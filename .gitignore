@@ -1,0 +1,30 @@
+# fitted objects and traces — never committed, regenerate them
+*.nc
+*.npz
+*.rds
+*.RData
+fits/
+traces/
+
+# logs and scheduler output
+logs/
+slurm-*.out
+*.err
+*.out
+
+# python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.ipynb_checkpoints/
+
+# latex build artifacts
+*.aux
+*.bbl
+*.blg
+*.toc
+*.synctex.gz
+
+# os
+.DS_Store
