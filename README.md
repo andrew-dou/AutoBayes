@@ -6,8 +6,9 @@ coding agent in the loop, on hardware you pay for by the hour.
 Two halves:
 
 - **`reference/`** — a pre-research pack that ships populated. The fixed cost of
-  entering the field, paid once: sampler theory and its citations, `brms`→PyMC porting,
-  the JAX/NumPyro GPU path, diagnostic thresholds, and a failure atlas keyed by symptom.
+  entering the field, paid once: sampler theory and its citations, how each library in
+  the stack actually works, `brms`→PyMC porting, the JAX/NumPyro GPU path, diagnostic
+  thresholds, and a failure atlas keyed by symptom.
 - **`scaffold/`** — what gets laid down in your project: an agent contract, a decision
   gate, a compiled wiki, a `research/` tier, and cluster templates with the expensive
   failures already encoded.
@@ -144,6 +145,11 @@ constrains what gets run, and keeps what was learned somewhere an agent will fin
 - Where official documentation does not exist, the pack says so rather than guessing.
   `bibliography.md` ends with six such gaps — including that no systematic brms→PyMC
   mapping reference exists anywhere, which is most of the reason this pack does.
+- Numbers are traced to their own tables. `acceleration.md` carries a claims audit of
+  the published sampler speedups, most of which shrink sharply or turn out to measure
+  something else — a GPU-versus-CPU comparison, a lattice-physics benchmark, a toy
+  target, or warmup charged to one side only. On realistic hierarchical models the
+  honest figure for modern samplers versus NUTS is about 2×.
 - No third-party PDFs are redistributed here — citations and summaries only.
 
 ## Licence

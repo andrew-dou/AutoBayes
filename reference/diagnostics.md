@@ -30,10 +30,40 @@ az.bfmi(trace)                             # one value per chain
 (trace.sample_stats.tree_depth >= max_treedepth).mean()
 ```
 
-Always use **split** R-hat (ArviZ's default) — it splits each chain in half and
-compares, which catches a chain drifting within itself. And read the *maximum* across
-parameters, never the mean: one non-mixing parameter contaminates everything derived
-from it, and averaging hides exactly the thing you are looking for.
+Read the *maximum* across parameters, never the mean: one non-mixing parameter
+contaminates everything derived from it, and averaging hides exactly the thing you are
+looking for.
+
+### What ArviZ actually computes
+
+`az.rhat` defaults to `method="rank"`, which is **the maximum of a bulk and a tail
+R-hat**, both rank-normalized: chains are split in half and z-transformed, and the tail
+component is the same statistic applied to the absolute deviation from the median. This
+is the Vehtari et al. (2021) diagnostic, and it is what `az.summary`'s `r_hat` column
+reports.
+
+`method="split"` is the *un*-rank-normalized classic split-R̂. It is a different
+statistic and is **not comparable** to the default — do not mix the two across a
+comparison table.
+
+For ESS, `method="bulk"` is the rank-normalized default and `method="tail"` is the
+minimum of the 5% and 95% quantile ESS.
+
+Two behaviours that look like bugs and are not:
+
+- **ESS can exceed the number of draws.** The estimator floors $\hat\tau$, which
+  ceilings ESS at $n\log_{10}n$ — 14,408 for 4 chains × 1,000 draws. Values above N
+  indicate antithetic behaviour, which NUTS produces routinely. Because the ceiling is a
+  heuristic, treat very large ESS as *saturated* rather than as a meaningful magnitude.
+- **`rhat` returns `NaN` rather than raising** for fewer than 2 chains, fewer than 4
+  draws, or non-finite input. A `NaN` here means "not computed", not "converged".
+
+**Version warning.** ArviZ 1.0 is a breaking rewrite: `InferenceData` becomes
+`xarray.DataTree`, the default credible-interval probability changes from **0.94 to
+0.89**, the default interval kind from **HDI to ETI**, and WAIC is removed. Any script
+or figure caption that hard-codes `hdi_3%` / `hdi_97%` or says "94% interval" changes
+meaning across that boundary without erroring. Pin the version and state it in the
+write-up.
 
 ## Reading the failures
 

@@ -26,8 +26,10 @@ costs almost nothing and survives.
 | File | What it settles |
 | --- | --- |
 | `bibliography.md` | The papers worth reading, what each one establishes, and which are load-bearing. Pointers and summaries only — no redistributed PDFs. |
+| `libraries.md` | What each library in the stack *actually is* and the internal mechanisms you need to debug it. brms, Stan, PyMC, PyTensor, JAX, NumPyro, ArviZ. |
 | `brms-to-pymc.md` | Translating a `brms`/Stan formula model into explicit PyMC. Priors, censoring, missing data, distributional parameters, post-processing. |
 | `pymc-to-jax.md` | Getting that model onto a GPU through NumPyro, and writing a custom differentiable likelihood when the built-in one will not do. |
+| `acceleration.md` | Making sampling faster — and a claims audit of the published speedup numbers, most of which do not mean what they are used to mean. |
 | `diagnostics.md` | What to compute after a fit, what threshold to hold it to, and what each failure implies about the model. |
 | `failure-atlas.md` | Failure modes with their signatures — the funnel, multimodality, and the environment errors that kill a job seconds into an allocation. |
 
@@ -38,6 +40,18 @@ Read `bibliography.md` and `diagnostics.md` before the first model. Read
 the first GPU run, and again the first time a gradient comes back `nan`. Treat
 `failure-atlas.md` as a lookup: match the signature you are seeing, then read the
 entry.
+
+`libraries.md` is the one to read when a library is behaving in a way that makes no
+sense — it explains mechanism rather than usage, and most of the entries exist because
+the behaviour they describe is surprising. It also collects the version boundaries that
+change results silently, which is the category of problem that costs the most time to
+diagnose.
+
+Read `acceleration.md` before choosing a sampler, and before quoting anyone's speedup
+number — including in a paper. Its claims audit traces the circulating figures back to
+their own tables, and most of them shrink dramatically or turn out to measure something
+else. If you are about to write "N× faster than NUTS," that section is the one to check
+first.
 
 Everything here is background that does not change as your project advances. Your
 project's own accumulating knowledge goes in `wiki/`, and your decisions go in

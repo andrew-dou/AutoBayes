@@ -208,12 +208,31 @@ correlation; separate PyMC likelihood terms give you that by default.
 | `pairs(fit)` | `az.plot_pair(trace)` |
 
 `posterior_predict(fit, newdata = ..., allow_new_levels = TRUE)` has no one-line
-equivalent, and this is the part of a port most likely to be wrong while looking
-right. Read `brms`'s behaviour for unseen grouping levels before reimplementing it:
-under `sample_new_levels = "gaussian"` it draws a fresh effect from the fitted
-population distribution, and a hand-written predictor that instead reuses a known
-level's effect, or substitutes zero, produces predictions that are plausible,
-systematically overconfident, and pass every convergence check.
+equivalent, and this is the part of a port most likely to be wrong while looking right.
+
+Before reimplementing it, find out which of three quite different things your reference
+fit was doing, because `sample_new_levels` is not a stylistic choice:
+
+| Option | What it does |
+| --- | --- |
+| `"uncertainty"` **(default)** | Per posterior draw, reuses the fitted draws of a randomly chosen **observed** level. |
+| `"gaussian"` | Draws from the multivariate normal implied by the fitted `sd_*` and `cor_*`. |
+| `"old_levels"` | Copies all draws from **one** randomly chosen observed level. |
+
+Only `"gaussian"` samples from the population distribution. The **default** reuses
+*shrunk, partially pooled* draws from a finite set of observed levels, which
+systematically understates between-level variance — and does so worst when few levels
+were observed, which is exactly when you need the prediction to be honest. `"old_levels"`
+adds no between-level variance whatsoever.
+
+So "port the new-level behaviour faithfully" is ambiguous until you know which one the
+baseline used. If you port `"gaussian"` semantics against an `"uncertainty"` baseline,
+your intervals will be wider and you will be *right* — but you will not match, and the
+mismatch is the model, not a bug.
+
+Two further quirks worth knowing: brms uses base R's `sample()` here, so new-level
+predictions are **not reproducible without `set.seed()`**; and an `NA` in a grouping
+variable is treated as a new level, silently.
 
 Validate prediction separately from fitting. Matching posteriors does not imply
 matching predictions.

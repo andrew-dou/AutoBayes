@@ -95,6 +95,8 @@ re-derive these.
 
 | Symptom | Read |
 | --- | --- |
+| A library is behaving in a way that makes no sense | `reference/libraries.md` |
+| Results changed after a version upgrade | `reference/libraries.md` (version boundaries) |
 | Divergences concentrated where a scale is small | `reference/diagnostics.md` (funnel), `failure-atlas.md` |
 | High R-hat, chains stable in separate places | `reference/failure-atlas.md` (multimodality) |
 | Tree depth saturating | `reference/diagnostics.md` |
@@ -106,6 +108,10 @@ re-derive these.
 | Elementwise op fails on a long loop | `reference/failure-atlas.md` (vectorize with `cumsum`) |
 | A port disagrees with the R/Stan original | `reference/failure-atlas.md` (comparison) |
 | Predictions wrong while posteriors match | `reference/brms-to-pymc.md` (unseen levels) |
+| GPU backend no faster than CPU | `reference/acceleration.md`, `failure-atlas.md` |
+| Choosing a sampler, or quoting a speedup number | `reference/acceleration.md` (claims audit) |
+| R-hat stuck above 1.01 with many short chains | `reference/acceleration.md` (nested R̂) |
+| Divergences that ignore reparameterization | `reference/failure-atlas.md` (float32) |
 
 **On custom operations specifically:** if the likelihood cannot be expressed with
 built-in distributions, or will not differentiate, the answer is often a custom

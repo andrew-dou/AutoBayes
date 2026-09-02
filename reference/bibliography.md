@@ -202,6 +202,103 @@ learning programs via high-level tracing," SysML.
 
 ---
 
+## Acceleration and modern samplers
+
+See `acceleration.md` for what each of these actually measured — nearly every headline
+number in this area is quoted out of context.
+
+**[STANDARD] Sountsov, P., Carroll, C. & Hoffman, M. D. (2024).** "Running Markov Chain
+Monte Carlo on Modern Hardware and Software." arXiv:2411.04260. Chapter in *Handbook of
+MCMC*, 2nd ed.
+
+The best practitioner reference for GPU MCMC. Source of the ESS/second framing and of
+the float32 tripwire ($2^{24}$ mantissa limit) that gives a computable pre-flight check.
+*(Chapter number unresolved — sources disagree; cite the book without one.)*
+
+**[STANDARD] Margossian, C. C., Hoffman, M. D., Sountsov, P., Riou-Durand, L., Vehtari, A.
+& Gelman, A. (2025).** "Nested R̂: Assessing the convergence of MCMC when running many
+short chains." *Bayesian Analysis* **20**(4), 1587–1614. DOI `10.1214/24-BA1453`.
+Preprint arXiv:2110.13017.
+
+Why the R̂ < 1.01 gate is wrong in the many-chain regime, and what to use instead
+(superchains, nested R̂ ≈ 1.004). Also establishes that more chains does not shorten
+warmup. Essential if you are running 100+ chains on a GPU.
+
+**[STANDARD] Hoffman, M. D., Radul, A. & Sountsov, P. (2021).** "An Adaptive-MCMC Scheme
+for Setting Trajectory Lengths in Hamiltonian Monte Carlo." *AISTATS*, PMLR
+**130**:3907–3915.
+
+ChEES-HMC. **No arXiv version exists** — PMLR is the only primary source. Uses ESS per
+gradient as a hardware-independent efficiency measure, which is the right habit.
+
+**[STANDARD] Hoffman, M. D. & Sountsov, P. (2022).** "Tuning-Free Generalized Hamiltonian
+Monte Carlo." *AISTATS*, PMLR **151**:7799–7813.
+
+MEADS is Algorithm 3 inside this paper — **not** a paper title. Claims only to "compete
+with" NUTS, and loses asymptotically on several targets; its win is transient bias.
+
+**[STANDARD] Robnik, J., De Luca, G. B., Silverstein, E. & Seljak, U. (2023).**
+"Microcanonical Hamiltonian Monte Carlo." *JMLR* **24**(311), 1–34. Preprint
+arXiv:2212.08549.
+
+MCHMC/MCLMC. Unadjusted, therefore **asymptotically biased**. Apples-to-apples gain is
+2.6–12.5×, median ≈7.5×, not the larger figures quoted from its text.
+
+**[STANDARD] Robnik, J., Cohn-Gordon, R. & Seljak, U. (2025).** "Metropolis Adjusted
+Microcanonical Hamiltonian Monte Carlo." *NeurIPS 2025*, Advances in NeurIPS 38,
+17098–17128. DOI `10.52202/085713-0513`. Preprint arXiv:2503.01707.
+
+MAMS — the adjusted, unbiased variant. **Published, not preprint-only.** Its "up to
+seven-fold speedup" is 2D toys; on real hierarchical targets it is 1.6–2.2×, and >42× on
+the funnel because NUTS fails there.
+
+**[STANDARD] Modi, C., Barnett, A. & Carpenter, B. (2024).** "Delayed rejection
+Hamiltonian Monte Carlo for sampling multiscale distributions." *Bayesian Analysis*
+**19**(3). DOI `10.1214/23-BA1360`. Preprint arXiv:2110.00610.
+
+Its "five-fold" figure is against *optimally tuned HMC*, not NUTS.
+
+**[STANDARD] Bou-Rabee, N., Carpenter, B. & Marsden, M. (2026).** "GIST: Gibbs self-tuning
+for locally adaptive Hamiltonian Monte Carlo." *Statistics Surveys* **20**, 135–179.
+DOI `10.1214/26-SS156`. Preprint arXiv:2404.15253.
+
+The framework in which randomized HMC, multinomial HMC, NUTS, and apogee-to-apogee
+sampling are all special cases of Gibbs-sampling the tuning parameters. The right
+citation for why NUTS's path-length rule is a choice rather than a given.
+
+**[STANDARD] Radul, A., Patton, B., Maclaurin, D., Hoffman, M. D. & Saurous, R. A.
+(2020).** "Automatically Batching Control-Intensive Programs for Modern Accelerators."
+*MLSys*. Preprint arXiv:1910.11141.
+
+The mechanics of vectorizing data-dependent recursion, and the measured cost of not
+doing it — up to a factor of 4 even at batch size 30. The technical argument for
+fixed-trajectory samplers on GPU.
+
+**[STANDARD] Magnusson, M., Torgander, J., Bürkner, P.-C., Zhang, L., Carpenter, B. &
+Vehtari, A. (2025).** "posteriordb: Testing, Benchmarking and Developing Bayesian
+Inference Algorithms." *AISTATS*, PMLR **258**:1198–1206. Preprint arXiv:2407.04967.
+
+120 models with reference posterior draws, and the implementation-dependent versus
+implementation-independent metric taxonomy. Cite when defending a benchmarking design.
+
+**[STANDARD] Zhang, L., Carpenter, B., Gelman, A. & Vehtari, A. (2022).** "Pathfinder:
+Parallel quasi-Newton variational inference." *JMLR* **23**.
+
+The standard initializer for many-chain GPU runs.
+
+**[STANDARD] Seyboldt, A., Carlson, E. L. & Carpenter, B. (2026).** "Preconditioning
+Hamiltonian Monte Carlo by minimizing Fisher Divergence." arXiv:2603.18845. Preprint.
+
+nutpie's mass-matrix adaptation, benchmarked on 114 posteriordb models — the most
+thorough benchmark in this area. ~1.3× median wall clock versus Stan in diagonal mode,
+~4× in the opt-in low-rank mode.
+
+**Blog, but the best writing on the subject: Carpenter, B. (2024), "Evaluating MCMC
+samplers," and Margossian, C. (2024), "What makes an MCMC sampler GPU-friendly?"** — both
+on the Gelman blog. The first is the clearest statement of why single-run speedup ratios
+mislead; the second is the clearest plain-language account of NUTS's raggedness problem.
+*(The GPU-friendliness post is by Margossian; the attribution is frequently given wrongly.)*
+
 ## Posts, docs, and code worth reading
 
 Often more immediately useful than papers. Verified live.

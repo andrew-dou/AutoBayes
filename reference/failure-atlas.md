@@ -75,24 +75,114 @@ queue before walking away.
 
 ### Silent float32
 
-**Signature.** Divergences that look like geometry and do not respond to
-reparameterization. Log densities that differ in the sixth digit between runs.
+**Signature.** Divergences that look like geometry and **do not respond to
+reparameterization.** Log densities that differ in the sixth digit between runs.
 
-**Cause.** JAX defaults to float32. A hierarchical model accumulates rounding error
-through the log density.
+**Cause.** JAX defaults to float32, whose mantissa is 24 bits. Once the absolute log
+density exceeds $2^{24} = 16{,}777{,}216$, absolute errors reach 1 — and the
+Metropolis accept/reject step is then comparing numbers whose difference is smaller
+than their own error.
 
-**Fix.** `export JAX_ENABLE_X64=true`, and assert `jnp.ones(1).dtype == jnp.float64`
-in preflight. This one is insidious because the model works — it just is not the model
-you wrote.
+**Pre-flight check you can actually compute.** With $n$ observations at typical
+per-observation log-density magnitude $\ell$:
+
+$$n \cdot |\ell| \gtrsim 1.7 \times 10^{7} \implies \text{float32 will corrupt the accept step}$$
+
+**Detection heuristic.** Log-ratios ending in exactly `.0`, `.5`, or `.25` should arouse
+suspicion — that is quantization showing through.
+
+**Fix.** `export JAX_ENABLE_X64=true`, and assert `jnp.ones(1).dtype == jnp.float64` in
+preflight. If float64 is too expensive, restructure the accept ratio as
+$\sum_i [\log p(y_i \mid \theta') - \log p(y_i \mid \theta)]$ so the differencing happens
+inside the sum.
+
+**Scale of the symptom.** One measured HMM benchmark: float32 gave **282 divergences**
+against a float64 reference's **zero**, at 1.5× the per-leapfrog cost for float64.
+
+**Cost depends entirely on the card** — A100/H100 are about 1:2 FP64:FP32, but consumer
+GeForce silicon is **1:64**. Never quote an x64 penalty without naming the hardware.
+
+### Float32 that is not even float32
+
+**Signature.** Gradients subtly wrong in a matmul-heavy model, on NVIDIA hardware, with
+`x64` off.
+
+**Cause.** On NVIDIA GPUs, float32 matmuls default to **TF32**, which carries only 10
+mantissa bits.
+
+**Fix.** `jax.config.update('jax_default_matmul_precision', 'highest')`. Relevant
+whenever the log density is dominated by a large design matrix.
 
 ### A very long time before the first draw
 
 **Signature.** Minutes of nothing, then normal sampling.
 
 **Cause.** XLA compilation, which is expected once. If it recurs, some shape is
-changing between calls and forcing recompilation.
+changing between calls and forcing recompilation. Note also that a Python loop inside a
+jitted function is *unrolled* — a long loop produces an enormous XLA computation and a
+compile time to match. Use `lax.scan`.
 
 **Fix.** Keep shapes static. Padding to a fixed size beats a shape that varies.
+
+### The GPU backend is no faster than the CPU one
+
+**Signature.** You switched to a JAX sampler, everything works, wall clock barely moved.
+
+**Cause, most often.** Chains are running *sequentially*. NumPyro's default
+`chain_method="parallel"` maps chains across XLA devices and **silently falls back to
+sequential when there are not enough devices** — it warns and continues. JAX exposes
+**one CPU device by default**, so four chains on a CPU box run one after another.
+
+**Fix.** For CPU, call `numpyro.set_host_device_count(n)` **before any JAX array is
+created** — the ordering matters. On a single GPU, you want the chains vectorized into
+one batched program instead. Verify empirically that you are on the path you think you
+are; the failure mode here is silence, not an error.
+
+**Second cause.** An `Op` with no JAX translation forces a fallback, so the graph
+crosses between JAX and NumPy on every evaluation. See "Fast on CPU, impossibly slow on
+GPU" below.
+
+### Vectorized chains are slower than expected
+
+**Signature.** Chains vectorized onto one device; throughput worse than the arithmetic
+suggests. Tree-depth saturation present.
+
+**Cause.** Vectorized chains share one batched `while_loop` for trajectory building. A
+`vmap`'d `while_loop` runs in **lockstep to the slowest element** — the batched
+predicate is reduced with an "any", so every chain runs until the last one finishes.
+Results are masked correctly; the work is not saved. One chain stuck at
+`max_tree_depth = 10` makes all of them do $2^{10}$ leapfrog steps.
+
+**Fix.** This is tree-depth saturation showing up as a throughput problem rather than a
+statistical one. Fix the geometry; do not raise the depth limit and expect speed.
+
+### Eager and jitted results differ
+
+**Signature.** The same function returns different numbers — sometimes very different —
+inside and outside `jit`.
+
+**Cause.** XLA applies algebraic simplifications. The documented example is stark:
+`jnp.exp(x) / jnp.exp(x)` at `x = 100.0` gives `nan` eagerly, because both terms
+overflow, and `1.0` jitted, because XLA rewrites it to `exp(x - x)`.
+
+**What to do with that.** A difference between eager and jitted output is **not
+automatically a bug, and not automatically safe**. JAX's own docs concede the full list
+of simplifications is not well documented. Do not use eager evaluation as the reference
+implementation for a jitted log density without checking; and if you are hunting a
+discrepancy between two backends, note that PyTensor's JAX mode deliberately runs a
+*different rewrite set* from its C/Numba modes — it disables its own fusion because XLA
+fuses instead. Small backend-to-backend numerical differences are expected.
+
+### Gradients are unavailable through a loop
+
+**Signature.** Reverse-mode differentiation fails or silently gives nothing useful
+through an iterative construction — a state-space likelihood, a recursion, a filter.
+
+**Cause.** `lax.while_loop` and `lax.fori_loop` are **forward-mode differentiable
+only**. `lax.scan` is fully reverse-mode differentiable.
+
+**Fix.** Write the recursion with `scan`. This is not a style preference — it is the
+difference between having a gradient and not.
 
 ---
 
