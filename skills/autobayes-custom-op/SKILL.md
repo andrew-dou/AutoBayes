@@ -37,9 +37,26 @@ multiplication to discard it. Check this before anything else.
 
 **2. Does an existing distribution cover it?**
 `pm.Censored`, `pm.Truncated`, `pm.Mixture` and `pm.CustomDist` cover more than most
-people assume. **`pm.CustomDist` with a `logp` written in PyTensor ops needs no custom
-`Op` at all and jaxifies for free.** This is the single most commonly missed option —
-if you can express the log density in ordinary PyTensor operations, you are done.
+people assume. **`pm.CustomDist` built with the `dist=` form — a graph of PyMC
+primitives — gets its logp inferred automatically and stays inside PyTensor, so it can
+be JAX-compiled.** This is the single most commonly missed option: if you can express
+the log density in ordinary PyTensor operations, you are done.
+
+Four documented constraints that often decide this for you:
+
+- **`pm.Censored` is likelihood-only.** Continuous censored distributions "should only
+  be used as likelihoods" — they are discrete-continuous mixtures that cannot be
+  sampled properly without a custom step sampler. For a censored *latent* quantity,
+  model the uncensored variable and wrap it in `Deterministic(clip(...))`.
+- **`pm.Truncated` can fall back to rejection sampling** when the underlying
+  distribution has no `logcdf`, with a `max_n_steps` cap that raises `TruncationError`.
+  That is a hard blocker on GPU. Check for a `logcdf` first.
+- **`pm.Potential` does not affect forward sampling.** Prior and posterior predictive
+  ignore it. Hand-porting a censored likelihood as a `Potential` means rebuilding
+  posterior predictive separately or silently reporting the wrong model.
+- **There is no `lccdf` primitive** — right-censoring needs `log1mexp(logcdf(...))`
+  written by hand. *(Inferred from the API surface, not documented; verify against your
+  version.)*
 
 **3. Can you reparameterize the problem away?**
 Non-centring, working on the log scale, or integrating a latent variable out

@@ -9,6 +9,52 @@ hand, every distributional parameter given its own regression line. That is more
 than `brm(...)`, and it is the point — the explicit version is the one you can put a
 custom likelihood into, run on a GPU, and diff against a previous version.
 
+## Port from the generated Stan, not from the formula
+
+This is the single most important rule here, and it is the one most ports get wrong.
+
+A `brms` formula is not a specification you can read off. It is input to a code
+generator that applies defaults you cannot see in the formula: a mean-centred design
+matrix, non-centred group effects, Cholesky-factored correlations, log links on
+distributional parameters, and improper flat priors on population-level coefficients.
+Port the formula and you will faithfully reproduce a model `brms` did not fit.
+
+Start by dumping what it actually generated:
+
+```r
+stancode(fit)        # the generated Stan — this is ground truth
+standata(fit)        # the actual design matrices, index vectors, N_* counts
+default_prior(fit)   # every prior brms would silently apply
+```
+
+`standata()` matters as much as `stancode()`. It hands you `X`, `Z_1_1`, the group
+index vector `J_1`, and the centring columns already built. Reproducing *those arrays*
+in Python is far safer than rebuilding the design matrix with a Python formula library
+and hoping the contrast coding and factor ordering happen to agree.
+
+### The mean-centring trap
+
+`brms` centres the population-level design matrix in a `transformed data` block,
+fits on the centred `Xc`, and transforms the intercept back afterwards. This is
+invisible in the formula and it is not cosmetic: the prior you specified on the
+intercept applies to the *centred* intercept, so a port that uses raw `X` puts a
+differently-located prior on a differently-defined parameter.
+
+Symptom: population slopes match, the intercept does not, and everything looks
+correct. Either reproduce the centring, or disable it with `bf(..., center = FALSE)`
+before you extract the reference model. Kurz's Part III (below) walks this end to end.
+
+### Default priors are not neutral
+
+`brms` does not use flat priors everywhere and does not use proper priors everywhere
+either. Population-level coefficients (`class = "b"`) get an improper flat prior by
+default; intercepts and group-level SDs get a `student_t(3, ., .)` scaled to the data.
+
+None of that is portable, and none of it is visible in the formula. Read
+`default_prior()` and write every prior explicitly in PyMC. A port that silently swaps
+an improper flat prior for a weakly informative one has changed the model — sometimes
+harmlessly, sometimes not, and you will not know which without checking.
+
 ## Orientation
 
 | R | Python | Note |
@@ -98,9 +144,17 @@ model.
 
 ## Censoring
 
-`y_l | cens(censored, y_u)` covers four cases at once — uncensored, left-, right-, and
-interval-censored — via a per-observation code. Stan dispatches these to `lpdf`,
+`y_l | cens(censored, y_u)` covers four cases at once via a per-observation code:
+`brms` accepts `'left'`, `'none'`, `'right'`, `'interval'` or equivalently `-1`, `0`,
+`1`, `2`, with `y_u` supplying interval upper bounds. Stan dispatches these to `lpdf`,
 `lcdf`, `lccdf` and a CDF difference respectively.
+
+Because the censoring type is **per observation**, a vectorized PyMC port needs
+per-row bounds, not scalars — this is the detail that most often turns a "faithful"
+port into a subtly different model.
+
+Note also that nothing documents what `brms` actually emits for `cens()` or `trunc()`.
+`stancode()` on a censored model is the only route to the ground truth.
 
 In PyMC you build the same four branches explicitly, with masks, and add each
 contribution with `pm.Potential`. Preserve the exact convention for the censoring code
@@ -187,3 +241,30 @@ between an R and a Python fit is evidence that *at least one is wrong*, and the 
 that it must be the new one is unfounded. Check convergence on both before attributing
 the difference. A long-established fit that never converged will happily disagree with
 a correct port for months.
+
+## A cheap cross-check
+
+If the model is expressible as a formula, fit it in **Bambi** — an lme4/brms-style
+formula interface that compiles to PyMC — and compare against your hand-written
+version. It also accepts `inference_method="numpyro"`, so if the model fits inside its
+formula language you may not need a hand port at all.
+
+Caveat: reading the PyMC model Bambi built is not a documented workflow, so treat it as
+a check on your posterior, not as a source of code to copy.
+
+## Sources
+
+Full citations in `bibliography.md`. The three that matter most here:
+
+- **Vieira's "rosetta stone for PyMC and Stan"** — the best single source for this port,
+  by a PyMC core developer. Resolves the `target +=` versus one-RV-per-distribution
+  mismatch and names the escape hatches.
+- **Kurz, "Learn Stan with brms," Part III** — the mean-centring walkthrough. This is
+  the one that saves you the intercept bug.
+- **Stan User's Guide, "Truncated or Censored Data"** — the specification to port
+  against.
+
+Worth knowing before you start: **no systematic brms→PyMC mapping reference exists**,
+brms's generated parameter naming (`z_1`, `sd_1`, `r_1_1`, `L_1`) is undocumented, and
+there is no published walkthrough of the generated *multilevel* Stan code. Budget time
+for reading `stancode()` output directly — that is the actual state of the art.

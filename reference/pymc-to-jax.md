@@ -30,6 +30,9 @@ twenty minutes is usually recompiling — check for shapes that change between c
 
 ## Getting it running
 
+**Check your PyMC version before copying any sampling snippet, including this one.**
+This API moved recently and most tutorials online are now wrong.
+
 ```python
 import pymc as pm
 
@@ -37,13 +40,36 @@ with model:
     trace = pm.sample(
         draws=2500, tune=2500, chains=40,
         nuts_sampler="numpyro",
-        nuts_sampler_kwargs={"chain_method": "vectorized"},
-        target_accept=0.99, max_treedepth=12,
+        nuts={"target_accept": 0.99, "max_treedepth": 12},
     )
 ```
 
-`chain_method="vectorized"` runs all chains as one `vmap`'d program — the right
-default on a single GPU. `"parallel"` maps chains across devices and is for multi-GPU.
+Three things that changed and will bite you:
+
+- **`nuts_sampler_kwargs` is deprecated.** Current PyMC wants `nuts={...}`. Any snippet
+  passing `nuts_sampler_kwargs=` was written against PyMC 5 and will warn or fail.
+- **`nutpie` is now the default `nuts_sampler`**, not the Python NUTS. The choices are
+  `"pymc"`, `"nutpie"`, `"blackjax"`, `"numpyro"`. nutpie also has a GPU path via
+  `nutpie.compile_pymc_model(model, backend="jax")`, so numpyro is not the only route —
+  benchmark both rather than assuming.
+- **The docs are on PyMC 6.x.** They are not internally consistent about it: pages on
+  the same "stable" tree report 6.3.1, 6.0.1–6.2.0, and the examples site reports
+  5.25.1. Trust the installed package over any page.
+
+### The `chain_method` gap
+
+On a single GPU you want all chains as one `vmap`'d program. NumPyro's `chain_method`
+controls this: `"vectorized"` collects chains in parallel on one device, while
+`"parallel"` maps them across XLA devices and **silently falls back to sequential when
+there are not enough devices.** That fallback is the usual explanation for "the GPU port
+isn't any faster."
+
+The awkward part: `chain_method` is documented on `pymc.sampling.jax.sample_numpyro_nuts`,
+and there is **no documented way to pass it through `pm.sample(nuts_sampler="numpyro")`
+on current stable.** This is a real, currently-unresolved gap in the documentation, not
+something you are missing. If throughput matters, verify empirically which path you are
+on rather than assuming `pm.sample` forwards it — or call `sample_numpyro_nuts`
+directly and accept that it is the older entry point.
 
 Environment settings that matter more than they look:
 
@@ -88,13 +114,41 @@ and a JAX path, and its gradient has to be right in a way nothing will check for
 Exhaust these first:
 
 - **An existing distribution covers it.** `pm.Censored`, `pm.Truncated`, `pm.Mixture`
-  and `pm.CustomDist` cover a wider range than most people assume. `pm.CustomDist` with
-  a `logp` written in PyTensor ops needs no custom `Op` at all and jaxifies for free.
+  and `pm.CustomDist` cover a wider range than most people assume. `pm.CustomDist` built
+  with the `dist=` form — a graph of PyMC primitives — gets its logp inferred
+  automatically and stays inside PyTensor, so it can be JAX-compiled.
 - **Reparameterize.** Non-centring, working on the log scale, or integrating a latent
   variable out analytically often removes the offending operation entirely.
 - **A different numerical route to the same quantity.** This is the big one, below.
 - **The operation is fine and something else is wrong.** `nan` gradients are more often
   a log of a negative number, or a scale hitting zero, than a missing primitive.
+
+**Four documented constraints that decide this for you:**
+
+- **`pm.Censored` is likelihood-only.** The docs are explicit: continuous censored
+  distributions "should only be used as likelihoods," because they are
+  discrete-continuous mixtures that cannot be sampled properly without a custom step
+  sampler. For a censored *latent* quantity, model the uncensored variable and wrap it
+  in `Deterministic(clip(...))`. Its `dist` argument must implement `logcdf` and is
+  cloned, so it must be unnamed.
+- **`pm.Truncated` can fall back to rejection sampling.** If the underlying distribution
+  has no `logcdf` and no specialized `Op`, PyMC truncates by rejection with a
+  `max_n_steps` cap (default 10,000) that raises `TruncationError`. That is a hard
+  blocker on a GPU. Check for a `logcdf` before choosing `pm.Truncated` over a manual
+  `pm.Potential` normalization.
+- **`pm.Potential` does not affect forward sampling.** It influences probability-based
+  sampling only — `pm.sample_prior_predictive` and `pm.sample_posterior_predictive`
+  ignore it. If you hand-port a censored likelihood as a `Potential`, budget for
+  rebuilding posterior predictive separately, or it will silently be the wrong model.
+- **There is no `lccdf` primitive.** PyMC gives you `pm.logcdf`; Stan gives you both
+  `_lcdf` and `_lccdf`. Right-censoring therefore needs `log1mexp(logcdf(...))` written
+  by hand. *(Inferred from the API surface rather than stated in the docs — verify
+  against your PyMC version.)*
+
+For an imputed-versus-integrated-out choice, prefer integrating out. PyMC's own censored
+-data example notes the unimputed `pm.Censored` form "scales much better with more
+censored data, and converges faster" — the imputed form adds one parameter per censored
+row, which dominates gradient cost on GPU.
 
 If none of those apply, continue.
 
@@ -225,6 +279,10 @@ Notes on each piece:
   `jax.grad(interval_logp, argnums=...)` is the least-duplication way to write it.
 - **`jax_funcify`** is the piece that matters on GPU. Register the gradient `Op` too,
   or the backward pass falls back and you lose everything the port bought you.
+  **Return an un-jitted callable** — do not wrap it in `jax.jit` yourself. The point is
+  that PyTensor jits the *whole graph* as one unit; a pre-jitted function forces a
+  boundary in the middle of it. This is the single most common mistake in the pattern,
+  and PyTensor's own extension docs call it out.
 
 ### Verifying it
 

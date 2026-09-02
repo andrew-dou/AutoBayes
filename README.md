@@ -136,8 +136,14 @@ constrains what gets run, and keeps what was learned somewhere an agent will fin
   the result taken from it) or **[STANDARD]** (the canonical reference for a technique
   used here, recommended but not a provenance claim). Do not report the second kind as
   something this project verified.
-- The PyMC/JAX material assumes PyMC 5 with the NumPyro backend. The porting and
-  diagnostic material is stack-agnostic.
+- The PyMC/JAX material targets current PyMC (6.x) with the NumPyro or nutpie backend,
+  and flags where the API changed from PyMC 5 — `nuts_sampler_kwargs` is deprecated in
+  favour of `nuts={...}`, and nutpie is now the default sampler. PyMC's own docs are not
+  internally consistent about their version; trust the installed package. The porting
+  and diagnostic material is stack-agnostic.
+- Where official documentation does not exist, the pack says so rather than guessing.
+  `bibliography.md` ends with six such gaps — including that no systematic brms→PyMC
+  mapping reference exists anywhere, which is most of the reason this pack does.
 - No third-party PDFs are redistributed here — citations and summaries only.
 
 ## Licence
