@@ -30,6 +30,8 @@ FIELDS = [
             "and what would distinguish it."),
     ("How we'll know it worked", "Specific diagnostics with thresholds, set "
                                  "BEFORE the run. Not 'we'll look at the output'."),
+    ("Kill criterion", "The outcome that means this DIRECTION is dead, not just "
+                       "that this run missed."),
     ("If it fails", "The concrete next action. Not 'try something else'."),
     ("Files", "New, edited, untouched."),
 ]

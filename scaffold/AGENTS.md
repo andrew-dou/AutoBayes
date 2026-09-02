@@ -16,6 +16,19 @@ Read this file first, every session.
 3. Go to raw sources (model code, logs, fits, data) only when the wiki is
    insufficient — and when you do, write what you found back into the wiki.
 
+**Background you do not need to rediscover.** The AutoBayes `reference/` pack covers
+the fixed cost of the field — sampler theory and its citations, `brms`→PyMC porting,
+the JAX/NumPyro GPU path, diagnostic thresholds, and a failure atlas keyed by symptom.
+Read it rather than deriving it again. It is a fixed input: never write findings back
+into it. Anything you learn goes in `wiki/` or `research/`.
+
+**Two places for project knowledge, and they are not interchangeable.** `wiki/` is
+compiled state, optimized for an agent to retrieve — short pages, cross-referenced,
+current. `research/` is long-form and dated: the investigation write-up, the derivation,
+the argument a human reads end to end. A finding usually produces both — a `research/`
+document with the full reasoning, and a wiki page that states the conclusion and links
+to it.
+
 **Before proposing any new model, experiment, or expensive job:**
 
 1. Read `wiki/hypotheses/ruled-out.md`. **Do not revisit anything on it.** If you
@@ -49,12 +62,16 @@ If you learned it this session and it is not in the wiki, it did not happen.
 
 **No entry in `DECISIONS.md`, no job.**
 
-Every entry answers three questions, and an entry that does not is not an entry:
+Every entry answers four questions, and an entry that does not is not an entry:
 
 1. **What** are we changing, and **why** do we believe it will help?
 2. **How will we know if it worked?** A specific diagnostic or metric with a
    threshold, decided before the run. Not "we will look at the output".
-3. **What do we do if it fails?** A concrete next action, not "try something else".
+3. **What is the kill criterion?** The outcome that means this *direction* is dead, not
+   just this run. Separate from (2) on purpose: a run can miss its success threshold
+   and still be worth iterating on, and the distinction is only honest if you draw it
+   beforehand.
+4. **What do we do if it fails?** A concrete next action, not "try something else".
 
 Use `python3 scripts/new_decision.py "<short title>"`. It will refuse to write an
 entry with a field left empty.
