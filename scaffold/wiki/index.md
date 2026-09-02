@@ -15,8 +15,8 @@ are asked for constantly.
 
 | Page | Summary |
 | --- | --- |
-| `data/provenance.md` | Where every input came from, which file is canonical, what is derived from what. |
-| `data/dictionary.md` | Every column: meaning, range, and whether it is a predictor, an identifier, or vestigial. |
+| [[data/provenance]] | Where every input came from, which file is canonical, what is derived from what. |
+| [[data/dictionary]] | Every column: meaning, range, and whether it is a predictor, an identifier, or vestigial. |
 
 ## Concepts
 
