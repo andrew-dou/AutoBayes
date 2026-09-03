@@ -89,13 +89,51 @@ def check_jax(require_gpu: bool) -> None:
     # against the wrong CUDA imports fine on a login node and dies on device.
     try:
         import jax.numpy as jnp
-        x = jnp.ones((256, 256))
+        n = 256
+        x = jnp.ones((n, n))
         val = float((x @ x).sum())
-        report(OK if val > 0 else BAD, "kernel executes", f"matmul -> {val:.0f}")
+        exact = float(n) ** 3
+        if val == exact:
+            report(OK, "kernel executes", f"matmul -> {val:.0f}")
+        elif val > 0:
+            report(WARN, "kernel executes",
+                   f"matmul -> {val:.0f}, expected {exact:.0f} — the kernel runs "
+                   "but is not numerically exact; check precision settings")
+        else:
+            report(BAD, "kernel executes", f"matmul -> {val:.0f}")
     except Exception as e:
         report(BAD, "kernel executes",
                f"{type(e).__name__}: {e} — likely a CUDA version mismatch "
                "between the wheel and the driver")
+
+    # Precision. float32 is JAX's default and it silently corrupts MCMC: past
+    # 2**24 the mantissa gives absolute errors >= 1, which breaks the
+    # Metropolis accept step and looks exactly like bad geometry.
+    try:
+        import jax.numpy as jnp
+        dt = jnp.ones(1).dtype
+        if dt == jnp.float64:
+            report(OK, "float64 enabled", str(dt))
+        else:
+            report(BAD, "float64 enabled",
+                   f"default dtype is {dt} — set JAX_ENABLE_X64=true. In float32 "
+                   "a log density above 2**24 ~ 1.7e7 accumulates absolute error "
+                   ">= 1, corrupting accept/reject. With n observations at typical "
+                   "per-obs log-density |l|, you are at risk once n*|l| ~ 1.7e7")
+    except Exception as e:
+        report(WARN, "float64 enabled", f"{type(e).__name__}: {e}")
+
+    # On NVIDIA hardware float32 matmuls default to TF32 (10 mantissa bits),
+    # so "float32" is not float32 when the log density is matmul-dominated.
+    if "gpu" in kinds or "cuda" in kinds:
+        prec = os.environ.get("JAX_DEFAULT_MATMUL_PRECISION", "").lower()
+        if prec in ("highest", "float32"):
+            report(OK, "matmul precision", prec)
+        else:
+            report(WARN, "matmul precision",
+                   "unset — NVIDIA float32 matmuls default to TF32 (10 mantissa "
+                   "bits). Set JAX_DEFAULT_MATMUL_PRECISION=highest if the log "
+                   "density is matmul-dominated")
 
 
 def check_preallocation() -> None:
