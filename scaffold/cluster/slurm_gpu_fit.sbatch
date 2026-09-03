@@ -3,7 +3,7 @@
 # slurm_gpu_fit.sbatch — template for a single GPU sampling run.
 #
 # Copy this per run; do not edit it in place. Name the copy after the run
-# (fit_m47_h200.sbatch), not after the template.
+# (fit_<version>_<device>.sbatch), not after the template.
 #
 # Usage:
 #   sbatch cluster/fit_<name>.sbatch

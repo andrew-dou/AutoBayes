@@ -1,7 +1,32 @@
-# Why this harness
+# Why AutoBayes
 
 Notes on the reasoning, kept separate from the instructions so `AGENTS.md` stays
 short enough that an agent actually reads all of it.
+
+## Why ship pre-research at all
+
+The scaffold answers "how does this project not lose what it learned." The
+`reference/` pack answers a different question: why does every project pay the same
+entry fee?
+
+An agent starting a Bayesian modelling project cold spends its first sessions on
+literature discovery and API archaeology. Which sampler. What the diagnostics mean.
+How a `brms` formula expands. Why JAX will not differentiate the likelihood. None of
+that is anyone's research — it is the fixed cost of entering the field, identical for
+everybody, and it is *high-variance*: ask two agents and you get different papers,
+different idioms, and different confidence, at full token price each time, for an
+answer that was already known.
+
+The format matters as much as the content. A PDF costs thousands of tokens to read and
+yields a summary the agent loses at the next compaction. Three sentences saying what a
+paper establishes, which number to take from it, and which decision it should change
+costs almost nothing and survives. That asymmetry is why the pack is digests and
+pointers rather than a document library — and, separately, why it redistributes no
+third-party PDFs.
+
+The pack is deliberately a *fixed input*. Nothing writes back into it. The moment
+project findings start landing in `reference/`, it stops being a stable thing you can
+trust on a new project and becomes another wiki.
 
 ## The failure this is built around
 
@@ -15,7 +40,7 @@ Negative results are exactly what an agent will not reconstruct. Asked whether a
 approach was tried, an agent with no record does not say "I don't know" — it
 produces a plausible answer. Plausible is worse than absent, because you act on it.
 
-So the harness is organized around one question: *where does a negative result get
+So AutoBayes is organized around one question: *where does a negative result get
 written down, such that the agent is required to read it before proposing work?*
 The answer is `wiki/hypotheses/ruled-out.md`, and `AGENTS.md` makes reading it a
 precondition. Everything else supports that.

@@ -3,15 +3,29 @@
 **Rule: before submitting any job that costs real compute, add an entry below.
 No entry, no job.**
 
-Each entry answers three questions:
+Each entry answers four questions:
 
 1. **What** are we changing and **why** do we believe it will help?
 2. **How will we know if it worked?** A specific diagnostic or metric, with a
    threshold, chosen before the run.
-3. **What do we do if it fails?** A concrete next action, not "try something else".
+3. **What is the kill criterion?** The outcome that means this direction is dead — not
+   merely that this run missed.
+4. **What do we do if it fails?** A concrete next action, not "try something else".
 
 Append with `python3 scripts/new_decision.py "<short title>"`. Newest entries go at
 the top of Active. Move an entry to Resolved once its Result section is filled in.
+
+---
+
+## Open questions
+
+Standing blockers, checked before starting a new iteration. If an open blocker would
+prevent evaluating the next model's result, fix the blocker first — a fit you cannot
+evaluate costs the same as one you can.
+
+Unlike entries below, these are edited in place: resolve them, do not append.
+
+_(none yet)_
 
 ---
 
@@ -22,12 +36,27 @@ the top of Active. Move an entry to Resolved once its Result section is filled i
 
 ---
 
+## Retrospective
+
+Once this log passes roughly fifty entries it stops being readable, and an unreadable
+log is not consulted. Compress the oldest resolved entries into one-paragraph summaries
+here — what was tried, what the number was, where the detail lives — and delete the
+long form. The wiki page and the `research/` document keep the substance; this section
+keeps the thread.
+
+Do not compress anything that killed an approach until it is recorded in
+`wiki/hypotheses/ruled-out.md`.
+
+_(none yet)_
+
+---
+
 ## Resolved
 
 ### Example — non-centred parameterization for the group-level scale (2026-01-14)
 
 > Kept as a worked example of the intended altitude. Delete it once you have real
-> entries. It is real, from the project this harness came out of, with names
+> entries. It is real, from the project AutoBayes came out of, with names
 > generalized.
 
 **What.** Replace the centred parameterization of the group-level scale with a
@@ -42,7 +71,7 @@ non-centring is for. The alternative reading, that the model is simply
 misspecified, predicts divergences spread across the posterior rather than
 concentrated at small `sigma`, and that is not what the pairs plot shows.
 
-**How we will know it worked.** Three thresholds, all set before the run:
+**How we'll know it worked.** Three thresholds, all set before the run:
 
 - divergences below 0.1% of post-warmup draws (previous run: 1.6%);
 - max split R-hat at or below 1.01 across all parameters (previous: 1.79);
@@ -50,7 +79,11 @@ concentrated at small `sigma`, and that is not what the pairs plot shows.
 
 Sampling wall clock is allowed to rise; this is a geometry fix, not a speed fix.
 
-**What we do if it fails.** If divergences stay above 1% *and* remain concentrated
+**Kill criterion.** Divergences above 1% *and* still concentrated at small `sigma`
+after non-centring kills the funnel explanation outright — the geometry is not what
+is wrong, and no further reparameterization of this parameter is worth running.
+
+**If it fails.** If divergences stay above 1% *and* remain concentrated
 at small `sigma`, the funnel is not the whole story and the next step is to put a
 boundary-avoiding prior on `sigma` rather than to reparameterize further. If
 divergences drop but R-hat stays above 1.05 with chains visibly in separate modes,

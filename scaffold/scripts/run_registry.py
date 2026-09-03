@@ -5,11 +5,11 @@ Six months on you will be asked how long a fit took and which settings produced
 it. The scheduler's accounting database will have been purged and the logs will
 have rotated. This is a flat JSONL file that outlives both.
 
-    python3 scripts/run_registry.py add --tag m47 --outdir fits/m47 \
+    python3 scripts/run_registry.py add --tag v2 --outdir fits/v2 \
         --chains 40 --draws 2500 --warmup 2500 --seconds 20045
     python3 scripts/run_registry.py list
     python3 scripts/run_registry.py list --sort seconds
-    python3 scripts/run_registry.py show m47
+    python3 scripts/run_registry.py show v2
 
 The registry is append-only. Re-registering a tag adds a row; `show` reports all
 of them, because two runs with the same tag and different wall clocks is exactly

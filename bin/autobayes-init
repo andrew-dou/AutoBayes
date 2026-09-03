@@ -1,0 +1,105 @@
+#!/usr/bin/env python3
+"""Lay down the AutoBayes scaffold in a project directory.
+
+    bin/autobayes-init /path/to/project
+    bin/autobayes-init .                     # current directory
+    bin/autobayes-init . --name "my study"   # sets the project name in AGENTS.md
+    bin/autobayes-init . --dry-run
+
+Copies `scaffold/` into the target and reports what it wrote. Refuses to overwrite an
+existing file — a project that already has a DECISIONS.md has history in it, and this
+script is not going to be the thing that loses it. Re-running after adding files to the
+scaffold is therefore safe: it fills gaps and leaves everything else alone.
+
+Exit code 0 if anything was written or everything already existed; 1 on error.
+"""
+from __future__ import annotations
+
+import argparse
+import shutil
+import sys
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent.parent
+SCAFFOLD = ROOT / "scaffold"
+REFERENCE = ROOT / "reference"
+
+
+def iter_scaffold():
+    """Yield (source, path relative to scaffold/) for every file, sorted."""
+    for src in sorted(SCAFFOLD.rglob("*")):
+        if src.is_file():
+            yield src, src.relative_to(SCAFFOLD)
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser(description="Initialize an AutoBayes project.")
+    ap.add_argument("target", type=Path, help="project directory (created if absent)")
+    ap.add_argument("--name", default=None, help="project name written into AGENTS.md")
+    ap.add_argument("--dry-run", action="store_true", help="report, write nothing")
+    ap.add_argument("--link-reference", action="store_true",
+                    help="symlink reference/ into the project instead of reading it "
+                         "from the skill directory")
+    args = ap.parse_args()
+
+    if not SCAFFOLD.is_dir():
+        print(f"error: no scaffold/ at {SCAFFOLD}", file=sys.stderr)
+        return 1
+
+    target = args.target.expanduser().resolve()
+
+    written, skipped = [], []
+    for src, rel in iter_scaffold():
+        if rel.name == ".gitkeep":
+            rel = rel.parent / ".gitkeep"
+        dest = target / rel
+        if dest.exists():
+            skipped.append(rel)
+            continue
+        written.append(rel)
+        if args.dry_run:
+            continue
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(src, dest)
+        if src.suffix in {".py", ".sh"} or not src.suffix:
+            dest.chmod(dest.stat().st_mode | 0o111)
+
+    # The reference pack is read in place from the skill directory by default; a
+    # symlink is offered for projects that want it visible in their own tree.
+    ref_link = target / "reference"
+    if args.link_reference and not ref_link.exists() and not args.dry_run:
+        ref_link.symlink_to(REFERENCE, target_is_directory=True)
+
+    if args.name and not args.dry_run:
+        agents = target / "AGENTS.md"
+        if agents.exists():
+            text = agents.read_text()
+            if text.startswith("# Agent contract"):
+                agents.write_text(
+                    text.replace("# Agent contract",
+                                 f"# Agent contract — {args.name}", 1))
+
+    verb = "would write" if args.dry_run else "wrote"
+    print(f"{verb} {len(written)} file(s) to {target}")
+    for rel in written:
+        print(f"  + {rel}")
+    if skipped:
+        print(f"left {len(skipped)} existing file(s) untouched:")
+        for rel in skipped:
+            print(f"  = {rel}")
+
+    if not args.dry_run and written:
+        print()
+        print("Next:")
+        print("  1. Edit AGENTS.md — the Hard Rules section is project-specific and is")
+        print("     the part that does the work. Delete the examples, write yours.")
+        print("  2. Point your agent at it. CLAUDE.md forwards to AGENTS.md, so Claude")
+        print("     Code and Codex read the same contract.")
+        print("  3. Phase 1 is research, not code. See the autobayes skill.")
+        print("  4. Before the first expensive run:")
+        print('       python3 scripts/new_decision.py "first fit"')
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
