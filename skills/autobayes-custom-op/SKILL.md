@@ -96,9 +96,14 @@ quadrature over a smooth integrand.** It generalizes well past censoring.
 
 Two checks before adopting it:
 
-- **Smoothness across the whole parameter range.** Gauss–Legendre degrades on kinks and
-  near-singularities. A Student-t stays $C^\infty$ even at low `nu`; a density with a
-  boundary singularity does not.
+- **Check the interval width, not the smoothness.** The intuitive worry is heavy tails
+  and low `nu`. Measured, that is the wrong thing to check: holding interval width at
+  10σ, GL-64 error stays at ~1e-15 for `nu` from 1.5 to 100. What degrades it is **width
+  relative to scale**, because the nodes cluster toward the endpoints and undersample the
+  peak — error is ~1e-15 up to 10σ, then 1.0e-07 at 20σ, 4.1e-05 at 30σ, 1.4e-02 at 60σ.
+  Raising `N_QUAD` recovers it (at 60σ: 256 nodes → 2.6e-10, 512 → 5.6e-16).
+  **Rule: GL-64 is exact while the interval is within ~10σ.** Verify against `scipy` for
+  your own bounds — it is a two-line check.
 - **You have changed the likelihood.** Quadrature and an analytic CDF are
   mathematically equivalent and numerically different. Per-observation differences
   around `1e-4` in log space are negligible individually and can accumulate across

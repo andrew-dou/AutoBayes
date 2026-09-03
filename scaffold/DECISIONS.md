@@ -56,7 +56,7 @@ _(none yet)_
 ### Example — non-centred parameterization for the group-level scale (2026-01-14)
 
 > Kept as a worked example of the intended altitude. Delete it once you have real
-> entries. It is real, from the project this harness came out of, with names
+> entries. It is real, from the project AutoBayes came out of, with names
 > generalized.
 
 **What.** Replace the centred parameterization of the group-level scale with a

@@ -32,6 +32,7 @@ costs almost nothing and survives.
 | `acceleration.md` | Making sampling faster — and a claims audit of the published speedup numbers, most of which do not mean what they are used to mean. |
 | `diagnostics.md` | What to compute after a fit, what threshold to hold it to, and what each failure implies about the model. |
 | `failure-atlas.md` | Failure modes with their signatures — the funnel, multimodality, and the environment errors that kill a job seconds into an allocation. |
+| `examples/` | Runnable code. `custom_op_verification.py` executes the custom-`Op` pattern end to end and runs the verification ladder against `scipy`, finite differences, both PyTensor backends, and a live PyMC model. |
 
 ## How to use it
 

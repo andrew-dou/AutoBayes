@@ -40,7 +40,7 @@ Negative results are exactly what an agent will not reconstruct. Asked whether a
 approach was tried, an agent with no record does not say "I don't know" — it
 produces a plausible answer. Plausible is worse than absent, because you act on it.
 
-So the harness is organized around one question: *where does a negative result get
+So AutoBayes is organized around one question: *where does a negative result get
 written down, such that the agent is required to read it before proposing work?*
 The answer is `wiki/hypotheses/ruled-out.md`, and `AGENTS.md` makes reading it a
 precondition. Everything else supports that.

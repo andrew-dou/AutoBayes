@@ -30,12 +30,37 @@ twenty minutes is usually recompiling — check for shapes that change between c
 
 ## Getting it running
 
-**Check your PyMC version before copying any sampling snippet, including this one.**
-This API moved recently and most tutorials online are now wrong.
+**This API differs between PyMC 5 and PyMC 6. Check which you have before copying any
+snippet — including the ones below, and including whatever the docs site shows you.**
+
+Run this first. It takes two seconds and settles it:
 
 ```python
-import pymc as pm
+import inspect, pymc as pm
+print(pm.__version__)
+print("nuts"                in inspect.signature(pm.sample).parameters)  # 6.x style
+print("nuts_sampler_kwargs" in inspect.signature(pm.sample).parameters)  # 5.x style
+print(inspect.signature(pm.sample).parameters["nuts_sampler"].default)   # the default backend
+```
 
+**PyMC 5.x** — verified against 5.28.2. `nuts_sampler` defaults to `"pymc"`,
+`nuts_sampler_kwargs` is present and current, and there is **no** `nuts` parameter:
+
+```python
+with model:
+    trace = pm.sample(
+        draws=2500, tune=2500, chains=40,
+        nuts_sampler="numpyro",
+        nuts_sampler_kwargs={"chain_method": "vectorized"},
+        target_accept=0.99, max_treedepth=12,
+    )
+```
+
+**PyMC 6.x** — per the current docs. `nuts_sampler_kwargs` is deprecated in favour of
+`nuts={...}`, and the default sampler becomes `nutpie` when it is installed and
+compilable:
+
+```python
 with model:
     trace = pm.sample(
         draws=2500, tune=2500, chains=40,
@@ -44,17 +69,17 @@ with model:
     )
 ```
 
-Three things that changed and will bite you:
+Two things worth knowing regardless of version:
 
-- **`nuts_sampler_kwargs` is deprecated.** Current PyMC wants `nuts={...}`. Any snippet
-  passing `nuts_sampler_kwargs=` was written against PyMC 5 and will warn or fail.
-- **`nutpie` is now the default `nuts_sampler`**, not the Python NUTS. The choices are
-  `"pymc"`, `"nutpie"`, `"blackjax"`, `"numpyro"`. nutpie also has a GPU path via
-  `nutpie.compile_pymc_model(model, backend="jax")`, so numpyro is not the only route —
-  benchmark both rather than assuming.
-- **The docs are on PyMC 6.x.** They are not internally consistent about it: pages on
+- **The sampler choices are `"pymc"`, `"nutpie"`, `"blackjax"`, `"numpyro"`.** nutpie
+  also has a GPU path via `nutpie.compile_pymc_model(model, backend="jax")`, so NumPyro
+  is not the only route — benchmark both rather than assuming.
+- **The published docs are not internally consistent about their own version.** Pages on
   the same "stable" tree report 6.3.1, 6.0.1–6.2.0, and the examples site reports
-  5.25.1. Trust the installed package over any page.
+  5.25.1, while a current install may be 5.28.x. **Trust the installed package over any
+  page**, which is what the snippet above is for. This is not a hypothetical: the first
+  draft of this document told you to use `nuts={...}` unconditionally, which fails on
+  PyMC 5.
 
 ### The `chain_method` gap
 
@@ -180,11 +205,41 @@ The general shape of the trick: **replace an exact-but-non-differentiable specia
 function with a quadrature approximation of an integral whose integrand is smooth.**
 It applies well beyond Student-t censoring.
 
-Two things to check before adopting it:
+### What actually limits the accuracy — measured
 
-- **Smoothness across the parameter range.** Gauss–Legendre degrades on integrands with
-  kinks or near-singularities. A Student-t stays $C^\infty$ even at low `nu`, so it is
-  safe; a density with a boundary singularity is not.
+The intuitive worry is smoothness, and low `nu` heavy tails. **That is the wrong thing to
+check.** Measured against `scipy`, GL-64 on a Student-t over $[y_l, y_u]$ with scale
+$\sigma$:
+
+| interval width / σ | GL-64 log-space error |
+| --- | --- |
+| ≤ 10 | ~1e-15 (machine precision) |
+| 20 | 1.0e-07 |
+| 30 | 4.1e-05 |
+| 60 | 1.4e-02 |
+| 100 | 1.4e-01 |
+
+Holding width/σ at 10 and sweeping `nu` from 1.5 to 100 leaves the error at ~1e-15
+throughout. **Degrees of freedom are not the driver; interval width relative to the scale
+is.** The mechanism is node placement — Gauss–Legendre nodes cluster toward the endpoints,
+so over a very wide interval the peak, which holds essentially all the mass, is
+undersampled.
+
+Node count buys it back, at the same interval width of 60σ: N=64 → 1.4e-02,
+N=128 → 4.2e-05, N=256 → 2.6e-10, N=512 → 5.6e-16.
+
+**Practical rule: GL-64 is exact to machine precision while the integration interval is
+within roughly 10σ.** Beyond that, either raise `N_QUAD` (budget a doubling per doubling
+of width) or split the interval. For censoring this is usually fine — censoring bounds
+are normally close to the data — but a detection limit far in the tail, or a
+`[-inf, y]`-style bound mapped to a large finite range, lands squarely in the bad regime.
+
+Check this for *your* bounds rather than trusting the default. It is a two-line
+comparison against `scipy` and it is the difference between a correct likelihood and a
+quietly biased one.
+
+One more thing to check before adopting it:
+
 - **You have changed the likelihood.** Quadrature and an analytic CDF are mathematically
   equivalent and numerically different. Per-observation differences around `1e-4` in log
   space are irrelevant individually and can accumulate across thousands of censored
