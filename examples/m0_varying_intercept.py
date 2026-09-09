@@ -35,7 +35,7 @@ def main():
     ap.add_argument("--backend", default="pymc", choices=["pymc", "numpyro"])
     ap.add_argument("--device", default="cpu", choices=["cpu", "gpu"])
     ap.add_argument("--chains", type=int, default=4)
-    ap.add_argument("--draws", type=int, default=1000)
+    ap.add_argument("--draws", type=int, default=2500)
     ap.add_argument("--tune", type=int, default=1000)
     ap.add_argument("--seed", type=int, default=7)
     args = ap.parse_args()

@@ -88,6 +88,17 @@ reason the original evidence no longer applies.
 4. On completion: fill in the entry's **Result**, write the `wiki/models/` page, append
    to `wiki/log.md`, register the run.
 
+## The library
+
+If the model fits the M0 family — a Gaussian regression with numeric predictors and one
+varying intercept, `y ~ x + (1 | group)` — use `autobayes/` rather than hand-writing the
+PyMC model: `ab.gaussian(formula, data, priors)` builds an inspectable PyMC model through
+Bambi with explicit priors, `.fit(backend=..., device=...)` samples on the CPU or through
+JAX/NumPyro with an explicit device, and `.predict(...)` returns predictive draws with
+named new-group semantics. `examples/m0_varying_intercept.py` is the worked example and
+`docs/m0-decision.md` states what the layer adds over Bambi. Outside that family the
+library refuses the formula; write the model out per `reference/brms-to-pymc.md`.
+
 ## Symptom routing
 
 When something goes wrong mid-project, match the symptom and read the file. Do not

@@ -1,0 +1,168 @@
+{
+ "pymc": {
+  "report": "AutoBayes fit report\n  backend          : pymc\n  device requested : cpu\n  device actual    : cpu (platform cpu)\n  dtype            : float64\n  chain method     : n/a\n  chains/tune/draws: 4/1000/2500, target_accept 0.9\n  wall time        : 5.2 s (includes compilation)",
+  "panel": {
+   "divergences": 0.0,
+   "divergence_fraction": 0.0,
+   "max_rhat": 1.003232123240576,
+   "min_ess_bulk": 755.4689278821158,
+   "min_ess_tail": 1384.4676589511666,
+   "min_bfmi": 0.6973078865765646,
+   "treedepth_saturation": 0.0,
+   "n_draws": 10000
+  },
+  "status": {
+   "divergence_fraction": "pass",
+   "max_rhat": "pass",
+   "min_ess_bulk": "pass",
+   "min_ess_tail": "pass",
+   "min_bfmi": "pass",
+   "treedepth_saturation": "pass"
+  },
+  "summary": [
+   {
+    "index": "Intercept",
+    "mean": 0.7759824017442468,
+    "sd": 0.1427135840600203,
+    "hdi_3%": 0.4906254296634257,
+    "hdi_97%": 1.0371771276045445,
+    "mcse_mean": 0.0052010404348511695,
+    "mcse_sd": 0.003227744006329681,
+    "ess_bulk": 755.4689278821158,
+    "ess_tail": 1384.4676589511666,
+    "r_hat": 1.003232123240576
+   },
+   {
+    "index": "x",
+    "mean": 0.48615719728796064,
+    "sd": 0.023826066817388702,
+    "hdi_3%": 0.4405913002293317,
+    "hdi_97%": 0.5293791083672644,
+    "mcse_mean": 0.00033522242258956277,
+    "mcse_sd": 0.0002386012894731608,
+    "ess_bulk": 5055.333631694878,
+    "ess_tail": 5720.776145558217,
+    "r_hat": 1.0003357155383006
+   },
+   {
+    "index": "1|g_sigma",
+    "mean": 0.6422787427075682,
+    "sd": 0.11271882853770872,
+    "hdi_3%": 0.4497693915524749,
+    "hdi_97%": 0.858100102977065,
+    "mcse_mean": 0.0031688368623656307,
+    "mcse_sd": 0.002114843471745987,
+    "ess_bulk": 1214.7112173179255,
+    "ess_tail": 2544.06455386457,
+    "r_hat": 1.003153176750309
+   },
+   {
+    "index": "sigma",
+    "mean": 0.305784403793217,
+    "sd": 0.016190134019758603,
+    "hdi_3%": 0.275770279294898,
+    "hdi_97%": 0.33556023907118854,
+    "mcse_mean": 0.00022473462011244241,
+    "mcse_sd": 0.00016196981471229771,
+    "ess_bulk": 5207.6872098839185,
+    "ess_tail": 6234.789660959518,
+    "r_hat": 1.000912286432079
+   }
+  ]
+ },
+ "numpyro": {
+  "report": "AutoBayes fit report\n  backend          : numpyro\n  device requested : cpu\n  device actual    : cpu:cpu(id=0) (platform cpu)\n  dtype            : float64\n  chain method     : parallel\n  chains/tune/draws: 4/1000/2500, target_accept 0.9\n  wall time        : 3.5 s (includes compilation)",
+  "panel": {
+   "divergences": 0.0,
+   "divergence_fraction": 0.0,
+   "max_rhat": 1.0075057294712488,
+   "min_ess_bulk": 771.441673812415,
+   "min_ess_tail": 1234.6056344138342,
+   "min_bfmi": 0.674941517417627,
+   "treedepth_saturation": 0.0,
+   "n_draws": 10000
+  },
+  "status": {
+   "divergence_fraction": "pass",
+   "max_rhat": "pass",
+   "min_ess_bulk": "pass",
+   "min_ess_tail": "pass",
+   "min_bfmi": "pass",
+   "treedepth_saturation": "pass"
+  },
+  "summary": [
+   {
+    "index": "Intercept",
+    "mean": 0.7787014229692176,
+    "sd": 0.14631150144440247,
+    "hdi_3%": 0.5183316424063742,
+    "hdi_97%": 1.081519462572977,
+    "mcse_mean": 0.005259071091234094,
+    "mcse_sd": 0.0034473636508394238,
+    "ess_bulk": 771.441673812415,
+    "ess_tail": 1234.6056344138342,
+    "r_hat": 1.0044648375121796
+   },
+   {
+    "index": "x",
+    "mean": 0.4870566669440481,
+    "sd": 0.023789077455163014,
+    "hdi_3%": 0.44206628227186623,
+    "hdi_97%": 0.531250774527603,
+    "mcse_mean": 0.00032392310684899357,
+    "mcse_sd": 0.00025138379646527355,
+    "ess_bulk": 5401.37207390026,
+    "ess_tail": 6061.418694868092,
+    "r_hat": 1.0009155472325653
+   },
+   {
+    "index": "1|g_sigma",
+    "mean": 0.6474668255038359,
+    "sd": 0.11679562152927025,
+    "hdi_3%": 0.44336522609090556,
+    "hdi_97%": 0.8618288478488269,
+    "mcse_mean": 0.003671666835584784,
+    "mcse_sd": 0.002470959239028794,
+    "ess_bulk": 1010.0357891251867,
+    "ess_tail": 1966.4350791265983,
+    "r_hat": 1.0075057294712488
+   },
+   {
+    "index": "sigma",
+    "mean": 0.30539388818895863,
+    "sd": 0.01654515772919703,
+    "hdi_3%": 0.2743365726357653,
+    "hdi_97%": 0.3365264039065329,
+    "mcse_mean": 0.00022933678659517977,
+    "mcse_sd": 0.00018544062508220208,
+    "ess_bulk": 5229.077021382355,
+    "ess_tail": 6127.222373386262,
+    "r_hat": 0.9999084404074361
+   }
+  ]
+ },
+ "agreement": {
+  "Intercept": {
+   "diff": 0.002719021224970808,
+   "tol": 0.029586118460551328
+  },
+  "x": {
+   "diff": 0.0008994696560874482,
+   "tol": 0.001864619003475058
+  },
+  "1|g_sigma": {
+   "diff": 0.005188082796267701,
+   "tol": 0.01940006779857037
+  },
+  "sigma": {
+   "diff": 0.00039051560425834575,
+   "tol": 0.0012843738469021351
+  }
+ },
+ "truth": {
+  "a": 1.0,
+  "b": 0.5,
+  "sd": 0.5,
+  "sigma": 0.3
+ }
+}

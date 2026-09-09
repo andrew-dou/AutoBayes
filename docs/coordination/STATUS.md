@@ -32,9 +32,30 @@ acceptance checks: `docs/m0-decision.md`.
   `tests/test_logp.py` and `tests/test_formula.py`; A8 in `tests/test_predict.py`;
   C1-C2 in `tests/test_device.py`.
 
+- B1 passed (`tests/test_sampling.py::test_conditional_gaussian_posterior`): with
+  sigma and the group SD fixed by `pm.do`, 4x2000 NUTS draws vs the exact conditional
+  Gaussian posterior: max |z| = 2.80 over 8 parameters (threshold 4), posterior SDs
+  within 0.0-3.8% of exact, min ESS 1272. Numbers in
+  `docs/m0-evidence/B1_conditional_gaussian.json`.
+- B2 passed (`test_simulated_recovery_both_backends`, n=200, J=20, 4 chains, 1000 tune,
+  2500 draws, both backends on CPU): 0 divergences, max R-hat 1.0032 (pymc) / 1.0075
+  (numpyro), min bulk ESS 755 / 771, min tail ESS 1384 / 1235, E-BFMI 0.70 / 0.67, no
+  tree-depth saturation; truth inside every 94% HDI; backend posterior means differ by
+  at most 0.27 of the 4-MCSE tolerance. `docs/m0-evidence/B2_recovery.json`.
+  Note: at 4x1000 draws the same fits had R-hat 1.02 and bulk ESS 350 on the intercept
+  (identically on both backends): the intercept trades off against the mean of the 20
+  offsets. Runs were lengthened; thresholds were not loosened.
+- Example runs captured: `docs/m0-evidence/example_pymc_cpu.txt`,
+  `example_numpyro_cpu.txt` (all panel rows pass), `example_numpyro_gpu_attempt.txt`
+  (the clear refusal when no GPU is visible).
+- GPU: pending. `docs/m0-gpu-validation.md` and `cluster/m0_gpu_smoke.sbatch` carry
+  the reproducible command. Not submitted (outside the handoff's compute boundary).
+
 ## In progress
 
-- B1, B2 (`pytest -m slow`) and the example script; evidence to `docs/m0-evidence/`.
+- An order-dependent failure of two fast tests (`test_design_and_group_coding`,
+  `test_hessian_is_analytic_precision`) when the whole suite runs in one process; both
+  pass in isolation and after either backend's fit. Being bisected.
 
 ## Failures
 

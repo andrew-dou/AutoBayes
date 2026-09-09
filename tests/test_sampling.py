@@ -44,15 +44,20 @@ def test_conditional_gaussian_posterior(model, data):
 
 @pytest.mark.slow
 def test_simulated_recovery_both_backends():
-    """B2: simulated data, n=200, J=20; PyMC and NumPyro CPU paths agree and recover truth."""
+    """B2: simulated data, n=200, J=20; PyMC and NumPyro CPU paths agree and recover truth.
+
+    4 x 1000 draws gave R-hat 1.02 and bulk ESS 350 on the intercept on both backends
+    (the intercept trades off against the mean of the 20 offsets); 2500 draws per chain
+    is the run that meets the panel thresholds. Recorded in docs/m0-evidence.
+    """
     truth = dict(a=1.0, b=0.5, sd=0.5, sigma=0.3)
     df = simulate(n=200, J=20, seed=20, **truth)
     m = ab.gaussian("y ~ x + (1 | g)", df, PRIORS)
     results, summaries = {}, {}
     for backend in ["pymc", "numpyro"]:
-        r = m.fit(backend=backend, device="cpu", chains=4, draws=1000, tune=1000, seed=7, cores=4)
+        r = m.fit(backend=backend, device="cpu", chains=4, draws=2500, tune=1000, seed=7, cores=4)
         p = panel(r.idata, max_treedepth=10)
-        s = az.summary(r.idata, var_names=["Intercept", "x", "1|g_sigma", "sigma"], hdi_prob=0.94)
+        s = az.summary(r.idata, var_names=["Intercept", "x", "1|g_sigma", "sigma"], hdi_prob=0.94, round_to="none")
         results[backend] = (r, p, s)
         summaries[backend] = {"report": r.report(), "panel": p["values"], "status": p["status"],
                               "summary": s.reset_index().to_dict(orient="records")}

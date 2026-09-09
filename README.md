@@ -13,6 +13,13 @@ Two halves:
   gate, a compiled wiki, a `research/` tier, and cluster templates with the expensive
   failures already encoded.
 
+- **`autobayes/`** — the library, started at milestone M0: a brms-like Python interface
+  that builds an inspectable PyMC model through Bambi, requires explicit priors, samples
+  on the CPU with PyMC's NUTS or through JAX/NumPyro with an explicit device choice, and
+  returns posterior and predictive draws. M0 supports one model family,
+  `y ~ x + (1 | group)` with a Gaussian likelihood; anything else is refused with an
+  error naming the construct. See [Library](#library-milestone-m0) below.
+
 It came out of a multi-month hierarchical-modelling program that fit roughly sixty
 successive model versions on GPU, each conditional on the last. The modelling was the
 research; this is what made the modelling survivable once an agent was doing most of
@@ -75,6 +82,33 @@ of interest and the success criteria, with thresholds.
 Mid-project, the skills are symptom-triggered. When a gradient comes back `nan` or a
 likelihood will not differentiate, `autobayes-custom-op` loads on its own and — before
 showing you the pattern — tries to talk you out of needing it.
+
+## Library (milestone M0)
+
+```bash
+uv venv .venv --python 3.11
+uv pip install --python .venv/bin/python -e ".[jax,dev]" "matplotlib<3.11"
+.venv/bin/python examples/m0_varying_intercept.py --backend numpyro --device cpu
+```
+
+```python
+import autobayes as ab
+
+priors = ab.Priors(intercept=ab.Normal(0, 5), b=ab.Normal(0, 2),
+                   sd=ab.HalfNormal(1), sigma=ab.HalfNormal(1))
+model = ab.gaussian("y ~ x + (1 | school)", df, priors)
+print(model.describe())          # the density that is actually sampled, centring included
+model.pymc_model                 # the PyMC model; inspect it directly
+fit = model.fit(backend="numpyro", device="cpu", chains=4)   # or backend="pymc"
+print(fit.report())              # backend, requested and actual device, dtype, chain method
+draws = model.predict(fit, newdata=new_df, new_groups="population")
+```
+
+What Bambi supplies and what this layer adds, with the reason for each addition, is in
+`docs/m0-decision.md`; the acceptance checks and their evidence are in
+`docs/m0-decision.md` and `docs/m0-evidence/`. `docs/coordination/STATUS.md` is the
+live milestone status. GPU execution is supported in code and **not yet validated on a
+GPU**; `docs/m0-gpu-validation.md` has the reproducible command.
 
 ## The decision gate
 
