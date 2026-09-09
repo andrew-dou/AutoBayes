@@ -51,13 +51,19 @@ acceptance checks: `docs/m0-decision.md`.
 ### Repository
 
 - PR: https://github.com/andrew-dou/AutoBayes/pull/2 (branch `m0/gaussian-varying-intercept` -> `main`, author andrew-dou).
-- Merge commit / cleanup: recorded below after the merge.
+- Merged 2026-09-09: merge commit `0f2b4e9` on `main` (merge commit, not squash, to keep the
+  branch history). No required checks are configured on the repository; the PR was
+  MERGEABLE/CLEAN, and no agent attribution exists in any commit message or author field.
+- Cleanup: local branch `m0/gaussian-varying-intercept` deleted, remote branch deleted and
+  pruned; this checkout is on `main` at `0f2b4e9`, clean. No worktrees other than the main
+  checkout existed. `origin/autobayes-restructure` (PR #1, merged at `f87f639`) predates
+  this task and was left alone.
 
 ## Checkout
 ## Checkout
 
 - Clone: `IQSS-Research/projects/AutoBayes` (this file's repository).
-- Branch: `m0/gaussian-varying-intercept`, created from `main` at `f87f639`.
+- Branch: work was on `m0/gaussian-varying-intercept` (from `main` at `f87f639`); now merged, checkout on `main`.
 - Environment: `.venv/` (gitignored), created with `uv venv --python 3.11`. Packages:
   pymc 5.28.5, bambi 0.17.2, formulae 0.6.2, numpyro 0.21.0, jax 0.10.2 (CPU only),
   arviz 0.23.4, pytensor 2.38.3, matplotlib pinned `<3.11` (arviz 0.23 preview import
@@ -141,7 +147,7 @@ acceptance checks: `docs/m0-decision.md`.
   at the hub: one formula feature or one family at a time). No benchmark campaign, no
   package publishing, no FAS RC job without a decision entry.
 
-To resume in a fresh session: `git checkout m0/gaussian-varying-intercept`, then
+To resume in a fresh session: `git checkout main && git pull`, then
 `.venv/bin/python -m pytest tests -q` (fast) and `-m slow` (two sampling checks, ~30 s).
 
 M0_COMPLETE: yes. Support in code verified on CPU (both backends) and executed once on a
