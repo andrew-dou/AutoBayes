@@ -26,17 +26,25 @@ acceptance checks: `docs/m0-decision.md`.
   brms-"uncertainty" new-group semantics. Decision: build a thin layer on Bambi.
 - Decision record and acceptance checks A1-A8, B1-B2, C1-C3 written.
 
+- Package `autobayes/` (formula, priors, model, inference, predict, diagnostics),
+  `tests/`, `examples/m0_varying_intercept.py`, `pyproject.toml` written.
+- Passed (`.venv/bin/python -m pytest tests -q`, 34 tests): A1-A7 in
+  `tests/test_logp.py` and `tests/test_formula.py`; A8 in `tests/test_predict.py`;
+  C1-C2 in `tests/test_device.py`.
+
 ## In progress
 
-- Implementation of `autobayes/` package and tests.
+- B1, B2 (`pytest -m slow`) and the example script; evidence to `docs/m0-evidence/`.
 
 ## Failures
 
-- None yet.
+- A4 first failed with the sign flipped: PyMC 5.28.5's `get_jaxified_logp(model,
+  negative_logp=...)` flag is named backwards (default `True` returns the log density;
+  `False` negates it). Verified in source; test now uses the default. No library change.
 
 ## Remaining checks
 
-- All of A1-A8, B1-B2, C1-C3.
+- B1, B2, C3 (GPU pending), README/SKILL pointer, evidence write-up.
 
 ## Blockers
 
