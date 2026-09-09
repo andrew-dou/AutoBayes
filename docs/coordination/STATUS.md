@@ -50,7 +50,8 @@ acceptance checks: `docs/m0-decision.md`.
 
 ### Repository
 
-- PR: pending.
+- PR: https://github.com/andrew-dou/AutoBayes/pull/2 (branch `m0/gaussian-varying-intercept` -> `main`, author andrew-dou).
+- Merge commit / cleanup: recorded below after the merge.
 
 ## Checkout
 ## Checkout
