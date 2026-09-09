@@ -42,6 +42,7 @@ class FitResult:
     target_accept: float
     wall_seconds: float
     notes: list[str] = field(default_factory=list)
+    seed: int | None = None
 
     def report(self) -> str:
         lines = [
@@ -52,6 +53,7 @@ class FitResult:
             f"  dtype            : {self.dtype}",
             f"  chain method     : {self.chain_method or 'n/a'}",
             f"  chains/tune/draws: {self.chains}/{self.tune}/{self.draws}, target_accept {self.target_accept}",
+            f"  seed             : {self.seed}",
             f"  wall time        : {self.wall_seconds:.1f} s (includes compilation)",
         ]
         lines += [f"  note             : {n}" for n in self.notes]
@@ -84,12 +86,14 @@ def resolve_jax_device(device: str, chains: int, notes: list[str]):
         return gpus[0], "vectorized"
     if device == "cpu":
         cpus = jax.devices("cpu")
-        if len(cpus) < chains:
+        if chains > 1 and len(cpus) < chains:
             notes.append(
-                f"only {len(cpus)} CPU device(s) visible to JAX for {chains} chains; the JAX "
-                "backend was initialised before the host device count could be set, so "
-                "chains run sequentially (chain_method='parallel' falls back)."
+                f"only {len(cpus)} CPU device(s) visible to JAX for {chains} chains: the JAX "
+                "backend was initialised before autobayes could set the host device count "
+                "(import autobayes before anything that touches jax.devices()). Chains run "
+                "sequentially; the posterior is the same, the wall time is not."
             )
+            return cpus[0], "sequential"
         return cpus[0], "parallel"
     raise DeviceError(f"unknown device {device!r}; use 'cpu' or 'gpu'")
 
@@ -125,7 +129,7 @@ def fit(model, *, backend: str = "pymc", device: str = "cpu", chains: int = 4,
                          device_actual="cpu", platform="cpu",
                          dtype=str(pytensor.config.floatX), chain_method=None,
                          chains=chains, draws=draws, tune=tune, target_accept=target_accept,
-                         wall_seconds=wall, notes=notes)
+                         wall_seconds=wall, notes=notes, seed=seed)
 
     jax_device, default_method = resolve_jax_device(device, chains, notes)
     method = chain_method or default_method
@@ -153,4 +157,4 @@ def fit(model, *, backend: str = "pymc", device: str = "cpu", chains: int = 4,
                      device_actual=f"{actual.platform}:{getattr(actual, 'device_kind', '?')}(id={actual.id})",
                      platform=actual.platform, dtype=dtype, chain_method=method,
                      chains=chains, draws=draws, tune=tune, target_accept=target_accept,
-                     wall_seconds=wall, notes=notes)
+                     wall_seconds=wall, notes=notes, seed=seed)

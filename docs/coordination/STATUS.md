@@ -7,23 +7,52 @@ PyMC model, posterior and predictive outputs, CPU path plus explicit JAX/NumPyro
 path. Definition: `IQSS-Research/AUTOBAYES_FIRST_MILESTONE.md`. Design decision and
 acceptance checks: `docs/m0-decision.md`.
 
-## Session checkpoint (2026-09-08, relocated hub)
+## Session checkpoint (2026-09-09, relocated hub)
 
 - Working clone moved out of Dropbox to `/Users/andrewdou/iqss-research/projects/AutoBayes`.
-  Claude session `e5628a7d-e572-4bad-9feb-82ee8361c261` (Fable 5.1) owns this branch now; the
-  old M0 session `local_79bbf46f-...` is historical.
-- `.venv/` repaired in place: the activate scripts and console-script wrappers still pointed
-  at the Dropbox path (`sed` replaced them); `bin/python` is a symlink to the framework
-  Python 3.11 and needed nothing. `.venv/bin/python -c "import autobayes"` resolves to this
-  checkout.
-- Fast suite re-run here: 36 passed, 2 slow deselected (69 s). Run with
-  `PYTENSOR_FLAGS=base_compiledir=<writable dir>` if `~/.pytensor` is not writable in a sandbox.
+  Claude session `e5628a7d-e572-4bad-9feb-82ee8361c261` (Fable 5.1) owns this branch; the old
+  M0 session `local_79bbf46f-...` is historical.
+- `.venv/` repaired in place: activate scripts and console-script wrappers pointed at the
+  Dropbox path (`sed` replaced them); `bin/python` is a symlink to the framework Python 3.11
+  and needed nothing. `.venv/bin/python -c "import autobayes"` resolves to this checkout.
+- Tests on the final code: fast suite 39 passed, 2 deselected; slow suite 2 passed (B1, B2
+  regenerated; only the report's new `seed` line changed in `B2_recovery.json`). Use
+  `PYTENSOR_FLAGS=base_compiledir=<writable dir>` if `~/.pytensor` is not writable.
 - GitHub identity verified: `gh api user` -> andrew-dou, admin on andrew-dou/AutoBayes;
   git user andrew-dou <andrew.dou0805@gmail.com>. No branch protection on `main`.
-- In progress: (1) skill rewrite around the M0 researcher workflow, (2) one bounded GPU smoke
-  test on GiveMeANode (mission `autobayes-m0-gpu-smoke`, credits $1118 before start),
-  (3) PR + merge under andrew-dou, then cleanup. Each is recorded below as it completes.
 
+### Done this session
+
+1. **Skill rewrite** (`SKILL.md`): researcher workflow for the verified family in six checked
+   steps (data, formula and priors with the centring trap, fit and report, panel with the
+   family-specific responses, prediction semantics, fit record and agreement), a failure
+   recovery table of the errors actually seen on this stack, a session-handoff checklist, GPU
+   and remote execution, routing outside the family, and the long-program scaffold condensed.
+   Every Python snippet in it was executed in order on the example data (scratch script; the
+   4x1000 run reproduced the documented `investigate` on `Intercept`, R-hat 1.02, ESS 350).
+2. **Library**: `autobayes/session.py` (`environment`, `fit_record`, `compare_records`, and
+   their formatters), `seed` on `FitResult` and in the report, `import autobayes` now enables
+   float64 and sets the JAX host device count (found while preparing the GPU run: the
+   example's environment print initialised JAX first and silently left CPU chains sequential;
+   `fit()` now reports `chain method : sequential` with a note if that still happens). Example
+   gained `--record` and `--compare`. Tests: `tests/test_session.py` (4).
+3. **GPU smoke test executed** on GiveMeANode (node `autobayes-m0-smoke`, h100-1, image
+   cuda-12.9, mission `autobayes-m0-gpu-smoke`, https://givemeanode.com/missions/autobayes-m0-gpu-smoke):
+   H100 80GB, float64, 4 vectorized chains, 4x(1000+2500), seed 7; panel all pass (0
+   divergences, R-hat 1.006, bulk ESS 798, tail ESS 1404, E-BFMI 0.674); posterior means agree
+   with the CPU NumPyro record within 4 combined MCSE on every parameter; A4 re-run on the GPU
+   to 9e-13. Wall 39.2 s incl. compile (no speed claim). Cost: 10.83 min, $0.72 of the $1118.45
+   credit balance; node stopped and deleted. Evidence: `docs/m0-evidence/example_numpyro_gpu.txt`,
+   `gpu_record.json`, `B2_numpyro_cpu_record.json`; write-up `docs/m0-gpu-validation.md`;
+   PDF `docs/m0-evidence/m0_evidence.pdf` gained a GPU paragraph (6 pages).
+   Firecrawl: authenticated, 344/1000 credits this cycle; not used (nothing to acquire for M0).
+4. **PR / merge / cleanup**: see "Repository" below (filled in as it happens).
+
+### Repository
+
+- PR: pending.
+
+## Checkout
 ## Checkout
 
 - Clone: `IQSS-Research/projects/AutoBayes` (this file's repository).
@@ -96,23 +125,24 @@ acceptance checks: `docs/m0-decision.md`.
 
 ## Remaining checks
 
-- C3 only: actual GPU execution, pending by design (no accelerator here). Reproducible
-  command in `docs/m0-gpu-validation.md`; batch form `cluster/m0_gpu_smoke.sbatch`.
+- None for M0. C3 (GPU execution) done on one rented H100, matched to the CPU record.
+  A FAS RC run (`cluster/m0_gpu_smoke.sbatch`) has not been made and is not required by
+  the milestone.
 
 ## Blockers
 
-- No accelerator on this machine: GPU validation (C3) will stay pending with a
-  reproducible command.
+- None.
 
 ## Next action
 
-- Andrew reviews `docs/m0-evidence/m0_evidence.pdf` and the branch. On approval: decide
-  whether to run the GPU smoke test on FAS RC (needs a Bambi-capable env) and which
-  family or formula feature M1 covers. Merging, publishing, and new compute are not
-  authorised by the M0 handoff.
+- Andrew reviews `docs/m0-evidence/m0_evidence.pdf`, `SKILL.md`, and the merged PR. Then
+  choose M1 from an actual researcher need (candidates in `memory/projects/autobayes.md`
+  at the hub: one formula feature or one family at a time). No benchmark campaign, no
+  package publishing, no FAS RC job without a decision entry.
 
 To resume in a fresh session: `git checkout m0/gaussian-varying-intercept`, then
 `.venv/bin/python -m pytest tests -q` (fast) and `-m slow` (two sampling checks, ~30 s).
 
-M0_COMPLETE: yes, with GPU execution pending as the milestone definition allows
-(support in code is verified; execution on a GPU is not).
+M0_COMPLETE: yes. Support in code verified on CPU (both backends) and executed once on a
+GPU (H100, matched to the CPU posterior). One recovery run is not a calibration claim and
+no speedup is claimed.

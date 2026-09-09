@@ -17,7 +17,7 @@
 
 \title{AutoBayes milestone M0: evidence for review}
 \author{Claude session, branch \code{m0/gaussian-varying-intercept}}
-\date{September 8, 2026}
+\date{September 8, 2026; GPU section added September 9, 2026}
 
 \begin{document}
 \maketitle
@@ -253,7 +253,7 @@ Path & Status & Evidence \\
 \midrule
 \code{backend="pymc"}, CPU & executed & B2, \file{example\_pymc\_cpu.txt} (wall 5.0 s incl.\ compile) \\
 \code{backend="numpyro"}, \code{device="cpu"} & executed, 4 parallel CPU chains, float64 & B2, \file{example\_numpyro\_cpu.txt} (3.9 s) \\
-\code{backend="numpyro"}, \code{device="gpu"} & supported in code, \textbf{not validated} & \file{example\_numpyro\_gpu\_attempt.txt}: the refusal \\
+\code{backend="numpyro"}, \code{device="gpu"} & \textbf{executed} on an H100, 4 vectorized chains, float64 & \file{example\_numpyro\_gpu.txt}, \file{gpu\_record.json} (39.2 s incl.\ XLA compile); on a machine without a GPU, \file{example\_numpyro\_gpu\_attempt.txt} is the refusal \\
 \code{backend="pymc"}, \code{device="gpu"} & refused by design & \code{test\_gpu\_on\_pymc\_backend\_is\_error} \\
 \bottomrule
 \end{tabular}
@@ -283,10 +283,30 @@ the chain method; on this machine it reads \code{cpu:cpu(id=0)}, \code{float64},
 machine, same targets, but compilation is inside both numbers and the sizes are tiny.}
 
 \medskip
-The GPU command is in \file{docs/m0-gpu-validation.md} and \file{cluster/m0\_gpu\_smoke.sbatch};
-the cluster's existing \code{electit\_env2} lacks Bambi, so it needs a new environment.
-Nothing was submitted, per the handoff. What a GPU run would add is one fact: that the same
-compiled graph runs on the other device. It would not add a speed claim.
+\textbf{GPU execution (September 9, 2026).} The same example, same seed, same
+4$\times$(1000 + 2500) settings, on a rented single H100 80GB (GiveMeANode node
+\code{autobayes-m0-smoke}, image \code{cuda-12.9}, driver 595.71.05, Python 3.11.15, the
+same pymc/bambi/numpyro/arviz versions, \code{jax[cuda12]==0.10.2}). The fit report reads
+\code{device actual : gpu:NVIDIA H100 80GB HBM3(id=0)}, \code{dtype : float64},
+\code{chain method : vectorized}. Panel: 0 divergences, max $\hat R$ 1.006, min bulk ESS 798,
+min tail ESS 1404, min E-BFMI 0.674, no tree-depth saturation. Posterior means against the CPU
+NumPyro record (\file{B2\_numpyro\_cpu\_record.json}, produced by the same code and seed):
+$|\Delta|$ of 0.0069, 0.0004, 0.0033, 0.0001 for $a$, $b$, $s_g$, $\sigma$ against tolerances
+of four combined MCSE, 0.029, 0.0018, 0.020, 0.0013 (\code{ab.compare\_records}). The A4
+check re-run on the node with the GPU as JAX's default device: the JAX-compiled log density
+equals the PyTensor C path at five random points to $9\times10^{-13}$. Wall time 39.2 s on
+the GPU against 4.1 s on the laptop CPU, both including compilation: 200 rows and 4 chains do
+not fill an H100, and no speed claim is made in either direction. Node time 10.8 min, \$0.72.
+The full output is \file{docs/m0-evidence/example\_numpyro\_gpu.txt}; the recipe is in
+\file{docs/m0-gpu-validation.md}.
+
+Two library changes came out of preparing that run. \code{fit\_record()} writes one
+JSON record per fit (specification, execution, environment, panel, posterior summary) and
+\code{compare\_records()} tests two records for agreement within $k$ combined MCSE; the
+comparison above is that function. And \code{import autobayes} now enables float64 and sets
+the JAX host device count at import time, because calling \code{jax.devices()} before the
+first fit (as the example's environment print did) otherwise leaves CPU chains sequential;
+\code{fit()} reports \code{chain method : sequential} with a note when that still happens.
 
 \section{Prediction meaning (check A8)}
 
@@ -303,10 +323,11 @@ variance, which is why it is not the default here.
 \section{Not claimed, and next}
 
 Not claimed: any family beyond Gaussian, varying slopes, multiple or nested grouping
-factors, categorical predictors, missing data, calibration in general, GPU execution, or
-any speedup. Follow-ups worth a decision: run \file{cluster/m0\_gpu\_smoke.sbatch} once a
-Bambi-capable environment exists on the cluster; decide whether the three PyMC quirks
-belong in \file{reference/libraries.md} (the pack is a fixed input, so that is Andrew's
-call); and choose the next family (M1) only after this review.
+factors, categorical predictors, missing data, calibration in general, or any speedup. GPU
+execution is now claimed for exactly one run of the M0 example on one H100, matched to the
+CPU record; a FAS RC run (\file{cluster/m0\_gpu\_smoke.sbatch}) has still not been made.
+Follow-ups worth a decision: decide whether the three PyMC quirks belong in
+\file{reference/libraries.md} (the pack is a fixed input, so that is Andrew's call); and
+choose the next family (M1) only after this review.
 
 \end{document}

@@ -99,16 +99,21 @@ priors = ab.Priors(intercept=ab.Normal(0, 5), b=ab.Normal(0, 2),
 model = ab.gaussian("y ~ x + (1 | school)", df, priors)
 print(model.describe())          # the density that is actually sampled, centring included
 model.pymc_model                 # the PyMC model; inspect it directly
-fit = model.fit(backend="numpyro", device="cpu", chains=4)   # or backend="pymc"
-print(fit.report())              # backend, requested and actual device, dtype, chain method
+fit = model.fit(backend="numpyro", device="cpu", chains=4, seed=7)   # or backend="pymc"; device="gpu"
+print(fit.report())              # backend, requested and actual device, dtype, chain method, seed
+print(format_panel(panel(fit.idata)))                       # divergences, R-hat, ESS, E-BFMI, tree depth
 draws = model.predict(fit, newdata=new_df, new_groups="population")
+rec = ab.fit_record(model, fit)                             # one JSON record per fit, for the handoff
+ab.compare_records(rec, earlier_rec)                        # same posterior? (4 combined MCSE)
 ```
 
-What Bambi supplies and what this layer adds, with the reason for each addition, is in
-`docs/m0-decision.md`; the acceptance checks and their evidence are in
-`docs/m0-decision.md` and `docs/m0-evidence/`. `docs/coordination/STATUS.md` is the
-live milestone status. GPU execution is supported in code and **not yet validated on a
-GPU**; `docs/m0-gpu-validation.md` has the reproducible command.
+`SKILL.md` is the researcher workflow for this family, step by step with the checks,
+failure recovery and the session handoff. What Bambi supplies and what this layer adds,
+with the reason for each addition, is in `docs/m0-decision.md`; the acceptance checks and
+their evidence are in `docs/m0-decision.md` and `docs/m0-evidence/`.
+`docs/coordination/STATUS.md` is the live milestone status. GPU execution has been run
+once on an H100 and matched to the CPU posterior; `docs/m0-gpu-validation.md` has the
+numbers and the reproducible command. No speed claim is made.
 
 ## The decision gate
 

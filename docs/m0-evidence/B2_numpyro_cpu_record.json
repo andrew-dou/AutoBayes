@@ -1,0 +1,123 @@
+{
+ "autobayes_version": "0.0.1",
+ "model": {
+  "formula": "y ~ x + (1 | school)",
+  "family": "gaussian",
+  "n": 200,
+  "J": 20,
+  "group": "school",
+  "center_predictors": true,
+  "noncentered": true,
+  "priors": {
+   "intercept": "Normal(mu=0, sigma=5)",
+   "b:x": "Normal(mu=0, sigma=2)",
+   "sd": "HalfNormal(sigma=1)",
+   "sigma": "HalfNormal(sigma=1)"
+  },
+  "intercept_prior_applies_to": "centred intercept (at predictor means)"
+ },
+ "execution": {
+  "backend": "numpyro",
+  "device_requested": "cpu",
+  "device_actual": "cpu:cpu(id=0)",
+  "platform": "cpu",
+  "dtype": "float64",
+  "chain_method": "parallel",
+  "chains": 4,
+  "draws": 2500,
+  "tune": 1000,
+  "target_accept": 0.9,
+  "seed": 7,
+  "wall_seconds": 4.073,
+  "notes": []
+ },
+ "environment": {
+  "python": "3.11.0",
+  "platform": "macOS-26.6.1-arm64-arm-64bit",
+  "versions": {
+   "pymc": "5.28.5",
+   "pytensor": "2.38.3",
+   "bambi": "0.17.2",
+   "formulae": "0.6.2",
+   "arviz": "0.23.4",
+   "numpyro": "0.21.0",
+   "jax": "0.10.2",
+   "jaxlib": "0.10.2",
+   "numpy": "2.4.6"
+  },
+  "jax_devices": [
+   "cpu:cpu(id=0)",
+   "cpu:cpu(id=1)",
+   "cpu:cpu(id=2)",
+   "cpu:cpu(id=3)",
+   "cpu:cpu(id=4)",
+   "cpu:cpu(id=5)",
+   "cpu:cpu(id=6)",
+   "cpu:cpu(id=7)"
+  ],
+  "jax_x64": true
+ },
+ "diagnostics": {
+  "values": {
+   "divergences": 0.0,
+   "divergence_fraction": 0.0,
+   "max_rhat": 1.0075057294712488,
+   "min_ess_bulk": 771.441673812415,
+   "min_ess_tail": 1234.6056344138342,
+   "min_bfmi": 0.674941517417627,
+   "treedepth_saturation": 0.0,
+   "n_draws": 10000.0
+  },
+  "status": {
+   "divergence_fraction": "pass",
+   "max_rhat": "pass",
+   "min_ess_bulk": "pass",
+   "min_ess_tail": "pass",
+   "min_bfmi": "pass",
+   "treedepth_saturation": "pass"
+  },
+  "overall": "pass"
+ },
+ "posterior": {
+  "Intercept": {
+   "mean": 0.7787014229692176,
+   "sd": 0.14631150144440247,
+   "hdi_3%": 0.5183316424063742,
+   "hdi_97%": 1.081519462572977,
+   "mcse_mean": 0.005259071091234094,
+   "ess_bulk": 771.441673812415,
+   "ess_tail": 1234.6056344138342,
+   "r_hat": 1.0044648375121796
+  },
+  "x": {
+   "mean": 0.4870566669440481,
+   "sd": 0.023789077455163014,
+   "hdi_3%": 0.44206628227186623,
+   "hdi_97%": 0.531250774527603,
+   "mcse_mean": 0.00032392310684899357,
+   "ess_bulk": 5401.37207390026,
+   "ess_tail": 6061.418694868092,
+   "r_hat": 1.0009155472325653
+  },
+  "1|school_sigma": {
+   "mean": 0.6474668255038359,
+   "sd": 0.11679562152927025,
+   "hdi_3%": 0.44336522609090556,
+   "hdi_97%": 0.8618288478488269,
+   "mcse_mean": 0.003671666835584784,
+   "ess_bulk": 1010.0357891251867,
+   "ess_tail": 1966.4350791265983,
+   "r_hat": 1.0075057294712488
+  },
+  "sigma": {
+   "mean": 0.30539388818895863,
+   "sd": 0.01654515772919703,
+   "hdi_3%": 0.2743365726357653,
+   "hdi_97%": 0.3365264039065329,
+   "mcse_mean": 0.00022933678659517977,
+   "ess_bulk": 5229.077021382355,
+   "ess_tail": 6127.222373386262,
+   "r_hat": 0.9999084404074361
+  }
+ }
+}

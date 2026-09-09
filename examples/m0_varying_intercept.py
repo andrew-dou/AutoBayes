@@ -4,11 +4,16 @@
     .venv/bin/python examples/m0_varying_intercept.py                       # PyMC NUTS on CPU
     .venv/bin/python examples/m0_varying_intercept.py --backend numpyro     # JAX/NumPyro on CPU
     .venv/bin/python examples/m0_varying_intercept.py --backend numpyro --device gpu
+    .venv/bin/python examples/m0_varying_intercept.py --backend numpyro --device gpu \
+        --record docs/m0-evidence/gpu_record.json --compare docs/m0-evidence/B2_numpyro_cpu_record.json
 
-The GPU form is the reproducible command for the pending GPU validation. It errors
-clearly on a machine without a visible GPU rather than running on the CPU.
+The GPU form is the reproducible command for the GPU validation. It errors clearly on
+a machine without a visible GPU rather than running on the CPU. ``--record`` writes the
+fit record (``ab.fit_record``) as JSON; ``--compare`` checks the population-parameter
+means against an earlier record within four combined MCSE (``ab.compare_records``).
 """
 import argparse
+import json
 import sys
 from pathlib import Path
 
@@ -38,8 +43,12 @@ def main():
     ap.add_argument("--draws", type=int, default=2500)
     ap.add_argument("--tune", type=int, default=1000)
     ap.add_argument("--seed", type=int, default=7)
+    ap.add_argument("--record", type=Path, default=None, help="write the fit record (JSON) here")
+    ap.add_argument("--compare", type=Path, default=None, help="an earlier fit record to agree with")
     args = ap.parse_args()
 
+    print(ab.format_environment(ab.environment()))
+    print()
     df = simulate()
     priors = ab.Priors(
         intercept=ab.Normal(0, 5),        # on the intercept at the predictor means (centred)
@@ -69,6 +78,18 @@ def main():
     pop = model.predict(fit, newdata=new, kind="response", new_groups="population", seed=1)
     sd_obs, sd_new = float(pop["y"][..., 0].std()), float(pop["y"][..., 1].std())
     print(f"predictive SD for an observed school {sd_obs:.3f}; for a new school (population draw) {sd_new:.3f}")
+
+    record = ab.fit_record(model, fit)
+    if args.record is not None:
+        if args.record.exists():
+            sys.exit(f"refusing to overwrite {args.record}")
+        args.record.parent.mkdir(parents=True, exist_ok=True)
+        args.record.write_text(json.dumps(record, indent=1))
+        print(f"fit record written to {args.record}")
+    if args.compare is not None:
+        earlier = json.loads(args.compare.read_text())
+        print()
+        print(ab.format_comparison(ab.compare_records(record, earlier)))
 
 
 if __name__ == "__main__":
