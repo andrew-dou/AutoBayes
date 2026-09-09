@@ -209,3 +209,49 @@ predictor); `p = expit(logit_p)` is computed by `predict`.
 2. `validate_data` casts the response with `to_numpy(dtype=float)`, so a complex-valued
    response such as `[0+4j, 1+4j]` passes the 0/1 check after its imaginary part is
    discarded (NumPy warns). A dtype check before the cast would refuse it.
+
+## Follow-up unit (2026-09-09): unseen-label identity in `resample_observed`, complex responses
+
+Written before editing. Scope: the two open review items above, nothing else.
+
+**Intended semantics of `new_groups="resample_observed"`** (brms `sample_new_levels =
+"uncertainty"`): for each posterior draw and each *distinct* unseen label in `newdata`,
+one observed level is chosen uniformly at random, independently across distinct labels
+and across draws, and that draw's fitted effect $u_{\text{chosen}}$ is used. Every row
+carrying the same unseen label shares that label's chosen effect within a draw (one
+unit, one effect). Two distinct unseen labels may coincide by chance, with probability
+$1/J$ per draw, but are never deterministically equal. Observed labels keep their own
+effects. The rest of the prediction is unchanged: $\eta = a + x b + u$, Gaussian
+$\mu = \eta$, $y \sim \mathrm{Normal}(\mu, \sigma)$; Bernoulli $p = \mathrm{expit}(\eta)$,
+$y \sim \mathrm{Bernoulli}(p)$. This is computed in this layer, as `"population"` already
+is, instead of delegating to Bambi's `sample_new_groups=True`, which maps every unseen
+label to one placeholder group and therefore gives all unseen labels the same effect in
+every draw. In-sample predictions and `newdata` with only observed labels still go
+through Bambi.
+
+**Intended validation.** A complex-valued column is refused before any cast, for the
+response of both families, for predictors, and for `newdata` predictors, with a message
+saying so; NumPy's "casting complex values to real discards the imaginary part" warning
+must not be the mechanism that reports it. Real integer and float columns are accepted
+as before.
+
+**Acceptance criteria.**
+
+- U1 (distinct identity): with a synthetic posterior whose observed effects are distinct
+  constants across draws, two distinct unseen labels coincide in a fraction of draws
+  near $1/J$ (within Monte Carlo tolerance), never in all draws; each label's effect in
+  each draw is one of that draw's observed effects. Under the previous behaviour the
+  fraction is 1, so the test separates the two.
+- U2 (repeated label): rows with the same unseen label have identical effects in every
+  draw, for both families.
+- U3 (observed untouched): observed labels in the same `newdata` use their own effects
+  exactly, as before.
+- U4 (both families, both kinds): Gaussian `mu` and Bernoulli `p` equal the hand-computed
+  linear predictor with the chosen effects; `y` draws keep their family's meaning
+  (Gaussian residual SD, Bernoulli 0/1).
+- U5 (`population` and in-sample unchanged): the existing A8 and M0 prediction tests pass
+  unchanged; `seed` makes the result reproducible.
+- U6 (validation): complex response (both families), complex predictor, and complex
+  `newdata` predictor are refused with a message naming the column and "complex", and no
+  NumPy complex-cast warning is emitted; real inputs still pass.
+- U7 (regression): the fast suite and the slow CPU sampling suite pass.
