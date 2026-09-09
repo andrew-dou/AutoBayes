@@ -51,9 +51,15 @@ acceptance checks: `docs/m0-decision.md`.
 - GPU: pending. `docs/m0-gpu-validation.md` and `cluster/m0_gpu_smoke.sbatch` carry
   the reproducible command. Not submitted (outside the handoff's compute boundary).
 
+- B1 seed check (`docs/m0-evidence/B1_seed_check.json`): seeds 11-14, 2000-8000
+  draws; all |z| < 1.8 with alternating signs along the weakly identified
+  intercept-vs-mean-offset direction, so the committed run's 2.5-sigma pattern was noise.
+- Evidence write-up for review: `docs/m0-evidence/m0_evidence.pdf` (source
+  `m0_evidence.tex`, pdflatex, 6 pages).
+
 ## In progress
 
-- Evidence write-up (LaTeX -> PDF) for review.
+- Nothing. Awaiting review before any scope expansion.
 
 ## Failures
 
@@ -73,7 +79,8 @@ acceptance checks: `docs/m0-decision.md`.
 
 ## Remaining checks
 
-- B1, B2, C3 (GPU pending), README/SKILL pointer, evidence write-up.
+- C3 only: actual GPU execution, pending by design (no accelerator here). Reproducible
+  command in `docs/m0-gpu-validation.md`; batch form `cluster/m0_gpu_smoke.sbatch`.
 
 ## Blockers
 
@@ -82,7 +89,13 @@ acceptance checks: `docs/m0-decision.md`.
 
 ## Next action
 
-- Implement `autobayes/formula.py`, `priors.py`, `model.py`, `inference.py`,
-  `predict.py`, `diagnostics.py`; then `tests/reference_logp.py` and the A-series tests.
+- Andrew reviews `docs/m0-evidence/m0_evidence.pdf` and the branch. On approval: decide
+  whether to run the GPU smoke test on FAS RC (needs a Bambi-capable env) and which
+  family or formula feature M1 covers. Merging, publishing, and new compute are not
+  authorised by the M0 handoff.
 
-M0_COMPLETE: no
+To resume in a fresh session: `git checkout m0/gaussian-varying-intercept`, then
+`.venv/bin/python -m pytest tests -q` (fast) and `-m slow` (two sampling checks, ~30 s).
+
+M0_COMPLETE: yes, with GPU execution pending as the milestone definition allows
+(support in code is verified; execution on a GPU is not).

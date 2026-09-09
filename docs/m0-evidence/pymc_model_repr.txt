@@ -1,0 +1,38 @@
+# pymc_model.str_repr()
+     sigma ~ HalfNormal(0, 1)
+ Intercept ~ Normal(0, 5)
+         x ~ Normal(0, 2)
+ 1|g_sigma ~ HalfNormal(0, 1)
+1|g_offset ~ Normal(0, 1)
+       1|g ~ Deterministic(f(1|g_offset, 1|g_sigma))
+        mu ~ Deterministic(f(Intercept, 1|g_offset, x, 1|g_sigma))
+         y ~ Normal(mu, sigma)
+
+# value variables (sampled) and transforms
+  sigma        value=sigma_log__        transform=LogTransform
+  Intercept    value=Intercept          transform=None
+  x            value=x                  transform=None
+  1|g_sigma    value=1|g_sigma_log__    transform=LogTransform
+  1|g_offset   value=1|g_offset         transform=None
+
+# pytensor.dprint(pymc_model['mu'], depth=6)
+ViewOp [id A] 'mu'
+ └─ Add [id B]
+    ├─ Add [id C]
+    │  ├─ Add [id D]
+    │  │  ├─ ExpandDims{axis=0} [id E]
+    │  │  │  └─ 0 [id F]
+    │  │  └─ ExpandDims{axis=0} [id G]
+    │  │     └─ normal_rv{"(),()->()"}.1 [id H] 'Intercept'
+    │  └─ Squeeze{axis=1} [id I]
+    │     └─ Dot [id J]
+    │        ├─ [[-1.23497 ... 46374856]] [id K]
+    │        └─ ExpandDims{axis=1} [id L]
+    └─ Add [id M]
+       ├─ ExpandDims{axis=0} [id N]
+       │  └─ 0 [id O]
+       └─ Mul [id P]
+          ├─ AdvancedSubtensor [id Q]
+          │  ├─ ViewOp [id R] '1|g'
+          │  └─ [5 3 3 1 1 ... 5 2 4 5 3] [id S]
+          └─ [1 1 1 1 1 ... 1 1 1 1 1] [id T]

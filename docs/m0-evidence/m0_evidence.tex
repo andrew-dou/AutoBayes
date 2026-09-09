@@ -1,0 +1,312 @@
+\documentclass[11pt]{article}
+\usepackage[margin=1in]{geometry}
+\usepackage[T1]{fontenc}
+\usepackage{amsmath,amssymb,mathtools,bbm}
+\usepackage{booktabs,longtable,array,enumitem}
+\usepackage{listings,xcolor,tikz,hyperref}
+\sloppy
+\hypersetup{colorlinks=true, linkcolor=blue!50!black, urlcolor=blue!50!black}
+\definecolor{cbg}{rgb}{0.97,0.97,0.97}
+\lstset{language=Python, basicstyle=\ttfamily\footnotesize,
+  backgroundcolor=\color{cbg}, showstringspaces=false, breaklines=true,
+  frame=single, framerule=0pt, numbers=left, numberstyle=\tiny, xleftmargin=2em}
+\newcommand{\code}[1]{\texttt{#1}}
+\newcommand{\file}[1]{\texttt{#1}}
+\newcommand{\sbscode}[1]{\begin{minipage}[t]{0.55\textwidth}#1\end{minipage}}
+\newcommand{\sbstext}[1]{\hfill\begin{minipage}[t]{0.42\textwidth}\small #1\end{minipage}}
+
+\title{AutoBayes milestone M0: evidence for review}
+\author{Claude session, branch \code{m0/gaussian-varying-intercept}}
+\date{September 8, 2026}
+
+\begin{document}
+\maketitle
+
+\section{What M0 delivers}
+
+One executable path for the Gaussian varying-intercept model
+\[
+y_i \sim \mathrm{Normal}(\mu_i,\sigma), \qquad
+\mu_i = a_c + (x_i - \bar x)\,b + u[g_i], \qquad u[j] = s_g\, z_j,\quad z_j \sim \mathrm{Normal}(0,1),
+\]
+with explicit priors on the four brms classes (\code{Intercept}, \code{b}, \code{sd}, \code{sigma}),
+an inspectable PyMC model, posterior and predictive draws, PyMC's NUTS on the CPU, and a
+JAX/NumPyro path with an explicit device choice. Everything outside that family is
+refused with an error naming the construct.
+
+\begin{center}\footnotesize
+\begin{tabular}{p{0.2\textwidth}p{0.74\textwidth}}
+\toprule
+Branch, clone & \code{m0/gaussian-varying-intercept} in \file{IQSS-Research/projects/AutoBayes}, five commits on \code{f87f639} \\
+Package & \file{autobayes/} (\file{formula.py}, \file{priors.py}, \file{model.py}, \file{inference.py}, \file{predict.py}, \file{diagnostics.py}) \\
+Tests & \file{tests/}: 36 fast, 2 slow (\code{-m slow}); all 38 pass \\
+Reference density & \file{tests/reference\_logp.py}, imports nothing from \code{autobayes}, PyMC, or Bambi \\
+Example & \file{examples/m0\_varying\_intercept.py}; outputs captured in \file{docs/m0-evidence/} \\
+Decision record & \file{docs/m0-decision.md} (written before implementation), \file{docs/coordination/STATUS.md} \\
+Environment & \file{.venv}: pymc 5.28.5, bambi 0.17.2, numpyro 0.21.0, jax 0.10.2 (CPU wheel), arviz 0.23.4, pytensor 2.38.3 \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\section{Bambi already builds this model; the layer is thin on purpose}
+
+The milestone asked for a comparison before any new code. Verified against the installed
+Bambi 0.17.2: it parses \code{y \textasciitilde{} x + (1|g)}, builds the one-hot group matrix with levels
+in sorted order, accepts explicit priors including a hyperprior on the group SD, uses the
+non-centred parameterisation by default (as brms always does), centres the predictors by
+default and back-transforms the intercept after sampling (as brms does), exposes the PyMC
+model as \code{model.backend.model} after \code{build()}, forwards \code{**kwargs} to
+\code{pm.sample} so \code{nuts\_sampler="numpyro"} with \code{nuts\_sampler\_kwargs=\{"chain\_method": ...\}}
+reaches PyMC 5.28.5's \code{sample\_jax\_nuts}, and predicts for new group levels with brms's
+default \code{sample\_new\_levels="uncertainty"} semantics only.
+
+The layer therefore adds six things, each because Bambi does not do it: (1)~a grammar
+check that refuses \code{(1 + x | g)}, \code{(1 | g/h)}, two grouping factors,
+interactions, transformations, \code{0 +}, categorical predictors, and missing data with a
+message naming the construct; (2)~mandatory explicit priors by class, with no silent
+defaults; (3)~a \code{describe()} that states the density actually sampled, centring and
+transforms included; (4)~device resolution that raises rather than falling back, enables
+float64, sets the host device count for parallel CPU chains, and reports the actual
+device; (5)~predictive draws with named new-group semantics, including the population
+option (brms \code{"gaussian"}) that Bambi lacks; (6)~the diagnostic panel with the
+thresholds from \file{reference/diagnostics.md}. No parser, design-matrix builder, prior
+language, or sampler was written.
+
+\section{The model that is actually sampled}
+
+\code{model.describe()} on the example data prints the specification below; the PyMC
+representation follows it. Both are real output (\file{example\_pymc\_cpu.txt},
+\file{pymc\_model\_repr.txt}).
+
+\begin{lstlisting}[numbers=none]
+Linear predictor
+  mu_i = a_c + (x_x - mean(x_x)) * b_x + u[school_i]
+  Predictors are centred at their sample means (center_predictors=True, as in
+  brms and Bambi). a_c is the expected response at the predictor means; the
+  prior on the intercept applies to a_c. The posterior reports the raw-scale
+  intercept a = a_c - sum_p mean(x_p) * b_p, computed after sampling.
+Group effects (non-centred)
+  u[j] = sd_school * z[j],  z[j] ~ Normal(0, 1),  j = 0..19
+PyMC variables sampled (value space)
+  sigma_log__              log(sigma)
+  Intercept                a_c
+  x                        b_x
+  1|school_sigma_log__     log(sd_school)
+  1|school_offset          z
+\end{lstlisting}
+\begin{lstlisting}[numbers=none]
+     sigma ~ HalfNormal(0, 1)          1|g_offset ~ Normal(0, 1)
+ Intercept ~ Normal(0, 5)                     1|g ~ Deterministic(f(1|g_offset, 1|g_sigma))
+         x ~ Normal(0, 2)                      mu ~ Deterministic(f(Intercept, 1|g_offset, x, 1|g_sigma))
+ 1|g_sigma ~ HalfNormal(0, 1)                   y ~ Normal(mu, sigma)
+\end{lstlisting}
+
+Two facts a researcher must know and would not see in Bambi's own printout. First, the
+\code{Intercept} in the PyMC model is $a_c$, the intercept at the predictor means; the
+\code{Intercept} in the returned trace is $a = a_c - \bar x\, b$. The prior
+$\mathrm{Normal}(0,5)$ is on $a_c$. With the example data $\bar x = -0.092$ and $b\approx 0.49$
+the two differ by $0.045$, small here and not small in general. Second, the sampler moves
+$\log\sigma$ and $\log s_g$, not $\sigma$ and $s_g$; the joint density in that space carries
+the Jacobian $+\log\sigma + \log s_g$, which is what the reference below reproduces.
+
+\section{Log density and meaning (checks A1--A7)}
+
+\begin{minipage}[t]{0.54\textwidth}\begin{lstlisting}[firstnumber=65]
+    y, Xc, _, gidx, levels = build_design(data, response, predictors, group, center)
+    a, b = float(point["a_c"]), np.atleast_1d(point["b"])
+    log_sigma, log_sd = float(point["log_sigma"]), float(point["log_sd"])
+    z = np.asarray(point["z"], dtype=float)
+    assert z.shape == (len(levels),)
+    sigma, sd = np.exp(log_sigma), np.exp(log_sd)
+
+    mu = a + Xc @ b + sd * z[gidx]
+    lp = np.sum(stats.norm.logpdf(y, loc=mu, scale=sigma))
+    lp += np.sum(stats.norm.logpdf(z, 0.0, 1.0))
+    lp += prior_logpdf(*priors["intercept"], a)
+    for i, p in enumerate(predictors):
+        lp += prior_logpdf(*priors["b"][p], b[i])
+    lp += prior_logpdf(*priors["sd"], sd)
+    lp += prior_logpdf(*priors["sigma"], sigma)
+    if jacobian:
+        lp += log_sigma + log_sd
+\end{lstlisting}\end{minipage}
+\sbstext{\file{tests/reference\_logp.py:65--81}. The reference builds its own centred
+design and its own sorted level index from the data frame, evaluates every prior with
+SciPy (half-Student-t written out), and adds the log-transform Jacobian. It shares no code
+with the library, so agreement is evidence about Bambi's graph, not about the layer.
+
+The comparison point is a dictionary in PyMC's value space produced by
+\code{Model.value\_point()}, whose keys are checked against \code{pymc\_model.value\_vars}.}
+
+\medskip
+\begin{center}\footnotesize
+\begin{tabular}{lp{0.6\textwidth}ll}
+\toprule
+Check & What is compared & Tolerance & Result \\
+\midrule
+A1 & \code{compile\_logp()} vs reference, 5 random points, 4 formula/centring variants & $10^{-8}$ abs & pass \\
+A2 & same with \code{jacobian=False}; difference equals $\log\sigma+\log s_g$ & $10^{-8}$, $10^{-12}$ & pass \\
+A3 & \code{compile\_dlogp()} vs central differences of the reference, 3 points & rel $10^{-5}$ & pass \\
+A4 & JAX-compiled density (\code{get\_jaxified\_logp}) vs PyTensor path & $10^{-8}$ abs & pass \\
+A5 & scales fixed by \code{pm.do}: negative Hessian equals closed-form precision at two points; maximiser equals exact posterior mean & $10^{-8}$, $10^{-4}$ & pass \\
+A6 & $X_\text{model} = x-\bar x$, $Z$ one-hot in sorted level order, \code{mu} and \code{1|g} from the graph vs by hand & $10^{-12}$ & pass \\
+A7 & 17 unsupported formulas and 5 data/prior faults raise the named error & --- & pass \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+Three PyMC 5.28.5 facts surfaced while making A4--A6 pass, all verified in source and
+none a model problem. \code{get\_jaxified\_logp(model, negative\_logp=...)} has its flag
+named backwards: the default \code{True} returns the log density and \code{False} negates
+it. \code{compile\_d2logp()} returns the \emph{negative} Hessian
+(\code{pymc.pytensorf.hessian(negate\_output=True)}), i.e. the precision matrix, which is
+why A5 compares it to $+P$. A deterministic such as \code{mu} is a graph of random
+variables; to evaluate it at a point in value space the RVs must first be substituted
+(\code{model.replace\_rvs\_by\_values}). Each is recorded in the test that hit it.
+
+\section{Sampling (checks B1--B2)}
+
+\paragraph{B1: exact conditional posterior.} With $\sigma = 0.3$ and $s_g = 0.5$ fixed
+through \code{pm.do} on the inspectable model, the posterior of $(a_c, b, z_1..z_6)$ is
+Gaussian with precision $P = \mathrm{diag}(1/25, 1/4, 1,\dots,1) + W^\top W/\sigma^2$,
+$W = [\mathbf 1,\ x-\bar x,\ s_g Z]$. NUTS on that model (n = 60, J = 6) against the exact
+mean, with MCSE $= \text{exact SD}/\sqrt{\mathrm{ESS}}$:
+
+\begin{center}\footnotesize
+\begin{tabular}{lrrrrrr}
+\toprule
+\multicolumn{7}{l}{\emph{Committed test: seed 11, 4 chains $\times$ 2000 draws, threshold $|z|<4$ and SD within 10\%}} \\
+ & exact mean & MCMC mean & exact SD & MCMC SD & ESS & $z$ \\
+\midrule
+$a_c$ & 1.2147 & 1.2289 & 0.2078 & 0.2149 & 1273 & $+2.45$ \\
+$b_x$ & 0.4561 & 0.4565 & 0.0423 & 0.0423 & 3159 & $+0.48$ \\
+$z_0 \dots z_5$ & & & 0.437--0.456 & 0.450--0.467 & 1413--1503 & $-2.20$ to $-2.80$ \\
+\bottomrule
+\end{tabular}
+
+\medskip
+\begin{tabular}{llrrrrrr}
+\toprule
+\multicolumn{8}{l}{\emph{Seed check, 4 chains, 2000 tune; $z$ for $a_c$, for the identified direction $a_c + s_g\bar z$, and for the weak direction $a_c - s_g\bar z$}} \\
+seed & draws & ESS $a_c$ & ESS ident. & ESS weak & $z(a_c)$ & $z$(ident.) & $z$(weak) \\
+\midrule
+11 & 2000 & 1315 & 8929 & 1294 & $+0.06$ & $-0.96$ & $+0.09$ \\
+12 & 4000 & 2493 & 17328 & 2444 & $-1.69$ & $+1.72$ & $-1.76$ \\
+13 & 4000 & 2474 & 17622 & 2429 & $+1.59$ & $+0.89$ & $+1.57$ \\
+14 & 8000 & 4884 & 31828 & 4793 & $-1.14$ & $-0.15$ & $-1.13$ \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+The committed run passed its threshold ($|z| < 4$, SDs within 10\%) but its eight
+$z$-scores share one sign pattern, so they are one event, not eight. The pattern is the
+direction $a_c - s_g \bar z$: the data pin down $a_c + s_g \bar z$ (the grand mean, exact
+SD 0.040, about one effective draw per draw) and leave $a_c - s_g \bar z$ to the priors
+(exact SD 0.41, about one effective draw per six). Across seeds and lengths the deviations
+alternate sign and stay under 1.8 MCSE, so the first run was a $2.5\sigma$ draw and not a
+bias. Files: \file{B1\_conditional\_gaussian.json}, \file{B1\_seed\_check.json}.
+
+\paragraph{B2: simulated recovery on both backends.} $n = 200$, $J = 20$, truth
+$a = 1.0$, $b = 0.5$, $s_g = 0.5$, $\sigma = 0.3$; 4 chains, 1000 tune, 2500 draws,
+\code{target\_accept} 0.9, seed 7.
+
+\begin{center}\footnotesize
+\begin{tabular}{lrrrrrr}
+\toprule
+ & mean & SD & 94\% HDI & $\hat R$ & bulk ESS & tail ESS \\
+\midrule
+\multicolumn{7}{l}{\emph{PyMC NUTS, CPU: 0 divergences of 10000, E-BFMI 0.70, tree-depth saturation 0\%}} \\
+Intercept & 0.776 & 0.143 & [0.491, 1.037] & 1.003 & 755 & 1384 \\
+$b_x$ & 0.486 & 0.024 & [0.441, 0.529] & 1.000 & 5055 & 5721 \\
+$s_g$ & 0.642 & 0.113 & [0.450, 0.858] & 1.003 & 1215 & 2544 \\
+$\sigma$ & 0.306 & 0.016 & [0.276, 0.336] & 1.001 & 5208 & 6235 \\
+\midrule
+\multicolumn{7}{l}{\emph{NumPyro NUTS via JAX, CPU: 0 divergences of 10000, E-BFMI 0.67, tree-depth saturation 0\%}} \\
+Intercept & 0.779 & 0.146 & [0.518, 1.082] & 1.005 & 771 & 1235 \\
+$b_x$ & 0.487 & 0.024 & [0.442, 0.531] & 1.001 & 5401 & 6061 \\
+$s_g$ & 0.647 & 0.117 & [0.443, 0.862] & 1.008 & 1010 & 1966 \\
+$\sigma$ & 0.305 & 0.017 & [0.274, 0.337] & 1.000 & 5229 & 6127 \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+Every panel row passes on both backends and the truth is inside every 94\% HDI. The two
+backends' posterior means differ by 0.0027 (Intercept), 0.0009 ($b$), 0.0052 ($s_g$),
+0.0004 ($\sigma$), against 4-combined-MCSE tolerances of 0.030, 0.0019, 0.019, 0.0013:
+the same posterior, sampled two ways.
+
+Two readings that would be wrong. The Intercept posterior sits at 0.78 against a nominal
+1.0 and $s_g$ at 0.64 against 0.5: this is not shrinkage error. The twenty simulated
+effects have realised mean $-0.234$ and realised SD 0.602, so the quantities the data can
+identify are $1.0 - 0.234 = 0.766$ and about 0.60, both near the posterior centres. And at
+4 chains $\times$ 1000 draws these same fits gave $\hat R = 1.02$ and bulk ESS 350 on the
+Intercept on both backends, for the reason B1 exhibits: the weakly identified
+intercept-versus-mean-offset direction. The runs were lengthened; the thresholds were not
+loosened. One recovery on one simulated data set is not a calibration claim.
+
+\section{Devices: executed versus supported}
+
+\begin{center}\footnotesize
+\begin{tabular}{p{0.29\textwidth}p{0.27\textwidth}p{0.35\textwidth}}
+\toprule
+Path & Status & Evidence \\
+\midrule
+\code{backend="pymc"}, CPU & executed & B2, \file{example\_pymc\_cpu.txt} (wall 5.0 s incl.\ compile) \\
+\code{backend="numpyro"}, \code{device="cpu"} & executed, 4 parallel CPU chains, float64 & B2, \file{example\_numpyro\_cpu.txt} (3.9 s) \\
+\code{backend="numpyro"}, \code{device="gpu"} & supported in code, \textbf{not validated} & \file{example\_numpyro\_gpu\_attempt.txt}: the refusal \\
+\code{backend="pymc"}, \code{device="gpu"} & refused by design & \code{test\_gpu\_on\_pymc\_backend\_is\_error} \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\begin{minipage}[t]{0.54\textwidth}\begin{lstlisting}[firstnumber=70]
+    if device == "cpu":
+        # Must run before the JAX backend initialises, else it is a no-op.
+        numpyro.set_host_device_count(int(chains))
+    jax.config.update("jax_enable_x64", True)
+    devs = jax.devices()
+    if device == "gpu":
+        gpus = [d for d in devs if d.platform in _GPU_PLATFORMS]
+        if not gpus:
+            raise DeviceError(
+                "device='gpu' requested for backend='numpyro', but JAX sees no GPU. "
+                f"Visible devices: {_jax_devices_summary(jax)}. Install a CUDA-enabled "
+                "jaxlib on a machine with an NVIDIA GPU, or pass device='cpu'. "
+                "AutoBayes does not fall back to CPU silently."
+            )
+        return gpus[0], "vectorized"
+\end{lstlisting}\end{minipage}
+\sbstext{\file{autobayes/inference.py:70--84}. The report on every fit records the device
+the arrays actually landed on (probed inside \code{jax.default\_device}), the dtype, and
+the chain method; on this machine it reads \code{cpu:cpu(id=0)}, \code{float64},
+\code{parallel}. The two wall-clock figures above are not a speed comparison: same
+machine, same targets, but compilation is inside both numbers and the sizes are tiny.}
+
+\medskip
+The GPU command is in \file{docs/m0-gpu-validation.md} and \file{cluster/m0\_gpu\_smoke.sbatch};
+the cluster's existing \code{electit\_env2} lacks Bambi, so it needs a new environment.
+Nothing was submitted, per the handoff. What a GPU run would add is one fact: that the same
+compiled graph runs on the other device. It would not add a speed claim.
+
+\section{Prediction meaning (check A8)}
+
+In-sample \code{mu} from \code{predict()} equals $a + x b + u[g]$ computed by hand from
+the trace to $10^{-10}$; \code{y} draws scatter around it with pooled SD equal to the
+posterior mean of $\sigma$. For an unseen group, \code{new\_groups="population"} draws
+$u_\text{new} \sim \mathrm{Normal}(0, s_g)$ per posterior draw, so its predictive SD is
+about $\sqrt{\sigma^2 + s_g^2}$: in the example 0.74 for a new school against 0.32 for an
+observed one ($\sqrt{0.306^2 + 0.642^2} = 0.71$ before posterior spread in $a$ and $s_g$).
+\code{"resample\_observed"} reproduces Bambi's behaviour, verified draw by draw to be one of
+the observed levels' effects; it is brms's default and it understates between-group
+variance, which is why it is not the default here.
+
+\section{Not claimed, and next}
+
+Not claimed: any family beyond Gaussian, varying slopes, multiple or nested grouping
+factors, categorical predictors, missing data, calibration in general, GPU execution, or
+any speedup. Follow-ups worth a decision: run \file{cluster/m0\_gpu\_smoke.sbatch} once a
+Bambi-capable environment exists on the cluster; decide whether the three PyMC quirks
+belong in \file{reference/libraries.md} (the pack is a fixed input, so that is Andrew's
+call); and choose the next family (M1) only after this review.
+
+\end{document}
