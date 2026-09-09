@@ -133,3 +133,38 @@ by hand with `pm.Bernoulli(logit_p=...)`; Bambi is kept for the design matrices 
 Repair and re-run; record the failure in `docs/coordination/STATUS.md`. Thresholds are not
 loosened. If B1 fails on one backend only, that is a sampler-path bug to investigate before
 any claim about either backend.
+
+## Repair record (2026-09-09): the likelihood at large positive logits was wrong, not negligible
+
+**Finding (coordinator review, reproduced).** In the model as merged into the PR, with two
+zero and two one observations at $\eta = 40$ the likelihood is $-72.087$ instead of $-80$,
+and at $\eta = 300$ it is still $-72.087$ instead of $-600$; the likelihood's contribution
+to the intercept gradient vanishes there. This is a parameter-dependent change of the target
+density, not a precision footnote, and the earlier A5 acceptance condition asserted the
+erroneous deviation instead of refusing it. The statements "negligible under weakly
+informative priors" and "watch for separation" are withdrawn: a sampler that can reach the
+region samples a different posterior there.
+
+**Constraints found while repairing (all reproduced on this stack, pymc 5.28.5, pytensor
+2.38.3, jax 0.10.2).** `pm.Bernoulli(logit_p=eta)` has the correct log density but
+`compile_dlogp` returns NaN at $\eta = 40$ and $300$. A `pt.softplus` likelihood lowers to a
+branching form whose JAX gradient fails at magnitude 1000. The construction must therefore
+be verified on both backends, for values and gradients, rather than chosen by API name.
+
+**Repair acceptance criteria (written before the change).**
+
+- R1. For the actual `ab.bernoulli` model (priors, centring, non-centred coding unchanged),
+  `compile_logp` equals the independent stable reference (SciPy `log_expit`) at logits
+  $\eta \in \{0, \pm 0.5, \pm 12, \pm 40, \pm 300, \pm 1000, \pm 10^6\}$, for both outcomes,
+  to 1e-8 absolute or 1e-12 relative. The reviewer's case (two zeros, two ones) gives
+  $-80$ at $\eta = 40$ and $-600$ at $\eta = 300$ for the likelihood term.
+- R2. `compile_dlogp` and `jax.grad` of `get_jaxified_logp` equal the analytic gradient
+  ($y_i - \mathrm{expit}(\eta_i)$ through the design, plus prior terms) at the same points
+  to 1e-8, finite everywhere, on both the PyTensor C path and the JAX path.
+- R3. A1-A4 and A6-A8 pass unchanged (moderate regime, design, predictions), and the
+  Gaussian suite is untouched.
+- R4. The posterior predictive still draws $y \sim \mathrm{Bernoulli}(\mathrm{expit}(\eta))$;
+  `predict` semantics and `p` are unchanged.
+- R5. B1 is re-run on both backends with the same prespecified thresholds and the evidence
+  regenerated; the old A5 assertion of the deviation is deleted, not relaxed.
+- R6. `describe()` states the likelihood form that is actually sampled.
