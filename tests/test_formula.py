@@ -1,3 +1,4 @@
+import numpy as np
 import pandas as pd
 import pytest
 
@@ -72,3 +73,17 @@ def test_model_builds_and_describes():
     assert "mu_i = a_c + (x_x - mean(x_x)) * b_x + u[g_i]" in text
     assert "sigma_log__" in text and "1|g_offset" in text
     assert {v.name for v in m.pymc_model.free_RVs} == {"Intercept", "x", "sigma", "1|g_sigma", "1|g_offset"}
+
+
+def test_complex_columns_are_refused_gaussian():
+    import warnings
+    df = simulate()
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", np.exceptions.ComplexWarning)
+        with pytest.raises(ab.FormulaError, match="response 'y' is complex"):
+            ab.gaussian("y ~ x + (1 | g)", df.assign(y=df.y.astype(complex) + 4j), PRIORS)
+        with pytest.raises(ab.FormulaError, match="column 'x' is complex"):
+            ab.gaussian("y ~ x + (1 | g)", df.assign(x=df.x.astype(complex)), PRIORS)
+        with pytest.raises(ab.FormulaError, match="is complex"):
+            ab.parse_formula("y ~ x + (1 | g)", df.assign(y=df.y.astype(complex)))
+    assert ab.parse_formula("y ~ x + (1 | g)", df.assign(y=df.y.astype(np.float32), x=df.x.astype(int))).levels

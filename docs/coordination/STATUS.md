@@ -52,9 +52,62 @@
 - Not done: no PDF write-up for M1; no binomial trials, other links, varying slopes or
   generic family layer; no merge, worktree cleanup, paid compute or Firecrawl.
 
+## M1 follow-up unit (2026-09-09): unseen-label identity, complex responses
+
+- Dispatch: `iqss-research/memory/dispatches/2026-09-09-autobayes-followup.txt`. Scope: the two
+  open review items; the stable likelihood at `2aea478` untouched. Semantics and acceptance
+  criteria U1-U7 were written into `docs/m1-decision.md` and committed (`0cad179`) before
+  editing.
+- **Finding 1 (reproduced before the change, both families, real 2 x 300-draw fits):** with
+  `newdata` labels `[lvl00, NEW_A, NEW_B, NEW_A]`, `new_groups="resample_observed"` gave
+  NEW_A and NEW_B identical effects in 100 % of draws (Bambi's `sample_new_groups=True` maps
+  every unseen label to one placeholder group). **Change:** `autobayes/predict.py::
+  _predict_by_hand` now handles both `"population"` and `"resample_observed"` when unseen
+  labels exist: one observed level is drawn uniformly per distinct unseen label per posterior
+  draw, independently across labels and draws; rows sharing a label share the choice. After
+  the change with J = 6: NEW_A/NEW_B identical in 17.5 % of draws (1/J = 16.7 %), repeated
+  NEW_A rows identical in 100 %. In-sample and observed-only `newdata` still go through Bambi.
+- **Finding 2 (reproduced):** complex-valued responses (`y + 4j`) built for both families with
+  the imaginary part discarded by the float cast under a NumPy warning (pandas counts complex
+  as numeric). **Change:** `autobayes/formula.py::reject_complex` refuses complex response,
+  predictor and `newdata` predictor columns before any cast, both families.
+- Tests added (fast suite now **59 passed, 3 deselected**; slow suite **3 passed**):
+  `test_predict.py::test_resample_observed_keeps_distinct_unseen_labels` (synthetic posterior
+  with distinct constant effects: each label's effect is one of the draw's observed effects,
+  repeated label shares exactly, observed labels untouched, coincidence fraction near 1/J and
+  never 1, seed reproducibility, Gaussian `y` residual SD) and `..._on_a_real_fit_is_not_collapsed`;
+  `test_bernoulli.py::test_resample_observed_keeps_distinct_unseen_labels_bernoulli` (same on `p`
+  and integer 0/1 draws) and `test_complex_inputs_are_refused_before_casting` (response,
+  predictor, `newdata`; `ComplexWarning` turned into an error so a cast cannot be the
+  mechanism); `test_formula.py::test_complex_columns_are_refused_gaussian` (float32/int still
+  accepted). The old membership-only assertions remain and still pass.
+- Limitations: levels are drawn uniformly, as in brms, not weighted by group size; no change
+  to `"population"` or in-sample predictions; GPU execution of the M1 likelihood still
+  pending; no PDF write-up.
+- Not done, by instruction: no merge, cleanup, new PR, paid compute, Firecrawl.
+
+### Next-milestone proposal (not implemented)
+
+**M2: binomial trials for grouped binary data, `successes | trials(n) ~ x + (1 | group)`.**
+The smallest step past M1 that changes what researchers can fit: aggregated binary data
+(k successes of n per row) is the common form of the M1 use case, and it reuses the logit
+link, the logit-scale priors, the stable softplus likelihood (log-binomial coefficient plus
+`k*eta - n*softplus(eta)`), centring and the non-centred group coding unchanged.
+Acceptance criteria to set before implementation: (a) the log density and full gradient
+equal an independent SciPy reference (`log_expit`, `gammaln`) at moderate and extreme
+logits on both PyTensor and JAX paths, with `n = 1` reproducing M1 exactly; (b) `trials`
+must be a positive integer column with `0 <= successes <= trials` and both non-degenerate
+rows present, refused otherwise before any cast; (c) predictions distinguish `p` from
+`successes` draws (`Binomial(n, p)`), with the same new-group semantics and identity rules
+as M1; (d) simulated recovery on both CPU backends with the M1 thresholds and 4-MCSE
+agreement, stated as one recovery, not calibration; (e) formula syntax limited to
+`successes | trials(n)` on the left-hand side, everything else refused by name. Out of
+scope: other links, overdispersion (beta-binomial), varying slopes, GPU execution beyond
+a labelled pending status.
+
 ## Repository (M1)
 
-- PR: https://github.com/andrew-dou/AutoBayes/pull/3 (branch `m1/bernoulli-varying-intercept` -> `main`, author andrew-dou). Repair pushed to the same PR; open for independent review; not merged by this session.
+- PR: https://github.com/andrew-dou/AutoBayes/pull/3 (branch `m1/bernoulli-varying-intercept` -> `main`, author andrew-dou). Repair (`2aea478`) and the follow-up unit pushed to the same PR; open for independent review; not merged by this session.
 
 ## Milestone
 

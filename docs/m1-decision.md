@@ -255,3 +255,24 @@ as before.
   `newdata` predictor are refused with a message naming the column and "complex", and no
   NumPy complex-cast warning is emitted; real inputs still pass.
 - U7 (regression): the fast suite and the slow CPU sampling suite pass.
+
+**Executed results (2026-09-09).** Before the change, on both families with a real fit
+(2 chains x 300 draws) and `newdata` labels `[lvl00, NEW_A, NEW_B, NEW_A]`: NEW_A and NEW_B
+identical in 100 % of draws (the collapse); complex responses built with the imaginary
+part discarded under a NumPy warning. After the change, J = 6: NEW_A and NEW_B identical in
+17.5 % of draws against 1/J = 16.7 %, repeated NEW_A rows identical in 100 % of draws,
+complex response/predictor/`newdata` refused with "is complex-valued" before any cast.
+Implementation: `autobayes/predict.py::_predict_by_hand` (both `"population"` and
+`"resample_observed"` when `newdata` has unseen labels; in-sample and observed-only
+`newdata` still through Bambi), `autobayes/formula.py::reject_complex`. Tests:
+`tests/test_predict.py` (synthetic posterior with distinct constant effects: U1-U4 exact,
+seed reproducibility; real fit: not collapsed), `tests/test_bernoulli.py` (same on `p`
+and 0/1 draws; complex refusal for response, predictor, `newdata`, with
+`ComplexWarning` turned into an error so a cast cannot be the mechanism),
+`tests/test_formula.py` (Gaussian complex refusal, real float32/int accepted).
+Suite results are in `docs/coordination/STATUS.md`.
+
+Remaining limitations of this unit: `"resample_observed"` draws levels uniformly, as
+brms does; it does not weight by group size. A label that is unseen but present in the
+training data under a different spelling is a new label, as before. No change to
+`"population"` or to in-sample predictions.

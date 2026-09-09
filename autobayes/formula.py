@@ -164,11 +164,20 @@ def parse_formula(formula: str, data: pd.DataFrame | None = None, family: str = 
     return spec
 
 
+def reject_complex(label: str, s: pd.Series) -> None:
+    """Refuse a complex-valued column before anything casts it (a cast would silently drop
+    the imaginary part and pandas counts complex as numeric)."""
+    if pd.api.types.is_complex_dtype(s):
+        raise FormulaError(f"{label} is complex-valued ({s.dtype}); only real numeric columns are supported.")
+
+
 def _is_numeric(s: pd.Series) -> bool:
-    return pd.api.types.is_numeric_dtype(s) and not pd.api.types.is_bool_dtype(s)
+    return (pd.api.types.is_numeric_dtype(s) and not pd.api.types.is_bool_dtype(s)
+            and not pd.api.types.is_complex_dtype(s))
 
 
 def _validate_binary_response(name: str, s: pd.Series) -> None:
+    reject_complex(f"response {name!r}", s)
     if pd.api.types.is_bool_dtype(s):
         raise FormulaError(
             f"response {name!r} is boolean; code it as integers 0/1 explicitly "
@@ -199,11 +208,13 @@ def validate_data(spec: ModelSpec, data: pd.DataFrame, family: str = "gaussian")
     if missing:
         raise FormulaError(f"columns not in data: {missing}")
     for c in spec.predictors:
+        reject_complex(f"column {c!r}", data[c])
         if not _is_numeric(data[c]):
             raise FormulaError(
                 f"column {c!r} has dtype {data[c].dtype}; only numeric predictors are "
                 "supported (categorical predictors are not supported)."
             )
+    reject_complex(f"response {spec.response!r}", data[spec.response])
     if family == "bernoulli":
         _validate_binary_response(spec.response, data[spec.response])
     elif not _is_numeric(data[spec.response]):

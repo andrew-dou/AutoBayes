@@ -243,9 +243,12 @@ that was not in the training data:
   draw, on the linear-predictor scale (the logit scale for Bernoulli). This is the
   distribution the model fit (brms `sample_new_levels = "gaussian"`) and is the right
   choice for "a new school".
-- `"resample_observed"`: reuse a random observed level's fitted effect per draw
-  (brms's default `"uncertainty"`, Bambi's `sample_new_groups=True`). It understates
-  between-level spread because it resamples shrunk effects from a finite set.
+- `"resample_observed"`: for each posterior draw and each distinct unseen label,
+  reuse the fitted effect of a uniformly chosen observed level (brms's default
+  `"uncertainty"`). Rows sharing a label share the choice; distinct labels are drawn
+  independently and coincide only by chance. It understates between-level spread
+  because it resamples shrunk effects from a finite set. Computed in this layer:
+  Bambi's `sample_new_groups=True` gives every unseen label the same effect in a draw.
 
 The M0 example prints the two predictive SDs side by side (observed school 0.32, new
 school 0.74 on the simulated data): that gap is the between-group variance, and it is
@@ -289,6 +292,7 @@ The worked examples do all six steps and write a record:
 | --- | --- | --- |
 | `FormulaError: ... not supported in M0` | Formula outside the verified subset | Not a bug. Use the subset, or write the model by hand: "Outside the verified family" |
 | `FormulaError: response ... outside {0, 1}` / `boolean` / `constant` | Bernoulli response not coded 0/1 | Recode so 1 is the modelled outcome; binomial trials are not supported |
+| `FormulaError: ... is complex-valued` | A complex column (pandas counts it as numeric; a cast would drop the imaginary part) | Take the real part explicitly if that is what you mean |
 | `PriorError: the Bernoulli family has no residual SD` | `sigma` given to `ab.bernoulli` | Drop `sigma`; the priors are on the logit scale |
 | `PriorError: prior for 'sd' must be a positive-support prior` | Wrong class of prior | Location classes for intercept and slopes, scale classes for `sd` and `sigma` |
 | Bernoulli fit: divergences or a group SD posterior stuck at its prior | Separation, or very few groups | Check for a group or predictor that perfectly predicts the outcome; tighten the logit-scale priors deliberately, and say so |

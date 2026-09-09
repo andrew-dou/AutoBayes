@@ -326,3 +326,37 @@ def test_gpu_unavailable_is_error_for_this_family(bmodel):
         pytest.skip("a GPU is visible")
     with pytest.raises(ab.DeviceError, match="does not fall back"):
         bmodel.fit(backend="numpyro", device="gpu", chains=1, draws=5, tune=5)
+
+
+# -- U1-U4 (docs/m1-decision.md, follow-up unit): unseen-label identity, Bernoulli ------
+def test_resample_observed_keeps_distinct_unseen_labels_bernoulli(bmodel, bfit):
+    from tests.test_predict import check_resample_observed_identity, synthetic_posterior
+
+    idata = synthetic_posterior(bmodel, effects=np.linspace(-2.5, 2.5, bmodel.design.J))
+    check_resample_observed_identity(bmodel, idata, "p", expit)
+    new = pd.DataFrame({"x": [0.0, 0.0, 0.0], "g": ["NEW_A", "NEW_B", "NEW_A"]})
+    ds = bmodel.predict(idata, newdata=new, kind="response", new_groups="resample_observed", seed=1)
+    yv = ds["y"].to_numpy()
+    assert set(np.unique(yv)) <= {0, 1} and np.issubdtype(yv.dtype, np.integer)
+    assert abs(yv.mean() - ds["p"].to_numpy().mean()) < 0.02
+    # on the real fit: same label shares, distinct labels are not collapsed
+    ds = bmodel.predict(bfit, newdata=new, kind="mean", new_groups="resample_observed", seed=2)
+    v = ds["p"].to_numpy()
+    assert np.allclose(v[..., 0], v[..., 2]) and np.isclose(v[..., 0], v[..., 1]).mean() < 0.5
+
+
+def test_complex_inputs_are_refused_before_casting(bdata):
+    import warnings
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", np.exceptions.ComplexWarning)     # a cast would raise here
+        with pytest.raises(ab.FormulaError, match="response 'y' is complex"):
+            ab.bernoulli("y ~ x + (1 | g)", bdata.assign(y=bdata.y.astype(complex) + 4j), PRIORS)
+        with pytest.raises(ab.FormulaError, match="response 'y' is complex"):
+            ab.bernoulli("y ~ x + (1 | g)", bdata.assign(y=bdata.y.astype(complex)), PRIORS)
+        with pytest.raises(ab.FormulaError, match="column 'x' is complex"):
+            ab.bernoulli("y ~ x + (1 | g)", bdata.assign(x=bdata.x.astype(complex)), PRIORS)
+    m = ab.bernoulli("y ~ x + (1 | g)", bdata.assign(y=bdata.y.astype(float)), PRIORS)   # real float 0/1 still fine
+    fit = m.fit(backend="pymc", chains=1, draws=10, tune=10, seed=1, cores=1)
+    with pytest.raises(ab.FormulaError, match="newdata column 'x' is complex"):
+        m.predict(fit, newdata=pd.DataFrame({"x": np.array([0.5 + 0j]), "g": ["lvl00"]}), kind="mean")

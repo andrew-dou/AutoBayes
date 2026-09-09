@@ -10,10 +10,12 @@ so ``y`` is 0/1 for the Bernoulli family and carries the outcome's own variabili
 factor that was not in the training data:
 
 - ``"error"`` (default): refuse. The safe default.
-- ``"resample_observed"``: Bambi's ``sample_new_groups=True``, which is brms's default
-  ``sample_new_levels="uncertainty"``: for each posterior draw, reuse the fitted effect
-  of a randomly chosen observed level. This understates between-level variance because
-  it resamples shrunk draws from a finite set of levels.
+- ``"resample_observed"``: brms's default ``sample_new_levels="uncertainty"``: for each
+  posterior draw and each distinct unseen label, reuse the fitted effect of a uniformly
+  chosen observed level (chosen independently per label and per draw; rows sharing a
+  label share the choice). This understates between-level variance because it resamples
+  shrunk draws from a finite set of levels. Computed here rather than through Bambi's
+  ``sample_new_groups=True``, which gives every unseen label the same effect in a draw.
 - ``"population"``: brms's ``sample_new_levels="gaussian"``: for each posterior draw,
   draw a fresh effect from ``Normal(0, sd_group)`` (on the linear-predictor scale, i.e. the
   logit scale for Bernoulli). This is the population distribution the model actually fit
@@ -27,7 +29,7 @@ import xarray as xr
 
 from scipy.special import expit
 
-from autobayes.formula import FormulaError
+from autobayes.formula import FormulaError, reject_complex
 
 _NEW_GROUPS = {"error", "resample_observed", "population"}
 
@@ -42,14 +44,20 @@ def _check_newdata(model, newdata: pd.DataFrame) -> pd.DataFrame:
     if df.isna().any().any():
         raise FormulaError("newdata contains missing values")
     for c in s.predictors:
+        reject_complex(f"newdata column {c!r}", df[c])
         if not pd.api.types.is_numeric_dtype(df[c]):
             raise FormulaError(f"newdata column {c!r} must be numeric")
     df[s.group] = df[s.group].astype(str)
     return df.reset_index(drop=True)
 
 
-def _population_predict(model, idata, df: pd.DataFrame, kind: str, seed) -> xr.Dataset:
-    """Linear predictor by hand from the posterior, drawing new-level effects from Normal(0, sd)."""
+def _predict_by_hand(model, idata, df: pd.DataFrame, kind: str, seed, new_groups: str) -> xr.Dataset:
+    """Linear predictor by hand from the posterior, with one effect per distinct unseen label.
+
+    ``"population"``: a fresh ``Normal(0, sd)`` draw per label and posterior draw.
+    ``"resample_observed"``: the effect of a uniformly chosen observed level per label and
+    posterior draw. In both cases every row with the same label shares that label's effect.
+    """
     post = idata.posterior
     n = model.names
     rng = np.random.default_rng(seed)
@@ -63,7 +71,13 @@ def _population_predict(model, idata, df: pd.DataFrame, kind: str, seed) -> xr.D
     if b is not None:
         mu = mu + np.einsum("cdp,np->cdn", b, X)
     new_levels = sorted(set(df[model.spec.group]) - set(levels))
-    new_effects = {lvl: rng.normal(0.0, 1.0, size=sd.shape) * sd for lvl in new_levels}
+    new_effects = {}
+    for lvl in new_levels:                                      # one effect per label per draw
+        if new_groups == "population":
+            new_effects[lvl] = rng.normal(0.0, 1.0, size=sd.shape) * sd
+        else:                                                   # resample_observed
+            chosen = rng.integers(0, len(levels), size=sd.shape)
+            new_effects[lvl] = np.take_along_axis(u, chosen[..., None], axis=-1)[..., 0]
     for i, lvl in enumerate(df[model.spec.group]):
         if lvl in new_effects:
             mu[..., i] += new_effects[lvl]
@@ -80,7 +94,7 @@ def _population_predict(model, idata, df: pd.DataFrame, kind: str, seed) -> xr.D
         if kind == "response":
             out["y"] = (("chain", "draw", "__obs__"), rng.binomial(1, prob).astype(np.int64))
     ds = xr.Dataset(out, coords={"chain": post["chain"], "draw": post["draw"], "__obs__": np.arange(len(df))})
-    ds.attrs["new_groups"] = "population"
+    ds.attrs["new_groups"] = new_groups
     ds.attrs["new_levels"] = new_levels
     return ds
 
@@ -103,14 +117,11 @@ def predict(model, fit_result, *, newdata: pd.DataFrame | None = None, kind: str
                 "Pass new_groups='population' to draw their effects from Normal(0, sd), or "
                 "new_groups='resample_observed' for brms's default 'uncertainty' behaviour."
             )
-        if new_groups == "population" and unseen:
-            return _population_predict(model, idata, df, kind, seed)
+        if unseen:                                              # "population" or "resample_observed"
+            return _predict_by_hand(model, idata, df, kind, seed, new_groups)
 
     bambi_kind = "response" if kind == "response" else "response_params"
-    out = model.bambi_model.predict(
-        idata, kind=bambi_kind, data=df, inplace=False,
-        sample_new_groups=(new_groups == "resample_observed"), random_seed=seed,
-    )
+    out = model.bambi_model.predict(idata, kind=bambi_kind, data=df, inplace=False, random_seed=seed)
     mean_name = model.names["mean"]
     mu = out.posterior[model.names["linpred"]]
     if model.family == "bernoulli":
