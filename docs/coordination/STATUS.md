@@ -7,6 +7,23 @@ PyMC model, posterior and predictive outputs, CPU path plus explicit JAX/NumPyro
 path. Definition: `IQSS-Research/AUTOBAYES_FIRST_MILESTONE.md`. Design decision and
 acceptance checks: `docs/m0-decision.md`.
 
+## Session checkpoint (2026-09-08, relocated hub)
+
+- Working clone moved out of Dropbox to `/Users/andrewdou/iqss-research/projects/AutoBayes`.
+  Claude session `e5628a7d-e572-4bad-9feb-82ee8361c261` (Fable 5.1) owns this branch now; the
+  old M0 session `local_79bbf46f-...` is historical.
+- `.venv/` repaired in place: the activate scripts and console-script wrappers still pointed
+  at the Dropbox path (`sed` replaced them); `bin/python` is a symlink to the framework
+  Python 3.11 and needed nothing. `.venv/bin/python -c "import autobayes"` resolves to this
+  checkout.
+- Fast suite re-run here: 36 passed, 2 slow deselected (69 s). Run with
+  `PYTENSOR_FLAGS=base_compiledir=<writable dir>` if `~/.pytensor` is not writable in a sandbox.
+- GitHub identity verified: `gh api user` -> andrew-dou, admin on andrew-dou/AutoBayes;
+  git user andrew-dou <andrew.dou0805@gmail.com>. No branch protection on `main`.
+- In progress: (1) skill rewrite around the M0 researcher workflow, (2) one bounded GPU smoke
+  test on GiveMeANode (mission `autobayes-m0-gpu-smoke`, credits $1118 before start),
+  (3) PR + merge under andrew-dou, then cleanup. Each is recorded below as it completes.
+
 ## Checkout
 
 - Clone: `IQSS-Research/projects/AutoBayes` (this file's repository).
