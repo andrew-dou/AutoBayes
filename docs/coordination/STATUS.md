@@ -51,7 +51,7 @@
 
 ## Repository (M1)
 
-- PR: pending.
+- PR: https://github.com/andrew-dou/AutoBayes/pull/3 (branch `m1/bernoulli-varying-intercept` -> `main`, author andrew-dou). Open for independent review; not merged by this session.
 
 ## Milestone
 
