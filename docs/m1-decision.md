@@ -168,3 +168,44 @@ be verified on both backends, for values and gradients, rather than chosen by AP
 - R5. B1 is re-run on both backends with the same prespecified thresholds and the evidence
   regenerated; the old A5 assertion of the deviation is deleted, not relaxed.
 - R6. `describe()` states the likelihood form that is actually sampled.
+
+**Executed failure history (2026-09-09, this stack).** Two zero and two one observations,
+likelihood term only, reference $-80$ at $\eta = 40$, $-600$ at $\eta = 300$, $-2000$ at
+$\pm 1000$, gradient $\sum_i (y_i - \mathrm{expit}(\eta))$:
+
+| Construction | PyTensor value / gradient | JAX value / gradient |
+| --- | --- | --- |
+| Bambi built-in (`p = sigmoid`, eps substitution), as in the PR before repair | $-72.087$ / $0$ at $\eta = 40, 300, \pm 1000, \pm 10^6$ | same |
+| `pm.Bernoulli(logit_p=eta)` | exact / **NaN** at $\eta = 40, 300, 1000, 10^6$ | exact / **NaN** at $\pm 1000, \pm 10^6$ |
+| `CustomDist` with `y*eta - pt.softplus(eta)` | exact / exact everywhere | exact / **NaN** at $\pm 1000, \pm 10^6$ |
+| `CustomDist` with `(x+\lvert x\rvert)/2 + \log1p(e^{-\lvert x\rvert})` written out | exact / exact | exact / **NaN** at $\pm 1000, \pm 10^6$ (PyTensor rewrites it back to `Softplus`) |
+| **`CustomDist` with `y*eta - stable_softplus(eta)`** (Softplus subclass, JAX lowering `jax.nn.softplus`) | exact / exact | exact / exact |
+
+Mechanism, from the installed source: `pytensor/link/jax/dispatch/scalar.py` lowers
+`Softplus` to nested `jnp.where` branches, one of which is `x + exp(-x)`; at $x \le -710$
+that branch overflows and JAX's `where` gradient multiplies its untaken-branch cotangent
+by the overflowed derivative, giving NaN. The C path evaluates only the taken branch. The
+rewrite `log1p(exp(x)) -> softplus(x)` (`pytensor/tensor/rewriting/math.py`) applies to any
+hand-written stable form, so a distinct op is the smallest construction that survives
+lowering. The chosen construction is `autobayes/likelihoods.py`; it is verified on the
+actual `ab.bernoulli` model (priors, centring, non-centred coding unchanged) at
+$\eta \in \{0, \pm 0.5, \pm 12, \pm 40, \pm 300, \pm 1000, \pm 10^6\}$ with both outcomes present,
+values and full gradients, PyTensor and JAX (`tests/test_bernoulli.py::test_extreme_logits_density_and_gradient_both_paths`,
+`test_reviewer_case_two_zeros_two_ones`).
+
+Consequences for the rest of the record: the "known deviation" paragraph above and the old
+A5 are superseded by R1-R6; the `describe()` note now states the sampled likelihood form;
+Bambi's built-in `bernoulli` family is no longer used for this model, Bambi's design
+matrices, priors, centring, group coding, `predict` machinery and `sample_new_groups`
+are. The response-parameter deterministic is now `logit_p` (identity link on the linear
+predictor); `p = expit(logit_p)` is computed by `predict`.
+
+**Open review items, not addressed by this repair (for the coordinator).**
+
+1. `new_groups="resample_observed"` inherits Bambi's `sample_new_groups=True`, which draws
+   one observed level per posterior draw for *all* unseen levels together, so two distinct
+   unseen labels in `newdata` receive the same effect within a draw. `"population"` draws
+   an independent effect per unseen label and is unaffected.
+2. `validate_data` casts the response with `to_numpy(dtype=float)`, so a complex-valued
+   response such as `[0+4j, 1+4j]` passes the 0/1 check after its imaginary part is
+   discarded (NumPy warns). A dtype check before the cast would refuse it.

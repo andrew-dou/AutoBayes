@@ -125,30 +125,75 @@ def test_jax_logp_matches_pytensor(bmodel):
         assert abs(float(jf([point[n] for n in names])) - float(logp(point))) < 1e-8
 
 
-# -- A5 ----------------------------------------------------------------------------------
-def test_extreme_logits_documented_regime(bmodel, bdata):
-    """Exact for |eta| <= 15 and for large negative eta; floored at machine epsilon for
-    large positive eta, where sigmoid(eta) rounds to 1 and Bambi substitutes 1 - eps."""
-    logp = bmodel.pymc_model.compile_logp()
-    dlogp = bmodel.pymc_model.compile_dlogp()
+# -- A5 (replaced by R1/R2 after the review; see docs/m1-decision.md, repair record) --------
+EXTREME = [0.0, 0.5, -0.5, 12.0, -12.0, 40.0, -40.0, 300.0, -300.0, 1000.0, -1000.0, 1e6, -1e6]
+
+
+def _analytic_gradient(model, data, nat):
+    """d log p / d (value variables) from the equations, with the priors of PRIORS."""
+    d = model.design
+    eta = _eta(model, nat)
+    r = data.y.to_numpy() - expit(eta)                      # d loglik / d eta_i, stable
+    a, sd, z = nat["intercept"], nat["sd"], nat["z"]
+    out = {"Intercept": r.sum() - a / 1.5 ** 2,
+           "1|g_sigma_log__": (r * z[d.group_index]).sum() * sd - sd ** 2 + 1.0,   # HalfNormal(1) + Jacobian
+           "1|g_offset": np.array([r[d.group_index == j].sum() * sd - z[j] for j in range(d.J)])}
+    for i, pname in enumerate(model.spec.predictors):
+        out[pname] = (r * d.X_model[:, i]).sum() - nat["b"][i]
+    return out
+
+
+def test_extreme_logits_density_and_gradient_both_paths(bmodel, bdata):
+    """R1/R2: value and gradient equal the stable reference at every logit, PyTensor and JAX."""
+    jax = pytest.importorskip("jax")
+    import jax.numpy as jnp
+    from pymc.sampling.jax import get_jaxified_logp
+
+    pmm = bmodel.pymc_model
+    logp, dlogp = pmm.compile_logp(), pmm.compile_dlogp()
+    names = [v.name for v in pmm.value_vars]
+    jf = get_jaxified_logp(pmm)
+    jgrad = jax.grad(lambda *args: jf(list(args)), argnums=tuple(range(len(names))))
     kw = dict(response="y", predictors=["x"], group="g", priors=PRIORS_DICT, center=True, jacobian=True)
-    z = np.zeros(bmodel.design.J)
-    for a in [-12.0, 12.0, -40.0, -300.0]:
-        nat = dict(intercept=a, b=np.array([0.0]), sd=0.1, z=z)
-        point = bmodel.value_point(**nat)
-        val, grad = float(logp(point)), np.asarray(dlogp(point))
-        assert np.isfinite(val) and np.all(np.isfinite(grad))
-        assert abs(val - reference_logp_bernoulli(_ref_point(nat), bdata, **kw)) < 1e-8, a
-    for a in [40.0, 300.0]:
-        nat = dict(intercept=a, b=np.array([0.0]), sd=0.1, z=z)
-        point = bmodel.value_point(**nat)
-        val, grad = float(logp(point)), np.asarray(dlogp(point))
-        assert np.isfinite(val) and np.all(np.isfinite(grad))
-        exact = reference_logp_bernoulli(_ref_point(nat), bdata, **kw)
-        # the epsilon floor: each y = 0 observation contributes log(eps) = -36.04 instead of -a
-        n_zero = int(np.sum(bdata.y.to_numpy() == 0))
-        assert val - exact > 1.0, (val, exact)
-        assert abs((val - exact) - n_zero * (a - 36.04)) < 0.01 * n_zero + 1.0, (val, exact, n_zero)
+    rng = np.random.default_rng(5)
+    assert set(np.unique(bdata.y)) == {0, 1}
+    for a in EXTREME:
+        for b, sd in [(0.0, 0.1), (0.7, 0.5)]:
+            nat = dict(intercept=a, b=np.array([b]), sd=sd, z=rng.normal(size=bmodel.design.J))
+            point = bmodel.value_point(**nat)
+            ref = reference_logp_bernoulli(_ref_point(nat), bdata, **kw)
+            gref = _analytic_gradient(bmodel, bdata, nat)
+            gref_vec = np.concatenate([np.atleast_1d(gref[n]) for n in names])
+            tol = 1e-8 * max(1.0, abs(ref))
+            v_pt, g_pt = float(logp(point)), np.asarray(dlogp(point), dtype=float)
+            v_jx = float(jf([point[n] for n in names]))
+            g_jx = np.concatenate([np.atleast_1d(np.asarray(g, dtype=float))
+                                   for g in jgrad(*[jnp.asarray(point[n]) for n in names])])
+            assert np.isfinite(v_pt) and np.isfinite(v_jx)
+            assert abs(v_pt - ref) < tol, (a, b, sd, v_pt, ref)
+            assert abs(v_jx - ref) < tol, (a, b, sd, v_jx, ref)
+            assert np.all(np.isfinite(g_pt)) and np.all(np.isfinite(g_jx))
+            assert np.allclose(g_pt, gref_vec, atol=1e-8, rtol=1e-10), (a, b, sd, g_pt, gref_vec)
+            assert np.allclose(g_jx, gref_vec, atol=1e-8, rtol=1e-10), (a, b, sd, g_jx, gref_vec)
+
+
+def test_reviewer_case_two_zeros_two_ones():
+    """The likelihood term alone: -80 at eta = 40 and -600 at eta = 300 (was -72.087 for both)."""
+    df = pd.DataFrame({"y": [0, 1, 0, 1], "g": ["a", "a", "b", "b"]})
+    m = ab.bernoulli("y ~ 1 + (1 | g)", df, PRIORS)
+    import pytensor
+    pmm = m.pymc_model
+    lik_term = pmm.logp(vars=[pmm["y"]], jacobian=False)              # the likelihood term alone
+    lik = pmm.compile_fn(lik_term, inputs=pmm.value_vars, point_fn=True, on_unused_input="ignore")
+    dlik = pmm.compile_fn(pytensor.grad(lik_term, wrt=pmm.value_vars), inputs=pmm.value_vars,
+                          point_fn=True, on_unused_input="ignore")
+    i_a = [v.name for v in pmm.value_vars].index("Intercept")
+    for eta, expected in [(40.0, -80.0), (300.0, -600.0), (-40.0, -80.0), (-300.0, -600.0), (1000.0, -2000.0)]:
+        point = m.value_point(intercept=eta, b=[], sd=1e-12, z=np.zeros(2))
+        assert abs(float(lik(point)) - expected) < 1e-8 * abs(expected)
+        g = [np.asarray(x, dtype=float) for x in dlik(point)]
+        assert all(np.all(np.isfinite(x)) for x in g)
+        assert abs(float(g[i_a]) - (2.0 - 4.0 * expit(eta))) < 1e-8     # d/da sum_i (y_i - expit(eta))
 
 
 # -- A6 ----------------------------------------------------------------------------------
@@ -161,12 +206,14 @@ def test_design_and_probability_from_graph(bmodel, bdata):
     nat = _random_points(bmodel, k=1)[0]
     point = bmodel.value_point(**nat)
     pmm = bmodel.pymc_model
-    p_v, u_v = pmm.replace_rvs_by_values([pmm["p"], pmm["1|g"]])
-    fn = pmm.compile_fn([p_v, u_v], inputs=pmm.value_vars, point_fn=True, on_unused_input="ignore")
-    p_graph, u_graph = (np.asarray(a).ravel() for a in fn(point))
-    assert np.allclose(p_graph, expit(_eta(bmodel, nat)), atol=1e-12)
+    eta_v, u_v = pmm.replace_rvs_by_values([pmm["logit_p"], pmm["1|g"]])
+    fn = pmm.compile_fn([eta_v, u_v], inputs=pmm.value_vars, point_fn=True, on_unused_input="ignore")
+    eta_graph, u_graph = (np.asarray(a).ravel() for a in fn(point))
+    assert np.allclose(eta_graph, _eta(bmodel, nat), atol=1e-12)
+    assert np.allclose(expit(eta_graph), expit(_eta(bmodel, nat)), atol=1e-12)
     assert np.allclose(u_graph, nat["sd"] * nat["z"], atol=1e-12)
     assert "logit link" in bmodel.describe() and "P(y_i = 1) = p_i = expit(eta_i)" in bmodel.describe()
+    assert "softplus" in bmodel.describe() and {v.name for v in pmm.deterministics} == {"1|g", "logit_p"}
     assert {v.name for v in pmm.free_RVs} == {"Intercept", "x", "1|g_sigma", "1|g_offset"}
 
 

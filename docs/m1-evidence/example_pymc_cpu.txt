@@ -28,19 +28,17 @@ Priors (a_c and b on the logit scale)
   sd_clinic ~ HalfNormal(sigma=1)
 
 Likelihood
-  y_i ~ Bernoulli(p_i)
-  Note: Bambi evaluates p_i = sigmoid(eta_i) and replaces an exact 1 by 1 - eps, so for
-  eta_i above about 15 the y = 0 term log(1 - p_i) loses precision and above ~37 it is
-  floored at log(eps) = -36 per observation (negative logits stay exact). With weakly
-  informative logit-scale priors that region carries negligible mass; separation in
-  the data is the case to watch (docs/m1-decision.md).
+  y_i ~ Bernoulli(p_i), sampled as log p(y_i | eta_i) = y_i * eta_i - softplus(eta_i)
+  with a softplus whose value and gradient are exact for every finite eta on both the
+  PyTensor and the JAX path (autobayes/likelihoods.py; Bambi's built-in bernoulli family
+  is not used because its likelihood is floored at machine epsilon for |eta| > ~37).
 
 PyMC variables sampled (value space)
   Intercept                a_c
   x                        b_x
   1|clinic_sigma_log__     log(sd_clinic)
   1|clinic_offset          z
-Deterministic: 1|clinic = u, p = expit(linear predictor)
+Deterministic: 1|clinic = u, logit_p = linear predictor; p = expit(logit_p) is computed by predict()
 
 AutoBayes fit report
   backend          : pymc
@@ -50,24 +48,24 @@ AutoBayes fit report
   chain method     : n/a
   chains/tune/draws: 4/1000/2000, target_accept 0.9
   seed             : 7
-  wall time        : 3.7 s (includes compilation)
+  wall time        : 3.3 s (includes compilation)
 
 Diagnostic panel (thresholds from reference/diagnostics.md)
   divergences            0 of 8000 (0.000%)           pass
   max R-hat              1.0014                       pass
-  min bulk ESS           2672                         pass
-  min tail ESS           4041                         pass
-  min E-BFMI             0.710                        pass
+  min bulk ESS           2467                         pass
+  min tail ESS           3693                         pass
+  min E-BFMI             0.715                        pass
   tree-depth saturation  0.00%                        pass
   overall: pass
 
                  mean     sd  hdi_3%  hdi_97%  mcse_mean  mcse_sd  ess_bulk  ess_tail  r_hat
-Intercept      -0.453  0.182  -0.792   -0.105      0.003    0.002    3372.0    4079.0    1.0
-x               0.636  0.098   0.452    0.822      0.001    0.001   10577.0    6227.0    1.0
-1|clinic_sigma  0.836  0.168   0.527    1.153      0.003    0.002    2672.0    4041.0    1.0
+Intercept      -0.449  0.181  -0.789   -0.102      0.003    0.002    3708.0    4478.0    1.0
+x               0.635  0.099   0.452    0.820      0.001    0.001   10533.0    6371.0    1.0
+1|clinic_sigma  0.834  0.170   0.523    1.150      0.003    0.002    2467.0    3693.0    1.0
 truth: Intercept -0.5, x 0.8, sd 0.7   (one recovery, not calibration)
 
 in-sample: mean predicted probability 0.430, mean of 0/1 predictive draws 0.430, observed rate 0.430
-P(y = 1) at x = 0: observed clinic c00 mean 0.273 (SD 0.075); a new clinic (population draw) mean 0.401 (SD 0.179)
+P(y = 1) at x = 0: observed clinic c00 mean 0.274 (SD 0.076); a new clinic (population draw) mean 0.402 (SD 0.179)
 the wider SD for the new clinic is the between-clinic variance on the probability scale
 fit record written to docs/m1-evidence/example_pymc_cpu_record.json

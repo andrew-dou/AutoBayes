@@ -112,10 +112,14 @@ def predict(model, fit_result, *, newdata: pd.DataFrame | None = None, kind: str
         sample_new_groups=(new_groups == "resample_observed"), random_seed=seed,
     )
     mean_name = model.names["mean"]
-    mu = out.posterior[mean_name]
+    mu = out.posterior[model.names["linpred"]]
+    if model.family == "bernoulli":
+        mu = expit(mu)                                          # logit_p -> p = P(y = 1)
     data = {mean_name: mu.rename({mu.dims[-1]: "__obs__"}) if mu.dims[-1] != "__obs__" else mu}
     if kind == "response":
         y = out.posterior_predictive[model.names["y"]]
+        if model.family == "bernoulli":
+            y = y.astype(np.int64)
         data["y"] = y.rename({y.dims[-1]: "__obs__"}) if y.dims[-1] != "__obs__" else y
     ds = xr.Dataset({k: v.drop_vars([c for c in v.coords if c not in ("chain", "draw")]) for k, v in data.items()})
     ds = ds.assign_coords(__obs__=np.arange(ds.sizes["__obs__"]))

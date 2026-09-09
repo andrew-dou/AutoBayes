@@ -1,57 +1,60 @@
 # AutoBayes status
 
-## M1 checkpoint (2026-09-09): Bernoulli varying intercept, logit link
+## M1 checkpoint (2026-09-09, after review repair): Bernoulli varying intercept, logit link
 
 - Branch `m1/bernoulli-varying-intercept` from `main` at `925554b`; session
-  `e5628a7d-e572-4bad-9feb-82ee8361c261`. Decision record written and committed before the
-  implementation: `docs/m1-decision.md` (target density, Bambi/brms semantics checked against
-  the installed 0.17.2 source and the brms/Bambi reference pages, acceptance checks A1-A8,
-  B1, C1-C3, kill criterion).
-- Scope delivered: `ab.bernoulli("y ~ x + (1 | group)", df, priors)` for a strictly 0/1
-  numeric response, logit link, logit-scale priors on intercept and slopes, group SD prior,
-  no `sigma` (giving one is an error; omitting it for Gaussian is an error). Same formula
-  subset, centring and non-centred effects as M0. `predict(kind="mean")` returns `p`
-  (probabilities); `kind="response"` adds 0/1 draws `y`; new-group semantics as in M0 with
-  the population draw on the logit scale. Fit records carry family and link;
-  `compare_records` refuses different families. Gaussian behaviour unchanged.
-- Changed files: `autobayes/{priors,formula,model,predict,session,__init__}.py`,
-  `tests/{reference_logp,test_bernoulli,test_sampling,test_formula}.py`,
-  `examples/m1_bernoulli_varying_intercept.py`, `SKILL.md`, `README.md`,
-  `docs/m1-decision.md`, `docs/m1-evidence/`, `pyproject.toml` (version 0.1.0).
-- Tests executed (this machine, Apple M1 Pro, CPU): fast suite **53 passed, 2 deselected**
-  (M0's 40 plus 13 for M1); slow suite **3 passed** (M0 B1, B2 and the M1 recovery).
-  M1 checks: A1/A2 log density vs an independent NumPy/SciPy reference (`log_expit`
-  likelihood, centred and uncentred, one and two predictors, intercept-only) to 1e-8;
-  A3 gradient vs central differences; A4 JAX-compiled density vs PyTensor; A5 extreme
-  logits; A6 design and `p` from the graph; A7 invalid inputs and unsupported constructs;
-  A8 prediction shape, range, meaning and new-group semantics; C1 GPU refusal.
-- B1 sampling (`docs/m1-evidence/B1_recovery.json`; n = 600, J = 30, truth a = -0.5,
-  b = 0.8, sd = 0.7, 4 x (1000 + 2000), seed 7): both backends 0 divergences, max R-hat
-  1.0014 (pymc) / 1.0025 (numpyro), min bulk ESS 2672 / 3344, min tail ESS 4041 / 4688,
-  E-BFMI 0.71 / 0.69; truth inside every 94 % HDI (x: posterior mean 0.636, HDI
-  [0.45, 0.82], truth 0.8 near the upper edge in this one simulated data set); backend
-  means within 4 combined MCSE (largest ratio 0.51, on x). One recovery on one simulated
-  data set; not a calibration claim.
-- Example outputs: `docs/m1-evidence/example_pymc_cpu.txt`, `example_numpyro_cpu.txt`
-  (records `*_record.json`, agreement block `agree: True`), `example_numpyro_gpu_attempt.txt`
-  (the refusal on this machine).
-- **Limitation, measured and documented** (`docs/m1-decision.md`, `describe()`): Bambi
-  computes `p = sigmoid(eta)` and substitutes `1 - eps` when it rounds to 1, so the sampled
-  density equals the exact Bernoulli-logit density (to 1e-8) for eta below about 15 and for
-  all negative eta, loses precision in the y = 0 term above that, and is floored at
-  log(eps) = -36.04 per zero outcome above eta of about 37 (test A5 pins this). Bambi's
-  likelihood registry does not accept `logit_p`. Negligible under weakly informative
-  logit-scale priors; separation in real data is the case to watch, and the recorded
-  fallback is a hand-built `pm.Bernoulli(logit_p=...)` on Bambi's design matrices.
-- **GPU execution for this family: pending.** Same code path as M0; not run on a GPU in
-  this task (no rented node, no cluster job). The M0 H100 evidence does not transfer.
-- Not done: no PDF write-up for M1 (the decision record and STATUS carry the evidence);
-  no binomial trials, other links, varying slopes or generic family layer.
-- PR: opened for the coordinator's independent review, not merged (recorded below).
+  `e5628a7d-e572-4bad-9feb-82ee8361c261`. Decision record `docs/m1-decision.md` (target,
+  semantics, acceptance checks A1-A8/B1/C1-C3), plus a **repair record** with acceptance
+  criteria R1-R6 written before the fix, the executed failure history, and open review items.
+- **Review finding (coordinator, reproduced here): merge-blocking.** The PR as first opened
+  used Bambi's built-in `bernoulli` family, whose likelihood floors `p` at machine epsilon:
+  with two zero and two one observations the likelihood was -72.087 instead of -80 at
+  eta = 40 and still -72.087 instead of -600 at eta = 300 (same floor at eta = -1000), with
+  the likelihood's gradient contribution vanishing. The earlier test A5 asserted that
+  deviation; the "negligible / watch for separation" framing is withdrawn.
+- **Repair.** `autobayes/likelihoods.py`: the likelihood is `y*eta - stable_softplus(eta)` in a
+  `pm.CustomDist` inside a Bambi custom family (identity link on `logit_p`); Bambi still
+  supplies design matrices, priors, centring, non-centred group coding and the predict
+  machinery. `stable_softplus` is a subclass of PyTensor's `Softplus` (same C code and
+  gradient) with a JAX lowering to `jax.nn.softplus`. Why not the obvious alternatives,
+  all reproduced on this stack: `pm.Bernoulli(logit_p=...)` has NaN PyTensor gradients at
+  eta >= 40 and NaN JAX gradients at |eta| >= 1000; `pt.softplus` is right on the PyTensor
+  path but PyTensor's JAX lowering is a nested `jnp.where` whose untaken branch overflows,
+  giving NaN gradients at |eta| >= 1000; any hand-written stable `log1p(exp(.))` form is
+  rewritten back into `Softplus` by PyTensor before lowering. Table in the decision record.
+- Tests after the repair (fast suite **54 passed, 3 deselected**; slow suite **3 passed**):
+  the old A5 assertion deleted; new `test_extreme_logits_density_and_gradient_both_paths`
+  (values and full gradients vs the stable reference and analytic gradient at eta in
+  {0, +-0.5, +-12, +-40, +-300, +-1000, +-1e6}, two slope/SD settings, both outcomes
+  present, PyTensor `compile_logp`/`compile_dlogp` and `get_jaxified_logp`/`jax.grad`) and
+  `test_reviewer_case_two_zeros_two_ones` (likelihood term -80 / -600 / -2000, gradient
+  2 - 4 expit(eta)). A1-A4, A6-A8 unchanged and passing; Gaussian suite untouched;
+  `describe()` now states the sampled likelihood form (`logit_p` deterministic; `p` is
+  computed by `predict`).
+- B1 re-run after the repair (`docs/m1-evidence/B1_recovery.json`, same prespecified
+  thresholds, n = 600, J = 30, 4 x (1000 + 2000), seed 7): pymc 0 divergences, max R-hat
+  1.0014, min bulk ESS 2467, min tail ESS 3693, E-BFMI 0.715; numpyro 0 divergences, R-hat
+  1.0016, bulk ESS 3107, tail ESS 4223, E-BFMI 0.729; truth inside every 94 % HDI (x:
+  mean 0.635, HDI [0.45, 0.82], truth 0.8 near the upper edge in this one data set);
+  backends agree within 4 combined MCSE (largest ratio 0.08). Posterior means moved by less
+  than 0.005 relative to the pre-repair run, as expected for data whose logits stay
+  moderate; the repair matters where the old likelihood was wrong, not here. Examples
+  re-run on both backends (`docs/m1-evidence/example_*_cpu.txt`, records, `agree: True`);
+  pre-repair outputs kept under `docs/m1-evidence/before-repair/` for the history.
+- **GPU execution for this family: pending** (same code path; the JAX lowering of the new
+  op is verified on the CPU JAX path only, not on a GPU). No rented node or cluster job.
+- **Open review items, not addressed (for the coordinator):** (1) `new_groups=
+  "resample_observed"` inherits Bambi's behaviour of drawing one observed level per
+  posterior draw for all unseen labels together, so distinct unseen labels share an effect
+  within a draw; `"population"` is unaffected. (2) A complex-valued response such as
+  `[0+4j, 1+4j]` passes the 0/1 validation after the imaginary part is discarded by the
+  float cast; a dtype check before the cast would refuse it.
+- Not done: no PDF write-up for M1; no binomial trials, other links, varying slopes or
+  generic family layer; no merge, worktree cleanup, paid compute or Firecrawl.
 
 ## Repository (M1)
 
-- PR: https://github.com/andrew-dou/AutoBayes/pull/3 (branch `m1/bernoulli-varying-intercept` -> `main`, author andrew-dou). Open for independent review; not merged by this session.
+- PR: https://github.com/andrew-dou/AutoBayes/pull/3 (branch `m1/bernoulli-varying-intercept` -> `main`, author andrew-dou). Repair pushed to the same PR; open for independent review; not merged by this session.
 
 ## Milestone
 

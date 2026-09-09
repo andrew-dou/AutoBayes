@@ -39,9 +39,9 @@ class Design:
 
 
 _FAMILIES = {
-    # family: (Bambi parent parameter, link name)
+    # family: (Bambi parent parameter = the deterministic in the graph, link name)
     "gaussian": ("mu", "identity"),
-    "bernoulli": ("p", "logit"),
+    "bernoulli": ("logit_p", "logit"),
 }
 
 
@@ -77,8 +77,14 @@ class Model:
             df[self.spec.response] = df[self.spec.response].astype(int)
         self.data = df.reset_index(drop=True)
 
+        if family == "bernoulli":
+            from autobayes.likelihoods import bernoulli_logit_family
+
+            bambi_family = bernoulli_logit_family()   # stable likelihood; see likelihoods.py
+        else:
+            bambi_family = family
         self.bambi_model = bmb.Model(
-            self.spec.formula, self.data, family=family,
+            self.spec.formula, self.data, family=bambi_family,
             priors=priors.to_bambi(self.spec.predictors, self.spec.group, family),
             noncentered=True, center_predictors=self.center_predictors,
         )
@@ -130,17 +136,18 @@ class Model:
 
     @property
     def names(self) -> dict[str, str]:
-        """PyMC variable names for each role in the model. ``"mean"`` is the likelihood's
-        parent parameter: ``mu`` (Gaussian) or ``p`` (Bernoulli). ``"sigma"`` exists only
-        for the Gaussian family."""
+        """PyMC variable names for each role in the model. ``"linpred"`` is the deterministic
+        Bambi builds for the likelihood's parent parameter (``mu`` for Gaussian, ``logit_p``
+        for Bernoulli); ``"mean"`` is the name ``predict`` gives the expected response (``mu``
+        or ``p``). ``"sigma"`` exists only for the Gaussian family."""
         g = self.spec.group
-        mean = _FAMILIES[self.family][0]
         out = {
             "intercept": "Intercept",
             "sd": f"1|{g}_sigma",
             "offset": f"1|{g}_offset",
             "group_effect": f"1|{g}",
-            "mean": mean,
+            "linpred": _FAMILIES[self.family][0],
+            "mean": "mu" if self.family == "gaussian" else "p",
             "y": self.spec.response,
             **{f"b:{p}": p for p in self.spec.predictors},
         }
@@ -224,12 +231,10 @@ class Model:
             lines += [f"  sigma ~ {pr.sigma}", "", "Likelihood", "  y_i ~ Normal(mu_i, sigma)"]
         else:
             lines += [
-                "", "Likelihood", "  y_i ~ Bernoulli(p_i)",
-                "  Note: Bambi evaluates p_i = sigmoid(eta_i) and replaces an exact 1 by 1 - eps, so for",
-                "  eta_i above about 15 the y = 0 term log(1 - p_i) loses precision and above ~37 it is",
-                "  floored at log(eps) = -36 per observation (negative logits stay exact). With weakly",
-                "  informative logit-scale priors that region carries negligible mass; separation in",
-                "  the data is the case to watch (docs/m1-decision.md).",
+                "", "Likelihood", "  y_i ~ Bernoulli(p_i), sampled as log p(y_i | eta_i) = y_i * eta_i - softplus(eta_i)",
+                "  with a softplus whose value and gradient are exact for every finite eta on both the",
+                "  PyTensor and the JAX path (autobayes/likelihoods.py; Bambi's built-in bernoulli family",
+                "  is not used because its likelihood is floored at machine epsilon for |eta| > ~37).",
             ]
         lines += ["", "PyMC variables sampled (value space)"]
         n = self.names
@@ -240,8 +245,8 @@ class Model:
             roles[f"{n['sigma']}_log__"] = "log(sigma)"
         for v in self.pymc_model.value_vars:
             lines.append(f"  {v.name:<24} {roles.get(v.name, f'b_{v.name}')}")
-        lines.append(f"Deterministic: {n['group_effect']} = u, {n['mean']} = "
-                     + ("linear predictor" if gaussian else "expit(linear predictor)"))
+        lines.append(f"Deterministic: {n['group_effect']} = u, {n['linpred']} = linear predictor"
+                     + ("" if gaussian else "; p = expit(logit_p) is computed by predict()"))
         return "\n".join(lines)
 
     # -- convenience -------------------------------------------------------------------

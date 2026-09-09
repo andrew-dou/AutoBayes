@@ -38,11 +38,11 @@ for two outcome families:
   `docs/m0-decision.md`.
 - **Bernoulli, logit link (M1)**: `ab.bernoulli(...)` for a strictly 0/1 response, priors
   on the logit-scale intercept, slopes and the group SD, no `sigma`. Log density and
-  gradient against an independent reference, the JAX compilation, the epsilon regime at
-  extreme logits, prediction meaning (probability versus 0/1 draw), and a simulated
-  recovery on both backends. GPU execution for this family is **pending** (the same code
-  path, not yet run on a GPU). Evidence `docs/m1-evidence/`, checks in
-  `docs/m1-decision.md`.
+  gradient against an independent reference at moderate and extreme logits (to 1e6,
+  both signs, both outcomes) on both the PyTensor and the JAX path, prediction meaning
+  (probability versus 0/1 draw), and a simulated recovery on both backends. GPU
+  execution for this family is **pending** (the same code path, not yet run on a GPU).
+  Evidence `docs/m1-evidence/`, checks and the repair record in `docs/m1-decision.md`.
 
 **What is not verified.** Every other formula and family (binomial trials, other links,
 varying slopes, nested or crossed groups, categorical predictors). The library refuses
@@ -139,13 +139,16 @@ variable per slope, `sigma_log__` (Gaussian only), `1|school_sigma_log__` (the g
 SD, log scale) and `1|school_offset` (the J standard-normal offsets of the non-centred
 parameterisation). `model.pymc_model` is the graph itself;
 `pytensor.dprint(model.pymc_model["mu"])` (or `["p"]`) shows the linear predictor if
-`describe()` is not enough. For the Bernoulli family `describe()` also states the
-one place the sampled density is not the textbook one: Bambi computes
-`p = sigmoid(eta)` and substitutes `1 - eps` when it rounds to 1, so the `y = 0` term
-loses precision above `eta` of about 15 and is floored above about 37. Negative logits
-are exact. With logit-scale priors like the ones above that region has negligible
-mass; the case to watch is separation in the data (a predictor or group that
-perfectly predicts the outcome), where the posterior wants to go there.
+`describe()` is not enough. For the Bernoulli family the likelihood is written by hand
+as `y * eta - softplus(eta)` with a softplus whose value and gradient are exact for
+every finite logit on both the PyTensor and the JAX path (`autobayes/likelihoods.py`).
+Bambi's built-in `bernoulli` family is not used for the likelihood because it floors
+`p` at machine epsilon: at `eta = 40` it returns -72.1 for two zero and two one
+observations where the density is -80, and the gradient vanishes. The design
+matrices, priors, centring, group coding and prediction machinery are still Bambi's.
+Separation in the data (a predictor or group that perfectly predicts the outcome)
+is still a modelling problem: the likelihood is now right there, and the posterior is
+then governed by the logit-scale priors, which should be chosen and stated deliberately.
 
 ### 3. Fit
 
@@ -289,6 +292,7 @@ The worked examples do all six steps and write a record:
 | `PriorError: the Bernoulli family has no residual SD` | `sigma` given to `ab.bernoulli` | Drop `sigma`; the priors are on the logit scale |
 | `PriorError: prior for 'sd' must be a positive-support prior` | Wrong class of prior | Location classes for intercept and slopes, scale classes for `sd` and `sigma` |
 | Bernoulli fit: divergences or a group SD posterior stuck at its prior | Separation, or very few groups | Check for a group or predictor that perfectly predicts the outcome; tighten the logit-scale priors deliberately, and say so |
+| A hand-written PyMC logistic likelihood gives NaN gradients at large logits | `pm.Bernoulli(logit_p=...)` (PyTensor path) or `pt.softplus` (JAX path) branch on the untaken side | Use `autobayes.likelihoods.stable_softplus`, or verify values and gradients on both paths at logits up to 1e6 before trusting any form |
 | `DeviceError: ... JAX sees no GPU` | No CUDA jaxlib, or no GPU on this machine | Check `jax.devices()`. On a GPU host install `"jax[cuda12]"`; else `device="cpu"`. Do not "fix" this by catching it |
 | `DeviceError: backend='pymc' runs ... CPU only` | GPU asked of the PyMC sampler | `backend="numpyro"` |
 | report note: chains sequential | JAX initialised before autobayes import | Reorder imports; posterior unaffected |

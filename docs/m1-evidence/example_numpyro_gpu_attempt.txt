@@ -28,19 +28,17 @@ Priors (a_c and b on the logit scale)
   sd_clinic ~ HalfNormal(sigma=1)
 
 Likelihood
-  y_i ~ Bernoulli(p_i)
-  Note: Bambi evaluates p_i = sigmoid(eta_i) and replaces an exact 1 by 1 - eps, so for
-  eta_i above about 15 the y = 0 term log(1 - p_i) loses precision and above ~37 it is
-  floored at log(eps) = -36 per observation (negative logits stay exact). With weakly
-  informative logit-scale priors that region carries negligible mass; separation in
-  the data is the case to watch (docs/m1-decision.md).
+  y_i ~ Bernoulli(p_i), sampled as log p(y_i | eta_i) = y_i * eta_i - softplus(eta_i)
+  with a softplus whose value and gradient are exact for every finite eta on both the
+  PyTensor and the JAX path (autobayes/likelihoods.py; Bambi's built-in bernoulli family
+  is not used because its likelihood is floored at machine epsilon for |eta| > ~37).
 
 PyMC variables sampled (value space)
   Intercept                a_c
   x                        b_x
   1|clinic_sigma_log__     log(sd_clinic)
   1|clinic_offset          z
-Deterministic: 1|clinic = u, p = expit(linear predictor)
+Deterministic: 1|clinic = u, logit_p = linear predictor; p = expit(logit_p) is computed by predict()
 
 Traceback (most recent call last):
   File "/Users/andrewdou/iqss-research/projects/AutoBayes/examples/m1_bernoulli_varying_intercept.py", line 101, in <module>
@@ -48,7 +46,7 @@ Traceback (most recent call last):
   File "/Users/andrewdou/iqss-research/projects/AutoBayes/examples/m1_bernoulli_varying_intercept.py", line 66, in main
     fit = model.fit(backend=args.backend, device=args.device, chains=args.chains,
           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/Users/andrewdou/iqss-research/projects/AutoBayes/autobayes/model.py", line 251, in fit
+  File "/Users/andrewdou/iqss-research/projects/AutoBayes/autobayes/model.py", line 256, in fit
     return fit(self, **kwargs)
            ^^^^^^^^^^^^^^^^^^^
   File "/Users/andrewdou/iqss-research/projects/AutoBayes/autobayes/inference.py", line 134, in fit

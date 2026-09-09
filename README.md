@@ -118,8 +118,9 @@ draws = bmodel.predict(bfit, newdata=new_df, kind="response", new_groups="popula
 `SKILL.md` is the researcher workflow for these families, step by step with the checks,
 failure recovery and the session handoff. What Bambi supplies and what this layer adds,
 with the reason for each addition, is in `docs/m0-decision.md` (Gaussian) and
-`docs/m1-decision.md` (Bernoulli, including the one measured deviation of Bambi's
-likelihood from the textbook density at extreme logits); the acceptance checks and their
+`docs/m1-decision.md` (Bernoulli, including why its likelihood is written by hand: Bambi's
+built-in one is floored at machine epsilon for large logits, and the obvious PyMC and
+PyTensor alternatives have NaN gradients on one path or the other); the acceptance checks and their
 evidence are in those records and `docs/m0-evidence/`, `docs/m1-evidence/`.
 `docs/coordination/STATUS.md` is the live milestone status. GPU execution has been run
 once on an H100 for the Gaussian family and matched to the CPU posterior
