@@ -1,6 +1,6 @@
 {
  "pymc": {
-  "report": "AutoBayes fit report\n  backend          : pymc\n  device requested : cpu\n  device actual    : cpu (platform cpu)\n  dtype            : float64\n  chain method     : n/a\n  chains/tune/draws: 4/1000/2500, target_accept 0.9\n  wall time        : 5.2 s (includes compilation)",
+  "report": "AutoBayes fit report\n  backend          : pymc\n  device requested : cpu\n  device actual    : cpu (platform cpu)\n  dtype            : float64\n  chain method     : n/a\n  chains/tune/draws: 4/1000/2500, target_accept 0.9\n  wall time        : 4.2 s (includes compilation)",
   "panel": {
    "divergences": 0.0,
    "divergence_fraction": 0.0,
@@ -71,7 +71,7 @@
   ]
  },
  "numpyro": {
-  "report": "AutoBayes fit report\n  backend          : numpyro\n  device requested : cpu\n  device actual    : cpu:cpu(id=0) (platform cpu)\n  dtype            : float64\n  chain method     : parallel\n  chains/tune/draws: 4/1000/2500, target_accept 0.9\n  wall time        : 3.5 s (includes compilation)",
+  "report": "AutoBayes fit report\n  backend          : numpyro\n  device requested : cpu\n  device actual    : cpu:cpu(id=0) (platform cpu)\n  dtype            : float64\n  chain method     : parallel\n  chains/tune/draws: 4/1000/2500, target_accept 0.9\n  wall time        : 3.8 s (includes compilation)",
   "panel": {
    "divergences": 0.0,
    "divergence_fraction": 0.0,

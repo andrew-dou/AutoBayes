@@ -115,12 +115,15 @@ def test_design_and_group_coding(model, data):
     # mu from the PyMC graph at a point
     nat = _random_points(model, k=1)[0]
     point = model.value_point(**nat)
-    mu_fn = model.pymc_model.compile_fn(model.pymc_model["mu"], point_fn=True)
-    mu_graph = np.asarray(mu_fn(point)).ravel()
+    pmm = model.pymc_model
+    # Deterministics are graphs of the RVs; evaluate them as functions of the value
+    # variables (what the sampler moves) by substituting RVs first.
+    mu_v, u_v = pmm.replace_rvs_by_values([pmm["mu"], pmm["1|g"]])
+    fn = pmm.compile_fn([mu_v, u_v], inputs=pmm.value_vars, point_fn=True, on_unused_input="ignore")
+    mu_graph, u_graph = (np.asarray(a).ravel() for a in fn(point))
     mu_hand = nat["intercept"] + d.X_model @ nat["b"] + nat["sd"] * nat["z"][d.group_index]
     assert np.allclose(mu_graph, mu_hand, atol=1e-12)
-    u_fn = model.pymc_model.compile_fn(model.pymc_model["1|g"], point_fn=True)
-    assert np.allclose(np.asarray(u_fn(point)).ravel(), nat["sd"] * nat["z"], atol=1e-12)
+    assert np.allclose(u_graph, nat["sd"] * nat["z"], atol=1e-12)
 
 
 def test_hessian_is_analytic_precision(model, data):
@@ -133,9 +136,11 @@ def test_hessian_is_analytic_precision(model, data):
     mean, cov, P = conditional_gaussian_posterior(
         data, response="y", predictors=["x"], group="g", center=True, sigma=sigma, sd=sd,
         prior_intercept={"mu": 0.0, "sigma": 5.0}, prior_b={"x": {"mu": 0.0, "sigma": 2.0}})
+    # PyMC convention: compile_d2logp returns the *negative* Hessian of the log density
+    # (pymc.pytensorf.hessian has negate_output=True), i.e. the precision matrix.
     d2 = fixed.compile_d2logp()
     point = {"Intercept": np.asarray(0.7), "x": np.asarray(0.2), "1|g_offset": np.zeros(model.design.J)}
-    H = np.asarray(d2(point))
+    negH = np.asarray(d2(point))
     # order in fixed.value_vars may differ from [a, b, z]; map it
     order = []
     for n in names:
@@ -143,7 +148,10 @@ def test_hessian_is_analytic_precision(model, data):
         elif n == "x": order.append([1])
         else: order.append(list(range(2, 2 + model.design.J)))
     idx = np.concatenate(order)
-    assert np.allclose(H, -P[np.ix_(idx, idx)], atol=1e-8)
+    assert np.allclose(negH, P[np.ix_(idx, idx)], atol=1e-8)
+    # and it is constant in the linear parameters (a Gaussian), so any point gives the same
+    point2 = {"Intercept": np.asarray(-3.0), "x": np.asarray(5.0), "1|g_offset": np.ones(model.design.J)}
+    assert np.allclose(np.asarray(d2(point2)), negH, atol=1e-8)
     # and the maximiser of the log density is the exact posterior mean
     from scipy.optimize import minimize
     logp = fixed.compile_logp()

@@ -53,15 +53,23 @@ acceptance checks: `docs/m0-decision.md`.
 
 ## In progress
 
-- An order-dependent failure of two fast tests (`test_design_and_group_coding`,
-  `test_hessian_is_analytic_precision`) when the whole suite runs in one process; both
-  pass in isolation and after either backend's fit. Being bisected.
+- Evidence write-up (LaTeX -> PDF) for review.
 
 ## Failures
 
 - A4 first failed with the sign flipped: PyMC 5.28.5's `get_jaxified_logp(model,
   negative_logp=...)` flag is named backwards (default `True` returns the log density;
   `False` negates it). Verified in source; test now uses the default. No library change.
+- A5/A6 tests were wrong on first run (they had never executed: the first run stopped at
+  A4). A6: a deterministic must have its RVs replaced by value variables before
+  compiling (`model.replace_rvs_by_values`), and inputs the output does not use need
+  `on_unused_input="ignore"`. A5: `compile_d2logp` returns the *negative* Hessian
+  (`pymc.pytensorf.hessian(negate_output=True)`), i.e. the precision matrix; the test
+  now checks that against the closed-form precision at two points. Model unchanged.
+- B2 at 4x1000 draws: R-hat 1.02 / bulk ESS 350 on the intercept on both backends.
+  Lengthened to 2500 draws per chain; passes. Thresholds unchanged.
+- B2 agreement check first used `az.summary`'s rounded MCSE (0.000 -> zero tolerance);
+  now `round_to="none"`.
 
 ## Remaining checks
 
