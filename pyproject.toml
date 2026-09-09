@@ -1,0 +1,32 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "autobayes"
+version = "0.0.1"
+description = "brms-like Bayesian hierarchical models on PyMC with a JAX/NumPyro device path (milestone M0)"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+dependencies = [
+  "pymc>=5.28,<6",
+  "bambi==0.17.2",
+  "arviz>=0.22,<1",
+  "numpy",
+  "pandas",
+  "scipy",
+  "xarray",
+]
+
+[project.optional-dependencies]
+jax = ["jax", "numpyro"]
+dev = ["pytest"]
+
+[tool.setuptools]
+packages = ["autobayes"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = ["slow: sampling runs that take more than a few seconds"]
+filterwarnings = ["ignore::UserWarning", "ignore::FutureWarning", "ignore::DeprecationWarning"]

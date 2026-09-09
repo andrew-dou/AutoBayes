@@ -1,0 +1,49 @@
+AutoBayes M0 model
+  formula   : y ~ x + (1 | school)
+  family    : gaussian, identity link
+  data      : n = 200 observations, J = 20 levels of school
+  levels    : 0=s00, 1=s01, 2=s02, 3=s03, 4=s04, 5=s05, 6=s06, 7=s07, 8=s08, 9=s09, 10=s10, 11=s11, 12=s12, 13=s13, 14=s14, 15=s15, 16=s16, 17=s17, 18=s18, 19=s19
+
+Linear predictor
+  mu_i = a_c + (x_x - mean(x_x)) * b_x + u[school_i]
+  Predictors are centred at their sample means (center_predictors=True, as in
+  brms and Bambi). a_c is the expected response at the predictor means; the
+  prior on the intercept applies to a_c. The posterior reports the raw-scale
+  intercept a = a_c - sum_p mean(x_p) * b_p, computed after sampling.
+
+Group effects (non-centred)
+  u[j] = sd_school * z[j],  z[j] ~ Normal(0, 1),  j = 0..19
+
+Priors
+  a_c ~ Normal(mu=0, sigma=5)
+  b_x ~ Normal(mu=0, sigma=2)
+  sd_school ~ HalfNormal(sigma=1)
+  sigma ~ HalfNormal(sigma=1)
+
+Likelihood
+  y_i ~ Normal(mu_i, sigma)
+
+PyMC variables sampled (value space)
+  sigma_log__              log(sigma)
+  Intercept                a_c
+  x                        b_x
+  1|school_sigma_log__     log(sd_school)
+  1|school_offset          z
+Deterministic: 1|school = u, mu = linear predictor
+
+PyMC model: <pymc.model.core.Model object at 0x156bb1790>
+Traceback (most recent call last):
+  File "/Users/andrewdou/Ebanks Research Dropbox/Andrew Dou/IQSS-Research/projects/AutoBayes/examples/m0_varying_intercept.py", line 75, in <module>
+    main()
+  File "/Users/andrewdou/Ebanks Research Dropbox/Andrew Dou/IQSS-Research/projects/AutoBayes/examples/m0_varying_intercept.py", line 55, in main
+    fit = model.fit(backend=args.backend, device=args.device, chains=args.chains,
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/andrewdou/Ebanks Research Dropbox/Andrew Dou/IQSS-Research/projects/AutoBayes/autobayes/model.py", line 203, in fit
+    return fit(self, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^
+  File "/Users/andrewdou/Ebanks Research Dropbox/Andrew Dou/IQSS-Research/projects/AutoBayes/autobayes/inference.py", line 130, in fit
+    jax_device, default_method = resolve_jax_device(device, chains, notes)
+                                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/andrewdou/Ebanks Research Dropbox/Andrew Dou/IQSS-Research/projects/AutoBayes/autobayes/inference.py", line 78, in resolve_jax_device
+    raise DeviceError(
+autobayes.inference.DeviceError: device='gpu' requested for backend='numpyro', but JAX sees no GPU. Visible devices: cpu:cpu(id=0). Install a CUDA-enabled jaxlib on a machine with an NVIDIA GPU, or pass device='cpu'. AutoBayes does not fall back to CPU silently.

@@ -1,0 +1,116 @@
+{
+ "autobayes_version": "0.0.1",
+ "model": {
+  "formula": "y ~ x + (1 | school)",
+  "family": "gaussian",
+  "n": 200,
+  "J": 20,
+  "group": "school",
+  "center_predictors": true,
+  "noncentered": true,
+  "priors": {
+   "intercept": "Normal(mu=0, sigma=5)",
+   "b:x": "Normal(mu=0, sigma=2)",
+   "sd": "HalfNormal(sigma=1)",
+   "sigma": "HalfNormal(sigma=1)"
+  },
+  "intercept_prior_applies_to": "centred intercept (at predictor means)"
+ },
+ "execution": {
+  "backend": "numpyro",
+  "device_requested": "gpu",
+  "device_actual": "gpu:NVIDIA H100 80GB HBM3(id=0)",
+  "platform": "gpu",
+  "dtype": "float64",
+  "chain_method": "vectorized",
+  "chains": 4,
+  "draws": 2500,
+  "tune": 1000,
+  "target_accept": 0.9,
+  "seed": 7,
+  "wall_seconds": 39.218,
+  "notes": []
+ },
+ "environment": {
+  "python": "3.11.15",
+  "platform": "Linux-5.15.0-187-generic-x86_64-with-glibc2.39",
+  "versions": {
+   "pymc": "5.28.5",
+   "pytensor": "2.38.3",
+   "bambi": "0.17.2",
+   "formulae": "0.6.2",
+   "arviz": "0.23.4",
+   "numpyro": "0.21.0",
+   "jax": "0.10.2",
+   "jaxlib": "0.10.2",
+   "numpy": "2.4.6"
+  },
+  "jax_devices": [
+   "gpu:NVIDIA H100 80GB HBM3(id=0)"
+  ],
+  "jax_x64": true
+ },
+ "diagnostics": {
+  "values": {
+   "divergences": 0.0,
+   "divergence_fraction": 0.0,
+   "max_rhat": 1.0060065142239345,
+   "min_ess_bulk": 798.0655837280275,
+   "min_ess_tail": 1404.478332643206,
+   "min_bfmi": 0.6740636065299144,
+   "treedepth_saturation": 0.0,
+   "n_draws": 10000.0
+  },
+  "status": {
+   "divergence_fraction": "pass",
+   "max_rhat": "pass",
+   "min_ess_bulk": "pass",
+   "min_ess_tail": "pass",
+   "min_bfmi": "pass",
+   "treedepth_saturation": "pass"
+  },
+  "overall": "pass"
+ },
+ "posterior": {
+  "Intercept": {
+   "mean": 0.7717976073050175,
+   "sd": 0.14341524365165265,
+   "hdi_3%": 0.5159808660822098,
+   "hdi_97%": 1.049273868860546,
+   "mcse_mean": 0.00507157847456765,
+   "ess_bulk": 798.0655837280275,
+   "ess_tail": 1404.478332643206,
+   "r_hat": 1.0050209491841624
+  },
+  "x": {
+   "mean": 0.48662414242220486,
+   "sd": 0.02384572696568518,
+   "hdi_3%": 0.4419601674377678,
+   "hdi_97%": 0.5321816230537769,
+   "mcse_mean": 0.0003150592232664979,
+   "ess_bulk": 5747.850413371464,
+   "ess_tail": 6045.5097809276285,
+   "r_hat": 1.0005200295066823
+  },
+  "1|school_sigma": {
+   "mean": 0.6441199644420132,
+   "sd": 0.11404080761542226,
+   "hdi_3%": 0.4601160483714773,
+   "hdi_97%": 0.87045258857062,
+   "mcse_mean": 0.003372823884154615,
+   "ess_bulk": 1119.5100091034906,
+   "ess_tail": 2304.218160051084,
+   "r_hat": 1.0060065142239345
+  },
+  "sigma": {
+   "mean": 0.30547337330157043,
+   "sd": 0.01636898931730929,
+   "hdi_3%": 0.2740180334448431,
+   "hdi_97%": 0.3350947392361367,
+   "mcse_mean": 0.0002347568552461767,
+   "ess_bulk": 4910.147709471796,
+   "ess_tail": 5593.921641993586,
+   "r_hat": 1.00043297807257
+  }
+ }
+}

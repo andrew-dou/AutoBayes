@@ -1,97 +1,338 @@
 ---
 name: autobayes
 description: >
-  Set up and run a long Bayesian model-iteration program with a coding agent in the
-  loop — hierarchical models, MCMC/HMC/NUTS, PyMC or Stan or NumPyro, fitted on a GPU
-  or cluster you pay for. Use when starting a new Bayesian modelling project, porting a
-  brms/Stan model to PyMC, scaffolding a research repo that needs to survive many
-  sessions, or when an existing project keeps re-proposing approaches it already ruled
-  out. Also covers pre-run decision gates, MCMC diagnostic thresholds, and cluster
-  submission for sampling jobs.
+  Fit and check a Bayesian hierarchical regression in Python the way a careful
+  researcher would: brms-style formula `y ~ x + (1 | group)`, explicit priors, an
+  inspectable PyMC model built through Bambi, NUTS on the CPU or through JAX/NumPyro on
+  an explicitly chosen GPU, a diagnostic panel with fixed thresholds, predictive draws
+  with named new-group semantics, and a fit record that a later session can resume
+  from. Use when someone asks for a multilevel / mixed-effects / varying-intercept /
+  random-intercept model, a brms or lme4 formula in Python, PyMC or NumPyro sampling on
+  a GPU, help reading divergences / R-hat / ESS, or to set up a Bayesian modelling
+  project that must survive many sessions. Milestone M0 covers one model family; the
+  skill says what is verified and routes everything else to the reference pack.
 ---
 
 # AutoBayes
 
-Scaffolding and pre-research for a Bayesian model-iteration program that runs longer
-than any context window.
+One library (`autobayes/`), one reference pack (`reference/`), one scaffold
+(`scaffold/`) for long programs. This file is the researcher workflow for the verified
+model family, then the routing for everything else.
 
-Two halves. **`reference/`** is background that ships populated — read it instead of
-rediscovering it. **`scaffold/`** is what gets copied into the user's project, where
-that project's own knowledge accumulates.
+**What is verified (milestone M0).** A Gaussian regression with numeric predictors and
+one varying intercept:
 
-## Before anything else
+    y ~ [1 +] x1 [+ x2 ...] + (1 | group)
 
-If the project already has a `wiki/` and a `DECISIONS.md`, **it is initialized** — do
-not re-run init. Go to `AGENTS.md` in the project root and follow it. It supersedes
-this file for anything project-specific.
+with explicit priors on the intercept, every slope, the group SD and the residual SD.
+The log density of the Bambi-built PyMC model equals an independent reference at fixed
+points (with and without the Jacobian, and through the JAX compilation NumPyro
+samples), the gradient equals finite differences, the Hessian equals the closed-form
+precision when the scales are fixed, NUTS reproduces an exact conditional Gaussian
+posterior, and a simulated recovery passes the panel on both backends and both
+devices with the two posteriors agreeing within Monte Carlo error. Evidence:
+`docs/m0-evidence/`, checks A1-A8, B1-B2, C1-C3 in `docs/m0-decision.md`.
 
-If not, and the user is starting Bayesian modelling work, run the four phases below.
+**What is not verified.** Every other formula. The library refuses them with an error
+naming the construct. Do not loosen the parser to get past that error; go to
+"Outside the verified family" below.
 
-## Phase 1 — Research
+## Session start, every time
 
-Do not write model code yet. The cost of this phase is small and the cost of skipping
-it is a month of work in a direction the literature already closed.
+1. If the project has `docs/coordination/STATUS.md` or a `wiki/`, read it before
+   touching code. It records what was fit, with which seed, and what is pending.
+2. Print the environment and keep the output for the handoff:
 
-1. Read `reference/bibliography.md`. Note the tier labels: **[USED]** entries are
-   provenance, **[STANDARD]** entries are recommendations. Do not report a
-   **[STANDARD]** entry as something this project has verified.
-2. Read `reference/diagnostics.md`. You will need the thresholds in Phase 3.
-3. If porting from R: read `reference/brms-to-pymc.md`.
-4. If sampling on GPU: read `reference/pymc-to-jax.md`.
-5. Search for work specific to *this* problem — the pack covers the fixed cost of the
-   field, not the user's domain.
-6. Write findings to `research/01_<topic>.md` and seed `wiki/concepts/` with one page
-   per core technical concept.
+```bash
+.venv/bin/python -c "import autobayes as ab; print(ab.format_environment(ab.environment()))"
+```
 
-End state: the user can name the modelling approach, the main risk, and the prior art.
+   Verified stack: Python 3.11, pymc 5.28.5, pytensor 2.38.3, bambi 0.17.2, formulae
+   0.6.2, arviz 0.23.4, numpyro 0.21.0, jax 0.10.2. Install:
 
-## Phase 2 — Scope
+```bash
+uv venv .venv --python 3.11
+uv pip install --python .venv/bin/python -e ".[jax,dev]" "matplotlib<3.11"
+```
 
-1. **Data provenance** → `wiki/data/provenance.md`. Where every input came from, which
-   file is canonical, what has been derived from what. Do this before modelling; it is
-   painful to reconstruct and it is the page most often needed later.
-2. **Column dictionary** → `wiki/data/dictionary.md`. Every column, its meaning, its
-   range, whether it is a predictor, an identifier, or vestigial.
-3. **Quantity of interest.** What is this model *for*? A model built without a stated
-   QoI gets evaluated on whatever is convenient, which is usually in-sample fit.
-4. **Success criteria.** The diagnostics and the calibration target, with thresholds,
-   written down now.
+3. Three environment traps seen on this stack, and the fix for each:
+   - `~/.pytensor` not writable (sandboxes, shared accounts): every model build fails
+     at compile time. Set `PYTENSOR_FLAGS=base_compiledir=<writable dir>`.
+   - arviz 0.23 fails to import with matplotlib 3.11.1. Pin `matplotlib<3.11`.
+   - JAX touched before `import autobayes` (any `jax.devices()` call, any JAX import
+     that initialises the backend): CPU chains on the NumPyro path then run
+     sequentially. `fit()` says so in its notes and reports `chain method : sequential`.
+     Import autobayes first, or accept the wall time. The posterior is unaffected.
 
-## Phase 3 — Decide
+## The workflow
 
-**No entry in `DECISIONS.md`, no job.**
+Run the steps in order. Each has a check; a step whose check fails is not done.
 
-`python3 scripts/new_decision.py "<title>"`. Every entry answers:
+### 1. Data
 
-1. **What** are we changing, and **why** should it help?
-2. **How will we know it worked?** A named diagnostic with a threshold, chosen before
-   the run. Not "we will look at the output."
-3. **What is the kill criterion?** The outcome that means this direction is dead.
-4. **What do we do if it fails?** A concrete next action, not "try something else."
+A pandas data frame with a numeric response, numeric predictors, and a grouping
+column (any dtype; it is coded as a factor with levels in **sorted** order). The
+library refuses missing values, categorical predictors, a constant predictor, and a
+grouping factor with one level, each with a message saying so. Transform columns in
+the data frame, not in the formula.
 
-Writing (2) before the run regularly reveals that the run as specified cannot produce
-the diagnostic. That is much cheaper to discover on a login node.
+### 2. Formula and priors
 
-Before proposing anything, read `wiki/hypotheses/ruled-out.md`. Do not revisit what is
-on it. If you believe an entry deserves another look, say so explicitly and give the
-reason the original evidence no longer applies.
+```python
+import autobayes as ab
 
-## Phase 4 — Build and prepare
+priors = ab.Priors(
+    intercept=ab.Normal(0, 5),   # applies to the CENTRED intercept: E[y] at the predictor means
+    b=ab.Normal(0, 2),           # one prior for every slope, or {"x": ..., "w": ...}
+    sd=ab.HalfNormal(1),         # SD of the varying intercepts (brms class "sd")
+    sigma=ab.HalfNormal(1),      # residual SD
+)
+model = ab.gaussian("y ~ x + (1 | school)", df, priors)
+```
 
-1. Write the model. **Clone, don't edit in place** — a working script gets copied with
-   a version suffix, never edited.
-2. `python3 cluster/preflight.py` — builds the model, takes one log density and one
-   gradient, asserts both finite, prints the free parameter count. Thirty seconds on a
-   login node beats an hour in the queue followed by a seven-second failure.
-3. Copy `cluster/slurm_gpu_fit.sbatch`, fill every `CHANGEME`, submit, record the job
-   ID immediately.
-4. On completion: fill in the entry's **Result**, write the `wiki/models/` page, append
-   to `wiki/log.md`, register the run.
+All four classes are required. There are no defaults, because a default prior is the
+thing you cannot see in the formula and cannot reproduce later. Location classes take
+`Normal` or `StudentT(nu, mu, sigma)`; scale classes take `HalfNormal`,
+`HalfStudentT(nu, sigma)`, `Exponential(lam)` or `HalfCauchy(beta)`. Parameters are
+PyMC's: `sigma` is a standard deviation, `lam` a rate, `beta` a scale.
+
+**The centring trap.** Bambi, like brms, centres the predictors and samples the
+intercept at the predictor means. Your prior on `intercept` is a prior on that
+quantity. The `Intercept` column in the posterior is the raw-scale intercept, back-
+transformed after sampling. Choose the prior for the centred quantity (the typical
+response), not for "y at x = 0". `center_predictors=False` turns this off if the raw
+intercept is what the prior is about.
+
+Check: `print(model.describe())`. Read the `levels` line (index to label map), the
+`mu_i =` line, the centring paragraph, and the "PyMC variables sampled" block. That
+block is the model that will be sampled: `Intercept` (centred), one variable per
+slope, `sigma_log__`, `1|school_sigma_log__` (the group SD, log scale) and
+`1|school_offset` (the J standard-normal offsets of the non-centred parameterisation).
+`model.pymc_model` is the graph itself; `pytensor.dprint(model.pymc_model["mu"])`
+shows the linear predictor if `describe()` is not enough.
+
+### 3. Fit
+
+```python
+fit = model.fit(backend="pymc",    device="cpu", chains=4, draws=1000, tune=1000, seed=7)
+fit = model.fit(backend="numpyro", device="cpu", chains=4, draws=1000, tune=1000, seed=7)
+fit = model.fit(backend="numpyro", device="gpu", chains=4, draws=1000, tune=1000, seed=7)
+print(fit.report())
+```
+
+- `backend="pymc"` is PyMC's own NUTS, CPU only; `device="gpu"` there is an error.
+- `backend="numpyro"` compiles the graph to JAX and samples with NumPyro's NUTS.
+  `device` is resolved against `jax.devices()`. If a GPU is requested and none is
+  visible the call raises `DeviceError` listing the visible devices. **It never falls
+  back to the CPU silently**, so a report that says `device actual : cuda:...` means a
+  GPU ran, and nothing else does.
+- Always pass `seed`. The report and the fit record carry it.
+
+Check the report: `device actual`, `dtype` (must be float64; float32 divergences look
+like geometry and are not), `chain method` (`parallel` on CPU, `vectorized` on GPU,
+`sequential` only with the import-order note above), and any `note` line. Wall time
+includes XLA compilation on the NumPyro path; the first fit of a graph is slow for
+that reason and that reason only.
+
+### 4. Diagnostics
+
+```python
+from autobayes.diagnostics import panel, format_panel
+p = panel(fit.idata)          # max_treedepth=10 unless you changed it
+print(format_panel(p))
+```
+
+Thresholds (from `reference/diagnostics.md`; the panel applies them to the *worst*
+parameter, never an average):
+
+| Diagnostic | pass | investigate | fail |
+| --- | --- | --- | --- |
+| divergences | 0 | < 0.1 % of draws | more, or clustered |
+| max split R-hat | <= 1.01 | 1.01-1.05 | > 1.05 |
+| min bulk / tail ESS | > 400 total | 100-400 | < 100 |
+| min E-BFMI | > 0.3 | 0.2-0.3 | < 0.2 |
+| tree-depth saturation | < 1 % | 1-20 % | > 20 % |
+
+The ESS row is 400 *total* over chains, the smoke-run threshold; for a fit you will
+report, hold it to 400 per chain as the reference says.
+
+What to do, in this family specifically:
+
+- **R-hat 1.01-1.03 or bulk ESS of a few hundred on `Intercept` and on
+  `1|group_sigma`, with everything else clean.** This is the known weak direction of
+  the model: the intercept trades off against the mean of the J offsets. At 4 x 1000
+  draws on the M0 example it gave R-hat 1.02 and bulk ESS 350 on both backends; at
+  4 x 2500 it passed. Lengthen the run. Do not loosen the threshold, and do not
+  change the parameterisation first; it is already non-centred.
+- **A handful of divergences with no pattern.** Refit with `target_accept=0.95` (the
+  default is 0.9). If they vanish they were step-size noise. If the count is stable,
+  look at where they are before doing anything else (`reference/diagnostics.md`,
+  "Reading the failures").
+- **Divergences concentrated at small `1|group_sigma`.** The funnel. The model is
+  already non-centred, so this points at a group SD prior that lets the scale reach
+  zero with too few groups. Look at J and at the `sd` prior.
+- **Anything at `fail`.** Stop. The fit is not evidence. Record the panel anyway; a
+  failed panel is a result.
+
+`fit.idata` is an ArviZ `InferenceData`; `az.summary(fit.idata)` gives the per-
+parameter table. In it, `Intercept` is the raw-scale intercept, `1|school_sigma` is
+the group SD, `1|school` are the J group effects `u`, and `1|school_offset` the
+standard-normal offsets (ignore them in reporting). The interval columns are the
+94 % HDI under arviz 0.23; arviz 1.0 changes the default to an 89 % ETI, so state the
+version next to any interval you quote.
+
+### 5. Predictions
+
+```python
+ppc = model.predict(fit, kind="response", seed=1)                       # in-sample y draws
+mu  = model.predict(fit, newdata=new_df, kind="mean")                    # E[y | x, group]
+new = model.predict(fit, newdata=new_df, kind="response", new_groups="population", seed=1)
+```
+
+`kind="mean"` returns draws of `mu`; `kind="response"` also returns draws of a new
+observation. For a level of the grouping factor that was not in the training data:
+
+- `new_groups="error"` (default): refuse, so an unseen level is never silently treated
+  as an observed one.
+- `"population"`: draw the level's effect from `Normal(0, sd_group)` for each posterior
+  draw. This is the distribution the model fit (brms `sample_new_levels = "gaussian"`)
+  and is the right choice for "a new school".
+- `"resample_observed"`: reuse a random observed level's fitted effect per draw
+  (brms's default `"uncertainty"`, Bambi's `sample_new_groups=True`). It understates
+  between-level spread because it resamples shrunk effects from a finite set.
+
+The M0 example prints the two predictive SDs side by side (observed school 0.32, new
+school 0.74 on the simulated data): that gap is the between-group variance, and it is
+what a prediction for a new unit has to carry.
+
+### 6. Record
+
+```python
+import json
+rec = ab.fit_record(model, fit)                 # spec, execution, environment, panel, posterior
+json.dump(rec, open("fits/<name>_record.json", "w"), indent=1)
+```
+
+A fit record is the unit of evidence. It is what goes into the status file or wiki
+page, and what a later session compares against. Never write over an earlier record;
+name a new one. To check that two fits target the same posterior (CPU vs GPU, PyMC vs
+NumPyro, two seeds):
+
+```python
+c = ab.compare_records(rec_a, rec_b)            # population means within 4 combined MCSE
+print(ab.format_comparison(c))
+```
+
+Agreement says the two runs sampled the same posterior. It says nothing about speed.
+A speed claim needs the same model, priors, dtype, chains, warmup and draws, the
+diagnostic panels side by side, and the hardware named; `reference/acceleration.md`
+has the audit of how the published numbers fail that test.
+
+The worked example does all six steps and writes a record:
+
+```bash
+.venv/bin/python examples/m0_varying_intercept.py --backend numpyro --device cpu \
+    --record fits/example_cpu.json
+```
+
+## Recovering from failures
+
+| Symptom | Cause | Do |
+| --- | --- | --- |
+| `FormulaError: ... not supported in M0` | Formula outside the verified family | Not a bug. Use the family, or write the model by hand: "Outside the verified family" |
+| `PriorError: prior for 'sd' must be a positive-support prior` | Wrong class of prior | Location classes for intercept and slopes, scale classes for `sd` and `sigma` |
+| `DeviceError: ... JAX sees no GPU` | No CUDA jaxlib, or no GPU on this machine | Check `jax.devices()`. On a GPU host install `"jax[cuda12]"`; else `device="cpu"`. Do not "fix" this by catching it |
+| `DeviceError: backend='pymc' runs ... CPU only` | GPU asked of the PyMC sampler | `backend="numpyro"` |
+| report note: chains sequential | JAX initialised before autobayes import | Reorder imports; posterior unaffected |
+| report `dtype : float32` | x64 disabled after import | The library enables x64 before sampling; if you see float32, something reset `jax_enable_x64`. Refit; do not trust the float32 run |
+| `PermissionError` under `~/.pytensor` | Read-only home | `PYTENSOR_FLAGS=base_compiledir=<dir>` |
+| `ImportError` from arviz mentioning matplotlib | matplotlib 3.11.1 | `matplotlib<3.11` |
+| `az.summary` MCSE column reads 0.000 | Rounding to 3 decimals | `az.summary(..., round_to="none")` before dividing by it |
+| Minutes of nothing, then sampling | XLA compilation | Expected once per graph shape; the report's wall time includes it |
+| GPU run slower than CPU on a small model | 200 rows x 4 chains does not fill an H100 | Expected. Agreement is the evidence here, not time |
+| `get_jaxified_logp` sign looks wrong | pymc 5.28.5 names `negative_logp` backwards: the default returns `+logp` | Use the default; test A4 pins this |
+| `compile_d2logp` gives the negative Hessian | PyMC's `hessian(negate_output=True)` | It is the precision matrix; test A5 pins this |
+| R-hat just over 1.01 on `Intercept` | Intercept vs mean-offset direction | More draws (see step 4) |
+
+Anything else: match the symptom in the routing table at the end of this file.
+
+## Handing off a session
+
+Write before context runs out, not at the end. Before any long operation, and any
+time you have learned something and not written it down, update the status file
+(`docs/coordination/STATUS.md` in this repository; `wiki/` in a scaffolded project).
+A handoff a fresh session can use states:
+
+- **Environment**: the `format_environment` output, verbatim.
+- **What was fit**: formula, priors, n, J, `describe()` output or the record path.
+- **How**: backend, device actual, dtype, chain method, chains/tune/draws, seed.
+- **Panel**: every value and its status, not "converged".
+- **Records**: the path of each fit record; which pair was compared and the result.
+- **Executed vs implemented**: name what actually ran on which hardware. "GPU
+  supported" and "GPU validated" are different sentences; write the one that is true.
+- **Failures**: what failed, the message, what you changed. A failed run is a result.
+- **Next action**: one concrete step, and the command to resume:
+
+```bash
+git checkout <branch> && .venv/bin/python -m pytest tests -q        # fast checks
+.venv/bin/python -m pytest tests -q -m slow                          # two sampling checks, ~1 min
+```
+
+## GPU and remote execution
+
+The reproducible command, and what counts as evidence, is in
+`docs/m0-gpu-validation.md`. In short: run the example with
+`--backend numpyro --device gpu --record <path> --compare docs/m0-evidence/B2_numpyro_cpu_record.json`,
+keep the full output, and require `device actual : cuda:...`, `dtype : float64`,
+`chain method : vectorized`, a panel at `pass`, and `agree: True` against the CPU
+record. Set `XLA_PYTHON_CLIENT_PREALLOCATE=false` so JAX does not take the whole card
+at import. On a rented node, install exactly the verified versions with
+`"jax[cuda12]==0.10.2"` on a CUDA 12.x image, put a `timeout` on the run, and stop the
+node the moment the output is copied. The SLURM form is `cluster/m0_gpu_smoke.sbatch`.
+
+## Outside the verified family
+
+The library will not build it, and you should not extend the parser to make it. Two
+routes:
+
+- **A brms/Stan model exists.** `reference/brms-to-pymc.md`: port from the generated
+  Stan code and `standata()`, not from the formula; reproduce the centring; write every
+  default prior explicitly; sort factor levels yourself. Then verify the port the way
+  M0 was verified (log density at fixed points against an independent reference,
+  before any sampling).
+- **A new model.** Write it in PyMC directly, keep the M0 conventions (non-centred
+  group effects, explicit priors, sorted levels, a `describe`-style statement of what
+  is sampled), and take diagnostics through the same `panel`. If the likelihood needs
+  a custom operation, the companion skill `autobayes-custom-op` decides whether it
+  really does.
+
+Bambi accepts far more formulas than M0 verifies. If you use Bambi directly for a
+richer formula, the M0 checks are the template for what to verify before believing
+its posterior: design matrix and level order, log density against a reference,
+prediction semantics for new levels.
+
+## A program longer than one session
+
+For a modelling program that will run for weeks with an agent doing most of the
+typing, lay down the scaffold once (`bin/autobayes-init <project>`) and follow its
+`AGENTS.md`. The parts that do the work:
+
+1. **Research before code.** `reference/bibliography.md` and `reference/diagnostics.md`
+   first; [USED] entries are provenance, [STANDARD] entries are recommendations.
+   Findings go to `research/`, concepts to `wiki/concepts/`.
+2. **Scope.** Data provenance and column dictionary in `wiki/data/`; the quantity of
+   interest and the success thresholds written down before the first fit.
+3. **Decide.** No `DECISIONS.md` entry, no job. Each entry: what and why, the named
+   diagnostic and threshold, the kill criterion, the next action on failure.
+   `python3 scripts/new_decision.py "<title>"` refuses an empty field. Read
+   `wiki/hypotheses/ruled-out.md` before proposing anything.
+4. **Build.** Clone scripts, never edit a working one in place. `cluster/preflight.py`
+   before any queued job. Record the job ID the moment it exists. On completion, fill
+   in the entry's Result, write the `wiki/models/` page, append to `wiki/log.md`.
+
+Do not write findings into `reference/`; it is a fixed input.
 
 ## Symptom routing
-
-When something goes wrong mid-project, match the symptom and read the file. Do not
-re-derive these.
 
 | Symptom | Read |
 | --- | --- |
@@ -103,33 +344,12 @@ re-derive these.
 | Job dies seconds in on a missing shared library | `reference/failure-atlas.md` (environment) |
 | Imports fine, fails on first GPU operation | `reference/failure-atlas.md` (CUDA/driver mismatch) |
 | Gradient returns `nan` or zero | `reference/failure-atlas.md` (implementation) |
-| JAX will not differentiate a primitive | `reference/pymc-to-jax.md` — **and see below** |
+| JAX will not differentiate a primitive | `reference/pymc-to-jax.md`, then `autobayes-custom-op` |
 | Fast on CPU, impossibly slow on GPU | `reference/pymc-to-jax.md` (unjaxified node) |
 | Elementwise op fails on a long loop | `reference/failure-atlas.md` (vectorize with `cumsum`) |
 | A port disagrees with the R/Stan original | `reference/failure-atlas.md` (comparison) |
-| Predictions wrong while posteriors match | `reference/brms-to-pymc.md` (unseen levels) |
+| Predictions wrong while posteriors match | `reference/brms-to-pymc.md` (unseen levels); step 5 above |
 | GPU backend no faster than CPU | `reference/acceleration.md`, `failure-atlas.md` |
-| Choosing a sampler, or quoting a speedup number | `reference/acceleration.md` (claims audit) |
-| R-hat stuck above 1.01 with many short chains | `reference/acceleration.md` (nested R̂) |
+| Choosing a sampler, or quoting a speedup | `reference/acceleration.md` (claims audit) |
+| R-hat stuck above 1.01 with many short chains | `reference/acceleration.md` (nested R-hat) |
 | Divergences that ignore reparameterization | `reference/failure-atlas.md` (float32) |
-
-**On custom operations specifically:** if the likelihood cannot be expressed with
-built-in distributions, or will not differentiate, the answer is often a custom
-PyTensor `Op` with a JAX implementation — but it is the *last* answer, not the first.
-The companion skill `autobayes-custom-op` gates that decision and gives the pattern.
-Invoke it rather than improvising.
-
-## Writing things down
-
-The rule that matters most in practice: **write to the wiki before context runs out,
-not at the end of the session.** An agent that waits until it is done loses everything
-to compaction.
-
-After any significant finding, write it down immediately. Before any long-running
-operation, flush what you know. If you have been working a while and have not written
-to the wiki, stop and do it now.
-
-If you learned it this session and it is not in the wiki, it did not happen.
-
-Do not write findings into `reference/` — that is a fixed input, not a working
-surface. Project knowledge goes in `wiki/` and `research/`.

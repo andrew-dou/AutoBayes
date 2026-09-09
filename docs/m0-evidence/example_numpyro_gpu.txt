@@ -1,0 +1,98 @@
+# Captured from GiveMeANode node autobayes-m0-smoke (h100-1, image cuda-12.9, region europe-north1),
+# mission autobayes-m0-gpu-smoke, 2026-09-09. Command:
+#   XLA_PYTHON_CLIENT_PREALLOCATE=false PYTENSOR_FLAGS=floatX=float64 timeout 20m \
+#   python -u examples/m0_varying_intercept.py --backend numpyro --device gpu --chains 4 --draws 2500 --tune 1000 \
+#     --record gpu_record.json --compare docs/m0-evidence/B2_numpyro_cpu_record.json
+# The "jax x64 : False" line is environment() before fit(); fit() enables x64 and the report shows float64.
+# (Since this run, `import autobayes` enables x64 itself, so a fresh run prints True there.)
+NVIDIA H100 80GB HBM3, 595.71.05, 81559 MiB
+Wed Sep  9 02:29:31 UTC 2026
+AutoBayes environment
+  python    : 3.11.15 (Linux-5.15.0-187-generic-x86_64-with-glibc2.39)
+  versions  : pymc 5.28.5, pytensor 2.38.3, bambi 0.17.2, formulae 0.6.2, arviz 0.23.4, numpyro 0.21.0, jax 0.10.2, jaxlib 0.10.2, numpy 2.4.6
+  jax       : gpu:NVIDIA H100 80GB HBM3(id=0)
+  jax x64   : False
+
+AutoBayes M0 model
+  formula   : y ~ x + (1 | school)
+  family    : gaussian, identity link
+  data      : n = 200 observations, J = 20 levels of school
+  levels    : 0=s00, 1=s01, 2=s02, 3=s03, 4=s04, 5=s05, 6=s06, 7=s07, 8=s08, 9=s09, 10=s10, 11=s11, 12=s12, 13=s13, 14=s14, 15=s15, 16=s16, 17=s17, 18=s18, 19=s19
+
+Linear predictor
+  mu_i = a_c + (x_x - mean(x_x)) * b_x + u[school_i]
+  Predictors are centred at their sample means (center_predictors=True, as in
+  brms and Bambi). a_c is the expected response at the predictor means; the
+  prior on the intercept applies to a_c. The posterior reports the raw-scale
+  intercept a = a_c - sum_p mean(x_p) * b_p, computed after sampling.
+
+Group effects (non-centred)
+  u[j] = sd_school * z[j],  z[j] ~ Normal(0, 1),  j = 0..19
+
+Priors
+  a_c ~ Normal(mu=0, sigma=5)
+  b_x ~ Normal(mu=0, sigma=2)
+  sd_school ~ HalfNormal(sigma=1)
+  sigma ~ HalfNormal(sigma=1)
+
+Likelihood
+  y_i ~ Normal(mu_i, sigma)
+
+PyMC variables sampled (value space)
+  sigma_log__              log(sigma)
+  Intercept                a_c
+  x                        b_x
+  1|school_sigma_log__     log(sd_school)
+  1|school_offset          z
+Deterministic: 1|school = u, mu = linear predictor
+
+PyMC model: <pymc.model.core.Model object at 0x7fecac1f3bd0>
+
+AutoBayes fit report
+  backend          : numpyro
+  device requested : gpu
+  device actual    : gpu:NVIDIA H100 80GB HBM3(id=0) (platform gpu)
+  dtype            : float64
+  chain method     : vectorized
+  chains/tune/draws: 4/1000/2500, target_accept 0.9
+  seed             : 7
+  wall time        : 39.2 s (includes compilation)
+
+Diagnostic panel (thresholds from reference/diagnostics.md)
+  divergences            0 of 10000 (0.000%)          pass
+  max R-hat              1.0060                       pass
+  min bulk ESS           798                          pass
+  min tail ESS           1404                         pass
+  min E-BFMI             0.674                        pass
+  tree-depth saturation  0.00%                        pass
+  overall: pass
+
+                 mean     sd  hdi_3%  hdi_97%  mcse_mean  mcse_sd  ess_bulk  ess_tail  r_hat
+Intercept       0.772  0.143   0.516    1.049      0.005    0.003     798.0    1404.0   1.01
+x               0.487  0.024   0.442    0.532      0.000    0.000    5748.0    6046.0   1.00
+1|school_sigma  0.644  0.114   0.460    0.870      0.003    0.002    1120.0    2304.0   1.01
+sigma           0.305  0.016   0.274    0.335      0.000    0.000    4910.0    5594.0   1.00
+truth: Intercept 1.0, x 0.5, sd 0.5, sigma 0.3
+
+posterior predictive: mean of y draws 0.635 vs observed mean 0.636
+predictive SD for an observed school 0.319; for a new school (population draw) 0.736
+fit record written to gpu_record.json
+
+Agreement of population-parameter means (4 combined MCSE): gpu:NVIDIA H100 80GB HBM3(id=0) vs cpu:cpu(id=0)
+  Intercept        0.7718 vs 0.7787  |diff| 0.0069  tol 0.0292  ok
+  x                0.4866 vs 0.4871  |diff| 0.0004  tol 0.0018  ok
+  1|school_sigma   0.6441 vs 0.6475  |diff| 0.0033  tol 0.0199  ok
+  sigma            0.3055 vs 0.3054  |diff| 0.0001  tol 0.0013  ok
+  agree: True  (a statement about the target, not about speed)
+example exit 0
+Wed Sep  9 02:30:28 UTC 2026
+
+=== gpu_a4_check.py (A4 on the GPU: JAX-compiled log density vs PyTensor C path, 5 random points)
+jax devices: [CudaDevice(id=0)] default backend: gpu
+jax -420.3462757408 on cuda:0  pytensor -420.3462757408  |diff| 1.71e-13
+jax -247.7883990324 on cuda:0  pytensor -247.7883990324  |diff| 0.00e+00
+jax -5471.3263289581 on cuda:0  pytensor -5471.3263289581  |diff| 9.09e-13
+jax -308.1209892152 on cuda:0  pytensor -308.1209892152  |diff| 0.00e+00
+jax -1482.1652020703 on cuda:0  pytensor -1482.1652020703  |diff| 0.00e+00
+A4_GPU PASS max |diff| 9.09e-13
+a4 exit 0
