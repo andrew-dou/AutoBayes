@@ -81,8 +81,8 @@ def _reject_group_term(inner: str, factor: str, piece: str) -> None:
         )
 
 
-def parse_formula(formula: str, data: pd.DataFrame | None = None) -> ModelSpec:
-    """Parse and validate an M0 formula, optionally against a data frame."""
+def parse_formula(formula: str, data: pd.DataFrame | None = None, family: str = "gaussian") -> ModelSpec:
+    """Parse and validate a formula in the supported subset, optionally against a data frame."""
     m = _FORMULA_RE.match(formula)
     if not m:
         raise FormulaError(
@@ -160,7 +160,7 @@ def parse_formula(formula: str, data: pd.DataFrame | None = None) -> ModelSpec:
         group=group, intercept=True,
     )
     if data is not None:
-        spec = validate_data(spec, data)
+        spec = validate_data(spec, data, family)
     return spec
 
 
@@ -168,18 +168,49 @@ def _is_numeric(s: pd.Series) -> bool:
     return pd.api.types.is_numeric_dtype(s) and not pd.api.types.is_bool_dtype(s)
 
 
-def validate_data(spec: ModelSpec, data: pd.DataFrame) -> ModelSpec:
+def _validate_binary_response(name: str, s: pd.Series) -> None:
+    if pd.api.types.is_bool_dtype(s):
+        raise FormulaError(
+            f"response {name!r} is boolean; code it as integers 0/1 explicitly "
+            f"(data[{name!r}].astype(int)) so that 1 is unambiguously the modelled outcome."
+        )
+    if not pd.api.types.is_numeric_dtype(s):
+        raise FormulaError(
+            f"response {name!r} has dtype {s.dtype}; the Bernoulli family needs a numeric 0/1 "
+            "column with 1 the modelled outcome. Recode labels explicitly rather than relying on "
+            "the sorted first level."
+        )
+    vals = set(np.unique(s.dropna().to_numpy(dtype=float)))
+    if not vals <= {0.0, 1.0}:
+        raise FormulaError(
+            f"response {name!r} takes values outside {{0, 1}}: {sorted(vals - {0.0, 1.0})[:5]}. "
+            "The Bernoulli family needs exactly 0/1 (binomial trials are not supported in M1)."
+        )
+    if vals != {0.0, 1.0}:
+        raise FormulaError(
+            f"response {name!r} is constant ({sorted(vals)}); a Bernoulli model needs both outcomes."
+        )
+
+
+def validate_data(spec: ModelSpec, data: pd.DataFrame, family: str = "gaussian") -> ModelSpec:
     """Check columns exist, are numeric where required, and have no missing values."""
     needed = [spec.response, *spec.predictors, spec.group]
     missing = [c for c in needed if c not in data.columns]
     if missing:
         raise FormulaError(f"columns not in data: {missing}")
-    for c in (spec.response, *spec.predictors):
+    for c in spec.predictors:
         if not _is_numeric(data[c]):
             raise FormulaError(
-                f"column {c!r} has dtype {data[c].dtype}; M0 supports numeric predictors "
-                "and a numeric response only (categorical predictors are not supported)."
+                f"column {c!r} has dtype {data[c].dtype}; only numeric predictors are "
+                "supported (categorical predictors are not supported)."
             )
+    if family == "bernoulli":
+        _validate_binary_response(spec.response, data[spec.response])
+    elif not _is_numeric(data[spec.response]):
+        raise FormulaError(
+            f"column {spec.response!r} has dtype {data[spec.response].dtype}; the Gaussian "
+            "family needs a numeric response."
+        )
     na = data[needed].isna().any()
     if na.any():
         raise FormulaError(

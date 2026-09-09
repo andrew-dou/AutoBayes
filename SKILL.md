@@ -2,15 +2,17 @@
 name: autobayes
 description: >
   Fit and check a Bayesian hierarchical regression in Python the way a careful
-  researcher would: brms-style formula `y ~ x + (1 | group)`, explicit priors, an
-  inspectable PyMC model built through Bambi, NUTS on the CPU or through JAX/NumPyro on
-  an explicitly chosen GPU, a diagnostic panel with fixed thresholds, predictive draws
-  with named new-group semantics, and a fit record that a later session can resume
-  from. Use when someone asks for a multilevel / mixed-effects / varying-intercept /
-  random-intercept model, a brms or lme4 formula in Python, PyMC or NumPyro sampling on
-  a GPU, help reading divergences / R-hat / ESS, or to set up a Bayesian modelling
-  project that must survive many sessions. Milestone M0 covers one model family; the
-  skill says what is verified and routes everything else to the reference pack.
+  researcher would: brms-style formula `y ~ x + (1 | group)` with a Gaussian outcome or
+  a binary (Bernoulli, logit) outcome, explicit priors, an inspectable PyMC model built
+  through Bambi, NUTS on the CPU or through JAX/NumPyro on an explicitly chosen GPU, a
+  diagnostic panel with fixed thresholds, predictive draws with named new-group
+  semantics (probabilities versus 0/1 outcomes), and a fit record that a later session
+  can resume from. Use when someone asks for a multilevel / mixed-effects /
+  varying-intercept / random-intercept model, a logistic regression with a group
+  intercept, a brms or lme4 formula in Python, PyMC or NumPyro sampling on a GPU, help
+  reading divergences / R-hat / ESS, or to set up a Bayesian modelling project that must
+  survive many sessions. Two verified families; the skill says what is verified and
+  routes everything else to the reference pack.
 ---
 
 # AutoBayes
@@ -19,23 +21,33 @@ One library (`autobayes/`), one reference pack (`reference/`), one scaffold
 (`scaffold/`) for long programs. This file is the researcher workflow for the verified
 model family, then the routing for everything else.
 
-**What is verified (milestone M0).** A Gaussian regression with numeric predictors and
-one varying intercept:
+**What is verified.** One formula subset with numeric predictors and one varying
+intercept,
 
     y ~ [1 +] x1 [+ x2 ...] + (1 | group)
 
-with explicit priors on the intercept, every slope, the group SD and the residual SD.
-The log density of the Bambi-built PyMC model equals an independent reference at fixed
-points (with and without the Jacobian, and through the JAX compilation NumPyro
-samples), the gradient equals finite differences, the Hessian equals the closed-form
-precision when the scales are fixed, NUTS reproduces an exact conditional Gaussian
-posterior, and a simulated recovery passes the panel on both backends and both
-devices with the two posteriors agreeing within Monte Carlo error. Evidence:
-`docs/m0-evidence/`, checks A1-A8, B1-B2, C1-C3 in `docs/m0-decision.md`.
+for two outcome families:
 
-**What is not verified.** Every other formula. The library refuses them with an error
-naming the construct. Do not loosen the parser to get past that error; go to
-"Outside the verified family" below.
+- **Gaussian, identity link (M0)**: `ab.gaussian(...)`, priors on the intercept, every
+  slope, the group SD and the residual SD `sigma`. Log density equals an independent
+  reference at fixed points (with and without the Jacobian, and through the JAX
+  compilation NumPyro samples), gradient equals finite differences, Hessian equals the
+  closed-form precision with the scales fixed, NUTS reproduces an exact conditional
+  Gaussian posterior, a simulated recovery passes the panel on both backends, and one
+  GPU run on an H100 matched the CPU posterior. Evidence `docs/m0-evidence/`, checks in
+  `docs/m0-decision.md`.
+- **Bernoulli, logit link (M1)**: `ab.bernoulli(...)` for a strictly 0/1 response, priors
+  on the logit-scale intercept, slopes and the group SD, no `sigma`. Log density and
+  gradient against an independent reference, the JAX compilation, the epsilon regime at
+  extreme logits, prediction meaning (probability versus 0/1 draw), and a simulated
+  recovery on both backends. GPU execution for this family is **pending** (the same code
+  path, not yet run on a GPU). Evidence `docs/m1-evidence/`, checks in
+  `docs/m1-decision.md`.
+
+**What is not verified.** Every other formula and family (binomial trials, other links,
+varying slopes, nested or crossed groups, categorical predictors). The library refuses
+them with an error naming the construct. Do not loosen the parser to get past that
+error; go to "Outside the verified family" below.
 
 ## Session start, every time
 
@@ -70,11 +82,14 @@ Run the steps in order. Each has a check; a step whose check fails is not done.
 
 ### 1. Data
 
-A pandas data frame with a numeric response, numeric predictors, and a grouping
-column (any dtype; it is coded as a factor with levels in **sorted** order). The
-library refuses missing values, categorical predictors, a constant predictor, and a
-grouping factor with one level, each with a message saying so. Transform columns in
-the data frame, not in the formula.
+A pandas data frame with a response, numeric predictors, and a grouping column (any
+dtype; it is coded as a factor with levels in **sorted** order). Gaussian: a numeric
+response. Bernoulli: a numeric column with values exactly 0 and 1, both present, where
+**1 is the outcome being modelled**; booleans and labels are refused with a message
+telling you to recode them, because a label column would silently make the sorted
+first level the "success". The library refuses missing values, categorical predictors,
+a constant predictor, and a grouping factor with one level, each with a message saying
+so. Transform columns in the data frame, not in the formula.
 
 ### 2. Formula and priors
 
@@ -90,11 +105,25 @@ priors = ab.Priors(
 model = ab.gaussian("y ~ x + (1 | school)", df, priors)
 ```
 
-All four classes are required. There are no defaults, because a default prior is the
-thing you cannot see in the formula and cannot reproduce later. Location classes take
-`Normal` or `StudentT(nu, mu, sigma)`; scale classes take `HalfNormal`,
+For a binary outcome:
+
+```python
+priors = ab.Priors(
+    intercept=ab.Normal(0, 1.5),  # log-odds of y = 1 at the predictor means
+    b=ab.Normal(0, 1),            # log-odds ratio per unit of the predictor
+    sd=ab.HalfNormal(1),          # SD of the group intercepts, logit scale
+)                                 # no sigma: passing one is an error for this family
+model = ab.bernoulli("y ~ x + (1 | clinic)", df, priors)
+```
+
+Every class the family has is required. There are no defaults, because a default
+prior is the thing you cannot see in the formula and cannot reproduce later. Location
+classes take `Normal` or `StudentT(nu, mu, sigma)`; scale classes take `HalfNormal`,
 `HalfStudentT(nu, sigma)`, `Exponential(lam)` or `HalfCauchy(beta)`. Parameters are
-PyMC's: `sigma` is a standard deviation, `lam` a rate, `beta` a scale.
+PyMC's: `sigma` is a standard deviation, `lam` a rate, `beta` a scale. For the
+Bernoulli family the location priors are on the **logit scale**: `Normal(0, 1.5)` on
+the intercept puts most mass on probabilities between 0.05 and 0.95; `Normal(0, 5)`
+would be a strong prior for extreme probabilities, not a weak one.
 
 **The centring trap.** Bambi, like brms, centres the predictors and samples the
 intercept at the predictor means. Your prior on `intercept` is a prior on that
@@ -104,12 +133,19 @@ response), not for "y at x = 0". `center_predictors=False` turns this off if the
 intercept is what the prior is about.
 
 Check: `print(model.describe())`. Read the `levels` line (index to label map), the
-`mu_i =` line, the centring paragraph, and the "PyMC variables sampled" block. That
-block is the model that will be sampled: `Intercept` (centred), one variable per
-slope, `sigma_log__`, `1|school_sigma_log__` (the group SD, log scale) and
-`1|school_offset` (the J standard-normal offsets of the non-centred parameterisation).
-`model.pymc_model` is the graph itself; `pytensor.dprint(model.pymc_model["mu"])`
-shows the linear predictor if `describe()` is not enough.
+`mu_i =` (or `eta_i =`) line, the centring paragraph, and the "PyMC variables sampled"
+block. That block is the model that will be sampled: `Intercept` (centred), one
+variable per slope, `sigma_log__` (Gaussian only), `1|school_sigma_log__` (the group
+SD, log scale) and `1|school_offset` (the J standard-normal offsets of the non-centred
+parameterisation). `model.pymc_model` is the graph itself;
+`pytensor.dprint(model.pymc_model["mu"])` (or `["p"]`) shows the linear predictor if
+`describe()` is not enough. For the Bernoulli family `describe()` also states the
+one place the sampled density is not the textbook one: Bambi computes
+`p = sigmoid(eta)` and substitutes `1 - eps` when it rounds to 1, so the `y = 0` term
+loses precision above `eta` of about 15 and is floored above about 37. Negative logits
+are exact. With logit-scale priors like the ones above that region has negligible
+mass; the case to watch is separation in the data (a predictor or group that
+perfectly predicts the outcome), where the posterior wants to go there.
 
 ### 3. Fit
 
@@ -175,11 +211,13 @@ What to do, in this family specifically:
   failed panel is a result.
 
 `fit.idata` is an ArviZ `InferenceData`; `az.summary(fit.idata)` gives the per-
-parameter table. In it, `Intercept` is the raw-scale intercept, `1|school_sigma` is
-the group SD, `1|school` are the J group effects `u`, and `1|school_offset` the
-standard-normal offsets (ignore them in reporting). The interval columns are the
-94 % HDI under arviz 0.23; arviz 1.0 changes the default to an 89 % ETI, so state the
-version next to any interval you quote.
+parameter table. In it, `Intercept` is the raw-scale intercept (log-odds for the
+Bernoulli family), `1|school_sigma` is the group SD, `1|school` are the J group
+effects `u`, and `1|school_offset` the standard-normal offsets (ignore them in
+reporting). The interval columns are the 94 % HDI under arviz 0.23; arviz 1.0 changes
+the default to an 89 % ETI, so state the version next to any interval you quote.
+Binary outcomes carry less information than Gaussian ones: expect wider posteriors
+and, with few groups, a group SD posterior that leans on its prior.
 
 ### 5. Predictions
 
@@ -189,14 +227,19 @@ mu  = model.predict(fit, newdata=new_df, kind="mean")                    # E[y |
 new = model.predict(fit, newdata=new_df, kind="response", new_groups="population", seed=1)
 ```
 
-`kind="mean"` returns draws of `mu`; `kind="response"` also returns draws of a new
-observation. For a level of the grouping factor that was not in the training data:
+`kind="mean"` returns draws of the expected response: `mu` for Gaussian, `p = P(y = 1)`
+for Bernoulli (brms `posterior_epred`). `kind="response"` also returns draws `y` of a
+new observation, `Normal(mu, sigma)` or a 0/1 `Bernoulli(p)` draw (brms
+`posterior_predict`). Report a probability from `p`, not from the mean of `y`; report
+an interval for an outcome from `y`, not from `p`. For a level of the grouping factor
+that was not in the training data:
 
 - `new_groups="error"` (default): refuse, so an unseen level is never silently treated
   as an observed one.
 - `"population"`: draw the level's effect from `Normal(0, sd_group)` for each posterior
-  draw. This is the distribution the model fit (brms `sample_new_levels = "gaussian"`)
-  and is the right choice for "a new school".
+  draw, on the linear-predictor scale (the logit scale for Bernoulli). This is the
+  distribution the model fit (brms `sample_new_levels = "gaussian"`) and is the right
+  choice for "a new school".
 - `"resample_observed"`: reuse a random observed level's fitted effect per draw
   (brms's default `"uncertainty"`, Bambi's `sample_new_groups=True`). It understates
   between-level spread because it resamples shrunk effects from a finite set.
@@ -228,19 +271,24 @@ A speed claim needs the same model, priors, dtype, chains, warmup and draws, the
 diagnostic panels side by side, and the hardware named; `reference/acceleration.md`
 has the audit of how the published numbers fail that test.
 
-The worked example does all six steps and writes a record:
+The worked examples do all six steps and write a record:
 
 ```bash
 .venv/bin/python examples/m0_varying_intercept.py --backend numpyro --device cpu \
     --record fits/example_cpu.json
+.venv/bin/python examples/m1_bernoulli_varying_intercept.py --backend numpyro --device cpu \
+    --record fits/example_bernoulli_cpu.json
 ```
 
 ## Recovering from failures
 
 | Symptom | Cause | Do |
 | --- | --- | --- |
-| `FormulaError: ... not supported in M0` | Formula outside the verified family | Not a bug. Use the family, or write the model by hand: "Outside the verified family" |
+| `FormulaError: ... not supported in M0` | Formula outside the verified subset | Not a bug. Use the subset, or write the model by hand: "Outside the verified family" |
+| `FormulaError: response ... outside {0, 1}` / `boolean` / `constant` | Bernoulli response not coded 0/1 | Recode so 1 is the modelled outcome; binomial trials are not supported |
+| `PriorError: the Bernoulli family has no residual SD` | `sigma` given to `ab.bernoulli` | Drop `sigma`; the priors are on the logit scale |
 | `PriorError: prior for 'sd' must be a positive-support prior` | Wrong class of prior | Location classes for intercept and slopes, scale classes for `sd` and `sigma` |
+| Bernoulli fit: divergences or a group SD posterior stuck at its prior | Separation, or very few groups | Check for a group or predictor that perfectly predicts the outcome; tighten the logit-scale priors deliberately, and say so |
 | `DeviceError: ... JAX sees no GPU` | No CUDA jaxlib, or no GPU on this machine | Check `jax.devices()`. On a GPU host install `"jax[cuda12]"`; else `device="cpu"`. Do not "fix" this by catching it |
 | `DeviceError: backend='pymc' runs ... CPU only` | GPU asked of the PyMC sampler | `backend="numpyro"` |
 | report note: chains sequential | JAX initialised before autobayes import | Reorder imports; posterior unaffected |
@@ -281,7 +329,8 @@ git checkout <branch> && .venv/bin/python -m pytest tests -q        # fast check
 ## GPU and remote execution
 
 The reproducible command, and what counts as evidence, is in
-`docs/m0-gpu-validation.md`. In short: run the example with
+`docs/m0-gpu-validation.md` (executed once for the Gaussian family; **pending for the
+Bernoulli family**, same code path, not yet run). In short: run the example with
 `--backend numpyro --device gpu --record <path> --compare docs/m0-evidence/B2_numpyro_cpu_record.json`,
 keep the full output, and require `device actual : cuda:...`, `dtype : float64`,
 `chain method : vectorized`, a panel at `pass`, and `agree: True` against the CPU

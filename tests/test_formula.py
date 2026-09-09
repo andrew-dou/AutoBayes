@@ -60,8 +60,8 @@ def test_priors_required():
         ab.gaussian("y ~ x + (1 | g)", df, ab.Priors(intercept=ab.Normal(0, 1), b=ab.Normal(0, 1), sd=ab.Normal(0, 1), sigma=ab.HalfNormal(1)))
     with pytest.raises(ab.PriorError, match="missing \\['w'\\]"):
         ab.gaussian("y ~ x + w + (1 | g)", simulate(extra=True), ab.Priors(intercept=ab.Normal(0, 1), b={"x": ab.Normal(0, 1)}, sd=ab.HalfNormal(1), sigma=ab.HalfNormal(1)))
-    with pytest.raises(TypeError):
-        ab.Priors(intercept=ab.Normal(0, 1), b=ab.Normal(0, 1), sd=ab.HalfNormal(1))  # sigma missing
+    with pytest.raises(ab.PriorError, match="residual SD"):   # sigma missing for the Gaussian family
+        ab.gaussian("y ~ x + (1 | g)", df, ab.Priors(intercept=ab.Normal(0, 1), b=ab.Normal(0, 1), sd=ab.HalfNormal(1)))
     with pytest.raises(ab.PriorError, match="positive"):
         ab.Normal(0, -1)
 

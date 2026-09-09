@@ -13,12 +13,13 @@ Two halves:
   gate, a compiled wiki, a `research/` tier, and cluster templates with the expensive
   failures already encoded.
 
-- **`autobayes/`** — the library, started at milestone M0: a brms-like Python interface
-  that builds an inspectable PyMC model through Bambi, requires explicit priors, samples
-  on the CPU with PyMC's NUTS or through JAX/NumPyro with an explicit device choice, and
-  returns posterior and predictive draws. M0 supports one model family,
-  `y ~ x + (1 | group)` with a Gaussian likelihood; anything else is refused with an
-  error naming the construct. See [Library](#library-milestone-m0) below.
+- **`autobayes/`** — the library: a brms-like Python interface that builds an
+  inspectable PyMC model through Bambi, requires explicit priors, samples on the CPU
+  with PyMC's NUTS or through JAX/NumPyro with an explicit device choice, and returns
+  posterior and predictive draws. Two families on one formula subset
+  `y ~ x + (1 | group)`: Gaussian (M0) and Bernoulli with a logit link for a 0/1
+  outcome (M1); anything else is refused with an error naming the construct. See
+  [Library](#library-milestones-m0-and-m1) below.
 
 It came out of a multi-month hierarchical-modelling program that fit roughly sixty
 successive model versions on GPU, each conditional on the last. The modelling was the
@@ -83,7 +84,7 @@ Mid-project, the skills are symptom-triggered. When a gradient comes back `nan` 
 likelihood will not differentiate, `autobayes-custom-op` loads on its own and — before
 showing you the pattern — tries to talk you out of needing it.
 
-## Library (milestone M0)
+## Library (milestones M0 and M1)
 
 ```bash
 uv venv .venv --python 3.11
@@ -105,15 +106,25 @@ print(format_panel(panel(fit.idata)))                       # divergences, R-hat
 draws = model.predict(fit, newdata=new_df, new_groups="population")
 rec = ab.fit_record(model, fit)                             # one JSON record per fit, for the handoff
 ab.compare_records(rec, earlier_rec)                        # same posterior? (4 combined MCSE)
+
+# binary outcome nested in groups: Bernoulli likelihood, logit link, logit-scale priors, no sigma
+bpriors = ab.Priors(intercept=ab.Normal(0, 1.5), b=ab.Normal(0, 1), sd=ab.HalfNormal(1))
+bmodel = ab.bernoulli("y ~ x + (1 | clinic)", df01, bpriors)   # y must be exactly 0/1
+bfit = bmodel.fit(backend="pymc", seed=7)
+probs = bmodel.predict(bfit, newdata=new_df, kind="mean")        # p = P(y = 1)
+draws = bmodel.predict(bfit, newdata=new_df, kind="response", new_groups="population")  # p and 0/1 y
 ```
 
-`SKILL.md` is the researcher workflow for this family, step by step with the checks,
+`SKILL.md` is the researcher workflow for these families, step by step with the checks,
 failure recovery and the session handoff. What Bambi supplies and what this layer adds,
-with the reason for each addition, is in `docs/m0-decision.md`; the acceptance checks and
-their evidence are in `docs/m0-decision.md` and `docs/m0-evidence/`.
+with the reason for each addition, is in `docs/m0-decision.md` (Gaussian) and
+`docs/m1-decision.md` (Bernoulli, including the one measured deviation of Bambi's
+likelihood from the textbook density at extreme logits); the acceptance checks and their
+evidence are in those records and `docs/m0-evidence/`, `docs/m1-evidence/`.
 `docs/coordination/STATUS.md` is the live milestone status. GPU execution has been run
-once on an H100 and matched to the CPU posterior; `docs/m0-gpu-validation.md` has the
-numbers and the reproducible command. No speed claim is made.
+once on an H100 for the Gaussian family and matched to the CPU posterior
+(`docs/m0-gpu-validation.md`); for the Bernoulli family it is pending. No speed claim is
+made.
 
 ## The decision gate
 

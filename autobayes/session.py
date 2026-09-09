@@ -68,7 +68,7 @@ def _summary_rows(model, idata) -> dict:
     import arviz as az
 
     n = model.names
-    names = [n["intercept"], *model.spec.predictors, n["sd"], n["sigma"]]
+    names = [n["intercept"], *model.spec.predictors, n["sd"]] + ([n["sigma"]] if "sigma" in n else [])
     s = az.summary(idata, var_names=names, hdi_prob=0.94, round_to="none")
     rows = {}
     for name, r in s.iterrows():
@@ -85,16 +85,18 @@ def fit_record(model, fit, *, panel: dict | None = None, max_treedepth: int = 10
     s, d, pr = model.spec, model.design, model.priors
     slopes = pr.slope_priors(s.predictors)
     return {
-        "autobayes_version": _version("autobayes") or "0.0.1",
+        "autobayes_version": _version("autobayes") or "0.1.0",
         "model": {
             "formula": s.formula,
-            "family": "gaussian",
+            "family": model.family,
+            "link": model.link,
             "n": int(d.n), "J": int(d.J), "group": s.group,
             "center_predictors": bool(d.centered),
             "noncentered": True,
             "priors": {"intercept": str(pr.intercept), **{f"b:{k}": str(v) for k, v in slopes.items()},
-                       "sd": str(pr.sd), "sigma": str(pr.sigma)},
-            "intercept_prior_applies_to": "centred intercept (at predictor means)" if d.centered else "raw intercept",
+                       "sd": str(pr.sd), **({"sigma": str(pr.sigma)} if pr.sigma is not None else {})},
+            "intercept_prior_applies_to": ("centred intercept (at predictor means)" if d.centered else "raw intercept")
+                                          + (", logit scale" if model.family == "bernoulli" else ""),
         },
         "execution": {
             "backend": fit.backend, "device_requested": fit.device_requested,
@@ -112,8 +114,9 @@ def fit_record(model, fit, *, panel: dict | None = None, max_treedepth: int = 10
 
 def compare_records(a: dict, b: dict, *, k: float = 4.0) -> dict:
     """Population-parameter means within ``k`` combined MCSE. Returns per-parameter rows and ``agree``."""
-    if a["model"]["formula"] != b["model"]["formula"] or a["model"]["priors"] != b["model"]["priors"]:
-        raise ValueError("records fit different models; agreement is only defined for the same model and priors")
+    same = all(a["model"].get(k) == b["model"].get(k) for k in ("formula", "priors", "family"))
+    if not same:
+        raise ValueError("records fit different models; agreement is only defined for the same family, formula and priors")
     rows, agree = {}, True
     for name in a["posterior"]:
         if name not in b["posterior"]:

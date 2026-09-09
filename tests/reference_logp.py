@@ -102,3 +102,33 @@ def conditional_gaussian_posterior(data, *, response, predictors, group, center,
     cov = np.linalg.inv(P)
     mean = cov @ (prior_prec * prior_mean + W.T @ y / sigma**2)
     return mean, cov, P
+
+
+def reference_logp_bernoulli(point: dict, data: pd.DataFrame, *, response: str, predictors: list[str],
+                             group: str, priors: dict, center: bool = True, jacobian: bool = True) -> float:
+    """M1 reference: Bernoulli likelihood with a logit link, same structure as ``reference_logp``.
+
+    ``point`` holds a_c, b (array), log_sd, z (array); there is no residual scale. The
+    likelihood is written with ``log_expit`` so it is exact at any logit, which is what the
+    Bambi-built model is compared against (and where it deviates, see docs/m1-decision.md).
+    """
+    from scipy.special import log_expit
+
+    y, Xc, _, gidx, levels = build_design(data, response, predictors, group, center)
+    assert set(np.unique(y)) <= {0.0, 1.0}
+    a, b = float(point["a_c"]), np.atleast_1d(point["b"])
+    log_sd = float(point["log_sd"])
+    z = np.asarray(point["z"], dtype=float)
+    assert z.shape == (len(levels),)
+    sd = np.exp(log_sd)
+
+    eta = a + Xc @ b + sd * z[gidx]
+    lp = np.sum(y * log_expit(eta) + (1.0 - y) * log_expit(-eta))
+    lp += np.sum(stats.norm.logpdf(z, 0.0, 1.0))
+    lp += prior_logpdf(*priors["intercept"], a)
+    for i, p in enumerate(predictors):
+        lp += prior_logpdf(*priors["b"][p], b[i])
+    lp += prior_logpdf(*priors["sd"], sd)
+    if jacobian:
+        lp += log_sd
+    return float(lp)

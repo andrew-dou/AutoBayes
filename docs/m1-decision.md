@@ -49,10 +49,12 @@ $$\log p = \sum_i \big[y_i \log\mathrm{expit}(\eta_i) + (1 - y_i)\log\mathrm{exp
 `p = sigmoid(eta)` and replaces an exact `0` or `1` by machine epsilon (bambi
 `backend/links.py`); PyMC's `Bernoulli(p=...)` then evaluates `log(p)` / `log1p(-p)`.
 The sampled density therefore equals the exact Bernoulli-logit density to about 1e-8 for
-$|\eta| \lesssim 15$, loses precision in the $\log(1 - p)$ term as $|\eta|$ grows (total
-deviation 6e-3 over 80 observations at $\eta \approx 30$ in the probe), and is floored at
-$\log \epsilon = -36.04$ per observation for $|\eta| \gtrsim 37$, where the gradient of the
-likelihood term vanishes. Bambi's likelihood registry does not accept a `logit_p`
+$\eta \lesssim 15$ and for every negative $\eta$ down to underflow (measured: exact at
+$\eta = -40$ and $-300$); for large positive $\eta$ the $y = 0$ term $\log(1 - p)$ loses
+precision (total deviation 6e-3 over 80 observations at $\eta \approx 30$ in the probe) and
+above $\eta \approx 37$, where $\mathrm{sigmoid}(\eta)$ rounds to 1, it is floored at
+$\log \epsilon = -36.04$ per $y = 0$ observation, where the gradient of that term vanishes.
+The asymmetry is because $\mathrm{sigmoid}(\eta)$ underflows to 0 only near $\eta = -745$. Bambi's likelihood registry does not accept a `logit_p`
 parameterisation, so this cannot be changed without replacing the likelihood. Decision:
 reuse the built-in family, state this in `describe()`, pin the regime with tests (A5), and
 record the fallback: if a real dataset shows separation (posterior mass at $|\eta| > 20$),
@@ -86,10 +88,11 @@ Log density and meaning (CPU tests):
 - A2. Same with `jacobian=False`; the difference is exactly $\log s_g$.
 - A3. `compile_dlogp` equals central finite differences of the reference, rtol 1e-5.
 - A4. `get_jaxified_logp` equals the PyTensor path to 1e-8 at the same points.
-- A5. Extreme logits: at points with $\max|\eta| \le 15$ the deviation from the exact density
-  is below 1e-8; at $\eta \approx 40$ the log density and gradient are finite and the
-  deviation from the exact density exceeds 1 (documenting the epsilon floor; a Bambi change
-  that removes it will fail this test and the record gets updated).
+- A5. Extreme logits: at $\eta = \pm 12$, $-40$ and $-300$ the deviation from the exact
+  density is below 1e-8; at $\eta = +40$ and $+300$ the log density and gradient are finite
+  and the deviation equals $n_0 (\eta - 36.04)$ within 1 % for the $n_0$ zero outcomes
+  (documenting the epsilon floor; a Bambi change that removes it will fail this test and
+  the record gets updated).
 - A6. Design and coding as in M0; `p` from the graph equals $\mathrm{expit}$ of the hand-computed
   $\eta$ to 1e-12.
 - A7. Invalid inputs raise errors naming the problem: response values outside {0, 1}, a

@@ -1,4 +1,9 @@
-"""The M0 model: a thin, inspectable layer over a Bambi-built PyMC model."""
+"""The model: a thin, inspectable layer over a Bambi-built PyMC model.
+
+Two families. ``"gaussian"`` (M0): identity link, residual SD ``sigma``. ``"bernoulli"``
+(M1): logit link, ``p = expit(eta)``, no residual scale. Both share the formula subset
+``y ~ [1 +] x1 [+ x2 ...] + (1 | group)``, centring, and non-centred group effects.
+"""
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -33,11 +38,19 @@ class Design:
         return len(self.levels)
 
 
+_FAMILIES = {
+    # family: (Bambi parent parameter, link name)
+    "gaussian": ("mu", "identity"),
+    "bernoulli": ("p", "logit"),
+}
+
+
 class Model:
-    """``y ~ x + (1 | group)`` with a Gaussian likelihood and explicit priors.
+    """``y ~ x + (1 | group)`` with explicit priors, Gaussian or Bernoulli likelihood.
 
     Attributes
     ----------
+    family : str               "gaussian" or "bernoulli"
     spec : ModelSpec
     priors : Priors
     bambi_model : bambi.Model  (already built)
@@ -46,31 +59,41 @@ class Model:
     """
 
     def __init__(self, formula: str, data: pd.DataFrame, priors: Priors, *,
-                 center_predictors: bool = True):
+                 family: str = "gaussian", center_predictors: bool = True):
         import bambi as bmb
 
-        self.spec: ModelSpec = parse_formula(formula, data)
+        if family not in _FAMILIES:
+            raise ValueError(f"family must be one of {sorted(_FAMILIES)}, got {family!r}")
+        self.family = family
+        self.spec: ModelSpec = parse_formula(formula, data, family)
         self.priors = priors
-        priors.validate(self.spec.predictors)
+        priors.validate(self.spec.predictors, family)
         self.center_predictors = bool(center_predictors)
 
         cols = [self.spec.response, *self.spec.predictors, self.spec.group]
         df = data[cols].copy()
         df[self.spec.group] = df[self.spec.group].astype(str)
+        if family == "bernoulli":
+            df[self.spec.response] = df[self.spec.response].astype(int)
         self.data = df.reset_index(drop=True)
 
         self.bambi_model = bmb.Model(
-            self.spec.formula, self.data, family="gaussian",
-            priors=priors.to_bambi(self.spec.predictors, self.spec.group),
+            self.spec.formula, self.data, family=family,
+            priors=priors.to_bambi(self.spec.predictors, self.spec.group, family),
             noncentered=True, center_predictors=self.center_predictors,
         )
         self.bambi_model.build()
         self.pymc_model = self.bambi_model.backend.model
         self.design = self._extract_design()
+        if family == "bernoulli":
+            rv = self.pymc_model[self.spec.response]
+            obs = np.asarray(self.pymc_model.rvs_to_values[rv].eval())
+            if not np.array_equal(obs, self.design.y.astype(int)):
+                raise RuntimeError("Bambi's observed response does not equal the 0/1 column (success coding)")
 
     # -- design ------------------------------------------------------------------------
     def _extract_design(self) -> Design:
-        comp = self.bambi_model.components["mu"]
+        comp = self.bambi_model.components[_FAMILIES[self.family][0]]
         common = comp.design.common
         group = comp.design.group
         names = list(common.terms)
@@ -102,27 +125,37 @@ class Model:
 
     # -- naming ------------------------------------------------------------------------
     @property
+    def link(self) -> str:
+        return _FAMILIES[self.family][1]
+
+    @property
     def names(self) -> dict[str, str]:
-        """PyMC variable names for each role in the model."""
+        """PyMC variable names for each role in the model. ``"mean"`` is the likelihood's
+        parent parameter: ``mu`` (Gaussian) or ``p`` (Bernoulli). ``"sigma"`` exists only
+        for the Gaussian family."""
         g = self.spec.group
-        return {
+        mean = _FAMILIES[self.family][0]
+        out = {
             "intercept": "Intercept",
-            "sigma": "sigma",
             "sd": f"1|{g}_sigma",
             "offset": f"1|{g}_offset",
             "group_effect": f"1|{g}",
-            "mu": "mu",
+            "mean": mean,
             "y": self.spec.response,
             **{f"b:{p}": p for p in self.spec.predictors},
         }
+        if self.family == "gaussian":
+            out["sigma"] = "sigma"
+            out["mu"] = "mu"
+        return out
 
-    def value_point(self, *, intercept: float, b, sigma: float, sd: float, z) -> dict[str, np.ndarray]:
+    def value_point(self, *, intercept: float, b, sd: float, z, sigma: float | None = None) -> dict[str, np.ndarray]:
         """A point in PyMC's sampled (value) space, from natural-scale quantities.
 
         ``intercept`` is the *model* intercept (at the predictor means when centred),
         ``b`` the slopes in predictor order, ``sd`` the group SD, ``z`` the J standard
-        normal offsets. Scales are stored on the log scale because that is what PyMC
-        samples.
+        normal offsets, ``sigma`` the residual SD (Gaussian only). Scales are stored on the
+        log scale because that is what PyMC samples.
         """
         b = np.atleast_1d(np.asarray(b, dtype=float))
         if b.shape != (len(self.spec.predictors),):
@@ -130,11 +163,14 @@ class Model:
         z = np.asarray(z, dtype=float)
         if z.shape != (self.design.J,):
             raise ValueError(f"z must have {self.design.J} entries")
+        if (sigma is None) != (self.family == "bernoulli"):
+            raise ValueError("sigma is required for the Gaussian family and must be omitted for Bernoulli")
         n = self.names
         point = {n["intercept"]: np.asarray(float(intercept)),
-                 f"{n['sigma']}_log__": np.asarray(np.log(float(sigma))),
                  f"{n['sd']}_log__": np.asarray(np.log(float(sd))),
                  n["offset"]: z}
+        if sigma is not None:
+            point[f"{n['sigma']}_log__"] = np.asarray(np.log(float(sigma)))
         for i, p in enumerate(self.spec.predictors):
             point[p] = np.asarray(b[i])
         expected = {v.name for v in self.pymc_model.value_vars}
@@ -149,20 +185,26 @@ class Model:
         xs = " + ".join(
             (f"(x_{p} - mean(x_{p})) * b_{p}" if d.centered else f"x_{p} * b_{p}") for p in s.predictors
         )
+        gaussian = self.family == "gaussian"
+        lp = "mu" if gaussian else "eta"
+        a = f"a{'_c' if d.centered else ''}"
         lines = [
-            "AutoBayes M0 model",
+            f"AutoBayes {'M0' if gaussian else 'M1'} model",
             f"  formula   : {s.formula}",
-            "  family    : gaussian, identity link",
+            f"  family    : {self.family}, {self.link} link",
             f"  data      : n = {d.n} observations, J = {d.J} levels of {s.group}",
             f"  levels    : {', '.join(f'{j}={l}' for j, l in enumerate(d.levels))}",
             "",
             "Linear predictor",
-            f"  mu_i = a{'_c' if d.centered else ''}" + (f" + {xs}" if xs else "") + f" + u[{s.group}_i]",
+            f"  {lp}_i = {a}" + (f" + {xs}" if xs else "") + f" + u[{s.group}_i]",
         ]
+        if not gaussian:
+            lines += ["  P(y_i = 1) = p_i = expit(eta_i) = 1 / (1 + exp(-eta_i)); eta is on the log-odds scale."]
         if d.centered:
+            what = "expected response" if gaussian else "log-odds of y = 1"
             lines += [
                 "  Predictors are centred at their sample means (center_predictors=True, as in",
-                "  brms and Bambi). a_c is the expected response at the predictor means; the",
+                f"  brms and Bambi). a_c is the {what} at the predictor means; the",
                 "  prior on the intercept applies to a_c. The posterior reports the raw-scale",
                 "  intercept a = a_c - sum_p mean(x_p) * b_p, computed after sampling.",
             ]
@@ -173,27 +215,33 @@ class Model:
             "Group effects (non-centred)",
             f"  u[j] = sd_{s.group} * z[j],  z[j] ~ Normal(0, 1),  j = 0..{d.J - 1}",
             "",
-            "Priors",
-            f"  a{'_c' if d.centered else ''} ~ {pr.intercept}",
+            "Priors" + ("" if gaussian else " (a_c and b on the logit scale)"),
+            f"  {a} ~ {pr.intercept}",
         ]
         lines += [f"  b_{p} ~ {slopes[p]}" for p in s.predictors]
-        lines += [
-            f"  sd_{s.group} ~ {pr.sd}",
-            f"  sigma ~ {pr.sigma}",
-            "",
-            "Likelihood",
-            "  y_i ~ Normal(mu_i, sigma)",
-            "",
-            "PyMC variables sampled (value space)",
-        ]
+        lines += [f"  sd_{s.group} ~ {pr.sd}"]
+        if gaussian:
+            lines += [f"  sigma ~ {pr.sigma}", "", "Likelihood", "  y_i ~ Normal(mu_i, sigma)"]
+        else:
+            lines += [
+                "", "Likelihood", "  y_i ~ Bernoulli(p_i)",
+                "  Note: Bambi evaluates p_i = sigmoid(eta_i) and replaces an exact 1 by 1 - eps, so for",
+                "  eta_i above about 15 the y = 0 term log(1 - p_i) loses precision and above ~37 it is",
+                "  floored at log(eps) = -36 per observation (negative logits stay exact). With weakly",
+                "  informative logit-scale priors that region carries negligible mass; separation in",
+                "  the data is the case to watch (docs/m1-decision.md).",
+            ]
+        lines += ["", "PyMC variables sampled (value space)"]
         n = self.names
+        roles = {n["intercept"]: "a_c" if d.centered else "a",
+                 f"{n['sd']}_log__": f"log(sd_{s.group})",
+                 n["offset"]: "z"}
+        if gaussian:
+            roles[f"{n['sigma']}_log__"] = "log(sigma)"
         for v in self.pymc_model.value_vars:
-            role = {n["intercept"]: "a_c" if d.centered else "a",
-                    f"{n['sigma']}_log__": "log(sigma)",
-                    f"{n['sd']}_log__": f"log(sd_{s.group})",
-                    n["offset"]: "z"}.get(v.name, f"b_{v.name}")
-            lines.append(f"  {v.name:<24} {role}")
-        lines.append(f"Deterministic: {n['group_effect']} = u, mu = linear predictor")
+            lines.append(f"  {v.name:<24} {roles.get(v.name, f'b_{v.name}')}")
+        lines.append(f"Deterministic: {n['group_effect']} = u, {n['mean']} = "
+                     + ("linear predictor" if gaussian else "expit(linear predictor)"))
         return "\n".join(lines)
 
     # -- convenience -------------------------------------------------------------------
@@ -209,5 +257,10 @@ class Model:
 
 
 def gaussian(formula: str, data: pd.DataFrame, priors: Priors, *, center_predictors: bool = True) -> Model:
-    """Build the M0 Gaussian varying-intercept model."""
-    return Model(formula, data, priors, center_predictors=center_predictors)
+    """Build the M0 Gaussian varying-intercept model (identity link, residual SD ``sigma``)."""
+    return Model(formula, data, priors, family="gaussian", center_predictors=center_predictors)
+
+
+def bernoulli(formula: str, data: pd.DataFrame, priors: Priors, *, center_predictors: bool = True) -> Model:
+    """Build the M1 Bernoulli varying-intercept model (logit link, response strictly 0/1)."""
+    return Model(formula, data, priors, family="bernoulli", center_predictors=center_predictors)
