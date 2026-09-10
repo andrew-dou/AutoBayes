@@ -1,5 +1,62 @@
 # AutoBayes status
 
+## Foundation slice (2026-09-09): reproducible CPU checks (section 4.0 of the proposal)
+
+- Andrew approved the software plan on 2026-09-09 (evening); this is the first implementation
+  slice, dispatched by the coordinator. Branch `foundation/reproducible-cpu-checks` from the
+  reviewed M1 head `bd63348`, in the worktree
+  `/Users/andrewdou/iqss-research/projects/AutoBayes-worktrees/foundation-cpu-checks`
+  (the M1 checkout at `projects/AutoBayes` is left as it was, dirty with the planning docs).
+  Session `e5628a7d-e572-4bad-9feb-82ee8361c261`. Depends on PR #3 (M1), still open.
+- **Pinned, locked stack**: `pyproject.toml` now pins the tested versions exactly
+  (`requires-python >=3.11,<3.12`; pymc 5.28.5, pytensor 2.38.3, bambi 0.17.2, formulae 0.6.2,
+  arviz 0.23.4, numpy 2.4.6, pandas 3.0.5, scipy 1.17.1, xarray 2026.7.0, matplotlib 3.10.9;
+  extras `jax` = jax/jaxlib 0.10.2 + numpyro 0.21.0, `dev` = pytest 9.1.1) and `uv.lock`
+  (58 packages) fixes the rest. No library was upgraded; the lock reproduces the environment
+  every result in `docs/` came from. A clean environment was built from the lock in the
+  worktree (`uv sync --locked --extra jax --extra dev`, Python 3.11.0) and used for the runs
+  below.
+- **Evidence paths**: test runs write candidate evidence to `evidence-runs/<UTC time>-<git
+  head>/` (gitignored, `AUTOBAYES_EVIDENCE_DIR` overrides; a `run.json` records environment,
+  git head and argv). `tests/test_sampling.py` no longer writes into `docs/m*-evidence/`; the
+  committed records are immutable history. Acceptance stays the statistical criteria the
+  tests assert.
+- **New checks**: `tests/test_fresh_process.py` (fresh interpreters: autobayes-first gives
+  parallel CPU chains; JAX-first gives `sequential` with the note; `AUTOBAYES_HOST_DEVICES=0`;
+  a process without JAX: `environment()` reports it, `backend="numpyro"` raises `DeviceError`
+  naming the `[jax]` extra, `backend="pymc"` works), `tests/test_priors_families.py`
+  (StudentT / HalfStudentT / Exponential / HalfCauchy end to end against the reference
+  density, both families), `tests/test_multi_predictor_predict.py` (two predictors, in-sample
+  and new-group paths, both families), `tests/test_diagnostics_panel.py` (pass / investigate /
+  fail / n/a statuses and `format_panel`), `tests/test_evidence_provenance.py` (record schema,
+  provenance, history untouched). Library change: `inference.resolve_jax_device` turns a
+  missing JAX into a `DeviceError` with the fix named.
+- **CI**: `.github/workflows/ci.yml` (fast suite on push and pull request, Ubuntu, CPU, locked
+  install, 40-minute timeout, cancel-in-progress per ref, evidence + junit artifacts) and
+  `slow.yml` (manual, the three sampling checks, 60-minute timeout, artifacts). No GPU
+  workflow. Actions are enabled on the repository (`actions/permissions`: enabled); included
+  minutes could not be read through the API (the token lacks the `user` scope), so the first
+  run is the availability check.
+- **Results (executed).** Clean locked environment in the worktree (Python 3.11.0, macOS
+  arm64, fresh PyTensor compiledir): fast suite **81 passed, 3 deselected** (65.6 s on the
+  second full run; the first full run found one wrong expectation in the new
+  `AUTOBAYES_HOST_DEVICES=0` test, fixed by asserting what the switch does: it only
+  matters if JAX is initialised before the first fit, because `fit()` sets the host device
+  count itself otherwise; a test for that second fact was added), slow suite **3 passed**
+  (27.1 s), evidence in `evidence-runs/20260910T024831Z-552bdfe663f3-dirty/`
+  (`B1_conditional_gaussian.json`, `B2_recovery.json`, `M1_B1_recovery.json`, `run.json`).
+  Hosted CI (`fast checks`, run 34430932197 on head `72f0afe`, ubuntu-latest, locked
+  install): **81 passed, 3 deselected in 152 s**, whole run 3.5 minutes, artifact
+  `fast-evidence-34430932197-1` uploaded; the run for the previous head was cancelled by
+  the concurrency rule as intended. The environment report in CI shows the same versions
+  and 2 CPU devices (2-core runner). The slow workflow has not been dispatched in CI.
+- Fix-up commit `72f0afe`: `autobayes.egg-info/` (created by the editable install) was in
+  the first commit and is now gitignored and removed.
+- Docs: README install/test section and supported-path table; `SKILL.md` session start,
+  handoff and failure table updated to the implemented behaviour.
+- Not in this slice: M2 and later; GPU runs; the Bernoulli boundary-form change (D8) is a
+  separate reviewed correctness change if approved.
+
 ## Planning checkpoint (2026-09-09): complete for Andrew's review
 
 - Proposal: `docs/coordination/NEXT_MILESTONES_PROPOSAL.md`, revision3 plus final coordinator
