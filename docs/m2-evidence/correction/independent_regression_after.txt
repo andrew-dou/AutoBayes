@@ -1,0 +1,3 @@
+Coordinator's independent regression /Users/andrewdou/iqss-research/artifacts/2026-09-10-autobayes-m2-repair-independent/test_distribution_normalization.py (three observed k, pmf [.25,.5,.25] to 1e-12 on both paths)
+run against the corrected worktree in the clean locked environment: 3 passed, 3 warnings in 9.00s
+Saved result on d98b730 (coordinator's artifact normalization-regression.txt): 3 failed.

@@ -44,8 +44,19 @@ for two outcome families:
   execution for this family is **pending** (the same code path, not yet run on a GPU).
   Evidence `docs/m1-evidence/`, checks and the repair record in `docs/m1-decision.md`.
 
-**What is not verified.** Every other formula and family (binomial trials, other links,
-varying slopes, nested or crossed groups, categorical predictors). The library refuses
+- **Binomial counts, logit link (M2)**: `ab.binomial("successes | trials(n) ~ x + (1 | group)", df, priors)`,
+  brms syntax, counts validated before any cast, zero-trial rows dropped and reported
+  before centring, a data set without trials refused, constant outcomes accepted with a
+  separation warning. Log density and full gradients against a 60-digit high-precision
+  reference at logits to 1e6 and counts to 1e6 per row on both paths, row by row and near
+  the mode, `n = 1` equivalence with the Bernoulli family, expansion to Bernoulli rows with
+  aligned centring, three prediction quantities. Counts above 1e6 per row are refused: the
+  float64 density near a binomial mode loses the prespecified accuracy there
+  (`docs/m2-decision.md`, repair record). GPU execution **pending**. Evidence
+  `docs/m2-evidence/`, checks in `docs/m2-decision.md`.
+
+**What is not verified.** Every other formula and family (other links, varying slopes,
+nested or crossed groups, categorical predictors, beta-binomial). The library refuses
 them with an error naming the construct. Do not loosen the parser to get past that
 error; go to "Outside the verified family" below.
 
@@ -120,6 +131,27 @@ priors = ab.Priors(
 )                                 # no sigma: passing one is an error for this family
 model = ab.bernoulli("y ~ x + (1 | clinic)", df, priors)
 ```
+
+For counts with known denominators (k successes of n trials per row):
+
+```python
+priors = ab.Priors(intercept=ab.Normal(0, 1.5), b=ab.Normal(0, 1), sd=ab.HalfNormal(1))
+model = ab.binomial("deaths | trials(patients) ~ x + (1 | clinic)", df, priors)
+```
+
+Counts must be real integers (int columns, or floats holding integers); bool, complex,
+non-integral, negative, non-finite, `successes > trials`, and values above `1e6` per row
+are refused before any cast, naming the column. The cap is the tested numerical domain of
+this implementation, not a modelling limit; do not work around it by splitting a row into
+several rows, which changes the unweighted centring and therefore what the centred-intercept
+prior refers to unless the centring is preserved or the prior transformed. A row with `trials = 0` and no successes
+carries no information and is **dropped before centring** (`describe()` reports how many
+and where); successes with zero trials is impossible data and refused; a data set with
+no trials at all is refused. If every fitted row has zero successes or all successes the
+model still builds, with a warning: the data are separated along the intercept direction
+and the posterior there is set by the intercept prior's tail, so refit with a wider and a
+narrower intercept prior and report the movement. Bambi's `p(k, n)` left-hand side is
+refused; write the brms form.
 
 Every class the family has is required. There are no defaults, because a default
 prior is the thing you cannot see in the formula and cannot reproduce later. Location
@@ -236,11 +268,16 @@ new = model.predict(fit, newdata=new_df, kind="response", new_groups="population
 ```
 
 `kind="mean"` returns draws of the expected response: `mu` for Gaussian, `p = P(y = 1)`
-for Bernoulli (brms `posterior_epred`). `kind="response"` also returns draws `y` of a
-new observation, `Normal(mu, sigma)` or a 0/1 `Bernoulli(p)` draw (brms
-`posterior_predict`). Report a probability from `p`, not from the mean of `y`; report
-an interval for an outcome from `y`, not from `p`. For a level of the grouping factor
-that was not in the training data:
+for Bernoulli, and for binomial `p` together with `expected = n p` (brms
+`posterior_epred`, which is `mu * trials` for binomial models). `kind="response"` also
+returns draws `y` of a new observation, `Normal(mu, sigma)`, a 0/1 `Bernoulli(p)` draw,
+or an integer `Binomial(n, p)` draw (brms `posterior_predict`). For binomial models
+`kind="probability"` returns `p` alone and needs no trials column (brms
+`posterior_linpred(transform = TRUE)`); `mean` and `response` need the trials column
+named in the formula in `newdata`, and a row with zero trials gives `expected = 0` and
+`y = 0`. Report a probability from `p`, not from the mean of `y`; report an interval
+for an outcome from `y`, not from `p`. For a level of the grouping factor that was not
+in the training data:
 
 - `new_groups="error"` (default): refuse, so an unseen level is never silently treated
   as an observed one.
@@ -289,6 +326,8 @@ The worked examples do all six steps and write a record:
     --record fits/example_cpu.json
 .venv/bin/python examples/m1_bernoulli_varying_intercept.py --backend numpyro --device cpu \
     --record fits/example_bernoulli_cpu.json
+.venv/bin/python examples/m2_binomial_varying_intercept.py --backend numpyro --device cpu \
+    --record fits/example_binomial_cpu.json
 ```
 
 ## Recovering from failures
@@ -296,7 +335,11 @@ The worked examples do all six steps and write a record:
 | Symptom | Cause | Do |
 | --- | --- | --- |
 | `FormulaError: ... not supported in M0` | Formula outside the verified subset | Not a bug. Use the subset, or write the model by hand: "Outside the verified family" |
-| `FormulaError: response ... outside {0, 1}` / `boolean` / `constant` | Bernoulli response not coded 0/1 | Recode so 1 is the modelled outcome; binomial trials are not supported |
+| `FormulaError: response ... outside {0, 1}` / `boolean` / `constant` | Bernoulli response not coded 0/1 | Recode so 1 is the modelled outcome; for counts with denominators use `ab.binomial` |
+| `FormulaError: ... needs 'successes \| trials(n)'` or `Bambi's 'p(...)'` | Binomial left-hand side not in brms form | Write `k \| trials(n) ~ ...` |
+| `FormulaError: ... exceed trials` / `zero trials is impossible` / `no trials in the data` | Count data inconsistent | Fix the data; zero-trial rows without successes are fine and are dropped and reported |
+| `FormulaError: ... above the tested limit` | A count above 1e6 in one row | Outside the validated float64 domain (`docs/m2-decision.md`); not silently accepted |
+| Binomial `describe()` shows a separation WARNING | All rows zero successes or all successes | Refit with a wider and a narrower intercept prior; report the movement; the result is prior-sensitive by construction |
 | `FormulaError: ... is complex-valued` | A complex column (pandas counts it as numeric; a cast would drop the imaginary part) | Take the real part explicitly if that is what you mean |
 | `PriorError: the Bernoulli family has no residual SD` | `sigma` given to `ab.bernoulli` | Drop `sigma`; the priors are on the logit scale |
 | `PriorError: prior for 'sd' must be a positive-support prior` | Wrong class of prior | Location classes for intercept and slopes, scale classes for `sd` and `sigma` |
@@ -364,7 +407,7 @@ pinned environment on that runner, nothing more; there is no GPU workflow.
 
 The reproducible command, and what counts as evidence, is in
 `docs/m0-gpu-validation.md` (executed once for the Gaussian family; **pending for the
-Bernoulli family**, same code path, not yet run). In short: run the example with
+Bernoulli and binomial families**, same code path, not yet run). In short: run the example with
 `--backend numpyro --device gpu --record <path> --compare docs/m0-evidence/B2_numpyro_cpu_record.json`,
 keep the full output, and require `device actual : cuda:...`, `dtype : float64`,
 `chain method : vectorized`, a panel at `pass`, and `agree: True` against the CPU

@@ -1,8 +1,9 @@
-"""The M0 formula grammar and its validation.
+"""The formula grammar and its validation.
 
 Supported::
 
-    response ~ [1 +] predictor [+ predictor ...] + (1 | group)
+    response ~ [1 +] predictor [+ predictor ...] + (1 | group)               (Gaussian, Bernoulli)
+    successes | trials(n) ~ [1 +] predictor [+ predictor ...] + (1 | group)  (binomial, brms syntax)
 
 Predictors must be numeric columns; the grouping variable may be any column and is
 coded as a factor with levels in sorted order. Bambi (via formulae) accepts a much
@@ -19,7 +20,11 @@ import pandas as pd
 
 _IDENT = r"[A-Za-z_][A-Za-z0-9_.]*"
 _FORMULA_RE = re.compile(rf"^\s*({_IDENT})\s*~\s*(.+?)\s*$", re.S)
+_TRIALS_FORMULA_RE = re.compile(rf"^\s*({_IDENT})\s*\|\s*trials\(\s*({_IDENT})\s*\)\s*~\s*(.+?)\s*$", re.S)
+_BAMBI_PROPORTION_RE = re.compile(r"^\s*(p|prop|proportion)\s*\(", re.S)
 _GROUP_RE = re.compile(rf"^\(\s*(.+?)\s*\|\s*(.+?)\s*\)$", re.S)
+
+COUNT_CAP = 10**6   # the validated domain for binomial counts per row (docs/m2-decision.md, repair record)
 
 
 class FormulaError(ValueError):
@@ -34,10 +39,19 @@ class ModelSpec:
     group: str
     intercept: bool = True
     levels: tuple[str, ...] = field(default_factory=tuple)
+    trials: str | None = None          # binomial only: the trials column of ``successes | trials(n)``
+    rhs: str = ""
 
     @property
     def group_term(self) -> str:
         return f"1|{self.group}"
+
+    @property
+    def bambi_formula(self) -> str:
+        """What is handed to Bambi: brms's ``k | trials(n)`` becomes Bambi's ``p(k, n)``."""
+        if self.trials is None:
+            return self.formula
+        return f"p({self.response}, {self.trials}) ~ {self.rhs}"
 
 
 def _split_top_level(rhs: str, sep: str = "+") -> list[str]:
@@ -83,13 +97,40 @@ def _reject_group_term(inner: str, factor: str, piece: str) -> None:
 
 def parse_formula(formula: str, data: pd.DataFrame | None = None, family: str = "gaussian") -> ModelSpec:
     """Parse and validate a formula in the supported subset, optionally against a data frame."""
-    m = _FORMULA_RE.match(formula)
-    if not m:
+    trials = None
+    if _BAMBI_PROPORTION_RE.match(formula):
         raise FormulaError(
-            f"{formula!r}: expected 'response ~ terms'. M0 supports "
-            "'y ~ [1 +] x1 [+ x2 ...] + (1 | group)'."
+            f"{formula!r}: Bambi's 'p(successes, trials)' left-hand side is not accepted; write the brms "
+            "form 'successes | trials(n) ~ ...' (ab.binomial)."
         )
-    response, rhs = m.group(1), m.group(2)
+    mt = _TRIALS_FORMULA_RE.match(formula)
+    if mt:
+        if family != "binomial":
+            raise FormulaError(
+                f"{formula!r}: 'successes | trials(n)' is the binomial family's left-hand side; use "
+                "ab.binomial, or drop '| trials(...)' for a Gaussian or Bernoulli response."
+            )
+        response, trials, rhs = mt.group(1), mt.group(2), mt.group(3)
+        if trials == response:
+            raise FormulaError(f"{trials!r}: the trials column cannot also be the response")
+    else:
+        if "~" in formula and "|" in formula.split("~", 1)[0]:
+            raise FormulaError(
+                f"{formula!r}: a '|' on the left-hand side must be exactly 'successes | trials(n)'."
+            )
+        m = _FORMULA_RE.match(formula)
+        if not m:
+            raise FormulaError(
+                f"{formula!r}: expected 'response ~ terms'. Supported: "
+                "'y ~ [1 +] x1 [+ x2 ...] + (1 | group)' and, for ab.binomial, "
+                "'successes | trials(n) ~ [1 +] x1 [+ x2 ...] + (1 | group)'."
+            )
+        if family == "binomial":
+            raise FormulaError(
+                f"{formula!r}: the binomial family needs 'successes | trials(n) ~ ...' (brms syntax); "
+                "counts without a trials column are not a binomial model."
+            )
+        response, rhs = m.group(1), m.group(2)
     if "-" in rhs:
         raise FormulaError(
             f"{formula!r}: '-' is not supported in M0 (this includes '- 1' to drop the "
@@ -154,10 +195,12 @@ def parse_formula(formula: str, data: pd.DataFrame | None = None, family: str = 
     group = groups[0]
     if group in predictors or group == response:
         raise FormulaError(f"{group!r}: the grouping factor cannot also be a predictor or the response")
+    if trials is not None and (trials in predictors or trials == group):
+        raise FormulaError(f"{trials!r}: the trials column cannot also be a predictor or the grouping factor")
 
     spec = ModelSpec(
         formula=formula.strip(), response=response, predictors=tuple(predictors),
-        group=group, intercept=True,
+        group=group, intercept=True, trials=trials, rhs=rhs.strip(),
     )
     if data is not None:
         spec = validate_data(spec, data, family)
@@ -201,9 +244,70 @@ def _validate_binary_response(name: str, s: pd.Series) -> None:
         )
 
 
+def check_counts(label: str, s: pd.Series, *, cap: int = COUNT_CAP) -> np.ndarray:
+    """A count column: real numeric, finite, integral, in ``[0, cap]``. Checked before any cast;
+    returns the values as ``int64``."""
+    reject_complex(label, s)
+    if pd.api.types.is_bool_dtype(s):
+        raise FormulaError(f"{label} is boolean; counts must be integers")
+    if not pd.api.types.is_numeric_dtype(s):
+        raise FormulaError(f"{label} has dtype {s.dtype}; counts must be numeric integers")
+    v = s.to_numpy()
+    if not np.all(np.isfinite(v.astype(float))):
+        bad = v[~np.isfinite(v.astype(float))][0]
+        raise FormulaError(f"{label} has a non-finite value ({bad!r}); counts must be finite integers")
+    vf = v.astype(float)
+    if not np.all(np.mod(vf, 1.0) == 0.0):
+        bad = vf[np.mod(vf, 1.0) != 0.0][0]
+        raise FormulaError(f"{label} has a non-integral value ({bad!r}); counts must be whole numbers")
+    if np.any(vf < 0):
+        raise FormulaError(f"{label} has a negative value ({vf[vf < 0][0]!r}); counts must be non-negative")
+    if np.any(vf > cap):
+        raise FormulaError(
+            f"{label} has a value above the tested limit {cap} ({vf[vf > cap][0]:.0f}); larger counts per row "
+            "are outside the validated domain (the float64 density and gradient checks in docs/m2-decision.md) "
+            "and are refused rather than assumed. Note that splitting a row into several rows changes the "
+            "unweighted centring and therefore what the centred-intercept prior refers to."
+        )
+    return vf.astype(np.int64)
+
+
+def binomial_counts(spec: ModelSpec, data: pd.DataFrame) -> tuple[np.ndarray, np.ndarray]:
+    """Validated ``(successes, trials)`` for a binomial formula, without dropping any row.
+
+    Refuses ``successes > trials``, a zero-trial row with successes, and a data set with no
+    trials at all. Rows with ``trials = 0`` and ``successes = 0`` pass; the model drops and
+    reports them (they carry no likelihood and would otherwise enter the centring means).
+    """
+    na = data[[spec.response, spec.trials]].isna().any()
+    if na.any():
+        raise FormulaError(
+            f"missing values in columns {list(na[na].index)}; drop or impute them explicitly before fitting."
+        )
+    k = check_counts(f"response {spec.response!r}", data[spec.response])
+    n = check_counts(f"trials {spec.trials!r}", data[spec.trials])
+    impossible = np.flatnonzero((n == 0) & (k > 0))
+    if impossible.size:
+        raise FormulaError(f"row {int(impossible[0])}: successes with zero trials is impossible data")
+    over = np.flatnonzero(k > n)
+    if over.size:
+        i = int(over[0])
+        raise FormulaError(
+            f"row {i}: successes {spec.response!r} = {k[i]} exceed trials {spec.trials!r} = {n[i]}"
+        )
+    if not np.any(n > 0):
+        raise FormulaError(
+            f"no trials in the data ({spec.trials!r} is zero everywhere); a prior-only fit must be requested "
+            "explicitly, it is not a binomial fit"
+        )
+    return k, n
+
+
 def validate_data(spec: ModelSpec, data: pd.DataFrame, family: str = "gaussian") -> ModelSpec:
     """Check columns exist, are numeric where required, and have no missing values."""
-    needed = [spec.response, *spec.predictors, spec.group]
+    if (spec.trials is not None) != (family == "binomial"):
+        raise FormulaError("a trials column is present exactly for the binomial family")
+    needed = [spec.response, *spec.predictors, spec.group] + ([spec.trials] if spec.trials else [])
     missing = [c for c in needed if c not in data.columns]
     if missing:
         raise FormulaError(f"columns not in data: {missing}")
@@ -217,6 +321,8 @@ def validate_data(spec: ModelSpec, data: pd.DataFrame, family: str = "gaussian")
     reject_complex(f"response {spec.response!r}", data[spec.response])
     if family == "bernoulli":
         _validate_binary_response(spec.response, data[spec.response])
+    elif family == "binomial":
+        binomial_counts(spec, data)
     elif not _is_numeric(data[spec.response]):
         raise FormulaError(
             f"column {spec.response!r} has dtype {data[spec.response].dtype}; the Gaussian "
@@ -241,5 +347,5 @@ def validate_data(spec: ModelSpec, data: pd.DataFrame, family: str = "gaussian")
             raise FormulaError(f"predictor {c!r} is constant")
     return ModelSpec(
         formula=spec.formula, response=spec.response, predictors=spec.predictors,
-        group=spec.group, intercept=True, levels=levels,
+        group=spec.group, intercept=True, levels=levels, trials=spec.trials, rhs=spec.rhs,
     )

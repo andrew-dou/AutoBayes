@@ -85,7 +85,7 @@ def fit_record(model, fit, *, panel: dict | None = None, max_treedepth: int = 10
     s, d, pr = model.spec, model.design, model.priors
     slopes = pr.slope_priors(s.predictors)
     return {
-        "autobayes_version": _version("autobayes") or "0.1.0",
+        "autobayes_version": _version("autobayes") or "0.2.0",
         "model": {
             "formula": s.formula,
             "family": model.family,
@@ -96,7 +96,11 @@ def fit_record(model, fit, *, panel: dict | None = None, max_treedepth: int = 10
             "priors": {"intercept": str(pr.intercept), **{f"b:{k}": str(v) for k, v in slopes.items()},
                        "sd": str(pr.sd), **({"sigma": str(pr.sigma)} if pr.sigma is not None else {})},
             "intercept_prior_applies_to": ("centred intercept (at predictor means)" if d.centered else "raw intercept")
-                                          + (", logit scale" if model.family == "bernoulli" else ""),
+                                          + (", logit scale" if model.family != "gaussian" else ""),
+            **({"trials": s.trials, "trials_total": int(d.trials.sum()),
+                "zero_trial_rows_dropped": len(model.dropped_rows),
+                "zero_trial_row_positions": list(model.dropped_rows)} if model.family == "binomial" else {}),
+            "warnings": list(model.warnings),
         },
         "execution": {
             "backend": fit.backend, "device_requested": fit.device_requested,

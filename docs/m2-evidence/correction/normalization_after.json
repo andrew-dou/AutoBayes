@@ -1,0 +1,144 @@
+{
+ "package": "/Users/andrewdou/iqss-research/projects/AutoBayes-worktrees/m2-binomial",
+ "git_head_of_package_dir": "8d76d64",
+ "n": 2,
+ "eta": 0.0,
+ "true_pmf": [
+  0.25,
+  0.5,
+  0.25
+ ],
+ "by_observed_k": [
+  {
+   "observed_k": 0,
+   "pmf_pytensor_int_value": [
+    0.25,
+    0.5,
+    0.25
+   ],
+   "pmf_jax_int_value": [
+    0.25,
+    0.5,
+    0.25
+   ],
+   "mass_pytensor_int_value": 1.0,
+   "mass_jax_int_value": 1.0,
+   "pmf_pytensor_float_value": [
+    0.25,
+    0.5,
+    0.25
+   ],
+   "pmf_jax_float_value": [
+    0.25,
+    0.5,
+    0.25
+   ],
+   "mass_pytensor_float_value": 1.0,
+   "mass_jax_float_value": 1.0
+  },
+  {
+   "observed_k": 1,
+   "pmf_pytensor_int_value": [
+    0.25,
+    0.5,
+    0.25
+   ],
+   "pmf_jax_int_value": [
+    0.25,
+    0.5,
+    0.25
+   ],
+   "mass_pytensor_int_value": 1.0,
+   "mass_jax_int_value": 1.0,
+   "pmf_pytensor_float_value": [
+    0.25,
+    0.5,
+    0.25
+   ],
+   "pmf_jax_float_value": [
+    0.25,
+    0.5,
+    0.25
+   ],
+   "mass_pytensor_float_value": 1.0,
+   "mass_jax_float_value": 1.0
+  },
+  {
+   "observed_k": 2,
+   "pmf_pytensor_int_value": [
+    0.25,
+    0.5,
+    0.25
+   ],
+   "pmf_jax_int_value": [
+    0.25,
+    0.5,
+    0.25
+   ],
+   "mass_pytensor_int_value": 1.0,
+   "mass_jax_int_value": 1.0,
+   "pmf_pytensor_float_value": [
+    0.25,
+    0.5,
+    0.25
+   ],
+   "pmf_jax_float_value": [
+    0.25,
+    0.5,
+    0.25
+   ],
+   "mass_pytensor_float_value": 1.0,
+   "mass_jax_float_value": 1.0
+  }
+ ],
+ "off_support": [
+  {
+   "value_dtype": "int64",
+   "value": -1,
+   "logp_pytensor": -Infinity,
+   "logp_jax": -Infinity
+  },
+  {
+   "value_dtype": "int64",
+   "value": 3,
+   "logp_pytensor": -Infinity,
+   "logp_jax": -Infinity
+  },
+  {
+   "value_dtype": "int64",
+   "value": 5,
+   "logp_pytensor": -Infinity,
+   "logp_jax": -Infinity
+  },
+  {
+   "value_dtype": "int64",
+   "value": -7,
+   "logp_pytensor": -Infinity,
+   "logp_jax": -Infinity
+  },
+  {
+   "value_dtype": "float64",
+   "value": -1.0,
+   "logp_pytensor": -Infinity,
+   "logp_jax": -Infinity
+  },
+  {
+   "value_dtype": "float64",
+   "value": 3.0,
+   "logp_pytensor": -Infinity,
+   "logp_jax": -Infinity
+  },
+  {
+   "value_dtype": "float64",
+   "value": 1.5,
+   "logp_pytensor": -Infinity,
+   "logp_jax": -Infinity
+  },
+  {
+   "value_dtype": "float64",
+   "value": 0.5,
+   "logp_pytensor": -Infinity,
+   "logp_jax": -Infinity
+  }
+ ]
+}

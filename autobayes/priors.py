@@ -97,9 +97,9 @@ class Priors:
     def validate(self, predictors: tuple[str, ...], family: str = "gaussian") -> None:
         if family == "gaussian" and self.sigma is None:
             raise PriorError("the Gaussian family needs a prior on the residual SD: pass sigma=...")
-        if family == "bernoulli" and self.sigma is not None:
+        if family != "gaussian" and self.sigma is not None:
             raise PriorError(
-                "the Bernoulli family has no residual SD; do not pass sigma. Its intercept and "
+                f"the {family} family has no residual SD; do not pass sigma. Its intercept and "
                 "slope priors are on the logit scale."
             )
         for label, prior in [("intercept", self.intercept), *self.slope_priors(predictors).items()]:

@@ -1,5 +1,115 @@
 # AutoBayes status
 
+## M2 slice (2026-09-10): grouped binomial counts, logit link
+
+- Approved by Andrew 2026-09-09 (evening; `iqss-research/plans/2026-09-09-autobayes-approval-brief.md`),
+  dispatched after the foundation merge. Branch `m2/binomial-trials` from `main` at `4eee25c`
+  in the worktree `/Users/andrewdou/iqss-research/projects/AutoBayes-worktrees/m2-binomial`;
+  session `e5628a7d-e572-4bad-9feb-82ee8361c261`. Decision record `docs/m2-decision.md`
+  committed at `93ab82d` before any implementation (defaults, target, construction chosen
+  after measuring the built-ins, high-precision reference and error budget, A1-A9/B1/C1-C3).
+- Planning-file provenance: the original checkout at `projects/AutoBayes` (branch `m1`, dirty)
+  still holds the uncommitted planning docs; `main` already contains identical copies (the
+  proposal is byte-identical; STATUS on `main` is a superset with the coordinator's corrected
+  planning checkpoint, committed in the foundation branch at `552bdfe`). Nothing was copied
+  or replaced in this slice. The foundation worktree's ignored `evidence-runs/` candidate
+  directories were removed together with that worktree on 2026-09-10 and are not preserved
+  locally; the hosted artifacts (`fast-evidence-34430932197-1`, `slow-evidence-34439415443-1`
+  and the later run artifacts) and the coordinator's independently preserved run artifacts
+  are the surviving copies.
+- Cleanup commit `b0b3497` removed a vacuous `... or True` assertion from
+  `tests/test_evidence_provenance.py` (explained in its message).
+- **Delivered**: `ab.binomial("successes | trials(n) ~ x + (1 | group)", df, priors)` (brms syntax
+  only; Bambi's `p(k, n)` refused), counts validated before any cast (bool, complex,
+  non-integral, non-finite, negative, `k > n`, above the cap refused; the cap was `2^31-1` at this head and is `1e6` since the repair), zero-trial rows dropped
+  and reported before centring, all-zero-trial data refused, constant outcomes accepted with a
+  separation warning (M1's Bernoulli refusal retained), likelihood
+  `log C(n,k) - k softplus(-eta) - (n-k) softplus(eta)` on `stable_softplus` in a Bambi custom
+  family with `n` passed as Bambi's own binomial passes it; predictions computed in this layer:
+  `probability` (p), `mean` (p, expected = n p; brms `posterior_epred`), `response` (+ integer
+  `Binomial(n, p)` draws), trials column required only for `mean`/`response` newdata, zero-trial
+  prediction rows deterministic zero, M1 new-group identity/sharing semantics; fit records carry
+  trials, dropped rows and warnings. Version 0.2.0 (`uv.lock` changed only in the project entry).
+- **Measured before choosing the construction** (`docs/m2-decision.md`): Bambi's built-in
+  binomial fails 49 of 130 grid points (values and gradients, both paths, from |eta| = 12 at
+  large n); `pm.Binomial(logit_p=)` fails 60 of 130 including JAX gradient failures.
+- **Tests** (clean locked environment): `tests/test_binomial.py` 26 passed, including the full
+  A5 grid (n in {1, 2, 10, 1e3, 1e6, 1e9, 2^31-2, 2^31-1}, k at 0/1/mid/n-1/n, 13 logits to
+  +-1e6, PyTensor and JAX values and full gradients against the 60-digit `decimal` reference
+  with exact / Stirling `lnGamma`), n = 1 equivalence with Bernoulli, expansion to Bernoulli
+  rows with aligned centring (and the documented difference with unequal trials), invalid
+  inputs, three prediction kinds, Bernstein-bounded conditional predictive check with exact
+  zero-variance and saturated cases. Full fast suite: **117 passed, 5 deselected** (69.7 s). Slow suite 5 passed
+  (31.3 s), M2 B1: PyMC 0 divergences, R-hat 1.0062, bulk ESS 781; NumPyro 0 divergences,
+  R-hat 1.0073, bulk ESS 681; truth inside every 94 % HDI; backends within 4 combined MCSE
+  (largest ratio 0.33). Evidence in `evidence-runs/20260910T052144.898878Z-…-p25085-648eaa/`.
+- Example evidence `docs/m2-evidence/` (both backends, agreement, GPU refusal). GPU execution
+  for this family: **pending**. The Bernoulli boundary-form change (D8) was not made.
+- Limitations: one recovery is not calibration; in one simulated data set the intercept is
+  identified relative to the realised mean of the group effects (the example prints it); the
+  validated count/logit domain is the tested grid; no calibration or benchmark claims.
+- **Review repair (2026-09-10, `memory/reviews/2026-09-10-autobayes-m2-review.md`, artifacts
+  `artifacts/2026-09-10-autobayes-m2-independent/`).** Finding: the coefficient was a float64
+  difference of three `gammaln` values, so the normalised density near a binomial mode carried
+  absolute errors of 3.3e-6 at n = 1e9 and 1.1e-5 at the cap against the prespecified 1e-8;
+  nine of fifteen probed near-mode cases failed on each path, and the mixed-grid A5 check had
+  masked it because k = 0 and k = n rows at the same logit made the total O(n). Before coding,
+  the repair record in `docs/m2-decision.md` (commit `8309449`) tabulated the failed cases and
+  measured, with an accurate coefficient, where float64 itself gives out: the likelihood terms'
+  magnitude (~n ln 2) bounds the near-mode value (1.8e-8 at n = 1e8) and the rounding of
+  expit(eta) bounds the gradient (1.2e-8 at n = 1e9), independent of any reformulation short of
+  the deviance form. Repair: (a) the coefficient is computed as data per row (exact summation
+  for min(k, n-k) <= 1000, Loader decomposition with the `stirlerr` series above) and never
+  as a `gammaln` difference; (b) the accepted count cap is lowered by the approved rule to
+  **1e6 per row**, the largest acceptance-grid value that passes on both paths with a margin
+  of at least 25 (values) and 400 (gradients); 1e7 also passed at probed points with a margin
+  of about seven and was not adopted; the deviance form is recorded as the route if counts
+  above 1e6 per row are ever needed. Tolerance unchanged.
+- Repair tests: per-row normalised terms and per-row derivatives over the whole acceptance
+  grid (n in {1, 2, 10, 1e3, 1e5, 999999, 1e6}; k at 0/1/2/10/n/4/n/2/3n/4/n-2/n-1/n; the 13
+  extreme logits plus the mode and six offsets), homogeneous near-mode models with a slope,
+  sd = 0.3 and random offsets (16 cases), the reviewer's two-row construction at the cap and
+  its neighbour, the mixed grid, refusal of 1e6+1 and of the three previously failing n.
+  `tests/test_binomial.py` 50 passed (122 s). After the repair the reviewer's construction has
+  worst error 1.6e-10 at the cap (was 1.4e-9 at 1e6 and 3.3e-6 at 1e9 before). Full suites on
+  the repaired tree: fast suite **141 passed, 5 deselected** (144 s); slow suite **5 passed** (30.6 s; new run-specific evidence directories, earlier ones untouched). Example evidence regenerated with
+  the repaired code; the pre-repair outputs are archived under `docs/m2-evidence/before-repair/`.
+- Wording fixed with the repair: the binomial centred intercept is the per-trial success
+  log-odds; README and SKILL count three families; the package description names M2; the cap
+  and precision statements describe the tested domain, not exactness for every input.
+- Evidence provenance: the foundation worktree's ignored candidate evidence was removed with
+  that worktree on 2026-09-10 and is not preserved locally (hosted artifacts and the
+  coordinator's preserved run artifacts remain); the M2 runs below write to new run-specific
+  directories under `evidence-runs/`, earlier ones untouched.
+- **Second review correction (2026-09-10, `memory/reviews/2026-09-10-autobayes-m2-distribution-review.md`,
+  artifacts `artifacts/2026-09-10-autobayes-m2-repair-independent/`).** Finding, reproduced on
+  `d98b730` with the public API on both paths: the per-row coefficient was passed into the
+  `CustomDist` as a fixed parameter tied to the observed outcome, so the exposed RV's `logp`
+  was normalised only at that outcome (n = 2, eta = 0: masses 0.75 or 1.5 instead of 1),
+  `logp` and `random` described different distributions, and out-of-range or non-integral
+  values had finite mass. The fitted-data likelihood and gradients were unaffected (the
+  coefficient is constant in eta there), so this does not by itself change the reported
+  posteriors. Correction record written before coding (`docs/m2-decision.md`, commit
+  `8d76d64`): the coefficient is now a function of the evaluated value inside the graph on
+  both paths (0 at the boundary, Loader/`stirlerr` decomposition on clipped arguments under a
+  `switch`), with -inf off the integer support {0, ..., n}; `random` unchanged; the family
+  passes only `n`. Measured coefficient error 1.2e-10 at n <= 1e6 on both paths (one ulp of
+  its magnitude; table in the record), so the 1e6 cap and its margins stand. Before/after
+  evidence in `docs/m2-evidence/correction/` (normalisation probe, N7 example log density
+  changed by at most 4.5e-13, coefficient accuracy, scripts). New tests N1-N5 (support
+  enumeration against `math.comb` and a decimal expit with mass 1, observed-outcome
+  independence, symbolic value reused after compilation, 20000 draws against the mass under
+  a Hoeffding bound, zero mass for invalid values on both paths, integer and float tensors).
+  Wording: the current 1e6 cap is stated at the top of the decision record with 2^31-1
+  labelled historical; the refusal message and SKILL no longer suggest splitting large
+  denominators across rows (it changes the unweighted centring); the docstring cites the
+  measured table; the gradient-floor sentence describes the tested evaluation only.
+  `tests/test_binomial.py` **92 passed (190 s)**; fast suite **183 passed, 5 deselected (240 s)**; slow suite **5 passed (31 s)** (new
+  run-specific evidence directories, earlier ones untouched). Example outputs not re-sampled
+  (N7). No D8 change, no M3 work, no GPU use.
+  Correction commit `cb5e5a1` (record `8d76d64` before it).
+- PR: https://github.com/andrew-dou/AutoBayes/pull/5 (base `main`, author andrew-dou). First head `1fcb2cf` (fast checks green: runs 34441129737, 34441162554); reviewed head `49052ac` (green); repair head `5a43caf` (fast checks green for both the push, run 34482262505, and the pull-request, run 34482266661, events); STATUS checkpoint `d98b730`; correction record `8d76d64`; **correction head `cb5e5a1`** followed by this STATUS checkpoint (CI runs recorded in the PR comment). Left open for independent review; not merged by this session; the M2 worktree is kept until that review passes.
+
 ## Foundation slice (2026-09-09): reproducible CPU checks (section 4.0 of the proposal)
 
 - Andrew approved the software plan on 2026-09-09 (evening); this is the first implementation

@@ -1,10 +1,15 @@
 """Posterior draws of the mean and posterior predictive draws, with named semantics.
 
 ``kind="mean"`` returns draws of the expected response: ``mu`` for the Gaussian family,
-``p = P(y = 1)`` for the Bernoulli family (brms ``posterior_epred``). ``kind="response"``
-also returns draws of a new observation ``y``: ``Normal(mu, sigma)`` or ``Bernoulli(p)``,
-so ``y`` is 0/1 for the Bernoulli family and carries the outcome's own variability (brms
-``posterior_predict``).
+``p = P(y = 1)`` for the Bernoulli family, and for the binomial family ``p`` together with
+``expected = n p`` (brms ``posterior_epred``, which is ``mu * trials`` there).
+``kind="response"`` also returns draws of a new observation ``y``: ``Normal(mu, sigma)``,
+``Bernoulli(p)`` or ``Binomial(n, p)``, so ``y`` is an integer for the discrete families and
+carries the outcome's own variability (brms ``posterior_predict``). ``kind="probability"``
+(binomial only) returns ``p`` alone and needs no trials (brms ``posterior_linpred(transform =
+TRUE)``). Binomial predictions are computed in this layer from the posterior; for
+``newdata``, ``mean`` and ``response`` need the trials column named in the formula, and a row
+with zero trials gives ``expected = 0`` and ``y = 0``.
 
 ``new_groups`` decides what happens when ``newdata`` contains a level of the grouping
 factor that was not in the training data:
@@ -29,14 +34,21 @@ import xarray as xr
 
 from scipy.special import expit
 
-from autobayes.formula import FormulaError, reject_complex
+from autobayes.formula import FormulaError, check_counts, reject_complex
 
 _NEW_GROUPS = {"error", "resample_observed", "population"}
 
 
-def _check_newdata(model, newdata: pd.DataFrame) -> pd.DataFrame:
+def _check_newdata(model, newdata: pd.DataFrame, *, need_trials: bool = False) -> pd.DataFrame:
     s = model.spec
     cols = [*s.predictors, s.group]
+    if need_trials:
+        if s.trials not in newdata.columns:
+            raise FormulaError(
+                f"newdata lacks the trials column {s.trials!r}, which kind='mean' and kind='response' need "
+                "for a binomial model (kind='probability' does not)."
+            )
+        cols.append(s.trials)
     missing = [c for c in cols if c not in newdata.columns]
     if missing:
         raise FormulaError(f"newdata lacks columns {missing}")
@@ -47,17 +59,22 @@ def _check_newdata(model, newdata: pd.DataFrame) -> pd.DataFrame:
         reject_complex(f"newdata column {c!r}", df[c])
         if not pd.api.types.is_numeric_dtype(df[c]):
             raise FormulaError(f"newdata column {c!r} must be numeric")
+    if need_trials:
+        df[s.trials] = check_counts(f"newdata trials {s.trials!r}", df[s.trials])
     df[s.group] = df[s.group].astype(str)
     return df.reset_index(drop=True)
 
 
-def _predict_by_hand(model, idata, df: pd.DataFrame, kind: str, seed, new_groups: str) -> xr.Dataset:
+def _predict_by_hand(model, idata, df: pd.DataFrame | None, kind: str, seed, new_groups: str) -> xr.Dataset:
     """Linear predictor by hand from the posterior, with one effect per distinct unseen label.
 
-    ``"population"``: a fresh ``Normal(0, sd)`` draw per label and posterior draw.
-    ``"resample_observed"``: the effect of a uniformly chosen observed level per label and
-    posterior draw. In both cases every row with the same label shares that label's effect.
+    ``df=None`` means the fitted rows (in-sample). ``"population"``: a fresh ``Normal(0, sd)``
+    draw per unseen label and posterior draw. ``"resample_observed"``: the effect of a
+    uniformly chosen observed level per label and posterior draw. In both cases every row
+    with the same label shares that label's effect.
     """
+    if df is None:
+        df = model.data
     post = idata.posterior
     n = model.names
     rng = np.random.default_rng(seed)
@@ -88,11 +105,19 @@ def _predict_by_hand(model, idata, df: pd.DataFrame, kind: str, seed, new_groups
         if kind == "response":
             sigma = post[n["sigma"]].to_numpy()
             out["y"] = (("chain", "draw", "__obs__"), rng.normal(mu, sigma[..., None]))
-    else:
+    elif model.family == "bernoulli":
         prob = expit(mu)                                         # mu held the linear predictor eta
         out = {"p": (("chain", "draw", "__obs__"), prob)}
         if kind == "response":
             out["y"] = (("chain", "draw", "__obs__"), rng.binomial(1, prob).astype(np.int64))
+    else:                                                        # binomial: p, expected = n p, count draws
+        prob = expit(mu)
+        out = {"p": (("chain", "draw", "__obs__"), prob)}
+        if kind in ("mean", "response"):
+            trials = df[model.spec.trials].to_numpy(dtype=np.int64)
+            out["expected"] = (("chain", "draw", "__obs__"), prob * trials)
+            if kind == "response":
+                out["y"] = (("chain", "draw", "__obs__"), rng.binomial(trials, prob).astype(np.int64))
     ds = xr.Dataset(out, coords={"chain": post["chain"], "draw": post["draw"], "__obs__": np.arange(len(df))})
     ds.attrs["new_groups"] = new_groups
     ds.attrs["new_levels"] = new_levels
@@ -101,12 +126,30 @@ def _predict_by_hand(model, idata, df: pd.DataFrame, kind: str, seed, new_groups
 
 def predict(model, fit_result, *, newdata: pd.DataFrame | None = None, kind: str = "response",
             new_groups: str = "error", seed: int | None = None) -> xr.Dataset:
-    """Return an ``xarray.Dataset`` with the mean (``mu`` or ``p``) and, for ``kind="response"``, ``y``."""
-    if kind not in {"mean", "response"}:
-        raise ValueError("kind must be 'mean' or 'response'")
+    """Return an ``xarray.Dataset`` with the mean (``mu`` or ``p``, plus ``expected`` for binomial)
+    and, for ``kind="response"``, ``y``; ``kind="probability"`` (binomial) gives ``p`` only."""
+    if model.family == "binomial":
+        if kind not in {"probability", "mean", "response"}:
+            raise ValueError("kind must be 'probability', 'mean' or 'response' for a binomial model")
+    elif kind not in {"mean", "response"}:
+        raise ValueError("kind must be 'mean' or 'response'" + (" ('probability' is for binomial models; here 'mean' is p)" if model.family == "bernoulli" else ""))
     if new_groups not in _NEW_GROUPS:
         raise ValueError(f"new_groups must be one of {sorted(_NEW_GROUPS)}")
     idata = getattr(fit_result, "idata", fit_result)
+    if model.family == "binomial":
+        df = None if newdata is None else _check_newdata(model, newdata, need_trials=(kind != "probability"))
+        if df is not None:
+            unseen = sorted(set(df[model.spec.group]) - set(model.design.levels))
+            if unseen and new_groups == "error":
+                raise FormulaError(
+                    f"newdata has levels of {model.spec.group!r} not seen in training: {unseen}. "
+                    "Pass new_groups='population' to draw their effects from Normal(0, sd), or "
+                    "new_groups='resample_observed' for brms's default 'uncertainty' behaviour."
+                )
+        ds = _predict_by_hand(model, idata, df, kind, seed, new_groups)
+        if df is None:
+            ds.attrs["new_groups"] = "in_sample"
+        return ds
     df = None if newdata is None else _check_newdata(model, newdata)
 
     if df is not None:

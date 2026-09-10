@@ -1,0 +1,79 @@
+AutoBayes environment
+  python    : 3.11.0 (macOS-26.6.1-arm64-arm-64bit)
+  versions  : pymc 5.28.5, pytensor 2.38.3, bambi 0.17.2, formulae 0.6.2, arviz 0.23.4, numpyro 0.21.0, jax 0.10.2, jaxlib 0.10.2, numpy 2.4.6
+  jax       : cpu:cpu(id=0), cpu:cpu(id=1), cpu:cpu(id=2), cpu:cpu(id=3), cpu:cpu(id=4), cpu:cpu(id=5), cpu:cpu(id=6), cpu:cpu(id=7)
+  jax x64   : True
+
+300 clinic rows, 8097 patients, 2690 deaths, 2 rows with no patients
+AutoBayes M2 model
+  formula   : deaths | trials(patients) ~ x + (1 | clinic)
+  family    : binomial, logit link
+  data      : 298 fitted rows, 8097 trials in total, J = 30 levels of clinic; 2 zero-trial row(s) dropped (positions [0, 1])
+  levels    : 0=c00, 1=c01, 2=c02, 3=c03, 4=c04, 5=c05, 6=c06, 7=c07, 8=c08, 9=c09, 10=c10, 11=c11, 12=c12, 13=c13, 14=c14, 15=c15, 16=c16, 17=c17, 18=c18, 19=c19, 20=c20, 21=c21, 22=c22, 23=c23, 24=c24, 25=c25, 26=c26, 27=c27, 28=c28, 29=c29
+
+Linear predictor
+  eta_i = a_c + (x_x - mean(x_x)) * b_x + u[clinic_i]
+  P(success) = p_i = expit(eta_i); deaths_i ~ Binomial(patients_i, p_i); eta is on the log-odds scale.
+  Predictors are centred at their sample means (center_predictors=True, as in
+  brms and Bambi). a_c is the per-trial success log-odds at the predictor means; the
+  prior on the intercept applies to a_c. The posterior reports the raw-scale
+  intercept a = a_c - sum_p mean(x_p) * b_p, computed after sampling.
+
+Group effects (non-centred)
+  u[j] = sd_clinic * z[j],  z[j] ~ Normal(0, 1),  j = 0..29
+
+Priors (a_c and b on the logit scale)
+  a_c ~ Normal(mu=0, sigma=1.5)
+  b_x ~ Normal(mu=0, sigma=1)
+  sd_clinic ~ HalfNormal(sigma=1)
+
+Likelihood
+  log p(deaths_i | patients_i, eta_i) = log C(patients_i, deaths_i) - deaths_i softplus(-eta_i) - (patients_i - deaths_i) softplus(eta_i)
+  with log C computed accurately as data and a softplus whose gradient is finite on both
+  the PyTensor and the JAX path. Validated (docs/m2-decision.md) for counts up to 1e6 per
+  row at logits to 1e6 against a 60-digit reference; larger counts are refused. Zero-trial
+  rows are dropped before centring; predictors are centred at the means of the fitted rows.
+
+PyMC variables sampled (value space)
+  Intercept                a_c
+  x                        b_x
+  1|clinic_sigma_log__     log(sd_clinic)
+  1|clinic_offset          z
+Deterministic: 1|clinic = u, logit_p = linear predictor; p = expit(logit_p), expected = n p and count draws are computed by predict()
+
+AutoBayes fit report
+  backend          : numpyro
+  device requested : cpu
+  device actual    : cpu:cpu(id=0) (platform cpu)
+  dtype            : float64
+  chain method     : parallel
+  chains/tune/draws: 4/1000/2000, target_accept 0.9
+  seed             : 7
+  wall time        : 4.3 s (includes compilation)
+
+Diagnostic panel (thresholds from reference/diagnostics.md)
+  divergences            0 of 8000 (0.000%)           pass
+  max R-hat              1.0040                       pass
+  min bulk ESS           767                          pass
+  min tail ESS           1462                         pass
+  min E-BFMI             0.729                        pass
+  tree-depth saturation  0.00%                        pass
+  overall: pass
+
+                 mean     sd  hdi_3%  hdi_97%  mcse_mean  mcse_sd  ess_bulk  ess_tail  r_hat
+Intercept      -0.703  0.102  -0.901   -0.517      0.004    0.002     767.0    1462.0    1.0
+x               0.804  0.033   0.742    0.866      0.000    0.000    6767.0    5757.0    1.0
+1|clinic_sigma  0.554  0.078   0.417    0.701      0.002    0.001    1331.0    2642.0    1.0
+truth: Intercept -0.5, x 0.8, sd 0.7   (one recovery, not calibration)
+the realised mean of the 30 simulated clinic effects is -0.199: in one data set the intercept is identified relative to it, so compare Intercept with -0.699
+
+in-sample: mean predicted probability 0.332; expected deaths summed over clinics 2690.0 (observed 2690); mean of count draws 2689.5
+a 40-patient clinic at x = 0: observed clinic c00 expected deaths 8.2 (SD 1.0); a new clinic 13.6 (SD 4.8); with no patients: expected 0, draws 0
+probabilities need no trials column: P(outcome) for c00 at x = 0 is 0.206
+fit record written to docs/m2-evidence/example_numpyro_cpu_record.json
+
+Agreement of population-parameter means (4 combined MCSE): cpu:cpu(id=0) vs cpu
+  Intercept        -0.7031 vs -0.7034  |diff| 0.0004  tol 0.0205  ok
+  x                0.8043 vs 0.8047  |diff| 0.0004  tol 0.0021  ok
+  1|clinic_sigma   0.5538 vs 0.5550  |diff| 0.0012  tol 0.0114  ok
+  agree: True  (a statement about the target, not about speed)
