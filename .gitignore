@@ -31,3 +31,6 @@ venv/
 
 # os
 .DS_Store
+
+# build metadata from the editable install
+*.egg-info/
