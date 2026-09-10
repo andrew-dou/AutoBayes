@@ -475,6 +475,13 @@ def parse_formula(formula: str, data: pd.DataFrame | None = None, family: str = 
         if (x, z) in interactions:
             raise FormulaError(f"{piece!r}: the interaction '{x}:{z}' appears more than once after expansion")
         interactions.append((x, z))
+    if len(interactions) > 1:
+        names = [f"{x}:{z}" for x, z in interactions]
+        raise FormulaError(
+            f"{formula!r}: {len(interactions)} interactions after expansion ({names}); this slice supports at most one "
+            "numeric-by-categorical interaction per model, whether or not they share a side "
+            "(docs/m3a2-decision.md, repair record). Fit one interaction, or wait for a slice that verifies several."
+        )
     canonical_rhs = " + ".join([*predictors, *(f"{x}:{z}" for x, z in interactions), f"(1 | {group})"])
     spec = ModelSpec(
         formula=formula.strip(), response=response,

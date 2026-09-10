@@ -366,10 +366,18 @@ class Model:
             "Linear predictor",
             f"  {lp}_i = {a}" + (f" + {xs}" if xs else "") + f" + u[{s.group}_i]",
         ]
+        scale = "response" if gaussian else "log-odds"
         for cat in s.categoricals:
-            lines += [f"  b_{cat.name}[l] is the difference between level l and the reference {cat.reference!r} "
-                      f"on the {'response' if gaussian else 'log-odds'} scale at the same predictors and group; "
-                      f"the reference has no coefficient."]
+            partners = [xn for xn, zn in s.interactions if zn == cat.name]
+            if partners:
+                xn = partners[0]
+                lines += [f"  b_{cat.name}[l] is the difference between level l and the reference {cat.reference!r} on the "
+                          f"{scale} scale at {xn} = 0 (same group); at another value of {xn} the difference is "
+                          f"b_{cat.name}[l] + {xn} * b_{xn}:{cat.name}[l], because the levels have different slopes. "
+                          f"The reference has no coefficient."]
+            else:
+                lines += [f"  b_{cat.name}[l] is the difference between level l and the reference {cat.reference!r} "
+                          f"on the {scale} scale at the same predictors and group; the reference has no coefficient."]
         for xn, zn in s.interactions:
             ref = s.categorical(zn).reference
             lines += [f"  {xn}:{zn}: the reference level {ref!r} has the raw intercept a and slope b_{xn}; level l has intercept "

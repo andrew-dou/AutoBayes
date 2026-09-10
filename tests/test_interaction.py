@@ -110,6 +110,13 @@ def test_canonical_expansion_equivalence_and_refusals():
         build("gaussian", df, G_PRIORS, formula="y ~ x + z + x*z + (1 | g)")
     with pytest.raises(ab.FormulaError, match="appears more than once after expansion"):
         build("gaussian", df, G_PRIORS, formula="y ~ x + z + x:z + z:x + (1 | g)")
+    df_w = df.assign(w=np.linspace(-1, 2, len(df)), v=np.where(df.index % 2 == 0, "p", "q"))
+    for formula, cat in [("y ~ x + w + z + x:z + w:z + (1 | g)", {"z": "a"}),                  # shared categorical side
+                         ("y ~ x + z + v + x:z + x:v + (1 | g)", {"z": "a", "v": "p"}),          # shared numeric side
+                         ("y ~ x + z + w + v + x:z + w:v + (1 | g)", {"z": "a", "v": "p"}),      # disjoint
+                         ("y ~ x*z + w*v + (1 | g)", {"z": "a", "v": "p"})]:                     # shorthand twice
+        with pytest.raises(ab.FormulaError, match="2 interactions after expansion .* at most one"):
+            ab.gaussian(formula, df_w, G_PRIORS, categorical=cat)
     with pytest.raises(ab.FormulaError, match="two numeric terms"):
         ab.gaussian("y ~ x + z + x:z + (1 | g)", df.assign(z=df.x ** 2), G_PRIORS)
     df2 = df.assign(w=np.where(df.index % 2 == 0, "p", "q"))
@@ -212,7 +219,11 @@ def test_density_jacobian_and_gradients_both_paths(family, priors, center):
     from pymc.sampling.jax import get_jaxified_logp
 
     df = simulate_int()
+    if family == "binomial":                                 # the ORIGINAL frame decides what the reference sees
+        df = df.copy(); df.loc[df.index[[4, 17, 30]], ["n", "k"]] = 0            # three zero-trial rows the model must drop
     m = build(family, df, priors, reference="b", center=center)
+    fitted = df[df.n > 0].reset_index(drop=True) if family == "binomial" else df    # selected here, not from model.data
+    assert len(fitted) == m.design.n
     pd_ = ref_priors(priors, m.spec)
     assert set(pd_["b"]) == set(m.spec.columns)
     logp, logp_nojac, dlogp = m.pymc_model.compile_logp(), m.pymc_model.compile_logp(jacobian=False), m.pymc_model.compile_dlogp()
@@ -223,7 +234,7 @@ def test_density_jacobian_and_gradients_both_paths(family, priors, center):
     for _ in range(3):
         nat = _random_nat(m, rng)
         point = m.value_point(**nat)
-        ref, ref_nojac = _reference(m, m.data, pd_, point, True), _reference(m, m.data, pd_, point, False)
+        ref, ref_nojac = _reference(m, fitted, pd_, point, True), _reference(m, fitted, pd_, point, False)
         assert np.isfinite(ref)
         assert abs(float(logp(point)) - ref) < 1e-8, (family, float(logp(point)), ref)
         assert abs(float(logp_nojac(point)) - ref_nojac) < 1e-8
@@ -236,7 +247,7 @@ def test_density_jacobian_and_gradients_both_paths(family, priors, center):
             for n_ in names:
                 size = int(np.prod(np.shape(point[n_])))
                 q[n_] = vec[i:i + size].reshape(np.shape(point[n_])) if np.ndim(point[n_]) else np.asarray(vec[i]); i += size
-            return _reference(m, m.data, pd_, q, True)
+            return _reference(m, fitted, pd_, q, True)
         h = 1e-5
         fd = np.array([(f(flat + h * e) - f(flat - h * e)) / (2 * h) for e in np.eye(len(flat))])
         assert np.allclose(grad_pt, fd, rtol=1e-6, atol=1e-5), (family, grad_pt, fd)
@@ -343,6 +354,8 @@ def test_describe_and_fit_record():
     m = build("bernoulli", df, L_LEVEL, reference="b")
     text = m.describe()
     for s in ["x:z: the reference level 'b' has the raw intercept a and slope b_x", "slope difference b_x:z[l]", "slope in x is b_x + b_x:z[l]",
+              "b_z[l] is the difference between level l and the reference 'b' on the log-odds scale at x = 0 (same group)",
+              "at another value of x the difference is b_z[l] + x * b_x:z[l]",
               "(x_x * 1[z_i = a] - q_x:z[a]) * b_x:z[a]", "centred at its OWN mean q", "not mean(x)", "not a realisable covariate row",
               "fitted-row means of every expanded design column", "NOT the", "average probability across the levels",
               "b_x:z[a] ~ StudentT(nu=4, mu=0, sigma=1)", "b_x:z[c] ~ StudentT(nu=6, mu=0.2, sigma=2)", "posterior rows x:z[a], x:z[c]"]:

@@ -183,7 +183,8 @@ complex values, missing values, larger or fractional floats, and a column that m
 text labels with numeric codes are refused before any model is built. Each non-reference level gets one dummy
 column `arm[level]` and one coefficient: the difference between that level and the
 reference on the link scale (response scale for Gaussian, log-odds for Bernoulli and
-binomial) at the same predictors and group. The posterior variable is `arm` with the
+binomial) at the same predictors and group, a constant contrast unless the term also
+interacts with a numeric predictor (see the interaction paragraph). The posterior variable is `arm` with the
 levels as coordinates, so `az.summary(fit.idata, var_names=["arm"])` shows rows
 `arm[low]`, `arm[high]`; `model.coefficients` is the exact map from design columns to
 variables. Per-level priors must cover exactly the non-reference levels (the reference
@@ -213,7 +214,11 @@ effects are required: `x + x:z` or `z + x:z` are refused because they are differ
 models (a level intercept or the reference slope forced to zero, and formulae recodes the
 interaction). The reference level has the raw intercept and the slope `dose`; every other
 level has an intercept difference `arm[l]` and a slope difference `dose:arm[l]`, so its
-slope is `dose + dose:arm[l]`; the posterior variable is `dose:arm` with the levels as
+slope is `dose + dose:arm[l]`. Once the interaction is present, `arm[l]` is the contrast
+with the reference **at dose = 0** only; at dose `d` the contrast is `arm[l] + d *
+dose:arm[l]` (on the log-odds scale for Bernoulli and binomial), and `describe()` says
+so. This slice admits **one** interaction per model (`x:z + w:z` or `x:z + x:w` are
+refused). The posterior variable is `dose:arm` with the levels as
 coordinates (`az.summary(fit.idata, var_names=["dose:arm"])`). Check
 `model.spec.columns` and `model.design.X_raw[:5]`: the product columns are
 `dose * 1[arm = l]`, built and verified against an independent one-hot construction.
