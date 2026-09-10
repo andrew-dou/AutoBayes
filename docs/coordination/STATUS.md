@@ -1,5 +1,24 @@
 # AutoBayes status
 
+## Planning checkpoint (2026-09-09): complete for Andrew's review
+
+- Proposal: `docs/coordination/NEXT_MILESTONES_PROPOSAL.md`, revision3 plus final coordinator
+  mathematical/reference clarification. Concise decision brief:
+  `/Users/andrewdou/iqss-research/plans/2026-09-09-autobayes-approval-brief.md`.
+- All dispatched planning/revision units are complete. Claude's final response was observed
+  idle; do not repeat the work. Implementation awaits Andrew's edits/approval.
+- Recommended sequence: reproducible environment/tests and CPU CI; M2 binomial counts;
+  categorical/interactions and varying slopes in separate slices; researcher skill/onboarding
+  throughout; separately scoped GPU correctness and a capped benchmark dry run.
+- M2 specifies probability/expected-count/response outputs, explicit zero-trial/constant-outcome
+  policy, log-sigmoid likelihood, proposed numerical validation domain and independent references.
+  These are acceptance specifications, not implemented or validated behavior.
+- Benchmark accounting:8 dry-run fits plus40 cold and40 warm =88 proposed pilot fits;
+  optional overhead block adds40. No GPU/benchmark run or budget approved by this document.
+- Evidence: coordinator independently reran59 fast tests earlier;3 slow passes are
+  worker-reported. Only proposal/STATUS documentation modified in the planning unit.
+  Implementation head remainsbd63348 on M1; existing PR3 left open, no commit/push/merge.
+
 ## M1 checkpoint (2026-09-09, after review repair): Bernoulli varying intercept, logit link
 
 - Branch `m1/bernoulli-varying-intercept` from `main` at `925554b`; session
