@@ -48,7 +48,7 @@
 - Limitations: one recovery is not calibration; in one simulated data set the intercept is
   identified relative to the realised mean of the group effects (the example prints it); the
   validated count/logit domain is the tested grid; no calibration or benchmark claims.
-- PR: pending (recorded below when opened).
+- PR: https://github.com/andrew-dou/AutoBayes/pull/5 (base `main`, head `1fcb2cf`, author andrew-dou). Hosted `fast checks` succeeded on that head for both the push (run 34441129737) and the pull-request (run 34441162554) events. Left open for independent review; not merged by this session.
 
 ## Foundation slice (2026-09-09): reproducible CPU checks (section 4.0 of the proposal)
 
