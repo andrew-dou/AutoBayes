@@ -8,6 +8,8 @@
   `/Users/andrewdou/iqss-research/projects/AutoBayes-worktrees/foundation-cpu-checks`
   (the M1 checkout at `projects/AutoBayes` is left as it was, dirty with the planning docs).
   Session `e5628a7d-e572-4bad-9feb-82ee8361c261`. Depends on PR #3 (M1), still open.
+  PR: https://github.com/andrew-dou/AutoBayes/pull/4 (base `m1/bernoulli-varying-intercept`;
+  retarget to `main` after #3 merges). Left open for the coordinator's review; not merged.
 - **Pinned, locked stack**: `pyproject.toml` now pins the tested versions exactly
   (`requires-python >=3.11,<3.12`; pymc 5.28.5, pytensor 2.38.3, bambi 0.17.2, formulae 0.6.2,
   arviz 0.23.4, numpy 2.4.6, pandas 3.0.5, scipy 1.17.1, xarray 2026.7.0, matplotlib 3.10.9;
