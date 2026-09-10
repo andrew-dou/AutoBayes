@@ -284,3 +284,17 @@ nullable, object and string containers of the same codes.
 
 The failed head `393e4ec` stays in the history as the reviewed candidate; this record and the
 repair commits follow it.
+
+**Executed results (2026-09-10, clean locked environment, fresh evidence directories).** Root
+cause: `categorical_labels` cast numeric columns with `astype(float)` before `astype(np.int64)`;
+`_label` had no complex branch and `reject_complex` only saw the dtype. Repair (commit 3b711f2):
+`_label` is the single scalar rule of the contract above (integers via `int(v)`, floats only in
+the exact domain, strings, everything else refused by type); `categorical_labels` reads every
+container with `astype(object)`, checks missing values, declared categories, and text/number
+mixing; references, declared categories and prior keys go through the same function; the model
+keeps `original_labels` of the supplied column and checks Bambi's dummies against them; the test
+reference applies the same rule independently. Before: the coordinator's nine regressions failed
+on `393e4ec` (`docs/m3a1-evidence/label-repair/before-393e4ec.txt`). After: 12 passed
+(`after-repair-independent-regressions.txt`). New `tests/test_label_integrity.py`: 36 passed. Fast suite:
+297 passed, 6 deselected (254 s). Slow suite: 6 passed (39 s) (the recovery and every earlier gate unchanged; no gate loosened).
+Evidence directories: `evidence-runs/20260910T205033.025294Z-04a4e2f02569-dirty-p51506-94309e/` (fast, final) and `evidence-runs/20260910T204556.417719Z-04a4e2f02569-dirty-p51342-1a7f45/` (slow; same library code, run before one test-expectation edit in `tests/test_categorical.py` whose earlier fast run `...-p50888-72f5c4/` had that single failure); earlier directories untouched.

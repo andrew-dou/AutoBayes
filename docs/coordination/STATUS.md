@@ -50,9 +50,24 @@
   `docs/m3a1-evidence/`. One pre-code statement of the record was corrected during
   implementation (the sign of the induced prior covariance under a change of reference), noted
   in the record.
+- **Review repair (2026-09-10, `memory/reviews/2026-09-10-autobayes-m3a1-review.md`, regressions
+  `artifacts/2026-09-10-autobayes-m3a1-independent/test_label_integrity.py`, nine failures on
+  `393e4ec`).** Numeric categorical columns were cast through float64 and int64, merging codes above
+  2^53 and corrupting unsigned codes at or above 2^63 (a public three-level Gaussian model built two
+  levels); complex scalars in object or category containers bypassed the refusal. Repair record
+  committed before code (`04a4e2f`, with the before-evidence): one scalar label rule (exact integers
+  of any width, floats only if integral and at most 2^53, strings; booleans, complex, missing and
+  other types refused; integer/decimal-string equivalence intentional; mixed text/number columns and
+  colliding keys refused as ambiguous) applied to data, newdata, references, declared categories and
+  prior keys; containers read as Python objects; the model keeps the supplied column's labels and
+  checks the design against them; the test reference applies the same rule. Repair commit `3b711f2`.
+  Coordinator's regressions after the repair: 12 passed; new `tests/test_label_integrity.py` 36 passed;
+  fast suite **297 passed, 6 deselected (254 s)**; slow suite **6 passed (39 s)** (recovery unchanged; R-hat 1.0099851 for NumPyro is
+  below the 1.01 gate, not at it). Fresh evidence directories; committed evidence untouched.
 - PR: https://github.com/andrew-dou/AutoBayes/pull/6 (base `main`, author andrew-dou). Record
-  `f134f66`; implementation `d47ca7f`; this STATUS checkpoint follows it (CI runs recorded in the
-  final report and PR checks). Left open for independent review; not merged by this session; the
+  `f134f66`; implementation `d47ca7f`; reviewed head `393e4ec` (request changes); repair record
+  `04a4e2f`; repair `3b711f2`; this STATUS checkpoint follows it (CI runs recorded in the PR comment
+  and the final report). Left open for independent review; not merged by this session; the
   M3a-1 worktree is kept until that review passes. Next approved increment after acceptance:
   numeric-by-categorical interaction, in a separate PR.
 
