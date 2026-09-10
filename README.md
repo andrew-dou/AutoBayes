@@ -53,12 +53,13 @@ and you pay full token price each time for an answer that was already known.
 ## Install
 
 ```bash
-git clone https://github.com/andrew-dou/autobayes && cd autobayes
+git clone https://github.com/andrew-dou/AutoBayes && cd AutoBayes
 ./install.sh
 ```
 
 Symlinks the skills into `~/.claude/skills/` so `git pull` keeps them current.
-`--copy` pins them instead; `--uninstall` reverses it.
+`--copy` pins them instead; `--uninstall` reverses it. The Python library and its tests
+are installed separately from the lock file; see [Install and test](#install-and-test-the-pinned-tested-stack).
 
 Or use it without installing:
 
@@ -86,14 +87,58 @@ showing you the pattern — tries to talk you out of needing it.
 
 ## Library (milestones M0 and M1)
 
+### Install and test (the pinned, tested stack)
+
+`pyproject.toml` pins the versions that the fit records under `docs/` name (Python 3.11;
+pymc 5.28.5, pytensor 2.38.3, bambi 0.17.2, formulae 0.6.2, arviz 0.23.4, jax/jaxlib 0.10.2,
+numpyro 0.21.0, numpy 2.4.6). `uv.lock` was frozen on 2026-09-10 from the environment that
+produced the foundation results; the earlier M0 and M1 records did not record transitive
+versions, so the lock is evidence for the new environment, not a reconstruction of the old
+one. Anything else is untested.
+
 ```bash
-uv venv .venv --python 3.11
-uv pip install --python .venv/bin/python -e ".[jax,dev]" "matplotlib<3.11"
-.venv/bin/python examples/m0_varying_intercept.py --backend numpyro --device cpu
+git clone https://github.com/andrew-dou/AutoBayes && cd AutoBayes
+uv sync --locked --extra jax --extra dev                 # creates .venv from uv.lock; nothing is resolved anew
+uv run --no-sync python -c "import autobayes as ab; print(ab.format_environment(ab.environment()))"
+uv run --no-sync pytest tests -q -m "not slow"           # fast checks, a few minutes
+uv run --no-sync pytest tests -q -m slow                 # three CPU sampling checks, about a minute
+uv run --no-sync python examples/m0_varying_intercept.py --backend numpyro --device cpu --record fits/m0.json
 ```
+
+If `~/.pytensor` is not writable (sandboxes), set `PYTENSOR_FLAGS=base_compiledir=<writable dir>`.
+Each test run allocates its own directory `evidence-runs/<UTC time>-<git head>-p<pid>-<token>/`
+(gitignored; `run.json` records the environment and commit; files are written once, never
+replaced). `AUTOBAYES_EVIDENCE_DIR` names another *parent* for such directories (CI passes
+one); anything that resolves into `docs/` or into an existing run is refused before a byte is
+written, so reruns and retries cannot touch the committed `docs/m*-evidence/` history.
+
+### Supported paths
+
+"CPU-validated" means the checks in `docs/m0-decision.md` / `docs/m1-decision.md` passed on
+the pinned stack: the fast suite in hosted CI (`.github/workflows/ci.yml`, every push and
+pull request) and the three sampling checks locally in the locked environment (2026-09-10;
+`docs/coordination/STATUS.md` records each run). The manual slow workflow (`slow.yml`)
+exists; its execution status is recorded in STATUS, not assumed here. "GPU-validated" means
+one executed run on a GPU matched the CPU posterior. Nothing here is a claim about other
+versions.
+
+| Family, formula | PyMC NUTS, CPU | JAX/NumPyro, CPU | JAX/NumPyro, GPU | Status |
+| --- | --- | --- | --- | --- |
+| Gaussian, `y ~ [1 +] x… + (1 \| g)` | CPU-validated | CPU-validated | GPU-validated once, H100 (`docs/m0-gpu-validation.md`) | M0, merged |
+| Bernoulli (logit), `y ~ [1 +] x… + (1 \| g)`, y strictly 0/1 | CPU-validated | CPU-validated | **pending** (same code path, not run on a GPU) | M1, PR #3 |
+| Binomial `k \| trials(n)` | not implemented | not implemented | not implemented | M2, proposed |
+| Categorical predictors, interactions, varying slopes, several groups, other families | refused with an error naming the construct | same | same | later slices, `docs/coordination/NEXT_MILESTONES_PROPOSAL.md` |
+
+Device rules on every path: `device="gpu"` without a visible GPU raises `DeviceError`
+(no silent CPU fallback); the fit report states the actual device, dtype (float64) and
+chain method; if JAX is not installed, `backend="numpyro"` raises `DeviceError` naming
+the `[jax]` extra.
+
+### Using it
 
 ```python
 import autobayes as ab
+from autobayes.diagnostics import panel, format_panel
 
 priors = ab.Priors(intercept=ab.Normal(0, 5), b=ab.Normal(0, 2),
                    sd=ab.HalfNormal(1), sigma=ab.HalfNormal(1))
@@ -122,10 +167,8 @@ with the reason for each addition, is in `docs/m0-decision.md` (Gaussian) and
 built-in one is floored at machine epsilon for large logits, and the obvious PyMC and
 PyTensor alternatives have NaN gradients on one path or the other); the acceptance checks and their
 evidence are in those records and `docs/m0-evidence/`, `docs/m1-evidence/`.
-`docs/coordination/STATUS.md` is the live milestone status. GPU execution has been run
-once on an H100 for the Gaussian family and matched to the CPU posterior
-(`docs/m0-gpu-validation.md`); for the Bernoulli family it is pending. No speed claim is
-made.
+`docs/coordination/STATUS.md` is the live milestone status; the roadmap is
+`docs/coordination/NEXT_MILESTONES_PROPOSAL.md`. No speed claim is made anywhere.
 
 ## The decision gate
 

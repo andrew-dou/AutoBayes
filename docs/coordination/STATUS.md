@@ -1,5 +1,120 @@
 # AutoBayes status
 
+## Foundation slice (2026-09-09): reproducible CPU checks (section 4.0 of the proposal)
+
+- Andrew approved the software plan on 2026-09-09 (evening); this is the first implementation
+  slice, dispatched by the coordinator. Branch `foundation/reproducible-cpu-checks` from the
+  reviewed M1 head `bd63348`, in the worktree
+  `/Users/andrewdou/iqss-research/projects/AutoBayes-worktrees/foundation-cpu-checks`
+  (the M1 checkout at `projects/AutoBayes` is left as it was, dirty with the planning docs).
+  Session `e5628a7d-e572-4bad-9feb-82ee8361c261`. Depends on PR #3 (M1), still open.
+  PR: https://github.com/andrew-dou/AutoBayes/pull/4. PR #3 was merged by the coordinator
+  (`main` at `52d2b61` contains `bd63348`), so PR #4 was retargeted to `main` on 2026-09-10.
+  Left open for the coordinator's review; not merged.
+- **Pinned, locked stack**: `pyproject.toml` now pins the tested versions exactly
+  (`requires-python >=3.11,<3.12`; pymc 5.28.5, pytensor 2.38.3, bambi 0.17.2, formulae 0.6.2,
+  arviz 0.23.4, numpy 2.4.6, pandas 3.0.5, scipy 1.17.1, xarray 2026.7.0, matplotlib 3.10.9;
+  extras `jax` = jax/jaxlib 0.10.2 + numpyro 0.21.0, `dev` = pytest 9.1.1) and `uv.lock`
+  (58 packages) fixes the rest. No library was upgraded; the lock reproduces the environment
+  every result in `docs/` came from. A clean environment was built from the lock in the
+  worktree (`uv sync --locked --extra jax --extra dev`, Python 3.11.0) and used for the runs
+  below.
+- **Evidence paths**: test runs write candidate evidence to `evidence-runs/<UTC time>-<git
+  head>/` (gitignored, `AUTOBAYES_EVIDENCE_DIR` overrides; a `run.json` records environment,
+  git head and argv). `tests/test_sampling.py` no longer writes into `docs/m*-evidence/`; the
+  committed records are immutable history. Acceptance stays the statistical criteria the
+  tests assert.
+- **New checks**: `tests/test_fresh_process.py` (fresh interpreters: autobayes-first gives
+  parallel CPU chains; JAX-first gives `sequential` with the note; `AUTOBAYES_HOST_DEVICES=0`;
+  a process without JAX: `environment()` reports it, `backend="numpyro"` raises `DeviceError`
+  naming the `[jax]` extra, `backend="pymc"` works), `tests/test_priors_families.py`
+  (StudentT / HalfStudentT / Exponential / HalfCauchy end to end against the reference
+  density, both families), `tests/test_multi_predictor_predict.py` (two predictors, in-sample
+  and new-group paths, both families), `tests/test_diagnostics_panel.py` (pass / investigate /
+  fail / n/a statuses and `format_panel`), `tests/test_evidence_provenance.py` (record schema,
+  provenance, history untouched). Library change: `inference.resolve_jax_device` turns a
+  missing JAX into a `DeviceError` with the fix named.
+- **CI**: `.github/workflows/ci.yml` (fast suite on push and pull request, Ubuntu, CPU, locked
+  install, 40-minute timeout, cancel-in-progress per ref, evidence + junit artifacts) and
+  `slow.yml` (manual, the three sampling checks, 60-minute timeout, artifacts). No GPU
+  workflow. Actions are enabled on the repository (`actions/permissions`: enabled); included
+  minutes could not be read through the API (the token lacks the `user` scope), so the first
+  run is the availability check.
+- **Results (executed).** Clean locked environment in the worktree (Python 3.11.0, macOS
+  arm64, fresh PyTensor compiledir): fast suite **81 passed, 3 deselected** (65.6 s on the
+  second full run; the first full run found one wrong expectation in the new
+  `AUTOBAYES_HOST_DEVICES=0` test, fixed by asserting what the switch does: it only
+  matters if JAX is initialised before the first fit, because `fit()` sets the host device
+  count itself otherwise; a test for that second fact was added), slow suite **3 passed**
+  (27.1 s), evidence in `evidence-runs/20260910T024831Z-552bdfe663f3-dirty/`
+  (`B1_conditional_gaussian.json`, `B2_recovery.json`, `M1_B1_recovery.json`, `run.json`).
+  Hosted CI (`fast checks`, run 34430932197 on head `72f0afe`, ubuntu-latest, locked
+  install): **81 passed, 3 deselected in 152 s**, whole run 3.5 minutes, artifact
+  `fast-evidence-34430932197-1` uploaded; the run for the previous head was cancelled by
+  the concurrency rule as intended. The environment report in CI shows the same versions
+  and 2 CPU devices (2-core runner). The slow workflow has not been dispatched in CI.
+- Fix-up commit `72f0afe`: `autobayes.egg-info/` (created by the editable install) was in
+  the first commit and is now gitignored and removed.
+- **Review repair (2026-09-10, `memory/reviews/2026-09-09-autobayes-foundation-review.md`).**
+  Both findings reproduced first on head `1a480ac` in a fake repository: two allocations at
+  the same head and second returned one directory and the second replaced the first
+  `run.json`; an `AUTOBAYES_EVIDENCE_DIR` pointing into `docs/m0-evidence` was accepted and
+  the historical `run.json` overwritten. Repair in `tests/evidence.py`: a run directory is
+  claimed atomically with `mkdir(exist_ok=False)` under
+  `<UTC time to the microsecond>-<git head>-p<pid>-<random token>` (collisions retried with a
+  new token); the override names a *parent* for new run directories, never a run; any parent
+  resolving (symlinks followed) into `docs/` or containing a `run.json` is refused with
+  `EvidenceDestinationError` before anything is created or written; evidence files are
+  written with exclusive create, so a second write to the same name fails and the first
+  survives. `tests/test_sampling.py` uses the exclusive writer and gained a slow test that
+  compares every committed evidence file's bytes with HEAD after sampling.
+  `tests/test_evidence_provenance.py` (13 tests) covers: same-instant same-head allocations
+  distinct with the first run's files byte-identical; 20 allocations without collision;
+  overrides into `docs/`, `docs/m0-evidence`, a not-yet-existing child of it, and a symlink
+  into it refused with the repository's file bytes unchanged; an override naming an existing
+  run refused with that run's bytes unchanged; an identical override reused on a retry
+  yields a second directory and preserves the first; `write_evidence` refuses overwrites and
+  unsafe names; the session's run directory is outside `docs/`; committed evidence bytes
+  equal HEAD. Executed before/after: the same assertions applied to the old allocation logic
+  fail for distinct directories, history refusal, history bytes and retry reuse, and pass on
+  the new one (scratch script, not committed). README and SKILL now attribute the three slow
+  passes to the local locked environment, state that the hosted slow workflow's execution
+  status is recorded here rather than assumed, and bound the lock claim to the versions the
+  fit records name (transitive versions were not recorded before 2026-09-10).
+- **Repair results (executed, clean locked environment, Python 3.11.0).** Targeted
+  regressions `tests/test_evidence_provenance.py`: 13 passed. Full fast suite **91 passed,
+  4 deselected** (64.3 s); slow suite **4 passed** (24.0 s, incl. the new history-bytes check);
+  run directories now look like `evidence-runs/20260910T030827.102547Z-1a480acd579f-dirty-p19739-487ea9/`.
+  Hosted CI on the repair head `425b3ef`: both `fast checks` runs succeeded (push run
+  34432238494, pull-request run 34432241934). The manual slow workflow **could not be
+  dispatched**: GitHub only accepts `workflow_dispatch` for a workflow file that exists on
+  the default branch (`HTTP 404: workflow slow.yml not found on the default branch`), so
+  the hosted slow run stays unexecuted until this PR is merged; the three sampling checks
+  plus the history-bytes check ran locally in the locked environment (4 passed).
+- Docs: README install/test section and supported-path table; `SKILL.md` session start,
+  handoff and failure table updated to the implemented behaviour.
+- Not in this slice: M2 and later; GPU runs; the Bernoulli boundary-form change (D8) is a
+  separate reviewed correctness change if approved.
+
+## Planning checkpoint (2026-09-09): complete for Andrew's review
+
+- Proposal: `docs/coordination/NEXT_MILESTONES_PROPOSAL.md`, revision3 plus final coordinator
+  mathematical/reference clarification. Concise decision brief:
+  `/Users/andrewdou/iqss-research/plans/2026-09-09-autobayes-approval-brief.md`.
+- All dispatched planning/revision units are complete. Claude's final response was observed
+  idle; do not repeat the work. Implementation awaits Andrew's edits/approval.
+- Recommended sequence: reproducible environment/tests and CPU CI; M2 binomial counts;
+  categorical/interactions and varying slopes in separate slices; researcher skill/onboarding
+  throughout; separately scoped GPU correctness and a capped benchmark dry run.
+- M2 specifies probability/expected-count/response outputs, explicit zero-trial/constant-outcome
+  policy, log-sigmoid likelihood, proposed numerical validation domain and independent references.
+  These are acceptance specifications, not implemented or validated behavior.
+- Benchmark accounting:8 dry-run fits plus40 cold and40 warm =88 proposed pilot fits;
+  optional overhead block adds40. No GPU/benchmark run or budget approved by this document.
+- Evidence: coordinator independently reran59 fast tests earlier;3 slow passes are
+  worker-reported. Only proposal/STATUS documentation modified in the planning unit.
+  Implementation head remainsbd63348 on M1; existing PR3 left open, no commit/push/merge.
+
 ## M1 checkpoint (2026-09-09, after review repair): Bernoulli varying intercept, logit link
 
 - Branch `m1/bernoulli-varying-intercept` from `main` at `925554b`; session

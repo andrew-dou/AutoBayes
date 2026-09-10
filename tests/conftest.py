@@ -1,8 +1,28 @@
+import os
+from pathlib import Path
+
 import numpy as np
 import pandas as pd
 import pytest
 
 import autobayes as ab
+
+REPO = Path(__file__).resolve().parent.parent
+
+
+@pytest.fixture(scope="session")
+def evidence_dir() -> Path:
+    """A fresh, unique directory for this run's candidate evidence (see ``tests/evidence.py``).
+
+    Default parent: ``evidence-runs/`` under the repository (gitignored). ``AUTOBAYES_EVIDENCE_DIR``
+    names another parent (CI passes one). Anything resolving into ``docs/`` or into an existing
+    run is refused before any write; ``run.json`` (environment, git head, argv, pid) is written
+    first, with exclusive create. The committed ``docs/m*-evidence/`` files are history.
+    """
+    from tests.evidence import allocate_run_dir, git_head
+
+    return allocate_run_dir(REPO, os.environ.get("AUTOBAYES_EVIDENCE_DIR"), head=git_head(REPO),
+                            environment=ab.environment())
 
 
 def simulate(n=60, J=6, seed=0, a=1.0, b=0.5, sd=0.5, sigma=0.3, extra=False):

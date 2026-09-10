@@ -1,0 +1,45 @@
+name: slow sampling checks
+
+# Manual only. Acceptance is the statistical criteria the tests assert (analytic z-scores,
+# panel thresholds, truth inside the 94% HDI, backends within 4 combined MCSE), never
+# equality with earlier JSON. Candidate evidence is uploaded as an artifact; the committed
+# records under docs/ are history and are not rewritten. CPU only; no GPU job exists.
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: slow-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  slow:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      PYTENSOR_FLAGS: base_compiledir=${{ github.workspace }}/.pytensor-ci
+      AUTOBAYES_EVIDENCE_DIR: ${{ github.workspace }}/evidence-runs/ci-slow-${{ github.run_id }}-${{ github.run_attempt }}
+      PYTHONDONTWRITEBYTECODE: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+      - name: Install the locked stack (Python 3.11, jax + dev extras)
+        run: |
+          uv python install 3.11
+          uv sync --locked --extra jax --extra dev
+      - name: Environment report
+        run: uv run --no-sync python -c "import autobayes as ab; print(ab.format_environment(ab.environment()))"
+      - name: Slow suite (statistical acceptance)
+        run: uv run --no-sync pytest tests -q -m slow -p no:cacheprovider --junitxml=evidence-runs/junit-slow.xml
+      - name: Upload evidence and junit
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: slow-evidence-${{ github.run_id }}-${{ github.run_attempt }}
+          path: evidence-runs/
+          if-no-files-found: warn
+          retention-days: 90

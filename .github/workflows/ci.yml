@@ -1,0 +1,44 @@
+name: fast checks
+
+# CPU only, on the pinned stack in uv.lock. Evidence for that environment, not for other
+# versions. The slow sampling suite is a separate manual workflow (slow.yml).
+on:
+  push:
+  pull_request:
+
+concurrency:
+  group: fast-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  fast:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    env:
+      PYTENSOR_FLAGS: base_compiledir=${{ github.workspace }}/.pytensor-ci
+      AUTOBAYES_EVIDENCE_DIR: ${{ github.workspace }}/evidence-runs/ci-fast-${{ github.run_id }}-${{ github.run_attempt }}
+      PYTHONDONTWRITEBYTECODE: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+      - name: Install the locked stack (Python 3.11, jax + dev extras)
+        run: |
+          uv python install 3.11
+          uv sync --locked --extra jax --extra dev
+      - name: Environment report
+        run: uv run --no-sync python -c "import autobayes as ab; print(ab.format_environment(ab.environment()))"
+      - name: Fast suite
+        run: uv run --no-sync pytest tests -q -m "not slow" -p no:cacheprovider --junitxml=evidence-runs/junit-fast.xml
+      - name: Upload evidence and junit
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fast-evidence-${{ github.run_id }}-${{ github.run_attempt }}
+          path: evidence-runs/
+          if-no-files-found: warn
+          retention-days: 30

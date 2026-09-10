@@ -1,3 +1,6 @@
+# candidate evidence written by test runs (run-specific; committed history lives in docs/)
+evidence-runs/
+
 # fitted objects and traces — never committed, regenerate them
 *.nc
 *.npz
@@ -28,3 +31,6 @@ venv/
 
 # os
 .DS_Store
+
+# build metadata from the editable install
+*.egg-info/

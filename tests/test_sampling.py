@@ -10,14 +10,17 @@ import pytest
 
 import autobayes as ab
 from autobayes.diagnostics import format_panel, panel
+from tests.evidence import write_evidence
 from tests.conftest import PRIORS, simulate
 from tests.reference_logp import conditional_gaussian_posterior
 
-EVIDENCE = Path(__file__).resolve().parent.parent / "docs" / "m0-evidence"
+# Candidate evidence goes to the run-specific directory (conftest.evidence_dir), never to the
+# committed docs/m*-evidence/ history. Acceptance is the statistical criteria asserted below,
+# not agreement with any earlier JSON.
 
 
 @pytest.mark.slow
-def test_conditional_gaussian_posterior(model, data):
+def test_conditional_gaussian_posterior(model, data, evidence_dir):
     """B1: with scales fixed, NUTS must reproduce the exact Gaussian posterior."""
     pmm = model.pymc_model
     sigma, sd = 0.3, 0.5
@@ -37,14 +40,13 @@ def test_conditional_gaussian_posterior(model, data):
     zscores = (draws.mean(0) - mean) / mcse
     rows = {"exact_mean": mean.tolist(), "mcmc_mean": draws.mean(0).tolist(), "exact_sd": exact_sd.tolist(),
             "mcmc_sd": draws.std(0, ddof=1).tolist(), "ess": ess.tolist(), "z": zscores.tolist()}
-    EVIDENCE.mkdir(exist_ok=True)
-    (EVIDENCE / "B1_conditional_gaussian.json").write_text(json.dumps(rows, indent=1))
+    write_evidence(evidence_dir, "B1_conditional_gaussian.json", json.dumps(rows, indent=1))
     assert np.all(np.abs(zscores) < 4), zscores
     assert np.allclose(draws.std(0, ddof=1), exact_sd, rtol=0.10)
 
 
 @pytest.mark.slow
-def test_simulated_recovery_both_backends():
+def test_simulated_recovery_both_backends(evidence_dir):
     """B2: simulated data, n=200, J=20; PyMC and NumPyro CPU paths agree and recover truth.
 
     4 x 1000 draws gave R-hat 1.02 and bulk ESS 350 on the intercept on both backends
@@ -76,12 +78,11 @@ def test_simulated_recovery_both_backends():
         assert diff < tol, (name, diff, tol)
         summaries.setdefault("agreement", {})[name] = {"diff": float(diff), "tol": float(tol)}
     summaries["truth"] = truth
-    EVIDENCE.mkdir(exist_ok=True)
-    (EVIDENCE / "B2_recovery.json").write_text(json.dumps(summaries, indent=1, default=str))
+    write_evidence(evidence_dir, "B2_recovery.json", json.dumps(summaries, indent=1, default=str))
 
 
 @pytest.mark.slow
-def test_bernoulli_recovery_both_backends():
+def test_bernoulli_recovery_both_backends(evidence_dir):
     """M1 B1: simulated binary data, n=600, J=30; PyMC and NumPyro CPU paths agree and recover truth.
 
     Thresholds set in docs/m1-decision.md before the run. One recovery is not calibration.
@@ -111,7 +112,18 @@ def test_bernoulli_recovery_both_backends():
             assert row["hdi_3%"] <= val <= row["hdi_97%"], (backend, name, val, row)
     c = ab.compare_records(results["pymc"], results["numpyro"])
     summaries["agreement"] = c
-    EVIDENCE_M1 = EVIDENCE.parent / "m1-evidence"
-    EVIDENCE_M1.mkdir(exist_ok=True)
-    (EVIDENCE_M1 / "B1_recovery.json").write_text(json.dumps(summaries, indent=1, default=str))
+    write_evidence(evidence_dir, "M1_B1_recovery.json", json.dumps(summaries, indent=1, default=str))
     assert c["agree"], ab.format_comparison(c)
+
+
+@pytest.mark.slow
+def test_history_bytes_unchanged_after_sampling(evidence_dir):
+    """After the sampling checks wrote their records, every committed evidence file still has
+    its committed bytes (a byte comparison against HEAD, not an existence check)."""
+    from tests.conftest import REPO
+    from tests.evidence import committed_bytes, working_tree_bytes
+
+    head = committed_bytes(REPO, ["docs/m0-evidence", "docs/m1-evidence"])
+    assert len(head) >= 10
+    assert working_tree_bytes(REPO, list(head)) == head
+    assert not any(p.resolve().is_relative_to((REPO / "docs").resolve()) for p in evidence_dir.iterdir())
