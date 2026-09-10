@@ -213,9 +213,74 @@ than papering over it with a rename or a looser tolerance.
   Bambi's `predict`. The kill criterion was not triggered: every tested design and name
   matched the map.
 - `tests/test_categorical.py`: 78 passed (33 s). Fast suite: 261 passed, 6 deselected (272 s). Slow suite: 6 passed (43 s).
-- C10 recovery: both CPU samplers, 4 x (1000 + 1000), seed 11: PyMC 0 divergences, max R-hat 1.0066, min bulk ESS 669; NumPyro 0 divergences, max R-hat 1.0100 (at the gate), min bulk ESS 761; every truth (raw intercept 1.0, x 0.5, z[b] -0.8, z[c] 0.6, sd 0.5, sigma 0.4) inside its 99 % HDI on both backends (the intercept posterior mean 0.84 sits where the realised mean of the ten group effects puts it); backends within 4 combined MCSE on every population mean (largest ratio 0.43). Raw results in `C10_categorical_recovery.json`, `C10_categorical_recovery_records.json` and `C10_categorical_agreement.json` of the slow run's evidence directory.
+- C10 recovery: both CPU samplers, 4 x (1000 + 1000), seed 11: PyMC 0 divergences, max R-hat 1.0066, min bulk ESS 669; NumPyro 0 divergences, max R-hat 1.0099851 (below the 1.01 gate), min bulk ESS 761; every truth (raw intercept 1.0, x 0.5, z[b] -0.8, z[c] 0.6, sd 0.5, sigma 0.4) inside its 99 % HDI on both backends (the intercept posterior mean 0.84 sits where the realised mean of the ten group effects puts it); backends within 4 combined MCSE on every population mean (largest ratio 0.43). Raw results in `C10_categorical_recovery.json`, `C10_categorical_recovery_records.json` and `C10_categorical_agreement.json` of the slow run's evidence directory.
 - Example (`docs/m3a1-evidence/`): both backends recover the arm contrasts (treatment[high] 0.92, treatment[low] -0.63 for truths 0.9 and -0.6); PyMC and NumPyro agree within 4 combined MCSE on all six population means (largest ratio 0.39); the unfitted arm 'placebo' is refused; `--device gpu` raises `DeviceError` on this machine (captured). Files: `example_pymc_cpu.txt`, `example_numpyro_cpu.txt` (with the comparison), the two fit records, `example_numpyro_gpu_attempt.txt`.
 - Corrections to the pre-code text of this record made during implementation: the sign of the
   induced covariance under a change of reference (now $+s_{r'}^2$ between dummies, $-s_{r'}^2$
   intercept coupling when uncentred); nothing else in the accepted defaults changed.
 - Evidence directories of these runs: `evidence-runs/20260910T201758.793519Z-f134f6681885-dirty-p46904-eeda91/` (fast, final) and `evidence-runs/20260910T201242.053154Z-f134f6681885-dirty-p46734-a6732f/` (slow; run on the same library code before the one test-expectation edit in `tests/test_formula.py`, whose earlier fast run `...-p46534-dd7ec8/` had that single failure); earlier run directories untouched.
+
+## Repair record (2026-09-10): categorical labels lost their identity in a float round trip
+
+**Finding (independent review, `memory/reviews/2026-09-10-autobayes-m3a1-review.md`; regressions
+`artifacts/2026-09-10-autobayes-m3a1-independent/test_label_integrity.py`, nine failures on
+`393e4ec`; reproduced here before any change, `docs/m3a1-evidence/label-repair/before-393e4ec.txt`).**
+`categorical_labels` converted every numeric categorical column through `float64` and then
+`int64`, so integer codes above $2^{53}$ were merged (`[2^{53}, 2^{53}+1, 2^{53}+2]` became two
+labels) and unsigned codes at or above $2^{63}$ were corrupted with only a RuntimeWarning; a valid
+public `ab.gaussian` call with three exact integer levels built a two-level model. The same
+converter served `newdata`, so prediction identity depended on the dtype. Separately, `_label`
+fell through to `str(v)` for complex scalars and `reject_complex` looked only at the Series
+dtype, so complex values inside `object` or `category` containers bypassed the documented
+refusal. A categorical code is an identifier: any conversion that can change it changes the
+statistical model before either backend sees it.
+
+**Validation contract (decided before coding).** A categorical value is normalised scalar by
+scalar, by one function used for data values, `newdata`, references, a pandas Categorical's
+declared categories and per-level prior keys, with no float intermediate and no narrowing cast:
+
+| scalar | label | rule |
+|---|---|---|
+| Python `int`, any NumPy integer (signed or unsigned, any width), including nullable `Int64`/`UInt64` containers | exact decimal string of the integer | `str(int(v))`, exact for every width; no range limit |
+| `float` / NumPy float | decimal string of the integer it equals | accepted only if finite, integral and $\lvert v \rvert \le 2^{53}$ (the range in which float64 represents every integer); larger or fractional floats are refused, not relabelled |
+| `str` (including `numpy.str_`) | itself | no normalisation |
+| `bool` / `numpy.bool_` | refused | recode explicitly |
+| complex, `bytes`, `None`/`NaN`/`pd.NA`, and any other type | refused | missing values are refused as before; complex is refused at the scalar level in every container |
+
+Containers are read with `astype(object)`, which yields exact Python integers for `int64`,
+`uint64`, `Int64`, `UInt64` and object columns and the category scalars of a Categorical
+(measured). **Intentional equivalence:** an integer and its decimal string denote the same label
+(`categorical={"z": 1}` and `{"z": "1"}` name the same level; an integral float `2.0` names
+`"2"`). **Refused as ambiguous:** a column that mixes text labels with numeric codes (the
+equivalence would silently merge `"1"` and `1`); a prior mapping whose keys collide after
+normalisation (`2` and `"2"`); a complex, boolean or other unsupported reference, declared
+category or prior key. Nothing outside this domain is accepted and relabelled.
+
+**Original-input checks.** The model keeps the labels of the *supplied* column (before the
+internal ordered Categorical is built) and verifies Bambi's dummy columns against indicators of
+those original labels; the tests build the expected design directly from the raw values with
+exact integer comparison, and check predictions from `newdata` given as `int64`, `uint64`,
+nullable, object and string containers of the same codes.
+
+**Acceptance (all in `tests/test_label_integrity.py` plus the coordinator's file run unchanged).**
+
+- R1 The nine independent regressions pass unchanged.
+- R2 Exact labels for `[2^{53}, 2^{53}+1, 2^{53}+2]` and `[0, 2^{63}, 2^{64}-1]` in `int64`,
+  `Int64`, `uint64`, `UInt64`, object (Python ints) and pandas Categorical containers; a public
+  Gaussian model on the three large codes has three levels and its `X_raw` equals the one-hot of
+  the raw values; the reference given as an int, as a string and as a NumPy integer selects the
+  same level.
+- R3 Integral floats: `2.0` and `float(2^{53})` accepted with the integer label; `2^{53}+2` as a
+  float, `1e300`, `inf`, `nan` and fractional values refused with the domain in the message.
+- R4 Complex scalars refused in float-complex, object and category containers, and as a
+  reference, a declared category and a prior key; booleans refused in bool, object and category
+  containers and as a reference or key; a column mixing strings and numbers refused as ambiguous;
+  missing values (`None`, `NaN`, `pd.NA`) refused in every container.
+- R5 Predictions: `newdata` codes in each container map to the same levels and give identical
+  predictions; `2^{53}+1` is distinct from `2^{53}` in `newdata`; an unseen large code is refused.
+- R6 The reference implementation used by the density tests applies the same scalar rule
+  (no float intermediate), and the existing categorical, prediction and numerical regressions
+  pass unchanged; suites re-run in fresh evidence directories.
+
+The failed head `393e4ec` stays in the history as the reviewed candidate; this record and the
+repair commits follow it.

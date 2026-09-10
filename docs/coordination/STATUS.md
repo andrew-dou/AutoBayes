@@ -44,8 +44,8 @@
   and the fit record, predictions per level with unseen levels refused for every kind and
   `new_groups`, binomial levels after the zero-trial drop, `value_point`. Fast suite **261 passed,
   6 deselected** (272 s). Slow suite **6 passed** (43 s) including the prespecified categorical
-  recovery on both CPU samplers: 0 divergences, max R-hat 1.0066 (PyMC) and 1.0100 (NumPyro, at
-  the gate), min bulk ESS 669/761, every truth inside its 99 % HDI, backends within 4 combined
+  recovery on both CPU samplers: 0 divergences, max R-hat 1.0066 (PyMC) and 1.0099851 (NumPyro, below
+  the 1.01 gate), min bulk ESS 669/761, every truth inside its 99 % HDI, backends within 4 combined
   MCSE (largest ratio 0.43). Example on both backends with the comparison and the GPU refusal in
   `docs/m3a1-evidence/`. One pre-code statement of the record was corrected during
   implementation (the sign of the induced prior covariance under a change of reference), noted

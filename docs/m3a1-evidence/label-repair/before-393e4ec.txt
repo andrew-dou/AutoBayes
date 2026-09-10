@@ -1,0 +1,147 @@
+FFFFFFFFF                                                                [100%]
+=================================== FAILURES ===================================
+__________________ test_large_integer_labels_are_exact[int64] __________________
+
+dtype = 'int64'
+
+    @pytest.mark.parametrize('dtype', ['int64', 'Int64', 'uint64', 'UInt64'])
+    def test_large_integer_labels_are_exact(dtype):
+        raw = [2**53, 2**53 + 1, 2**53 + 2]
+        labels, unused = categorical_labels('z', pd.Series(raw, dtype=dtype))
+>       assert labels.tolist() == [str(v) for v in raw]
+E       AssertionError: assert ['90071992547...199254740994'] == ['90071992547...199254740994']
+E         
+E         At index 1 diff: '9007199254740992' != '9007199254740993'
+E         Use -v to get more diff
+
+../../../artifacts/2026-09-10-autobayes-m3a1-independent/test_label_integrity.py:12: AssertionError
+__________________ test_large_integer_labels_are_exact[Int64] __________________
+
+dtype = 'Int64'
+
+    @pytest.mark.parametrize('dtype', ['int64', 'Int64', 'uint64', 'UInt64'])
+    def test_large_integer_labels_are_exact(dtype):
+        raw = [2**53, 2**53 + 1, 2**53 + 2]
+        labels, unused = categorical_labels('z', pd.Series(raw, dtype=dtype))
+>       assert labels.tolist() == [str(v) for v in raw]
+E       AssertionError: assert ['90071992547...199254740994'] == ['90071992547...199254740994']
+E         
+E         At index 1 diff: '9007199254740992' != '9007199254740993'
+E         Use -v to get more diff
+
+../../../artifacts/2026-09-10-autobayes-m3a1-independent/test_label_integrity.py:12: AssertionError
+_________________ test_large_integer_labels_are_exact[uint64] __________________
+
+dtype = 'uint64'
+
+    @pytest.mark.parametrize('dtype', ['int64', 'Int64', 'uint64', 'UInt64'])
+    def test_large_integer_labels_are_exact(dtype):
+        raw = [2**53, 2**53 + 1, 2**53 + 2]
+        labels, unused = categorical_labels('z', pd.Series(raw, dtype=dtype))
+>       assert labels.tolist() == [str(v) for v in raw]
+E       AssertionError: assert ['90071992547...199254740994'] == ['90071992547...199254740994']
+E         
+E         At index 1 diff: '9007199254740992' != '9007199254740993'
+E         Use -v to get more diff
+
+../../../artifacts/2026-09-10-autobayes-m3a1-independent/test_label_integrity.py:12: AssertionError
+_________________ test_large_integer_labels_are_exact[UInt64] __________________
+
+dtype = 'UInt64'
+
+    @pytest.mark.parametrize('dtype', ['int64', 'Int64', 'uint64', 'UInt64'])
+    def test_large_integer_labels_are_exact(dtype):
+        raw = [2**53, 2**53 + 1, 2**53 + 2]
+        labels, unused = categorical_labels('z', pd.Series(raw, dtype=dtype))
+>       assert labels.tolist() == [str(v) for v in raw]
+E       AssertionError: assert ['90071992547...199254740994'] == ['90071992547...199254740994']
+E         
+E         At index 1 diff: '9007199254740992' != '9007199254740993'
+E         Use -v to get more diff
+
+../../../artifacts/2026-09-10-autobayes-m3a1-independent/test_label_integrity.py:12: AssertionError
+_____________ test_unsigned_integer_labels_do_not_overflow[uint64] _____________
+
+dtype = 'uint64'
+
+    @pytest.mark.parametrize('dtype', ['uint64', 'UInt64'])
+    def test_unsigned_integer_labels_do_not_overflow(dtype):
+        raw = [0, 2**63, 2**64 - 1]
+        labels, _ = categorical_labels('z', pd.Series(raw, dtype=dtype))
+>       assert labels.tolist() == [str(v) for v in raw]
+E       AssertionError: assert ['0', '922337...036854775807'] == ['0', '922337...073709551615']
+E         
+E         At index 1 diff: '9223372036854775807' != '9223372036854775808'
+E         Use -v to get more diff
+
+../../../artifacts/2026-09-10-autobayes-m3a1-independent/test_label_integrity.py:18: AssertionError
+_____________ test_unsigned_integer_labels_do_not_overflow[UInt64] _____________
+
+dtype = 'UInt64'
+
+    @pytest.mark.parametrize('dtype', ['uint64', 'UInt64'])
+    def test_unsigned_integer_labels_do_not_overflow(dtype):
+        raw = [0, 2**63, 2**64 - 1]
+        labels, _ = categorical_labels('z', pd.Series(raw, dtype=dtype))
+>       assert labels.tolist() == [str(v) for v in raw]
+E       AssertionError: assert ['0', '922337...036854775807'] == ['0', '922337...073709551615']
+E         
+E         At index 1 diff: '9223372036854775807' != '9223372036854775808'
+E         Use -v to get more diff
+
+../../../artifacts/2026-09-10-autobayes-m3a1-independent/test_label_integrity.py:18: AssertionError
+_________ test_complex_labels_are_rejected_in_every_container[object] __________
+
+dtype = 'object'
+
+    @pytest.mark.parametrize('dtype', ['object', 'category'])
+    def test_complex_labels_are_rejected_in_every_container(dtype):
+>       with pytest.raises(ab.FormulaError, match='complex'):
+E       Failed: DID NOT RAISE FormulaError
+
+../../../artifacts/2026-09-10-autobayes-m3a1-independent/test_label_integrity.py:22: Failed
+________ test_complex_labels_are_rejected_in_every_container[category] _________
+
+dtype = 'category'
+
+    @pytest.mark.parametrize('dtype', ['object', 'category'])
+    def test_complex_labels_are_rejected_in_every_container(dtype):
+>       with pytest.raises(ab.FormulaError, match='complex'):
+E       Failed: DID NOT RAISE FormulaError
+
+../../../artifacts/2026-09-10-autobayes-m3a1-independent/test_label_integrity.py:22: Failed
+____ test_public_gaussian_model_does_not_merge_distinct_integer_categories _____
+
+    def test_public_gaussian_model_does_not_merge_distinct_integer_categories():
+        raw = [2**53, 2**53+1, 2**53+2] * 4
+        df = pd.DataFrame({'y':np.arange(12, dtype=float), 'z':raw, 'g':['a']*6+['b']*6})
+        priors = ab.Priors(intercept=ab.Normal(0,5), b=ab.Normal(0,2), sd=ab.HalfNormal(1), sigma=ab.HalfNormal(1))
+        model = ab.gaussian('y ~ z + (1 | g)',df,priors,categorical={'z':2**53})
+>       assert model.spec.categorical('z').levels == tuple(str(v) for v in raw[:3])
+E       AssertionError: assert ('90071992547...199254740994') == ('90071992547...199254740994')
+E         
+E         At index 1 diff: '9007199254740994' != '9007199254740993'
+E         Right contains one more item: '9007199254740994'
+E         Use -v to get more diff
+
+../../../artifacts/2026-09-10-autobayes-m3a1-independent/test_label_integrity.py:30: AssertionError
+=============================== warnings summary ===============================
+::test_unsigned_integer_labels_do_not_overflow[uint64]
+::test_unsigned_integer_labels_do_not_overflow[UInt64]
+    values = pd.Series(vf.astype(np.int64), index=s.index).astype(object)
+
+::test_public_gaussian_model_does_not_merge_distinct_integer_categories
+  See https://pandas.pydata.org/docs/user_guide/migration-3-strings.html#string-migration-select-dtypes for details on how to write code that works with pandas 2 and 3.
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+FAILED ../../../../../../private/tmp/claude-502/-Users-andrewdou-iqss-research-projects-AutoBayes/e5628a7d-e572-4bad-9feb-82ee8361c261/scratchpad::test_large_integer_labels_are_exact[int64]
+FAILED ../../../../../../private/tmp/claude-502/-Users-andrewdou-iqss-research-projects-AutoBayes/e5628a7d-e572-4bad-9feb-82ee8361c261/scratchpad::test_large_integer_labels_are_exact[Int64]
+FAILED ../../../../../../private/tmp/claude-502/-Users-andrewdou-iqss-research-projects-AutoBayes/e5628a7d-e572-4bad-9feb-82ee8361c261/scratchpad::test_large_integer_labels_are_exact[uint64]
+FAILED ../../../../../../private/tmp/claude-502/-Users-andrewdou-iqss-research-projects-AutoBayes/e5628a7d-e572-4bad-9feb-82ee8361c261/scratchpad::test_large_integer_labels_are_exact[UInt64]
+FAILED ../../../../../../private/tmp/claude-502/-Users-andrewdou-iqss-research-projects-AutoBayes/e5628a7d-e572-4bad-9feb-82ee8361c261/scratchpad::test_unsigned_integer_labels_do_not_overflow[uint64]
+FAILED ../../../../../../private/tmp/claude-502/-Users-andrewdou-iqss-research-projects-AutoBayes/e5628a7d-e572-4bad-9feb-82ee8361c261/scratchpad::test_unsigned_integer_labels_do_not_overflow[UInt64]
+FAILED ../../../../../../private/tmp/claude-502/-Users-andrewdou-iqss-research-projects-AutoBayes/e5628a7d-e572-4bad-9feb-82ee8361c261/scratchpad::test_complex_labels_are_rejected_in_every_container[object]
+FAILED ../../../../../../private/tmp/claude-502/-Users-andrewdou-iqss-research-projects-AutoBayes/e5628a7d-e572-4bad-9feb-82ee8361c261/scratchpad::test_complex_labels_are_rejected_in_every_container[category]
+FAILED ../../../../../../private/tmp/claude-502/-Users-andrewdou-iqss-research-projects-AutoBayes/e5628a7d-e572-4bad-9feb-82ee8361c261/scratchpad::test_public_gaussian_model_does_not_merge_distinct_integer_categories
+9 failed, 3 warnings in 4.83s
