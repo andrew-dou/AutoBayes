@@ -50,6 +50,11 @@
   `docs/m3a1-evidence/`. One pre-code statement of the record was corrected during
   implementation (the sign of the induced prior covariance under a change of reference), noted
   in the record.
+- PR: https://github.com/andrew-dou/AutoBayes/pull/6 (base `main`, author andrew-dou). Record
+  `f134f66`; implementation `d47ca7f`; this STATUS checkpoint follows it (CI runs recorded in the
+  final report and PR checks). Left open for independent review; not merged by this session; the
+  M3a-1 worktree is kept until that review passes. Next approved increment after acceptance:
+  numeric-by-categorical interaction, in a separate PR.
 
 ## M2 slice (2026-09-10): grouped binomial counts, logit link
 
