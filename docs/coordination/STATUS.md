@@ -8,8 +8,9 @@
   `/Users/andrewdou/iqss-research/projects/AutoBayes-worktrees/foundation-cpu-checks`
   (the M1 checkout at `projects/AutoBayes` is left as it was, dirty with the planning docs).
   Session `e5628a7d-e572-4bad-9feb-82ee8361c261`. Depends on PR #3 (M1), still open.
-  PR: https://github.com/andrew-dou/AutoBayes/pull/4 (base `m1/bernoulli-varying-intercept`;
-  retarget to `main` after #3 merges). Left open for the coordinator's review; not merged.
+  PR: https://github.com/andrew-dou/AutoBayes/pull/4. PR #3 was merged by the coordinator
+  (`main` at `52d2b61` contains `bd63348`), so PR #4 was retargeted to `main` on 2026-09-10.
+  Left open for the coordinator's review; not merged.
 - **Pinned, locked stack**: `pyproject.toml` now pins the tested versions exactly
   (`requires-python >=3.11,<3.12`; pymc 5.28.5, pytensor 2.38.3, bambi 0.17.2, formulae 0.6.2,
   arviz 0.23.4, numpy 2.4.6, pandas 3.0.5, scipy 1.17.1, xarray 2026.7.0, matplotlib 3.10.9;
@@ -84,7 +85,12 @@
   regressions `tests/test_evidence_provenance.py`: 13 passed. Full fast suite **91 passed,
   4 deselected** (64.3 s); slow suite **4 passed** (24.0 s, incl. the new history-bytes check);
   run directories now look like `evidence-runs/20260910T030827.102547Z-1a480acd579f-dirty-p19739-487ea9/`.
-  Hosted CI on the repair head and the manual slow workflow: recorded below once run.
+  Hosted CI on the repair head `425b3ef`: both `fast checks` runs succeeded (push run
+  34432238494, pull-request run 34432241934). The manual slow workflow **could not be
+  dispatched**: GitHub only accepts `workflow_dispatch` for a workflow file that exists on
+  the default branch (`HTTP 404: workflow slow.yml not found on the default branch`), so
+  the hosted slow run stays unexecuted until this PR is merged; the three sampling checks
+  plus the history-bytes check ran locally in the locked environment (4 passed).
 - Docs: README install/test section and supported-path table; `SKILL.md` session start,
   handoff and failure table updated to the implemented behaviour.
 - Not in this slice: M2 and later; GPU runs; the Bernoulli boundary-form change (D8) is a
