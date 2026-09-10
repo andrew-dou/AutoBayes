@@ -21,7 +21,7 @@
   `tests/test_evidence_provenance.py` (explained in its message).
 - **Delivered**: `ab.binomial("successes | trials(n) ~ x + (1 | group)", df, priors)` (brms syntax
   only; Bambi's `p(k, n)` refused), counts validated before any cast (bool, complex,
-  non-integral, non-finite, negative, `k > n`, above `2^31-1` refused), zero-trial rows dropped
+  non-integral, non-finite, negative, `k > n`, above the cap refused; the cap was `2^31-1` at this head and is `1e6` since the repair), zero-trial rows dropped
   and reported before centring, all-zero-trial data refused, constant outcomes accepted with a
   separation warning (M1's Bernoulli refusal retained), likelihood
   `log C(n,k) - k softplus(-eta) - (n-k) softplus(eta)` on `stable_softplus` in a Bambi custom
@@ -81,7 +81,34 @@
   that worktree on 2026-09-10 and is not preserved locally (hosted artifacts and the
   coordinator's preserved run artifacts remain); the M2 runs below write to new run-specific
   directories under `evidence-runs/`, earlier ones untouched.
-- PR: https://github.com/andrew-dou/AutoBayes/pull/5 (base `main`, author andrew-dou). First head `1fcb2cf` (fast checks green: runs 34441129737, 34441162554); reviewed head `49052ac` (green); **repair head `5a43caf`** (fast checks green for both the push, run 34482262505, and the pull-request, run 34482266661, events). Left open for independent review; not merged by this session; the M2 worktree is kept until that review passes.
+- **Second review correction (2026-09-10, `memory/reviews/2026-09-10-autobayes-m2-distribution-review.md`,
+  artifacts `artifacts/2026-09-10-autobayes-m2-repair-independent/`).** Finding, reproduced on
+  `d98b730` with the public API on both paths: the per-row coefficient was passed into the
+  `CustomDist` as a fixed parameter tied to the observed outcome, so the exposed RV's `logp`
+  was normalised only at that outcome (n = 2, eta = 0: masses 0.75 or 1.5 instead of 1),
+  `logp` and `random` described different distributions, and out-of-range or non-integral
+  values had finite mass. The fitted-data likelihood and gradients were unaffected (the
+  coefficient is constant in eta there), so this does not by itself change the reported
+  posteriors. Correction record written before coding (`docs/m2-decision.md`, commit
+  `8d76d64`): the coefficient is now a function of the evaluated value inside the graph on
+  both paths (0 at the boundary, Loader/`stirlerr` decomposition on clipped arguments under a
+  `switch`), with -inf off the integer support {0, ..., n}; `random` unchanged; the family
+  passes only `n`. Measured coefficient error 1.2e-10 at n <= 1e6 on both paths (one ulp of
+  its magnitude; table in the record), so the 1e6 cap and its margins stand. Before/after
+  evidence in `docs/m2-evidence/correction/` (normalisation probe, N7 example log density
+  changed by at most 4.5e-13, coefficient accuracy, scripts). New tests N1-N5 (support
+  enumeration against `math.comb` and a decimal expit with mass 1, observed-outcome
+  independence, symbolic value reused after compilation, 20000 draws against the mass under
+  a Hoeffding bound, zero mass for invalid values on both paths, integer and float tensors).
+  Wording: the current 1e6 cap is stated at the top of the decision record with 2^31-1
+  labelled historical; the refusal message and SKILL no longer suggest splitting large
+  denominators across rows (it changes the unweighted centring); the docstring cites the
+  measured table; the gradient-floor sentence describes the tested evaluation only.
+  `tests/test_binomial.py` **92 passed (190 s)**; fast suite **183 passed, 5 deselected (240 s)**; slow suite **5 passed (31 s)** (new
+  run-specific evidence directories, earlier ones untouched). Example outputs not re-sampled
+  (N7). No D8 change, no M3 work, no GPU use.
+  Correction commit `cb5e5a1` (record `8d76d64` before it).
+- PR: https://github.com/andrew-dou/AutoBayes/pull/5 (base `main`, author andrew-dou). First head `1fcb2cf` (fast checks green: runs 34441129737, 34441162554); reviewed head `49052ac` (green); repair head `5a43caf` (fast checks green for both the push, run 34482262505, and the pull-request, run 34482266661, events); STATUS checkpoint `d98b730`; correction record `8d76d64`; **correction head `cb5e5a1`** followed by this STATUS checkpoint (CI runs recorded in the PR comment). Left open for independent review; not merged by this session; the M2 worktree is kept until that review passes.
 
 ## Foundation slice (2026-09-09): reproducible CPU checks (section 4.0 of the proposal)
 
