@@ -40,8 +40,23 @@
   zero-trial drop before the means). Fast suite **332 passed, 7 deselected (288 s)**. Slow suite **7 passed (49 s)** including the
   prespecified interaction recovery: 0 divergences, max R-hat 1.0094889 (PyMC) and 1.0045411 (NumPyro), min bulk ESS 520/662, all eight truths inside their 99 % HDIs, backends within 4 combined MCSE (largest ratio 0.41). Example on both backends in `docs/m3a2-evidence/`.
 
-- PR: https://github.com/andrew-dou/AutoBayes/pull/7 (base `main`, author andrew-dou). Record `f0d229f`; implementation `9c2ef95`; this STATUS
-  checkpoint follows it (CI runs recorded in the final report and PR checks). Left open for independent
+- **Review repair (2026-09-10, `memory/reviews/2026-09-10-autobayes-m3a2-review.md`).** The
+  one-interaction scope was not enforced (`x:z + w:z` built in all families: the coordinator's three
+  scope checks failed on `cc3081a`, reproduced before any change); `describe()` kept the constant
+  categorical-contrast sentence when the category interacts (the contrast is `b_z[l] + x * b_x:z[l]`,
+  `b_z[l]` alone is at x = 0); the density/gradient tests fed `model.data` to the reference. Repair
+  record committed before code (`7f48b08`); repair commit `76beb7b`: at most one distinct interaction
+  after canonicalisation (shared numeric side, shared categorical side, disjoint and double shorthand
+  all refused), conditional link-scale contrast wording in `describe()` (constant contrast kept for
+  categories without an interaction) with a nonzero-x numerical contrast test, original-source oracles
+  (the reference reads the caller's frame and selects positive-trial rows itself) and the coordinator's
+  original-input checks adopted as `tests/test_interaction_original_inputs.py`. After: coordinator's
+  file 15 passed (pytest exit 0); new module 16 passed; `tests/test_interaction.py` 35 passed; fast suite **348 passed, 7 deselected (343 s)**; slow suite
+  **7 passed (49 s)**; independent regressions 12 passed. Real pytest exit codes recorded; frozen coordinator
+  evidence untouched.
+- PR: https://github.com/andrew-dou/AutoBayes/pull/7 (base `main`, author andrew-dou). Record `f0d229f`; implementation `9c2ef95`;
+  reviewed head `cc3081a` (request changes); repair record `7f48b08`; repair `76beb7b`; this STATUS checkpoint follows it
+  (CI runs recorded in the PR comment and the final report). Left open for independent
   review; not merged by this session; the M3a-2 worktree is kept until that review passes. Next approved
   increment after acceptance: independent varying slopes, then correlated slopes, in separate PRs.
 

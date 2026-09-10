@@ -197,3 +197,13 @@ recoded labels) to the reference, so a preprocessing mistake could have validate
 passes; E3 every earlier suite, gate and independent regression passes unchanged in fresh evidence
 directories, with the actual pytest exit codes and summaries recorded; E4 a nonzero-x numerical
 contrast check confirms the stated conditional contrast.
+
+**Executed results of the repair (2026-09-10, clean locked environment, fresh evidence directories;
+real pytest exit codes recorded in `docs/m3a2-evidence/scope-repair/after-repair.txt`).** Repair commit
+76beb7b. Before, on `cc3081a`: the coordinator's extra file gave pytest exit 1, "3 failed, 12 passed"
+(`before-cc3081a.txt`). After: 15 passed (pytest exit 0); `tests/test_interaction_original_inputs.py` (the adapted
+original-input, scope and conditional-contrast checks) 16 passed; `tests/test_interaction.py` with the
+original-source oracle 35 passed; fast suite 348 passed, 7 deselected (343 s); slow suite 7 passed (49 s) (recovery gates unchanged);
+independent label-identity and M2 normalisation regressions 12 passed. Evidence directories:
+`evidence-runs/20260910T234927.734308Z-7f48b0864c77-dirty-p63348-86ea40/` (fast) and `evidence-runs/20260910T235131.008154Z-7f48b0864c77-dirty-p64883-5b4505/` (slow); earlier directories untouched. The frozen coordinator evidence under
+`artifacts/2026-09-10-autobayes-m3a2-independent/` was not modified.
