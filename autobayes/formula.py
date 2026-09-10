@@ -2,8 +2,11 @@
 
 Supported::
 
-    response ~ [1 +] predictor [+ predictor ...] + (1 | group)               (Gaussian, Bernoulli)
-    successes | trials(n) ~ [1 +] predictor [+ predictor ...] + (1 | group)  (binomial, brms syntax)
+    response ~ [1 +] predictor [+ predictor ...] [+ x:z ...] + (1 | group)               (Gaussian, Bernoulli)
+    successes | trials(n) ~ [1 +] predictor [+ predictor ...] [+ x:z ...] + (1 | group)  (binomial, brms syntax)
+
+with ``x:z`` (or the shorthand ``x*z`` = ``x + z + x:z``) one interaction between a numeric term
+and a declared categorical term whose main effects are both present (milestone M3a-2).
 
 Predictors are numeric columns, or categorical columns declared with ``categorical={column:
 reference_level}`` (treatment coding, milestone M3a-1); the grouping variable may be any
@@ -74,9 +77,10 @@ class ModelSpec:
     intercept: bool = True
     levels: tuple[str, ...] = field(default_factory=tuple)
     trials: str | None = None          # binomial only: the trials column of ``successes | trials(n)``
-    rhs: str = ""
-    terms: tuple[str, ...] = ()        # every predictor term (numeric and categorical) in formula order
+    rhs: str = ""                      # the CANONICAL right-hand side handed to Bambi (docs/m3a2-decision.md)
+    terms: tuple[str, ...] = ()        # every term in canonical order: main effects, then interactions ``x:z``
     categoricals: tuple[Categorical, ...] = ()   # the declared categorical terms, in formula order
+    interactions: tuple[tuple[str, str], ...] = ()   # (numeric term, categorical term) per interaction, canonical order
 
     def __post_init__(self):
         if not self.terms:                      # numeric-only construction (M0-M2 call sites)
@@ -97,33 +101,63 @@ class ModelSpec:
         raise KeyError(name)
 
     @property
+    def interaction_names(self) -> tuple[str, ...]:
+        return tuple(f"{x}:{z}" for x, z in self.interactions)
+
+    def interaction_of(self, term: str) -> tuple[str, str]:
+        for x, z in self.interactions:
+            if f"{x}:{z}" == term:
+                return x, z
+        raise KeyError(term)
+
+    def is_vector_term(self, term: str) -> bool:
+        """A categorical or interaction term: one coefficient per non-reference level."""
+        return term in self.categorical_names or term in self.interaction_names
+
+    def levels_of(self, term: str) -> tuple[str, ...]:
+        """Coefficient levels of a vector-valued term: a categorical term's non-reference levels,
+        or those of an interaction's categorical side. ``()`` for a numeric term."""
+        if term in self.categorical_names:
+            return self.categorical(term).coefficients
+        if term in self.interaction_names:
+            return self.categorical(self.interaction_of(term)[1]).coefficients
+        return ()
+
+    def term_columns(self, term: str) -> tuple[str, ...]:
+        """Design-column labels of one term, Bambi/formulae's own: ``x``; ``z[l]``; ``x:z[l]``."""
+        levels = self.levels_of(term)
+        return tuple(f"{term}[{l}]" for l in levels) if levels else (term,)
+
+    @property
     def columns(self) -> tuple[str, ...]:
-        """Design-column labels in design order: formula term order, a categorical term
-        expanded into its ``z[level]`` dummies (reference omitted)."""
-        out: list[str] = []
-        for term in self.terms:
-            if term in self.categorical_names:
-                out.extend(self.categorical(term).columns)
-            else:
-                out.append(term)
-        return tuple(out)
+        """Design-column labels in design order: canonical term order, a categorical term
+        expanded into ``z[level]`` dummies (reference omitted), an interaction into ``x:z[level]``."""
+        return tuple(col for term in self.terms for col in self.term_columns(term))
 
     @property
     def column_terms(self) -> tuple[tuple[str, str, int | None], ...]:
         """``(column label, term, index within the term or None for a numeric term)`` per column."""
         out: list[tuple[str, str, int | None]] = []
         for term in self.terms:
-            if term in self.categorical_names:
-                out.extend((col, term, j) for j, col in enumerate(self.categorical(term).columns))
+            cols = self.term_columns(term)
+            if self.levels_of(term):
+                out.extend((col, term, j) for j, col in enumerate(cols))
             else:
                 out.append((term, term, None))
         return tuple(out)
 
     @property
+    def canonical_formula(self) -> str:
+        """The formula as expanded: main effects, then interactions spelled ``numeric:categorical``."""
+        lhs = self.response if self.trials is None else f"{self.response} | trials({self.trials})"
+        return f"{lhs} ~ {self.rhs}"
+
+    @property
     def bambi_formula(self) -> str:
-        """What is handed to Bambi: brms's ``k | trials(n)`` becomes Bambi's ``p(k, n)``."""
+        """What is handed to Bambi: the canonical right-hand side; brms's ``k | trials(n)`` becomes
+        Bambi's ``p(k, n)``."""
         if self.trials is None:
-            return self.formula
+            return f"{self.response} ~ {self.rhs}"
         return f"p({self.response}, {self.trials}) ~ {self.rhs}"
 
 
@@ -327,7 +361,21 @@ def parse_formula(formula: str, data: pd.DataFrame | None = None, family: str = 
 
     predictors: list[str] = []
     groups: list[str] = []
+    raw_interactions: list[tuple[str, str, str]] = []      # (left, right, piece as written)
     saw_intercept_token = False
+
+    def _main(name: str, piece: str) -> None:
+        if not re.fullmatch(_IDENT, name):
+            raise FormulaError(f"{piece!r}: {name!r} is not a column name")
+        if name == response:
+            raise FormulaError(f"{name!r}: the response cannot also be a predictor")
+        if name in predictors:
+            raise FormulaError(
+                f"{name!r}: duplicated predictor" + (f" after expanding {piece!r} (a*b means a + b + a:b; write "
+                                                     f"'a + b + a:b' or 'a*b', not both)" if piece != name else "")
+            )
+        predictors.append(name)
+
     for piece in _split_top_level(rhs):
         if piece == "":
             raise FormulaError(f"{formula!r}: empty term")
@@ -349,23 +397,40 @@ def parse_formula(formula: str, data: pd.DataFrame | None = None, family: str = 
             raise FormulaError(f"{piece!r}: parenthesised term is not a '(1 | group)' term")
         if "|" in piece:
             raise FormulaError(f"{piece!r}: a '|' term must be written '(1 | group)'")
-        if "*" in piece or ":" in piece:
-            raise FormulaError(
-                f"{piece!r}: interactions ('*', ':') are not supported in M0."
-            )
         if "(" in piece or ")" in piece:
             raise FormulaError(
                 f"{piece!r}: function calls and transformations inside the formula are "
                 "not supported in M0; transform the column in the data frame instead."
             )
-        if not re.fullmatch(_IDENT, piece):
-            raise FormulaError(f"{piece!r}: not a column name")
-        if piece == response:
-            raise FormulaError(f"{piece!r}: the response cannot also be a predictor")
-        if piece in predictors:
-            raise FormulaError(f"{piece!r}: duplicated predictor")
-        predictors.append(piece)
+        if "*" in piece or ":" in piece:
+            sep = "*" if "*" in piece else ":"
+            if "*" in piece and ":" in piece:
+                raise FormulaError(f"{piece!r}: mixing '*' and ':' in one term is not supported; write 'x*z' or 'x + z + x:z'")
+            factors = [f.strip() for f in piece.split(sep)]
+            if len(factors) != 2 or any(f == "" for f in factors):
+                raise FormulaError(
+                    f"{piece!r}: only a two-way interaction between one numeric and one categorical term is "
+                    "supported in this slice (docs/m3a2-decision.md); higher-order interactions are not."
+                )
+            left, right = factors
+            if left == right:
+                raise FormulaError(f"{piece!r}: a term cannot interact with itself")
+            if sep == "*":                                          # a*b is shorthand for a + b + a:b
+                _main(left, piece)
+                _main(right, piece)
+            raw_interactions.append((left, right, piece))
+            continue
+        _main(piece, piece)
 
+    for left, right, piece in raw_interactions:              # both main effects are required in this slice
+        for side in (left, right):
+            if side not in predictors and re.fullmatch(_IDENT, side) and side not in groups:
+                raise FormulaError(
+                    f"{piece!r}: the main effect {side!r} is missing. This slice requires both main effects of an "
+                    f"interaction ('{left} + {right} + {left}:{right}' or '{left}*{right}'): omitting one is a different "
+                    "model (the level intercepts or the reference slope are forced to zero and formulae changes the "
+                    "interaction's coding) and is not part of the verified subset (docs/m3a2-decision.md)."
+                )
     if len(groups) == 0:
         raise FormulaError(
             f"{formula!r}: M0 requires exactly one varying-intercept term '(1 | group)'."
@@ -388,11 +453,35 @@ def parse_formula(formula: str, data: pd.DataFrame | None = None, family: str = 
 
     categoricals = _normalise_categorical(categorical, predictors, response, group, trials, formula)
     cat_names = {c.name for c in categoricals}
+    interactions: list[tuple[str, str]] = []
+    for left, right, piece in raw_interactions:
+        for side in (left, right):
+            if not re.fullmatch(_IDENT, side):
+                raise FormulaError(f"{piece!r}: {side!r} is not a column name")
+            if side == group:
+                raise FormulaError(f"{piece!r}: the grouping factor {group!r} cannot enter a fixed interaction")
+            if side == response or (trials is not None and side == trials):
+                raise FormulaError(f"{piece!r}: the response or trials column cannot enter an interaction")
+        cats = [s for s in (left, right) if s in cat_names]
+        nums = [s for s in (left, right) if s not in cat_names]
+        if len(cats) != 1:
+            kind = "two categorical terms" if len(cats) == 2 else "two numeric terms"
+            raise FormulaError(
+                f"{piece!r}: an interaction between {kind} is not supported in this slice; only one numeric "
+                "by one declared categorical term is (docs/m3a2-decision.md). A categorical side must be "
+                "declared in categorical=."
+            )
+        x, z = nums[0], cats[0]
+        if (x, z) in interactions:
+            raise FormulaError(f"{piece!r}: the interaction '{x}:{z}' appears more than once after expansion")
+        interactions.append((x, z))
+    canonical_rhs = " + ".join([*predictors, *(f"{x}:{z}" for x, z in interactions), f"(1 | {group})"])
     spec = ModelSpec(
         formula=formula.strip(), response=response,
         predictors=tuple(p for p in predictors if p not in cat_names),
-        group=group, intercept=True, trials=trials, rhs=rhs.strip(),
-        terms=tuple(predictors), categoricals=categoricals,
+        group=group, intercept=True, trials=trials, rhs=canonical_rhs,
+        terms=(*predictors, *(f"{x}:{z}" for x, z in interactions)), categoricals=categoricals,
+        interactions=tuple(interactions),
     )
     if data is not None:
         spec = validate_data(spec, data, family)
@@ -499,7 +588,7 @@ def validate_data(spec: ModelSpec, data: pd.DataFrame, family: str = "gaussian")
     """Check columns exist, are numeric where required, and have no missing values."""
     if (spec.trials is not None) != (family == "binomial"):
         raise FormulaError("a trials column is present exactly for the binomial family")
-    needed = [spec.response, *spec.terms, spec.group] + ([spec.trials] if spec.trials else [])
+    needed = [spec.response, *spec.predictors, *spec.categorical_names, spec.group] + ([spec.trials] if spec.trials else [])
     missing = [c for c in needed if c not in data.columns]
     if missing:
         raise FormulaError(f"columns not in data: {missing}")
@@ -553,5 +642,5 @@ def validate_data(spec: ModelSpec, data: pd.DataFrame, family: str = "gaussian")
     return ModelSpec(
         formula=spec.formula, response=spec.response, predictors=spec.predictors,
         group=spec.group, intercept=True, levels=levels, trials=spec.trials, rhs=spec.rhs,
-        terms=spec.terms, categoricals=tuple(categoricals),
+        terms=spec.terms, categoricals=tuple(categoricals), interactions=spec.interactions,
     )

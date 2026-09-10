@@ -1,0 +1,107 @@
+AutoBayes environment
+  python    : 3.11.0 (macOS-26.6.1-arm64-arm-64bit)
+  versions  : pymc 5.28.5, pytensor 2.38.3, bambi 0.17.2, formulae 0.6.2, arviz 0.23.4, numpyro 0.21.0, jax 0.10.2, jaxlib 0.10.2, numpy 2.4.6
+  jax       : cpu:cpu(id=0), cpu:cpu(id=1), cpu:cpu(id=2), cpu:cpu(id=3), cpu:cpu(id=4), cpu:cpu(id=5), cpu:cpu(id=6), cpu:cpu(id=7)
+  jax x64   : True
+
+300 rows, 12 sites; arms {'control': 139, 'low': 100, 'high': 61}; mean dose by arm {'control': -0.07, 'high': -0.48, 'low': 1.07}
+AutoBayes M0 model with categorical predictor(s) and interaction(s)
+  formula   : y ~ dose + arm + dose:arm + (1 | site)
+  family    : gaussian, identity link
+  data      : n = 300 observations, J = 12 levels of site
+  levels    : 0=s00, 1=s01, 2=s02, 3=s03, 4=s04, 5=s05, 6=s06, 7=s07, 8=s08, 9=s09, 10=s10, 11=s11
+  arm       : categorical, treatment coding, reference 'control'; levels (sorted) control, high, low; coefficients b_arm[high, low]
+              proportions among fitted rows: control 0.463, high 0.203, low 0.333
+
+Linear predictor
+  mu_i = a_c + (x_dose - mean(x_dose)) * b_dose + (1[arm_i = high] - p_arm[high]) * b_arm[high] + (1[arm_i = low] - p_arm[low]) * b_arm[low] + (x_dose * 1[arm_i = high] - q_dose:arm[high]) * b_dose:arm[high] + (x_dose * 1[arm_i = low] - q_dose:arm[low]) * b_dose:arm[low] + u[site_i]
+  b_arm[l] is the difference between level l and the reference 'control' on the response scale at the same predictors and group; the reference has no coefficient.
+  dose:arm: the reference level 'control' has the raw intercept a and slope b_dose; level l has intercept difference b_arm[l] and slope difference b_dose:arm[l], so its slope in dose is b_dose + b_dose:arm[l].
+  Predictors are centred at their sample means (center_predictors=True, as in
+  brms and Bambi); a dummy column's mean is its level's proportion p_z[l].
+  Each product column x * 1[z = l] is centred at its OWN mean q, which is the level's proportion
+  times the mean of x within that level: q_dose:arm[high] = -0.0975 = p_arm[high] 0.203 * mean(dose | arm = high) -0.4793 (not mean(dose) 0.2270 * p)
+  times the mean of x within that level: q_dose:arm[low] = 0.3564 = p_arm[low] 0.333 * mean(dose | arm = low) 1.0693 (not mean(dose) 0.2270 * p)
+  That point of the expanded design is not a realisable covariate row (a row has x*1[z=l] equal to x or 0).
+  a_c is the expected response at the fitted-row means of every expanded design column (x, 1[z = l], x * 1[z = l]) (group effect zero); the
+  prior on the intercept applies to a_c. The posterior reports the raw-scale
+  intercept a = a_c - sum_p mean(x_p) * b_p - sum_l p_z[l] * b_z[l] - sum_l q_x:z[l] * b_x:z[l], computed after sampling: the linear predictor at x = 0 and at the reference level.
+
+Group effects (non-centred)
+  u[j] = sd_site * z[j],  z[j] ~ Normal(0, 1),  j = 0..11
+
+Priors
+  a_c ~ Normal(mu=0, sigma=5)
+  b_dose ~ Normal(mu=0, sigma=2)
+  b_arm[high] ~ Normal(mu=0, sigma=2)
+  b_arm[low] ~ Normal(mu=0, sigma=2)
+  b_dose:arm[high] ~ Normal(mu=0, sigma=1)
+  b_dose:arm[low] ~ Normal(mu=0, sigma=1)
+  sd_site ~ HalfNormal(sigma=1)
+  sigma ~ HalfNormal(sigma=1)
+
+Likelihood
+  y_i ~ Normal(mu_i, sigma)
+
+PyMC variables sampled (value space)
+  sigma_log__              log(sigma)
+  Intercept                a_c
+  dose                     b_dose
+  arm                      b_arm[high, low] (vector; dims arm_dim, posterior rows arm[high], arm[low])
+  dose:arm                 b_dose:arm[high, low] (vector; dims dose:arm_dim, posterior rows dose:arm[high], dose:arm[low])
+  1|site_sigma_log__       log(sd_site)
+  1|site_offset            z
+Deterministic: 1|site = u, mu = linear predictor
+
+design columns: ('dose', 'arm[high]', 'arm[low]', 'dose:arm[high]', 'dose:arm[low]')
+coefficients   : (('dose', 'dose', None), ('arm[high]', 'arm', 0), ('arm[low]', 'arm', 1), ('dose:arm[high]', 'dose:arm', 0), ('dose:arm[low]', 'dose:arm', 1))
+column means used for centring: {'dose': np.float64(0.227), 'arm[high]': np.float64(0.2033), 'arm[low]': np.float64(0.3333), 'dose:arm[high]': np.float64(-0.0975), 'dose:arm[low]': np.float64(0.3564)}
+
+AutoBayes fit report
+  backend          : numpyro
+  device requested : cpu
+  device actual    : cpu:cpu(id=0) (platform cpu)
+  dtype            : float64
+  chain method     : parallel
+  chains/tune/draws: 4/1000/1000, target_accept 0.9
+  seed             : 23
+  wall time        : 4.7 s (includes compilation)
+
+Diagnostic panel (thresholds from reference/diagnostics.md)
+  divergences            0 of 4000 (0.000%)           pass
+  max R-hat              1.0083                       pass
+  min bulk ESS           475                          pass
+  min tail ESS           761                          pass
+  min E-BFMI             0.746                        pass
+  tree-depth saturation  0.00%                        pass
+  overall: pass
+
+                 mean     sd  hdi_3%  hdi_97%  mcse_mean  mcse_sd  ess_bulk  ess_tail  r_hat
+Intercept       1.686  0.166   1.361    1.982      0.008    0.005     475.0     761.0   1.01
+dose            0.544  0.036   0.475    0.611      0.001    0.001    1969.0    2042.0   1.00
+arm[high]       0.884  0.064   0.763    1.003      0.001    0.001    2462.0    2582.0   1.00
+arm[low]       -0.539  0.069  -0.665   -0.408      0.001    0.001    2204.0    1996.0   1.00
+dose:arm[high] -0.960  0.061  -1.084   -0.854      0.001    0.001    2327.0    2251.0   1.00
+dose:arm[low]   0.204  0.053   0.110    0.308      0.001    0.001    1858.0    2389.0   1.00
+1|site_sigma    0.522  0.130   0.304    0.769      0.005    0.004     813.0    1167.0   1.00
+sigma           0.393  0.016   0.365    0.426      0.000    0.000    3077.0    2744.0   1.00
+truth: Intercept 2.0 (raw: dose = 0, control), dose 0.5, arm[low] -0.6, arm[high] 0.9, dose:arm[low] 0.3, dose:arm[high] -0.8, sd 0.5, sigma 0.4   (one recovery, not calibration)
+the realised mean of the site effects is -0.270; compare Intercept with 1.730
+  dose slope in arm control: mean +0.544, 94% HDI [+0.476, +0.612]
+  dose slope in arm low    : mean +0.749, 94% HDI [+0.673, +0.823]
+  dose slope in arm high   : mean -0.415, 94% HDI [-0.506, -0.320]
+
+expected y at site s00: high arm dose 0 -> 2.47, dose 1 -> 2.06; control dose 0 -> 1.59, dose 1 -> 2.13; a new site, low arm, dose 0 -> 1.14 (SD across draws 0.56)
+an arm that was not fitted is refused: newdata has levels of the categorical predictor 'arm' that were not in the fitted rows: ['placebo']
+fit record written to docs/m3a2-evidence/example_numpyro_cpu_record.json
+
+Agreement of population-parameter means (4 combined MCSE): cpu:cpu(id=0) vs cpu
+  Intercept        1.6862 vs 1.6761  |diff| 0.0101  tol 0.0384  ok
+  dose             0.5444 vs 0.5427  |diff| 0.0017  tol 0.0046  ok
+  arm[high]        0.8844 vs 0.8849  |diff| 0.0006  tol 0.0072  ok
+  arm[low]         -0.5388 vs -0.5377  |diff| 0.0012  tol 0.0077  ok
+  dose:arm[high]   -0.9595 vs -0.9581  |diff| 0.0014  tol 0.0073  ok
+  dose:arm[low]    0.2044 vs 0.2061  |diff| 0.0017  tol 0.0068  ok
+  1|site_sigma     0.5225 vs 0.5157  |diff| 0.0068  tol 0.0238  ok
+  sigma            0.3926 vs 0.3926  |diff| 0.0000  tol 0.0017  ok
+  agree: True  (a statement about the target, not about speed)

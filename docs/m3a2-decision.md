@@ -148,3 +148,12 @@ Jacobian); the test builds it by hand, no public multivariate-prior API.
 If formulae's interaction coding differs from the map in any tested case (levels, labels,
 order, centring), or a density or prediction check fails on either path, the slice stops and
 reports rather than renaming or loosening a tolerance.
+
+## Executed results (2026-09-10, clean locked environment, Python 3.11.0, fresh evidence directories)
+
+- Measured first (scratch probe, recorded above); the kill criterion was not triggered: every
+  tested coding, label, order and centring matched the map.
+- `tests/test_interaction.py`: 35 passed (37 s). Fast suite: 332 passed, 7 deselected (288 s). Slow suite: 7 passed (49 s).
+- D10 recovery: both CPU samplers, 4 x (1000 + 1000), seed 13: PyMC 0 divergences, max R-hat 1.0094889, min bulk ESS 520; NumPyro 0 divergences, max R-hat 1.0045411, min bulk ESS 662; all eight truths (raw intercept 1.0, x 0.5, z[b] -0.8, z[c] 0.6, x:z[b] 0.4, x:z[c] -0.7, sd 0.5, sigma 0.4) inside their 99 % HDIs on both backends; backends within 4 combined MCSE on every population mean (largest ratio 0.41). Raw results in `D10_interaction_recovery.json`, `D10_interaction_recovery_records.json` and `D10_interaction_agreement.json` of the slow run's evidence directory.
+- Example (`docs/m3a2-evidence/`): both backends recover the arm-specific slopes (control 0.54, low 0.75, high -0.42 for truths 0.5, 0.8, -0.3) and the arm contrasts; PyMC and NumPyro agree within 4 combined MCSE on all eight population means (largest ratio 0.26); the unfitted arm 'placebo' is refused; `--device gpu` raises `DeviceError` (captured). Files: `example_pymc_cpu.txt`, `example_numpyro_cpu.txt` (with the comparison), the two fit records, `example_numpyro_gpu_attempt.txt`, `independent_regressions.txt`.
+- Evidence directories of these runs: `evidence-runs/20260910T213233.367265Z-f0d229f12697-dirty-p57280-fc4e8d/` (fast, final) and `evidence-runs/20260910T212717.645617Z-f0d229f12697-dirty-p56976-4fbce1/` (slow; same library code, run before three refusal-message expectation edits in `tests/test_formula.py` and `tests/test_categorical.py`, whose earlier fast run `...-p56367-77a663/` had those three failures); earlier run directories untouched.

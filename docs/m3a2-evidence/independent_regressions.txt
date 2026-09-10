@@ -1,0 +1,10 @@
+............                                                             [100%]
+=============================== warnings summary ===============================
+::test_public_gaussian_model_does_not_merge_distinct_integer_categories
+::test_binomial_mass_is_normalized_independently_of_observed_k[0]
+::test_binomial_mass_is_normalized_independently_of_observed_k[1]
+::test_binomial_mass_is_normalized_independently_of_observed_k[2]
+  See https://pandas.pydata.org/docs/user_guide/migration-3-strings.html#string-migration-select-dtypes for details on how to write code that works with pandas 2 and 3.
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+12 passed, 4 warnings in 6.68s

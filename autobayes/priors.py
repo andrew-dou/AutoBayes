@@ -104,9 +104,12 @@ class Priors:
         if missing or extra:
             hint = ""
             for k in extra:
-                if isinstance(k, str) and "[" in k and k.split("[", 1)[0] in cat_names:
-                    hint = (f"; {k!r} looks like a dummy-column label: give per-level priors as "
+                if isinstance(k, str) and "[" in k and k.split("[", 1)[0] in (*cat_names, *spec.interaction_names):
+                    hint = (f"; {k!r} looks like a design-column label: give per-level priors as "
                             f"b={{{k.split('[', 1)[0]!r}: {{level: prior}}}}")
+                    break
+                if isinstance(k, str) and ":" in k and ":".join(reversed(k.split(":", 1))) in spec.interaction_names:
+                    hint = f"; write the interaction key in its canonical spelling {':'.join(reversed(k.split(':', 1)))!r} (numeric first)"
                     break
             raise PriorError(
                 f"coefficient priors must cover exactly the predictor terms {list(spec.terms)}; "
@@ -115,7 +118,7 @@ class Priors:
         out: dict[str, Prior] = {}
         for term in spec.terms:
             entry = given[term]
-            if term not in cat_names:
+            if not spec.is_vector_term(term):
                 if not isinstance(entry, Prior):
                     raise PriorError(
                         f"predictor {term!r} takes one prior, got {type(entry).__name__}; a mapping {{level: prior}} "
@@ -123,9 +126,9 @@ class Priors:
                     )
                 out[term] = entry
                 continue
-            cat = spec.categorical(term)
+            cat = spec.categorical(term if term in cat_names else spec.interaction_of(term)[1])
             if isinstance(entry, Prior):
-                for col in cat.columns:
+                for col in spec.term_columns(term):
                     out[col] = entry
                 continue
             if not isinstance(entry, Mapping):
@@ -211,11 +214,10 @@ class Priors:
         if self.sigma is not None:
             out["sigma"] = self.sigma.to_bambi()
         for term in spec.terms:
-            if term not in spec.categorical_names:
+            if not spec.is_vector_term(term):
                 out[term] = per_column[term].to_bambi()
                 continue
-            cat = spec.categorical(term)
-            priors = [per_column[col] for col in cat.columns]
+            priors = [per_column[col] for col in spec.term_columns(term)]
             name = priors[0].name
             params = {k: np.array([float(pr.params[k]) for pr in priors]) for k in priors[0].params}
             out[term] = bmb.Prior(name, **params)

@@ -317,7 +317,7 @@ def test_prior_forms_and_refusals():
     cases = [
         ({"x": ab.Normal(0, 2)}, "missing \\['z'\\]"),
         ({"x": ab.Normal(0, 2), "z": ab.Normal(0, 2), "w": ab.Normal(0, 1)}, "unexpected \\['w'\\]"),
-        ({"x": ab.Normal(0, 2), "z[b]": ab.Normal(0, 2), "z[c]": ab.Normal(0, 2)}, "looks like a dummy-column label"),
+        ({"x": ab.Normal(0, 2), "z[b]": ab.Normal(0, 2), "z[c]": ab.Normal(0, 2)}, "looks like a design-column label"),
         ({"x": ab.Normal(0, 2), "z": {"b": ab.Normal(0, 1)}}, "missing \\['c'\\]"),
         ({"x": ab.Normal(0, 2), "z": {"a": ab.Normal(0, 1), "b": ab.Normal(0, 1), "c": ab.Normal(0, 1)}}, "reference level and has no coefficient"),
         ({"x": ab.Normal(0, 2), "z": {"b": ab.Normal(0, 1), "c": ab.Normal(0, 1), "d": ab.Normal(0, 1)}}, "unexpected \\['d'\\]"),

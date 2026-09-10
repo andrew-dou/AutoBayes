@@ -22,10 +22,11 @@ One library (`autobayes/`), one reference pack (`reference/`), one scaffold
 model family, then the routing for everything else.
 
 **What is verified.** One formula subset with numeric predictors, treatment-coded
-categorical predictors declared with `categorical={column: reference}`, and one varying
-intercept,
+categorical predictors declared with `categorical={column: reference}`, one
+numeric-by-categorical interaction `x:z` with both main effects present (`x*z` is the
+shorthand for `x + z + x:z`), and one varying intercept,
 
-    y ~ [1 +] x1 [+ x2 ...] [+ z ...] + (1 | group)
+    y ~ [1 +] x1 [+ x2 ...] [+ z ...] [+ x:z ...] + (1 | group)
 
 for two outcome families:
 
@@ -192,6 +193,31 @@ relabels the coefficients by a known linear map and leaves the likelihood unchan
 but independent priors in the new coding are a **different model** (their induced joint
 prior is correlated); `docs/m3a1-decision.md` derives the map and the test checks it.
 
+For an interaction between a numeric and a categorical predictor (milestone M3a-2):
+
+```python
+priors = ab.Priors(
+    intercept=ab.Normal(0, 5),
+    b={"dose": ab.Normal(0, 2),                                   # the reference arm's dose slope
+       "arm": ab.Normal(0, 2),                                    # arm minus control at dose = 0
+       "dose:arm": {"low": ab.Normal(0, 1), "high": ab.Normal(0, 1)}},  # slope differences (or one prior)
+    sd=ab.HalfNormal(1), sigma=ab.HalfNormal(1),
+)
+model = ab.gaussian("y ~ dose + arm + dose:arm + (1 | site)", df, priors, categorical={"arm": "control"})
+```
+
+`x*z` means `x + z + x:z` (measured identical in Bambi); the canonical spelling handed to
+Bambi is `numeric:categorical`, which `describe()` prints as `expanded :` when it differs
+from what you wrote, and it is the prior key (`"dose:arm"`, never `"arm:dose"`). Both main
+effects are required: `x + x:z` or `z + x:z` are refused because they are different
+models (a level intercept or the reference slope forced to zero, and formulae recodes the
+interaction). The reference level has the raw intercept and the slope `dose`; every other
+level has an intercept difference `arm[l]` and a slope difference `dose:arm[l]`, so its
+slope is `dose + dose:arm[l]`; the posterior variable is `dose:arm` with the levels as
+coordinates (`az.summary(fit.idata, var_names=["dose:arm"])`). Check
+`model.spec.columns` and `model.design.X_raw[:5]`: the product columns are
+`dose * 1[arm = l]`, built and verified against an independent one-hot construction.
+
 Every class the family has is required. There are no defaults, because a default
 prior is the thing you cannot see in the formula and cannot reproduce later. Location
 classes take `Normal` or `StudentT(nu, mu, sigma)`; scale classes take `HalfNormal`,
@@ -212,7 +238,13 @@ are centred too, so the sampled intercept is the linear predictor at the numeric
 family the expected response there; for the logit families a log-odds whose `expit` is
 the probability at that proportion-weighted predictor, **not** the average probability
 across the levels (the link is nonlinear). The posterior `Intercept` is the linear
-predictor at x = 0 and the reference level.
+predictor at x = 0 and the reference level. With an interaction every expanded column is
+centred at its **own** fitted-row mean: the product column `x * 1[z = l]` at
+`p_l * mean(x within level l)`, which is not `mean(x) * p_l` when `x` differs by level
+(`describe()` prints both). The sampled intercept is then the linear predictor at a point of
+the expanded design that no covariate row can occupy (a row has `x*1[z=l]` equal to `x` or
+0); the reported `Intercept` is `a_c` minus the sum of column mean times coefficient, the
+linear predictor at x = 0 in the reference level.
 
 Check: `print(model.describe())`. Read the `levels` line (index to label map), the
 categorical line (reference, sorted levels, proportions, unused categories), the

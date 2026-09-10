@@ -20,6 +20,26 @@
   removed and `m3a1/categorical-predictors` deleted locally and on the remote. The original M1
   planning checkout at `projects/AutoBayes` (dirty) was not touched.
 
+- **Delivered (this slice):** `x:z` (and `x*z` = `x + z + x:z`, measured identical) between a
+  numeric term and a declared categorical term, both main effects required (lower-order-omitting
+  forms refused with the explanation), deterministic canonical expansion (main effects in first
+  appearance order, then interactions spelled `numeric:categorical`), duplicates/overlaps and
+  unsupported interactions refused; design columns `x:z[l]` = `x * 1[z = l]` verified against an
+  independent construction from the supplied labels; PyMC variable `x:z` with dims `x:z_dim`;
+  `Priors.b` keys per canonical term, term-wide or per level; centring of every expanded column
+  at its own mean with the product-column means printed by `describe()` (not the product of the
+  means) and the reported-intercept transformation verified against the sampler's own log
+  density; predictions per level and slope with unseen category levels refused; fit records carry
+  the interaction and canonical formula. Version 0.4.0.
+- **Tests** (clean locked environment, fresh evidence directories): `tests/test_interaction.py`
+  35 passed (37 s) (grammar and refusals; design against an independent construction for 3 families x 2
+  references x 2 centrings on shuffled data; the sampled-to-reported intercept check; density,
+  Jacobian and gradients on both paths for all three families with term-wide and per-level
+  priors; the reference change with slopes; prior refusals; describe/record; predictions by hand
+  with per-level slopes, mixed rows, expected vs predictive counts, unseen levels; binomial
+  zero-trial drop before the means). Fast suite **332 passed, 7 deselected (288 s)**. Slow suite **7 passed (49 s)** including the
+  prespecified interaction recovery: 0 divergences, max R-hat 1.0094889 (PyMC) and 1.0045411 (NumPyro), min bulk ESS 520/662, all eight truths inside their 99 % HDIs, backends within 4 combined MCSE (largest ratio 0.41). Example on both backends in `docs/m3a2-evidence/`.
+
 ## M3a-1 slice (2026-09-10): one treatment-coded categorical predictor
 
 - Dispatched by the coordinator after the M2 acceptance

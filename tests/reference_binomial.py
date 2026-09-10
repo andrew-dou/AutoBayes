@@ -69,10 +69,10 @@ def row_grad_dec(k: int, n: int, eta: float) -> Decimal:
 
 
 def reference_logp_binomial(point: dict, data: pd.DataFrame, *, response: str, trials: str,
-                            predictors: list[str], group: str, priors: dict, center: bool = True, categorical: dict | None = None,
+                            predictors: list[str], group: str, priors: dict, center: bool = True, categorical: dict | None = None, interactions: list | None = None,
                             jacobian: bool = True, coefficient: bool = True) -> float:
     """``point`` holds a_c, b (array), log_sd, z (array). ``data`` are the fitted rows."""
-    y, Xc, _, gidx, levels = build_design(data, response, predictors, group, center, categorical)
+    y, Xc, _, gidx, levels = build_design(data, response, predictors, group, center, categorical, interactions)
     k = data[response].to_numpy(dtype=np.int64)
     n = data[trials].to_numpy(dtype=np.int64)
     a, b = float(point["a_c"]), np.atleast_1d(point["b"])
@@ -87,7 +87,7 @@ def reference_logp_binomial(point: dict, data: pd.DataFrame, *, response: str, t
     lp = float(lik)
     lp += float(np.sum(__import__("scipy").stats.norm.logpdf(z, 0.0, 1.0)))
     lp += prior_logpdf(*priors["intercept"], a)
-    for i, p in enumerate(design_columns(data, predictors, categorical)):
+    for i, p in enumerate(design_columns(data, predictors, categorical, interactions)):
         lp += prior_logpdf(*priors["b"][p], b[i])
     lp += prior_logpdf(*priors["sd"], sd)
     if jacobian:
@@ -96,11 +96,11 @@ def reference_logp_binomial(point: dict, data: pd.DataFrame, *, response: str, t
 
 
 def reference_grad_binomial(point: dict, data: pd.DataFrame, *, response: str, trials: str,
-                            predictors: list[str], group: str, prior_intercept_sigma: float, categorical: dict | None = None,
+                            predictors: list[str], group: str, prior_intercept_sigma: float, categorical: dict | None = None, interactions: list | None = None,
                             prior_b_sigma: float, jacobian: bool = True, center: bool = True) -> dict:
     """Gradient w.r.t. the value variables for Normal(0, s) intercept/slope priors and a
     HalfNormal(1) group SD (the priors the tests use); row terms in decimal."""
-    y, Xc, _, gidx, levels = build_design(data, response, predictors, group, center, categorical)
+    y, Xc, _, gidx, levels = build_design(data, response, predictors, group, center, categorical, interactions)
     k = data[response].to_numpy(dtype=np.int64)
     n = data[trials].to_numpy(dtype=np.int64)
     a, b = float(point["a_c"]), np.atleast_1d(point["b"])
@@ -109,7 +109,7 @@ def reference_grad_binomial(point: dict, data: pd.DataFrame, *, response: str, t
     eta = a + Xc @ b + sd * z[gidx]
     r = np.array([float(row_grad_dec(int(ki), int(ni), float(ei))) for ki, ni, ei in zip(k, n, eta)])
     out = {"Intercept": r.sum() - a / prior_intercept_sigma ** 2}
-    for i, p in enumerate(design_columns(data, predictors, categorical)):
+    for i, p in enumerate(design_columns(data, predictors, categorical, interactions)):
         out[p] = (r * Xc[:, i]).sum() - b[i] / prior_b_sigma ** 2
     out["1|g_sigma_log__"] = (r * z[gidx]).sum() * sd - sd ** 2 + (1.0 if jacobian else 0.0)
     out["1|g_offset"] = np.array([r[gidx == j].sum() * sd - z[j] for j in range(len(levels))])

@@ -17,7 +17,8 @@ Three parts:
   inspectable PyMC model through Bambi, requires explicit priors, samples on the CPU
   with PyMC's NUTS or through JAX/NumPyro with an explicit device choice, and returns
   posterior and predictive draws. Three families on one formula subset
-  `y ~ x + z + (1 | group)` with numeric and declared categorical predictors (M3a-1):
+  `y ~ x + z + x:z + (1 | group)` with numeric and declared categorical predictors (M3a-1)
+  and one numeric-by-categorical interaction (M3a-2):
   Gaussian (M0), Bernoulli with a logit link for a 0/1
   outcome (M1), and binomial counts `successes | trials(n)` with a logit link (M2);
   anything else is refused with an error naming the construct. See
@@ -87,7 +88,7 @@ Mid-project, the skills are symptom-triggered. When a gradient comes back `nan` 
 likelihood will not differentiate, `autobayes-custom-op` loads on its own and — before
 showing you the pattern — tries to talk you out of needing it.
 
-## Library (milestones M0, M1, M2 and M3a-1)
+## Library (milestones M0, M1, M2, M3a-1 and M3a-2)
 
 ### Install and test (the pinned, tested stack)
 
@@ -168,6 +169,12 @@ amodel = ab.gaussian("y ~ x + arm + (1 | site)", df, cpriors, categorical={"arm"
 amodel.coefficients                                               # (("x","x",None), ("arm[high]","arm",0), ("arm[low]","arm",1))
 amodel.predict(afit, newdata=new_df, kind="mean")                 # an arm that was not fitted is refused
 
+# a numeric-by-categorical interaction: each arm gets its own dose slope (x*z is x + z + x:z)
+ipriors = ab.Priors(intercept=ab.Normal(0, 5), b={"dose": ab.Normal(0, 2), "arm": ab.Normal(0, 2), "dose:arm": ab.Normal(0, 1)},
+                    sd=ab.HalfNormal(1), sigma=ab.HalfNormal(1))
+imodel = ab.gaussian("y ~ dose + arm + dose:arm + (1 | site)", df, ipriors, categorical={"arm": "control"})
+print(imodel.describe())                                          # prints the actual product-column means used for centring
+
 # counts with known denominators: k successes of n trials per row, brms syntax
 cmodel = ab.binomial("deaths | trials(patients) ~ x + (1 | clinic)", counts_df, bpriors)
 cfit = cmodel.fit(backend="pymc", seed=7)
@@ -186,9 +193,12 @@ PyTensor alternatives have NaN gradients on one path or the other) and `docs/m2-
 built-ins, the high-precision reference and its error budget, the validated count and
 logit domain) and `docs/m3a1-decision.md` (categorical predictors: declaration, level
 order, reference validation, prior forms, the naming map, what the centred intercept is
-with dummies, and what a change of reference level does and does not preserve); the
-acceptance checks and their evidence are in those records and `docs/m0-evidence/`,
-`docs/m1-evidence/`, `docs/m2-evidence/`, `docs/m3a1-evidence/`.
+with dummies, and what a change of reference level does and does not preserve) and
+`docs/m3a2-decision.md` (the interaction: canonical expansion, both main effects required,
+expanded-column centring and the reported-intercept transformation, the reference change
+with slopes); the acceptance checks and their evidence are in those records and
+`docs/m0-evidence/`, `docs/m1-evidence/`, `docs/m2-evidence/`, `docs/m3a1-evidence/`,
+`docs/m3a2-evidence/`.
 `docs/coordination/STATUS.md` is the live milestone status; the roadmap is
 `docs/coordination/NEXT_MILESTONES_PROPOSAL.md`. No speed claim is made anywhere.
 

@@ -85,7 +85,7 @@ class Model:
 
         spec0 = parse_formula(formula, None, family, categorical)
         priors.validate(spec0, family)                  # structure now; per-level coverage once levels are known
-        cols = [spec0.response, *spec0.terms, spec0.group] + ([spec0.trials] if spec0.trials else [])
+        cols = [spec0.response, *spec0.predictors, *spec0.categorical_names, spec0.group] + ([spec0.trials] if spec0.trials else [])
         missing = [c for c in cols if c not in data.columns]
         if missing:
             raise FormulaError(f"columns not in data: {missing}")
@@ -185,27 +185,33 @@ class Model:
         # categorical term as one dummy per non-reference level in the recorded order.
         col = 1
         for term in self.spec.terms:
-            if term not in self.spec.categorical_names:
+            if term in self.spec.predictors:
                 if not np.array_equal(Xfull[:, col], self.data[term].to_numpy(dtype=float)):
                     raise RuntimeError(f"Bambi's column for {term!r} does not equal the data column")
                 col += 1
                 continue
-            cat = self.spec.categorical(term)
+            is_inter = term in self.spec.interaction_names
+            xname, zname = self.spec.interaction_of(term) if is_inter else (None, term)
+            cat = self.spec.categorical(zname)
             bterm = common.terms[term]
-            if getattr(bterm, "kind", None) != "categoric" or list(bterm.levels) != list(cat.coefficients) \
-                    or list(bterm.labels) != list(cat.columns):
+            expected_kind = "interaction" if is_inter else "categoric"
+            cols = self.spec.term_columns(term)
+            if getattr(bterm, "kind", None) != expected_kind or list(bterm.levels) != list(cat.coefficients) \
+                    or list(bterm.labels) != list(cols):
                 raise RuntimeError(
                     f"Bambi coded {term!r} as {getattr(bterm, 'kind', None)} with levels {getattr(bterm, 'levels', None)} "
-                    f"and labels {getattr(bterm, 'labels', None)}; expected treatment coding with reference "
-                    f"{cat.reference!r}, levels {list(cat.coefficients)} and labels {list(cat.columns)}"
+                    f"and labels {getattr(bterm, 'labels', None)}; expected {expected_kind} coding with reference "
+                    f"{cat.reference!r}, levels {list(cat.coefficients)} and labels {list(cols)}"
                 )
-            labels = self.original_labels[term]                        # the supplied values' labels, not the recoded column
-            if not np.array_equal(labels, self.data[term].astype(str).to_numpy()):
-                raise RuntimeError(f"the recoded column {term!r} does not reproduce the supplied labels")
+            labels = self.original_labels[zname]                       # the supplied values' labels, not the recoded column
+            if not np.array_equal(labels, self.data[zname].astype(str).to_numpy()):
+                raise RuntimeError(f"the recoded column {zname!r} does not reproduce the supplied labels")
+            xval = self.data[xname].to_numpy(dtype=float) if is_inter else np.ones(len(labels))
             for j, lvl in enumerate(cat.coefficients):
-                if not np.array_equal(Xfull[:, col + j], (labels == lvl).astype(float)):
-                    raise RuntimeError(f"Bambi's dummy column {cat.columns[j]!r} is not the indicator of level {lvl!r}")
-            if not np.array_equal(Xfull[:, col:col + len(cat.coefficients)].sum(1) + (labels == cat.reference), np.ones(len(labels))):
+                if not np.array_equal(Xfull[:, col + j], xval * (labels == lvl)):
+                    what = f"x * indicator of level {lvl!r}" if is_inter else f"the indicator of level {lvl!r}"
+                    raise RuntimeError(f"Bambi's column {cols[j]!r} is not {what}")
+            if not is_inter and not np.array_equal(Xfull[:, col:col + len(cat.coefficients)].sum(1) + (labels == cat.reference), np.ones(len(labels))):
                 raise RuntimeError(f"the dummies of {term!r} and the reference indicator do not partition the rows")
             coords = [str(c) for c in self.pymc_model.coords.get(f"{term}_dim", ())]
             if coords != list(cat.coefficients):
@@ -297,7 +303,7 @@ class Model:
             if j is None:
                 point[term] = np.asarray(b[i])
             else:
-                point.setdefault(term, np.zeros(len(self.spec.categorical(term).coefficients)))
+                point.setdefault(term, np.zeros(len(self.spec.levels_of(term))))
                 point[term][j] = b[i]
         expected = {v.name for v in self.pymc_model.value_vars}
         if set(point) != expected:
@@ -315,6 +321,11 @@ class Model:
                 for lvl in cat.coefficients:
                     ind = f"1[{term}_i = {lvl}]"
                     parts.append(f"({ind} - p_{term}[{lvl}]) * b_{term}[{lvl}]" if d.centered else f"{ind} * b_{term}[{lvl}]")
+            elif term in s.interaction_names:
+                xn, zn = s.interaction_of(term)
+                for lvl in s.levels_of(term):
+                    prod = f"x_{xn} * 1[{zn}_i = {lvl}]"
+                    parts.append(f"({prod} - q_{term}[{lvl}]) * b_{term}[{lvl}]" if d.centered else f"{prod} * b_{term}[{lvl}]")
             else:
                 parts.append(f"(x_{term} - mean(x_{term})) * b_{term}" if d.centered else f"x_{term} * b_{term}")
         xs = " + ".join(parts)
@@ -330,8 +341,13 @@ class Model:
                          + (f" (positions {list(self.dropped_rows)[:10]}{'...' if len(self.dropped_rows) > 10 else ''})"
                             if self.dropped_rows else ""))
         lines = [
-            f"AutoBayes {tag} model" + (" with categorical predictor(s)" if s.categoricals else ""),
+            f"AutoBayes {tag} model" + (" with categorical predictor(s)" if s.categoricals else "")
+            + (" and interaction(s)" if s.interactions else ""),
             f"  formula   : {s.formula}",
+        ]
+        if s.canonical_formula != s.formula:
+            lines += [f"  expanded  : {s.canonical_formula}   (canonical form handed to Bambi)"]
+        lines += [
             f"  family    : {self.family}, {self.link} link",
             data_line,
             f"  levels    : {', '.join(f'{j}={l}' for j, l in enumerate(d.levels))}",
@@ -354,6 +370,10 @@ class Model:
             lines += [f"  b_{cat.name}[l] is the difference between level l and the reference {cat.reference!r} "
                       f"on the {'response' if gaussian else 'log-odds'} scale at the same predictors and group; "
                       f"the reference has no coefficient."]
+        for xn, zn in s.interactions:
+            ref = s.categorical(zn).reference
+            lines += [f"  {xn}:{zn}: the reference level {ref!r} has the raw intercept a and slope b_{xn}; level l has intercept "
+                      f"difference b_{zn}[l] and slope difference b_{xn}:{zn}[l], so its slope in {xn} is b_{xn} + b_{xn}:{zn}[l]."]
         if binomial:
             lines += [f"  P(success) = p_i = expit(eta_i); {s.response}_i ~ Binomial({s.trials}_i, p_i); eta is on the log-odds scale."]
         elif not gaussian:
@@ -363,13 +383,28 @@ class Model:
                     "per-trial success log-odds" if binomial else "log-odds of y = 1")
             where = "at the predictor means" if not s.categoricals else \
                 "at the numeric predictor means and at the sample proportions of the categorical levels"
+            if s.interactions:
+                where = "at the fitted-row means of every expanded design column (x, 1[z = l], x * 1[z = l])"
             lines += [
                 "  Predictors are centred at their sample means (center_predictors=True, as in",
                 f"  brms and Bambi)" + ("; a dummy column's mean is its level's proportion p_z[l]." if s.categoricals else "."),
+            ]
+            if s.interactions:
+                qs = []
+                for xn, zn in s.interactions:
+                    lab = self.original_labels[zn]; xv = self.data[xn].to_numpy(dtype=float)
+                    for lvl in s.levels_of(f"{xn}:{zn}"):
+                        m = lab == lvl
+                        qs.append(f"q_{xn}:{zn}[{lvl}] = {xv[m].sum() / len(xv):.4f} = p_{zn}[{lvl}] {m.mean():.3f} * mean({xn} | {zn} = {lvl}) {xv[m].mean():.4f}"
+                                  f" (not mean({xn}) {xv.mean():.4f} * p)")
+                lines += ["  Each product column x * 1[z = l] is centred at its OWN mean q, which is the level's proportion"] + \
+                         [f"  times the mean of x within that level: {q}" for q in qs] + \
+                         ["  That point of the expanded design is not a realisable covariate row (a row has x*1[z=l] equal to x or 0)."]
+            lines += [
                 f"  a_c is the {what} {where} (group effect zero); the",
                 "  prior on the intercept applies to a_c. The posterior reports the raw-scale",
                 "  intercept a = a_c - sum_p mean(x_p) * b_p" + (" - sum_l p_z[l] * b_z[l]" if s.categoricals else "")
-                + ", computed after sampling"
+                + (" - sum_l q_x:z[l] * b_x:z[l]" if s.interactions else "") + ", computed after sampling"
                 + (": the linear predictor at x = 0 and at the reference level." if s.categoricals else "."),
             ]
             if s.categoricals and not gaussian:
@@ -416,8 +451,8 @@ class Model:
                  n["offset"]: "z"}
         if gaussian:
             roles[f"{n['sigma']}_log__"] = "log(sigma)"
-        for cat in s.categoricals:
-            roles[cat.name] = f"b_{cat.name}[{', '.join(cat.coefficients)}] (vector; dims {cat.name}_dim, posterior rows {', '.join(cat.columns)})"
+        for term in (*s.categorical_names, *s.interaction_names):
+            roles[term] = f"b_{term}[{', '.join(s.levels_of(term))}] (vector; dims {term}_dim, posterior rows {', '.join(s.term_columns(term))})"
         for v in self.pymc_model.value_vars:
             lines.append(f"  {v.name:<24} {roles.get(v.name, f'b_{v.name}')}")
         lines.append(f"Deterministic: {n['group_effect']} = u, {n['linpred']} = linear predictor"
