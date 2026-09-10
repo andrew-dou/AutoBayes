@@ -81,7 +81,7 @@
   that worktree on 2026-09-10 and is not preserved locally (hosted artifacts and the
   coordinator's preserved run artifacts remain); the M2 runs below write to new run-specific
   directories under `evidence-runs/`, earlier ones untouched.
-- PR: https://github.com/andrew-dou/AutoBayes/pull/5 (base `main`, head `1fcb2cf`, author andrew-dou). Hosted `fast checks` succeeded on that head for both the push (run 34441129737) and the pull-request (run 34441162554) events. Left open for independent review; not merged by this session.
+- PR: https://github.com/andrew-dou/AutoBayes/pull/5 (base `main`, author andrew-dou). First head `1fcb2cf` (fast checks green: runs 34441129737, 34441162554); reviewed head `49052ac` (green); **repair head `5a43caf`** (fast checks green for both the push, run 34482262505, and the pull-request, run 34482266661, events). Left open for independent review; not merged by this session; the M2 worktree is kept until that review passes.
 
 ## Foundation slice (2026-09-09): reproducible CPU checks (section 4.0 of the proposal)
 
