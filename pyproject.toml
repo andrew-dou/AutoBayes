@@ -5,23 +5,29 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "autobayes"
 version = "0.1.0"
-description = "brms-like Bayesian hierarchical models on PyMC with a JAX/NumPyro device path (milestone M0)"
+description = "brms-like Bayesian hierarchical models on PyMC with a JAX/NumPyro device path (milestones M0 Gaussian, M1 Bernoulli)"
 readme = "README.md"
-requires-python = ">=3.11"
+requires-python = ">=3.11,<3.12"
 license = { text = "MIT" }
+# The tested stack, pinned exactly. Every result in docs/ was produced with these versions
+# (plus the ones in uv.lock); a different version is an untested combination, not a
+# supported one. Upgrades are deliberate slices with their own evidence.
 dependencies = [
-  "pymc>=5.28,<6",
+  "pymc==5.28.5",
+  "pytensor==2.38.3",
   "bambi==0.17.2",
-  "arviz>=0.22,<1",
-  "numpy",
-  "pandas",
-  "scipy",
-  "xarray",
+  "formulae==0.6.2",
+  "arviz==0.23.4",
+  "numpy==2.4.6",
+  "pandas==3.0.5",
+  "scipy==1.17.1",
+  "xarray==2026.7.0",
+  "matplotlib==3.10.9",
 ]
 
 [project.optional-dependencies]
-jax = ["jax", "numpyro"]
-dev = ["pytest"]
+jax = ["jax==0.10.2", "jaxlib==0.10.2", "numpyro==0.21.0"]
+dev = ["pytest==9.1.1"]
 
 [tool.setuptools]
 packages = ["autobayes"]

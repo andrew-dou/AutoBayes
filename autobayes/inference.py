@@ -66,8 +66,14 @@ def _jax_devices_summary(jax) -> str:
 
 def resolve_jax_device(device: str, chains: int, notes: list[str]):
     """Return (jax_device, chain_method). Raises DeviceError if ``device`` is absent."""
-    import jax  # noqa: F401  (import only; backends initialise on first device query)
-    import numpyro
+    try:
+        import jax  # noqa: F401  (import only; backends initialise on first device query)
+        import numpyro
+    except ImportError as e:
+        raise DeviceError(
+            "backend='numpyro' needs jax, jaxlib and numpyro, which are not importable here "
+            f"({e}). Install the [jax] extra (uv sync --extra jax) or use backend='pymc'."
+        ) from e
 
     if device == "cpu":
         # Must run before the JAX backend initialises, else it is a no-op.

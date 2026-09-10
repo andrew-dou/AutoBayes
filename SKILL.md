@@ -53,19 +53,19 @@ error; go to "Outside the verified family" below.
 
 1. If the project has `docs/coordination/STATUS.md` or a `wiki/`, read it before
    touching code. It records what was fit, with which seed, and what is pending.
-2. Print the environment and keep the output for the handoff:
+2. Install the pinned stack from the lock file and print the environment; keep the
+   output for the handoff:
 
 ```bash
-.venv/bin/python -c "import autobayes as ab; print(ab.format_environment(ab.environment()))"
+uv sync --locked --extra jax --extra dev
+uv run --no-sync python -c "import autobayes as ab; print(ab.format_environment(ab.environment()))"
 ```
 
-   Verified stack: Python 3.11, pymc 5.28.5, pytensor 2.38.3, bambi 0.17.2, formulae
-   0.6.2, arviz 0.23.4, numpyro 0.21.0, jax 0.10.2. Install:
-
-```bash
-uv venv .venv --python 3.11
-uv pip install --python .venv/bin/python -e ".[jax,dev]" "matplotlib<3.11"
-```
+   Tested stack (`pyproject.toml` pins it, `uv.lock` fixes the rest): Python 3.11,
+   pymc 5.28.5, pytensor 2.38.3, bambi 0.17.2, formulae 0.6.2, arviz 0.23.4, numpyro
+   0.21.0, jax/jaxlib 0.10.2, numpy 2.4.6. Every number in `docs/` comes from this stack;
+   other versions are untested, not "probably fine". Do not upgrade to get past an error;
+   record the error and stop.
 
 3. Three environment traps seen on this stack, and the fix for each:
    - `~/.pytensor` not writable (sandboxes, shared accounts): every model build fails
@@ -75,6 +75,10 @@ uv pip install --python .venv/bin/python -e ".[jax,dev]" "matplotlib<3.11"
      that initialises the backend): CPU chains on the NumPyro path then run
      sequentially. `fit()` says so in its notes and reports `chain method : sequential`.
      Import autobayes first, or accept the wall time. The posterior is unaffected.
+     Both behaviours are checked in fresh interpreters by `tests/test_fresh_process.py`,
+     as is `AUTOBAYES_HOST_DEVICES=0` (turns the import-time setting off) and a process
+     without JAX (`environment()` reports it; `backend="numpyro"` raises `DeviceError`
+     naming the `[jax]` extra; `backend="pymc"` still works).
 
 ## The workflow
 
@@ -302,6 +306,8 @@ The worked examples do all six steps and write a record:
 | report note: chains sequential | JAX initialised before autobayes import | Reorder imports; posterior unaffected |
 | report `dtype : float32` | x64 disabled after import | The library enables x64 before sampling; if you see float32, something reset `jax_enable_x64`. Refit; do not trust the float32 run |
 | `PermissionError` under `~/.pytensor` | Read-only home | `PYTENSOR_FLAGS=base_compiledir=<dir>` |
+| `DeviceError: backend='numpyro' needs jax` | The `[jax]` extra is not installed | `uv sync --locked --extra jax --extra dev`, or `backend="pymc"` |
+| `uv sync --locked` refuses | `pyproject.toml` and `uv.lock` disagree | Do not edit pins to get past it; a version change is its own reviewed slice |
 | `ImportError` from arviz mentioning matplotlib | matplotlib 3.11.1 | `matplotlib<3.11` |
 | `az.summary` MCSE column reads 0.000 | Rounding to 3 decimals | `az.summary(..., round_to="none")` before dividing by it |
 | Minutes of nothing, then sampling | XLA compilation | Expected once per graph shape; the report's wall time includes it |
@@ -330,9 +336,24 @@ A handoff a fresh session can use states:
 - **Next action**: one concrete step, and the command to resume:
 
 ```bash
-git checkout <branch> && .venv/bin/python -m pytest tests -q        # fast checks
-.venv/bin/python -m pytest tests -q -m slow                          # two sampling checks, ~1 min
+git checkout <branch> && uv sync --locked --extra jax --extra dev
+uv run --no-sync pytest tests -q -m "not slow"                       # fast checks, a few minutes
+uv run --no-sync pytest tests -q -m slow                             # three sampling checks, ~1 min
 ```
+
+Where evidence goes: a test run writes its JSON records and a `run.json` (environment,
+git head) to `evidence-runs/<UTC time>-<git head>/`, which is gitignored. The committed
+`docs/m*-evidence/` files are history; a rerun never rewrites them. To promote a run's
+records into the history, copy them under a new name with the decision record that
+explains them. Acceptance for the sampling checks is the criteria the tests assert
+(analytic z-scores, panel thresholds, truth inside the 94 % HDI, backends within
+4 combined MCSE), never agreement with an earlier JSON: Monte Carlo variation and
+platform differences change valid summaries.
+
+CI: `.github/workflows/ci.yml` runs the fast suite on every push and pull request on the
+pinned stack (Ubuntu, CPU); `slow.yml` is started by hand and runs the three sampling
+checks. Both upload `evidence-runs/` as an artifact. A green run is evidence for the
+pinned environment on that runner, nothing more; there is no GPU workflow.
 
 ## GPU and remote execution
 
