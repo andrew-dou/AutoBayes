@@ -76,12 +76,12 @@ def synthetic_posterior(model, *, draws=1500, effects=None, sigma=0.3):
     return az.InferenceData(posterior=post)
 
 
-def check_resample_observed_identity(model, idata, mean_name, transform):
-    """Shared by the Gaussian and Bernoulli tests: U1 (distinct labels), U2 (repeated label),
-    U3 (observed label), U4 (values are the hand-computed linear predictor)."""
+def check_resample_observed_identity(model, idata, mean_name, transform, kind="mean"):
+    """Shared by the Gaussian, Bernoulli and binomial tests: U1 (distinct labels), U2 (repeated
+    label), U3 (observed label), U4 (values are the hand-computed linear predictor)."""
     J = model.design.J
     new = pd.DataFrame({"x": [0.0, 0.0, 0.0, 1.0, 0.0], "g": ["lvl00", "NEW_A", "NEW_B", "NEW_A", "lvl02"]})
-    ds = model.predict(idata, newdata=new, kind="mean", new_groups="resample_observed", seed=11)
+    ds = model.predict(idata, newdata=new, kind=kind, new_groups="resample_observed", seed=11)
     assert ds.attrs["new_groups"] == "resample_observed" and ds.attrs["new_levels"] == ["NEW_A", "NEW_B"]
     post = idata.posterior
     a = post["Intercept"].to_numpy(); b = post["x"].to_numpy(); u = post["1|g"].to_numpy()
@@ -104,9 +104,9 @@ def check_resample_observed_identity(model, idata, mean_name, transform):
     se = np.sqrt((1 / J) * (1 - 1 / J) / n_draws)
     assert same < 1.0 and abs(same - 1 / J) < 5 * se + 0.02, (same, 1 / J)
     # reproducible with the seed, different without it
-    again = model.predict(idata, newdata=new, kind="mean", new_groups="resample_observed", seed=11)
+    again = model.predict(idata, newdata=new, kind=kind, new_groups="resample_observed", seed=11)
     assert np.array_equal(again[mean_name].to_numpy(), v)
-    other = model.predict(idata, newdata=new, kind="mean", new_groups="resample_observed", seed=12)
+    other = model.predict(idata, newdata=new, kind=kind, new_groups="resample_observed", seed=12)
     assert not np.array_equal(other[mean_name].to_numpy(), v)
 
 

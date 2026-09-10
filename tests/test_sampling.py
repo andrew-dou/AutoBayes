@@ -127,3 +127,39 @@ def test_history_bytes_unchanged_after_sampling(evidence_dir):
     assert len(head) >= 10
     assert working_tree_bytes(REPO, list(head)) == head
     assert not any(p.resolve().is_relative_to((REPO / "docs").resolve()) for p in evidence_dir.iterdir())
+
+
+@pytest.mark.slow
+def test_binomial_recovery_both_backends(evidence_dir):
+    """M2 B1: 300 rows, 30 groups all present, trials 5-50; PyMC and NumPyro CPU paths agree
+    and recover the truth. Thresholds set in docs/m2-decision.md before the run. One recovery
+    on one simulated data set; not calibration."""
+    from scipy.special import expit
+
+    truth = dict(a=-0.5, b=0.8, sd=0.7)
+    rng = np.random.default_rng(7)
+    rows, J = 300, 30
+    g = np.array([i % J for i in range(rows)]); rng.shuffle(g)
+    x = rng.normal(size=rows); u = rng.normal(0, truth["sd"], J)
+    n = rng.integers(5, 51, rows)
+    df = pd.DataFrame({"x": x, "g": [f"lvl{j:02d}" for j in g], "n": n})
+    df["k"] = rng.binomial(n, expit(truth["a"] + truth["b"] * x + u[g]))
+    assert df.g.nunique() == J
+    m = ab.binomial("k | trials(n) ~ x + (1 | g)", df, ab.Priors(intercept=ab.Normal(0, 1.5), b=ab.Normal(0, 1), sd=ab.HalfNormal(1)))
+    results, summaries = {}, {"truth": truth, "rows": rows, "J": J}
+    for backend in ["pymc", "numpyro"]:
+        r = m.fit(backend=backend, device="cpu", chains=4, draws=2000, tune=1000, seed=7, cores=4)
+        p = panel(r.idata, max_treedepth=10)
+        rec = ab.fit_record(m, r, panel=p)
+        results[backend] = rec
+        summaries[backend] = rec
+        assert p["values"]["divergences"] == 0, format_panel(p)
+        assert p["values"]["max_rhat"] <= 1.01, format_panel(p)
+        assert p["values"]["min_ess_bulk"] > 400 and p["values"]["min_ess_tail"] > 400, format_panel(p)
+        for name, val in [("Intercept", truth["a"]), ("x", truth["b"]), ("1|g_sigma", truth["sd"])]:
+            row = rec["posterior"][name]
+            assert row["hdi_3%"] <= val <= row["hdi_97%"], (backend, name, val, row)
+    c = ab.compare_records(results["pymc"], results["numpyro"])
+    summaries["agreement"] = c
+    write_evidence(evidence_dir, "M2_B1_recovery.json", json.dumps(summaries, indent=1, default=str))
+    assert c["agree"], ab.format_comparison(c)

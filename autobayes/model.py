@@ -1,8 +1,9 @@
 """The model: a thin, inspectable layer over a Bambi-built PyMC model.
 
-Two families. ``"gaussian"`` (M0): identity link, residual SD ``sigma``. ``"bernoulli"``
-(M1): logit link, ``p = expit(eta)``, no residual scale. Both share the formula subset
-``y ~ [1 +] x1 [+ x2 ...] + (1 | group)``, centring, and non-centred group effects.
+Three families. ``"gaussian"`` (M0): identity link, residual SD ``sigma``. ``"bernoulli"``
+(M1): logit link, ``p = expit(eta)``, no residual scale. ``"binomial"`` (M2): logit link on
+``successes | trials(n)``, counts. All share the right-hand side ``[1 +] x1 [+ x2 ...] +
+(1 | group)``, centring, and non-centred group effects.
 """
 from __future__ import annotations
 
@@ -11,7 +12,7 @@ from dataclasses import dataclass
 import numpy as np
 import pandas as pd
 
-from autobayes.formula import ModelSpec, parse_formula
+from autobayes.formula import FormulaError, ModelSpec, binomial_counts, parse_formula
 from autobayes.priors import Priors
 
 
@@ -28,6 +29,7 @@ class Design:
     group_index: np.ndarray       # (n,) integer index into levels
     levels: tuple[str, ...]       # sorted level labels; column j of Z is levels[j]
     centered: bool
+    trials: np.ndarray | None = None   # binomial only: (n,) trials per fitted row; y holds the successes
 
     @property
     def n(self) -> int:
@@ -42,6 +44,7 @@ _FAMILIES = {
     # family: (Bambi parent parameter = the deterministic in the graph, link name)
     "gaussian": ("mu", "identity"),
     "bernoulli": ("logit_p", "logit"),
+    "binomial": ("logit_p", "logit"),
 }
 
 
@@ -65,37 +68,69 @@ class Model:
         if family not in _FAMILIES:
             raise ValueError(f"family must be one of {sorted(_FAMILIES)}, got {family!r}")
         self.family = family
-        self.spec: ModelSpec = parse_formula(formula, data, family)
         self.priors = priors
-        priors.validate(self.spec.predictors, family)
         self.center_predictors = bool(center_predictors)
+        self.dropped_rows: tuple[int, ...] = ()     # binomial: positional indices of zero-trial rows
+        self.warnings: list[str] = []
 
-        cols = [self.spec.response, *self.spec.predictors, self.spec.group]
-        df = data[cols].copy()
+        spec0 = parse_formula(formula, None, family)
+        priors.validate(spec0.predictors, family)
+        cols = [spec0.response, *spec0.predictors, spec0.group] + ([spec0.trials] if spec0.trials else [])
+        missing = [c for c in cols if c not in data.columns]
+        if missing:
+            raise FormulaError(f"columns not in data: {missing}")
+        df = data[cols].copy().reset_index(drop=True)
+        if family == "binomial":
+            k, n = binomial_counts(spec0, df)               # validated before any cast, all rows
+            zero = np.flatnonzero(n == 0)
+            self.dropped_rows = tuple(int(i) for i in zero)
+            df[spec0.response] = k
+            df[spec0.trials] = n
+            if zero.size:
+                df = df.drop(index=zero).reset_index(drop=True)
+            k_kept = df[spec0.response].to_numpy()
+            n_kept = df[spec0.trials].to_numpy()
+            if np.all(k_kept == 0) or np.all(k_kept == n_kept):
+                which = "zero successes" if np.all(k_kept == 0) else "all successes"
+                self.warnings.append(
+                    f"every fitted row has {which}: the data are separated along the intercept "
+                    "direction, the likelihood is monotone there, and the posterior in that direction "
+                    "is set by the intercept prior's tail and the data's extent. Check prior sensitivity "
+                    "(refit with a wider and a narrower intercept prior and report the movement)."
+                )
+        self.spec: ModelSpec = parse_formula(formula, df, family)   # levels over the fitted rows
         df[self.spec.group] = df[self.spec.group].astype(str)
         if family == "bernoulli":
             df[self.spec.response] = df[self.spec.response].astype(int)
-        self.data = df.reset_index(drop=True)
+        self.data = df
 
         if family == "bernoulli":
             from autobayes.likelihoods import bernoulli_logit_family
 
             bambi_family = bernoulli_logit_family()   # stable likelihood; see likelihoods.py
+        elif family == "binomial":
+            from autobayes.likelihoods import binomial_logit_family
+
+            bambi_family = binomial_logit_family()
         else:
             bambi_family = family
         self.bambi_model = bmb.Model(
-            self.spec.formula, self.data, family=bambi_family,
+            self.spec.bambi_formula, self.data, family=bambi_family,
             priors=priors.to_bambi(self.spec.predictors, self.spec.group, family),
             noncentered=True, center_predictors=self.center_predictors,
         )
         self.bambi_model.build()
         self.pymc_model = self.bambi_model.backend.model
         self.design = self._extract_design()
-        if family == "bernoulli":
-            rv = self.pymc_model[self.spec.response]
+        if family in ("bernoulli", "binomial"):
+            rv = self.pymc_model[self.names["y"]]
             obs = np.asarray(self.pymc_model.rvs_to_values[rv].eval())
             if not np.array_equal(obs, self.design.y.astype(int)):
-                raise RuntimeError("Bambi's observed response does not equal the 0/1 column (success coding)")
+                raise RuntimeError("Bambi's observed response does not equal the response column")
+            if family == "binomial":
+                n_in = [i for i in rv.owner.inputs if getattr(i, "data", None) is not None]
+                if not n_in or not np.array_equal(np.asarray(n_in[-1].data), self.design.trials):
+                    raise RuntimeError("the trials attached to the likelihood do not equal the trials column")
 
     # -- design ------------------------------------------------------------------------
     def _extract_design(self) -> Design:
@@ -125,9 +160,10 @@ class Model:
             x_means = np.zeros(X_raw.shape[1])
             X_model = X_raw
         y = np.asarray(self.data[self.spec.response], dtype=float)
+        trials = np.asarray(self.data[self.spec.trials], dtype=np.int64) if self.spec.trials else None
         return Design(y=y, X_raw=X_raw, X_model=X_model, x_means=x_means,
                       predictors=self.spec.predictors, Z=Z, group_index=group_index,
-                      levels=levels, centered=self.center_predictors)
+                      levels=levels, centered=self.center_predictors, trials=trials)
 
     # -- naming ------------------------------------------------------------------------
     @property
@@ -148,7 +184,7 @@ class Model:
             "group_effect": f"1|{g}",
             "linpred": _FAMILIES[self.family][0],
             "mean": "mu" if self.family == "gaussian" else "p",
-            "y": self.spec.response,
+            "y": self.spec.response if self.spec.trials is None else f"p({self.spec.response}, {self.spec.trials})",
             **{f"b:{p}": p for p in self.spec.predictors},
         }
         if self.family == "gaussian":
@@ -170,8 +206,8 @@ class Model:
         z = np.asarray(z, dtype=float)
         if z.shape != (self.design.J,):
             raise ValueError(f"z must have {self.design.J} entries")
-        if (sigma is None) != (self.family == "bernoulli"):
-            raise ValueError("sigma is required for the Gaussian family and must be omitted for Bernoulli")
+        if (sigma is None) != (self.family != "gaussian"):
+            raise ValueError("sigma is required for the Gaussian family and must be omitted for Bernoulli and binomial")
         n = self.names
         point = {n["intercept"]: np.asarray(float(intercept)),
                  f"{n['sd']}_log__": np.asarray(np.log(float(sd))),
@@ -193,19 +229,29 @@ class Model:
             (f"(x_{p} - mean(x_{p})) * b_{p}" if d.centered else f"x_{p} * b_{p}") for p in s.predictors
         )
         gaussian = self.family == "gaussian"
+        binomial = self.family == "binomial"
         lp = "mu" if gaussian else "eta"
         a = f"a{'_c' if d.centered else ''}"
+        tag = {"gaussian": "M0", "bernoulli": "M1", "binomial": "M2"}[self.family]
+        data_line = f"  data      : n = {d.n} observations, J = {d.J} levels of {s.group}"
+        if binomial:
+            data_line = (f"  data      : {d.n} fitted rows, {int(d.trials.sum())} trials in total, "
+                         f"J = {d.J} levels of {s.group}; {len(self.dropped_rows)} zero-trial row(s) dropped"
+                         + (f" (positions {list(self.dropped_rows)[:10]}{'...' if len(self.dropped_rows) > 10 else ''})"
+                            if self.dropped_rows else ""))
         lines = [
-            f"AutoBayes {'M0' if gaussian else 'M1'} model",
+            f"AutoBayes {tag} model",
             f"  formula   : {s.formula}",
             f"  family    : {self.family}, {self.link} link",
-            f"  data      : n = {d.n} observations, J = {d.J} levels of {s.group}",
+            data_line,
             f"  levels    : {', '.join(f'{j}={l}' for j, l in enumerate(d.levels))}",
             "",
             "Linear predictor",
             f"  {lp}_i = {a}" + (f" + {xs}" if xs else "") + f" + u[{s.group}_i]",
         ]
-        if not gaussian:
+        if binomial:
+            lines += [f"  P(success) = p_i = expit(eta_i); {s.response}_i ~ Binomial({s.trials}_i, p_i); eta is on the log-odds scale."]
+        elif not gaussian:
             lines += ["  P(y_i = 1) = p_i = expit(eta_i) = 1 / (1 + exp(-eta_i)); eta is on the log-odds scale."]
         if d.centered:
             what = "expected response" if gaussian else "log-odds of y = 1"
@@ -229,6 +275,18 @@ class Model:
         lines += [f"  sd_{s.group} ~ {pr.sd}"]
         if gaussian:
             lines += [f"  sigma ~ {pr.sigma}", "", "Likelihood", "  y_i ~ Normal(mu_i, sigma)"]
+        elif binomial:
+            lines += [
+                "", "Likelihood",
+                f"  log p({s.response}_i | {s.trials}_i, eta_i) = log C({s.trials}_i, {s.response}_i)"
+                f" - {s.response}_i softplus(-eta_i) - ({s.trials}_i - {s.response}_i) softplus(eta_i)",
+                "  with a softplus whose value and gradient are exact for every finite eta on both the",
+                "  PyTensor and the JAX path (autobayes/likelihoods.py; the built-in Bambi and PyMC forms",
+                "  were measured and fail at large logits, docs/m2-decision.md). Zero-trial rows are",
+                "  dropped before centring; predictors are centred at the means of the fitted rows.",
+            ]
+            for w in self.warnings:
+                lines += ["", "WARNING: " + w]
         else:
             lines += [
                 "", "Likelihood", "  y_i ~ Bernoulli(p_i), sampled as log p(y_i | eta_i) = y_i * eta_i - softplus(eta_i)",
@@ -246,7 +304,8 @@ class Model:
         for v in self.pymc_model.value_vars:
             lines.append(f"  {v.name:<24} {roles.get(v.name, f'b_{v.name}')}")
         lines.append(f"Deterministic: {n['group_effect']} = u, {n['linpred']} = linear predictor"
-                     + ("" if gaussian else "; p = expit(logit_p) is computed by predict()"))
+                     + ("" if gaussian else "; p = expit(logit_p)" + (", expected = n p and count draws" if binomial else "")
+                        + " are computed by predict()"))
         return "\n".join(lines)
 
     # -- convenience -------------------------------------------------------------------
@@ -269,3 +328,8 @@ def gaussian(formula: str, data: pd.DataFrame, priors: Priors, *, center_predict
 def bernoulli(formula: str, data: pd.DataFrame, priors: Priors, *, center_predictors: bool = True) -> Model:
     """Build the M1 Bernoulli varying-intercept model (logit link, response strictly 0/1)."""
     return Model(formula, data, priors, family="bernoulli", center_predictors=center_predictors)
+
+
+def binomial(formula: str, data: pd.DataFrame, priors: Priors, *, center_predictors: bool = True) -> Model:
+    """Build the M2 binomial varying-intercept model: ``successes | trials(n) ~ x + (1 | group)``."""
+    return Model(formula, data, priors, family="binomial", center_predictors=center_predictors)

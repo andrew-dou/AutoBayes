@@ -1,10 +1,11 @@
 """AutoBayes: brms-like Bayesian hierarchical models on PyMC, with a JAX/NumPyro path.
 
-Two model families, one formula subset ``y ~ x + (1 | group)`` with numeric predictors
-and one varying intercept: Gaussian with identity link (milestone M0) and Bernoulli with
-logit link for a strictly 0/1 response (milestone M1). Everything else is refused with an
-error that names the unsupported construct. See ``docs/m0-decision.md`` and
-``docs/m1-decision.md`` for what Bambi supplies and what this layer adds.
+Three model families on one right-hand side ``x + (1 | group)`` with numeric predictors
+and one varying intercept: Gaussian with identity link (milestone M0), Bernoulli with logit
+link for a strictly 0/1 response (M1), and binomial counts ``successes | trials(n)`` with
+logit link (M2). Everything else is refused with an error that names the unsupported
+construct. See ``docs/m0-decision.md``, ``docs/m1-decision.md`` and ``docs/m2-decision.md``
+for what Bambi supplies and what this layer adds.
 """
 import os as _os
 
@@ -38,7 +39,7 @@ from autobayes.priors import (
     Priors,
     StudentT,
 )
-from autobayes.model import Model, bernoulli, gaussian
+from autobayes.model import Model, bernoulli, binomial, gaussian
 from autobayes.inference import DeviceError, FitResult, fit
 from autobayes.predict import predict
 from autobayes.diagnostics import panel
@@ -47,7 +48,7 @@ from autobayes.session import compare_records, environment, fit_record, format_c
 __all__ = [
     "DeviceError", "Exponential", "FitResult", "FormulaError", "HalfCauchy",
     "HalfNormal", "HalfStudentT", "Model", "ModelSpec", "Normal", "Prior",
-    "PriorError", "Priors", "StudentT", "bernoulli", "compare_records", "environment", "fit", "fit_record",
+    "PriorError", "Priors", "StudentT", "bernoulli", "binomial", "compare_records", "environment", "fit", "fit_record",
     "format_comparison", "format_environment", "gaussian", "panel", "parse_formula", "predict",
 ]
-__version__ = "0.1.0"
+__version__ = "0.2.0"

@@ -1,5 +1,55 @@
 # AutoBayes status
 
+## M2 slice (2026-09-10): grouped binomial counts, logit link
+
+- Approved by Andrew 2026-09-09 (evening; `iqss-research/plans/2026-09-09-autobayes-approval-brief.md`),
+  dispatched after the foundation merge. Branch `m2/binomial-trials` from `main` at `4eee25c`
+  in the worktree `/Users/andrewdou/iqss-research/projects/AutoBayes-worktrees/m2-binomial`;
+  session `e5628a7d-e572-4bad-9feb-82ee8361c261`. Decision record `docs/m2-decision.md`
+  committed at `93ab82d` before any implementation (defaults, target, construction chosen
+  after measuring the built-ins, high-precision reference and error budget, A1-A9/B1/C1-C3).
+- Planning-file provenance: the original checkout at `projects/AutoBayes` (branch `m1`, dirty)
+  still holds the uncommitted planning docs; `main` already contains identical copies (the
+  proposal is byte-identical; STATUS on `main` is a superset with the coordinator's corrected
+  planning checkpoint, committed in the foundation branch at `552bdfe`). Nothing was copied
+  or replaced in this slice. The foundation worktree's ignored `evidence-runs/` candidate
+  directories were removed together with that worktree on 2026-09-10 and are not preserved
+  locally; the hosted artifacts (`fast-evidence-34430932197-1`, `slow-evidence-34439415443-1`
+  and the later run artifacts) and the coordinator's independently preserved run artifacts
+  are the surviving copies.
+- Cleanup commit `b0b3497` removed a vacuous `... or True` assertion from
+  `tests/test_evidence_provenance.py` (explained in its message).
+- **Delivered**: `ab.binomial("successes | trials(n) ~ x + (1 | group)", df, priors)` (brms syntax
+  only; Bambi's `p(k, n)` refused), counts validated before any cast (bool, complex,
+  non-integral, non-finite, negative, `k > n`, above `2^31-1` refused), zero-trial rows dropped
+  and reported before centring, all-zero-trial data refused, constant outcomes accepted with a
+  separation warning (M1's Bernoulli refusal retained), likelihood
+  `log C(n,k) - k softplus(-eta) - (n-k) softplus(eta)` on `stable_softplus` in a Bambi custom
+  family with `n` passed as Bambi's own binomial passes it; predictions computed in this layer:
+  `probability` (p), `mean` (p, expected = n p; brms `posterior_epred`), `response` (+ integer
+  `Binomial(n, p)` draws), trials column required only for `mean`/`response` newdata, zero-trial
+  prediction rows deterministic zero, M1 new-group identity/sharing semantics; fit records carry
+  trials, dropped rows and warnings. Version 0.2.0 (`uv.lock` changed only in the project entry).
+- **Measured before choosing the construction** (`docs/m2-decision.md`): Bambi's built-in
+  binomial fails 49 of 130 grid points (values and gradients, both paths, from |eta| = 12 at
+  large n); `pm.Binomial(logit_p=)` fails 60 of 130 including JAX gradient failures.
+- **Tests** (clean locked environment): `tests/test_binomial.py` 26 passed, including the full
+  A5 grid (n in {1, 2, 10, 1e3, 1e6, 1e9, 2^31-2, 2^31-1}, k at 0/1/mid/n-1/n, 13 logits to
+  +-1e6, PyTensor and JAX values and full gradients against the 60-digit `decimal` reference
+  with exact / Stirling `lnGamma`), n = 1 equivalence with Bernoulli, expansion to Bernoulli
+  rows with aligned centring (and the documented difference with unequal trials), invalid
+  inputs, three prediction kinds, Bernstein-bounded conditional predictive check with exact
+  zero-variance and saturated cases. Full fast suite: **117 passed, 5 deselected** (69.7 s). Slow suite 5 passed
+  (31.3 s), M2 B1: PyMC 0 divergences, R-hat 1.0062, bulk ESS 781; NumPyro 0 divergences,
+  R-hat 1.0073, bulk ESS 681; truth inside every 94 % HDI; backends within 4 combined MCSE
+  (largest ratio 0.33). Evidence in `evidence-runs/20260910T052144.898878Z-…-p25085-648eaa/`.
+- Example evidence `docs/m2-evidence/` (both backends, agreement, GPU refusal). GPU execution
+  for this family: **pending**. The Bernoulli boundary-form change (D8) was not made.
+- Limitations: one recovery is not calibration; in one simulated data set the intercept is
+  identified relative to the realised mean of the group effects (the example prints it); the
+  validated count/logit domain is the tested grid; no calibration or benchmark claims.
+- PR: pending (recorded below when opened).
+
 ## Foundation slice (2026-09-09): reproducible CPU checks (section 4.0 of the proposal)
 
 - Andrew approved the software plan on 2026-09-09 (evening); this is the first implementation

@@ -18,8 +18,9 @@ Two halves:
   with PyMC's NUTS or through JAX/NumPyro with an explicit device choice, and returns
   posterior and predictive draws. Two families on one formula subset
   `y ~ x + (1 | group)`: Gaussian (M0) and Bernoulli with a logit link for a 0/1
-  outcome (M1); anything else is refused with an error naming the construct. See
-  [Library](#library-milestones-m0-and-m1) below.
+  outcome (M1), and binomial counts `successes | trials(n)` with a logit link (M2);
+  anything else is refused with an error naming the construct. See
+  [Library](#library-milestones-m0-m1-and-m2) below.
 
 It came out of a multi-month hierarchical-modelling program that fit roughly sixty
 successive model versions on GPU, each conditional on the last. The modelling was the
@@ -85,7 +86,7 @@ Mid-project, the skills are symptom-triggered. When a gradient comes back `nan` 
 likelihood will not differentiate, `autobayes-custom-op` loads on its own and — before
 showing you the pattern — tries to talk you out of needing it.
 
-## Library (milestones M0 and M1)
+## Library (milestones M0, M1 and M2)
 
 ### Install and test (the pinned, tested stack)
 
@@ -126,7 +127,7 @@ versions.
 | --- | --- | --- | --- | --- |
 | Gaussian, `y ~ [1 +] x… + (1 \| g)` | CPU-validated | CPU-validated | GPU-validated once, H100 (`docs/m0-gpu-validation.md`) | M0, merged |
 | Bernoulli (logit), `y ~ [1 +] x… + (1 \| g)`, y strictly 0/1 | CPU-validated | CPU-validated | **pending** (same code path, not run on a GPU) | M1, PR #3 |
-| Binomial `k \| trials(n)` | not implemented | not implemented | not implemented | M2, proposed |
+| Binomial (logit), `k \| trials(n) ~ [1 +] x… + (1 \| g)`, integer counts | CPU-validated | CPU-validated | **pending** (same code path, not run on a GPU) | M2 |
 | Categorical predictors, interactions, varying slopes, several groups, other families | refused with an error naming the construct | same | same | later slices, `docs/coordination/NEXT_MILESTONES_PROPOSAL.md` |
 
 Device rules on every path: `device="gpu"` without a visible GPU raises `DeviceError`
@@ -158,6 +159,13 @@ bmodel = ab.bernoulli("y ~ x + (1 | clinic)", df01, bpriors)   # y must be exact
 bfit = bmodel.fit(backend="pymc", seed=7)
 probs = bmodel.predict(bfit, newdata=new_df, kind="mean")        # p = P(y = 1)
 draws = bmodel.predict(bfit, newdata=new_df, kind="response", new_groups="population")  # p and 0/1 y
+
+# counts with known denominators: k successes of n trials per row, brms syntax
+cmodel = ab.binomial("deaths | trials(patients) ~ x + (1 | clinic)", counts_df, bpriors)
+cfit = cmodel.fit(backend="pymc", seed=7)
+cmodel.predict(cfit, kind="probability")                          # p only, no trials needed
+cmodel.predict(cfit, newdata=new_counts, kind="mean")             # p and expected = n p (needs the trials column)
+cmodel.predict(cfit, newdata=new_counts, kind="response")         # ... and integer Binomial(n, p) draws
 ```
 
 `SKILL.md` is the researcher workflow for these families, step by step with the checks,
@@ -165,8 +173,11 @@ failure recovery and the session handoff. What Bambi supplies and what this laye
 with the reason for each addition, is in `docs/m0-decision.md` (Gaussian) and
 `docs/m1-decision.md` (Bernoulli, including why its likelihood is written by hand: Bambi's
 built-in one is floored at machine epsilon for large logits, and the obvious PyMC and
-PyTensor alternatives have NaN gradients on one path or the other); the acceptance checks and their
-evidence are in those records and `docs/m0-evidence/`, `docs/m1-evidence/`.
+PyTensor alternatives have NaN gradients on one path or the other) and `docs/m2-decision.md`
+(binomial: accepted data policies, the log-sigmoid density chosen after measuring the
+built-ins, the high-precision reference and its error budget, the validated count and
+logit domain); the acceptance checks and their evidence are in those records and
+`docs/m0-evidence/`, `docs/m1-evidence/`, `docs/m2-evidence/`.
 `docs/coordination/STATUS.md` is the live milestone status; the roadmap is
 `docs/coordination/NEXT_MILESTONES_PROPOSAL.md`. No speed claim is made anywhere.
 

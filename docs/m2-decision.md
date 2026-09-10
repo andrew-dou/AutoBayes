@@ -199,3 +199,35 @@ checkpointed for review before it is written.
 Repair and re-run; record the failure here and in `docs/coordination/STATUS.md`. If B1
 fails on one backend only, that is a sampler-path bug to investigate before any claim about
 either backend. Thresholds and tolerances are not loosened.
+
+## Executed results (2026-09-10, clean locked environment, Python 3.11.0, macOS arm64)
+
+- Grid A5 (`tests/test_binomial.py::test_extreme_logits_and_large_counts_both_paths`): all
+  eight $n$ values including $N_{\max}-1$ and $N_{\max}$, every $k$ and $\eta$ on the list,
+  values and full gradients on the PyTensor and JAX paths within the tolerance rule, finite
+  everywhere; $N_{\max}+1$ refused before any cast. No domain reduction was needed.
+- A1-A4, A6, A6a, A6b, A7, A8, A9, C1 and the CPU NumPyro report: 26 tests in the module,
+  all passing (`test_binomial.py`); the reference's own self-checks (Stirling versus exact
+  summation at the branch point, known binomial coefficients) pass.
+- Fixes made while writing the tests, none to the mathematics: the zero-trials-with-successes
+  check now precedes the `successes > trials` check so its message is reachable; missing
+  counts are reported as missing values before the count checks; `sigma` is refused for every
+  non-Gaussian family (it was refused for Bernoulli only); a formula without `~` keeps its
+  original message.
+- B1 (`test_sampling.py::test_binomial_recovery_both_backends`, evidence
+  `M2_B1_recovery.json` in the run directory): 300 rows, 30 groups all present, trials 5-50,
+  seed 7, 4 x (1000 + 2000). PyMC: 0 divergences, max R-hat 1.0062, bulk ESS 781, tail ESS
+  1557, E-BFMI 0.647; NumPyro (4 parallel CPU chains): 0 divergences, max R-hat 1.0073, bulk
+  ESS 681, tail ESS 1055, E-BFMI 0.708. Truth inside every 94 % HDI: Intercept -0.673
+  [-0.887, -0.463] (truth -0.5), x 0.851 [0.789, 0.909] (0.8), group SD 0.598 [0.442, 0.764]
+  (0.7). Backends within 4 combined MCSE (largest ratio 0.33, on Intercept). One recovery on
+  one simulated data set; not calibration. Note on the intercept: in a single data set it
+  is identified only up to the realised mean of the simulated group effects; the example
+  prints that mean and the identifiable value, and the recovery check keeps the prespecified
+  comparison with the population value.
+- Example (`examples/m2_binomial_varying_intercept.py`, `docs/m2-evidence/`): both backends,
+  4 x (1000 + 2000), panel all pass, backend agreement `agree: True`; the two clinics with no
+  patients are dropped and reported; a zero-patient prediction row gives expected 0 and
+  count 0; probabilities need no trials column; the GPU refusal on this machine is captured.
+- Built-in measurements (table above) were taken before the construction was chosen.
+- GPU execution: pending, not run.
