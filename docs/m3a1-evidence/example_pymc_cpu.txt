@@ -1,0 +1,87 @@
+AutoBayes environment
+  python    : 3.11.0 (macOS-26.6.1-arm64-arm-64bit)
+  versions  : pymc 5.28.5, pytensor 2.38.3, bambi 0.17.2, formulae 0.6.2, arviz 0.23.4, numpyro 0.21.0, jax 0.10.2, jaxlib 0.10.2, numpy 2.4.6
+  jax       : cpu:cpu(id=0), cpu:cpu(id=1), cpu:cpu(id=2), cpu:cpu(id=3), cpu:cpu(id=4), cpu:cpu(id=5), cpu:cpu(id=6), cpu:cpu(id=7)
+  jax x64   : True
+
+240 rows, 12 sites; arms: {'control': 119, 'low': 75, 'high': 46}
+AutoBayes M0 model with categorical predictor(s)
+  formula   : y ~ x + treatment + (1 | site)
+  family    : gaussian, identity link
+  data      : n = 240 observations, J = 12 levels of site
+  levels    : 0=s00, 1=s01, 2=s02, 3=s03, 4=s04, 5=s05, 6=s06, 7=s07, 8=s08, 9=s09, 10=s10, 11=s11
+  treatment : categorical, treatment coding, reference 'control'; levels (sorted) control, high, low; coefficients b_treatment[high, low]
+              proportions among fitted rows: control 0.496, high 0.192, low 0.312
+
+Linear predictor
+  mu_i = a_c + (x_x - mean(x_x)) * b_x + (1[treatment_i = high] - p_treatment[high]) * b_treatment[high] + (1[treatment_i = low] - p_treatment[low]) * b_treatment[low] + u[site_i]
+  b_treatment[l] is the difference between level l and the reference 'control' on the response scale at the same predictors and group; the reference has no coefficient.
+  Predictors are centred at their sample means (center_predictors=True, as in
+  brms and Bambi); a dummy column's mean is its level's proportion p_z[l].
+  a_c is the expected response at the numeric predictor means and at the sample proportions of the categorical levels (group effect zero); the
+  prior on the intercept applies to a_c. The posterior reports the raw-scale
+  intercept a = a_c - sum_p mean(x_p) * b_p - sum_l p_z[l] * b_z[l], computed after sampling: the linear predictor at x = 0 and at the reference level.
+
+Group effects (non-centred)
+  u[j] = sd_site * z[j],  z[j] ~ Normal(0, 1),  j = 0..11
+
+Priors
+  a_c ~ Normal(mu=0, sigma=5)
+  b_x ~ Normal(mu=0, sigma=2)
+  b_treatment[high] ~ Normal(mu=0, sigma=2)
+  b_treatment[low] ~ Normal(mu=0, sigma=2)
+  sd_site ~ HalfNormal(sigma=1)
+  sigma ~ HalfNormal(sigma=1)
+
+Likelihood
+  y_i ~ Normal(mu_i, sigma)
+
+PyMC variables sampled (value space)
+  sigma_log__              log(sigma)
+  Intercept                a_c
+  x                        b_x
+  treatment                b_treatment[high, low] (vector; dims treatment_dim, posterior rows treatment[high], treatment[low])
+  1|site_sigma_log__       log(sd_site)
+  1|site_offset            z
+Deterministic: 1|site = u, mu = linear predictor
+
+design columns: ('x', 'treatment[high]', 'treatment[low]') | coefficients: (('x', 'x', None), ('treatment[high]', 'treatment', 0), ('treatment[low]', 'treatment', 1))
+first rows of the raw design (x, low, high):
+[['control' 1.703 0.0 0.0]
+ ['control' 1.344 0.0 0.0]
+ ['high' -2.406 1.0 0.0]
+ ['control' 0.968 0.0 0.0]
+ ['high' 0.554 1.0 0.0]]
+
+AutoBayes fit report
+  backend          : pymc
+  device requested : cpu
+  device actual    : cpu (platform cpu)
+  dtype            : float64
+  chain method     : n/a
+  chains/tune/draws: 4/1000/1000, target_accept 0.9
+  seed             : 21
+  wall time        : 7.1 s (includes compilation)
+
+Diagnostic panel (thresholds from reference/diagnostics.md)
+  divergences            0 of 4000 (0.000%)           pass
+  max R-hat              1.0107                       investigate
+  min bulk ESS           783                          pass
+  min tail ESS           1113                         pass
+  min E-BFMI             0.754                        pass
+  tree-depth saturation  0.00%                        pass
+  overall: investigate
+
+                  mean     sd  hdi_3%  hdi_97%  mcse_mean  mcse_sd  ess_bulk  ess_tail  r_hat
+Intercept        1.876  0.125   1.632    2.107      0.004    0.003     890.0    1113.0   1.00
+x                0.524  0.026   0.477    0.575      0.000    0.000    3801.0    2484.0   1.00
+treatment[high]  0.916  0.072   0.772    1.044      0.001    0.001    3454.0    2833.0   1.00
+treatment[low]  -0.628  0.062  -0.745   -0.515      0.001    0.001    3098.0    2212.0   1.00
+1|site_sigma     0.402  0.104   0.236    0.597      0.004    0.003     783.0    1595.0   1.01
+sigma            0.402  0.020   0.366    0.439      0.000    0.000    3382.0    2544.0   1.00
+truth: Intercept 2.0 (raw: x = 0, control), x 0.5, treatment[low] -0.6, treatment[high] 0.9, sd 0.5, sigma 0.4   (one recovery, not calibration)
+the realised mean of the simulated site effects is -0.199; in one data set the intercept is identified relative to it, so compare Intercept with 1.801
+
+expected y at x = 0, site s00: high 2.47, control 1.55, low 0.93; a new site, control: 1.87 (SD across draws 0.43)
+an arm that was not fitted is refused: newdata has levels of the categorical predictor 'treatment' that were not in the fitted rows: ['placebo']
+fit record written to docs/m3a1-evidence/example_pymc_cpu_record.json

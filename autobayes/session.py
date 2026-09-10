@@ -68,7 +68,7 @@ def _summary_rows(model, idata) -> dict:
     import arviz as az
 
     n = model.names
-    names = [n["intercept"], *model.spec.predictors, n["sd"]] + ([n["sigma"]] if "sigma" in n else [])
+    names = [n["intercept"], *model.spec.terms, n["sd"]] + ([n["sigma"]] if "sigma" in n else [])
     s = az.summary(idata, var_names=names, hdi_prob=0.94, round_to="none")
     rows = {}
     for name, r in s.iterrows():
@@ -83,9 +83,9 @@ def fit_record(model, fit, *, panel: dict | None = None, max_treedepth: int = 10
 
     p = panel if panel is not None else _panel(fit.idata, max_treedepth=max_treedepth)
     s, d, pr = model.spec, model.design, model.priors
-    slopes = pr.slope_priors(s.predictors)
+    coef = pr.coefficient_priors(s)
     return {
-        "autobayes_version": _version("autobayes") or "0.2.0",
+        "autobayes_version": _version("autobayes") or "0.3.0",
         "model": {
             "formula": s.formula,
             "family": model.family,
@@ -93,9 +93,16 @@ def fit_record(model, fit, *, panel: dict | None = None, max_treedepth: int = 10
             "n": int(d.n), "J": int(d.J), "group": s.group,
             "center_predictors": bool(d.centered),
             "noncentered": True,
-            "priors": {"intercept": str(pr.intercept), **{f"b:{k}": str(v) for k, v in slopes.items()},
+            "priors": {"intercept": str(pr.intercept), **{f"b:{k}": str(v) for k, v in coef.items()},
                        "sd": str(pr.sd), **({"sigma": str(pr.sigma)} if pr.sigma is not None else {})},
-            "intercept_prior_applies_to": ("centred intercept (at predictor means)" if d.centered else "raw intercept")
+            "terms": list(s.terms),
+            "design_columns": list(s.columns),
+            "categorical": {c.name: {"reference": c.reference, "levels": list(c.levels),
+                                     "coefficients": list(c.coefficients), "unused_levels": list(c.unused)}
+                            for c in s.categoricals},
+            "intercept_prior_applies_to": ("centred intercept (at the numeric predictor means"
+                                           + (" and the sample proportions of the categorical levels)" if s.categoricals else ")")
+                                           if d.centered else "raw intercept")
                                           + (", logit scale" if model.family != "gaussian" else ""),
             **({"trials": s.trials, "trials_total": int(d.trials.sum()),
                 "zero_trial_rows_dropped": len(model.dropped_rows),

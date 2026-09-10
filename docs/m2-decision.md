@@ -471,8 +471,9 @@ off-support value returns $-\infty$ on both paths.
 | 1e6 | 1.2e-10 | 1.2e-10 | 250000 | 2.1e-12 |
 | 1e7 (outside the cap) | 9.3e-10 | 9.3e-10 | 2500000 | 3.3e-11 |
 
-The worst absolute error is one float64 ulp of the coefficient's own magnitude at
-$k = n/4$ (where $\log\binom{n}{k}$ is largest on the grid); the $k = n - 1$ and interior
+The worst absolute error is one float64 ulp of the coefficient's own magnitude, measured at
+$k = n/4$ on this grid (the coefficient's mathematical maximum is at $k = n/2$, where the grid
+point $n/2$ showed a smaller error; the ulp bound is the same order at both); the $k = n - 1$ and interior
 figures quoted in the correction text above ($4\times10^{-10}$, $3\times10^{-13}$) were the
 previous data-side helper's measurements and are superseded by this table, which the
 coefficient docstring now cites. The cap decision is unchanged: the per-row density and

@@ -21,10 +21,11 @@ One library (`autobayes/`), one reference pack (`reference/`), one scaffold
 (`scaffold/`) for long programs. This file is the researcher workflow for the verified
 model family, then the routing for everything else.
 
-**What is verified.** One formula subset with numeric predictors and one varying
+**What is verified.** One formula subset with numeric predictors, treatment-coded
+categorical predictors declared with `categorical={column: reference}`, and one varying
 intercept,
 
-    y ~ [1 +] x1 [+ x2 ...] + (1 | group)
+    y ~ [1 +] x1 [+ x2 ...] [+ z ...] + (1 | group)
 
 for two outcome families:
 
@@ -98,14 +99,18 @@ Run the steps in order. Each has a check; a step whose check fails is not done.
 
 ### 1. Data
 
-A pandas data frame with a response, numeric predictors, and a grouping column (any
-dtype; it is coded as a factor with levels in **sorted** order). Gaussian: a numeric
+A pandas data frame with a response, predictors, and a grouping column (any dtype; it
+is coded as a factor with levels in **sorted** order). Predictors are numeric, or
+categorical when you **declare** them with `categorical={"column": reference_level}`
+(string, pandas Categorical, or integer codes; an undeclared integer column is numeric,
+an undeclared label column is refused with the declaration to use). Gaussian: a numeric
 response. Bernoulli: a numeric column with values exactly 0 and 1, both present, where
 **1 is the outcome being modelled**; booleans and labels are refused with a message
 telling you to recode them, because a label column would silently make the sorted
-first level the "success". The library refuses missing values, categorical predictors,
-a constant predictor, and a grouping factor with one level, each with a message saying
-so. Transform columns in the data frame, not in the formula.
+first level the "success". The library refuses missing values, a constant predictor,
+a categorical predictor with one level, a reference level that does not occur, and a
+grouping factor with one level, each with a message saying so. Transform columns in
+the data frame, not in the formula.
 
 ### 2. Formula and priors
 
@@ -153,6 +158,40 @@ and the posterior there is set by the intercept prior's tail, so refit with a wi
 narrower intercept prior and report the movement. Bambi's `p(k, n)` left-hand side is
 refused; write the brms form.
 
+For a categorical predictor (treatment coding, milestone M3a-1):
+
+```python
+priors = ab.Priors(
+    intercept=ab.Normal(0, 5),
+    b={"x": ab.Normal(0, 2),                                     # one prior per term ...
+       "arm": {"low": ab.Normal(0, 2), "high": ab.Normal(0, 2)}},  # ... or per non-reference level
+    sd=ab.HalfNormal(1), sigma=ab.HalfNormal(1),
+)
+model = ab.gaussian("y ~ x + arm + (1 | site)", df, priors, categorical={"arm": "control"})
+```
+
+`categorical` names the column and its **reference level**; both are required. The
+levels are the distinct values of the fitted rows as string labels in sorted order (a
+pandas Categorical's own order is not used, and its declared categories that never
+occur are reported and get no coefficient). Labels are formed value by value with no
+float intermediate: integers of any width keep their exact decimal form (`int64`,
+`uint64`, nullable and object columns alike), floats are accepted only when integral and
+at most 2**53 in magnitude, strings are themselves; an integer and its decimal string are
+the same label (`categorical={"z": 1}` and `{"z": "1"}` name the same level). Booleans,
+complex values, missing values, larger or fractional floats, and a column that mixes
+text labels with numeric codes are refused before any model is built. Each non-reference level gets one dummy
+column `arm[level]` and one coefficient: the difference between that level and the
+reference on the link scale (response scale for Gaussian, log-odds for Bernoulli and
+binomial) at the same predictors and group. The posterior variable is `arm` with the
+levels as coordinates, so `az.summary(fit.idata, var_names=["arm"])` shows rows
+`arm[low]`, `arm[high]`; `model.coefficients` is the exact map from design columns to
+variables. Per-level priors must cover exactly the non-reference levels (the reference
+has none), must share one distribution family, and a key such as `"arm[low]"` at the
+term level is refused: nothing is filled in by default. Changing the reference level
+relabels the coefficients by a known linear map and leaves the likelihood unchanged,
+but independent priors in the new coding are a **different model** (their induced joint
+prior is correlated); `docs/m3a1-decision.md` derives the map and the test checks it.
+
 Every class the family has is required. There are no defaults, because a default
 prior is the thing you cannot see in the formula and cannot reproduce later. Location
 classes take `Normal` or `StudentT(nu, mu, sigma)`; scale classes take `HalfNormal`,
@@ -167,11 +206,20 @@ intercept at the predictor means. Your prior on `intercept` is a prior on that
 quantity. The `Intercept` column in the posterior is the raw-scale intercept, back-
 transformed after sampling. Choose the prior for the centred quantity (the typical
 response), not for "y at x = 0". `center_predictors=False` turns this off if the raw
-intercept is what the prior is about.
+intercept is what the prior is about. With a categorical predictor the dummy columns
+are centred too, so the sampled intercept is the linear predictor at the numeric means
+**and at the sample proportions of the levels** (group effect zero): for the Gaussian
+family the expected response there; for the logit families a log-odds whose `expit` is
+the probability at that proportion-weighted predictor, **not** the average probability
+across the levels (the link is nonlinear). The posterior `Intercept` is the linear
+predictor at x = 0 and the reference level.
 
 Check: `print(model.describe())`. Read the `levels` line (index to label map), the
+categorical line (reference, sorted levels, proportions, unused categories), the
 `mu_i =` (or `eta_i =`) line, the centring paragraph, and the "PyMC variables sampled"
-block. That block is the model that will be sampled: `Intercept` (centred), one
+block. Check the design itself: `model.spec.columns` and `model.design.X_raw[:5]` are
+the columns that multiply the coefficients (the library has already verified them
+against an independent one-hot construction; you can too). That block is the model that will be sampled: `Intercept` (centred), one
 variable per slope, `sigma_log__` (Gaussian only), `1|school_sigma_log__` (the group
 SD, log scale) and `1|school_offset` (the J standard-normal offsets of the non-centred
 parameterisation). `model.pymc_model` is the graph itself;

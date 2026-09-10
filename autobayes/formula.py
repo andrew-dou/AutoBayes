@@ -5,14 +5,17 @@ Supported::
     response ~ [1 +] predictor [+ predictor ...] + (1 | group)               (Gaussian, Bernoulli)
     successes | trials(n) ~ [1 +] predictor [+ predictor ...] + (1 | group)  (binomial, brms syntax)
 
-Predictors must be numeric columns; the grouping variable may be any column and is
-coded as a factor with levels in sorted order. Bambi (via formulae) accepts a much
-larger language; this module exists so that a formula outside the verified subset is
+Predictors are numeric columns, or categorical columns declared with ``categorical={column:
+reference_level}`` (treatment coding, milestone M3a-1); the grouping variable may be any
+column and is coded as a factor with levels in sorted order. Bambi (via formulae) accepts a
+much larger language; this module exists so that a formula outside the verified subset is
 refused with an error naming the construct, rather than silently built.
 """
 from __future__ import annotations
 
 import re
+import math
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 
 import numpy as np
@@ -32,19 +35,89 @@ class FormulaError(ValueError):
 
 
 @dataclass(frozen=True)
+class Categorical:
+    """One treatment-coded categorical predictor (docs/m3a1-decision.md).
+
+    ``levels`` are the distinct string labels present in the fitted rows in ``sorted`` order
+    (empty until the data are seen); ``reference`` is the declared reference label, which
+    must be one of them; ``coefficients`` are the levels without the reference, in order,
+    one dummy column and one coefficient each; ``unused`` lists a pandas Categorical's
+    declared categories that do not occur in the fitted rows.
+    """
+
+    name: str
+    reference: str
+    levels: tuple[str, ...] = ()
+    unused: tuple[str, ...] = ()
+
+    @property
+    def coefficients(self) -> tuple[str, ...]:
+        return tuple(l for l in self.levels if l != self.reference)
+
+    @property
+    def categories(self) -> tuple[str, ...]:
+        """Reference first, then the coefficient levels: the ordered Categorical handed to formulae."""
+        return (self.reference, *self.coefficients)
+
+    @property
+    def columns(self) -> tuple[str, ...]:
+        """Design-column labels, Bambi/formulae's own: ``z[level]`` per coefficient level."""
+        return tuple(f"{self.name}[{l}]" for l in self.coefficients)
+
+
+@dataclass(frozen=True)
 class ModelSpec:
     formula: str
     response: str
-    predictors: tuple[str, ...]
+    predictors: tuple[str, ...]        # numeric predictor terms, in formula order
     group: str
     intercept: bool = True
     levels: tuple[str, ...] = field(default_factory=tuple)
     trials: str | None = None          # binomial only: the trials column of ``successes | trials(n)``
     rhs: str = ""
+    terms: tuple[str, ...] = ()        # every predictor term (numeric and categorical) in formula order
+    categoricals: tuple[Categorical, ...] = ()   # the declared categorical terms, in formula order
+
+    def __post_init__(self):
+        if not self.terms:                      # numeric-only construction (M0-M2 call sites)
+            object.__setattr__(self, "terms", tuple(self.predictors))
 
     @property
     def group_term(self) -> str:
         return f"1|{self.group}"
+
+    @property
+    def categorical_names(self) -> tuple[str, ...]:
+        return tuple(c.name for c in self.categoricals)
+
+    def categorical(self, name: str) -> Categorical:
+        for c in self.categoricals:
+            if c.name == name:
+                return c
+        raise KeyError(name)
+
+    @property
+    def columns(self) -> tuple[str, ...]:
+        """Design-column labels in design order: formula term order, a categorical term
+        expanded into its ``z[level]`` dummies (reference omitted)."""
+        out: list[str] = []
+        for term in self.terms:
+            if term in self.categorical_names:
+                out.extend(self.categorical(term).columns)
+            else:
+                out.append(term)
+        return tuple(out)
+
+    @property
+    def column_terms(self) -> tuple[tuple[str, str, int | None], ...]:
+        """``(column label, term, index within the term or None for a numeric term)`` per column."""
+        out: list[tuple[str, str, int | None]] = []
+        for term in self.terms:
+            if term in self.categorical_names:
+                out.extend((col, term, j) for j, col in enumerate(self.categorical(term).columns))
+            else:
+                out.append((term, term, None))
+        return tuple(out)
 
     @property
     def bambi_formula(self) -> str:
@@ -95,8 +168,123 @@ def _reject_group_term(inner: str, factor: str, piece: str) -> None:
         )
 
 
-def parse_formula(formula: str, data: pd.DataFrame | None = None, family: str = "gaussian") -> ModelSpec:
-    """Parse and validate a formula in the supported subset, optionally against a data frame."""
+def _normalise_categorical(categorical, terms: list[str], response: str, group: str, trials: str | None,
+                           formula: str) -> tuple[Categorical, ...]:
+    if categorical is None:
+        return ()
+    if not isinstance(categorical, Mapping):
+        raise FormulaError(
+            "categorical must be a mapping {column: reference_level}, for example categorical={'z': 'a'}"
+        )
+    out: list[Categorical] = []
+    for name, ref in categorical.items():
+        if not isinstance(name, str):
+            raise FormulaError(f"categorical keys must be column names, got {name!r}")
+        if name == response:
+            raise FormulaError(f"{name!r} is the response; only predictor terms can be declared categorical")
+        if trials is not None and name == trials:
+            raise FormulaError(f"{name!r} is the trials column; only predictor terms can be declared categorical")
+        if name == group:
+            raise FormulaError(
+                f"{name!r} is the grouping factor of '(1 | {group})', which is already a factor with a "
+                "varying intercept; only fixed-effect predictor terms are declared categorical"
+            )
+        if name not in terms:
+            raise FormulaError(
+                f"{name!r} is declared categorical but is not a term of {formula!r}; add it to the formula"
+            )
+        if ref is None:
+            raise FormulaError(
+                f"categorical predictor {name!r} needs an explicit reference level: categorical={{{name!r}: <level>}}"
+            )
+        out.append(Categorical(name=name, reference=_scalar(f"categorical predictor {name!r}", ref, where="reference level")))
+    return tuple(c for t in terms for c in out if c.name == t)          # formula order
+
+
+_FLOAT_EXACT = 2 ** 53          # float64 represents every integer up to here exactly
+
+
+def _label(v) -> str:
+    """The string label of one categorical value (docs/m3a1-decision.md, repair record).
+
+    Integers of any width and sign map to their exact decimal string; floats only when finite,
+    integral and at most 2**53 in magnitude; strings are themselves. Booleans, complex numbers,
+    bytes, missing values and every other type are refused. No float intermediate anywhere."""
+    if isinstance(v, (bool, np.bool_)):
+        raise FormulaError("boolean values are not accepted as categorical labels; recode them explicitly")
+    if isinstance(v, (int, np.integer)):
+        return str(int(v))
+    if isinstance(v, (float, np.floating)):
+        if not np.isfinite(v):
+            raise FormulaError(f"{v!r} is not a finite categorical value")
+        if float(v) != math.floor(float(v)):
+            raise FormulaError(f"categorical values must be integral or labels, got {v!r}")
+        if abs(float(v)) > _FLOAT_EXACT:
+            raise FormulaError(
+                f"float categorical value {v!r} exceeds 2**53 in magnitude, beyond which float64 does not represent "
+                "integers exactly; store large codes as integers (int64/uint64/object) or as strings"
+            )
+        return str(int(v))
+    if isinstance(v, str):
+        return str(v)
+    if isinstance(v, (complex, np.complexfloating)):
+        raise FormulaError(f"complex value {v!r} is not accepted as a categorical label")
+    if v is None or v is pd.NA or v is pd.NaT:
+        raise FormulaError("missing value is not accepted as a categorical label")
+    raise FormulaError(f"unsupported categorical value type {type(v).__name__} ({v!r}); use integers or strings")
+
+
+def _kind(v) -> str:
+    return "text" if isinstance(v, str) else "number"
+
+
+def categorical_labels(label: str, s: pd.Series) -> tuple[np.ndarray, tuple[str, ...]]:
+    """String labels of a categorical predictor column, checked scalar by scalar before any
+    coding (``_label``), and the column's declared-but-absent categories (pandas Categorical
+    only). Containers are read as Python objects, which is exact for every integer width and
+    for nullable types; a column mixing text labels with numeric codes is refused as ambiguous."""
+    reject_complex(label, s)
+    if pd.api.types.is_bool_dtype(s):
+        raise FormulaError(
+            f"{label} is boolean; a categorical predictor needs explicit labels or integer codes "
+            "(recode it, for example data[col].map({False: 'no', True: 'yes'}))"
+        )
+    declared: tuple[str, ...] = ()
+    if isinstance(s.dtype, pd.CategoricalDtype):
+        declared = tuple(_scalar(label, c, where="declared category") for c in s.cat.categories)
+        if len(set(declared)) != len(declared):
+            raise FormulaError(f"{label} has declared categories that collide after normalisation: {list(declared)}")
+        if len({_kind(c) for c in s.cat.categories}) > 1:
+            raise FormulaError(f"{label} mixes text labels and numeric codes in its declared categories; recode it explicitly")
+    values = s.astype(object)
+    na = pd.isna(values.to_numpy())
+    if na.any():
+        raise FormulaError(f"{label} has missing values; drop or impute them explicitly before fitting.")
+    raw = values.tolist()
+    labels = np.array([_scalar(label, v) for v in raw], dtype=object)
+    if len({_kind(v) for v in raw}) > 1:
+        raise FormulaError(
+            f"{label} mixes text labels and numeric codes (for example a string '1' next to an integer 1), which "
+            "would silently merge under label normalisation; recode the column to one kind"
+        )
+    unused = tuple(c for c in declared if c not in set(labels.tolist()))
+    return labels, unused
+
+
+def _scalar(label: str, v, *, where: str = "value") -> str:
+    try:
+        return _label(v)
+    except FormulaError as e:
+        raise FormulaError(f"{label}: {where} {v!r} refused: {e}") from None
+
+
+def parse_formula(formula: str, data: pd.DataFrame | None = None, family: str = "gaussian",
+                  categorical: Mapping[str, object] | None = None) -> ModelSpec:
+    """Parse and validate a formula in the supported subset, optionally against a data frame.
+
+    ``categorical`` maps a predictor column to its reference level (treatment coding); every
+    other predictor term must be numeric.
+    """
     trials = None
     if _BAMBI_PROPORTION_RE.match(formula):
         raise FormulaError(
@@ -198,9 +386,13 @@ def parse_formula(formula: str, data: pd.DataFrame | None = None, family: str = 
     if trials is not None and (trials in predictors or trials == group):
         raise FormulaError(f"{trials!r}: the trials column cannot also be a predictor or the grouping factor")
 
+    categoricals = _normalise_categorical(categorical, predictors, response, group, trials, formula)
+    cat_names = {c.name for c in categoricals}
     spec = ModelSpec(
-        formula=formula.strip(), response=response, predictors=tuple(predictors),
+        formula=formula.strip(), response=response,
+        predictors=tuple(p for p in predictors if p not in cat_names),
         group=group, intercept=True, trials=trials, rhs=rhs.strip(),
+        terms=tuple(predictors), categoricals=categoricals,
     )
     if data is not None:
         spec = validate_data(spec, data, family)
@@ -307,7 +499,7 @@ def validate_data(spec: ModelSpec, data: pd.DataFrame, family: str = "gaussian")
     """Check columns exist, are numeric where required, and have no missing values."""
     if (spec.trials is not None) != (family == "binomial"):
         raise FormulaError("a trials column is present exactly for the binomial family")
-    needed = [spec.response, *spec.predictors, spec.group] + ([spec.trials] if spec.trials else [])
+    needed = [spec.response, *spec.terms, spec.group] + ([spec.trials] if spec.trials else [])
     missing = [c for c in needed if c not in data.columns]
     if missing:
         raise FormulaError(f"columns not in data: {missing}")
@@ -315,9 +507,22 @@ def validate_data(spec: ModelSpec, data: pd.DataFrame, family: str = "gaussian")
         reject_complex(f"column {c!r}", data[c])
         if not _is_numeric(data[c]):
             raise FormulaError(
-                f"column {c!r} has dtype {data[c].dtype}; only numeric predictors are "
-                "supported (categorical predictors are not supported)."
+                f"column {c!r} has dtype {data[c].dtype}; a predictor is numeric unless it is declared "
+                f"categorical with its reference level, for example categorical={{{c!r}: <level>}} "
+                "(treatment coding; docs/m3a1-decision.md)."
             )
+    categoricals = []
+    for cat in spec.categoricals:
+        labels, unused = categorical_labels(f"categorical predictor {cat.name!r}", data[cat.name])
+        levels = tuple(sorted(set(labels.tolist())))
+        if len(levels) < 2:
+            raise FormulaError(f"predictor {cat.name!r} is constant (single level {levels[0]!r} in the fitted rows)")
+        if cat.reference not in levels:
+            raise FormulaError(
+                f"reference level {cat.reference!r} of {cat.name!r} does not occur in the fitted rows; "
+                f"observed levels: {list(levels)}"
+            )
+        categoricals.append(Categorical(name=cat.name, reference=cat.reference, levels=levels, unused=unused))
     reject_complex(f"response {spec.response!r}", data[spec.response])
     if family == "bernoulli":
         _validate_binary_response(spec.response, data[spec.response])
@@ -348,4 +553,5 @@ def validate_data(spec: ModelSpec, data: pd.DataFrame, family: str = "gaussian")
     return ModelSpec(
         formula=spec.formula, response=spec.response, predictors=spec.predictors,
         group=spec.group, intercept=True, levels=levels, trials=spec.trials, rhs=spec.rhs,
+        terms=spec.terms, categoricals=tuple(categoricals),
     )

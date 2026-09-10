@@ -1,0 +1,171 @@
+{
+ "autobayes_version": "0.2.0",
+ "model": {
+  "formula": "y ~ x + treatment + (1 | site)",
+  "family": "gaussian",
+  "link": "identity",
+  "n": 240,
+  "J": 12,
+  "group": "site",
+  "center_predictors": true,
+  "noncentered": true,
+  "priors": {
+   "intercept": "Normal(mu=0, sigma=5)",
+   "b:x": "Normal(mu=0, sigma=2)",
+   "b:treatment[high]": "Normal(mu=0, sigma=2)",
+   "b:treatment[low]": "Normal(mu=0, sigma=2)",
+   "sd": "HalfNormal(sigma=1)",
+   "sigma": "HalfNormal(sigma=1)"
+  },
+  "terms": [
+   "x",
+   "treatment"
+  ],
+  "design_columns": [
+   "x",
+   "treatment[high]",
+   "treatment[low]"
+  ],
+  "categorical": {
+   "treatment": {
+    "reference": "control",
+    "levels": [
+     "control",
+     "high",
+     "low"
+    ],
+    "coefficients": [
+     "high",
+     "low"
+    ],
+    "unused_levels": []
+   }
+  },
+  "intercept_prior_applies_to": "centred intercept (at the numeric predictor means and the sample proportions of the categorical levels)",
+  "warnings": []
+ },
+ "execution": {
+  "backend": "numpyro",
+  "device_requested": "cpu",
+  "device_actual": "cpu:cpu(id=0)",
+  "platform": "cpu",
+  "dtype": "float64",
+  "chain_method": "parallel",
+  "chains": 4,
+  "draws": 1000,
+  "tune": 1000,
+  "target_accept": 0.9,
+  "seed": 21,
+  "wall_seconds": 4.197,
+  "notes": []
+ },
+ "environment": {
+  "python": "3.11.0",
+  "platform": "macOS-26.6.1-arm64-arm-64bit",
+  "versions": {
+   "pymc": "5.28.5",
+   "pytensor": "2.38.3",
+   "bambi": "0.17.2",
+   "formulae": "0.6.2",
+   "arviz": "0.23.4",
+   "numpyro": "0.21.0",
+   "jax": "0.10.2",
+   "jaxlib": "0.10.2",
+   "numpy": "2.4.6"
+  },
+  "jax_devices": [
+   "cpu:cpu(id=0)",
+   "cpu:cpu(id=1)",
+   "cpu:cpu(id=2)",
+   "cpu:cpu(id=3)",
+   "cpu:cpu(id=4)",
+   "cpu:cpu(id=5)",
+   "cpu:cpu(id=6)",
+   "cpu:cpu(id=7)"
+  ],
+  "jax_x64": true
+ },
+ "diagnostics": {
+  "values": {
+   "divergences": 0.0,
+   "divergence_fraction": 0.0,
+   "max_rhat": 1.00583886483206,
+   "min_ess_bulk": 775.1833096451678,
+   "min_ess_tail": 1255.852165920077,
+   "min_bfmi": 0.7200403107277263,
+   "treedepth_saturation": 0.0,
+   "n_draws": 4000.0
+  },
+  "status": {
+   "divergence_fraction": "pass",
+   "max_rhat": "pass",
+   "min_ess_bulk": "pass",
+   "min_ess_tail": "pass",
+   "min_bfmi": "pass",
+   "treedepth_saturation": "pass"
+  },
+  "overall": "pass"
+ },
+ "posterior": {
+  "Intercept": {
+   "mean": 1.8666504840111529,
+   "sd": 0.12484445915759407,
+   "hdi_3%": 1.6267343453373104,
+   "hdi_97%": 2.0936120289315725,
+   "mcse_mean": 0.004462238893022274,
+   "ess_bulk": 775.1833096451678,
+   "ess_tail": 1255.852165920077,
+   "r_hat": 1.00583886483206
+  },
+  "x": {
+   "mean": 0.5240549733681324,
+   "sd": 0.025783448098086238,
+   "hdi_3%": 0.4754404387146143,
+   "hdi_97%": 0.5707893856854419,
+   "mcse_mean": 0.000457023238489013,
+   "ess_bulk": 3185.8714747865556,
+   "ess_tail": 2641.759451208791,
+   "r_hat": 1.000147195985321
+  },
+  "treatment[high]": {
+   "mean": 0.919913857915546,
+   "sd": 0.07231504472244285,
+   "hdi_3%": 0.7853871091558057,
+   "hdi_97%": 1.057948646907255,
+   "mcse_mean": 0.0014387032807178601,
+   "ess_bulk": 2531.009178452387,
+   "ess_tail": 2810.432932789633,
+   "r_hat": 1.0001220161967368
+  },
+  "treatment[low]": {
+   "mean": -0.6261449574756273,
+   "sd": 0.061447562979171116,
+   "hdi_3%": -0.7466920305191291,
+   "hdi_97%": -0.518467227846521,
+   "mcse_mean": 0.0012365060055167896,
+   "ess_bulk": 2493.1590936030893,
+   "ess_tail": 2583.76730466925,
+   "r_hat": 1.0017843608050958
+  },
+  "1|site_sigma": {
+   "mean": 0.3931613632411287,
+   "sd": 0.09992884747094809,
+   "hdi_3%": 0.22566996210094156,
+   "hdi_97%": 0.5687592161059123,
+   "mcse_mean": 0.0034351968918967762,
+   "ess_bulk": 807.8872031041024,
+   "ess_tail": 1600.4014688170905,
+   "r_hat": 1.0041328342848077
+  },
+  "sigma": {
+   "mean": 0.4029237588405454,
+   "sd": 0.01927734119691565,
+   "hdi_3%": 0.3671273980804802,
+   "hdi_97%": 0.4400006900140103,
+   "mcse_mean": 0.0003595051137033135,
+   "ess_bulk": 2948.7480475192965,
+   "ess_tail": 2685.396208509707,
+   "r_hat": 1.0025542931494138
+  }
+ }
+}

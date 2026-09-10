@@ -1,5 +1,76 @@
 # AutoBayes status
 
+## M3a-1 slice (2026-09-10): one treatment-coded categorical predictor
+
+- Dispatched by the coordinator after the M2 acceptance
+  (`memory/reviews/2026-09-10-autobayes-m2-final-review.md`; dispatch
+  `memory/dispatches/2026-09-10-autobayes-m3a1-categorical.txt`). Branch
+  `m3a1/categorical-predictors` from `main` at `f8e116b` in the worktree
+  `projects/AutoBayes-worktrees/m3a1-categorical`; session `e5628a7d-e572-4bad-9feb-82ee8361c261`.
+  Decision and acceptance record `docs/m3a1-decision.md` committed at `f134f66` before any code,
+  after measuring formulae/Bambi's categorical behaviour (sorted levels unless an ordered
+  Categorical; dummies centred at their proportions; per-level array priors; unseen levels refused).
+- **M2 closure recorded here (per REPOSITORY_WORKFLOW):** PR https://github.com/andrew-dou/AutoBayes/pull/5
+  merged by andrew-dou at `f8e116bd76d0becaadebeab4b4ae75ce1aa09f32` (2026-09-10T19:33:43Z), verified
+  through GitHub before the transition. The M2 worktree's ignored candidate evidence (seven
+  `evidence-runs/` directories) was copied to
+  `iqss-research/artifacts/2026-09-10-autobayes-m2-worker-evidence/` with a checkpoint note; the
+  clean merged worktree `AutoBayes-worktrees/m2-binomial` was then removed and the branch
+  `m2/binomial-trials` deleted locally and on the remote; the local `main` ref was fast-forwarded to
+  `f8e116b`; the original M1 planning checkout at `projects/AutoBayes` (dirty) was left untouched.
+- **Delivered (this slice):** `categorical={column: reference}` on `ab.gaussian/bernoulli/binomial`
+  (string, pandas Categorical or integer-coded columns; an undeclared integer column stays numeric;
+  an undeclared label column is refused with the declaration to use); levels = sorted string labels
+  of the fitted rows (after the binomial zero-trial drop), reference required and validated,
+  unused declared categories reported and given no coefficient; treatment coding through
+  formulae with an ordered Categorical built by the library (reference first), the design
+  verified column by column against an independent one-hot construction, PyMC variable `z` with
+  dims `z_dim` and posterior rows `z[level]`; `Priors.b` per term or per level with every
+  missing/unknown/ambiguous/reference/dummy-label key refused; `model.coefficients` naming map;
+  `value_point` over design columns; `describe()` with the reference, contrast meaning,
+  proportion-centred intercept on the link scale (and the non-average warning for logit
+  families); predictions per level with unseen category levels refused for every kind and
+  `new_groups`; fit records carry the categorical specification. Version 0.3.0.
+- Wording carried: the M2 record's aside about the coefficient being "largest at n/4" corrected
+  (maximum at n/2; the measured error was worst at n/4); binomial `describe()` no longer says the
+  coefficient is computed as data.
+- **Tests** (clean locked environment, unique evidence directories): `tests/test_categorical.py`
+  78 passed (33 s): declaration/validation and dtypes, the design against an independent
+  construction (3 families x 3 term orders x 3 references x 2 centrings, plus two categorical
+  terms), density with and without the Jacobian and gradients (PyMC, JAX, central differences of
+  the extended reference) for all three families with term-wide and per-level priors, the
+  reference-change map (|det M| = 1; linear predictor and likelihood equal; independent priors a
+  different model; equal under the transformed joint prior), eleven prior refusals, `describe()`
+  and the fit record, predictions per level with unseen levels refused for every kind and
+  `new_groups`, binomial levels after the zero-trial drop, `value_point`. Fast suite **261 passed,
+  6 deselected** (272 s). Slow suite **6 passed** (43 s) including the prespecified categorical
+  recovery on both CPU samplers: 0 divergences, max R-hat 1.0066 (PyMC) and 1.0099851 (NumPyro, below
+  the 1.01 gate), min bulk ESS 669/761, every truth inside its 99 % HDI, backends within 4 combined
+  MCSE (largest ratio 0.43). Example on both backends with the comparison and the GPU refusal in
+  `docs/m3a1-evidence/`. One pre-code statement of the record was corrected during
+  implementation (the sign of the induced prior covariance under a change of reference), noted
+  in the record.
+- **Review repair (2026-09-10, `memory/reviews/2026-09-10-autobayes-m3a1-review.md`, regressions
+  `artifacts/2026-09-10-autobayes-m3a1-independent/test_label_integrity.py`, nine failures on
+  `393e4ec`).** Numeric categorical columns were cast through float64 and int64, merging codes above
+  2^53 and corrupting unsigned codes at or above 2^63 (a public three-level Gaussian model built two
+  levels); complex scalars in object or category containers bypassed the refusal. Repair record
+  committed before code (`04a4e2f`, with the before-evidence): one scalar label rule (exact integers
+  of any width, floats only if integral and at most 2^53, strings; booleans, complex, missing and
+  other types refused; integer/decimal-string equivalence intentional; mixed text/number columns and
+  colliding keys refused as ambiguous) applied to data, newdata, references, declared categories and
+  prior keys; containers read as Python objects; the model keeps the supplied column's labels and
+  checks the design against them; the test reference applies the same rule. Repair commit `3b711f2`.
+  Coordinator's regressions after the repair: 12 passed; new `tests/test_label_integrity.py` 36 passed;
+  fast suite **297 passed, 6 deselected (254 s)**; slow suite **6 passed (39 s)** (recovery unchanged; R-hat 1.0099851 for NumPyro is
+  below the 1.01 gate, not at it). Fresh evidence directories; committed evidence untouched.
+- PR: https://github.com/andrew-dou/AutoBayes/pull/6 (base `main`, author andrew-dou). Record
+  `f134f66`; implementation `d47ca7f`; reviewed head `393e4ec` (request changes); repair record
+  `04a4e2f`; repair `3b711f2`; this STATUS checkpoint follows it (CI runs recorded in the PR comment
+  and the final report). Left open for independent review; not merged by this session; the
+  M3a-1 worktree is kept until that review passes. Next approved increment after acceptance:
+  numeric-by-categorical interaction, in a separate PR.
+
 ## M2 slice (2026-09-10): grouped binomial counts, logit link
 
 - Approved by Andrew 2026-09-09 (evening; `iqss-research/plans/2026-09-09-autobayes-approval-brief.md`),

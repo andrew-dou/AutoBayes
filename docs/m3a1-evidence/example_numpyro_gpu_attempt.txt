@@ -1,0 +1,70 @@
+AutoBayes environment
+  python    : 3.11.0 (macOS-26.6.1-arm64-arm-64bit)
+  versions  : pymc 5.28.5, pytensor 2.38.3, bambi 0.17.2, formulae 0.6.2, arviz 0.23.4, numpyro 0.21.0, jax 0.10.2, jaxlib 0.10.2, numpy 2.4.6
+  jax       : cpu:cpu(id=0), cpu:cpu(id=1), cpu:cpu(id=2), cpu:cpu(id=3), cpu:cpu(id=4), cpu:cpu(id=5), cpu:cpu(id=6), cpu:cpu(id=7)
+  jax x64   : True
+
+240 rows, 12 sites; arms: {'control': 119, 'low': 75, 'high': 46}
+AutoBayes M0 model with categorical predictor(s)
+  formula   : y ~ x + treatment + (1 | site)
+  family    : gaussian, identity link
+  data      : n = 240 observations, J = 12 levels of site
+  levels    : 0=s00, 1=s01, 2=s02, 3=s03, 4=s04, 5=s05, 6=s06, 7=s07, 8=s08, 9=s09, 10=s10, 11=s11
+  treatment : categorical, treatment coding, reference 'control'; levels (sorted) control, high, low; coefficients b_treatment[high, low]
+              proportions among fitted rows: control 0.496, high 0.192, low 0.312
+
+Linear predictor
+  mu_i = a_c + (x_x - mean(x_x)) * b_x + (1[treatment_i = high] - p_treatment[high]) * b_treatment[high] + (1[treatment_i = low] - p_treatment[low]) * b_treatment[low] + u[site_i]
+  b_treatment[l] is the difference between level l and the reference 'control' on the response scale at the same predictors and group; the reference has no coefficient.
+  Predictors are centred at their sample means (center_predictors=True, as in
+  brms and Bambi); a dummy column's mean is its level's proportion p_z[l].
+  a_c is the expected response at the numeric predictor means and at the sample proportions of the categorical levels (group effect zero); the
+  prior on the intercept applies to a_c. The posterior reports the raw-scale
+  intercept a = a_c - sum_p mean(x_p) * b_p - sum_l p_z[l] * b_z[l], computed after sampling: the linear predictor at x = 0 and at the reference level.
+
+Group effects (non-centred)
+  u[j] = sd_site * z[j],  z[j] ~ Normal(0, 1),  j = 0..11
+
+Priors
+  a_c ~ Normal(mu=0, sigma=5)
+  b_x ~ Normal(mu=0, sigma=2)
+  b_treatment[high] ~ Normal(mu=0, sigma=2)
+  b_treatment[low] ~ Normal(mu=0, sigma=2)
+  sd_site ~ HalfNormal(sigma=1)
+  sigma ~ HalfNormal(sigma=1)
+
+Likelihood
+  y_i ~ Normal(mu_i, sigma)
+
+PyMC variables sampled (value space)
+  sigma_log__              log(sigma)
+  Intercept                a_c
+  x                        b_x
+  treatment                b_treatment[high, low] (vector; dims treatment_dim, posterior rows treatment[high], treatment[low])
+  1|site_sigma_log__       log(sd_site)
+  1|site_offset            z
+Deterministic: 1|site = u, mu = linear predictor
+
+design columns: ('x', 'treatment[high]', 'treatment[low]') | coefficients: (('x', 'x', None), ('treatment[high]', 'treatment', 0), ('treatment[low]', 'treatment', 1))
+first rows of the raw design (x, low, high):
+[['control' 1.703 0.0 0.0]
+ ['control' 1.344 0.0 0.0]
+ ['high' -2.406 1.0 0.0]
+ ['control' 0.968 0.0 0.0]
+ ['high' 0.554 1.0 0.0]]
+
+Traceback (most recent call last):
+  File "/Users/andrewdou/iqss-research/projects/AutoBayes-worktrees/m3a1-categorical/examples/m3a1_categorical.py", line 114, in <module>
+    main()
+  File "/Users/andrewdou/iqss-research/projects/AutoBayes-worktrees/m3a1-categorical/examples/m3a1_categorical.py", line 75, in main
+    fit = model.fit(backend=args.backend, device=args.device, chains=args.chains,
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/andrewdou/iqss-research/projects/AutoBayes-worktrees/m3a1-categorical/autobayes/model.py", line 428, in fit
+    return fit(self, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^
+  File "/Users/andrewdou/iqss-research/projects/AutoBayes-worktrees/m3a1-categorical/autobayes/inference.py", line 140, in fit
+    jax_device, default_method = resolve_jax_device(device, chains, notes)
+                                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/andrewdou/iqss-research/projects/AutoBayes-worktrees/m3a1-categorical/autobayes/inference.py", line 86, in resolve_jax_device
+    raise DeviceError(
+autobayes.inference.DeviceError: device='gpu' requested for backend='numpyro', but JAX sees no GPU. Visible devices: cpu:cpu(id=0), cpu:cpu(id=1), cpu:cpu(id=2), cpu:cpu(id=3), cpu:cpu(id=4), cpu:cpu(id=5), cpu:cpu(id=6), cpu:cpu(id=7). Install a CUDA-enabled jaxlib on a machine with an NVIDIA GPU, or pass device='cpu'. AutoBayes does not fall back to CPU silently.
