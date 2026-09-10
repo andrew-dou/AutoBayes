@@ -231,3 +231,103 @@ either backend. Thresholds and tolerances are not loosened.
   count 0; probabilities need no trials column; the GPU refusal on this machine is captured.
 - Built-in measurements (table above) were taken before the construction was chosen.
 - GPU execution: pending, not run.
+
+## Repair record (2026-09-10): the normalised density near the mode failed the tolerance
+
+**Finding (independent review, `memory/reviews/2026-09-10-autobayes-m2-review.md`, artifacts
+`artifacts/2026-09-10-autobayes-m2-independent/`).** `binomial_logit_logp` formed
+$\log\binom{n}{k}$ as a float64 difference of three `gammaln` values, each of magnitude
+$\sim n \ln n$, and then subtracted likelihood terms of magnitude $\sim n$. Near a mode the
+true log density is $O(-10)$ while the pieces are $O(10^{10})$, so the float64 spacing of
+the pieces ($\sim 10^{-6}$ at $n = 10^9$) becomes the absolute error of the result. Two-row
+intercept-only models, one row per group, $s_g = 1$, $z = 0$, Normal(0, 1.5) intercept
+prior, HalfNormal(1) SD prior, reference = `tests/reference_binomial.py` (60-digit
+`decimal`, Stirling `lnGamma` with a stated remainder), tolerance $\max(10^{-8}, 10^{-12}|v|)$:
+
+| $n$ | $k$ | $\eta$ | reference total | both paths | error |
+| --- | --- | --- | --- | --- | --- |
+| $10^9$ | $1$ | $-20.723$ | $-101.32223803876772$ | $-101.32223650953556$ | $1.53\times10^{-6}$ |
+| $10^9$ | $5\times10^8$ | $0$ | $-25.062920603102775$ | $-25.062917279025356$ | $3.32\times10^{-6}$ |
+| $10^9$ | $10^9-1$ | $+20.723$ | $-101.32223803876772$ | $-101.32223650953557$ | $1.53\times10^{-6}$ |
+| $2^{31}-2$ | $1$ | $-21.488$ | $-108.4914823522026$ | $-108.49147937122844$ | $2.98\times10^{-6}$ |
+| $2^{31}-2$ | $2^{30}-1$ | $0$ | $-25.827217362316176$ | $-25.82720618130807$ | $1.12\times10^{-5}$ |
+| $2^{31}-2$ | $2^{31}-3$ | $+21.488$ | $-108.4914823522026$ | $-108.49147937122844$ | $2.98\times10^{-6}$ |
+| $2^{31}-1$ | $1$ | $-21.488$ | $-108.49148235664967$ | $-108.49147937660685$ | $2.98\times10^{-6}$ |
+| $2^{31}-1$ | $2^{30}-1$ | $-9.3\times10^{-10}$ | $-25.827217362781838$ | $-25.82720904233102$ | $8.32\times10^{-6}$ |
+| $2^{31}-1$ | $2^{31}-2$ | $+21.488$ | $-108.49148235664967$ | $-108.49147937660685$ | $2.98\times10^{-6}$ |
+
+Nine of fifteen probed cases ($n \in \{10^3, 10^6, 10^9, 2^{31}-2, 2^{31}-1\}$, $k \in \{1, \lfloor n/2
+\rfloor, n-1\}$ at their modes) failed on each path; the $10^3$ and $10^6$ cases passed
+($1.4\times10^{-9}$ at $n = 10^6$, $k = n/2$, a margin of only seven). The reviewer's two
+standalone regressions fail on the reviewed head `49052ac`.
+
+**Why A5 passed.** The mixed-grid model put $k = 0$ and $k = n$ rows at the same $\eta$ as the
+interior rows, so at $\eta = 0$ the total density was $O(n)$ and the relative tolerance was
+thousands of times looser than the near-mode check the reference was written for. The
+mixed grid is kept, and per-row normalised checks and homogeneous near-mode models with
+non-trivial parameters are added (below), so that no large unrelated term can mask a
+small component.
+
+**Measured before choosing the repair (2026-09-10, scratch script, both paths, near-mode
+$\eta = \mathrm{logit}(k/n) + 10^{-3}$, one row).** With the coefficient computed accurately as
+data (Loader decomposition $n H(q) + c(n,k)$, `stirlerr` series) and the stable
+log-sigmoid likelihood terms:
+
+| $n$ | $k$ | coefficient error, `gammaln` difference | coefficient error, decomposition | value error | gradient error |
+| --- | --- | --- | --- | --- | --- |
+| $10^6$ | $n/2$ | $7.0\times10^{-10}$ | $3.1\times10^{-13}$ | $7.0\times10^{-11}$ | $2.4\times10^{-11}$ |
+| $10^6$ | $n-1$ | $1.7\times10^{-13}$ | $4.0\times10^{-10}$ | $4.0\times10^{-10}$ | $4\times10^{-17}$ |
+| $10^7$ | $n/2$ | $1.2\times10^{-8}$ | $6.2\times10^{-10}$ | $1.3\times10^{-9}$ | $2.9\times10^{-10}$ |
+| $10^7$ | $n-1$ | $1.5\times10^{-8}$ | $8.5\times10^{-9}$ | $8.5\times10^{-9}$ | $6\times10^{-17}$ |
+| $10^8$ | $n/2$ | $2.3\times10^{-7}$ | $8.9\times10^{-9}$ | $1.8\times10^{-8}$ (fail) | $2.0\times10^{-9}$ |
+| $10^9$ | $n/2$ | $2.1\times10^{-6}$ | $2.9\times10^{-8}$ | $3.0\times10^{-8}$ (fail) | $1.2\times10^{-8}$ (fail) |
+| $2^{31}-1$ | $2^{30}-1$ | $3.5\times10^{-6}$ | $5.6\times10^{-8}$ | $2.0\times10^{-7}$ (fail) | $6.4\times10^{-8}$ (fail) |
+
+Three float64 facts follow. (i) The coefficient must not be a `gammaln` difference; for
+$m = \min(k, n-k)$ small it must be the exact sum $\sum_{j=1}^{m}\log\frac{n-m+j}{j}$ (the
+entropy decomposition loses accuracy there: $8.5\times10^{-9}$ at $n = 10^7$, $k = n-1$), and
+for larger $m$ the decomposition with the `stirlerr` series is accurate to $\sim 10^{-12}$
+up to $10^7$. (ii) Even with an exact coefficient, the likelihood terms $k\,\mathrm{softplus}(-\eta)$
+and $(n-k)\,\mathrm{softplus}(\eta)$ are of magnitude $\sim n\ln 2$ near the mode, and their
+float64 spacing ($1.2\times10^{-10}$ at $n = 10^6$, $7.5\times10^{-9}$ at $10^8$) is an error
+floor of the combined value unless the deviance form $-n\,\mathrm{KL}(q\|p)$ is used instead.
+(iii) The gradient $k - n\,\mathrm{expit}(\eta)$ carries an intrinsic error $\sim n\,u\,p(1-p)$ from
+the float64 rounding of $\mathrm{expit}(\eta)$ ($u = 2^{-53}$), which no reformulation removes:
+$1.2\times10^{-8}$ at $n = 10^9$ and $6.4\times10^{-8}$ at $2^{31}-1$, above the tolerance
+floor at the mode where the true gradient is $\approx 0$.
+
+**Chosen repair (bounded).** (a) The coefficient is computed as data, per row, in
+`autobayes/likelihoods.py`: exact summation for $m \le 1000$, Loader decomposition with the
+`stirlerr` series for $m > 1000$; the likelihood keeps the stable log-sigmoid form. (b) The
+accepted count cap is lowered by the approved domain-reduction rule to $N_{\max} = 10^6$,
+the largest value of the acceptance grid at which every point passes on both paths, with a
+margin of at least 25 on values (worst measured $4\times10^{-10}$) and 400 on gradients.
+Exploration shows $10^7$ also passes at the probed points with a margin of about seven; it
+is not adopted because a single-digit margin does not cover libm differences across
+platforms. (c) The deviance form, which would allow $\sim 10^8$ before the gradient floor
+binds, is a larger change to the sampled graph on both paths (its own saturation regime,
+JAX gradient safety of the branch structure) and is recorded here as the route if a user
+need for counts above $10^6$ per row ever arises; it is not made in this slice.
+
+**Acceptance grid for the repair (both paths, values and full gradients, tolerance
+unchanged, reference error accounted for separately as before):**
+
+- $n \in \{1, 2, 10, 10^3, 10^5, N_{\max}-1, N_{\max}\}$, $N_{\max}+1$ refused;
+  $k \in \{0, 1, 2, 10, \lfloor n/4 \rfloor, \lfloor n/2 \rfloor, \lfloor 3n/4 \rfloor, n-2, n-1, n\}$ deduplicated;
+  $\eta$ at the A5 points and, for $0 < k < n$, at the mode $\mathrm{logit}(k/n)$ and at
+  offsets $\pm 10^{-3}, \pm 10^{-1}, \pm 1$ from it.
+- **Per-row normalised checks**: one model per $n$ with one row per $k$, each row its own
+  group; the per-row likelihood terms (`logp(sum=False)`) are compared row by row with the
+  reference row term, and the per-row derivatives are read off the offset gradient
+  components ($s_g = 1$, $z = 0$ make $\partial/\partial z_j$ the row-$j$ derivative exactly).
+- **Homogeneous near-mode models with non-trivial parameters**: all rows at one $(n, k)$
+  near the mode, with a slope on a varying predictor, $s_g \ne 1$ and $z \ne 0$ so rows sit at
+  different logits; full model density and full gradient on both paths.
+- The mixed-grid A5 check is kept on the new grid.
+- The reviewer's two-row near-mode construction at $N_{\max}-1$ and $N_{\max}$ passes on
+  both paths; the same construction at $10^9$ is refused by the cap.
+
+Wording fixed with the repair: the binomial centred intercept is the per-trial success
+log-odds, not the log-odds that a count equals 1; README and SKILL count three families;
+the package description names M2; the cap and precision statements say what was tested,
+not "exact for every finite input".
