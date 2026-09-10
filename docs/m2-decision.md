@@ -1,5 +1,12 @@
 # M2 decision record: grouped binomial counts, logit link
 
+> **Current contract (2026-09-10, after two review repairs).** Accepted counts are integers in
+> $[0, 10^6]$ per row (`autobayes.formula.COUNT_CAP`); the original default of $2^{31}-1$ in the
+> sections below is **historical** and was lowered by the domain-reduction rule (repair record).
+> The likelihood's binomial coefficient is a function of the evaluated value (correction record
+> at the end), computed inside the graph; the cap is a measured engineering boundary of the
+> tested evaluation, not a claim about what other formulations could reach.
+
 Date: 2026-09-10. Branch `m2/binomial-trials` from `main` at `4eee25c` (foundation merged at
 `8015374`). Written and committed before implementation. Source of the defaults: Andrew's
 approval (`iqss-research/plans/2026-09-09-autobayes-approval-brief.md`, 2026-09-09 evening) of
@@ -291,10 +298,13 @@ up to $10^7$. (ii) Even with an exact coefficient, the likelihood terms $k\,\mat
 and $(n-k)\,\mathrm{softplus}(\eta)$ are of magnitude $\sim n\ln 2$ near the mode, and their
 float64 spacing ($1.2\times10^{-10}$ at $n = 10^6$, $7.5\times10^{-9}$ at $10^8$) is an error
 floor of the combined value unless the deviance form $-n\,\mathrm{KL}(q\|p)$ is used instead.
-(iii) The gradient $k - n\,\mathrm{expit}(\eta)$ carries an intrinsic error $\sim n\,u\,p(1-p)$ from
-the float64 rounding of $\mathrm{expit}(\eta)$ ($u = 2^{-53}$), which no reformulation removes:
+(iii) The gradient as evaluated here, $k - n\,\mathrm{expit}(\eta)$, carries an error
+$\sim n\,u\,p(1-p)$ from the float64 rounding of $\mathrm{expit}(\eta)$ ($u = 2^{-53}$):
 $1.2\times10^{-8}$ at $n = 10^9$ and $6.4\times10^{-8}$ at $2^{31}-1$, above the tolerance
-floor at the mode where the true gradient is $\approx 0$.
+floor at the mode where the true gradient is $\approx 0$. This is a property of that
+evaluation, not of the problem: at $k = n/2$, for example, the derivative equals
+$-(n/2)\tanh(\eta/2)$, which subtracts nothing. The cap below is a measured boundary of the
+tested construction, not a claim that no construction could pass further.
 
 **Chosen repair (bounded).** (a) The coefficient is computed as data, per row, in
 `autobayes/likelihoods.py`: exact summation for $m \le 1000$, Loader decomposition with the
@@ -357,3 +367,73 @@ not "exact for every finite input".
   $3\times10^{-4}$ (within Monte Carlo noise), as expected for counts of at most 50 per row.
 - Unchanged: the sampled variables, priors, centring, zero-trial policy, prediction
   semantics, the Bernoulli family (no D8 change), and GPU status (pending).
+
+## Correction record (2026-09-10): the exposed distribution was normalised only at the observed outcome
+
+**Finding (independent review, `memory/reviews/2026-09-10-autobayes-m2-distribution-review.md`,
+artifacts `artifacts/2026-09-10-autobayes-m2-repair-independent/`; reproduced here on
+`d98b730` with the public API, both paths).** The previous repair passed $\log\binom{n}{k_{\rm obs}}$
+into the `CustomDist` as a fixed data parameter, so the RV's `logp(value)` used the observed
+outcome's coefficient for every `value`. For $n = 2$, $\eta = 0$, the masses over $k = 0, 1, 2$
+came out as $[0.25, 0.25, 0.25]$ (sum $0.75$) when $k_{\rm obs} \in \{0, 2\}$ and $[0.5, 0.5, 0.5]$
+(sum $1.5$) when $k_{\rm obs} = 1$, against the correct $[0.25, 0.5, 0.25]$; the random method
+still drew genuine binomial values, so `logp` and `random` described different
+distributions. Out-of-range or non-integral values passed to `pm.logp` returned finite
+numbers instead of zero mass. The parameter-space likelihood and gradients for the fitted
+observed data were correct (the coefficient is a constant in $\eta$ there), so this finding
+does not by itself make the reported posteriors or the recovery wrong; it makes the exposed
+PyMC distribution mis-specified for any other outcome (log-likelihood of new responses,
+reuse of the RV, generic predictive workflows).
+
+**Correction (bounded; decided before coding).** The coefficient becomes a function of the
+evaluated value inside the graph, on both paths, with no observed-outcome constant:
+
+$$\log p(v \mid n, \eta) = \begin{cases} \log\binom{n}{v} - v\,\mathrm{softplus}(-\eta) - (n - v)\,\mathrm{softplus}(\eta) & v \in \{0, 1, \dots, n\} \\ -\infty & \text{otherwise (negative, above } n\text{, or non-integral)} \end{cases}$$
+
+with $\log\binom{n}{v}$ evaluated symbolically as $0$ for $v \in \{0, n\}$ and otherwise by the
+decomposition $n H(v/n) + \tfrac12\log\frac{n}{2\pi v (n-v)} + \mathrm{stirlerr}(n) - \mathrm{stirlerr}(v)
+- \mathrm{stirlerr}(n-v)$, where $\mathrm{stirlerr}(x)$ is the series for $x \ge 16$ and
+$\ln\Gamma(x+1) - (x+\tfrac12)\ln x + x - \tfrac12\ln 2\pi$ (with `gammaln`) below. Every
+branch is evaluated on clipped arguments ($v$ and $n - v$ clipped to $[1, n]$) so that no
+branch produces NaN or infinity; the case selection is a `switch` on the actual value. The
+coefficient does not depend on $\eta$, so parameter gradients are unchanged from the
+repaired likelihood; the value is never differentiated. The exact-summation branch of the
+previous data-side helper cannot be expressed elementwise and is dropped: the measured
+error of the decomposition alone is $\le 4\times10^{-10}$ at $n \le 10^6$ (worst at $k = n - 1$;
+interior $\le 3\times10^{-13}$ at $10^6$), which is the value the cap decision already rested
+on, so the $10^6$ cap and its margins stand. `random` is unchanged. This keeps the
+inspectable-model contract (one normalised RV whose `logp` and `random` agree), downstream
+log-likelihood semantics, and the stable gradients; it is not a larger architecture change.
+
+**Acceptance for the correction (tests on the public API, `model.pymc_model`, both paths).**
+
+- N1. Support enumeration: for $n \in \{1, 2, 3, 5, 10, 25\}$ and $\eta \in \{0, \pm 0.7, \pm 3, -12\}$,
+  the pmf from a compiled function of a symbolic value equals the exact probabilities
+  $\binom{n}{k} p^k (1-p)^{n-k}$ computed independently from `math.comb` and a 60-digit
+  `decimal` expit (no SciPy) to $10^{-12}$ absolute, and sums to 1 within $10^{-12}$.
+- N2. Observed-outcome independence: for fixed $n$ and $\eta$, models built with each
+  possible $k_{\rm obs}$ give identical pmfs (to $10^{-14}$) and the correct one.
+- N3. Symbolic value after compilation: one compiled function of a value tensor is evaluated
+  repeatedly for every $k$ and again in a second pass; results identical to N1.
+- N4. Random against mass: $N = 20000$ draws from the same distribution (`.dist` at fixed
+  $n$, $\eta$) have per-outcome frequencies within Hoeffding's bound
+  $\sqrt{\ln(2 (n+1)/\delta)/(2N)}$ of the exact probabilities with $\delta = 10^{-6}$, and the
+  draw mean within the same bound of $n p$; recorded false-failure budget $10^{-6}$.
+- N5. Zero mass: `pm.logp` at $-1$, $n + 1$ and a non-integral value returns $-\infty$ on both
+  paths, for integer and float value tensors; valid values are unchanged.
+- N6. Everything from the repair record still passes: per-row terms and derivatives over the
+  acceptance grid, homogeneous near-mode models, the reviewer's two-row construction,
+  $n = 1$ equivalence with the Bernoulli family, expansion with aligned centring,
+  predictions, the $10^6$ cap and its refusals, and the CPU recovery.
+- N7. For the fitted data of the M2 example (counts $\le 50$), the observed-data log density
+  changes from the previous head by less than $10^{-11}$ (the exact-summation and the
+  decomposition coefficients agree to rounding at those counts); recorded, not re-sampled.
+
+Wording corrected with this record: the top of this file states the current $10^6$ cap and
+labels the $2^{31}-1$ default historical; the refusal message and SKILL no longer suggest
+splitting large denominators across rows (duplicating design rows changes the unweighted
+centring and therefore what the centred-intercept prior refers to, unless the centring is
+preserved or the prior transformed); the coefficient docstring states the measured
+$4\times10^{-10}$ / $1.2\times10^{-10}$ figures; and the gradient floor is described as a
+property of the tested evaluation $k - n\,\mathrm{expit}(\eta)$, not a universal one (at
+$k = n/2$, for example, the derivative equals $-(n/2)\tanh(\eta/2)$, which subtracts nothing).
