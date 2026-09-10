@@ -157,3 +157,43 @@ reports rather than renaming or loosening a tolerance.
 - D10 recovery: both CPU samplers, 4 x (1000 + 1000), seed 13: PyMC 0 divergences, max R-hat 1.0094889, min bulk ESS 520; NumPyro 0 divergences, max R-hat 1.0045411, min bulk ESS 662; all eight truths (raw intercept 1.0, x 0.5, z[b] -0.8, z[c] 0.6, x:z[b] 0.4, x:z[c] -0.7, sd 0.5, sigma 0.4) inside their 99 % HDIs on both backends; backends within 4 combined MCSE on every population mean (largest ratio 0.41). Raw results in `D10_interaction_recovery.json`, `D10_interaction_recovery_records.json` and `D10_interaction_agreement.json` of the slow run's evidence directory.
 - Example (`docs/m3a2-evidence/`): both backends recover the arm-specific slopes (control 0.54, low 0.75, high -0.42 for truths 0.5, 0.8, -0.3) and the arm contrasts; PyMC and NumPyro agree within 4 combined MCSE on all eight population means (largest ratio 0.26); the unfitted arm 'placebo' is refused; `--device gpu` raises `DeviceError` (captured). Files: `example_pymc_cpu.txt`, `example_numpyro_cpu.txt` (with the comparison), the two fit records, `example_numpyro_gpu_attempt.txt`, `independent_regressions.txt`.
 - Evidence directories of these runs: `evidence-runs/20260910T213233.367265Z-f0d229f12697-dirty-p57280-fc4e8d/` (fast, final) and `evidence-runs/20260910T212717.645617Z-f0d229f12697-dirty-p56976-4fbce1/` (slow; same library code, run before three refusal-message expectation edits in `tests/test_formula.py` and `tests/test_categorical.py`, whose earlier fast run `...-p56367-77a663/` had those three failures); earlier run directories untouched.
+
+## Repair record (2026-09-10): the one-interaction scope was not enforced; the categorical contrast wording; original-source oracles
+
+**Finding (independent review, `memory/reviews/2026-09-10-autobayes-m3a2-review.md`; extra checks
+`artifacts/2026-09-10-autobayes-m3a2-independent/test_iqss_m3a2_independent.py`: 12 original-input
+checks pass, 3 scope checks fail on `cc3081a`; reproduced here before any change,
+`docs/m3a2-evidence/scope-repair/before-cc3081a.txt`, pytest exit 1, "3 failed, 12 passed").**
+(1) `parse_formula` collected every distinct numeric-by-categorical interaction, so
+`y ~ x + w + z + x:z + w:z + (1 | g)` built in all three families although this slice
+advertises one interaction. (2) `describe()` kept the M3a-1 sentence "b_z[l] is the difference
+between level l and the reference at the same predictors and group" even when `z` interacts with
+`x`; with the interaction that difference is $\beta_\ell + x\,\delta_\ell$ and $\beta_\ell$ alone
+is the contrast at $x = 0$ (with $\beta = -0.2$, $\delta = 0.5$ the contrast at $x = 2$ is $+0.8$).
+(3) The density/finite-difference test passed `model.data` (the library's own fitted rows and
+recoded labels) to the reference, so a preprocessing mistake could have validated itself.
+
+**Repair (decided before coding).**
+
+1. **Scope guard.** After canonical expansion and duplicate detection, a model with more than one
+   distinct interaction is refused (`FormulaError` naming the interactions and this record),
+   whether the interactions share the numeric side (`x:z + x:w`), the categorical side
+   (`x:z + w:z`) or neither. No-interaction and single-interaction models, `x*z`, and every
+   existing refusal are unchanged. The refusal is a scope statement, not a claim that such models
+   are wrong.
+2. **Conditional contrast in `describe()`.** For a categorical term that interacts with a numeric
+   term, the explanation states that `b_z[l]` is the difference between level l and the reference
+   **at x = 0** (same group), that at another x the difference is `b_z[l] + x * b_x:z[l]`, on the
+   response scale (Gaussian) or the log-odds scale (Bernoulli, binomial); a categorical term without
+   an interaction keeps the constant-contrast sentence. Skill and example wording made consistent.
+3. **Original-source oracles.** The interaction density/gradient tests read the caller's original
+   frame and select the positive-trial rows themselves for the binomial family; the coordinator's
+   original-label checks (exact signed/unsigned large integer labels, explicit mathematical
+   reference, synthetic-posterior predictions) are incorporated as a repository test module,
+   together with the scope tests for shared numeric, shared categorical and disjoint sides in all
+   three families.
+
+**Acceptance.** E1 the coordinator's extra file passes unchanged (15 of 15); E2 the new module
+passes; E3 every earlier suite, gate and independent regression passes unchanged in fresh evidence
+directories, with the actual pytest exit codes and summaries recorded; E4 a nonzero-x numerical
+contrast check confirms the stated conditional contrast.
