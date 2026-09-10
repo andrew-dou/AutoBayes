@@ -63,9 +63,10 @@ uv run --no-sync python -c "import autobayes as ab; print(ab.format_environment(
 
    Tested stack (`pyproject.toml` pins it, `uv.lock` fixes the rest): Python 3.11,
    pymc 5.28.5, pytensor 2.38.3, bambi 0.17.2, formulae 0.6.2, arviz 0.23.4, numpyro
-   0.21.0, jax/jaxlib 0.10.2, numpy 2.4.6. Every number in `docs/` comes from this stack;
-   other versions are untested, not "probably fine". Do not upgrade to get past an error;
-   record the error and stop.
+   0.21.0, jax/jaxlib 0.10.2, numpy 2.4.6. Those are the versions the fit records in
+   `docs/` name; the lock's transitive versions were frozen on 2026-09-10 and were not
+   recorded for earlier runs. Other versions are untested, not "probably fine". Do not
+   upgrade to get past an error; record the error and stop.
 
 3. Three environment traps seen on this stack, and the fix for each:
    - `~/.pytensor` not writable (sandboxes, shared accounts): every model build fails
@@ -341,9 +342,13 @@ uv run --no-sync pytest tests -q -m "not slow"                       # fast chec
 uv run --no-sync pytest tests -q -m slow                             # three sampling checks, ~1 min
 ```
 
-Where evidence goes: a test run writes its JSON records and a `run.json` (environment,
-git head) to `evidence-runs/<UTC time>-<git head>/`, which is gitignored. The committed
-`docs/m*-evidence/` files are history; a rerun never rewrites them. To promote a run's
+Where evidence goes: a test run allocates its own directory
+`evidence-runs/<UTC time>-<git head>-p<pid>-<token>/` (gitignored) and writes its JSON
+records and a `run.json` (environment, git head, pid) there, each file once. Two runs
+never share a directory; `AUTOBAYES_EVIDENCE_DIR` names a parent for new run directories
+and is refused if it resolves into `docs/` or into an existing run. The committed
+`docs/m*-evidence/` files are history; a rerun never rewrites them, and
+`tests/test_evidence_provenance.py` checks their bytes against HEAD. To promote a run's
 records into the history, copy them under a new name with the decision record that
 explains them. Acceptance for the sampling checks is the criteria the tests assert
 (analytic z-scores, panel thresholds, truth inside the 94 % HDI, backends within

@@ -54,6 +54,37 @@
   and 2 CPU devices (2-core runner). The slow workflow has not been dispatched in CI.
 - Fix-up commit `72f0afe`: `autobayes.egg-info/` (created by the editable install) was in
   the first commit and is now gitignored and removed.
+- **Review repair (2026-09-10, `memory/reviews/2026-09-09-autobayes-foundation-review.md`).**
+  Both findings reproduced first on head `1a480ac` in a fake repository: two allocations at
+  the same head and second returned one directory and the second replaced the first
+  `run.json`; an `AUTOBAYES_EVIDENCE_DIR` pointing into `docs/m0-evidence` was accepted and
+  the historical `run.json` overwritten. Repair in `tests/evidence.py`: a run directory is
+  claimed atomically with `mkdir(exist_ok=False)` under
+  `<UTC time to the microsecond>-<git head>-p<pid>-<random token>` (collisions retried with a
+  new token); the override names a *parent* for new run directories, never a run; any parent
+  resolving (symlinks followed) into `docs/` or containing a `run.json` is refused with
+  `EvidenceDestinationError` before anything is created or written; evidence files are
+  written with exclusive create, so a second write to the same name fails and the first
+  survives. `tests/test_sampling.py` uses the exclusive writer and gained a slow test that
+  compares every committed evidence file's bytes with HEAD after sampling.
+  `tests/test_evidence_provenance.py` (13 tests) covers: same-instant same-head allocations
+  distinct with the first run's files byte-identical; 20 allocations without collision;
+  overrides into `docs/`, `docs/m0-evidence`, a not-yet-existing child of it, and a symlink
+  into it refused with the repository's file bytes unchanged; an override naming an existing
+  run refused with that run's bytes unchanged; an identical override reused on a retry
+  yields a second directory and preserves the first; `write_evidence` refuses overwrites and
+  unsafe names; the session's run directory is outside `docs/`; committed evidence bytes
+  equal HEAD. Executed before/after: the same assertions applied to the old allocation logic
+  fail for distinct directories, history refusal, history bytes and retry reuse, and pass on
+  the new one (scratch script, not committed). README and SKILL now attribute the three slow
+  passes to the local locked environment, state that the hosted slow workflow's execution
+  status is recorded here rather than assumed, and bound the lock claim to the versions the
+  fit records name (transitive versions were not recorded before 2026-09-10).
+- **Repair results (executed, clean locked environment, Python 3.11.0).** Targeted
+  regressions `tests/test_evidence_provenance.py`: 13 passed. Full fast suite **91 passed,
+  4 deselected** (64.3 s); slow suite **4 passed** (24.0 s, incl. the new history-bytes check);
+  run directories now look like `evidence-runs/20260910T030827.102547Z-1a480acd579f-dirty-p19739-487ea9/`.
+  Hosted CI on the repair head and the manual slow workflow: recorded below once run.
 - Docs: README install/test section and supported-path table; `SKILL.md` session start,
   handoff and failure table updated to the implemented behaviour.
 - Not in this slice: M2 and later; GPU runs; the Bernoulli boundary-form change (D8) is a

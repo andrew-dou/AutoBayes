@@ -89,9 +89,12 @@ showing you the pattern — tries to talk you out of needing it.
 
 ### Install and test (the pinned, tested stack)
 
-The versions in `pyproject.toml` and `uv.lock` are the ones every result in `docs/` was
-produced with (Python 3.11; pymc 5.28.5, pytensor 2.38.3, bambi 0.17.2, formulae 0.6.2,
-arviz 0.23.4, jax/jaxlib 0.10.2, numpyro 0.21.0, numpy 2.4.6). Anything else is untested.
+`pyproject.toml` pins the versions that the fit records under `docs/` name (Python 3.11;
+pymc 5.28.5, pytensor 2.38.3, bambi 0.17.2, formulae 0.6.2, arviz 0.23.4, jax/jaxlib 0.10.2,
+numpyro 0.21.0, numpy 2.4.6). `uv.lock` was frozen on 2026-09-10 from the environment that
+produced the foundation results; the earlier M0 and M1 records did not record transitive
+versions, so the lock is evidence for the new environment, not a reconstruction of the old
+one. Anything else is untested.
 
 ```bash
 git clone https://github.com/andrew-dou/AutoBayes && cd AutoBayes
@@ -103,17 +106,21 @@ uv run --no-sync python examples/m0_varying_intercept.py --backend numpyro --dev
 ```
 
 If `~/.pytensor` is not writable (sandboxes), set `PYTENSOR_FLAGS=base_compiledir=<writable dir>`.
-Test runs write candidate evidence to `evidence-runs/<UTC time>-<git head>/` (gitignored; a
-`run.json` records the environment and commit), never into the committed `docs/m*-evidence/`
-history. `AUTOBAYES_EVIDENCE_DIR` overrides the location; CI uses it.
+Each test run allocates its own directory `evidence-runs/<UTC time>-<git head>-p<pid>-<token>/`
+(gitignored; `run.json` records the environment and commit; files are written once, never
+replaced). `AUTOBAYES_EVIDENCE_DIR` names another *parent* for such directories (CI passes
+one); anything that resolves into `docs/` or into an existing run is refused before a byte is
+written, so reruns and retries cannot touch the committed `docs/m*-evidence/` history.
 
 ### Supported paths
 
 "CPU-validated" means the checks in `docs/m0-decision.md` / `docs/m1-decision.md` passed on
-the pinned stack, most recently in CI (`.github/workflows/ci.yml`, fast suite on every push
-and pull request) and in the manual slow workflow (`slow.yml`, the three sampling checks
-with their prespecified statistical criteria). "GPU-validated" means one executed run on
-a GPU matched the CPU posterior. Nothing here is a claim about other versions.
+the pinned stack: the fast suite in hosted CI (`.github/workflows/ci.yml`, every push and
+pull request) and the three sampling checks locally in the locked environment (2026-09-10;
+`docs/coordination/STATUS.md` records each run). The manual slow workflow (`slow.yml`)
+exists; its execution status is recorded in STATUS, not assumed here. "GPU-validated" means
+one executed run on a GPU matched the CPU posterior. Nothing here is a claim about other
+versions.
 
 | Family, formula | PyMC NUTS, CPU | JAX/NumPyro, CPU | JAX/NumPyro, GPU | Status |
 | --- | --- | --- | --- | --- |
