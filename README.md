@@ -17,7 +17,8 @@ Three parts:
   inspectable PyMC model through Bambi, requires explicit priors, samples on the CPU
   with PyMC's NUTS or through JAX/NumPyro with an explicit device choice, and returns
   posterior and predictive draws. Three families on one formula subset
-  `y ~ x + (1 | group)`: Gaussian (M0), Bernoulli with a logit link for a 0/1
+  `y ~ x + z + (1 | group)` with numeric and declared categorical predictors (M3a-1):
+  Gaussian (M0), Bernoulli with a logit link for a 0/1
   outcome (M1), and binomial counts `successes | trials(n)` with a logit link (M2);
   anything else is refused with an error naming the construct. See
   [Library](#library-milestones-m0-m1-and-m2) below.
@@ -86,7 +87,7 @@ Mid-project, the skills are symptom-triggered. When a gradient comes back `nan` 
 likelihood will not differentiate, `autobayes-custom-op` loads on its own and — before
 showing you the pattern — tries to talk you out of needing it.
 
-## Library (milestones M0, M1 and M2)
+## Library (milestones M0, M1, M2 and M3a-1)
 
 ### Install and test (the pinned, tested stack)
 
@@ -160,6 +161,13 @@ bfit = bmodel.fit(backend="pymc", seed=7)
 probs = bmodel.predict(bfit, newdata=new_df, kind="mean")        # p = P(y = 1)
 draws = bmodel.predict(bfit, newdata=new_df, kind="response", new_groups="population")  # p and 0/1 y
 
+# a categorical predictor: declare the column and its reference level; one coefficient per other level
+cpriors = ab.Priors(intercept=ab.Normal(0, 5), b={"x": ab.Normal(0, 2), "arm": ab.Normal(0, 2)},
+                    sd=ab.HalfNormal(1), sigma=ab.HalfNormal(1))     # or "arm": {"low": ..., "high": ...}
+amodel = ab.gaussian("y ~ x + arm + (1 | site)", df, cpriors, categorical={"arm": "control"})
+amodel.coefficients                                               # (("x","x",None), ("arm[high]","arm",0), ("arm[low]","arm",1))
+amodel.predict(afit, newdata=new_df, kind="mean")                 # an arm that was not fitted is refused
+
 # counts with known denominators: k successes of n trials per row, brms syntax
 cmodel = ab.binomial("deaths | trials(patients) ~ x + (1 | clinic)", counts_df, bpriors)
 cfit = cmodel.fit(backend="pymc", seed=7)
@@ -176,8 +184,11 @@ built-in one is floored at machine epsilon for large logits, and the obvious PyM
 PyTensor alternatives have NaN gradients on one path or the other) and `docs/m2-decision.md`
 (binomial: accepted data policies, the log-sigmoid density chosen after measuring the
 built-ins, the high-precision reference and its error budget, the validated count and
-logit domain); the acceptance checks and their evidence are in those records and
-`docs/m0-evidence/`, `docs/m1-evidence/`, `docs/m2-evidence/`.
+logit domain) and `docs/m3a1-decision.md` (categorical predictors: declaration, level
+order, reference validation, prior forms, the naming map, what the centred intercept is
+with dummies, and what a change of reference level does and does not preserve); the
+acceptance checks and their evidence are in those records and `docs/m0-evidence/`,
+`docs/m1-evidence/`, `docs/m2-evidence/`, `docs/m3a1-evidence/`.
 `docs/coordination/STATUS.md` is the live milestone status; the roadmap is
 `docs/coordination/NEXT_MILESTONES_PROPOSAL.md`. No speed claim is made anywhere.
 

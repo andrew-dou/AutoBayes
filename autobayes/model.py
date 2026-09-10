@@ -3,7 +3,8 @@
 Three families. ``"gaussian"`` (M0): identity link, residual SD ``sigma``. ``"bernoulli"``
 (M1): logit link, ``p = expit(eta)``, no residual scale. ``"binomial"`` (M2): logit link on
 ``successes | trials(n)``, counts. All share the right-hand side ``[1 +] x1 [+ x2 ...] +
-(1 | group)``, centring, and non-centred group effects.
+(1 | group)`` with numeric terms and, since M3a-1, treatment-coded categorical terms declared
+with ``categorical={column: reference}``; centring; non-centred group effects.
 """
 from __future__ import annotations
 
@@ -12,7 +13,9 @@ from dataclasses import dataclass
 import numpy as np
 import pandas as pd
 
-from autobayes.formula import FormulaError, ModelSpec, binomial_counts, parse_formula
+from collections.abc import Mapping
+
+from autobayes.formula import Categorical, FormulaError, ModelSpec, binomial_counts, categorical_labels, parse_formula
 from autobayes.priors import Priors
 
 
@@ -21,15 +24,21 @@ class Design:
     """What the model was actually fit to. All arrays are dense NumPy."""
 
     y: np.ndarray                 # (n,)
-    X_raw: np.ndarray             # (n, p) predictors as given, no intercept column
-    X_model: np.ndarray           # (n, p) what multiplies the slopes: centred if center_predictors
-    x_means: np.ndarray           # (p,) column means of X_raw (zeros if not centred)
-    predictors: tuple[str, ...]
+    X_raw: np.ndarray             # (n, P) design columns as given (numeric values, 0/1 dummies), no intercept
+    X_model: np.ndarray           # (n, P) what multiplies the coefficients: centred if center_predictors
+    x_means: np.ndarray           # (P,) column means of X_raw (zeros if not centred); a dummy's mean is its level's proportion
+    predictors: tuple[str, ...]   # numeric predictor terms
     Z: np.ndarray                 # (n, J) one-hot group indicators
     group_index: np.ndarray       # (n,) integer index into levels
     levels: tuple[str, ...]       # sorted level labels; column j of Z is levels[j]
     centered: bool
     trials: np.ndarray | None = None   # binomial only: (n,) trials per fitted row; y holds the successes
+    columns: tuple[str, ...] = ()      # design-column labels in order (``x``, ``z[b]``, ...); == predictors when numeric only
+    categoricals: tuple[Categorical, ...] = ()
+
+    def __post_init__(self):
+        if not self.columns:
+            object.__setattr__(self, "columns", tuple(self.predictors))
 
     @property
     def n(self) -> int:
@@ -62,7 +71,8 @@ class Model:
     """
 
     def __init__(self, formula: str, data: pd.DataFrame, priors: Priors, *,
-                 family: str = "gaussian", center_predictors: bool = True):
+                 family: str = "gaussian", center_predictors: bool = True,
+                 categorical: Mapping[str, object] | None = None):
         import bambi as bmb
 
         if family not in _FAMILIES:
@@ -73,9 +83,9 @@ class Model:
         self.dropped_rows: tuple[int, ...] = ()     # binomial: positional indices of zero-trial rows
         self.warnings: list[str] = []
 
-        spec0 = parse_formula(formula, None, family)
-        priors.validate(spec0.predictors, family)
-        cols = [spec0.response, *spec0.predictors, spec0.group] + ([spec0.trials] if spec0.trials else [])
+        spec0 = parse_formula(formula, None, family, categorical)
+        priors.validate(spec0, family)                  # structure now; per-level coverage once levels are known
+        cols = [spec0.response, *spec0.terms, spec0.group] + ([spec0.trials] if spec0.trials else [])
         missing = [c for c in cols if c not in data.columns]
         if missing:
             raise FormulaError(f"columns not in data: {missing}")
@@ -87,6 +97,21 @@ class Model:
             df[spec0.response] = k
             df[spec0.trials] = n
             if zero.size:
+                for cat in spec0.categoricals:              # levels are those of the fitted rows
+                    labels, _ = categorical_labels(f"categorical predictor {cat.name!r}", df[cat.name])
+                    kept = set(labels[n > 0].tolist())
+                    only_dropped = sorted(set(labels[zero].tolist()) - kept)
+                    if cat.reference in only_dropped:
+                        raise FormulaError(
+                            f"reference level {cat.reference!r} of {cat.name!r} occurs only in zero-trial rows, "
+                            f"which are dropped before the design is built; observed levels among the fitted "
+                            f"rows: {sorted(kept)}"
+                        )
+                    if only_dropped:
+                        self.warnings.append(
+                            f"level(s) {only_dropped} of {cat.name!r} occur only in the {zero.size} dropped "
+                            "zero-trial row(s) and are not levels of the fitted model; predictions for them are refused."
+                        )
                 df = df.drop(index=zero).reset_index(drop=True)
             k_kept = df[spec0.response].to_numpy()
             n_kept = df[spec0.trials].to_numpy()
@@ -98,10 +123,21 @@ class Model:
                     "is set by the intercept prior's tail and the data's extent. Check prior sensitivity "
                     "(refit with a wider and a narrower intercept prior and report the movement)."
                 )
-        self.spec: ModelSpec = parse_formula(formula, df, family)   # levels over the fitted rows
+        self.spec: ModelSpec = parse_formula(formula, df, family, categorical)   # levels over the fitted rows
         df[self.spec.group] = df[self.spec.group].astype(str)
         if family == "bernoulli":
             df[self.spec.response] = df[self.spec.response].astype(int)
+        for cat in self.spec.categoricals:
+            # An ORDERED Categorical with the reference first: formulae keeps this order (it sorts
+            # anything else) and takes the first category as the treatment reference; built from
+            # the observed labels only, so an unused declared category never becomes a zero column.
+            labels, _ = categorical_labels(f"categorical predictor {cat.name!r}", df[cat.name])
+            df[cat.name] = pd.Categorical(labels, categories=list(cat.categories), ordered=True)
+            if cat.unused:
+                self.warnings.append(
+                    f"declared categories {list(cat.unused)} of {cat.name!r} do not occur in the fitted rows: "
+                    "they get no coefficient, and predictions for them are refused."
+                )
         self.data = df
 
         if family == "bernoulli":
@@ -116,7 +152,7 @@ class Model:
             bambi_family = family
         self.bambi_model = bmb.Model(
             self.spec.bambi_formula, self.data, family=bambi_family,
-            priors=priors.to_bambi(self.spec.predictors, self.spec.group, family),
+            priors=priors.to_bambi(self.spec, self.spec.group, family),
             noncentered=True, center_predictors=self.center_predictors,
         )
         self.bambi_model.build()
@@ -138,11 +174,41 @@ class Model:
         common = comp.design.common
         group = comp.design.group
         names = list(common.terms)
-        if names[0] != "Intercept" or names[1:] != list(self.spec.predictors):
+        if names[0] != "Intercept" or names[1:] != list(self.spec.terms):
             raise RuntimeError(f"unexpected common terms from Bambi: {names}")
         Xfull = np.asarray(common.design_matrix, dtype=float)
         if not np.allclose(Xfull[:, 0], 1.0):
             raise RuntimeError("Bambi's first common column is not an intercept column")
+        # Verify Bambi's columns one by one against the data: numeric columns as given, a
+        # categorical term as one dummy per non-reference level in the recorded order.
+        col = 1
+        for term in self.spec.terms:
+            if term not in self.spec.categorical_names:
+                if not np.array_equal(Xfull[:, col], self.data[term].to_numpy(dtype=float)):
+                    raise RuntimeError(f"Bambi's column for {term!r} does not equal the data column")
+                col += 1
+                continue
+            cat = self.spec.categorical(term)
+            bterm = common.terms[term]
+            if getattr(bterm, "kind", None) != "categoric" or list(bterm.levels) != list(cat.coefficients) \
+                    or list(bterm.labels) != list(cat.columns):
+                raise RuntimeError(
+                    f"Bambi coded {term!r} as {getattr(bterm, 'kind', None)} with levels {getattr(bterm, 'levels', None)} "
+                    f"and labels {getattr(bterm, 'labels', None)}; expected treatment coding with reference "
+                    f"{cat.reference!r}, levels {list(cat.coefficients)} and labels {list(cat.columns)}"
+                )
+            labels = self.data[term].astype(str).to_numpy()
+            for j, lvl in enumerate(cat.coefficients):
+                if not np.array_equal(Xfull[:, col + j], (labels == lvl).astype(float)):
+                    raise RuntimeError(f"Bambi's dummy column {cat.columns[j]!r} is not the indicator of level {lvl!r}")
+            if not np.array_equal(Xfull[:, col:col + len(cat.coefficients)].sum(1) + (labels == cat.reference), np.ones(len(labels))):
+                raise RuntimeError(f"the dummies of {term!r} and the reference indicator do not partition the rows")
+            coords = [str(c) for c in self.pymc_model.coords.get(f"{term}_dim", ())]
+            if coords != list(cat.coefficients):
+                raise RuntimeError(f"PyMC coordinates {term}_dim = {coords} differ from the coefficient levels {list(cat.coefficients)}")
+            col += len(cat.coefficients)
+        if col != Xfull.shape[1]:
+            raise RuntimeError(f"Bambi's common design has {Xfull.shape[1] - 1} columns, expected {col - 1}")
         X_raw = Xfull[:, 1:]
         term = group.terms[self.spec.group_term]
         levels = tuple(str(v) for v in term.groups)
@@ -163,7 +229,8 @@ class Model:
         trials = np.asarray(self.data[self.spec.trials], dtype=np.int64) if self.spec.trials else None
         return Design(y=y, X_raw=X_raw, X_model=X_model, x_means=x_means,
                       predictors=self.spec.predictors, Z=Z, group_index=group_index,
-                      levels=levels, centered=self.center_predictors, trials=trials)
+                      levels=levels, centered=self.center_predictors, trials=trials,
+                      columns=self.spec.columns, categoricals=self.spec.categoricals)
 
     # -- naming ------------------------------------------------------------------------
     @property
@@ -185,24 +252,32 @@ class Model:
             "linpred": _FAMILIES[self.family][0],
             "mean": "mu" if self.family == "gaussian" else "p",
             "y": self.spec.response if self.spec.trials is None else f"p({self.spec.response}, {self.spec.trials})",
-            **{f"b:{p}": p for p in self.spec.predictors},
+            **{f"b:{p}": p for p in self.spec.terms},
         }
         if self.family == "gaussian":
             out["sigma"] = "sigma"
             out["mu"] = "mu"
         return out
 
+    @property
+    def coefficients(self) -> tuple[tuple[str, str, int | None], ...]:
+        """``(design column, PyMC variable, index into that variable or None)`` in design order:
+        ``("x", "x", None)`` for a numeric slope, ``("z[b]", "z", 0)`` for a dummy coefficient
+        (the variable ``z`` has dims ``z_dim`` with the coefficient levels as coordinates)."""
+        return self.spec.column_terms
+
     def value_point(self, *, intercept: float, b, sd: float, z, sigma: float | None = None) -> dict[str, np.ndarray]:
         """A point in PyMC's sampled (value) space, from natural-scale quantities.
 
         ``intercept`` is the *model* intercept (at the predictor means when centred),
-        ``b`` the slopes in predictor order, ``sd`` the group SD, ``z`` the J standard
-        normal offsets, ``sigma`` the residual SD (Gaussian only). Scales are stored on the
-        log scale because that is what PyMC samples.
+        ``b`` the coefficients in design-column order (``model.coefficients``: numeric slopes
+        and dummy coefficients), ``sd`` the group SD, ``z`` the J standard normal offsets,
+        ``sigma`` the residual SD (Gaussian only). Scales are stored on the log scale because
+        that is what PyMC samples.
         """
         b = np.atleast_1d(np.asarray(b, dtype=float))
-        if b.shape != (len(self.spec.predictors),):
-            raise ValueError(f"b must have {len(self.spec.predictors)} entries")
+        if b.shape != (len(self.spec.columns),):
+            raise ValueError(f"b must have {len(self.spec.columns)} entries, one per design column {list(self.spec.columns)}")
         z = np.asarray(z, dtype=float)
         if z.shape != (self.design.J,):
             raise ValueError(f"z must have {self.design.J} entries")
@@ -214,8 +289,12 @@ class Model:
                  n["offset"]: z}
         if sigma is not None:
             point[f"{n['sigma']}_log__"] = np.asarray(np.log(float(sigma)))
-        for i, p in enumerate(self.spec.predictors):
-            point[p] = np.asarray(b[i])
+        for i, (col, term, j) in enumerate(self.coefficients):
+            if j is None:
+                point[term] = np.asarray(b[i])
+            else:
+                point.setdefault(term, np.zeros(len(self.spec.categorical(term).coefficients)))
+                point[term][j] = b[i]
         expected = {v.name for v in self.pymc_model.value_vars}
         if set(point) != expected:
             raise RuntimeError(f"value names {sorted(point)} do not match PyMC's {sorted(expected)}")
@@ -224,10 +303,17 @@ class Model:
     # -- description -------------------------------------------------------------------
     def describe(self) -> str:
         s, d, pr = self.spec, self.design, self.priors
-        slopes = pr.slope_priors(s.predictors)
-        xs = " + ".join(
-            (f"(x_{p} - mean(x_{p})) * b_{p}" if d.centered else f"x_{p} * b_{p}") for p in s.predictors
-        )
+        coef = pr.coefficient_priors(s)
+        parts = []
+        for term in s.terms:
+            if term in s.categorical_names:
+                cat = s.categorical(term)
+                for lvl in cat.coefficients:
+                    ind = f"1[{term}_i = {lvl}]"
+                    parts.append(f"({ind} - p_{term}[{lvl}]) * b_{term}[{lvl}]" if d.centered else f"{ind} * b_{term}[{lvl}]")
+            else:
+                parts.append(f"(x_{term} - mean(x_{term})) * b_{term}" if d.centered else f"x_{term} * b_{term}")
+        xs = " + ".join(parts)
         gaussian = self.family == "gaussian"
         binomial = self.family == "binomial"
         lp = "mu" if gaussian else "eta"
@@ -240,15 +326,30 @@ class Model:
                          + (f" (positions {list(self.dropped_rows)[:10]}{'...' if len(self.dropped_rows) > 10 else ''})"
                             if self.dropped_rows else ""))
         lines = [
-            f"AutoBayes {tag} model",
+            f"AutoBayes {tag} model" + (" with categorical predictor(s)" if s.categoricals else ""),
             f"  formula   : {s.formula}",
             f"  family    : {self.family}, {self.link} link",
             data_line,
             f"  levels    : {', '.join(f'{j}={l}' for j, l in enumerate(d.levels))}",
+        ]
+        for cat in s.categoricals:
+            labels = self.data[cat.name].astype(str).to_numpy()
+            props = ", ".join(f"{l} {np.mean(labels == l):.3f}" for l in cat.levels)
+            lines += [
+                f"  {cat.name:<10}: categorical, treatment coding, reference {cat.reference!r}; levels (sorted) "
+                f"{', '.join(cat.levels)}; coefficients b_{cat.name}[{', '.join(cat.coefficients)}]"
+                + (f"; unused declared categories {list(cat.unused)}" if cat.unused else ""),
+                f"              proportions among fitted rows: {props}",
+            ]
+        lines += [
             "",
             "Linear predictor",
             f"  {lp}_i = {a}" + (f" + {xs}" if xs else "") + f" + u[{s.group}_i]",
         ]
+        for cat in s.categoricals:
+            lines += [f"  b_{cat.name}[l] is the difference between level l and the reference {cat.reference!r} "
+                      f"on the {'response' if gaussian else 'log-odds'} scale at the same predictors and group; "
+                      f"the reference has no coefficient."]
         if binomial:
             lines += [f"  P(success) = p_i = expit(eta_i); {s.response}_i ~ Binomial({s.trials}_i, p_i); eta is on the log-odds scale."]
         elif not gaussian:
@@ -256,14 +357,23 @@ class Model:
         if d.centered:
             what = ("expected response" if gaussian else
                     "per-trial success log-odds" if binomial else "log-odds of y = 1")
+            where = "at the predictor means" if not s.categoricals else \
+                "at the numeric predictor means and at the sample proportions of the categorical levels"
             lines += [
                 "  Predictors are centred at their sample means (center_predictors=True, as in",
-                f"  brms and Bambi). a_c is the {what} at the predictor means; the",
+                f"  brms and Bambi)" + ("; a dummy column's mean is its level's proportion p_z[l]." if s.categoricals else "."),
+                f"  a_c is the {what} {where} (group effect zero); the",
                 "  prior on the intercept applies to a_c. The posterior reports the raw-scale",
-                "  intercept a = a_c - sum_p mean(x_p) * b_p, computed after sampling.",
+                "  intercept a = a_c - sum_p mean(x_p) * b_p" + (" - sum_l p_z[l] * b_z[l]" if s.categoricals else "")
+                + ", computed after sampling"
+                + (": the linear predictor at x = 0 and at the reference level." if s.categoricals else "."),
             ]
+            if s.categoricals and not gaussian:
+                lines += ["  expit(a_c) is the probability at that proportion-weighted predictor; it is NOT the",
+                          "  average probability across the levels (the link is nonlinear)."]
         else:
-            lines += ["  Predictors are not centred (center_predictors=False); a is the raw-scale intercept."]
+            lines += ["  Predictors are not centred (center_predictors=False); a is the raw-scale intercept"
+                      + (" (x = 0, reference level, group effect zero)." if s.categoricals else ".")]
         lines += [
             "",
             "Group effects (non-centred)",
@@ -272,7 +382,7 @@ class Model:
             "Priors" + ("" if gaussian else " (a_c and b on the logit scale)"),
             f"  {a} ~ {pr.intercept}",
         ]
-        lines += [f"  b_{p} ~ {slopes[p]}" for p in s.predictors]
+        lines += [f"  b_{col} ~ {coef[col]}" for col in s.columns]
         lines += [f"  sd_{s.group} ~ {pr.sd}"]
         if gaussian:
             lines += [f"  sigma ~ {pr.sigma}", "", "Likelihood", "  y_i ~ Normal(mu_i, sigma)"]
@@ -281,13 +391,11 @@ class Model:
                 "", "Likelihood",
                 f"  log p({s.response}_i | {s.trials}_i, eta_i) = log C({s.trials}_i, {s.response}_i)"
                 f" - {s.response}_i softplus(-eta_i) - ({s.trials}_i - {s.response}_i) softplus(eta_i)",
-                "  with log C computed accurately as data and a softplus whose gradient is finite on both",
-                "  the PyTensor and the JAX path. Validated (docs/m2-decision.md) for counts up to 1e6 per",
-                "  row at logits to 1e6 against a 60-digit reference; larger counts are refused. Zero-trial",
-                "  rows are dropped before centring; predictors are centred at the means of the fitted rows.",
+                "  with log C computed inside the graph from the evaluated value and a softplus whose gradient",
+                "  is finite on both the PyTensor and the JAX path. Validated (docs/m2-decision.md) for counts",
+                "  up to 1e6 per row at logits to 1e6 against a 60-digit reference; larger counts are refused.",
+                "  Zero-trial rows are dropped before centring; predictors are centred at the means of the fitted rows.",
             ]
-            for w in self.warnings:
-                lines += ["", "WARNING: " + w]
         else:
             lines += [
                 "", "Likelihood", "  y_i ~ Bernoulli(p_i), sampled as log p(y_i | eta_i) = y_i * eta_i - softplus(eta_i)",
@@ -295,6 +403,8 @@ class Model:
                 "  PyTensor and the JAX path (autobayes/likelihoods.py; Bambi's built-in bernoulli family",
                 "  is not used because its likelihood is floored at machine epsilon for |eta| > ~37).",
             ]
+        for w in self.warnings:
+            lines += ["", "WARNING: " + w]
         lines += ["", "PyMC variables sampled (value space)"]
         n = self.names
         roles = {n["intercept"]: "a_c" if d.centered else "a",
@@ -302,6 +412,8 @@ class Model:
                  n["offset"]: "z"}
         if gaussian:
             roles[f"{n['sigma']}_log__"] = "log(sigma)"
+        for cat in s.categoricals:
+            roles[cat.name] = f"b_{cat.name}[{', '.join(cat.coefficients)}] (vector; dims {cat.name}_dim, posterior rows {', '.join(cat.columns)})"
         for v in self.pymc_model.value_vars:
             lines.append(f"  {v.name:<24} {roles.get(v.name, f'b_{v.name}')}")
         lines.append(f"Deterministic: {n['group_effect']} = u, {n['linpred']} = linear predictor"
@@ -321,16 +433,20 @@ class Model:
         return predict(self, fit_result, **kwargs)
 
 
-def gaussian(formula: str, data: pd.DataFrame, priors: Priors, *, center_predictors: bool = True) -> Model:
-    """Build the M0 Gaussian varying-intercept model (identity link, residual SD ``sigma``)."""
-    return Model(formula, data, priors, family="gaussian", center_predictors=center_predictors)
+def gaussian(formula: str, data: pd.DataFrame, priors: Priors, *, center_predictors: bool = True,
+             categorical: Mapping[str, object] | None = None) -> Model:
+    """Build the M0 Gaussian varying-intercept model (identity link, residual SD ``sigma``).
+    ``categorical={column: reference_level}`` declares treatment-coded categorical predictors."""
+    return Model(formula, data, priors, family="gaussian", center_predictors=center_predictors, categorical=categorical)
 
 
-def bernoulli(formula: str, data: pd.DataFrame, priors: Priors, *, center_predictors: bool = True) -> Model:
+def bernoulli(formula: str, data: pd.DataFrame, priors: Priors, *, center_predictors: bool = True,
+              categorical: Mapping[str, object] | None = None) -> Model:
     """Build the M1 Bernoulli varying-intercept model (logit link, response strictly 0/1)."""
-    return Model(formula, data, priors, family="bernoulli", center_predictors=center_predictors)
+    return Model(formula, data, priors, family="bernoulli", center_predictors=center_predictors, categorical=categorical)
 
 
-def binomial(formula: str, data: pd.DataFrame, priors: Priors, *, center_predictors: bool = True) -> Model:
+def binomial(formula: str, data: pd.DataFrame, priors: Priors, *, center_predictors: bool = True,
+             categorical: Mapping[str, object] | None = None) -> Model:
     """Build the M2 binomial varying-intercept model: ``successes | trials(n) ~ x + (1 | group)``."""
-    return Model(formula, data, priors, family="binomial", center_predictors=center_predictors)
+    return Model(formula, data, priors, family="binomial", center_predictors=center_predictors, categorical=categorical)

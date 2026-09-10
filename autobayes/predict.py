@@ -34,14 +34,37 @@ import xarray as xr
 
 from scipy.special import expit
 
-from autobayes.formula import FormulaError, check_counts, reject_complex
+from autobayes.formula import FormulaError, categorical_labels, check_counts, reject_complex
 
 _NEW_GROUPS = {"error", "resample_observed", "population"}
 
 
+def raw_design(model, df: pd.DataFrame) -> np.ndarray:
+    """The (n, P) raw design of ``df`` in ``model.coefficients`` order: numeric columns as given,
+    one 0/1 indicator per coefficient level of a categorical term (reference rows all zero)."""
+    cols = []
+    for term in model.spec.terms:
+        if term in model.spec.categorical_names:
+            cat = model.spec.categorical(term)
+            labels = df[term].astype(str).to_numpy()
+            cols.extend((labels == lvl).astype(float) for lvl in cat.coefficients)
+        else:
+            cols.append(df[term].to_numpy(dtype=float))
+    return np.column_stack(cols) if cols else np.zeros((len(df), 0))
+
+
+def _coefficient_draws(post, model):
+    """(chain, draw, P) posterior draws of the coefficients in design-column order."""
+    parts = []
+    for term in model.spec.terms:
+        arr = post[term].to_numpy()
+        parts.append(arr[..., None] if term not in model.spec.categorical_names else arr)
+    return np.concatenate(parts, axis=-1) if parts else None
+
+
 def _check_newdata(model, newdata: pd.DataFrame, *, need_trials: bool = False) -> pd.DataFrame:
     s = model.spec
-    cols = [*s.predictors, s.group]
+    cols = [*s.terms, s.group]
     if need_trials:
         if s.trials not in newdata.columns:
             raise FormulaError(
@@ -59,6 +82,17 @@ def _check_newdata(model, newdata: pd.DataFrame, *, need_trials: bool = False) -
         reject_complex(f"newdata column {c!r}", df[c])
         if not pd.api.types.is_numeric_dtype(df[c]):
             raise FormulaError(f"newdata column {c!r} must be numeric")
+    for cat in s.categoricals:
+        labels, _ = categorical_labels(f"newdata column {cat.name!r}", df[cat.name])
+        unseen = sorted(set(labels.tolist()) - set(cat.levels))
+        if unseen:
+            raise FormulaError(
+                f"newdata has levels of the categorical predictor {cat.name!r} that were not in the fitted rows: "
+                f"{unseen}; fitted levels {list(cat.levels)} (reference {cat.reference!r}). A categorical "
+                "predictor has a coefficient only for its fitted levels; it is not a grouping factor, so "
+                "new_groups does not apply to it."
+            )
+        df[cat.name] = pd.Categorical(labels, categories=list(cat.categories), ordered=True)
     if need_trials:
         df[s.trials] = check_counts(f"newdata trials {s.trials!r}", df[s.trials])
     df[s.group] = df[s.group].astype(str)
@@ -79,11 +113,11 @@ def _predict_by_hand(model, idata, df: pd.DataFrame | None, kind: str, seed, new
     n = model.names
     rng = np.random.default_rng(seed)
     a = post[n["intercept"]].to_numpy()                         # (chain, draw) raw-scale intercept
-    b = np.stack([post[p].to_numpy() for p in model.spec.predictors], axis=-1) if model.spec.predictors else None
+    b = _coefficient_draws(post, model)                         # (chain, draw, P) or None
     sd = post[n["sd"]].to_numpy()
     u = post[n["group_effect"]].to_numpy()                      # (chain, draw, J)
     levels = list(model.design.levels)
-    X = df[list(model.spec.predictors)].to_numpy(dtype=float)  # raw scale: a is raw-scale intercept
+    X = raw_design(model, df)                                   # raw scale: a is raw-scale intercept
     mu = np.repeat(a[..., None], len(df), axis=-1)
     if b is not None:
         mu = mu + np.einsum("cdp,np->cdn", b, X)

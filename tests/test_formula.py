@@ -43,7 +43,7 @@ def test_data_validation():
     df = simulate()
     with pytest.raises(ab.FormulaError, match="not in data"):
         ab.parse_formula("y ~ z + (1 | g)", df)
-    with pytest.raises(ab.FormulaError, match="categorical predictors are not supported"):
+    with pytest.raises(ab.FormulaError, match="declared categorical with its reference level"):
         ab.parse_formula("y ~ g + (1 | g2)", df.assign(g2=df.g))
     with pytest.raises(ab.FormulaError, match="missing values"):
         ab.parse_formula("y ~ x + (1 | g)", df.assign(x=df.x.where(df.index > 0)))

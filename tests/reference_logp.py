@@ -47,9 +47,44 @@ def prior_logpdf(name: str, params: dict, x: float) -> float:
     raise ValueError(name)
 
 
-def build_design(data: pd.DataFrame, response: str, predictors: list[str], group: str, center: bool):
+def _labels(s: pd.Series) -> np.ndarray:
+    """String labels of a categorical column, integers in decimal form (the library's rule)."""
+    if pd.api.types.is_numeric_dtype(s) and not isinstance(s.dtype, pd.CategoricalDtype):
+        return np.array([str(int(v)) for v in s.to_numpy()], dtype=object)
+    return np.array([str(v) for v in s.astype(object)], dtype=object)
+
+
+def design_columns(data: pd.DataFrame, predictors: list[str], categorical: dict | None = None) -> list[str]:
+    """Design-column labels in formula order: a numeric term as itself, a categorical term as
+    ``z[level]`` for every sorted level except the reference (treatment coding)."""
+    categorical = categorical or {}
+    cols = []
+    for term in predictors:
+        if term in categorical:
+            levels = sorted(set(_labels(data[term]).tolist()))
+            cols.extend(f"{term}[{l}]" for l in levels if l != str(categorical[term]))
+        else:
+            cols.append(term)
+    return cols
+
+
+def build_design(data: pd.DataFrame, response: str, predictors: list[str], group: str, center: bool,
+                 categorical: dict | None = None):
+    """``predictors`` are the formula's predictor terms in order; ``categorical`` maps a term to
+    its reference level. Dummies are 0/1 indicators of the non-reference levels; centring
+    subtracts every column's mean (a dummy's mean is the level's proportion)."""
+    categorical = categorical or {}
     y = data[response].to_numpy(dtype=float)
-    X = data[list(predictors)].to_numpy(dtype=float).reshape(len(y), len(predictors))
+    cols = []
+    for term in predictors:
+        if term in categorical:
+            lab = _labels(data[term])
+            for l in sorted(set(lab.tolist())):
+                if l != str(categorical[term]):
+                    cols.append((lab == l).astype(float))
+        else:
+            cols.append(data[term].to_numpy(dtype=float))
+    X = np.column_stack(cols) if cols else np.zeros((len(y), 0))
     xbar = X.mean(0) if center else np.zeros(X.shape[1])
     levels = sorted(data[group].astype(str).unique())
     gidx = np.array([levels.index(v) for v in data[group].astype(str)])
@@ -57,12 +92,14 @@ def build_design(data: pd.DataFrame, response: str, predictors: list[str], group
 
 
 def reference_logp(point: dict, data: pd.DataFrame, *, response: str, predictors: list[str],
-                   group: str, priors: dict, center: bool = True, jacobian: bool = True) -> float:
-    """``point`` holds a_c, b (array), log_sigma, log_sd, z (array).
+                   group: str, priors: dict, center: bool = True, jacobian: bool = True,
+                   categorical: dict | None = None) -> float:
+    """``point`` holds a_c, b (array, one entry per design column), log_sigma, log_sd, z (array).
 
-    ``priors`` maps 'intercept', 'b' (dict by predictor), 'sd', 'sigma' to (name, params).
+    ``priors`` maps 'intercept', 'b' (dict by design column), 'sd', 'sigma' to (name, params).
     """
-    y, Xc, _, gidx, levels = build_design(data, response, predictors, group, center)
+    y, Xc, _, gidx, levels = build_design(data, response, predictors, group, center, categorical)
+    columns = design_columns(data, predictors, categorical)
     a, b = float(point["a_c"]), np.atleast_1d(point["b"])
     log_sigma, log_sd = float(point["log_sigma"]), float(point["log_sd"])
     z = np.asarray(point["z"], dtype=float)
@@ -73,7 +110,7 @@ def reference_logp(point: dict, data: pd.DataFrame, *, response: str, predictors
     lp = np.sum(stats.norm.logpdf(y, loc=mu, scale=sigma))
     lp += np.sum(stats.norm.logpdf(z, 0.0, 1.0))
     lp += prior_logpdf(*priors["intercept"], a)
-    for i, p in enumerate(predictors):
+    for i, p in enumerate(columns):
         lp += prior_logpdf(*priors["b"][p], b[i])
     lp += prior_logpdf(*priors["sd"], sd)
     lp += prior_logpdf(*priors["sigma"], sigma)
@@ -105,7 +142,8 @@ def conditional_gaussian_posterior(data, *, response, predictors, group, center,
 
 
 def reference_logp_bernoulli(point: dict, data: pd.DataFrame, *, response: str, predictors: list[str],
-                             group: str, priors: dict, center: bool = True, jacobian: bool = True) -> float:
+                             group: str, priors: dict, center: bool = True, jacobian: bool = True,
+                             categorical: dict | None = None) -> float:
     """M1 reference: Bernoulli likelihood with a logit link, same structure as ``reference_logp``.
 
     ``point`` holds a_c, b (array), log_sd, z (array); there is no residual scale. The
@@ -114,7 +152,8 @@ def reference_logp_bernoulli(point: dict, data: pd.DataFrame, *, response: str, 
     """
     from scipy.special import log_expit
 
-    y, Xc, _, gidx, levels = build_design(data, response, predictors, group, center)
+    y, Xc, _, gidx, levels = build_design(data, response, predictors, group, center, categorical)
+    columns = design_columns(data, predictors, categorical)
     assert set(np.unique(y)) <= {0.0, 1.0}
     a, b = float(point["a_c"]), np.atleast_1d(point["b"])
     log_sd = float(point["log_sd"])
@@ -126,7 +165,7 @@ def reference_logp_bernoulli(point: dict, data: pd.DataFrame, *, response: str, 
     lp = np.sum(y * log_expit(eta) + (1.0 - y) * log_expit(-eta))
     lp += np.sum(stats.norm.logpdf(z, 0.0, 1.0))
     lp += prior_logpdf(*priors["intercept"], a)
-    for i, p in enumerate(predictors):
+    for i, p in enumerate(columns):
         lp += prior_logpdf(*priors["b"][p], b[i])
     lp += prior_logpdf(*priors["sd"], sd)
     if jacobian:

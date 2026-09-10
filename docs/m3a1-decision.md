@@ -127,9 +127,12 @@ row $a' = a + \beta_{r'}$; $|\det M| = 1$ in both cases (computed in the test, n
   $\theta' = M\theta$ the linear predictor, hence the likelihood of every family, is identical.
 - **Model invariance (does not hold under independent priors).** If $\beta \sim N(m, S)$ with
   $S$ diagonal, the induced prior of $\beta'$ is $N(M_\beta m, M_\beta S M_\beta^\top)$ whose
-  off-diagonal entries equal $-s_{r'}^2 \ne 0$ (and in the uncentred case the intercept is
-  coupled with $\beta_{r'}$). A model written with independent priors in the new coding is
-  therefore a different model with a different posterior, except in measure-zero cases.
+  off-diagonal entries equal $+s_{r'}^2 \ne 0$ (every $\beta'_\ell$ contains $-\beta_{r'}$; the
+  sign was written as negative in the pre-code version of this record and corrected when
+  the test computed the covariance), and in the uncentred case the intercept is coupled with
+  $\beta_{r'}$ through $\mathrm{Cov}(a', \beta'_\ell) = -s_{r'}^2$. A model written with independent
+  priors in the new coding is therefore a different model with a different posterior, except
+  in measure-zero cases.
 - **Posterior invariance (holds only under the transformed joint prior).** With the entire
   joint prior transformed (multivariate normal with mean $M\mu$ and covariance $M \Sigma
   M^\top$, including the intercept coupling when uncentred) the posterior densities at
@@ -200,3 +203,19 @@ accurately as data"; it is computed inside the graph since the M2 correction.
 If Bambi's design or naming for an ordered Categorical differs from the map above in any
 tested case, or the density check fails on either path, the slice stops and reports rather
 than papering over it with a rename or a looser tolerance.
+
+## Executed results (2026-09-10, clean locked environment, Python 3.11.0, macOS arm64)
+
+- Measured first (scratch probes, recorded above): formulae sorts string and unordered
+  Categorical levels; an ordered Categorical keeps its order with the first category as the
+  reference and keeps unused categories as zero columns; Bambi centres dummies at their
+  proportions (2e-16); per-level array priors match SciPy; unseen levels are refused by
+  Bambi's `predict`. The kill criterion was not triggered: every tested design and name
+  matched the map.
+- `tests/test_categorical.py`: 78 passed (33 s). Fast suite: 261 passed, 6 deselected (272 s). Slow suite: 6 passed (43 s).
+- C10 recovery: both CPU samplers, 4 x (1000 + 1000), seed 11: PyMC 0 divergences, max R-hat 1.0066, min bulk ESS 669; NumPyro 0 divergences, max R-hat 1.0100 (at the gate), min bulk ESS 761; every truth (raw intercept 1.0, x 0.5, z[b] -0.8, z[c] 0.6, sd 0.5, sigma 0.4) inside its 99 % HDI on both backends (the intercept posterior mean 0.84 sits where the realised mean of the ten group effects puts it); backends within 4 combined MCSE on every population mean (largest ratio 0.43). Raw results in `C10_categorical_recovery.json`, `C10_categorical_recovery_records.json` and `C10_categorical_agreement.json` of the slow run's evidence directory.
+- Example (`docs/m3a1-evidence/`): both backends recover the arm contrasts (treatment[high] 0.92, treatment[low] -0.63 for truths 0.9 and -0.6); PyMC and NumPyro agree within 4 combined MCSE on all six population means (largest ratio 0.39); the unfitted arm 'placebo' is refused; `--device gpu` raises `DeviceError` on this machine (captured). Files: `example_pymc_cpu.txt`, `example_numpyro_cpu.txt` (with the comparison), the two fit records, `example_numpyro_gpu_attempt.txt`.
+- Corrections to the pre-code text of this record made during implementation: the sign of the
+  induced covariance under a change of reference (now $+s_{r'}^2$ between dummies, $-s_{r'}^2$
+  intercept coupling when uncentred); nothing else in the accepted defaults changed.
+- Evidence directories of these runs: `evidence-runs/20260910T201758.793519Z-f134f6681885-dirty-p46904-eeda91/` (fast, final) and `evidence-runs/20260910T201242.053154Z-f134f6681885-dirty-p46734-a6732f/` (slow; run on the same library code before the one test-expectation edit in `tests/test_formula.py`, whose earlier fast run `...-p46534-dd7ec8/` had that single failure); earlier run directories untouched.

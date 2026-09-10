@@ -163,3 +163,47 @@ def test_binomial_recovery_both_backends(evidence_dir):
     summaries["agreement"] = c
     write_evidence(evidence_dir, "M2_B1_recovery.json", json.dumps(summaries, indent=1, default=str))
     assert c["agree"], ab.format_comparison(c)
+
+
+@pytest.mark.slow
+def test_categorical_recovery_both_backends(evidence_dir):
+    """C10 (docs/m3a1-decision.md): Gaussian y ~ x + z + (1 | g), one categorical predictor with unequal
+    level proportions, prespecified design, seed and gates; both CPU samplers. One recovery, not calibration."""
+    from tests.test_categorical import BETA, LEVELS, PROPS, TRUTH
+    rng = np.random.default_rng(11)
+    n, J = 300, 10
+    z = rng.choice(LEVELS, size=n, p=PROPS)
+    g = np.array([f"g{i % J:02d}" for i in range(n)]); rng.shuffle(g)
+    x = rng.normal(size=n)
+    u = rng.normal(0, TRUTH["sd"], J)
+    y = TRUTH["a"] + TRUTH["bx"] * x + np.array([BETA[v] for v in z]) + u[[int(s[1:]) for s in g]] + rng.normal(0, TRUTH["sigma"], n)
+    df = pd.DataFrame({"y": y, "x": x, "z": z, "g": g})
+    coverage = pd.crosstab(df.g, df.z)
+    assert coverage.shape == (J, len(LEVELS)) and (coverage > 0).all().all(), coverage     # every level in every group
+    priors = ab.Priors(intercept=ab.Normal(0, 5), b=ab.Normal(0, 2), sd=ab.HalfNormal(1), sigma=ab.HalfNormal(1))
+    m = ab.gaussian("y ~ x + z + (1 | g)", df, priors, categorical={"z": "a"})
+    truth = {"Intercept": TRUTH["a"], "x": TRUTH["bx"], "z[b]": BETA["b"], "z[c]": BETA["c"], "1|g_sigma": TRUTH["sd"], "sigma": TRUTH["sigma"]}
+    results, records = {}, {}
+    for backend in ["pymc", "numpyro"]:
+        fit = m.fit(backend=backend, device="cpu", chains=4, draws=1000, tune=1000, seed=11, target_accept=0.9)
+        p = panel(fit.idata)
+        s = az.summary(fit.idata, var_names=["Intercept", "x", "z", "1|g_sigma", "sigma"], hdi_prob=0.99, round_to="none")
+        rec = ab.fit_record(m, fit, panel=p)
+        records[backend] = rec
+        rows = {}
+        for name, r in s.iterrows():
+            rows[name] = {"mean": float(r["mean"]), "sd": float(r["sd"]), "hdi_0.5%": float(r["hdi_0.5%"]), "hdi_99.5%": float(r["hdi_99.5%"]),
+                          "ess_bulk": float(r["ess_bulk"]), "r_hat": float(r["r_hat"]), "truth": truth[name],
+                          "inside_99": bool(r["hdi_0.5%"] <= truth[name] <= r["hdi_99.5%"])}
+        results[backend] = {"panel": {"values": {k: (float(v) if v is not None else None) for k, v in p["values"].items()},
+                                      "status": dict(p["status"])}, "population": rows, "report": fit.report()}
+    write_evidence(evidence_dir, "C10_categorical_recovery.json", json.dumps(results, indent=1))
+    write_evidence(evidence_dir, "C10_categorical_recovery_records.json", json.dumps(records, indent=1))
+    for backend, res in results.items():
+        assert res["panel"]["values"]["divergences"] == 0, (backend, res["panel"])
+        assert all(r["r_hat"] <= 1.01 for r in res["population"].values()), (backend, res["population"])
+        assert all(r["ess_bulk"] >= 400 for r in res["population"].values()), (backend, res["population"])
+        assert all(r["inside_99"] for r in res["population"].values()), (backend, res["population"])
+    comparison = ab.compare_records(records["pymc"], records["numpyro"])
+    write_evidence(evidence_dir, "C10_categorical_agreement.json", json.dumps(comparison, indent=1))
+    assert comparison["agree"], comparison
