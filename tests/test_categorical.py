@@ -82,7 +82,7 @@ def test_declaration_and_validation():
     with pytest.raises(ab.FormulaError, match="boolean"):
         build("gaussian", d, G_PRIORS, categorical={"z": True})
     d = df.copy(); d["z"] = d["z"].map({"a": 1.0, "b": 1.5, "c": 3.0})
-    with pytest.raises(ab.FormulaError, match="non-integral"):
+    with pytest.raises(ab.FormulaError, match="must be integral"):
         build("gaussian", d, G_PRIORS, categorical={"z": 1})
     d = df.copy(); d["z"] = d["z"].map({"a": 1 + 0j, "b": 2 + 0j, "c": 3 + 0j})
     with pytest.raises(ab.FormulaError, match="complex"):

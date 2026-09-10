@@ -173,7 +173,13 @@ model = ab.gaussian("y ~ x + arm + (1 | site)", df, priors, categorical={"arm": 
 `categorical` names the column and its **reference level**; both are required. The
 levels are the distinct values of the fitted rows as string labels in sorted order (a
 pandas Categorical's own order is not used, and its declared categories that never
-occur are reported and get no coefficient). Each non-reference level gets one dummy
+occur are reported and get no coefficient). Labels are formed value by value with no
+float intermediate: integers of any width keep their exact decimal form (`int64`,
+`uint64`, nullable and object columns alike), floats are accepted only when integral and
+at most 2**53 in magnitude, strings are themselves; an integer and its decimal string are
+the same label (`categorical={"z": 1}` and `{"z": "1"}` name the same level). Booleans,
+complex values, missing values, larger or fractional floats, and a column that mixes
+text labels with numeric codes are refused before any model is built. Each non-reference level gets one dummy
 column `arm[level]` and one coefficient: the difference between that level and the
 reference on the link scale (response scale for Gaussian, log-odds for Bernoulli and
 binomial) at the same predictors and group. The posterior variable is `arm` with the

@@ -14,6 +14,7 @@ refused with an error naming the construct, rather than silently built.
 from __future__ import annotations
 
 import re
+import math
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 
@@ -196,27 +197,52 @@ def _normalise_categorical(categorical, terms: list[str], response: str, group: 
             raise FormulaError(
                 f"categorical predictor {name!r} needs an explicit reference level: categorical={{{name!r}: <level>}}"
             )
-        out.append(Categorical(name=name, reference=_label(ref)))
+        out.append(Categorical(name=name, reference=_scalar(f"categorical predictor {name!r}", ref, where="reference level")))
     return tuple(c for t in terms for c in out if c.name == t)          # formula order
 
 
+_FLOAT_EXACT = 2 ** 53          # float64 represents every integer up to here exactly
+
+
 def _label(v) -> str:
-    """The string label of one categorical value (integers as their decimal form)."""
+    """The string label of one categorical value (docs/m3a1-decision.md, repair record).
+
+    Integers of any width and sign map to their exact decimal string; floats only when finite,
+    integral and at most 2**53 in magnitude; strings are themselves. Booleans, complex numbers,
+    bytes, missing values and every other type are refused. No float intermediate anywhere."""
     if isinstance(v, (bool, np.bool_)):
         raise FormulaError("boolean values are not accepted as categorical labels; recode them explicitly")
     if isinstance(v, (int, np.integer)):
         return str(int(v))
     if isinstance(v, (float, np.floating)):
-        if not np.isfinite(v) or float(v) != int(v):
+        if not np.isfinite(v):
+            raise FormulaError(f"{v!r} is not a finite categorical value")
+        if float(v) != math.floor(float(v)):
             raise FormulaError(f"categorical values must be integral or labels, got {v!r}")
+        if abs(float(v)) > _FLOAT_EXACT:
+            raise FormulaError(
+                f"float categorical value {v!r} exceeds 2**53 in magnitude, beyond which float64 does not represent "
+                "integers exactly; store large codes as integers (int64/uint64/object) or as strings"
+            )
         return str(int(v))
-    return str(v)
+    if isinstance(v, str):
+        return str(v)
+    if isinstance(v, (complex, np.complexfloating)):
+        raise FormulaError(f"complex value {v!r} is not accepted as a categorical label")
+    if v is None or v is pd.NA or v is pd.NaT:
+        raise FormulaError("missing value is not accepted as a categorical label")
+    raise FormulaError(f"unsupported categorical value type {type(v).__name__} ({v!r}); use integers or strings")
+
+
+def _kind(v) -> str:
+    return "text" if isinstance(v, str) else "number"
 
 
 def categorical_labels(label: str, s: pd.Series) -> tuple[np.ndarray, tuple[str, ...]]:
-    """String labels of a categorical predictor column, checked before any coding, and the
-    column's declared-but-absent categories (pandas Categorical only). Integer-valued numeric
-    columns get decimal labels; fractional, boolean and complex columns are refused."""
+    """String labels of a categorical predictor column, checked scalar by scalar before any
+    coding (``_label``), and the column's declared-but-absent categories (pandas Categorical
+    only). Containers are read as Python objects, which is exact for every integer width and
+    for nullable types; a column mixing text labels with numeric codes is refused as ambiguous."""
     reject_complex(label, s)
     if pd.api.types.is_bool_dtype(s):
         raise FormulaError(
@@ -225,26 +251,31 @@ def categorical_labels(label: str, s: pd.Series) -> tuple[np.ndarray, tuple[str,
         )
     declared: tuple[str, ...] = ()
     if isinstance(s.dtype, pd.CategoricalDtype):
-        declared = tuple(_label(c) for c in s.cat.categories)
-        values = s.astype(object)
-    elif pd.api.types.is_numeric_dtype(s):
-        v = s.to_numpy()
-        if not np.all(np.isfinite(v.astype(float))):
-            raise FormulaError(f"{label} has a non-finite value; categorical codes must be finite integers")
-        vf = v.astype(float)
-        if not np.all(np.mod(vf, 1.0) == 0.0):
-            raise FormulaError(
-                f"{label} has a non-integral value ({vf[np.mod(vf, 1.0) != 0.0][0]!r}); a numeric column "
-                "declared categorical must hold integer codes"
-            )
-        values = pd.Series(vf.astype(np.int64), index=s.index).astype(object)
-    else:
-        values = s.astype(object)
-    if values.isna().any():
+        declared = tuple(_scalar(label, c, where="declared category") for c in s.cat.categories)
+        if len(set(declared)) != len(declared):
+            raise FormulaError(f"{label} has declared categories that collide after normalisation: {list(declared)}")
+        if len({_kind(c) for c in s.cat.categories}) > 1:
+            raise FormulaError(f"{label} mixes text labels and numeric codes in its declared categories; recode it explicitly")
+    values = s.astype(object)
+    na = pd.isna(values.to_numpy())
+    if na.any():
         raise FormulaError(f"{label} has missing values; drop or impute them explicitly before fitting.")
-    labels = np.array([_label(v) for v in values], dtype=object)
+    raw = values.tolist()
+    labels = np.array([_scalar(label, v) for v in raw], dtype=object)
+    if len({_kind(v) for v in raw}) > 1:
+        raise FormulaError(
+            f"{label} mixes text labels and numeric codes (for example a string '1' next to an integer 1), which "
+            "would silently merge under label normalisation; recode the column to one kind"
+        )
     unused = tuple(c for c in declared if c not in set(labels.tolist()))
     return labels, unused
+
+
+def _scalar(label: str, v, *, where: str = "value") -> str:
+    try:
+        return _label(v)
+    except FormulaError as e:
+        raise FormulaError(f"{label}: {where} {v!r} refused: {e}") from None
 
 
 def parse_formula(formula: str, data: pd.DataFrame | None = None, family: str = "gaussian",

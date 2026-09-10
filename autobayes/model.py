@@ -127,11 +127,13 @@ class Model:
         df[self.spec.group] = df[self.spec.group].astype(str)
         if family == "bernoulli":
             df[self.spec.response] = df[self.spec.response].astype(int)
+        self.original_labels: dict[str, np.ndarray] = {}     # labels of the SUPPLIED column, fitted rows, before any recoding
         for cat in self.spec.categoricals:
             # An ORDERED Categorical with the reference first: formulae keeps this order (it sorts
             # anything else) and takes the first category as the treatment reference; built from
             # the observed labels only, so an unused declared category never becomes a zero column.
             labels, _ = categorical_labels(f"categorical predictor {cat.name!r}", df[cat.name])
+            self.original_labels[cat.name] = labels
             df[cat.name] = pd.Categorical(labels, categories=list(cat.categories), ordered=True)
             if cat.unused:
                 self.warnings.append(
@@ -197,7 +199,9 @@ class Model:
                     f"and labels {getattr(bterm, 'labels', None)}; expected treatment coding with reference "
                     f"{cat.reference!r}, levels {list(cat.coefficients)} and labels {list(cat.columns)}"
                 )
-            labels = self.data[term].astype(str).to_numpy()
+            labels = self.original_labels[term]                        # the supplied values' labels, not the recoded column
+            if not np.array_equal(labels, self.data[term].astype(str).to_numpy()):
+                raise RuntimeError(f"the recoded column {term!r} does not reproduce the supplied labels")
             for j, lvl in enumerate(cat.coefficients):
                 if not np.array_equal(Xfull[:, col + j], (labels == lvl).astype(float)):
                     raise RuntimeError(f"Bambi's dummy column {cat.columns[j]!r} is not the indicator of level {lvl!r}")

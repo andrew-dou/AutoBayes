@@ -48,10 +48,20 @@ def prior_logpdf(name: str, params: dict, x: float) -> float:
 
 
 def _labels(s: pd.Series) -> np.ndarray:
-    """String labels of a categorical column, integers in decimal form (the library's rule)."""
-    if pd.api.types.is_numeric_dtype(s) and not isinstance(s.dtype, pd.CategoricalDtype):
-        return np.array([str(int(v)) for v in s.to_numpy()], dtype=object)
-    return np.array([str(v) for v in s.astype(object)], dtype=object)
+    """String labels of a categorical column: integers (any width) and integral floats as their
+    exact decimal string via Python int, strings as themselves; read as Python objects, never
+    through float64 (the library's contract, written independently here)."""
+    out = []
+    for v in s.astype(object).tolist():
+        if isinstance(v, str):
+            out.append(v)
+        elif isinstance(v, (int, np.integer)) and not isinstance(v, (bool, np.bool_)):
+            out.append(str(int(v)))
+        elif isinstance(v, (float, np.floating)) and float(v).is_integer():
+            out.append(str(int(v)))
+        else:
+            raise ValueError(f"reference labels: unsupported value {v!r}")
+    return np.array(out, dtype=object)
 
 
 def design_columns(data: pd.DataFrame, predictors: list[str], categorical: dict | None = None) -> list[str]:

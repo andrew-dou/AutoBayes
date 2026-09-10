@@ -136,10 +136,10 @@ class Priors:
             keyed: dict[str, Prior] = {}
             for k, v in entry.items():
                 try:
-                    from autobayes.formula import _label
-                    lab = _label(k)
-                except Exception as e:            # bool / fractional keys
-                    raise PriorError(f"prior key {k!r} for {term!r} is not a level label: {e}") from e
+                    from autobayes.formula import FormulaError, _label
+                    lab = _label(k)               # the same scalar rule as the data (no float intermediate)
+                except FormulaError as e:         # bool / complex / fractional / large-float keys
+                    raise PriorError(f"prior key {k!r} for {term!r} is not a level label: {e}") from None
                 if lab in keyed:
                     raise PriorError(f"ambiguous prior keys for {term!r}: more than one key maps to level {lab!r}")
                 keyed[lab] = v
