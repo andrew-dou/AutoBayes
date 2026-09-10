@@ -10,7 +10,21 @@
   Session `e5628a7d-e572-4bad-9feb-82ee8361c261`. Depends on PR #3 (M1), still open.
   PR: https://github.com/andrew-dou/AutoBayes/pull/4. PR #3 was merged by the coordinator
   (`main` at `52d2b61` contains `bd63348`), so PR #4 was retargeted to `main` on 2026-09-10.
-  Left open for the coordinator's review; not merged.
+  **Merged by the coordinator: merge commit `8015374` on `main`** (head `626ce24`).
+- **Hosted slow workflow, first execution (2026-09-10, after the merge put `slow.yml` on
+  the default branch):** run 34439415443 on `main` at `8015374`, `workflow_dispatch`,
+  ubuntu-latest, locked install: **4 passed, 91 deselected in 99.7 s**, whole run 2.25
+  minutes, artifact `slow-evidence-34439415443-1` (6 KB) uploaded, same versions as the
+  local environment report. The README's "CPU-validated" definition now holds for both
+  suites on the hosted runner as well as locally.
+- **Cleanup (per `REPOSITORY_WORKFLOW.md`):** the foundation worktree
+  `projects/AutoBayes-worktrees/foundation-cpu-checks` (clean, merged, no job attached) was
+  removed and the branch `foundation/reproducible-cpu-checks` deleted locally and on the
+  remote after this checkpoint was pushed. The M1 checkout at `projects/AutoBayes` and the
+  `m1/bernoulli-varying-intercept` branch were left to the coordinator, as instructed. The
+  locked environment is rebuilt in any checkout with `uv sync --locked --extra jax --extra dev`.
+- Next: M2 binomial counts, after the coordinator's review of this merged slice, using the
+  approved defaults recorded in the planning checkpoint below.
 - **Pinned, locked stack**: `pyproject.toml` now pins the tested versions exactly
   (`requires-python >=3.11,<3.12`; pymc 5.28.5, pytensor 2.38.3, bambi 0.17.2, formulae 0.6.2,
   arviz 0.23.4, numpy 2.4.6, pandas 3.0.5, scipy 1.17.1, xarray 2026.7.0, matplotlib 3.10.9;
