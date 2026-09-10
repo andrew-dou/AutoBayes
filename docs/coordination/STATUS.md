@@ -1,5 +1,114 @@
 # AutoBayes status
 
+## M1 checkpoint (2026-09-09, after review repair): Bernoulli varying intercept, logit link
+
+- Branch `m1/bernoulli-varying-intercept` from `main` at `925554b`; session
+  `e5628a7d-e572-4bad-9feb-82ee8361c261`. Decision record `docs/m1-decision.md` (target,
+  semantics, acceptance checks A1-A8/B1/C1-C3), plus a **repair record** with acceptance
+  criteria R1-R6 written before the fix, the executed failure history, and open review items.
+- **Review finding (coordinator, reproduced here): merge-blocking.** The PR as first opened
+  used Bambi's built-in `bernoulli` family, whose likelihood floors `p` at machine epsilon:
+  with two zero and two one observations the likelihood was -72.087 instead of -80 at
+  eta = 40 and still -72.087 instead of -600 at eta = 300 (same floor at eta = -1000), with
+  the likelihood's gradient contribution vanishing. The earlier test A5 asserted that
+  deviation; the "negligible / watch for separation" framing is withdrawn.
+- **Repair.** `autobayes/likelihoods.py`: the likelihood is `y*eta - stable_softplus(eta)` in a
+  `pm.CustomDist` inside a Bambi custom family (identity link on `logit_p`); Bambi still
+  supplies design matrices, priors, centring, non-centred group coding and the predict
+  machinery. `stable_softplus` is a subclass of PyTensor's `Softplus` (same C code and
+  gradient) with a JAX lowering to `jax.nn.softplus`. Why not the obvious alternatives,
+  all reproduced on this stack: `pm.Bernoulli(logit_p=...)` has NaN PyTensor gradients at
+  eta >= 40 and NaN JAX gradients at |eta| >= 1000; `pt.softplus` is right on the PyTensor
+  path but PyTensor's JAX lowering is a nested `jnp.where` whose untaken branch overflows,
+  giving NaN gradients at |eta| >= 1000; any hand-written stable `log1p(exp(.))` form is
+  rewritten back into `Softplus` by PyTensor before lowering. Table in the decision record.
+- Tests after the repair (fast suite **54 passed, 3 deselected**; slow suite **3 passed**):
+  the old A5 assertion deleted; new `test_extreme_logits_density_and_gradient_both_paths`
+  (values and full gradients vs the stable reference and analytic gradient at eta in
+  {0, +-0.5, +-12, +-40, +-300, +-1000, +-1e6}, two slope/SD settings, both outcomes
+  present, PyTensor `compile_logp`/`compile_dlogp` and `get_jaxified_logp`/`jax.grad`) and
+  `test_reviewer_case_two_zeros_two_ones` (likelihood term -80 / -600 / -2000, gradient
+  2 - 4 expit(eta)). A1-A4, A6-A8 unchanged and passing; Gaussian suite untouched;
+  `describe()` now states the sampled likelihood form (`logit_p` deterministic; `p` is
+  computed by `predict`).
+- B1 re-run after the repair (`docs/m1-evidence/B1_recovery.json`, same prespecified
+  thresholds, n = 600, J = 30, 4 x (1000 + 2000), seed 7): pymc 0 divergences, max R-hat
+  1.0014, min bulk ESS 2467, min tail ESS 3693, E-BFMI 0.715; numpyro 0 divergences, R-hat
+  1.0016, bulk ESS 3107, tail ESS 4223, E-BFMI 0.729; truth inside every 94 % HDI (x:
+  mean 0.635, HDI [0.45, 0.82], truth 0.8 near the upper edge in this one data set);
+  backends agree within 4 combined MCSE (largest ratio 0.08). Posterior means moved by less
+  than 0.005 relative to the pre-repair run, as expected for data whose logits stay
+  moderate; the repair matters where the old likelihood was wrong, not here. Examples
+  re-run on both backends (`docs/m1-evidence/example_*_cpu.txt`, records, `agree: True`);
+  pre-repair outputs kept under `docs/m1-evidence/before-repair/` for the history.
+- **GPU execution for this family: pending** (same code path; the JAX lowering of the new
+  op is verified on the CPU JAX path only, not on a GPU). No rented node or cluster job.
+- **Open review items, not addressed (for the coordinator):** (1) `new_groups=
+  "resample_observed"` inherits Bambi's behaviour of drawing one observed level per
+  posterior draw for all unseen labels together, so distinct unseen labels share an effect
+  within a draw; `"population"` is unaffected. (2) A complex-valued response such as
+  `[0+4j, 1+4j]` passes the 0/1 validation after the imaginary part is discarded by the
+  float cast; a dtype check before the cast would refuse it.
+- Not done: no PDF write-up for M1; no binomial trials, other links, varying slopes or
+  generic family layer; no merge, worktree cleanup, paid compute or Firecrawl.
+
+## M1 follow-up unit (2026-09-09): unseen-label identity, complex responses
+
+- Dispatch: `iqss-research/memory/dispatches/2026-09-09-autobayes-followup.txt`. Scope: the two
+  open review items; the stable likelihood at `2aea478` untouched. Semantics and acceptance
+  criteria U1-U7 were written into `docs/m1-decision.md` and committed (`0cad179`) before
+  editing.
+- **Finding 1 (reproduced before the change, both families, real 2 x 300-draw fits):** with
+  `newdata` labels `[lvl00, NEW_A, NEW_B, NEW_A]`, `new_groups="resample_observed"` gave
+  NEW_A and NEW_B identical effects in 100 % of draws (Bambi's `sample_new_groups=True` maps
+  every unseen label to one placeholder group). **Change:** `autobayes/predict.py::
+  _predict_by_hand` now handles both `"population"` and `"resample_observed"` when unseen
+  labels exist: one observed level is drawn uniformly per distinct unseen label per posterior
+  draw, independently across labels and draws; rows sharing a label share the choice. After
+  the change with J = 6: NEW_A/NEW_B identical in 17.5 % of draws (1/J = 16.7 %), repeated
+  NEW_A rows identical in 100 %. In-sample and observed-only `newdata` still go through Bambi.
+- **Finding 2 (reproduced):** complex-valued responses (`y + 4j`) built for both families with
+  the imaginary part discarded by the float cast under a NumPy warning (pandas counts complex
+  as numeric). **Change:** `autobayes/formula.py::reject_complex` refuses complex response,
+  predictor and `newdata` predictor columns before any cast, both families.
+- Tests added (fast suite now **59 passed, 3 deselected**; slow suite **3 passed**):
+  `test_predict.py::test_resample_observed_keeps_distinct_unseen_labels` (synthetic posterior
+  with distinct constant effects: each label's effect is one of the draw's observed effects,
+  repeated label shares exactly, observed labels untouched, coincidence fraction near 1/J and
+  never 1, seed reproducibility, Gaussian `y` residual SD) and `..._on_a_real_fit_is_not_collapsed`;
+  `test_bernoulli.py::test_resample_observed_keeps_distinct_unseen_labels_bernoulli` (same on `p`
+  and integer 0/1 draws) and `test_complex_inputs_are_refused_before_casting` (response,
+  predictor, `newdata`; `ComplexWarning` turned into an error so a cast cannot be the
+  mechanism); `test_formula.py::test_complex_columns_are_refused_gaussian` (float32/int still
+  accepted). The old membership-only assertions remain and still pass.
+- Limitations: levels are drawn uniformly, as in brms, not weighted by group size; no change
+  to `"population"` or in-sample predictions; GPU execution of the M1 likelihood still
+  pending; no PDF write-up.
+- Not done, by instruction: no merge, cleanup, new PR, paid compute, Firecrawl.
+
+### Next-milestone proposal (not implemented)
+
+**M2: binomial trials for grouped binary data, `successes | trials(n) ~ x + (1 | group)`.**
+The smallest step past M1 that changes what researchers can fit: aggregated binary data
+(k successes of n per row) is the common form of the M1 use case, and it reuses the logit
+link, the logit-scale priors, the stable softplus likelihood (log-binomial coefficient plus
+`k*eta - n*softplus(eta)`), centring and the non-centred group coding unchanged.
+Acceptance criteria to set before implementation: (a) the log density and full gradient
+equal an independent SciPy reference (`log_expit`, `gammaln`) at moderate and extreme
+logits on both PyTensor and JAX paths, with `n = 1` reproducing M1 exactly; (b) `trials`
+must be a positive integer column with `0 <= successes <= trials` and both non-degenerate
+rows present, refused otherwise before any cast; (c) predictions distinguish `p` from
+`successes` draws (`Binomial(n, p)`), with the same new-group semantics and identity rules
+as M1; (d) simulated recovery on both CPU backends with the M1 thresholds and 4-MCSE
+agreement, stated as one recovery, not calibration; (e) formula syntax limited to
+`successes | trials(n)` on the left-hand side, everything else refused by name. Out of
+scope: other links, overdispersion (beta-binomial), varying slopes, GPU execution beyond
+a labelled pending status.
+
+## Repository (M1)
+
+- PR: https://github.com/andrew-dou/AutoBayes/pull/3 (branch `m1/bernoulli-varying-intercept` -> `main`, author andrew-dou). Repair (`2aea478`) and the follow-up unit pushed to the same PR; open for independent review; not merged by this session.
+
 ## Milestone
 
 M0: Gaussian varying-intercept model `y ~ x + (1 | group)`, explicit priors, inspectable

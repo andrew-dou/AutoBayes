@@ -1,8 +1,10 @@
 """Explicit priors, by parameter class, in brms terms.
 
-brms classes for the M0 model: ``Intercept``, ``b`` (slopes), ``sd`` (group SD) and
-``sigma``. All four must be given; there are no silent defaults here (Bambi would supply
-some, and that is exactly what this layer refuses to let happen).
+brms classes: ``Intercept``, ``b`` (slopes), ``sd`` (group SD) and, for the Gaussian family
+only, ``sigma`` (residual SD). Every class the family has must be given; there are no
+silent defaults here (Bambi would supply some, and that is exactly what this layer refuses
+to let happen). For the Bernoulli family the intercept and slope priors are on the logit
+scale and ``sigma`` must be omitted.
 
 The parameterisation follows PyMC/Bambi: ``Normal(mu, sigma)`` is mean and standard
 deviation, ``StudentT(nu, mu, sigma)`` has a scale ``sigma``, ``Exponential(lam)`` is a
@@ -77,7 +79,7 @@ class Priors:
     intercept: Prior
     b: Prior | Mapping[str, Prior]
     sd: Prior
-    sigma: Prior
+    sigma: Prior | None = None
 
     def slope_priors(self, predictors: tuple[str, ...]) -> dict[str, Prior]:
         if isinstance(self.b, Prior):
@@ -92,7 +94,14 @@ class Priors:
             )
         return {p: given[p] for p in predictors}
 
-    def validate(self, predictors: tuple[str, ...]) -> None:
+    def validate(self, predictors: tuple[str, ...], family: str = "gaussian") -> None:
+        if family == "gaussian" and self.sigma is None:
+            raise PriorError("the Gaussian family needs a prior on the residual SD: pass sigma=...")
+        if family == "bernoulli" and self.sigma is not None:
+            raise PriorError(
+                "the Bernoulli family has no residual SD; do not pass sigma. Its intercept and "
+                "slope priors are on the logit scale."
+            )
         for label, prior in [("intercept", self.intercept), *self.slope_priors(predictors).items()]:
             if not isinstance(prior, Prior):
                 raise PriorError(f"prior for {label!r} must be a Prior, got {type(prior).__name__}")
@@ -100,7 +109,8 @@ class Priors:
                 raise PriorError(
                     f"prior for {label!r} must be a location prior ({sorted(_LOCATION)}), got {prior}"
                 )
-        for label, prior in [("sd", self.sd), ("sigma", self.sigma)]:
+        scales = [("sd", self.sd)] + ([("sigma", self.sigma)] if self.sigma is not None else [])
+        for label, prior in scales:
             if not isinstance(prior, Prior):
                 raise PriorError(f"prior for {label!r} must be a Prior, got {type(prior).__name__}")
             if prior.name not in _SCALE:
@@ -108,12 +118,14 @@ class Priors:
                     f"prior for {label!r} must be a positive-support prior ({sorted(_SCALE)}), got {prior}"
                 )
 
-    def to_bambi(self, predictors: tuple[str, ...], group: str) -> dict:
+    def to_bambi(self, predictors: tuple[str, ...], group: str, family: str = "gaussian") -> dict:
         """Bambi's prior dict. The group term is Normal(0, sd) with ``sd`` as hyperprior."""
         import bambi as bmb
 
-        self.validate(predictors)
-        out = {"Intercept": self.intercept.to_bambi(), "sigma": self.sigma.to_bambi()}
+        self.validate(predictors, family)
+        out = {"Intercept": self.intercept.to_bambi()}
+        if self.sigma is not None:
+            out["sigma"] = self.sigma.to_bambi()
         for p, prior in self.slope_priors(predictors).items():
             out[p] = prior.to_bambi()
         out[f"1|{group}"] = bmb.Prior("Normal", mu=0.0, sigma=self.sd.to_bambi())

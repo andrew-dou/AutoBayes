@@ -1,0 +1,113 @@
+{
+ "autobayes_version": "0.1.0",
+ "model": {
+  "formula": "y ~ x + (1 | clinic)",
+  "family": "bernoulli",
+  "link": "logit",
+  "n": 600,
+  "J": 30,
+  "group": "clinic",
+  "center_predictors": true,
+  "noncentered": true,
+  "priors": {
+   "intercept": "Normal(mu=0, sigma=1.5)",
+   "b:x": "Normal(mu=0, sigma=1)",
+   "sd": "HalfNormal(sigma=1)"
+  },
+  "intercept_prior_applies_to": "centred intercept (at predictor means), logit scale"
+ },
+ "execution": {
+  "backend": "pymc",
+  "device_requested": "cpu",
+  "device_actual": "cpu",
+  "platform": "cpu",
+  "dtype": "float64",
+  "chain_method": null,
+  "chains": 4,
+  "draws": 2000,
+  "tune": 1000,
+  "target_accept": 0.9,
+  "seed": 7,
+  "wall_seconds": 3.682,
+  "notes": []
+ },
+ "environment": {
+  "python": "3.11.0",
+  "platform": "macOS-26.6.1-arm64-arm-64bit",
+  "versions": {
+   "pymc": "5.28.5",
+   "pytensor": "2.38.3",
+   "bambi": "0.17.2",
+   "formulae": "0.6.2",
+   "arviz": "0.23.4",
+   "numpyro": "0.21.0",
+   "jax": "0.10.2",
+   "jaxlib": "0.10.2",
+   "numpy": "2.4.6"
+  },
+  "jax_devices": [
+   "cpu:cpu(id=0)",
+   "cpu:cpu(id=1)",
+   "cpu:cpu(id=2)",
+   "cpu:cpu(id=3)",
+   "cpu:cpu(id=4)",
+   "cpu:cpu(id=5)",
+   "cpu:cpu(id=6)",
+   "cpu:cpu(id=7)"
+  ],
+  "jax_x64": true
+ },
+ "diagnostics": {
+  "values": {
+   "divergences": 0.0,
+   "divergence_fraction": 0.0,
+   "max_rhat": 1.001408434263486,
+   "min_ess_bulk": 2672.185379646707,
+   "min_ess_tail": 4040.8060518970146,
+   "min_bfmi": 0.7102747325570606,
+   "treedepth_saturation": 0.0,
+   "n_draws": 8000.0
+  },
+  "status": {
+   "divergence_fraction": "pass",
+   "max_rhat": "pass",
+   "min_ess_bulk": "pass",
+   "min_ess_tail": "pass",
+   "min_bfmi": "pass",
+   "treedepth_saturation": "pass"
+  },
+  "overall": "pass"
+ },
+ "posterior": {
+  "Intercept": {
+   "mean": -0.4528448080683514,
+   "sd": 0.18236916869421674,
+   "hdi_3%": -0.7922089001459138,
+   "hdi_97%": -0.10482386767381756,
+   "mcse_mean": 0.0031461743757492592,
+   "ess_bulk": 3371.940305682629,
+   "ess_tail": 4079.0847834229776,
+   "r_hat": 1.001408434263486
+  },
+  "x": {
+   "mean": 0.6357887562018538,
+   "sd": 0.09836671021410773,
+   "hdi_3%": 0.4519259608885065,
+   "hdi_97%": 0.8219653857624118,
+   "mcse_mean": 0.0009573495840154306,
+   "ess_bulk": 10576.719836268574,
+   "ess_tail": 6227.367023628421,
+   "r_hat": 1.0002685287944304
+  },
+  "1|clinic_sigma": {
+   "mean": 0.8364407154550907,
+   "sd": 0.16791849648941584,
+   "hdi_3%": 0.5268189744254124,
+   "hdi_97%": 1.1532644122770244,
+   "mcse_mean": 0.0032789681835505807,
+   "ess_bulk": 2672.185379646707,
+   "ess_tail": 4040.8060518970146,
+   "r_hat": 1.0002862724116615
+  }
+ }
+}

@@ -4,6 +4,7 @@ from pathlib import Path
 
 import arviz as az
 import numpy as np
+import pandas as pd
 import pymc as pm
 import pytest
 
@@ -77,3 +78,40 @@ def test_simulated_recovery_both_backends():
     summaries["truth"] = truth
     EVIDENCE.mkdir(exist_ok=True)
     (EVIDENCE / "B2_recovery.json").write_text(json.dumps(summaries, indent=1, default=str))
+
+
+@pytest.mark.slow
+def test_bernoulli_recovery_both_backends():
+    """M1 B1: simulated binary data, n=600, J=30; PyMC and NumPyro CPU paths agree and recover truth.
+
+    Thresholds set in docs/m1-decision.md before the run. One recovery is not calibration.
+    """
+    from scipy.special import expit
+
+    truth = dict(a=-0.5, b=0.8, sd=0.7)
+    rng = np.random.default_rng(21)
+    n, J = 600, 30
+    g = rng.integers(0, J, n); x = rng.normal(size=n); u = rng.normal(0, truth["sd"], J)
+    df = pd.DataFrame({"x": x, "g": [f"lvl{k:02d}" for k in g]})
+    df["y"] = rng.binomial(1, expit(truth["a"] + truth["b"] * x + u[g]))
+    priors = ab.Priors(intercept=ab.Normal(0, 1.5), b=ab.Normal(0, 1), sd=ab.HalfNormal(1))
+    m = ab.bernoulli("y ~ x + (1 | g)", df, priors)
+    results, summaries = {}, {"truth": truth, "n": n, "J": J}
+    for backend in ["pymc", "numpyro"]:
+        r = m.fit(backend=backend, device="cpu", chains=4, draws=2000, tune=1000, seed=7, cores=4)
+        p = panel(r.idata, max_treedepth=10)
+        rec = ab.fit_record(m, r, panel=p)
+        results[backend] = rec
+        summaries[backend] = rec
+        assert p["values"]["divergences"] == 0, format_panel(p)
+        assert p["values"]["max_rhat"] <= 1.01, format_panel(p)
+        assert p["values"]["min_ess_bulk"] > 400 and p["values"]["min_ess_tail"] > 400, format_panel(p)
+        for name, val in [("Intercept", truth["a"]), ("x", truth["b"]), ("1|g_sigma", truth["sd"])]:
+            row = rec["posterior"][name]
+            assert row["hdi_3%"] <= val <= row["hdi_97%"], (backend, name, val, row)
+    c = ab.compare_records(results["pymc"], results["numpyro"])
+    summaries["agreement"] = c
+    EVIDENCE_M1 = EVIDENCE.parent / "m1-evidence"
+    EVIDENCE_M1.mkdir(exist_ok=True)
+    (EVIDENCE_M1 / "B1_recovery.json").write_text(json.dumps(summaries, indent=1, default=str))
+    assert c["agree"], ab.format_comparison(c)

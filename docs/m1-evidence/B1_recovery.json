@@ -1,0 +1,256 @@
+{
+ "truth": {
+  "a": -0.5,
+  "b": 0.8,
+  "sd": 0.7
+ },
+ "n": 600,
+ "J": 30,
+ "pymc": {
+  "autobayes_version": "0.1.0",
+  "model": {
+   "formula": "y ~ x + (1 | g)",
+   "family": "bernoulli",
+   "link": "logit",
+   "n": 600,
+   "J": 30,
+   "group": "g",
+   "center_predictors": true,
+   "noncentered": true,
+   "priors": {
+    "intercept": "Normal(mu=0, sigma=1.5)",
+    "b:x": "Normal(mu=0, sigma=1)",
+    "sd": "HalfNormal(sigma=1)"
+   },
+   "intercept_prior_applies_to": "centred intercept (at predictor means), logit scale"
+  },
+  "execution": {
+   "backend": "pymc",
+   "device_requested": "cpu",
+   "device_actual": "cpu",
+   "platform": "cpu",
+   "dtype": "float64",
+   "chain_method": null,
+   "chains": 4,
+   "draws": 2000,
+   "tune": 1000,
+   "target_accept": 0.9,
+   "seed": 7,
+   "wall_seconds": 2.978,
+   "notes": []
+  },
+  "environment": {
+   "python": "3.11.0",
+   "platform": "macOS-26.6.1-arm64-arm-64bit",
+   "versions": {
+    "pymc": "5.28.5",
+    "pytensor": "2.38.3",
+    "bambi": "0.17.2",
+    "formulae": "0.6.2",
+    "arviz": "0.23.4",
+    "numpyro": "0.21.0",
+    "jax": "0.10.2",
+    "jaxlib": "0.10.2",
+    "numpy": "2.4.6"
+   },
+   "jax_devices": [
+    "cpu:cpu(id=0)",
+    "cpu:cpu(id=1)",
+    "cpu:cpu(id=2)",
+    "cpu:cpu(id=3)"
+   ],
+   "jax_x64": true
+  },
+  "diagnostics": {
+   "values": {
+    "divergences": 0.0,
+    "divergence_fraction": 0.0,
+    "max_rhat": 1.0014039425595713,
+    "min_ess_bulk": 2467.1571468371512,
+    "min_ess_tail": 3693.2639424700315,
+    "min_bfmi": 0.7153202452647546,
+    "treedepth_saturation": 0.0,
+    "n_draws": 8000.0
+   },
+   "status": {
+    "divergence_fraction": "pass",
+    "max_rhat": "pass",
+    "min_ess_bulk": "pass",
+    "min_ess_tail": "pass",
+    "min_bfmi": "pass",
+    "treedepth_saturation": "pass"
+   },
+   "overall": "pass"
+  },
+  "posterior": {
+   "Intercept": {
+    "mean": -0.4493865812040901,
+    "sd": 0.18113700599593646,
+    "hdi_3%": -0.7885748379139217,
+    "hdi_97%": -0.10233125346143818,
+    "mcse_mean": 0.0029742964152609476,
+    "ess_bulk": 3707.8446689559573,
+    "ess_tail": 4478.406162984802,
+    "r_hat": 1.0002561530619665
+   },
+   "x": {
+    "mean": 0.6350313796223913,
+    "sd": 0.09928436453034825,
+    "hdi_3%": 0.451702356018596,
+    "hdi_97%": 0.8196928491943098,
+    "mcse_mean": 0.0009687829418057284,
+    "ess_bulk": 10533.35530831989,
+    "ess_tail": 6370.512094416615,
+    "r_hat": 1.0002014268472403
+   },
+   "1|g_sigma": {
+    "mean": 0.8336329041425042,
+    "sd": 0.16955872627257185,
+    "hdi_3%": 0.5229371176108754,
+    "hdi_97%": 1.150480290612896,
+    "mcse_mean": 0.0034566651366070658,
+    "ess_bulk": 2467.1571468371512,
+    "ess_tail": 3693.2639424700315,
+    "r_hat": 1.0007143387503252
+   }
+  }
+ },
+ "numpyro": {
+  "autobayes_version": "0.1.0",
+  "model": {
+   "formula": "y ~ x + (1 | g)",
+   "family": "bernoulli",
+   "link": "logit",
+   "n": 600,
+   "J": 30,
+   "group": "g",
+   "center_predictors": true,
+   "noncentered": true,
+   "priors": {
+    "intercept": "Normal(mu=0, sigma=1.5)",
+    "b:x": "Normal(mu=0, sigma=1)",
+    "sd": "HalfNormal(sigma=1)"
+   },
+   "intercept_prior_applies_to": "centred intercept (at predictor means), logit scale"
+  },
+  "execution": {
+   "backend": "numpyro",
+   "device_requested": "cpu",
+   "device_actual": "cpu:cpu(id=0)",
+   "platform": "cpu",
+   "dtype": "float64",
+   "chain_method": "parallel",
+   "chains": 4,
+   "draws": 2000,
+   "tune": 1000,
+   "target_accept": 0.9,
+   "seed": 7,
+   "wall_seconds": 3.284,
+   "notes": []
+  },
+  "environment": {
+   "python": "3.11.0",
+   "platform": "macOS-26.6.1-arm64-arm-64bit",
+   "versions": {
+    "pymc": "5.28.5",
+    "pytensor": "2.38.3",
+    "bambi": "0.17.2",
+    "formulae": "0.6.2",
+    "arviz": "0.23.4",
+    "numpyro": "0.21.0",
+    "jax": "0.10.2",
+    "jaxlib": "0.10.2",
+    "numpy": "2.4.6"
+   },
+   "jax_devices": [
+    "cpu:cpu(id=0)",
+    "cpu:cpu(id=1)",
+    "cpu:cpu(id=2)",
+    "cpu:cpu(id=3)"
+   ],
+   "jax_x64": true
+  },
+  "diagnostics": {
+   "values": {
+    "divergences": 0.0,
+    "divergence_fraction": 0.0,
+    "max_rhat": 1.0016173188849105,
+    "min_ess_bulk": 3106.95021995588,
+    "min_ess_tail": 4223.44428525622,
+    "min_bfmi": 0.7288601872272591,
+    "treedepth_saturation": 0.0,
+    "n_draws": 8000.0
+   },
+   "status": {
+    "divergence_fraction": "pass",
+    "max_rhat": "pass",
+    "min_ess_bulk": "pass",
+    "min_ess_tail": "pass",
+    "min_bfmi": "pass",
+    "treedepth_saturation": "pass"
+   },
+   "overall": "pass"
+  },
+  "posterior": {
+   "Intercept": {
+    "mean": -0.4503285775993221,
+    "sd": 0.18070931317205255,
+    "hdi_3%": -0.8011158706196652,
+    "hdi_97%": -0.12372443229954219,
+    "mcse_mean": 0.002812984909856524,
+    "ess_bulk": 4149.273648053763,
+    "ess_tail": 4528.6393658062625,
+    "r_hat": 1.001165708610984
+   },
+   "x": {
+    "mean": 0.634907444615235,
+    "sd": 0.10093444356395488,
+    "hdi_3%": 0.44856956765022155,
+    "hdi_97%": 0.8274990267297964,
+    "mcse_mean": 0.0009157574009061181,
+    "ess_bulk": 12157.970775724985,
+    "ess_tail": 5579.1119737594845,
+    "r_hat": 0.9998426015458077
+   },
+   "1|g_sigma": {
+    "mean": 0.8350539009493336,
+    "sd": 0.17093958042416393,
+    "hdi_3%": 0.5182559361196074,
+    "hdi_97%": 1.146927024041806,
+    "mcse_mean": 0.003119296153997626,
+    "ess_bulk": 3106.95021995588,
+    "ess_tail": 4223.44428525622,
+    "r_hat": 1.0009792367899422
+   }
+  }
+ },
+ "agreement": {
+  "k": 4.0,
+  "rows": {
+   "Intercept": {
+    "mean_a": -0.4493865812040901,
+    "mean_b": -0.4503285775993221,
+    "diff": 0.0009419963952320143,
+    "tol": 0.016375260984260197,
+    "agree": true
+   },
+   "x": {
+    "mean_a": 0.6350313796223913,
+    "mean_b": 0.634907444615235,
+    "diff": 0.00012393500715635053,
+    "tol": 0.005332394592523085,
+    "agree": true
+   },
+   "1|g_sigma": {
+    "mean_a": 0.8336329041425042,
+    "mean_b": 0.8350539009493336,
+    "diff": 0.0014209968068293888,
+    "tol": 0.01862408864368042,
+    "agree": true
+   }
+  },
+  "agree": true,
+  "a": "cpu",
+  "b": "cpu:cpu(id=0)"
+ }
+}
