@@ -40,6 +40,11 @@
   zero-trial drop before the means). Fast suite **332 passed, 7 deselected (288 s)**. Slow suite **7 passed (49 s)** including the
   prespecified interaction recovery: 0 divergences, max R-hat 1.0094889 (PyMC) and 1.0045411 (NumPyro), min bulk ESS 520/662, all eight truths inside their 99 % HDIs, backends within 4 combined MCSE (largest ratio 0.41). Example on both backends in `docs/m3a2-evidence/`.
 
+- PR: https://github.com/andrew-dou/AutoBayes/pull/7 (base `main`, author andrew-dou). Record `f0d229f`; implementation `9c2ef95`; this STATUS
+  checkpoint follows it (CI runs recorded in the final report and PR checks). Left open for independent
+  review; not merged by this session; the M3a-2 worktree is kept until that review passes. Next approved
+  increment after acceptance: independent varying slopes, then correlated slopes, in separate PRs.
+
 ## M3a-1 slice (2026-09-10): one treatment-coded categorical predictor
 
 - Dispatched by the coordinator after the M2 acceptance
