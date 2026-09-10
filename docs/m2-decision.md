@@ -331,3 +331,29 @@ Wording fixed with the repair: the binomial centred intercept is the per-trial s
 log-odds, not the log-odds that a count equals 1; README and SKILL count three families;
 the package description names M2; the cap and precision statements say what was tested,
 not "exact for every finite input".
+
+**Executed after the repair (2026-09-10, clean locked environment, Python 3.11.0).**
+
+- The reviewer's two-row near-mode construction (intercept-only, one row per group, $s_g = 1$,
+  $z = 0$) on the repaired tree, both paths, at the mode and $10^{-3}$ above it, tolerance
+  $10^{-8}$: worst error $1.6\times10^{-10}$ at $n = 999999$ and $1.4\times10^{-10}$ at $n = 10^6$,
+  $k = n/2$ (the reviewer measured $1.4\times10^{-9}$ at $n = 10^6$ on the previous head, and
+  $3.3\times10^{-6}$ at $10^9$); $\le 3\times10^{-11}$ at $n = 10^5$; $\le 2\times10^{-13}$ at
+  $n = 10^3$; $k = 1$ and $k = n-1$ rows at their modes $\le 1.4\times10^{-14}$ everywhere. A model
+  with $n = 10^9$ is refused before any cast with the cap message.
+- `tests/test_binomial.py`: 50 passed, including `test_per_row_terms_and_derivatives_both_paths`
+  (every $(n, k, \eta)$ of the acceptance grid as an individual row term and derivative on
+  both paths, plus the total), `test_homogeneous_near_mode_models_with_nontrivial_parameters`
+  (16 cases: four $n$ up to the cap, $k \in \{1, n/4, n/2, n-1\}$, slope, $s_g = 0.3$, random $z$,
+  seven mode offsets, full density and gradient on both paths), the reviewer's construction
+  at $N_{\max}-1$ and $N_{\max}$, the mixed grid on the new $n$ list, and the refusal of
+  $N_{\max}+1$ and of the three previously failing $n$.
+- Full suites: fast suite **141 passed, 5 deselected** (144 s); slow suite **5 passed** (30.6 s; new run-specific evidence directories, earlier ones untouched).
+- The coefficient routine against the 60-digit reference over $n \in \{1, 2, 10, 10^3, 1001, 2001,
+  10^5, 10^6-1, 10^6, 10^7\}$ and thirteen $k$ each: worst error $1.2\times10^{-10}$ at $n \le 10^6$
+  (the float64 spacing of the coefficient's own magnitude), $9.3\times10^{-10}$ at $10^7$.
+- Example evidence regenerated with the repaired code (`docs/m2-evidence/`); the pre-repair
+  outputs are kept under `docs/m2-evidence/before-repair/`. Posterior means moved by less than
+  $3\times10^{-4}$ (within Monte Carlo noise), as expected for counts of at most 50 per row.
+- Unchanged: the sampled variables, priors, centring, zero-trial policy, prediction
+  semantics, the Bernoulli family (no D8 change), and GPU status (pending).

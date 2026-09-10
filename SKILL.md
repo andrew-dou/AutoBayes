@@ -48,10 +48,12 @@ for two outcome families:
   brms syntax, counts validated before any cast, zero-trial rows dropped and reported
   before centring, a data set without trials refused, constant outcomes accepted with a
   separation warning. Log density and full gradients against a 60-digit high-precision
-  reference at logits to 1e6 and counts to 2^31-1 on both paths, `n = 1` equivalence with
-  the Bernoulli family, expansion to Bernoulli rows with aligned centring, three prediction
-  quantities. GPU execution **pending**. Evidence `docs/m2-evidence/`, checks in
-  `docs/m2-decision.md`.
+  reference at logits to 1e6 and counts to 1e6 per row on both paths, row by row and near
+  the mode, `n = 1` equivalence with the Bernoulli family, expansion to Bernoulli rows with
+  aligned centring, three prediction quantities. Counts above 1e6 per row are refused: the
+  float64 density near a binomial mode loses the prespecified accuracy there
+  (`docs/m2-decision.md`, repair record). GPU execution **pending**. Evidence
+  `docs/m2-evidence/`, checks in `docs/m2-decision.md`.
 
 **What is not verified.** Every other formula and family (other links, varying slopes,
 nested or crossed groups, categorical predictors, beta-binomial). The library refuses
@@ -138,8 +140,9 @@ model = ab.binomial("deaths | trials(patients) ~ x + (1 | clinic)", df, priors)
 ```
 
 Counts must be real integers (int columns, or floats holding integers); bool, complex,
-non-integral, negative, non-finite, `successes > trials`, and values above `2^31 - 1`
-are refused before any cast, naming the column. A row with `trials = 0` and no successes
+non-integral, negative, non-finite, `successes > trials`, and values above `1e6` per row
+are refused before any cast, naming the column (the cap is the tested numerical domain,
+not a modelling limit; split very large denominators across rows if the design allows). A row with `trials = 0` and no successes
 carries no information and is **dropped before centring** (`describe()` reports how many
 and where); successes with zero trials is impossible data and refused; a data set with
 no trials at all is refused. If every fitted row has zero successes or all successes the
@@ -333,7 +336,7 @@ The worked examples do all six steps and write a record:
 | `FormulaError: response ... outside {0, 1}` / `boolean` / `constant` | Bernoulli response not coded 0/1 | Recode so 1 is the modelled outcome; for counts with denominators use `ab.binomial` |
 | `FormulaError: ... needs 'successes \| trials(n)'` or `Bambi's 'p(...)'` | Binomial left-hand side not in brms form | Write `k \| trials(n) ~ ...` |
 | `FormulaError: ... exceed trials` / `zero trials is impossible` / `no trials in the data` | Count data inconsistent | Fix the data; zero-trial rows without successes are fine and are dropped and reported |
-| `FormulaError: ... above the tested limit` | A count above 2^31-1 | Outside the validated domain; not silently accepted |
+| `FormulaError: ... above the tested limit` | A count above 1e6 in one row | Outside the validated float64 domain (`docs/m2-decision.md`); not silently accepted |
 | Binomial `describe()` shows a separation WARNING | All rows zero successes or all successes | Refit with a wider and a narrower intercept prior; report the movement; the result is prior-sensitive by construction |
 | `FormulaError: ... is complex-valued` | A complex column (pandas counts it as numeric; a cast would drop the imaginary part) | Take the real part explicitly if that is what you mean |
 | `PriorError: the Bernoulli family has no residual SD` | `sigma` given to `ab.bernoulli` | Drop `sigma`; the priors are on the logit scale |

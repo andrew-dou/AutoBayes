@@ -3,7 +3,7 @@
 Pre-research and scaffolding for running a long Bayesian model-iteration program with a
 coding agent in the loop, on hardware you pay for by the hour.
 
-Two halves:
+Three parts:
 
 - **`reference/`** — a pre-research pack that ships populated. The fixed cost of
   entering the field, paid once: sampler theory and its citations, how each library in
@@ -16,8 +16,8 @@ Two halves:
 - **`autobayes/`** — the library: a brms-like Python interface that builds an
   inspectable PyMC model through Bambi, requires explicit priors, samples on the CPU
   with PyMC's NUTS or through JAX/NumPyro with an explicit device choice, and returns
-  posterior and predictive draws. Two families on one formula subset
-  `y ~ x + (1 | group)`: Gaussian (M0) and Bernoulli with a logit link for a 0/1
+  posterior and predictive draws. Three families on one formula subset
+  `y ~ x + (1 | group)`: Gaussian (M0), Bernoulli with a logit link for a 0/1
   outcome (M1), and binomial counts `successes | trials(n)` with a logit link (M2);
   anything else is refused with an error naming the construct. See
   [Library](#library-milestones-m0-m1-and-m2) below.
@@ -127,7 +127,7 @@ versions.
 | --- | --- | --- | --- | --- |
 | Gaussian, `y ~ [1 +] x… + (1 \| g)` | CPU-validated | CPU-validated | GPU-validated once, H100 (`docs/m0-gpu-validation.md`) | M0, merged |
 | Bernoulli (logit), `y ~ [1 +] x… + (1 \| g)`, y strictly 0/1 | CPU-validated | CPU-validated | **pending** (same code path, not run on a GPU) | M1, PR #3 |
-| Binomial (logit), `k \| trials(n) ~ [1 +] x… + (1 \| g)`, integer counts | CPU-validated | CPU-validated | **pending** (same code path, not run on a GPU) | M2 |
+| Binomial (logit), `k \| trials(n) ~ [1 +] x… + (1 \| g)`, integer counts up to 1e6 per row | CPU-validated | CPU-validated | **pending** (same code path, not run on a GPU) | M2 |
 | Categorical predictors, interactions, varying slopes, several groups, other families | refused with an error naming the construct | same | same | later slices, `docs/coordination/NEXT_MILESTONES_PROPOSAL.md` |
 
 Device rules on every path: `device="gpu"` without a visible GPU raises `DeviceError`

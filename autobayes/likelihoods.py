@@ -24,6 +24,8 @@ with the plain one. Verified in ``tests/test_bernoulli.py`` on both paths at log
 """
 from __future__ import annotations
 
+import math
+
 import numpy as np
 import pymc as pm
 import pytensor.tensor as pt
@@ -88,41 +90,89 @@ def bernoulli_logit_family():
 # nothing cancels at k = 0 or k = n; d/deta = k expit(-eta) - (n - k) expit(eta). Bambi's
 # built-in binomial (eps-floored p) and pm.Binomial(logit_p=) were measured first and fail
 # the tolerance on 49 and 60 of 130 grid points (docs/m2-decision.md).
+#
+# The coefficient is a constant in eta and is computed as DATA, per row, below, never as a
+# float64 difference of three gammaln values: near a binomial mode the true log density is
+# O(-10) while gammaln(n + 1) is ~n log n, so that difference carried an absolute error of
+# ~1e-6 at n = 1e9 (repair record in docs/m2-decision.md). Even with an exact coefficient the
+# likelihood terms are ~n ln 2 in magnitude near the mode, whose float64 spacing bounds the
+# accuracy of the combined value; that is why counts are capped (formula.COUNT_CAP) at the
+# largest tested value that meets the tolerance on both paths with a margin.
+
+_EXACT_M = 1000          # exact summation of the coefficient for min(k, n - k) <= _EXACT_M
+_HALF_LOG_2PI = 0.5 * math.log(2.0 * math.pi)
 
 
-def binomial_logit_logp(value, logit_p, n):
-    lgc = pt.gammaln(n + 1.0) - pt.gammaln(value + 1.0) - pt.gammaln(n - value + 1.0)
-    return lgc - value * stable_softplus(-logit_p) - (n - value) * stable_softplus(logit_p)
+def _stirlerr(x: float) -> float:
+    """lgamma(x + 1) - (x + 1/2) log x + x - log(2 pi) / 2: the Stirling remainder. Series for
+    x >= 16 (remainder below 1e-17 relative), lgamma below (moderate magnitudes, ~1e-15)."""
+    if x < 16:
+        return math.lgamma(x + 1.0) - (x + 0.5) * math.log(x) + x - _HALF_LOG_2PI
+    x2 = x * x
+    return (1.0 / 12 - (1.0 / 360 - (1.0 / 1260 - (1.0 / 1680 - 1.0 / 1188 / x2) / x2) / x2) / x2) / x
 
 
-def binomial_logit_random(logit_p, n, rng=None, size=None):
+def log_binomial_coefficient(n, k):
+    """log C(n, k) per row, accurate to ~1e-12 absolute for n <= 1e7 (measured against a 60-digit
+    reference; docs/m2-decision.md). Exact summation sum_{j=1..m} log((n - m + j) / j) with
+    m = min(k, n - k) when m <= 1000; otherwise n H(k/n) + c(n, k) with the Stirling
+    remainders, which does not form any quantity larger than the result itself."""
+    n = np.asarray(n, dtype=np.int64)
+    k = np.asarray(k, dtype=np.int64)
+    out = np.zeros(n.shape, dtype=float)
+    for i, (ni, ki) in enumerate(zip(n.ravel(), k.ravel())):
+        ni, ki = int(ni), int(ki)
+        m = min(ki, ni - ki)
+        if m <= 0:
+            continue
+        if m <= _EXACT_M:
+            j = np.arange(1, m + 1, dtype=float)
+            out.flat[i] = float(np.sum(np.log((ni - m + j) / j)))
+        else:
+            q = ki / ni
+            entropy = -(q * math.log(q) + (1.0 - q) * math.log1p(-q))
+            c = 0.5 * math.log(ni / (2.0 * math.pi * ki * (ni - ki))) + _stirlerr(ni) - _stirlerr(ki) - _stirlerr(ni - ki)
+            out.flat[i] = ni * entropy + c
+    return out
+
+
+def binomial_logit_logp(value, logit_p, n, logc):
+    return logc - value * stable_softplus(-logit_p) - (n - value) * stable_softplus(logit_p)
+
+
+def binomial_logit_random(logit_p, n, logc, rng=None, size=None):
     return rng.binomial(n, expit(logit_p), size=size).astype(np.int64)
 
 
 class BinomialLogit:
-    """``k ~ Binomial(n, expit(logit_p))`` with the stable log density above."""
+    """``k ~ Binomial(n, expit(logit_p))`` with the stable log density above; ``logc`` is the
+    per-row ``log C(n, k)`` computed as data by ``log_binomial_coefficient``."""
 
-    def __new__(cls, name, logit_p, n, **kwargs):
-        return pm.CustomDist(name, logit_p, n, logp=binomial_logit_logp, random=binomial_logit_random,
+    def __new__(cls, name, logit_p, n, logc, **kwargs):
+        return pm.CustomDist(name, logit_p, n, logc, logp=binomial_logit_logp, random=binomial_logit_random,
                              dtype="int64", **kwargs)
 
     @staticmethod
-    def dist(logit_p, n, **kwargs):
-        return pm.CustomDist.dist(logit_p, n, logp=binomial_logit_logp, random=binomial_logit_random,
+    def dist(logit_p, n, logc, **kwargs):
+        return pm.CustomDist.dist(logit_p, n, logc, logp=binomial_logit_logp, random=binomial_logit_random,
                                   dtype="int64", **kwargs)
 
 
 def binomial_logit_family():
     """Bambi family for a two-column ``p(k, n)`` response: identity link on ``logit_p`` (the
-    linear predictor); ``n`` reaches the likelihood the way Bambi's own binomial passes it."""
+    linear predictor); ``n`` reaches the likelihood the way Bambi's own binomial passes it,
+    and the accurate coefficient rides along as a second data input."""
     import bambi as bmb
 
     class BinomialLogitFamily(bmb.Family):
         @staticmethod
         def transform_backend_kwargs(kwargs):
             observed = kwargs.pop("observed")
-            kwargs["observed"] = np.asarray(observed[:, 0]).squeeze().astype(np.int64)
-            kwargs["n"] = np.asarray(observed[:, 1]).squeeze().astype(np.int64)
+            k = np.asarray(observed[:, 0]).squeeze().astype(np.int64)
+            n = np.asarray(observed[:, 1]).squeeze().astype(np.int64)
+            kwargs["observed"] = k
+            kwargs["n"] = n
+            kwargs["logc"] = log_binomial_coefficient(n, k)
             return kwargs
 
     likelihood = bmb.Likelihood("BinomialLogit", params=["logit_p"], parent="logit_p", dist=BinomialLogit)

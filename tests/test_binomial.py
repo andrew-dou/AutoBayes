@@ -21,7 +21,21 @@ PRIORS_DICT = {"intercept": ("Normal", {"mu": 0.0, "sigma": 1.5}),
                "sd": ("HalfNormal", {"sigma": 1.0})}
 FORMULA = "k | trials(n) ~ x + (1 | g)"
 ETAS = [0.0, 0.5, -0.5, 12.0, -12.0, 40.0, -40.0, 300.0, -300.0, 1000.0, -1000.0, 1e6, -1e6]
-GRID_N = [1, 2, 10, 10**3, 10**6, 10**9, COUNT_CAP - 1, COUNT_CAP]
+GRID_N = [1, 2, 10, 10**3, 10**5, COUNT_CAP - 1, COUNT_CAP]          # acceptance grid (docs/m2-decision.md, repair record)
+MODE_OFFSETS = [0.0, 1e-3, -1e-3, 0.1, -0.1, 1.0, -1.0]
+
+
+def grid_ks(n):
+    ks = sorted({0, 1, 2, 10, n // 4, n // 2, (3 * n) // 4, n - 2, n - 1, n})
+    return [k for k in ks if 0 <= k <= n]
+
+
+def etas_for(n, k):
+    out = list(ETAS)
+    if 0 < k < n:
+        mode = math.log(k) - math.log(n - k)
+        out += [mode + d for d in MODE_OFFSETS]
+    return out
 
 
 def tol(ref: float) -> float:
@@ -151,12 +165,29 @@ def test_jax_logp_matches_pytensor(cmodel):
 
 # -- A5: the validation domain grid, both paths, values and full gradients ---------------------------
 def grid_model(n):
-    ks = sorted({0, 1, n // 2, n - 1, n})
-    ks = [k for k in ks if 0 <= k <= n]
+    """One row per grid k, each row its own group, so per-row terms and derivatives are visible."""
+    ks = grid_ks(n)
     rows = len(ks)
     df = pd.DataFrame({"k": ks, "n": [n] * rows, "x": np.linspace(-0.3, 0.3, rows),
-                       "g": [["a", "b"][i % 2] for i in range(rows)]})
+                       "g": [f"g{i:02d}" for i in range(rows)]})
     return ab.binomial(FORMULA, df, PRIORS)
+
+
+def per_row_functions(m):
+    """PyTensor and JAX evaluators of the per-row likelihood terms and of the total gradient."""
+    import jax
+    from pymc.sampling.jax import get_jaxified_graph, get_jaxified_logp
+
+    pmm = m.pymc_model
+    names = [v.name for v in pmm.value_vars]
+    rows_term = pmm.logp(vars=[pmm[m.names["y"]]], sum=False)[0]
+    rows_term_v = pmm.replace_rvs_by_values([rows_term])[0]
+    f_rows_pt = pmm.compile_fn(rows_term_v, inputs=pmm.value_vars, point_fn=True, on_unused_input="ignore")
+    f_rows_jx = get_jaxified_graph(inputs=pmm.value_vars, outputs=[rows_term_v])
+    dlogp = pmm.compile_dlogp()
+    jf = get_jaxified_logp(pmm)
+    jgrad = jax.grad(lambda *args: jf(list(args)), argnums=tuple(range(len(names))))
+    return names, f_rows_pt, (lambda point: np.asarray(f_rows_jx(*[point[n_] for n_ in names])[0])), dlogp, jgrad
 
 
 @pytest.mark.parametrize("n", GRID_N)
@@ -173,7 +204,7 @@ def test_extreme_logits_and_large_counts_both_paths(n):
     jgrad = jax.grad(lambda *args: jf(list(args)), argnums=tuple(range(len(names))))
     kw = dict(response="k", trials="n", predictors=["x"], group="g", priors=PRIORS_DICT, center=True)
     z = np.zeros(m.design.J)
-    for eta in ETAS:
+    for eta in sorted({e for k in grid_ks(n) for e in etas_for(n, k)}):
         nat = dict(intercept=eta, b=np.array([0.0]), sd=0.1, z=z)           # every row at eta
         point = m.value_point(**nat)
         ref = reference_logp_binomial(_ref_point(nat), m.data, jacobian=True, **kw)
@@ -192,12 +223,112 @@ def test_extreme_logits_and_large_counts_both_paths(n):
 
 
 def test_count_cap_is_the_domain_boundary():
+    assert COUNT_CAP == 10**6
     df = pd.DataFrame({"k": [1, 2], "n": [COUNT_CAP, COUNT_CAP], "x": [0.0, 1.0], "g": ["a", "b"]})
     ab.binomial(FORMULA, df, PRIORS)                                        # at the cap: accepted
-    with pytest.raises(ab.FormulaError, match="above the tested limit"):
+    with pytest.raises(ab.FormulaError, match="above the tested limit 1000000"):
         ab.binomial(FORMULA, df.assign(n=[COUNT_CAP + 1, COUNT_CAP]), PRIORS)
     with pytest.raises(ab.FormulaError, match="above the tested limit"):
         ab.binomial(FORMULA, df.assign(n=[float(COUNT_CAP) * 4, 5.0], k=[1.0, 2.0]), PRIORS)
+    for n in (10**9, 2**31 - 2, 2**31 - 1):                                # the reviewer's failing cases are outside the domain
+        with pytest.raises(ab.FormulaError, match="above the tested limit"):
+            ab.binomial(FORMULA, df.assign(n=[n, n], k=[1, 2]), PRIORS)
+
+
+# -- per-row normalised checks over the whole acceptance grid (repair record) ----------------------
+@pytest.mark.parametrize("n", GRID_N)
+def test_per_row_terms_and_derivatives_both_paths(n):
+    """Every (n, k, eta) grid point checked as an individual row term, unmasked by other rows:
+    per-row likelihood values (PyTensor and JAX), and per-row derivatives read from the offset
+    gradient components (sd = 1, z = 0 make d/dz_j the row-j derivative), plus the total."""
+    pytest.importorskip("jax")
+    m = grid_model(n)
+    names, f_rows_pt, f_rows_jx, dlogp, jgrad = per_row_functions(m)
+    ks = grid_ks(n)
+    J = m.design.J
+    i_off = names.index("1|g_offset")
+    kw = dict(response="k", trials="n", predictors=["x"], group="g", priors=PRIORS_DICT, center=True)
+    etas = sorted({e for k in ks for e in etas_for(n, k)})
+    for eta in etas:
+        nat = dict(intercept=eta, b=np.array([0.0]), sd=1.0, z=np.zeros(J))   # every row exactly at eta
+        point = m.value_point(**nat)
+        refs = np.array([float(row_loglik_dec(int(k), n, eta)) for k in ks])
+        grefs = np.array([float(row_grad_dec(int(k), n, eta)) for k in ks])
+        rows_pt, rows_jx = np.asarray(f_rows_pt(point)).ravel(), np.asarray(f_rows_jx(point)).ravel()
+        assert rows_pt.shape == (len(ks),)
+        for j, k in enumerate(ks):
+            tv = tol(refs[j])
+            assert np.isfinite(rows_pt[j]) and abs(rows_pt[j] - refs[j]) <= tv, (n, k, eta, rows_pt[j], refs[j])
+            assert np.isfinite(rows_jx[j]) and abs(rows_jx[j] - refs[j]) <= tv, (n, k, eta, rows_jx[j], refs[j])
+        g_pt = np.asarray(dlogp(point), dtype=float)
+        g_jx = jgrad(*[__import__("jax").numpy.asarray(point[n_]) for n_ in names])
+        off_pt = g_pt[sum(int(np.asarray(point[n_]).size) for n_ in names[:i_off]):][:J]
+        off_jx = np.asarray(g_jx[i_off], dtype=float)
+        for j, k in enumerate(ks):                                            # row-j derivative, minus z_j = 0
+            tg = tol(grefs[j])
+            assert np.isfinite(off_pt[j]) and abs(off_pt[j] - grefs[j]) <= tg, (n, k, eta, off_pt[j], grefs[j])
+            assert np.isfinite(off_jx[j]) and abs(off_jx[j] - grefs[j]) <= tg, (n, k, eta, off_jx[j], grefs[j])
+        ref_total = reference_logp_binomial(_ref_point(nat), m.data, jacobian=True, **kw)
+        assert abs(float(m.pymc_model.compile_logp()(point)) - ref_total) <= tol(ref_total)
+
+
+@pytest.mark.parametrize("n", [10**3, 10**5, COUNT_CAP - 1, COUNT_CAP])
+@pytest.mark.parametrize("kfrac", ["one", "quarter", "half", "n-1"])
+def test_homogeneous_near_mode_models_with_nontrivial_parameters(n, kfrac):
+    """All rows at one (n, k), sd != 1, z != 0, a slope on a varying predictor: rows sit at
+    different logits near the mode. Model density and full gradient on both paths."""
+    jax = pytest.importorskip("jax")
+    import jax.numpy as jnp
+    from pymc.sampling.jax import get_jaxified_logp
+
+    k = {"one": 1, "quarter": n // 4, "half": n // 2, "n-1": n - 1}[kfrac]
+    rows = 6
+    df = pd.DataFrame({"k": [k] * rows, "n": [n] * rows, "x": np.linspace(-1.0, 1.0, rows),
+                       "g": [f"g{i}" for i in range(rows)]})
+    m = ab.binomial(FORMULA, df, PRIORS)
+    pmm = m.pymc_model
+    logp, dlogp = pmm.compile_logp(), pmm.compile_dlogp()
+    names = [v.name for v in pmm.value_vars]
+    jf = get_jaxified_logp(pmm)
+    jgrad = jax.grad(lambda *args: jf(list(args)), argnums=tuple(range(len(names))))
+    mode = math.log(k) - math.log(n - k)
+    rng = np.random.default_rng(11)
+    kw = dict(response="k", trials="n", predictors=["x"], group="g", priors=PRIORS_DICT, center=True)
+    for d in MODE_OFFSETS:
+        nat = dict(intercept=mode + d, b=np.array([0.05]), sd=0.3, z=rng.normal(size=rows) * 0.5)
+        point = m.value_point(**nat)
+        ref = reference_logp_binomial(_ref_point(nat), m.data, jacobian=True, **kw)
+        gref = reference_grad_binomial(_ref_point(nat), m.data, response="k", trials="n", predictors=["x"],
+                                       group="g", prior_intercept_sigma=1.5, prior_b_sigma=1.0)
+        gref_vec = np.concatenate([np.atleast_1d(gref[n_]) for n_ in names])
+        v_pt, g_pt = float(logp(point)), np.asarray(dlogp(point), dtype=float)
+        v_jx = float(jf([point[n_] for n_ in names]))
+        g_jx = np.concatenate([np.atleast_1d(np.asarray(g, dtype=float)) for g in jgrad(*[jnp.asarray(point[n_]) for n_ in names])])
+        assert abs(v_pt - ref) <= tol(ref), (n, k, d, v_pt, ref)
+        assert abs(v_jx - ref) <= tol(ref), (n, k, d, v_jx, ref)
+        gt = np.maximum(1e-8, 1e-12 * np.abs(gref_vec))
+        assert np.all(np.abs(g_pt - gref_vec) <= gt), (n, k, d, g_pt - gref_vec)
+        assert np.all(np.abs(g_jx - gref_vec) <= gt), (n, k, d, g_jx - gref_vec)
+
+
+@pytest.mark.parametrize("n", [COUNT_CAP - 1, COUNT_CAP])
+def test_reviewer_two_row_near_mode_construction(n):
+    """The construction that failed at n = 1e9 on the reviewed head, at the new cap: two identical
+    rows in two groups, intercept-only, sd = 1, z = 0, at the mode. Both paths, unmasked."""
+    pytest.importorskip("jax")
+    from pymc.sampling.jax import get_jaxified_logp
+
+    k = n // 2
+    df = pd.DataFrame({"k": [k, k], "n": [n, n], "g": ["a", "b"]})
+    m = ab.binomial("k | trials(n) ~ 1 + (1 | g)", df, PRIORS)
+    pdct = {"intercept": PRIORS_DICT["intercept"], "b": {}, "sd": PRIORS_DICT["sd"]}
+    for eta in [0.0, 1e-3, -0.1]:
+        point = m.value_point(intercept=eta, b=[], sd=1.0, z=np.zeros(2))
+        ref = reference_logp_binomial({"a_c": eta, "b": np.array([]), "log_sd": 0.0, "z": np.zeros(2)}, m.data,
+                                      response="k", trials="n", predictors=[], group="g", priors=pdct)
+        v_pt = float(m.pymc_model.compile_logp()(point))
+        v_jx = float(get_jaxified_logp(m.pymc_model)([point[v.name] for v in m.pymc_model.value_vars]))
+        assert abs(v_pt - ref) <= tol(ref) and abs(v_jx - ref) <= tol(ref), (n, eta, v_pt, v_jx, ref)
 
 
 # -- A6: design, levels, logit_p from the graph, zero-trial rows -------------------------------------

@@ -128,9 +128,14 @@ class Model:
             if not np.array_equal(obs, self.design.y.astype(int)):
                 raise RuntimeError("Bambi's observed response does not equal the response column")
             if family == "binomial":
-                n_in = [i for i in rv.owner.inputs if getattr(i, "data", None) is not None]
-                if not n_in or not np.array_equal(np.asarray(n_in[-1].data), self.design.trials):
-                    raise RuntimeError("the trials attached to the likelihood do not equal the trials column")
+                from autobayes.likelihoods import log_binomial_coefficient
+
+                consts = [np.asarray(i.data) for i in rv.owner.inputs if getattr(i, "data", None) is not None]
+                has_trials = any(c.shape == self.design.trials.shape and np.array_equal(c, self.design.trials) for c in consts)
+                logc = log_binomial_coefficient(self.design.trials, self.design.y.astype(np.int64))
+                has_logc = any(c.shape == logc.shape and np.allclose(c, logc, rtol=0, atol=0) for c in consts)
+                if not (has_trials and has_logc):
+                    raise RuntimeError("the trials or the coefficient attached to the likelihood do not equal the data")
 
     # -- design ------------------------------------------------------------------------
     def _extract_design(self) -> Design:
@@ -254,7 +259,8 @@ class Model:
         elif not gaussian:
             lines += ["  P(y_i = 1) = p_i = expit(eta_i) = 1 / (1 + exp(-eta_i)); eta is on the log-odds scale."]
         if d.centered:
-            what = "expected response" if gaussian else "log-odds of y = 1"
+            what = ("expected response" if gaussian else
+                    "per-trial success log-odds" if binomial else "log-odds of y = 1")
             lines += [
                 "  Predictors are centred at their sample means (center_predictors=True, as in",
                 f"  brms and Bambi). a_c is the {what} at the predictor means; the",
@@ -280,10 +286,10 @@ class Model:
                 "", "Likelihood",
                 f"  log p({s.response}_i | {s.trials}_i, eta_i) = log C({s.trials}_i, {s.response}_i)"
                 f" - {s.response}_i softplus(-eta_i) - ({s.trials}_i - {s.response}_i) softplus(eta_i)",
-                "  with a softplus whose value and gradient are exact for every finite eta on both the",
-                "  PyTensor and the JAX path (autobayes/likelihoods.py; the built-in Bambi and PyMC forms",
-                "  were measured and fail at large logits, docs/m2-decision.md). Zero-trial rows are",
-                "  dropped before centring; predictors are centred at the means of the fitted rows.",
+                "  with log C computed accurately as data and a softplus whose gradient is finite on both",
+                "  the PyTensor and the JAX path. Validated (docs/m2-decision.md) for counts up to 1e6 per",
+                "  row at logits to 1e6 against a 60-digit reference; larger counts are refused. Zero-trial",
+                "  rows are dropped before centring; predictors are centred at the means of the fitted rows.",
             ]
             for w in self.warnings:
                 lines += ["", "WARNING: " + w]

@@ -48,6 +48,39 @@
 - Limitations: one recovery is not calibration; in one simulated data set the intercept is
   identified relative to the realised mean of the group effects (the example prints it); the
   validated count/logit domain is the tested grid; no calibration or benchmark claims.
+- **Review repair (2026-09-10, `memory/reviews/2026-09-10-autobayes-m2-review.md`, artifacts
+  `artifacts/2026-09-10-autobayes-m2-independent/`).** Finding: the coefficient was a float64
+  difference of three `gammaln` values, so the normalised density near a binomial mode carried
+  absolute errors of 3.3e-6 at n = 1e9 and 1.1e-5 at the cap against the prespecified 1e-8;
+  nine of fifteen probed near-mode cases failed on each path, and the mixed-grid A5 check had
+  masked it because k = 0 and k = n rows at the same logit made the total O(n). Before coding,
+  the repair record in `docs/m2-decision.md` (commit `8309449`) tabulated the failed cases and
+  measured, with an accurate coefficient, where float64 itself gives out: the likelihood terms'
+  magnitude (~n ln 2) bounds the near-mode value (1.8e-8 at n = 1e8) and the rounding of
+  expit(eta) bounds the gradient (1.2e-8 at n = 1e9), independent of any reformulation short of
+  the deviance form. Repair: (a) the coefficient is computed as data per row (exact summation
+  for min(k, n-k) <= 1000, Loader decomposition with the `stirlerr` series above) and never
+  as a `gammaln` difference; (b) the accepted count cap is lowered by the approved rule to
+  **1e6 per row**, the largest acceptance-grid value that passes on both paths with a margin
+  of at least 25 (values) and 400 (gradients); 1e7 also passed at probed points with a margin
+  of about seven and was not adopted; the deviance form is recorded as the route if counts
+  above 1e6 per row are ever needed. Tolerance unchanged.
+- Repair tests: per-row normalised terms and per-row derivatives over the whole acceptance
+  grid (n in {1, 2, 10, 1e3, 1e5, 999999, 1e6}; k at 0/1/2/10/n/4/n/2/3n/4/n-2/n-1/n; the 13
+  extreme logits plus the mode and six offsets), homogeneous near-mode models with a slope,
+  sd = 0.3 and random offsets (16 cases), the reviewer's two-row construction at the cap and
+  its neighbour, the mixed grid, refusal of 1e6+1 and of the three previously failing n.
+  `tests/test_binomial.py` 50 passed (122 s). After the repair the reviewer's construction has
+  worst error 1.6e-10 at the cap (was 1.4e-9 at 1e6 and 3.3e-6 at 1e9 before). Full suites on
+  the repaired tree: fast suite **141 passed, 5 deselected** (144 s); slow suite **5 passed** (30.6 s; new run-specific evidence directories, earlier ones untouched). Example evidence regenerated with
+  the repaired code; the pre-repair outputs are archived under `docs/m2-evidence/before-repair/`.
+- Wording fixed with the repair: the binomial centred intercept is the per-trial success
+  log-odds; README and SKILL count three families; the package description names M2; the cap
+  and precision statements describe the tested domain, not exactness for every input.
+- Evidence provenance: the foundation worktree's ignored candidate evidence was removed with
+  that worktree on 2026-09-10 and is not preserved locally (hosted artifacts and the
+  coordinator's preserved run artifacts remain); the M2 runs below write to new run-specific
+  directories under `evidence-runs/`, earlier ones untouched.
 - PR: https://github.com/andrew-dou/AutoBayes/pull/5 (base `main`, head `1fcb2cf`, author andrew-dou). Hosted `fast checks` succeeded on that head for both the push (run 34441129737) and the pull-request (run 34441162554) events. Left open for independent review; not merged by this session.
 
 ## Foundation slice (2026-09-09): reproducible CPU checks (section 4.0 of the proposal)

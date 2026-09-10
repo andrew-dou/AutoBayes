@@ -15,7 +15,7 @@ Linear predictor
   eta_i = a_c + (x_x - mean(x_x)) * b_x + u[clinic_i]
   P(success) = p_i = expit(eta_i); deaths_i ~ Binomial(patients_i, p_i); eta is on the log-odds scale.
   Predictors are centred at their sample means (center_predictors=True, as in
-  brms and Bambi). a_c is the log-odds of y = 1 at the predictor means; the
+  brms and Bambi). a_c is the per-trial success log-odds at the predictor means; the
   prior on the intercept applies to a_c. The posterior reports the raw-scale
   intercept a = a_c - sum_p mean(x_p) * b_p, computed after sampling.
 
@@ -29,10 +29,10 @@ Priors (a_c and b on the logit scale)
 
 Likelihood
   log p(deaths_i | patients_i, eta_i) = log C(patients_i, deaths_i) - deaths_i softplus(-eta_i) - (patients_i - deaths_i) softplus(eta_i)
-  with a softplus whose value and gradient are exact for every finite eta on both the
-  PyTensor and the JAX path (autobayes/likelihoods.py; the built-in Bambi and PyMC forms
-  were measured and fail at large logits, docs/m2-decision.md). Zero-trial rows are
-  dropped before centring; predictors are centred at the means of the fitted rows.
+  with log C computed accurately as data and a softplus whose gradient is finite on both
+  the PyTensor and the JAX path. Validated (docs/m2-decision.md) for counts up to 1e6 per
+  row at logits to 1e6 against a 60-digit reference; larger counts are refused. Zero-trial
+  rows are dropped before centring; predictors are centred at the means of the fitted rows.
 
 PyMC variables sampled (value space)
   Intercept                a_c
@@ -47,7 +47,7 @@ Traceback (most recent call last):
   File "/Users/andrewdou/iqss-research/projects/AutoBayes-worktrees/m2-binomial/examples/m2_binomial_varying_intercept.py", line 72, in main
     fit = model.fit(backend=args.backend, device=args.device, chains=args.chains,
           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/Users/andrewdou/iqss-research/projects/AutoBayes-worktrees/m2-binomial/autobayes/model.py", line 315, in fit
+  File "/Users/andrewdou/iqss-research/projects/AutoBayes-worktrees/m2-binomial/autobayes/model.py", line 321, in fit
     return fit(self, **kwargs)
            ^^^^^^^^^^^^^^^^^^^
   File "/Users/andrewdou/iqss-research/projects/AutoBayes-worktrees/m2-binomial/autobayes/inference.py", line 140, in fit

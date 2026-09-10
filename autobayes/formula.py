@@ -24,7 +24,7 @@ _TRIALS_FORMULA_RE = re.compile(rf"^\s*({_IDENT})\s*\|\s*trials\(\s*({_IDENT})\s
 _BAMBI_PROPORTION_RE = re.compile(r"^\s*(p|prop|proportion)\s*\(", re.S)
 _GROUP_RE = re.compile(rf"^\(\s*(.+?)\s*\|\s*(.+?)\s*\)$", re.S)
 
-COUNT_CAP = 2**31 - 1   # the proposed validation domain for binomial counts (docs/m2-decision.md)
+COUNT_CAP = 10**6   # the validated domain for binomial counts per row (docs/m2-decision.md, repair record)
 
 
 class FormulaError(ValueError):
@@ -264,8 +264,10 @@ def check_counts(label: str, s: pd.Series, *, cap: int = COUNT_CAP) -> np.ndarra
         raise FormulaError(f"{label} has a negative value ({vf[vf < 0][0]!r}); counts must be non-negative")
     if np.any(vf > cap):
         raise FormulaError(
-            f"{label} has a value above the tested limit {cap} ({vf[vf > cap][0]:.0f}); larger counts are "
-            "outside the validated domain (docs/m2-decision.md) and are refused rather than assumed"
+            f"{label} has a value above the tested limit {cap} ({vf[vf > cap][0]:.0f}); larger counts per row "
+            "are outside the validated domain (the float64 density and gradient checks in docs/m2-decision.md) "
+            "and are refused rather than assumed. Split very large denominators into several rows if the "
+            "design allows it."
         )
     return vf.astype(np.int64)
 
