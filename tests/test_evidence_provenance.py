@@ -51,7 +51,6 @@ def test_same_instant_same_head_allocations_are_distinct_and_preserve_the_first(
     assert d1 != d2 and d1.is_dir() and d2.is_dir() and d1.parent == d2.parent == repo / "evidence-runs"
     assert tree_snapshot(d1) == before                 # nothing in the first run changed
     assert json.loads((d2 / "run.json").read_text())["git_head"] == "abc123"
-    assert (d1 / "run.json").read_bytes() != (d2 / "run.json").read_bytes() or True  # contents may match; paths never do
 
 
 def test_many_allocations_never_collide(tmp_path):
