@@ -1,5 +1,25 @@
 # AutoBayes status
 
+## M3a-2 slice (2026-09-10): one numeric-by-categorical fixed interaction
+
+- Dispatched by the coordinator after the M3a-1 acceptance
+  (`memory/reviews/2026-09-10-autobayes-m3a1-repair-acceptance.md`; dispatch
+  `memory/dispatches/2026-09-10-autobayes-m3a2-interaction.txt`). Branch
+  `m3a2/numeric-by-categorical-interaction` from `main` at `df8195a` in the worktree
+  `projects/AutoBayes-worktrees/m3a2-interaction`; session `e5628a7d-e572-4bad-9feb-82ee8361c261`.
+  Decision and acceptance record `docs/m3a2-decision.md` committed before any code, after
+  measuring formulae/Bambi's `x:z` and `x*z` expansion, product-column centring and naming.
+- **M3a-1 closure recorded here (per REPOSITORY_WORKFLOW):** PR https://github.com/andrew-dou/AutoBayes/pull/6
+  merged by andrew-dou at `df8195a39f5ef877e1c59186d69107e207063aa4` (2026-09-10T21:04:24Z; a squash whose
+  tree equals the branch head `15cd913`, verified with `git diff`), confirmed through GitHub before any
+  checkout changed. No process depended on the M3a-1 worktree (only the session shell's working
+  directory). Its six ignored `evidence-runs/` directories were copied with SHA-256 sums (24 files) to
+  `iqss-research/artifacts/2026-09-10-autobayes-m3a1-worker-evidence/` with a checkpoint note; the
+  local `main` ref was fast-forwarded to `df8195a`; the new worktree was created from `origin/main`
+  at the absolute path; then the clean merged worktree `AutoBayes-worktrees/m3a1-categorical` was
+  removed and `m3a1/categorical-predictors` deleted locally and on the remote. The original M1
+  planning checkout at `projects/AutoBayes` (dirty) was not touched.
+
 ## M3a-1 slice (2026-09-10): one treatment-coded categorical predictor
 
 - Dispatched by the coordinator after the M2 acceptance
