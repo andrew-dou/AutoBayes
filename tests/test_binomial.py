@@ -1,4 +1,4 @@
-"""M2: grouped binomial counts with a logit link. Checks A1-A9 and C1 of docs/m2-decision.md."""
+"""M2: grouped binomial counts with a logit link. Checks A1-A9 and C1 of docs/m2-decision.md, and N1-N5 of its correction record."""
 import copy
 import json
 import math
@@ -568,3 +568,121 @@ def test_numpyro_cpu_path(cmodel):
     r = cmodel.fit(backend="numpyro", device="cpu", chains=2, draws=40, tune=40, seed=3)
     assert r.platform == "cpu" and r.dtype == "float64" and r.chain_method == "parallel"
     assert set(r.idata.posterior.data_vars) >= {"Intercept", "x", "1|g_sigma", "1|g"}
+
+
+# -- N1-N5 (correction record): the exposed RV is one normalised distribution -----------------
+def exact_pmf(n, eta):
+    """Independent probabilities: math.comb and a 60-digit decimal expit, no SciPy."""
+    from decimal import Decimal, getcontext
+    getcontext().prec = 60
+    p = 1 / (1 + (-Decimal(eta)).exp())
+    return np.array([float(Decimal(math.comb(n, k)) * p ** k * (1 - p) ** (n - k)) for k in range(n + 1)])
+
+
+def two_row_model(n, k_obs):
+    df = pd.DataFrame({"k": [k_obs, k_obs], "n": [n, n], "g": ["a", "b"]})
+    return ab.binomial("k | trials(n) ~ 1 + (1 | g)", df, PRIORS)
+
+
+def compiled_value_functions(m):
+    """Functions of a symbolic value vector (integer and float) on both paths, at fixed params."""
+    import pymc as pm
+    import pytensor.tensor as pt
+    from pymc.sampling.jax import get_jaxified_graph
+
+    pmm = m.pymc_model
+    rv = pmm[m.names["y"]]
+    out = {}
+    for dtype in ("int64", "float64"):
+        v = pt.vector("v", dtype=dtype)
+        lp = pmm.replace_rvs_by_values([pm.logp(rv, v)])[0]
+        f_pt = pmm.compile_fn(lp, inputs=[v, *pmm.value_vars], point_fn=False, on_unused_input="ignore")
+        f_jx = get_jaxified_graph(inputs=[v, *pmm.value_vars], outputs=[lp])
+        out[dtype] = (f_pt, lambda vals, *args, f=f_jx: np.asarray(f(vals, *args)[0]))
+    return out
+
+
+@pytest.mark.parametrize("n", [1, 2, 3, 5, 10, 25])
+@pytest.mark.parametrize("eta", [0.0, 0.7, -0.7, 3.0, -3.0, -12.0])
+def test_support_enumeration_matches_exact_binomial_and_sums_to_one(n, eta):
+    pytest.importorskip("jax")
+    m = two_row_model(n, min(1, n))
+    fns = compiled_value_functions(m)
+    point = m.value_point(intercept=eta, b=[], sd=1.0, z=np.zeros(2))
+    args = [point[x.name] for x in m.pymc_model.value_vars]
+    exact = exact_pmf(n, eta)
+    for dtype, (f_pt, f_jx) in fns.items():
+        for f in (f_pt, f_jx):
+            pmf = np.array([np.exp(np.asarray(f(np.array([k, k], dtype=dtype), *args))[0]) for k in range(n + 1)])
+            assert np.allclose(pmf, exact, rtol=0, atol=1e-12), (n, eta, dtype, pmf, exact)
+            assert abs(pmf.sum() - 1.0) < 1e-12
+
+
+@pytest.mark.parametrize("n,eta", [(2, 0.0), (5, 0.7), (10, -3.0)])
+def test_pmf_does_not_depend_on_the_observed_outcome(n, eta):
+    pytest.importorskip("jax")
+    pmfs = []
+    for k_obs in range(n + 1):
+        m = two_row_model(n, k_obs)
+        f_pt, f_jx = compiled_value_functions(m)["int64"]
+        point = m.value_point(intercept=eta, b=[], sd=1.0, z=np.zeros(2))
+        args = [point[x.name] for x in m.pymc_model.value_vars]
+        pmfs.append(np.array([np.exp(np.asarray(f(np.array([k, k]), *args))[0]) for f in (f_pt, f_jx) for k in range(n + 1)]))
+    exact = np.tile(exact_pmf(n, eta), 2)
+    for pmf in pmfs:
+        assert np.allclose(pmf, pmfs[0], rtol=0, atol=1e-14) and np.allclose(pmf, exact, rtol=0, atol=1e-12)
+
+
+def test_symbolic_value_evaluated_repeatedly_after_compilation():
+    pytest.importorskip("jax")
+    n, eta = 5, 0.7
+    m = two_row_model(n, 2)
+    f_pt, f_jx = compiled_value_functions(m)["int64"]
+    point = m.value_point(intercept=eta, b=[], sd=1.0, z=np.zeros(2))
+    args = [point[x.name] for x in m.pymc_model.value_vars]
+    exact = exact_pmf(n, eta)
+    for _ in range(2):                                     # two passes over the support with the same compiled functions
+        for k in range(n + 1):
+            for f in (f_pt, f_jx):
+                lp = np.asarray(f(np.array([k, n - k]), *args))
+                assert np.allclose(np.exp(lp), [exact[k], exact[n - k]], rtol=0, atol=1e-12)
+    # a different point of the parameter space through the same compiled function
+    point2 = m.value_point(intercept=-3.0, b=[], sd=1.0, z=np.zeros(2))
+    args2 = [point2[x.name] for x in m.pymc_model.value_vars]
+    assert np.allclose([np.exp(np.asarray(f_pt(np.array([k, k]), *args2))[0]) for k in range(n + 1)], exact_pmf(n, -3.0), atol=1e-12)
+
+
+def test_random_draws_match_the_mass():
+    import pymc as pm
+    from autobayes.likelihoods import BinomialLogit
+
+    N, delta = 20000, 1e-6
+    for n, eta in [(2, 0.0), (10, -0.7), (25, 3.0)]:
+        dist = BinomialLogit.dist(np.full(N, eta), np.full(N, n, dtype=np.int64))
+        draws = pm.draw(dist, random_seed=1)
+        assert draws.shape == (N,) and np.issubdtype(draws.dtype, np.integer) and draws.min() >= 0 and draws.max() <= n
+        exact = exact_pmf(n, eta)
+        bound = math.sqrt(math.log(2 * (n + 1) / delta) / (2 * N))          # Hoeffding, per outcome
+        freq = np.bincount(draws, minlength=n + 1) / N
+        assert np.all(np.abs(freq - exact) <= bound), (n, eta, freq, exact, bound)
+        assert abs(draws.mean() - n / (1 + math.exp(-eta))) <= n * math.sqrt(math.log(2 / delta) / (2 * N))
+
+
+def test_invalid_values_have_zero_mass():
+    pytest.importorskip("jax")
+    n, eta = 5, 0.7
+    m = two_row_model(n, 2)
+    fns = compiled_value_functions(m)
+    point = m.value_point(intercept=eta, b=[], sd=1.0, z=np.zeros(2))
+    args = [point[x.name] for x in m.pymc_model.value_vars]
+    exact = exact_pmf(n, eta)
+    for f in fns["float64"]:
+        for bad, ok in (([-1.0, 2.0], [False, True]), ([6.0, 3.0], [False, True]), ([1.5, 1.0], [False, True]),
+                        ([2.0, 5.5], [True, False]), ([-0.5, 5.0], [False, True])):
+            lp = np.asarray(f(np.array(bad), *args))
+            ok = np.array(ok)
+            assert np.all(np.isneginf(lp[~ok])), (bad, lp)
+            assert np.allclose(np.exp(lp[ok]), exact[np.array(bad)[ok].astype(int)], rtol=0, atol=1e-12), (bad, lp)
+    for f in fns["int64"]:
+        assert np.all(np.isneginf(np.asarray(f(np.array([-1, 6]), *args))))
+        assert np.allclose(np.exp(np.asarray(f(np.array([0, 5]), *args))), [exact[0], exact[5]], rtol=0, atol=1e-12)

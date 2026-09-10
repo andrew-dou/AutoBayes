@@ -1,0 +1,12 @@
+{
+ "previous_head": "d98b730",
+ "rows": 298,
+ "points": 6,
+ "max_abs_change_total_logp_pytensor": 4.547473508864641e-13,
+ "max_abs_change_total_logp_jax": 4.547473508864641e-13,
+ "max_abs_change_likelihood_sum_pytensor": 4.547473508864641e-13,
+ "max_abs_change_per_row_pytensor": 7.105427357601002e-15,
+ "max_abs_change_per_row_jax": 7.105427357601002e-15,
+ "acceptance_N7_threshold": 1e-11,
+ "passes": true
+}

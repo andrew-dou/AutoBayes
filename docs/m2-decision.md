@@ -437,3 +437,63 @@ preserved or the prior transformed); the coefficient docstring states the measur
 $4\times10^{-10}$ / $1.2\times10^{-10}$ figures; and the gradient floor is described as a
 property of the tested evaluation $k - n\,\mathrm{expit}(\eta)$, not a universal one (at
 $k = n/2$, for example, the derivative equals $-(n/2)\tanh(\eta/2)$, which subtracts nothing).
+
+### Executed results for the correction (2026-09-10, clean locked environment, both paths)
+
+**Reproduction before the change (`d98b730`, `docs/m2-evidence/correction/normalization_before_d98b730.json`,
+script `scripts/norm_evidence.py`, public API, $n = 2$, $\eta = 0$):**
+
+| observed $k$ | pmf over $k = 0, 1, 2$ (PyTensor = JAX) | total mass |
+|---|---|---|
+| 0 | 0.25, 0.25, 0.25 | 0.75 |
+| 1 | 0.5, 0.5, 0.5 | 1.5 |
+| 2 | 0.25, 0.25, 0.25 | 0.75 |
+
+Off-support values ($-1$, $3$, $5$, $-7$ as integers; $-1.0$, $3.0$, $1.5$, $0.5$ as floats)
+all returned $\log p = -0.693$ on both paths. This agrees with the coordinator's independent
+probe (`artifacts/2026-09-10-autobayes-m2-repair-independent/normalization-probe.json`).
+
+**After the change (`normalization_after.json`):** pmf $0.25, 0.5, 0.25$ with total mass
+$1.000000$ for every observed $k$, integer and float value tensors, both paths; every
+off-support value returns $-\infty$ on both paths.
+
+**Coefficient accuracy of the symbolic decomposition (`coefficient_accuracy.json`, script
+`scripts/coef_measure.py`; 60-digit reference; acceptance grid `grid_ks(n)` plus $k \in
+\{15, 16, 17, n-15, n-16, n-17\}$ across the `stirlerr` branch boundary):**
+
+| $n$ | max abs error, PyTensor | max abs error, JAX | at $k$ | max rel error |
+|---|---|---|---|---|
+| 1, 2 | 0 | 1.3e-15 | 1 | 1.3e-15 |
+| 10 | 1.8e-15 | 1.1e-14 | 2 | 3.5e-15 |
+| 1e3 | 1.1e-13 | 1.1e-13 | 250 | 2.7e-16 |
+| 1e5 | 1.5e-11 | 1.5e-11 | 50000 | 4.0e-13 |
+| 999999 | 1.2e-10 | 1.2e-10 | 249999 | 4.4e-13 |
+| 1e6 | 1.2e-10 | 1.2e-10 | 250000 | 2.1e-12 |
+| 1e7 (outside the cap) | 9.3e-10 | 9.3e-10 | 2500000 | 3.3e-11 |
+
+The worst absolute error is one float64 ulp of the coefficient's own magnitude at
+$k = n/4$ (where $\log\binom{n}{k}$ is largest on the grid); the $k = n - 1$ and interior
+figures quoted in the correction text above ($4\times10^{-10}$, $3\times10^{-13}$) were the
+previous data-side helper's measurements and are superseded by this table, which the
+coefficient docstring now cites. The cap decision is unchanged: the per-row density and
+gradient checks over the grid (N6) pass at the same tolerance as in the repair record.
+
+**N7 (`n7_example_logdensity_*.json`, script `scripts/n7_logdensity.py`):** the M2
+example's fitted data (298 rows after the two zero-trial drops, counts $\le 50$) at six fixed
+parameter points, previous head `d98b730` against the corrected tree: largest change in the
+total model log density $4.5\times10^{-13}$ (both paths), in any per-row likelihood term
+$7.1\times10^{-15}$; threshold $10^{-11}$, passed. The committed example outputs
+(`docs/m2-evidence/example_*`) were therefore not re-sampled.
+
+**Tests (`tests/test_binomial.py`, new N1-N5: 42 parametrised cases).** N1 support
+enumeration: 36 cases pass with the pmf within $10^{-12}$ of `math.comb` $\times$ decimal expit
+and total mass within $10^{-12}$ of 1, integer and float value tensors, both paths. N2: pmfs
+identical to $10^{-14}$ across observed $k$ and correct. N3: one compiled function per path
+evaluated over the support twice and at a second parameter point. N4: 20000 draws from
+`BinomialLogit.dist` at $(n, \eta) \in \{(2, 0), (10, -0.7), (25, 3)\}$ within the Hoeffding
+bound ($\delta = 10^{-6}$) per outcome and in the mean. N5: $-\infty$ at $-1$, $n+1$, $1.5$,
+$5.5$, $-0.5$ on both paths for float and integer value tensors, valid entries of the same
+vectors unchanged. Module: **92 passed (190 s)**. Fast suite: **183 passed, 5 deselected (240 s)**. Slow suite: **5 passed (31 s)**
+(N6: every repair-record check, the $n = 1$ equivalence, expansion, predictions, the cap
+refusals and the CPU recovery on both backends pass unchanged). Evidence directories of
+these runs: `evidence-runs/20260910T162905.886985Z-8d76d649a5bc-dirty-p41180-00e060/` (fast) and `evidence-runs/20260910T162959.493761Z-8d76d649a5bc-dirty-p41519-cd3b40/` (slow); earlier run directories untouched.

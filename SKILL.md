@@ -141,8 +141,10 @@ model = ab.binomial("deaths | trials(patients) ~ x + (1 | clinic)", df, priors)
 
 Counts must be real integers (int columns, or floats holding integers); bool, complex,
 non-integral, negative, non-finite, `successes > trials`, and values above `1e6` per row
-are refused before any cast, naming the column (the cap is the tested numerical domain,
-not a modelling limit; split very large denominators across rows if the design allows). A row with `trials = 0` and no successes
+are refused before any cast, naming the column. The cap is the tested numerical domain of
+this implementation, not a modelling limit; do not work around it by splitting a row into
+several rows, which changes the unweighted centring and therefore what the centred-intercept
+prior refers to unless the centring is preserved or the prior transformed. A row with `trials = 0` and no successes
 carries no information and is **dropped before centring** (`describe()` reports how many
 and where); successes with zero trials is impossible data and refused; a data set with
 no trials at all is refused. If every fitted row has zero successes or all successes the

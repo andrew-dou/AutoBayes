@@ -1,0 +1,144 @@
+{
+ "package": "/private/tmp/claude-502/-Users-andrewdou-iqss-research-projects-AutoBayes/e5628a7d-e572-4bad-9feb-82ee8361c261/scratchpad/prev",
+ "git_head_of_package_dir": "d98b730 (git archive export of the previous PR head)",
+ "n": 2,
+ "eta": 0.0,
+ "true_pmf": [
+  0.25,
+  0.5,
+  0.25
+ ],
+ "by_observed_k": [
+  {
+   "observed_k": 0,
+   "pmf_pytensor_int_value": [
+    0.25,
+    0.25,
+    0.25
+   ],
+   "pmf_jax_int_value": [
+    0.25,
+    0.25,
+    0.25
+   ],
+   "mass_pytensor_int_value": 0.75,
+   "mass_jax_int_value": 0.75,
+   "pmf_pytensor_float_value": [
+    0.25,
+    0.25,
+    0.25
+   ],
+   "pmf_jax_float_value": [
+    0.25,
+    0.25,
+    0.25
+   ],
+   "mass_pytensor_float_value": 0.75,
+   "mass_jax_float_value": 0.75
+  },
+  {
+   "observed_k": 1,
+   "pmf_pytensor_int_value": [
+    0.5,
+    0.5,
+    0.5
+   ],
+   "pmf_jax_int_value": [
+    0.5,
+    0.5,
+    0.5
+   ],
+   "mass_pytensor_int_value": 1.5,
+   "mass_jax_int_value": 1.5,
+   "pmf_pytensor_float_value": [
+    0.5,
+    0.5,
+    0.5
+   ],
+   "pmf_jax_float_value": [
+    0.5,
+    0.5,
+    0.5
+   ],
+   "mass_pytensor_float_value": 1.5,
+   "mass_jax_float_value": 1.5
+  },
+  {
+   "observed_k": 2,
+   "pmf_pytensor_int_value": [
+    0.25,
+    0.25,
+    0.25
+   ],
+   "pmf_jax_int_value": [
+    0.25,
+    0.25,
+    0.25
+   ],
+   "mass_pytensor_int_value": 0.75,
+   "mass_jax_int_value": 0.75,
+   "pmf_pytensor_float_value": [
+    0.25,
+    0.25,
+    0.25
+   ],
+   "pmf_jax_float_value": [
+    0.25,
+    0.25,
+    0.25
+   ],
+   "mass_pytensor_float_value": 0.75,
+   "mass_jax_float_value": 0.75
+  }
+ ],
+ "off_support": [
+  {
+   "value_dtype": "int64",
+   "value": -1,
+   "logp_pytensor": -0.6931471805599452,
+   "logp_jax": -0.6931471805599452
+  },
+  {
+   "value_dtype": "int64",
+   "value": 3,
+   "logp_pytensor": -0.6931471805599451,
+   "logp_jax": -0.6931471805599451
+  },
+  {
+   "value_dtype": "int64",
+   "value": 5,
+   "logp_pytensor": -0.6931471805599454,
+   "logp_jax": -0.6931471805599454
+  },
+  {
+   "value_dtype": "int64",
+   "value": -7,
+   "logp_pytensor": -0.6931471805599454,
+   "logp_jax": -0.6931471805599454
+  },
+  {
+   "value_dtype": "float64",
+   "value": -1.0,
+   "logp_pytensor": -0.6931471805599452,
+   "logp_jax": -0.6931471805599452
+  },
+  {
+   "value_dtype": "float64",
+   "value": 3.0,
+   "logp_pytensor": -0.6931471805599451,
+   "logp_jax": -0.6931471805599451
+  },
+  {
+   "value_dtype": "float64",
+   "value": 1.5,
+   "logp_pytensor": -0.6931471805599452,
+   "logp_jax": -0.6931471805599452
+  },
+  {
+   "value_dtype": "float64",
+   "value": 0.5,
+   "logp_pytensor": -0.6931471805599452,
+   "logp_jax": -0.6931471805599452
+  }
+ ]
+}

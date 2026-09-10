@@ -128,14 +128,9 @@ class Model:
             if not np.array_equal(obs, self.design.y.astype(int)):
                 raise RuntimeError("Bambi's observed response does not equal the response column")
             if family == "binomial":
-                from autobayes.likelihoods import log_binomial_coefficient
-
                 consts = [np.asarray(i.data) for i in rv.owner.inputs if getattr(i, "data", None) is not None]
-                has_trials = any(c.shape == self.design.trials.shape and np.array_equal(c, self.design.trials) for c in consts)
-                logc = log_binomial_coefficient(self.design.trials, self.design.y.astype(np.int64))
-                has_logc = any(c.shape == logc.shape and np.allclose(c, logc, rtol=0, atol=0) for c in consts)
-                if not (has_trials and has_logc):
-                    raise RuntimeError("the trials or the coefficient attached to the likelihood do not equal the data")
+                if not any(c.shape == self.design.trials.shape and np.array_equal(c, self.design.trials) for c in consts):
+                    raise RuntimeError("the trials attached to the likelihood do not equal the trials column")
 
     # -- design ------------------------------------------------------------------------
     def _extract_design(self) -> Design:

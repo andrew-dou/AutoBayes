@@ -266,8 +266,8 @@ def check_counts(label: str, s: pd.Series, *, cap: int = COUNT_CAP) -> np.ndarra
         raise FormulaError(
             f"{label} has a value above the tested limit {cap} ({vf[vf > cap][0]:.0f}); larger counts per row "
             "are outside the validated domain (the float64 density and gradient checks in docs/m2-decision.md) "
-            "and are refused rather than assumed. Split very large denominators into several rows if the "
-            "design allows it."
+            "and are refused rather than assumed. Note that splitting a row into several rows changes the "
+            "unweighted centring and therefore what the centred-intercept prior refers to."
         )
     return vf.astype(np.int64)
 
