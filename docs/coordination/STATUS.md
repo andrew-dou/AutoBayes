@@ -41,6 +41,11 @@
   **365 passed, 8 deselected (312 s; pytest exit 0)**. Slow suite **1 failed, 7 passed (54 s; pytest exit 1): the failed test is F7, the prespecified recovery (population-SD gate), reported below and not re-run to pass** including the prespecified varying-slope recovery: **failed one gate**: `x|g_sigma` 99 % HDI [0.100, 0.27] excludes the population truth 0.30 on both backends (the NumPyro run also has `1|g_sigma` R-hat 1.0117 and `Intercept` bulk ESS 395); the realised spread of the 30 simulated slopes is 0.220 (a ~2 % event) and the model's posterior matches an independent OLS analysis (0.171 vs 0.177) and contains the realised SD; recorded and investigated, not re-run (`docs/m3b1-evidence/F7_*`).
   Independent regressions 27 passed (nine label-identity, three M2 normalisation, fifteen M3a-2 original-input). Example on both backends in `docs/m3b1-evidence/`.
 
+- PR: https://github.com/andrew-dou/AutoBayes/pull/8 (base `main`, author andrew-dou). Record `8307a90`; implementation `9b15865`; this STATUS
+  checkpoint follows it (CI runs recorded in the final report and PR checks). Left open for independent
+  review with the F7 gate failure reported, not merged by this session; the M3b-1 worktree is kept until
+  that review passes. Next approved increment after acceptance: correlated varying slopes (LKJ), separate PR.
+
 ## M3a-2 slice (2026-09-10): one numeric-by-categorical fixed interaction
 
 - Dispatched by the coordinator after the M3a-1 acceptance
