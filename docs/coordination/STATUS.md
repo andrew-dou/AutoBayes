@@ -1,5 +1,46 @@
 # AutoBayes status
 
+## M3b-1 slice (2026-09-11): independent varying intercept and one numeric varying slope
+
+- Dispatched by the coordinator after the M3a-2 acceptance
+  (`memory/reviews/2026-09-10-autobayes-m3a2-repair-review.md`; dispatch
+  `memory/dispatches/2026-09-10-autobayes-m3b1-independent-slopes.txt`). Branch
+  `m3b1/independent-varying-slope` from `main` at `95dce8c` in the worktree
+  `projects/AutoBayes-worktrees/m3b1-varying-slope`; session `e5628a7d-e572-4bad-9feb-82ee8361c261`.
+  Decision and acceptance record `docs/m3b1-decision.md` committed at `8307a90` before any code, after
+  a build observation of Bambi's `(1 + x | g)` (two independent group terms; the slope block is the raw
+  covariate times the one-hot matrix, uncentred under both centring settings; formulae rejects `||`).
+- **M3a-2 closure recorded here (per REPOSITORY_WORKFLOW):** PR https://github.com/andrew-dou/AutoBayes/pull/7
+  merged by andrew-dou at `95dce8c3b57bb949566f161a306503bcec2527c2` (2026-09-11T00:05:13Z); the merge tree
+  `afe73f3586041ac0dd043a19121036f9c344cc87` equals the reviewed head `aa2e4dc`'s tree (verified with
+  `git rev-parse` and `git diff`). No process used the M3a-2 worktree (only the session shell's working
+  directory). Its five ignored `evidence-runs/` directories were copied with SHA-256 sums (28 files) to
+  `iqss-research/artifacts/2026-09-10-autobayes-m3a2-worker-evidence/` with a checkpoint note; the local
+  `main` ref was fast-forwarded to `95dce8c`; the new worktree was created from `origin/main` at the
+  absolute path; then the clean merged worktree `AutoBayes-worktrees/m3a2-interaction` was removed and
+  `m3a2/numeric-by-categorical-interaction` deleted locally and on the remote. The original M1 planning
+  checkout at `projects/AutoBayes` (dirty) and the independent review artifacts were not touched.
+- **Delivered (this slice):** `(1 + x || g)` (and `(x + 1 || g)`; `(1 || g)` = `(1 | g)`) on the three
+  families: `u_j = sd0 z0_j`, `v_j = sd1 z1_j`, independent standard-normal offsets, `eta = fixed + u[g] +
+  x v[g]` with the RAW covariate (Bambi does not centre group columns; verified at build time, kill
+  criterion otherwise); `(1 + x | g)` refused as brms's correlated form with the independent spelling
+  named; implicit-intercept, slope-only, multi-slope, categorical/interaction-slope and absent-fixed-term
+  forms refused; `sd={"Intercept": ..., "x": ...}` required for a varying slope (scalar `sd` kept for
+  varying-intercept models; missing/unknown keys refused); names `x|g_sigma`, `x|g_offset`, `x|g`;
+  `value_point(sd_slope=, z_slope=)`; `Design.Z_slope`; `describe()` states both SDs, the two offset
+  vectors, the raw-x independence statement and the refused correlated form; fit records carry both SD
+  priors and the slope; predictions in-layer for every family: known groups `a + Xb + u[g] + x v[g]`,
+  `population` draws one independent (u, v) pair per new label per draw, `resample_observed` takes both
+  effects from one observed group's joint draw. Version 0.5.0.
+- **Tests** (clean locked environment, fresh evidence directories, real pytest exit codes):
+  `tests/test_varying_slope.py` 18 passed (grammar and refusals; the group design from the original rows and
+  labels for 3 families x 2 centrings with independently selected binomial rows; the separately written
+  reference density with both SD priors, two offset vectors and both Jacobians against PyTensor and JAX
+  values and full gradients; deterministic synthetic-posterior predictions for known and unseen groups in
+  both modes with the pairing verified; SD prior forms; describe/record/value_point). Fast suite
+  **365 passed, 8 deselected (312 s; pytest exit 0)**. Slow suite **1 failed, 7 passed (54 s; pytest exit 1): the failed test is F7, the prespecified recovery (population-SD gate), reported below and not re-run to pass** including the prespecified varying-slope recovery: **failed one gate**: `x|g_sigma` 99 % HDI [0.100, 0.27] excludes the population truth 0.30 on both backends (the NumPyro run also has `1|g_sigma` R-hat 1.0117 and `Intercept` bulk ESS 395); the realised spread of the 30 simulated slopes is 0.220 (a ~2 % event) and the model's posterior matches an independent OLS analysis (0.171 vs 0.177) and contains the realised SD; recorded and investigated, not re-run (`docs/m3b1-evidence/F7_*`).
+  Independent regressions 27 passed (nine label-identity, three M2 normalisation, fifteen M3a-2 original-input). Example on both backends in `docs/m3b1-evidence/`.
+
 ## M3a-2 slice (2026-09-10): one numeric-by-categorical fixed interaction
 
 - Dispatched by the coordinator after the M3a-1 acceptance

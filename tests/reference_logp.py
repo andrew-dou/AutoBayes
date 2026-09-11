@@ -113,12 +113,27 @@ def build_design(data: pd.DataFrame, response: str, predictors: list[str], group
     return y, X - xbar, xbar, gidx, levels
 
 
+def slope_terms(point: dict, data: pd.DataFrame, gidx, levels, priors: dict, varying_slope: str | None, jacobian: bool):
+    """M3b-1: the varying slope's contribution to eta (raw x times v[g]) and to the log density
+    (independent N(0, 1) offsets, the SD prior 'sd_slope', and the log-scale Jacobian)."""
+    if not varying_slope:
+        return 0.0, 0.0
+    log_sd1 = float(point["log_sd_slope"]); z1 = np.asarray(point["z_slope"], dtype=float)
+    assert z1.shape == (len(levels),)
+    sd1 = np.exp(log_sd1)
+    eta_add = sd1 * z1[gidx] * data[varying_slope].to_numpy(dtype=float)        # RAW covariate, never centred
+    lp_add = np.sum(stats.norm.logpdf(z1, 0.0, 1.0)) + prior_logpdf(*priors["sd_slope"], sd1) + (log_sd1 if jacobian else 0.0)
+    return eta_add, lp_add
+
+
 def reference_logp(point: dict, data: pd.DataFrame, *, response: str, predictors: list[str],
                    group: str, priors: dict, center: bool = True, jacobian: bool = True,
-                   categorical: dict | None = None, interactions: list | None = None) -> float:
-    """``point`` holds a_c, b (array, one entry per design column), log_sigma, log_sd, z (array).
+                   categorical: dict | None = None, interactions: list | None = None,
+                   varying_slope: str | None = None) -> float:
+    """``point`` holds a_c, b (array, one entry per design column), log_sigma, log_sd, z (array) and,
+    with a varying slope, log_sd_slope and z_slope (array).
 
-    ``priors`` maps 'intercept', 'b' (dict by design column), 'sd', 'sigma' to (name, params).
+    ``priors`` maps 'intercept', 'b' (dict by design column), 'sd', 'sd_slope', 'sigma' to (name, params).
     """
     y, Xc, _, gidx, levels = build_design(data, response, predictors, group, center, categorical, interactions)
     columns = design_columns(data, predictors, categorical, interactions)
@@ -127,8 +142,9 @@ def reference_logp(point: dict, data: pd.DataFrame, *, response: str, predictors
     z = np.asarray(point["z"], dtype=float)
     assert z.shape == (len(levels),)
     sigma, sd = np.exp(log_sigma), np.exp(log_sd)
+    eta_slope, lp_slope = slope_terms(point, data, gidx, levels, priors, varying_slope, jacobian)
 
-    mu = a + Xc @ b + sd * z[gidx]
+    mu = a + Xc @ b + sd * z[gidx] + eta_slope
     lp = np.sum(stats.norm.logpdf(y, loc=mu, scale=sigma))
     lp += np.sum(stats.norm.logpdf(z, 0.0, 1.0))
     lp += prior_logpdf(*priors["intercept"], a)
@@ -136,6 +152,7 @@ def reference_logp(point: dict, data: pd.DataFrame, *, response: str, predictors
         lp += prior_logpdf(*priors["b"][p], b[i])
     lp += prior_logpdf(*priors["sd"], sd)
     lp += prior_logpdf(*priors["sigma"], sigma)
+    lp += lp_slope
     if jacobian:
         lp += log_sigma + log_sd
     return float(lp)
@@ -165,7 +182,8 @@ def conditional_gaussian_posterior(data, *, response, predictors, group, center,
 
 def reference_logp_bernoulli(point: dict, data: pd.DataFrame, *, response: str, predictors: list[str],
                              group: str, priors: dict, center: bool = True, jacobian: bool = True,
-                             categorical: dict | None = None, interactions: list | None = None) -> float:
+                             categorical: dict | None = None, interactions: list | None = None,
+                             varying_slope: str | None = None) -> float:
     """M1 reference: Bernoulli likelihood with a logit link, same structure as ``reference_logp``.
 
     ``point`` holds a_c, b (array), log_sd, z (array); there is no residual scale. The
@@ -182,14 +200,16 @@ def reference_logp_bernoulli(point: dict, data: pd.DataFrame, *, response: str, 
     z = np.asarray(point["z"], dtype=float)
     assert z.shape == (len(levels),)
     sd = np.exp(log_sd)
+    eta_slope, lp_slope = slope_terms(point, data, gidx, levels, priors, varying_slope, jacobian)
 
-    eta = a + Xc @ b + sd * z[gidx]
+    eta = a + Xc @ b + sd * z[gidx] + eta_slope
     lp = np.sum(y * log_expit(eta) + (1.0 - y) * log_expit(-eta))
     lp += np.sum(stats.norm.logpdf(z, 0.0, 1.0))
     lp += prior_logpdf(*priors["intercept"], a)
     for i, p in enumerate(columns):
         lp += prior_logpdf(*priors["b"][p], b[i])
     lp += prior_logpdf(*priors["sd"], sd)
+    lp += lp_slope
     if jacobian:
         lp += log_sd
     return float(lp)

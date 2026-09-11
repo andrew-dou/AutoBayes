@@ -1,6 +1,6 @@
 """Explicit priors, by parameter class, in brms terms.
 
-brms classes: ``Intercept``, ``b`` (slopes and dummy coefficients), ``sd`` (group SD) and, for the Gaussian family
+brms classes: ``Intercept``, ``b`` (slopes and dummy coefficients), ``sd`` (group SDs: one prior, or one per varying effect) and, for the Gaussian family
 only, ``sigma`` (residual SD). Every class the family has must be given; there are no
 silent defaults here (Bambi would supply some, and that is exactly what this layer refuses
 to let happen). For the Bernoulli family the intercept and slope priors are on the logit
@@ -81,8 +81,35 @@ class Priors:
 
     intercept: Prior
     b: Prior | Mapping[str, Prior | Mapping[str, Prior]]
-    sd: Prior
+    sd: Prior | Mapping[str, Prior]
     sigma: Prior | None = None
+
+    # -- group-effect SD priors ---------------------------------------------------------------
+    def sd_priors(self, spec) -> dict[str, Prior]:
+        """One SD prior per varying effect, keyed ``"Intercept"`` and, with ``(1 + x || g)``, the slope
+        name. A single prior is the varying-intercept-only form; a varying slope requires the mapping
+        to name both effects exactly (docs/m3b1-decision.md)."""
+        from autobayes.formula import ModelSpec
+
+        slope = spec.varying_slope if isinstance(spec, ModelSpec) else None
+        wanted = ["Intercept"] + ([slope] if slope else [])
+        if isinstance(self.sd, Prior):
+            if slope:
+                raise PriorError(
+                    f"a model with the varying slope {slope!r} needs one SD prior per varying effect: "
+                    f"sd={{'Intercept': <prior>, {slope!r}: <prior>}} (nothing is filled in)"
+                )
+            return {"Intercept": self.sd}
+        if not isinstance(self.sd, Mapping):
+            raise PriorError(f"sd must be a Prior or a mapping {{'Intercept': prior[, 'x': prior]}}, got {type(self.sd).__name__}")
+        given = dict(self.sd)
+        missing = [k for k in wanted if k not in given]
+        extra = [k for k in given if k not in wanted]
+        if missing or extra:
+            raise PriorError(
+                f"sd priors must cover exactly the varying effects {wanted}; missing {missing}, unexpected {extra}"
+            )
+        return {k: given[k] for k in wanted}
 
     # -- coefficient priors -----------------------------------------------------------------
     def coefficient_priors(self, spec) -> dict[str, Prior]:
@@ -190,7 +217,7 @@ class Priors:
                 raise PriorError(
                     f"prior for {label!r} must be a location prior ({sorted(_LOCATION)}), got {prior}"
                 )
-        scales = [("sd", self.sd)] + ([("sigma", self.sigma)] if self.sigma is not None else [])
+        scales = [(f"sd:{k}", v) for k, v in self.sd_priors(spec).items()] + ([("sigma", self.sigma)] if self.sigma is not None else [])
         for label, prior in scales:
             if not isinstance(prior, Prior):
                 raise PriorError(f"prior for {label!r} must be a Prior, got {type(prior).__name__}")
@@ -221,5 +248,8 @@ class Priors:
             name = priors[0].name
             params = {k: np.array([float(pr.params[k]) for pr in priors]) for k in priors[0].params}
             out[term] = bmb.Prior(name, **params)
-        out[f"1|{group}"] = bmb.Prior("Normal", mu=0.0, sigma=self.sd.to_bambi())
+        sds = self.sd_priors(spec)
+        out[f"1|{group}"] = bmb.Prior("Normal", mu=0.0, sigma=sds["Intercept"].to_bambi())
+        if spec.varying_slope:
+            out[f"{spec.varying_slope}|{group}"] = bmb.Prior("Normal", mu=0.0, sigma=sds[spec.varying_slope].to_bambi())
         return out

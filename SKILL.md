@@ -24,9 +24,11 @@ model family, then the routing for everything else.
 **What is verified.** One formula subset with numeric predictors, treatment-coded
 categorical predictors declared with `categorical={column: reference}`, one
 numeric-by-categorical interaction `x:z` with both main effects present (`x*z` is the
-shorthand for `x + z + x:z`), and one varying intercept,
+shorthand for `x + z + x:z`), and one varying intercept, optionally with one independent
+numeric varying slope,
 
     y ~ [1 +] x1 [+ x2 ...] [+ z ...] [+ x:z ...] + (1 | group)
+    y ~ [1 +] x1 [+ x2 ...] [+ z ...] [+ x:z ...] + (1 + x1 || group)
 
 for two outcome families:
 
@@ -222,6 +224,38 @@ refused). The posterior variable is `dose:arm` with the levels as
 coordinates (`az.summary(fit.idata, var_names=["dose:arm"])`). Check
 `model.spec.columns` and `model.design.X_raw[:5]`: the product columns are
 `dose * 1[arm = l]`, built and verified against an independent one-hot construction.
+
+For a varying slope (milestone M3b-1), independent of the varying intercept:
+
+```python
+priors = ab.Priors(
+    intercept=ab.Normal(0, 5), b=ab.Normal(0, 2),
+    sd={"Intercept": ab.HalfNormal(1),      # SD of the site intercepts (at dose = 0, raw scale)
+        "dose": ab.HalfNormal(1)},          # SD of the site dose slopes; both keys required
+    sigma=ab.HalfNormal(1),
+)
+model = ab.gaussian("y ~ dose + (1 + dose || site)", df, priors)
+```
+
+`||` is brms's spelling for *independent* varying effects, and it is the only varying-slope
+form this layer accepts: `u_j = sd_site * z0_j`, `v_j = sd_dose|site * z1_j`, independent
+standard-normal offsets, no correlation parameter, `eta_i = fixed_i + u[site_i] +
+dose_i * v[site_i]`. brms's single-bar `(1 + dose | site)` means *correlated* effects with an
+LKJ prior; it is refused here with that explanation, because Bambi would silently build
+the independent model under that spelling. Also refused: `(dose || site)` (the varying
+intercept must be written), `(0 + dose || site)`, more than one slope, a categorical or
+interaction slope, and a slope whose population-level term is absent from the formula.
+`sd` must name both effects exactly (`{"Intercept": ..., "dose": ...}`); the old scalar `sd`
+still serves varying-intercept-only models. **Coordinates:** the slope multiplies the raw
+`dose` (the group column is never centred, and the build checks it), so the declared
+independence of intercepts and slopes is the independence at `dose = 0`; shifting `dose` by
+`c` would make `u' = u + c v` correlated with `v`. Choose the covariate's origin
+deliberately (the population-level centring of `dose` for `a_c` is unaffected). The
+posterior has `1|site_sigma`, `dose|site_sigma`, `1|site` (u) and `dose|site` (v); a strong
+correlation of the posterior-mean u and v is a reason to want the correlated model, which is
+a later milestone. For a new site, `new_groups="population"` draws one fresh (u, v) pair per
+new label per posterior draw, and `"resample_observed"` takes both u and v from one observed
+site's joint draw; rows sharing a label share the pair.
 
 Every class the family has is required. There are no defaults, because a default
 prior is the thing you cannot see in the formula and cannot reproduce later. Location

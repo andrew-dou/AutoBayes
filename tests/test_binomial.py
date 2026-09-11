@@ -454,8 +454,8 @@ def test_invalid_inputs(cdata):
         ab.Priors(intercept=ab.Normal(0, 1.5), b=ab.Normal(0, 1))
     for bad_formula, needle in [
         ("k ~ x + (1 | g)", "needs 'successes | trials"), ("p(k, n) ~ x + (1 | g)", "Bambi's 'p"),
-        ("k | trials(n) ~ x + (1 + x | g)", "varying slopes"), ("k | trials(n) ~ x + (1 | g/h)", "nested"),
-        ("k | trials(n) ~ 0 + x + (1 | g)", "no intercept"), ("k | trials(n) ~ x", "exactly one varying-intercept"),
+        ("k | trials(n) ~ x + (1 + x | g)", "CORRELATED varying intercept and slope"), ("k | trials(n) ~ x + (1 | g/h)", "nested"),
+        ("k | trials(n) ~ 0 + x + (1 | g)", "no intercept"), ("k | trials(n) ~ x", "exactly one varying term"),
         ("k | trials(n) ~ n + (1 | g)", "cannot also be a predictor"), ("k | trials(n) ~ x + (1 | n)", "cannot also be a predictor"),
         ("k | trials(k) ~ x + (1 | g)", "cannot also be the response"), ("k | n ~ x + (1 | g)", "exactly 'successes | trials"),
         ("k | weights(n) ~ x + (1 | g)", "exactly 'successes | trials"),

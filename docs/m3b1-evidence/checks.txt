@@ -1,0 +1,16 @@
+M3b-1 candidate checks (clean locked environment; each line is the real pytest exit code and summary line).
+
+First chain (2026-09-11T00:22:02Z .. 00:30:19Z), before six old test EXPECTATIONS were updated to the new refusal
+messages (the formulas stayed refused; '(1 || g)' became accepted by design):
+  varying_slope: pytest exit 0 | 18 passed, 2 warnings in 23.72s
+  fast: pytest exit 1 | 6 failed, 360 passed, 8 deselected, 3 warnings in 351.04s   (the six old expectations)
+  slow: pytest exit 1 | 1 failed, 7 passed, 366 deselected in 54.52s                (F7 population-SD gate, see F7_investigation.txt)
+  independent: pytest exit 0 | 27 passed, 16 warnings in 19.10s   (9 label-identity + 3 M2 normalisation + 15 M3a-2 original-input)
+  example pymc exit 0; example numpyro exit 0; gpu attempt exit 1 (refusal expected)
+
+Second chain (00:33:29Z .. 00:39:48Z), after the expectation updates, same library code:
+  fast2: pytest exit 0 | 365 passed, 8 deselected, 3 warnings in 312.33s
+  slow2: pytest exit 1 | 1 failed, 7 passed, 365 deselected in 53.78s               (F7 again: deterministic seed; not re-run to pass)
+
+Evidence directories (evidence-runs/, gitignored): 20260911T002709.385688Z-...-feca57 (first fast), 20260911T002903.692270Z-...-5b76d1
+(first slow; its F7 files are frozen here), 20260911T003657.969678Z-...-68410b (final fast), 20260911T003854.676250Z-...-7d0f6b (final slow).

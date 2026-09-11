@@ -68,7 +68,7 @@ def _summary_rows(model, idata) -> dict:
     import arviz as az
 
     n = model.names
-    names = [n["intercept"], *model.spec.terms, n["sd"]] + ([n["sigma"]] if "sigma" in n else [])
+    names = [n["intercept"], *model.spec.terms, n["sd"]] + ([n["sd_slope"]] if "sd_slope" in n else []) + ([n["sigma"]] if "sigma" in n else [])
     s = az.summary(idata, var_names=names, hdi_prob=0.94, round_to="none")
     rows = {}
     for name, r in s.iterrows():
@@ -84,8 +84,9 @@ def fit_record(model, fit, *, panel: dict | None = None, max_treedepth: int = 10
     p = panel if panel is not None else _panel(fit.idata, max_treedepth=max_treedepth)
     s, d, pr = model.spec, model.design, model.priors
     coef = pr.coefficient_priors(s)
+    sds = pr.sd_priors(s)
     return {
-        "autobayes_version": _version("autobayes") or "0.4.0",
+        "autobayes_version": _version("autobayes") or "0.5.0",
         "model": {
             "formula": s.formula,
             "family": model.family,
@@ -94,7 +95,10 @@ def fit_record(model, fit, *, panel: dict | None = None, max_treedepth: int = 10
             "center_predictors": bool(d.centered),
             "noncentered": True,
             "priors": {"intercept": str(pr.intercept), **{f"b:{k}": str(v) for k, v in coef.items()},
-                       "sd": str(pr.sd), **({"sigma": str(pr.sigma)} if pr.sigma is not None else {})},
+                       **({"sd": str(sds["Intercept"])} if not s.varying_slope else {f"sd:{k}": str(v) for k, v in sds.items()}),
+                       **({"sigma": str(pr.sigma)} if pr.sigma is not None else {})},
+            "varying_slope": s.varying_slope,
+            "group_effects": ["Intercept"] + ([s.varying_slope] if s.varying_slope else []),
             "terms": list(s.terms),
             "design_columns": list(s.columns),
             "interactions": [list(pair) for pair in s.interactions],

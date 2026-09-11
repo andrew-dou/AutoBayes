@@ -1,0 +1,302 @@
+{
+ "pymc": {
+  "autobayes_version": "0.4.0",
+  "model": {
+   "formula": "y ~ x + (1 + x || g)",
+   "family": "gaussian",
+   "link": "identity",
+   "n": 600,
+   "J": 30,
+   "group": "g",
+   "center_predictors": true,
+   "noncentered": true,
+   "priors": {
+    "intercept": "Normal(mu=0, sigma=5)",
+    "b:x": "Normal(mu=0, sigma=2)",
+    "sd:Intercept": "HalfNormal(sigma=1)",
+    "sd:x": "HalfNormal(sigma=1)",
+    "sigma": "HalfNormal(sigma=1)"
+   },
+   "varying_slope": "x",
+   "group_effects": [
+    "Intercept",
+    "x"
+   ],
+   "terms": [
+    "x"
+   ],
+   "design_columns": [
+    "x"
+   ],
+   "interactions": [],
+   "canonical_formula": "y ~ x + (1 + x || g)",
+   "categorical": {},
+   "intercept_prior_applies_to": "centred intercept (at the numeric predictor means)",
+   "warnings": []
+  },
+  "execution": {
+   "backend": "pymc",
+   "device_requested": "cpu",
+   "device_actual": "cpu",
+   "platform": "cpu",
+   "dtype": "float64",
+   "chain_method": null,
+   "chains": 4,
+   "draws": 1000,
+   "tune": 1000,
+   "target_accept": 0.9,
+   "seed": 17,
+   "wall_seconds": 4.95,
+   "notes": []
+  },
+  "environment": {
+   "python": "3.11.0",
+   "platform": "macOS-26.6.1-arm64-arm-64bit",
+   "versions": {
+    "pymc": "5.28.5",
+    "pytensor": "2.38.3",
+    "bambi": "0.17.2",
+    "formulae": "0.6.2",
+    "arviz": "0.23.4",
+    "numpyro": "0.21.0",
+    "jax": "0.10.2",
+    "jaxlib": "0.10.2",
+    "numpy": "2.4.6"
+   },
+   "jax_devices": [
+    "cpu:cpu(id=0)",
+    "cpu:cpu(id=1)",
+    "cpu:cpu(id=2)",
+    "cpu:cpu(id=3)",
+    "cpu:cpu(id=4)",
+    "cpu:cpu(id=5)",
+    "cpu:cpu(id=6)",
+    "cpu:cpu(id=7)"
+   ],
+   "jax_x64": true
+  },
+  "diagnostics": {
+   "values": {
+    "divergences": 0.0,
+    "divergence_fraction": 0.0,
+    "max_rhat": 1.0073920081733667,
+    "min_ess_bulk": 468.13742582508405,
+    "min_ess_tail": 964.1117824004409,
+    "min_bfmi": 0.6304440768361086,
+    "treedepth_saturation": 0.0,
+    "n_draws": 4000.0
+   },
+   "status": {
+    "divergence_fraction": "pass",
+    "max_rhat": "pass",
+    "min_ess_bulk": "pass",
+    "min_ess_tail": "pass",
+    "min_bfmi": "pass",
+    "treedepth_saturation": "pass"
+   },
+   "overall": "pass"
+  },
+  "posterior": {
+   "Intercept": {
+    "mean": 1.0560645774037705,
+    "sd": 0.06782059164780335,
+    "hdi_3%": 0.9370350471056997,
+    "hdi_97%": 1.1932847150468848,
+    "mcse_mean": 0.0031327760805620695,
+    "ess_bulk": 468.13742582508405,
+    "ess_tail": 964.1117824004409,
+    "r_hat": 1.0073920081733667
+   },
+   "x": {
+    "mean": 0.4996068469513658,
+    "sd": 0.036903676138018766,
+    "hdi_3%": 0.43006802320058723,
+    "hdi_97%": 0.5693771353954636,
+    "mcse_mean": 0.000994659848005873,
+    "ess_bulk": 1383.8611117770845,
+    "ess_tail": 1534.903627993669,
+    "r_hat": 1.0013009552091738
+   },
+   "1|g_sigma": {
+    "mean": 0.35419142903843587,
+    "sd": 0.0535229265289769,
+    "hdi_3%": 0.25732596223510085,
+    "hdi_97%": 0.449768499825742,
+    "mcse_mean": 0.001899195880853802,
+    "ess_bulk": 800.4273153632602,
+    "ess_tail": 1501.9233697736208,
+    "r_hat": 1.0069386713249455
+   },
+   "x|g_sigma": {
+    "mean": 0.17538564808362558,
+    "sd": 0.03329013939071744,
+    "hdi_3%": 0.11823116511192383,
+    "hdi_97%": 0.23928233608471616,
+    "mcse_mean": 0.0009004597334758575,
+    "ess_bulk": 1387.2508580363226,
+    "ess_tail": 1852.5891278918646,
+    "r_hat": 1.0021158378506838
+   },
+   "sigma": {
+    "mean": 0.4241341038705768,
+    "sd": 0.013195428912689915,
+    "hdi_3%": 0.40065445503519886,
+    "hdi_97%": 0.45033461697584815,
+    "mcse_mean": 0.00020069918663926756,
+    "ess_bulk": 4303.380713076454,
+    "ess_tail": 2723.386132996297,
+    "r_hat": 1.0014668643620224
+   }
+  }
+ },
+ "numpyro": {
+  "autobayes_version": "0.4.0",
+  "model": {
+   "formula": "y ~ x + (1 + x || g)",
+   "family": "gaussian",
+   "link": "identity",
+   "n": 600,
+   "J": 30,
+   "group": "g",
+   "center_predictors": true,
+   "noncentered": true,
+   "priors": {
+    "intercept": "Normal(mu=0, sigma=5)",
+    "b:x": "Normal(mu=0, sigma=2)",
+    "sd:Intercept": "HalfNormal(sigma=1)",
+    "sd:x": "HalfNormal(sigma=1)",
+    "sigma": "HalfNormal(sigma=1)"
+   },
+   "varying_slope": "x",
+   "group_effects": [
+    "Intercept",
+    "x"
+   ],
+   "terms": [
+    "x"
+   ],
+   "design_columns": [
+    "x"
+   ],
+   "interactions": [],
+   "canonical_formula": "y ~ x + (1 + x || g)",
+   "categorical": {},
+   "intercept_prior_applies_to": "centred intercept (at the numeric predictor means)",
+   "warnings": []
+  },
+  "execution": {
+   "backend": "numpyro",
+   "device_requested": "cpu",
+   "device_actual": "cpu:cpu(id=0)",
+   "platform": "cpu",
+   "dtype": "float64",
+   "chain_method": "parallel",
+   "chains": 4,
+   "draws": 1000,
+   "tune": 1000,
+   "target_accept": 0.9,
+   "seed": 17,
+   "wall_seconds": 3.143,
+   "notes": []
+  },
+  "environment": {
+   "python": "3.11.0",
+   "platform": "macOS-26.6.1-arm64-arm-64bit",
+   "versions": {
+    "pymc": "5.28.5",
+    "pytensor": "2.38.3",
+    "bambi": "0.17.2",
+    "formulae": "0.6.2",
+    "arviz": "0.23.4",
+    "numpyro": "0.21.0",
+    "jax": "0.10.2",
+    "jaxlib": "0.10.2",
+    "numpy": "2.4.6"
+   },
+   "jax_devices": [
+    "cpu:cpu(id=0)",
+    "cpu:cpu(id=1)",
+    "cpu:cpu(id=2)",
+    "cpu:cpu(id=3)",
+    "cpu:cpu(id=4)",
+    "cpu:cpu(id=5)",
+    "cpu:cpu(id=6)",
+    "cpu:cpu(id=7)"
+   ],
+   "jax_x64": true
+  },
+  "diagnostics": {
+   "values": {
+    "divergences": 0.0,
+    "divergence_fraction": 0.0,
+    "max_rhat": 1.0117481031650688,
+    "min_ess_bulk": 395.25045117247527,
+    "min_ess_tail": 939.5786934868855,
+    "min_bfmi": 0.6201613970714143,
+    "treedepth_saturation": 0.0,
+    "n_draws": 4000.0
+   },
+   "status": {
+    "divergence_fraction": "pass",
+    "max_rhat": "investigate",
+    "min_ess_bulk": "investigate",
+    "min_ess_tail": "pass",
+    "min_bfmi": "pass",
+    "treedepth_saturation": "pass"
+   },
+   "overall": "investigate"
+  },
+  "posterior": {
+   "Intercept": {
+    "mean": 1.0567286461135879,
+    "sd": 0.06929063713145266,
+    "hdi_3%": 0.9307753787095172,
+    "hdi_97%": 1.1903356711367112,
+    "mcse_mean": 0.003491345123987532,
+    "ess_bulk": 395.25045117247527,
+    "ess_tail": 939.5786934868855,
+    "r_hat": 1.0026323674377062
+   },
+   "x": {
+    "mean": 0.4996086765279128,
+    "sd": 0.036993555564818294,
+    "hdi_3%": 0.4268238114629878,
+    "hdi_97%": 0.5668013934825712,
+    "mcse_mean": 0.001135592657297366,
+    "ess_bulk": 1064.6572457117163,
+    "ess_tail": 1672.5513600483741,
+    "r_hat": 1.0006405479641938
+   },
+   "1|g_sigma": {
+    "mean": 0.3544247570097451,
+    "sd": 0.05397796796665002,
+    "hdi_3%": 0.2620232688817001,
+    "hdi_97%": 0.4593300481088852,
+    "mcse_mean": 0.002075625389792102,
+    "ess_bulk": 677.7789022591273,
+    "ess_tail": 1339.569844667698,
+    "r_hat": 1.0117481031650688
+   },
+   "x|g_sigma": {
+    "mean": 0.17390741511114013,
+    "sd": 0.03364326350451635,
+    "hdi_3%": 0.11645294655297604,
+    "hdi_97%": 0.2391120409566513,
+    "mcse_mean": 0.0009776386942660401,
+    "ess_bulk": 1162.5800361800336,
+    "ess_tail": 2170.7023335197,
+    "r_hat": 1.0020462545118658
+   },
+   "sigma": {
+    "mean": 0.42473688922555414,
+    "sd": 0.013059498864007727,
+    "hdi_3%": 0.4012751438326827,
+    "hdi_97%": 0.4511749775944914,
+    "mcse_mean": 0.0001985023041854494,
+    "ess_bulk": 4332.170434304903,
+    "ess_tail": 2692.2858015810757,
+    "r_hat": 1.0022025980950435
+   }
+  }
+ }
+}

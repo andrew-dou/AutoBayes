@@ -35,6 +35,8 @@ class Design:
     trials: np.ndarray | None = None   # binomial only: (n,) trials per fitted row; y holds the successes
     columns: tuple[str, ...] = ()      # design-column labels in order (``x``, ``z[b]``, ...); == predictors when numeric only
     categoricals: tuple[Categorical, ...] = ()
+    slope: str | None = None           # M3b-1: the varying-slope covariate, or None
+    Z_slope: np.ndarray | None = None  # (n, J) raw x times Z: the group design of the varying slope
 
     def __post_init__(self):
         if not self.columns:
@@ -220,15 +222,35 @@ class Model:
         if col != Xfull.shape[1]:
             raise RuntimeError(f"Bambi's common design has {Xfull.shape[1] - 1} columns, expected {col - 1}")
         X_raw = Xfull[:, 1:]
+        expected_group_terms = [self.spec.group_term] + ([self.spec.slope_term] if self.spec.slope_term else [])
+        if list(group.terms) != expected_group_terms:
+            raise RuntimeError(f"unexpected group terms from Bambi: {list(group.terms)}; expected {expected_group_terms}")
         term = group.terms[self.spec.group_term]
         levels = tuple(str(v) for v in term.groups)
         if levels != self.spec.levels:
             raise RuntimeError(f"Bambi level order {levels} differs from sorted order {self.spec.levels}")
-        Z = group.design_matrix
-        Z = np.asarray(Z.toarray() if hasattr(Z, "toarray") else Z, dtype=float)
-        if Z.shape != (len(X_raw), len(levels)) or not np.array_equal(Z.sum(1), np.ones(len(X_raw))):
+        Zfull = group.design_matrix
+        Zfull = np.asarray(Zfull.toarray() if hasattr(Zfull, "toarray") else Zfull, dtype=float)
+        J = len(levels)
+        if Zfull.shape != (len(X_raw), J * len(expected_group_terms)):
+            raise RuntimeError(f"group design matrix has shape {Zfull.shape}, expected {(len(X_raw), J * len(expected_group_terms))}")
+        Z = Zfull[:, :J]
+        if not np.array_equal(Z.sum(1), np.ones(len(X_raw))) or not np.isin(Z, [0.0, 1.0]).all():
             raise RuntimeError("group design matrix is not one-hot")
         group_index = Z.argmax(1)
+        Z_slope = None
+        if self.spec.slope_term:
+            sterm = group.terms[self.spec.slope_term]
+            if tuple(str(v) for v in sterm.groups) != levels:
+                raise RuntimeError("Bambi's slope term has a different level order than the intercept term")
+            x_raw = self.data[self.spec.varying_slope].to_numpy(dtype=float)     # the SUPPLIED covariate, uncentred
+            Z_slope = Zfull[:, J:]
+            if not np.array_equal(Z_slope, x_raw[:, None] * Z):
+                raise RuntimeError(
+                    f"Bambi's group design for the varying slope {self.spec.varying_slope!r} is not the raw covariate times "
+                    "the one-hot matrix (a centred or transformed group column would change the declared "
+                    "independence at x = 0; docs/m3b1-decision.md kill criterion)"
+                )
         if self.center_predictors:
             x_means = X_raw.mean(0)
             X_model = X_raw - x_means
@@ -240,7 +262,8 @@ class Model:
         return Design(y=y, X_raw=X_raw, X_model=X_model, x_means=x_means,
                       predictors=self.spec.predictors, Z=Z, group_index=group_index,
                       levels=levels, centered=self.center_predictors, trials=trials,
-                      columns=self.spec.columns, categoricals=self.spec.categoricals)
+                      columns=self.spec.columns, categoricals=self.spec.categoricals,
+                      slope=self.spec.varying_slope, Z_slope=Z_slope)
 
     # -- naming ------------------------------------------------------------------------
     @property
@@ -267,6 +290,11 @@ class Model:
         if self.family == "gaussian":
             out["sigma"] = "sigma"
             out["mu"] = "mu"
+        if self.spec.varying_slope:
+            x = self.spec.varying_slope
+            out["sd_slope"] = f"{x}|{g}_sigma"
+            out["offset_slope"] = f"{x}|{g}_offset"
+            out["group_slope"] = f"{x}|{g}"
         return out
 
     @property
@@ -276,14 +304,16 @@ class Model:
         (the variable ``z`` has dims ``z_dim`` with the coefficient levels as coordinates)."""
         return self.spec.column_terms
 
-    def value_point(self, *, intercept: float, b, sd: float, z, sigma: float | None = None) -> dict[str, np.ndarray]:
+    def value_point(self, *, intercept: float, b, sd: float, z, sigma: float | None = None,
+                    sd_slope: float | None = None, z_slope=None) -> dict[str, np.ndarray]:
         """A point in PyMC's sampled (value) space, from natural-scale quantities.
 
         ``intercept`` is the *model* intercept (at the predictor means when centred),
         ``b`` the coefficients in design-column order (``model.coefficients``: numeric slopes
-        and dummy coefficients), ``sd`` the group SD, ``z`` the J standard normal offsets,
-        ``sigma`` the residual SD (Gaussian only). Scales are stored on the log scale because
-        that is what PyMC samples.
+        and dummy coefficients), ``sd`` the varying-intercept SD, ``z`` its J standard normal
+        offsets, ``sigma`` the residual SD (Gaussian only); ``sd_slope`` and ``z_slope`` the
+        varying slope's SD and J offsets, required exactly when the model has ``(1 + x || g)``.
+        Scales are stored on the log scale because that is what PyMC samples.
         """
         b = np.atleast_1d(np.asarray(b, dtype=float))
         if b.shape != (len(self.spec.columns),):
@@ -293,10 +323,19 @@ class Model:
             raise ValueError(f"z must have {self.design.J} entries")
         if (sigma is None) != (self.family != "gaussian"):
             raise ValueError("sigma is required for the Gaussian family and must be omitted for Bernoulli and binomial")
+        has_slope = self.spec.varying_slope is not None
+        if has_slope != (sd_slope is not None and z_slope is not None):
+            raise ValueError("sd_slope and z_slope are required exactly when the model has a varying slope '(1 + x || g)'")
         n = self.names
         point = {n["intercept"]: np.asarray(float(intercept)),
                  f"{n['sd']}_log__": np.asarray(np.log(float(sd))),
                  n["offset"]: z}
+        if has_slope:
+            z_slope = np.asarray(z_slope, dtype=float)
+            if z_slope.shape != (self.design.J,):
+                raise ValueError(f"z_slope must have {self.design.J} entries")
+            point[f"{n['sd_slope']}_log__"] = np.asarray(np.log(float(sd_slope)))
+            point[n["offset_slope"]] = z_slope
         if sigma is not None:
             point[f"{n['sigma']}_log__"] = np.asarray(np.log(float(sigma)))
         for i, (col, term, j) in enumerate(self.coefficients):
@@ -342,7 +381,7 @@ class Model:
                             if self.dropped_rows else ""))
         lines = [
             f"AutoBayes {tag} model" + (" with categorical predictor(s)" if s.categoricals else "")
-            + (" and interaction(s)" if s.interactions else ""),
+            + (" and interaction(s)" if s.interactions else "") + (" and an independent varying slope" if s.varying_slope else ""),
             f"  formula   : {s.formula}",
         ]
         if s.canonical_formula != s.formula:
@@ -364,7 +403,8 @@ class Model:
         lines += [
             "",
             "Linear predictor",
-            f"  {lp}_i = {a}" + (f" + {xs}" if xs else "") + f" + u[{s.group}_i]",
+            f"  {lp}_i = {a}" + (f" + {xs}" if xs else "") + f" + u[{s.group}_i]"
+            + (f" + x_{s.varying_slope},i * v[{s.group}_i]" if s.varying_slope else ""),
         ]
         scale = "response" if gaussian else "log-odds"
         for cat in s.categoricals:
@@ -424,13 +464,28 @@ class Model:
         lines += [
             "",
             "Group effects (non-centred)",
-            f"  u[j] = sd_{s.group} * z[j],  z[j] ~ Normal(0, 1),  j = 0..{d.J - 1}",
+            f"  u[j] = sd_{s.group} * z0[j],  z0[j] ~ Normal(0, 1),  j = 0..{d.J - 1}",
+        ]
+        if s.varying_slope:
+            x = s.varying_slope
+            lines += [
+                f"  v[j] = sd_{x}|{s.group} * z1[j],  z1[j] ~ Normal(0, 1),  j = 0..{d.J - 1}",
+                f"  u and v are independent by construction ('||'): separate SDs, independent offsets, no correlation",
+                f"  parameter. v[j] multiplies the RAW x_{x} (the group column is not centred, checked at build time),",
+                f"  so the independence is stated for the intercept at x_{x} = 0; shifting x_{x} by c would make",
+                "  u' = u + c v correlated with v. brms's '(1 + x | g)' (correlated, LKJ prior) is a different model",
+                "  and is refused in this slice.",
+            ]
+        lines += [
             "",
             "Priors" + ("" if gaussian else " (a_c and b on the logit scale)"),
             f"  {a} ~ {pr.intercept}",
         ]
         lines += [f"  b_{col} ~ {coef[col]}" for col in s.columns]
-        lines += [f"  sd_{s.group} ~ {pr.sd}"]
+        sds = pr.sd_priors(s)
+        lines += [f"  sd_{s.group} ~ {sds['Intercept']}"]
+        if s.varying_slope:
+            lines += [f"  sd_{s.varying_slope}|{s.group} ~ {sds[s.varying_slope]}"]
         if gaussian:
             lines += [f"  sigma ~ {pr.sigma}", "", "Likelihood", "  y_i ~ Normal(mu_i, sigma)"]
         elif binomial:
@@ -456,14 +511,18 @@ class Model:
         n = self.names
         roles = {n["intercept"]: "a_c" if d.centered else "a",
                  f"{n['sd']}_log__": f"log(sd_{s.group})",
-                 n["offset"]: "z"}
+                 n["offset"]: "z0 (varying-intercept offsets)"}
+        if s.varying_slope:
+            roles[f"{n['sd_slope']}_log__"] = f"log(sd_{s.varying_slope}|{s.group})"
+            roles[n["offset_slope"]] = "z1 (varying-slope offsets)"
         if gaussian:
             roles[f"{n['sigma']}_log__"] = "log(sigma)"
         for term in (*s.categorical_names, *s.interaction_names):
             roles[term] = f"b_{term}[{', '.join(s.levels_of(term))}] (vector; dims {term}_dim, posterior rows {', '.join(s.term_columns(term))})"
         for v in self.pymc_model.value_vars:
             lines.append(f"  {v.name:<24} {roles.get(v.name, f'b_{v.name}')}")
-        lines.append(f"Deterministic: {n['group_effect']} = u, {n['linpred']} = linear predictor"
+        lines.append(f"Deterministic: {n['group_effect']} = u, " + (f"{n['group_slope']} = v, " if s.varying_slope else "")
+                     + f"{n['linpred']} = linear predictor"
                      + ("" if gaussian else "; p = expit(logit_p)" + (", expected = n p and count draws" if binomial else "")
                         + " are computed by predict()"))
         return "\n".join(lines)

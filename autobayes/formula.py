@@ -6,7 +6,9 @@ Supported::
     successes | trials(n) ~ [1 +] predictor [+ predictor ...] [+ x:z ...] + (1 | group)  (binomial, brms syntax)
 
 with ``x:z`` (or the shorthand ``x*z`` = ``x + z + x:z``) one interaction between a numeric term
-and a declared categorical term whose main effects are both present (milestone M3a-2).
+and a declared categorical term whose main effects are both present (milestone M3a-2), and the
+varying part ``(1 | group)`` or ``(1 + x || group)``: an independent varying slope on one numeric
+fixed-effect term (milestone M3b-1; the correlated ``(1 + x | group)`` is refused).
 
 Predictors are numeric columns, or categorical columns declared with ``categorical={column:
 reference_level}`` (treatment coding, milestone M3a-1); the grouping variable may be any
@@ -81,6 +83,7 @@ class ModelSpec:
     terms: tuple[str, ...] = ()        # every term in canonical order: main effects, then interactions ``x:z``
     categoricals: tuple[Categorical, ...] = ()   # the declared categorical terms, in formula order
     interactions: tuple[tuple[str, str], ...] = ()   # (numeric term, categorical term) per interaction, canonical order
+    varying_slope: str | None = None   # M3b-1: numeric term with an independent varying slope, ``(1 + x || g)``
 
     def __post_init__(self):
         if not self.terms:                      # numeric-only construction (M0-M2 call sites)
@@ -89,6 +92,22 @@ class ModelSpec:
     @property
     def group_term(self) -> str:
         return f"1|{self.group}"
+
+    @property
+    def slope_term(self) -> str | None:
+        """Bambi's name for the varying-slope term, ``x|g``, or None."""
+        return f"{self.varying_slope}|{self.group}" if self.varying_slope else None
+
+    @property
+    def group_spec(self) -> str:
+        """The varying part in the canonical (brms) spelling: ``(1 | g)`` or ``(1 + x || g)``."""
+        return f"(1 + {self.varying_slope} || {self.group})" if self.varying_slope else f"(1 | {self.group})"
+
+    @property
+    def bambi_rhs(self) -> str:
+        """The right-hand side handed to Bambi: formulae has no ``||``, and Bambi's ``(1 + x | g)`` is
+        the independent construction (measured; docs/m3b1-decision.md), so ``||`` is rewritten."""
+        return self.rhs.replace(self.group_spec, f"(1 + {self.varying_slope} | {self.group})") if self.varying_slope else self.rhs
 
     @property
     def categorical_names(self) -> tuple[str, ...]:
@@ -157,8 +176,8 @@ class ModelSpec:
         """What is handed to Bambi: the canonical right-hand side; brms's ``k | trials(n)`` becomes
         Bambi's ``p(k, n)``."""
         if self.trials is None:
-            return f"{self.response} ~ {self.rhs}"
-        return f"p({self.response}, {self.trials}) ~ {self.rhs}"
+            return f"{self.response} ~ {self.bambi_rhs}"
+        return f"p({self.response}, {self.trials}) ~ {self.bambi_rhs}"
 
 
 def _split_top_level(rhs: str, sep: str = "+") -> list[str]:
@@ -182,24 +201,57 @@ def _split_top_level(rhs: str, sep: str = "+") -> list[str]:
     return parts
 
 
-def _reject_group_term(inner: str, factor: str, piece: str) -> None:
-    if "||" in piece:
-        raise FormulaError(
-            f"{piece!r}: the '||' (uncorrelated varying effects) syntax is not supported "
-            "in M0; only a single varying intercept '(1 | group)' is."
-        )
+def _parse_group_term(piece: str) -> tuple[str, str | None]:
+    """``(1 | g)``, ``(1 || g)`` and ``(1 + x || g)`` -> (factor, slope or None); everything else is
+    refused with the reason (docs/m3b1-decision.md)."""
+    body = piece.strip()[1:-1]
+    independent = "||" in body
+    inner, factor = (body.split("||", 1) if independent else body.split("|", 1))
+    inner, factor = inner.strip(), factor.strip()
+    if "|" in factor or "|" in inner:
+        raise FormulaError(f"{piece!r}: a varying term is written '(1 | group)' or '(1 + x || group)'")
     if "/" in factor or ":" in factor:
         raise FormulaError(
             f"{piece!r}: nested or crossed grouping factors ('g/h', 'g:h') are not "
-            "supported in M0; only a single grouping factor '(1 | group)' is."
+            "supported; only a single grouping factor is."
         )
     if not re.fullmatch(_IDENT, factor):
         raise FormulaError(f"{piece!r}: grouping factor must be a single column name")
-    if inner != "1":
+    tokens = [s.strip() for s in inner.split("+")]
+    if any(s == "" for s in tokens):
+        raise FormulaError(f"{piece!r}: empty term inside the varying part")
+    if "0" in tokens or "-1" in tokens or "-" in inner:
         raise FormulaError(
-            f"{piece!r}: varying slopes are not supported in M0; only a varying "
-            f"intercept '(1 | {factor})' is."
+            f"{piece!r}: a varying slope without a varying intercept ('(0 + x || g)') is not supported in this "
+            "slice; write '(1 + x || g)'."
         )
+    slopes = [s for s in tokens if s != "1"]
+    if "1" not in tokens:
+        raise FormulaError(
+            f"{piece!r}: write the varying intercept explicitly: '(1 + {slopes[0]} || {factor})'. brms and Bambi "
+            "add it silently for '(x | g)'; this layer does not."
+        )
+    if len(slopes) > 1:
+        raise FormulaError(
+            f"{piece!r}: more than one varying slope ({slopes}) is not supported in this slice; one numeric "
+            f"varying slope '(1 + x || {factor})' is (docs/m3b1-decision.md)."
+        )
+    if len(tokens) != len(set(tokens)):
+        raise FormulaError(f"{piece!r}: duplicated term inside the varying part")
+    slope = slopes[0] if slopes else None
+    if slope is not None and not re.fullmatch(_IDENT, slope):
+        raise FormulaError(
+            f"{piece!r}: the varying slope must be a single numeric column name (no interactions, "
+            "transformations or categorical terms in this slice)"
+        )
+    if slope is not None and not independent:
+        raise FormulaError(
+            f"{piece!r}: '(1 + {slope} | {factor})' is brms's CORRELATED varying intercept and slope (an LKJ prior on "
+            "their correlation), which is not supported in this slice; Bambi would silently build independent "
+            f"effects under that spelling. For independent effects write '(1 + {slope} || {factor})' "
+            "(docs/m3b1-decision.md); correlated effects are a separate milestone."
+        )
+    return factor, slope
 
 
 def _normalise_categorical(categorical, terms: list[str], response: str, group: str, trials: str | None,
@@ -361,6 +413,7 @@ def parse_formula(formula: str, data: pd.DataFrame | None = None, family: str = 
 
     predictors: list[str] = []
     groups: list[str] = []
+    group_slopes: list[str | None] = []
     raw_interactions: list[tuple[str, str, str]] = []      # (left, right, piece as written)
     saw_intercept_token = False
 
@@ -387,11 +440,10 @@ def parse_formula(formula: str, data: pd.DataFrame | None = None, family: str = 
                 f"{formula!r}: '0 +' (no intercept) is not supported in M0; the model "
                 "requires a population-level intercept."
             )
-        gm = _GROUP_RE.match(piece)
-        if gm:
-            inner, factor = gm.group(1).strip(), gm.group(2).strip()
-            _reject_group_term(inner, factor, piece)
+        if piece.startswith("(") and piece.endswith(")") and "|" in piece:
+            factor, slope = _parse_group_term(piece)
             groups.append(factor)
+            group_slopes.append(slope)
             continue
         if piece.startswith("("):
             raise FormulaError(f"{piece!r}: parenthesised term is not a '(1 | group)' term")
@@ -433,12 +485,21 @@ def parse_formula(formula: str, data: pd.DataFrame | None = None, family: str = 
                 )
     if len(groups) == 0:
         raise FormulaError(
-            f"{formula!r}: M0 requires exactly one varying-intercept term '(1 | group)'."
+            f"{formula!r}: exactly one varying term '(1 | group)' or '(1 + x || group)' is required."
         )
     if len(groups) > 1:
         raise FormulaError(
             f"{formula!r}: more than one grouping factor ({groups}) is not supported in "
             "M0; use a single '(1 | group)' term."
+        )
+    if group_slopes and group_slopes[0] is not None and group_slopes[0] in groups:
+        raise FormulaError(f"the varying slope {group_slopes[0]!r} cannot be the grouping factor, the response or the trials column")
+    if group_slopes and group_slopes[0] is not None and group_slopes[0] not in predictors:
+        s_, g_ = group_slopes[0], groups[0]
+        raise FormulaError(
+            f"the varying slope {s_!r} must also be a numeric fixed-effect term of the formula "
+            f"('{s_} + (1 + {s_} || {g_})'); a varying slope without its population-level slope is a "
+            "different model and is not part of this slice."
         )
     if len(predictors) == 0 and not saw_intercept_token:
         raise FormulaError(
@@ -482,13 +543,28 @@ def parse_formula(formula: str, data: pd.DataFrame | None = None, family: str = 
             "numeric-by-categorical interaction per model, whether or not they share a side "
             "(docs/m3a2-decision.md, repair record). Fit one interaction, or wait for a slice that verifies several."
         )
-    canonical_rhs = " + ".join([*predictors, *(f"{x}:{z}" for x, z in interactions), f"(1 | {group})"])
+    slope = group_slopes[0]
+    if slope is not None:
+        if slope == group or slope == response or (trials is not None and slope == trials):
+            raise FormulaError(f"the varying slope {slope!r} cannot be the grouping factor, the response or the trials column")
+        if slope in cat_names:
+            raise FormulaError(
+                f"the varying slope {slope!r} is a categorical term; a categorical varying slope is not supported in this slice"
+            )
+        if slope not in predictors:
+            raise FormulaError(
+                f"the varying slope {slope!r} must also be a numeric fixed-effect term of the formula "
+                f"('{slope} + (1 + {slope} || {group})'); a varying slope without its population-level slope is a "
+                "different model and is not part of this slice."
+            )
+    group_part = f"(1 + {slope} || {group})" if slope else f"(1 | {group})"
+    canonical_rhs = " + ".join([*predictors, *(f"{x}:{z}" for x, z in interactions), group_part])
     spec = ModelSpec(
         formula=formula.strip(), response=response,
         predictors=tuple(p for p in predictors if p not in cat_names),
         group=group, intercept=True, trials=trials, rhs=canonical_rhs,
         terms=(*predictors, *(f"{x}:{z}" for x, z in interactions)), categoricals=categoricals,
-        interactions=tuple(interactions),
+        interactions=tuple(interactions), varying_slope=slope,
     )
     if data is not None:
         spec = validate_data(spec, data, family)
@@ -650,4 +726,5 @@ def validate_data(spec: ModelSpec, data: pd.DataFrame, family: str = "gaussian")
         formula=spec.formula, response=spec.response, predictors=spec.predictors,
         group=spec.group, intercept=True, levels=levels, trials=spec.trials, rhs=spec.rhs,
         terms=spec.terms, categoricals=tuple(categoricals), interactions=spec.interactions,
+        varying_slope=spec.varying_slope,
     )

@@ -1,0 +1,150 @@
+{
+ "autobayes_version": "0.4.0",
+ "model": {
+  "formula": "y ~ dose + (1 + dose || site)",
+  "family": "gaussian",
+  "link": "identity",
+  "n": 360,
+  "J": 24,
+  "group": "site",
+  "center_predictors": true,
+  "noncentered": true,
+  "priors": {
+   "intercept": "Normal(mu=0, sigma=5)",
+   "b:dose": "Normal(mu=0, sigma=2)",
+   "sd:Intercept": "HalfNormal(sigma=1)",
+   "sd:dose": "HalfNormal(sigma=1)",
+   "sigma": "HalfNormal(sigma=1)"
+  },
+  "varying_slope": "dose",
+  "group_effects": [
+   "Intercept",
+   "dose"
+  ],
+  "terms": [
+   "dose"
+  ],
+  "design_columns": [
+   "dose"
+  ],
+  "interactions": [],
+  "canonical_formula": "y ~ dose + (1 + dose || site)",
+  "categorical": {},
+  "intercept_prior_applies_to": "centred intercept (at the numeric predictor means)",
+  "warnings": []
+ },
+ "execution": {
+  "backend": "pymc",
+  "device_requested": "cpu",
+  "device_actual": "cpu",
+  "platform": "cpu",
+  "dtype": "float64",
+  "chain_method": null,
+  "chains": 4,
+  "draws": 1000,
+  "tune": 1000,
+  "target_accept": 0.9,
+  "seed": 31,
+  "wall_seconds": 7.227,
+  "notes": []
+ },
+ "environment": {
+  "python": "3.11.0",
+  "platform": "macOS-26.6.1-arm64-arm-64bit",
+  "versions": {
+   "pymc": "5.28.5",
+   "pytensor": "2.38.3",
+   "bambi": "0.17.2",
+   "formulae": "0.6.2",
+   "arviz": "0.23.4",
+   "numpyro": "0.21.0",
+   "jax": "0.10.2",
+   "jaxlib": "0.10.2",
+   "numpy": "2.4.6"
+  },
+  "jax_devices": [
+   "cpu:cpu(id=0)",
+   "cpu:cpu(id=1)",
+   "cpu:cpu(id=2)",
+   "cpu:cpu(id=3)",
+   "cpu:cpu(id=4)",
+   "cpu:cpu(id=5)",
+   "cpu:cpu(id=6)",
+   "cpu:cpu(id=7)"
+  ],
+  "jax_x64": true
+ },
+ "diagnostics": {
+  "values": {
+   "divergences": 0.0,
+   "divergence_fraction": 0.0,
+   "max_rhat": 1.004198347648415,
+   "min_ess_bulk": 856.0906994062773,
+   "min_ess_tail": 985.3784240584827,
+   "min_bfmi": 0.6038543577483289,
+   "treedepth_saturation": 0.0,
+   "n_draws": 4000.0
+  },
+  "status": {
+   "divergence_fraction": "pass",
+   "max_rhat": "pass",
+   "min_ess_bulk": "pass",
+   "min_ess_tail": "pass",
+   "min_bfmi": "pass",
+   "treedepth_saturation": "pass"
+  },
+  "overall": "pass"
+ },
+ "posterior": {
+  "Intercept": {
+   "mean": 2.1127847300510703,
+   "sd": 0.07439017448774315,
+   "hdi_3%": 1.975344891097877,
+   "hdi_97%": 2.25343623940764,
+   "mcse_mean": 0.00253994222955316,
+   "ess_bulk": 856.0906994062773,
+   "ess_tail": 985.3784240584827,
+   "r_hat": 1.001775133502066
+  },
+  "dose": {
+   "mean": 0.4754580019395645,
+   "sd": 0.06287476197038983,
+   "hdi_3%": 0.3644805334691054,
+   "hdi_97%": 0.6031564322220366,
+   "mcse_mean": 0.001996575005088397,
+   "ess_bulk": 994.5451149065016,
+   "ess_tail": 1448.2501836158706,
+   "r_hat": 1.004198347648415
+  },
+  "1|site_sigma": {
+   "mean": 0.34516550284811026,
+   "sd": 0.06080069279816991,
+   "hdi_3%": 0.2367978964945861,
+   "hdi_97%": 0.45788307630947517,
+   "mcse_mean": 0.0017233369392029977,
+   "ess_bulk": 1235.4325865237831,
+   "ess_tail": 2140.74170990521,
+   "r_hat": 1.0018270068487214
+  },
+  "dose|site_sigma": {
+   "mean": 0.2764811407510301,
+   "sd": 0.053026510980582656,
+   "hdi_3%": 0.18675527758178362,
+   "hdi_97%": 0.3766045913121017,
+   "mcse_mean": 0.0014583974704203682,
+   "ess_bulk": 1318.2685566318683,
+   "ess_tail": 2493.6735888721814,
+   "r_hat": 1.0014549378554314
+  },
+  "sigma": {
+   "mean": 0.45061536504610905,
+   "sd": 0.01840415526753825,
+   "hdi_3%": 0.4170746323630939,
+   "hdi_97%": 0.485957906508217,
+   "mcse_mean": 0.0002808986910273656,
+   "ess_bulk": 4352.833899680005,
+   "ess_tail": 2805.996567942578,
+   "r_hat": 1.0007359172367616
+  }
+ }
+}

@@ -13,7 +13,7 @@ from decimal import Decimal, getcontext
 import numpy as np
 import pandas as pd
 
-from tests.reference_logp import build_design, design_columns, prior_logpdf
+from tests.reference_logp import build_design, design_columns, prior_logpdf, slope_terms
 
 getcontext().prec = 60
 PI = Decimal("3.14159265358979323846264338327950288419716939937510582097494459")
@@ -70,7 +70,7 @@ def row_grad_dec(k: int, n: int, eta: float) -> Decimal:
 
 def reference_logp_binomial(point: dict, data: pd.DataFrame, *, response: str, trials: str,
                             predictors: list[str], group: str, priors: dict, center: bool = True, categorical: dict | None = None, interactions: list | None = None,
-                            jacobian: bool = True, coefficient: bool = True) -> float:
+                            jacobian: bool = True, coefficient: bool = True, varying_slope: str | None = None) -> float:
     """``point`` holds a_c, b (array), log_sd, z (array). ``data`` are the fitted rows."""
     y, Xc, _, gidx, levels = build_design(data, response, predictors, group, center, categorical, interactions)
     k = data[response].to_numpy(dtype=np.int64)
@@ -80,7 +80,8 @@ def reference_logp_binomial(point: dict, data: pd.DataFrame, *, response: str, t
     z = np.asarray(point["z"], dtype=float)
     assert z.shape == (len(levels),)
     sd = np.exp(log_sd)
-    eta = a + Xc @ b + sd * z[gidx]                      # float64, like the model's linear predictor
+    eta_slope, lp_slope = slope_terms(point, data, gidx, levels, priors, varying_slope, jacobian)
+    eta = a + Xc @ b + sd * z[gidx] + eta_slope          # float64, like the model's linear predictor
     lik = Decimal(0)
     for ki, ni, ei in zip(k, n, eta):
         lik += row_loglik_dec(int(ki), int(ni), float(ei), coefficient=coefficient)
@@ -90,6 +91,7 @@ def reference_logp_binomial(point: dict, data: pd.DataFrame, *, response: str, t
     for i, p in enumerate(design_columns(data, predictors, categorical, interactions)):
         lp += prior_logpdf(*priors["b"][p], b[i])
     lp += prior_logpdf(*priors["sd"], sd)
+    lp += lp_slope
     if jacobian:
         lp += log_sd
     return lp

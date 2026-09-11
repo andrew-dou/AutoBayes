@@ -121,6 +121,11 @@ def _predict_by_hand(model, idata, df: pd.DataFrame | None, kind: str, seed, new
     b = _coefficient_draws(post, model)                         # (chain, draw, P) or None
     sd = post[n["sd"]].to_numpy()
     u = post[n["group_effect"]].to_numpy()                      # (chain, draw, J)
+    slope = model.spec.varying_slope
+    if slope:                                                   # M3b-1: the varying slope's SD and effects, raw x
+        sd1 = post[n["sd_slope"]].to_numpy()
+        v = post[n["group_slope"]].to_numpy()                   # (chain, draw, J)
+        xs = df[slope].to_numpy(dtype=float)
     levels = list(model.design.levels)
     X = raw_design(model, df)                                   # raw scale: a is raw-scale intercept
     mu = np.repeat(a[..., None], len(df), axis=-1)
@@ -128,17 +133,22 @@ def _predict_by_hand(model, idata, df: pd.DataFrame | None, kind: str, seed, new
         mu = mu + np.einsum("cdp,np->cdn", b, X)
     new_levels = sorted(set(df[model.spec.group]) - set(levels))
     new_effects = {}
-    for lvl in new_levels:                                      # one effect per label per draw
+    for lvl in new_levels:                                      # one effect (pair) per label per draw
         if new_groups == "population":
-            new_effects[lvl] = rng.normal(0.0, 1.0, size=sd.shape) * sd
-        else:                                                   # resample_observed
+            eff_u = rng.normal(0.0, 1.0, size=sd.shape) * sd
+            eff_v = rng.normal(0.0, 1.0, size=sd.shape) * sd1 if slope else None    # an independent pair per label
+        else:                                                   # resample_observed: one observed group, BOTH effects from it
             chosen = rng.integers(0, len(levels), size=sd.shape)
-            new_effects[lvl] = np.take_along_axis(u, chosen[..., None], axis=-1)[..., 0]
+            eff_u = np.take_along_axis(u, chosen[..., None], axis=-1)[..., 0]
+            eff_v = np.take_along_axis(v, chosen[..., None], axis=-1)[..., 0] if slope else None
+        new_effects[lvl] = (eff_u, eff_v)
     for i, lvl in enumerate(df[model.spec.group]):
         if lvl in new_effects:
-            mu[..., i] += new_effects[lvl]
+            eff_u, eff_v = new_effects[lvl]
+            mu[..., i] += eff_u + (xs[i] * eff_v if slope else 0.0)
         else:
-            mu[..., i] += u[..., levels.index(lvl)]
+            j = levels.index(lvl)
+            mu[..., i] += u[..., j] + (xs[i] * v[..., j] if slope else 0.0)
     if model.family == "gaussian":
         out = {"mu": (("chain", "draw", "__obs__"), mu)}
         if kind == "response":
@@ -175,8 +185,8 @@ def predict(model, fit_result, *, newdata: pd.DataFrame | None = None, kind: str
     if new_groups not in _NEW_GROUPS:
         raise ValueError(f"new_groups must be one of {sorted(_NEW_GROUPS)}")
     idata = getattr(fit_result, "idata", fit_result)
-    if model.family == "binomial":
-        df = None if newdata is None else _check_newdata(model, newdata, need_trials=(kind != "probability"))
+    if model.family == "binomial" or model.spec.varying_slope:   # computed in this layer (verified against the reference)
+        df = None if newdata is None else _check_newdata(model, newdata, need_trials=(model.family == "binomial" and kind != "probability"))
         if df is not None:
             unseen = sorted(set(df[model.spec.group]) - set(model.design.levels))
             if unseen and new_groups == "error":

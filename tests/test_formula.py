@@ -7,18 +7,17 @@ from tests.conftest import PRIORS, simulate
 
 
 @pytest.mark.parametrize("formula,needle", [
-    ("y ~ x + (1 + x | g)", "varying slopes"),
-    ("y ~ x + (x | g)", "varying slopes"),
+    ("y ~ x + (1 + x | g)", "CORRELATED varying intercept and slope"),   # M3b-1: the independent form is (1 + x || g)
+    ("y ~ x + (x | g)", "write the varying intercept explicitly"),
     ("y ~ x + (1 | g/h)", "nested"),
     ("y ~ x + (1 | g:h)", "nested"),
     ("y ~ x + (1 | g) + (1 | h)", "more than one grouping"),
-    ("y ~ x + (1 || g)", "'||'"),
     ("y ~ 0 + x + (1 | g)", "no intercept"),
     ("y ~ x - 1 + (1 | g)", "'-'"),
     ("y ~ x * w + (1 | g)", "two numeric terms"),          # M3a-2: only numeric-by-declared-categorical interactions
     ("y ~ x:w + (1 | g)", "main effect 'x' is missing"),
     ("y ~ log(x) + (1 | g)", "function calls"),
-    ("y ~ x", "exactly one varying-intercept"),
+    ("y ~ x", "exactly one varying term"),
     ("y ~ (1 | g)", "no population-level predictor"),
     ("y x + (1 | g)", "expected 'response ~ terms'"),
     ("y ~ x + x + (1 | g)", "duplicated"),

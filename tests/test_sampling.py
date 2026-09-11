@@ -251,3 +251,43 @@ def test_interaction_recovery_both_backends(evidence_dir):
     comparison = ab.compare_records(records["pymc"], records["numpyro"])
     write_evidence(evidence_dir, "D10_interaction_agreement.json", json.dumps(comparison, indent=1))
     assert comparison["agree"], comparison
+
+
+@pytest.mark.slow
+def test_varying_slope_recovery_both_backends(evidence_dir):
+    """F7 (docs/m3b1-decision.md): Gaussian y ~ x + (1 + x || g), 600 rows, 30 groups of 20, x ~ N(0, 1) within every
+    group; prespecified truth, priors, seed and gates; both CPU samplers. One recovery is not calibration."""
+    rng = np.random.default_rng(17)
+    J, per = 30, 20
+    g = np.repeat([f"g{j:02d}" for j in range(J)], per)
+    x = rng.normal(size=J * per)
+    u = rng.normal(0, 0.5, J); v = rng.normal(0, 0.3, J)
+    gi = np.repeat(np.arange(J), per)
+    y = 1.0 + 0.5 * x + u[gi] + x * v[gi] + rng.normal(0, 0.4, J * per)
+    df = pd.DataFrame({"y": y, "x": x, "g": g})
+    assert (df.groupby("g").x.std() > 0.5).all()
+    priors = ab.Priors(intercept=ab.Normal(0, 5), b=ab.Normal(0, 2), sd={"Intercept": ab.HalfNormal(1), "x": ab.HalfNormal(1)}, sigma=ab.HalfNormal(1))
+    m = ab.gaussian("y ~ x + (1 + x || g)", df, priors)
+    truth = {"Intercept": 1.0, "x": 0.5, "1|g_sigma": 0.5, "x|g_sigma": 0.3, "sigma": 0.4}
+    results, records = {}, {}
+    for backend in ["pymc", "numpyro"]:
+        fit = m.fit(backend=backend, device="cpu", chains=4, draws=1000, tune=1000, seed=17, target_accept=0.9)
+        p = panel(fit.idata)
+        s = az.summary(fit.idata, var_names=list(truth), hdi_prob=0.99, round_to="none")
+        rec = ab.fit_record(m, fit, panel=p); records[backend] = rec
+        rows = {name: {"mean": float(r["mean"]), "sd": float(r["sd"]), "hdi_0.5%": float(r["hdi_0.5%"]), "hdi_99.5%": float(r["hdi_99.5%"]),
+                       "ess_bulk": float(r["ess_bulk"]), "r_hat": float(r["r_hat"]), "truth": truth[name],
+                       "inside_99": bool(r["hdi_0.5%"] <= truth[name] <= r["hdi_99.5%"])} for name, r in s.iterrows()}
+        results[backend] = {"panel": {"values": {k: (float(v) if v is not None else None) for k, v in p["values"].items()}, "status": dict(p["status"])},
+                            "population": rows, "report": fit.report(),
+                            "sd_posterior_sd": {k: rows[k]["sd"] for k in ("1|g_sigma", "x|g_sigma")}}
+    write_evidence(evidence_dir, "F7_varying_slope_recovery.json", json.dumps(results, indent=1))
+    write_evidence(evidence_dir, "F7_varying_slope_recovery_records.json", json.dumps(records, indent=1))
+    for backend, res in results.items():
+        assert res["panel"]["values"]["divergences"] == 0, (backend, res["panel"])
+        assert all(r["r_hat"] <= 1.01 for r in res["population"].values()), (backend, res["population"])
+        assert all(r["ess_bulk"] >= 400 for r in res["population"].values()), (backend, res["population"])
+        assert all(r["inside_99"] for r in res["population"].values()), (backend, res["population"])
+    comparison = ab.compare_records(records["pymc"], records["numpyro"])
+    write_evidence(evidence_dir, "F7_varying_slope_agreement.json", json.dumps(comparison, indent=1))
+    assert comparison["agree"], comparison

@@ -1,0 +1,69 @@
+AutoBayes environment
+  python    : 3.11.0 (macOS-26.6.1-arm64-arm-64bit)
+  versions  : pymc 5.28.5, pytensor 2.38.3, bambi 0.17.2, formulae 0.6.2, arviz 0.23.4, numpyro 0.21.0, jax 0.10.2, jaxlib 0.10.2, numpy 2.4.6
+  jax       : cpu:cpu(id=0), cpu:cpu(id=1), cpu:cpu(id=2), cpu:cpu(id=3), cpu:cpu(id=4), cpu:cpu(id=5), cpu:cpu(id=6), cpu:cpu(id=7)
+  jax x64   : True
+
+360 rows, 24 sites, dose varies within every site (min within-site SD 0.65)
+the single-bar (correlated) form is refused: '(1 + dose | site)': '(1 + dose | site)' is brms's CORRELATED varying intercept and slope (an LKJ prior on their correlation), which is not supported in this slice
+
+AutoBayes M0 model and an independent varying slope
+  formula   : y ~ dose + (1 + dose || site)
+  family    : gaussian, identity link
+  data      : n = 360 observations, J = 24 levels of site
+  levels    : 0=s00, 1=s01, 2=s02, 3=s03, 4=s04, 5=s05, 6=s06, 7=s07, 8=s08, 9=s09, 10=s10, 11=s11, 12=s12, 13=s13, 14=s14, 15=s15, 16=s16, 17=s17, 18=s18, 19=s19, 20=s20, 21=s21, 22=s22, 23=s23
+
+Linear predictor
+  mu_i = a_c + (x_dose - mean(x_dose)) * b_dose + u[site_i] + x_dose,i * v[site_i]
+  Predictors are centred at their sample means (center_predictors=True, as in
+  brms and Bambi).
+  a_c is the expected response at the predictor means (group effect zero); the
+  prior on the intercept applies to a_c. The posterior reports the raw-scale
+  intercept a = a_c - sum_p mean(x_p) * b_p, computed after sampling.
+
+Group effects (non-centred)
+  u[j] = sd_site * z0[j],  z0[j] ~ Normal(0, 1),  j = 0..23
+  v[j] = sd_dose|site * z1[j],  z1[j] ~ Normal(0, 1),  j = 0..23
+  u and v are independent by construction ('||'): separate SDs, independent offsets, no correlation
+  parameter. v[j] multiplies the RAW x_dose (the group column is not centred, checked at build time),
+  so the independence is stated for the intercept at x_dose = 0; shifting x_dose by c would make
+  u' = u + c v correlated with v. brms's '(1 + x | g)' (correlated, LKJ prior) is a different model
+  and is refused in this slice.
+
+Priors
+  a_c ~ Normal(mu=0, sigma=5)
+  b_dose ~ Normal(mu=0, sigma=2)
+  sd_site ~ HalfNormal(sigma=1)
+  sd_dose|site ~ HalfNormal(sigma=1)
+  sigma ~ HalfNormal(sigma=1)
+
+Likelihood
+  y_i ~ Normal(mu_i, sigma)
+
+PyMC variables sampled (value space)
+  sigma_log__              log(sigma)
+  Intercept                a_c
+  dose                     b_dose
+  1|site_sigma_log__       log(sd_site)
+  1|site_offset            z0 (varying-intercept offsets)
+  dose|site_sigma_log__    log(sd_dose|site)
+  dose|site_offset         z1 (varying-slope offsets)
+Deterministic: 1|site = u, dose|site = v, mu = linear predictor
+
+group design check: Z_slope equals raw dose times the one-hot site matrix -> True
+
+Traceback (most recent call last):
+  File "/Users/andrewdou/iqss-research/projects/AutoBayes-worktrees/m3b1-varying-slope/examples/m3b1_varying_slope.py", line 99, in <module>
+    main()
+  File "/Users/andrewdou/iqss-research/projects/AutoBayes-worktrees/m3b1-varying-slope/examples/m3b1_varying_slope.py", line 67, in main
+    fit = model.fit(backend=args.backend, device=args.device, chains=args.chains, draws=args.draws, tune=args.tune, seed=args.seed)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/andrewdou/iqss-research/projects/AutoBayes-worktrees/m3b1-varying-slope/autobayes/model.py", line 534, in fit
+    return fit(self, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^
+  File "/Users/andrewdou/iqss-research/projects/AutoBayes-worktrees/m3b1-varying-slope/autobayes/inference.py", line 140, in fit
+    jax_device, default_method = resolve_jax_device(device, chains, notes)
+                                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/andrewdou/iqss-research/projects/AutoBayes-worktrees/m3b1-varying-slope/autobayes/inference.py", line 86, in resolve_jax_device
+    raise DeviceError(
+autobayes.inference.DeviceError: device='gpu' requested for backend='numpyro', but JAX sees no GPU. Visible devices: cpu:cpu(id=0), cpu:cpu(id=1), cpu:cpu(id=2), cpu:cpu(id=3), cpu:cpu(id=4), cpu:cpu(id=5), cpu:cpu(id=6), cpu:cpu(id=7). Install a CUDA-enabled jaxlib on a machine with an NVIDIA GPU, or pass device='cpu'. AutoBayes does not fall back to CPU silently.

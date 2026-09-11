@@ -1,0 +1,160 @@
+{
+ "pymc": {
+  "panel": {
+   "values": {
+    "divergences": 0.0,
+    "divergence_fraction": 0.0,
+    "max_rhat": 1.0073920081733667,
+    "min_ess_bulk": 468.13742582508405,
+    "min_ess_tail": 964.1117824004409,
+    "min_bfmi": 0.6304440768361086,
+    "treedepth_saturation": 0.0,
+    "n_draws": 4000.0
+   },
+   "status": {
+    "divergence_fraction": "pass",
+    "max_rhat": "pass",
+    "min_ess_bulk": "pass",
+    "min_ess_tail": "pass",
+    "min_bfmi": "pass",
+    "treedepth_saturation": "pass"
+   }
+  },
+  "population": {
+   "Intercept": {
+    "mean": 1.0560645774037705,
+    "sd": 0.06782059164780335,
+    "hdi_0.5%": 0.8786208660425544,
+    "hdi_99.5%": 1.2318897499164938,
+    "ess_bulk": 468.13742582508405,
+    "r_hat": 1.0073920081733667,
+    "truth": 1.0,
+    "inside_99": true
+   },
+   "x": {
+    "mean": 0.4996068469513658,
+    "sd": 0.036903676138018766,
+    "hdi_0.5%": 0.4007098704977735,
+    "hdi_99.5%": 0.5960687834370807,
+    "ess_bulk": 1383.8611117770845,
+    "r_hat": 1.0013009552091738,
+    "truth": 0.5,
+    "inside_99": true
+   },
+   "1|g_sigma": {
+    "mean": 0.35419142903843587,
+    "sd": 0.0535229265289769,
+    "hdi_0.5%": 0.2402827439882446,
+    "hdi_99.5%": 0.5130495822187091,
+    "ess_bulk": 800.4273153632602,
+    "r_hat": 1.0069386713249455,
+    "truth": 0.5,
+    "inside_99": true
+   },
+   "x|g_sigma": {
+    "mean": 0.17538564808362558,
+    "sd": 0.03329013939071744,
+    "hdi_0.5%": 0.10037573721767871,
+    "hdi_99.5%": 0.2720470100513463,
+    "ess_bulk": 1387.2508580363226,
+    "r_hat": 1.0021158378506838,
+    "truth": 0.3,
+    "inside_99": false
+   },
+   "sigma": {
+    "mean": 0.4241341038705768,
+    "sd": 0.013195428912689915,
+    "hdi_0.5%": 0.38918468901714237,
+    "hdi_99.5%": 0.4575232444940179,
+    "ess_bulk": 4303.380713076454,
+    "r_hat": 1.0014668643620224,
+    "truth": 0.4,
+    "inside_99": true
+   }
+  },
+  "report": "AutoBayes fit report\n  backend          : pymc\n  device requested : cpu\n  device actual    : cpu (platform cpu)\n  dtype            : float64\n  chain method     : n/a\n  chains/tune/draws: 4/1000/1000, target_accept 0.9\n  seed             : 17\n  wall time        : 4.9 s (includes compilation)",
+  "sd_posterior_sd": {
+   "1|g_sigma": 0.0535229265289769,
+   "x|g_sigma": 0.03329013939071744
+  }
+ },
+ "numpyro": {
+  "panel": {
+   "values": {
+    "divergences": 0.0,
+    "divergence_fraction": 0.0,
+    "max_rhat": 1.0117481031650688,
+    "min_ess_bulk": 395.25045117247527,
+    "min_ess_tail": 939.5786934868855,
+    "min_bfmi": 0.6201613970714143,
+    "treedepth_saturation": 0.0,
+    "n_draws": 4000.0
+   },
+   "status": {
+    "divergence_fraction": "pass",
+    "max_rhat": "investigate",
+    "min_ess_bulk": "investigate",
+    "min_ess_tail": "pass",
+    "min_bfmi": "pass",
+    "treedepth_saturation": "pass"
+   }
+  },
+  "population": {
+   "Intercept": {
+    "mean": 1.0567286461135879,
+    "sd": 0.06929063713145266,
+    "hdi_0.5%": 0.8796913779105215,
+    "hdi_99.5%": 1.245205768451124,
+    "ess_bulk": 395.25045117247527,
+    "r_hat": 1.0026323674377062,
+    "truth": 1.0,
+    "inside_99": true
+   },
+   "x": {
+    "mean": 0.4996086765279128,
+    "sd": 0.036993555564818294,
+    "hdi_0.5%": 0.4085064960695174,
+    "hdi_99.5%": 0.6006243442089755,
+    "ess_bulk": 1064.6572457117163,
+    "r_hat": 1.0006405479641938,
+    "truth": 0.5,
+    "inside_99": true
+   },
+   "1|g_sigma": {
+    "mean": 0.3544247570097451,
+    "sd": 0.05397796796665002,
+    "hdi_0.5%": 0.22830674415732877,
+    "hdi_99.5%": 0.5133597389425796,
+    "ess_bulk": 677.7789022591273,
+    "r_hat": 1.0117481031650688,
+    "truth": 0.5,
+    "inside_99": true
+   },
+   "x|g_sigma": {
+    "mean": 0.17390741511114013,
+    "sd": 0.03364326350451635,
+    "hdi_0.5%": 0.09993519434097625,
+    "hdi_99.5%": 0.27499833564355786,
+    "ess_bulk": 1162.5800361800336,
+    "r_hat": 1.0020462545118658,
+    "truth": 0.3,
+    "inside_99": false
+   },
+   "sigma": {
+    "mean": 0.42473688922555414,
+    "sd": 0.013059498864007727,
+    "hdi_0.5%": 0.3927888520744622,
+    "hdi_99.5%": 0.4582926537814437,
+    "ess_bulk": 4332.170434304903,
+    "r_hat": 1.0022025980950435,
+    "truth": 0.4,
+    "inside_99": true
+   }
+  },
+  "report": "AutoBayes fit report\n  backend          : numpyro\n  device requested : cpu\n  device actual    : cpu:cpu(id=0) (platform cpu)\n  dtype            : float64\n  chain method     : parallel\n  chains/tune/draws: 4/1000/1000, target_accept 0.9\n  seed             : 17\n  wall time        : 3.1 s (includes compilation)",
+  "sd_posterior_sd": {
+   "1|g_sigma": 0.05397796796665002,
+   "x|g_sigma": 0.03364326350451635
+  }
+ }
+}

@@ -1,0 +1,19 @@
+realised SD of the 30 simulated intercepts u: 0.3311 (population 0.5); of the 30 slopes v: 0.2197 (population 0.3)
+  chi-square scale: 29 * s^2 / sigma^2 = 15.6 for v (expected 29), 12.7 for u
+  OLS slopes across groups: SD 0.2015, mean se 0.1028; noise-corrected spread sqrt(SD^2 - mean se^2) = 0.1706
+  correlation of OLS slopes with the true v: 0.901; of OLS intercepts with the true u: 0.949
+  posterior-mean v_j vs true v_j: correlation 0.915, regression slope 0.600 (shrinkage < 1 expected); SD of posterior means 0.1439
+  posterior-mean u_j vs true u_j: correlation 0.951, regression slope 0.944; SD of posterior means 0.3284
+  x|g_sigma posterior: mean 0.177, 99% interval [0.111, 0.276]; realised v SD 0.220 inside: True
+  1|g_sigma posterior: mean 0.354, 99% interval [0.248, 0.516]; realised u SD 0.331
+  fraction of 30-draw samples with realised SD <= 0.220: 0.0195
+
+Same check on the example's data (examples/m3b1_varying_slope.py, seed 31, J = 24 sites of 15):
+example seed 31: realised SD of the 24 site intercepts 0.347 (population 0.5), slopes 0.306 (population 0.3)
+  chi-square scale: intercepts 11.0, slopes 23.9 (expected 23)
+  over 5000 seeds, SD of 24 N(0, 0.5) draws: mean 0.495, 5th pct 0.376; fraction <= 0.347: 0.016
+  OLS: intercept spread noise-corrected 0.325 (posterior mean 0.345), slope spread 0.258 (posterior mean 0.276)
+Reading: in both data sets the posterior of each SD hyperparameter tracks the realised spread of the simulated
+group effects (and an independent no-pooling OLS analysis), not the population value used to draw them; with
+J = 24-30 groups the population SD is identified only through those realised effects. The failed F7 gate compares
+the slope SD with the population value on a draw whose realised slope spread is a ~2 % event.
