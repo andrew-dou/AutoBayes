@@ -1,5 +1,65 @@
 # AutoBayes status
 
+## M3a-2 slice (2026-09-10): one numeric-by-categorical fixed interaction
+
+- Dispatched by the coordinator after the M3a-1 acceptance
+  (`memory/reviews/2026-09-10-autobayes-m3a1-repair-acceptance.md`; dispatch
+  `memory/dispatches/2026-09-10-autobayes-m3a2-interaction.txt`). Branch
+  `m3a2/numeric-by-categorical-interaction` from `main` at `df8195a` in the worktree
+  `projects/AutoBayes-worktrees/m3a2-interaction`; session `e5628a7d-e572-4bad-9feb-82ee8361c261`.
+  Decision and acceptance record `docs/m3a2-decision.md` committed before any code, after
+  measuring formulae/Bambi's `x:z` and `x*z` expansion, product-column centring and naming.
+- **M3a-1 closure recorded here (per REPOSITORY_WORKFLOW):** PR https://github.com/andrew-dou/AutoBayes/pull/6
+  merged by andrew-dou at `df8195a39f5ef877e1c59186d69107e207063aa4` (2026-09-10T21:04:24Z; a squash whose
+  tree equals the branch head `15cd913`, verified with `git diff`), confirmed through GitHub before any
+  checkout changed. No process depended on the M3a-1 worktree (only the session shell's working
+  directory). Its six ignored `evidence-runs/` directories were copied with SHA-256 sums (24 files) to
+  `iqss-research/artifacts/2026-09-10-autobayes-m3a1-worker-evidence/` with a checkpoint note; the
+  local `main` ref was fast-forwarded to `df8195a`; the new worktree was created from `origin/main`
+  at the absolute path; then the clean merged worktree `AutoBayes-worktrees/m3a1-categorical` was
+  removed and `m3a1/categorical-predictors` deleted locally and on the remote. The original M1
+  planning checkout at `projects/AutoBayes` (dirty) was not touched.
+
+- **Delivered (this slice):** `x:z` (and `x*z` = `x + z + x:z`, measured identical) between a
+  numeric term and a declared categorical term, both main effects required (lower-order-omitting
+  forms refused with the explanation), deterministic canonical expansion (main effects in first
+  appearance order, then interactions spelled `numeric:categorical`), duplicates/overlaps and
+  unsupported interactions refused; design columns `x:z[l]` = `x * 1[z = l]` verified against an
+  independent construction from the supplied labels; PyMC variable `x:z` with dims `x:z_dim`;
+  `Priors.b` keys per canonical term, term-wide or per level; centring of every expanded column
+  at its own mean with the product-column means printed by `describe()` (not the product of the
+  means) and the reported-intercept transformation verified against the sampler's own log
+  density; predictions per level and slope with unseen category levels refused; fit records carry
+  the interaction and canonical formula. Version 0.4.0.
+- **Tests** (clean locked environment, fresh evidence directories): `tests/test_interaction.py`
+  35 passed (37 s) (grammar and refusals; design against an independent construction for 3 families x 2
+  references x 2 centrings on shuffled data; the sampled-to-reported intercept check; density,
+  Jacobian and gradients on both paths for all three families with term-wide and per-level
+  priors; the reference change with slopes; prior refusals; describe/record; predictions by hand
+  with per-level slopes, mixed rows, expected vs predictive counts, unseen levels; binomial
+  zero-trial drop before the means). Fast suite **332 passed, 7 deselected (288 s)**. Slow suite **7 passed (49 s)** including the
+  prespecified interaction recovery: 0 divergences, max R-hat 1.0094889 (PyMC) and 1.0045411 (NumPyro), min bulk ESS 520/662, all eight truths inside their 99 % HDIs, backends within 4 combined MCSE (largest ratio 0.41). Example on both backends in `docs/m3a2-evidence/`.
+
+- **Review repair (2026-09-10, `memory/reviews/2026-09-10-autobayes-m3a2-review.md`).** The
+  one-interaction scope was not enforced (`x:z + w:z` built in all families: the coordinator's three
+  scope checks failed on `cc3081a`, reproduced before any change); `describe()` kept the constant
+  categorical-contrast sentence when the category interacts (the contrast is `b_z[l] + x * b_x:z[l]`,
+  `b_z[l]` alone is at x = 0); the density/gradient tests fed `model.data` to the reference. Repair
+  record committed before code (`7f48b08`); repair commit `76beb7b`: at most one distinct interaction
+  after canonicalisation (shared numeric side, shared categorical side, disjoint and double shorthand
+  all refused), conditional link-scale contrast wording in `describe()` (constant contrast kept for
+  categories without an interaction) with a nonzero-x numerical contrast test, original-source oracles
+  (the reference reads the caller's frame and selects positive-trial rows itself) and the coordinator's
+  original-input checks adopted as `tests/test_interaction_original_inputs.py`. After: coordinator's
+  file 15 passed (pytest exit 0); new module 16 passed; `tests/test_interaction.py` 35 passed; fast suite **348 passed, 7 deselected (343 s)**; slow suite
+  **7 passed (49 s)**; independent regressions 12 passed. Real pytest exit codes recorded; frozen coordinator
+  evidence untouched.
+- PR: https://github.com/andrew-dou/AutoBayes/pull/7 (base `main`, author andrew-dou). Record `f0d229f`; implementation `9c2ef95`;
+  reviewed head `cc3081a` (request changes); repair record `7f48b08`; repair `76beb7b`; this STATUS checkpoint follows it
+  (CI runs recorded in the PR comment and the final report). Left open for independent
+  review; not merged by this session; the M3a-2 worktree is kept until that review passes. Next approved
+  increment after acceptance: independent varying slopes, then correlated slopes, in separate PRs.
+
 ## M3a-1 slice (2026-09-10): one treatment-coded categorical predictor
 
 - Dispatched by the coordinator after the M2 acceptance

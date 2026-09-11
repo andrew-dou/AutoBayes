@@ -1,0 +1,74 @@
+AutoBayes environment
+  python    : 3.11.0 (macOS-26.6.1-arm64-arm-64bit)
+  versions  : pymc 5.28.5, pytensor 2.38.3, bambi 0.17.2, formulae 0.6.2, arviz 0.23.4, numpyro 0.21.0, jax 0.10.2, jaxlib 0.10.2, numpy 2.4.6
+  jax       : cpu:cpu(id=0), cpu:cpu(id=1), cpu:cpu(id=2), cpu:cpu(id=3), cpu:cpu(id=4), cpu:cpu(id=5), cpu:cpu(id=6), cpu:cpu(id=7)
+  jax x64   : True
+
+300 rows, 12 sites; arms {'control': 139, 'low': 100, 'high': 61}; mean dose by arm {'control': -0.07, 'high': -0.48, 'low': 1.07}
+AutoBayes M0 model with categorical predictor(s) and interaction(s)
+  formula   : y ~ dose + arm + dose:arm + (1 | site)
+  family    : gaussian, identity link
+  data      : n = 300 observations, J = 12 levels of site
+  levels    : 0=s00, 1=s01, 2=s02, 3=s03, 4=s04, 5=s05, 6=s06, 7=s07, 8=s08, 9=s09, 10=s10, 11=s11
+  arm       : categorical, treatment coding, reference 'control'; levels (sorted) control, high, low; coefficients b_arm[high, low]
+              proportions among fitted rows: control 0.463, high 0.203, low 0.333
+
+Linear predictor
+  mu_i = a_c + (x_dose - mean(x_dose)) * b_dose + (1[arm_i = high] - p_arm[high]) * b_arm[high] + (1[arm_i = low] - p_arm[low]) * b_arm[low] + (x_dose * 1[arm_i = high] - q_dose:arm[high]) * b_dose:arm[high] + (x_dose * 1[arm_i = low] - q_dose:arm[low]) * b_dose:arm[low] + u[site_i]
+  b_arm[l] is the difference between level l and the reference 'control' on the response scale at the same predictors and group; the reference has no coefficient.
+  dose:arm: the reference level 'control' has the raw intercept a and slope b_dose; level l has intercept difference b_arm[l] and slope difference b_dose:arm[l], so its slope in dose is b_dose + b_dose:arm[l].
+  Predictors are centred at their sample means (center_predictors=True, as in
+  brms and Bambi); a dummy column's mean is its level's proportion p_z[l].
+  Each product column x * 1[z = l] is centred at its OWN mean q, which is the level's proportion
+  times the mean of x within that level: q_dose:arm[high] = -0.0975 = p_arm[high] 0.203 * mean(dose | arm = high) -0.4793 (not mean(dose) 0.2270 * p)
+  times the mean of x within that level: q_dose:arm[low] = 0.3564 = p_arm[low] 0.333 * mean(dose | arm = low) 1.0693 (not mean(dose) 0.2270 * p)
+  That point of the expanded design is not a realisable covariate row (a row has x*1[z=l] equal to x or 0).
+  a_c is the expected response at the fitted-row means of every expanded design column (x, 1[z = l], x * 1[z = l]) (group effect zero); the
+  prior on the intercept applies to a_c. The posterior reports the raw-scale
+  intercept a = a_c - sum_p mean(x_p) * b_p - sum_l p_z[l] * b_z[l] - sum_l q_x:z[l] * b_x:z[l], computed after sampling: the linear predictor at x = 0 and at the reference level.
+
+Group effects (non-centred)
+  u[j] = sd_site * z[j],  z[j] ~ Normal(0, 1),  j = 0..11
+
+Priors
+  a_c ~ Normal(mu=0, sigma=5)
+  b_dose ~ Normal(mu=0, sigma=2)
+  b_arm[high] ~ Normal(mu=0, sigma=2)
+  b_arm[low] ~ Normal(mu=0, sigma=2)
+  b_dose:arm[high] ~ Normal(mu=0, sigma=1)
+  b_dose:arm[low] ~ Normal(mu=0, sigma=1)
+  sd_site ~ HalfNormal(sigma=1)
+  sigma ~ HalfNormal(sigma=1)
+
+Likelihood
+  y_i ~ Normal(mu_i, sigma)
+
+PyMC variables sampled (value space)
+  sigma_log__              log(sigma)
+  Intercept                a_c
+  dose                     b_dose
+  arm                      b_arm[high, low] (vector; dims arm_dim, posterior rows arm[high], arm[low])
+  dose:arm                 b_dose:arm[high, low] (vector; dims dose:arm_dim, posterior rows dose:arm[high], dose:arm[low])
+  1|site_sigma_log__       log(sd_site)
+  1|site_offset            z
+Deterministic: 1|site = u, mu = linear predictor
+
+design columns: ('dose', 'arm[high]', 'arm[low]', 'dose:arm[high]', 'dose:arm[low]')
+coefficients   : (('dose', 'dose', None), ('arm[high]', 'arm', 0), ('arm[low]', 'arm', 1), ('dose:arm[high]', 'dose:arm', 0), ('dose:arm[low]', 'dose:arm', 1))
+column means used for centring: {'dose': np.float64(0.227), 'arm[high]': np.float64(0.2033), 'arm[low]': np.float64(0.3333), 'dose:arm[high]': np.float64(-0.0975), 'dose:arm[low]': np.float64(0.3564)}
+
+Traceback (most recent call last):
+  File "/Users/andrewdou/iqss-research/projects/AutoBayes-worktrees/m3a2-interaction/examples/m3a2_interaction.py", line 114, in <module>
+    main()
+  File "/Users/andrewdou/iqss-research/projects/AutoBayes-worktrees/m3a2-interaction/examples/m3a2_interaction.py", line 78, in main
+    fit = model.fit(backend=args.backend, device=args.device, chains=args.chains, draws=args.draws, tune=args.tune, seed=args.seed)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/andrewdou/iqss-research/projects/AutoBayes-worktrees/m3a2-interaction/autobayes/model.py", line 467, in fit
+    return fit(self, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^
+  File "/Users/andrewdou/iqss-research/projects/AutoBayes-worktrees/m3a2-interaction/autobayes/inference.py", line 140, in fit
+    jax_device, default_method = resolve_jax_device(device, chains, notes)
+                                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/andrewdou/iqss-research/projects/AutoBayes-worktrees/m3a2-interaction/autobayes/inference.py", line 86, in resolve_jax_device
+    raise DeviceError(
+autobayes.inference.DeviceError: device='gpu' requested for backend='numpyro', but JAX sees no GPU. Visible devices: cpu:cpu(id=0), cpu:cpu(id=1), cpu:cpu(id=2), cpu:cpu(id=3), cpu:cpu(id=4), cpu:cpu(id=5), cpu:cpu(id=6), cpu:cpu(id=7). Install a CUDA-enabled jaxlib on a machine with an NVIDIA GPU, or pass device='cpu'. AutoBayes does not fall back to CPU silently.

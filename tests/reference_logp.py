@@ -64,36 +64,48 @@ def _labels(s: pd.Series) -> np.ndarray:
     return np.array(out, dtype=object)
 
 
-def design_columns(data: pd.DataFrame, predictors: list[str], categorical: dict | None = None) -> list[str]:
-    """Design-column labels in formula order: a numeric term as itself, a categorical term as
-    ``z[level]`` for every sorted level except the reference (treatment coding)."""
+def _nonref_levels(data: pd.DataFrame, term: str, categorical: dict) -> list[str]:
+    return [l for l in sorted(set(_labels(data[term]).tolist())) if l != str(categorical[term])]
+
+
+def design_columns(data: pd.DataFrame, predictors: list[str], categorical: dict | None = None,
+                   interactions: list | None = None) -> list[str]:
+    """Design-column labels: main-effect terms in formula order (a numeric term as itself, a
+    categorical term as ``z[level]`` for every sorted level except the reference), then each
+    interaction ``(x, z)`` as ``x:z[level]`` for the same levels."""
     categorical = categorical or {}
     cols = []
     for term in predictors:
         if term in categorical:
-            levels = sorted(set(_labels(data[term]).tolist()))
-            cols.extend(f"{term}[{l}]" for l in levels if l != str(categorical[term]))
+            cols.extend(f"{term}[{l}]" for l in _nonref_levels(data, term, categorical))
         else:
             cols.append(term)
+    for x, z in (interactions or []):
+        cols.extend(f"{x}:{z}[{l}]" for l in _nonref_levels(data, z, categorical))
     return cols
 
 
 def build_design(data: pd.DataFrame, response: str, predictors: list[str], group: str, center: bool,
-                 categorical: dict | None = None):
-    """``predictors`` are the formula's predictor terms in order; ``categorical`` maps a term to
-    its reference level. Dummies are 0/1 indicators of the non-reference levels; centring
-    subtracts every column's mean (a dummy's mean is the level's proportion)."""
+                 categorical: dict | None = None, interactions: list | None = None):
+    """``predictors`` are the formula's main-effect terms in order; ``categorical`` maps a term to
+    its reference level; ``interactions`` lists ``(numeric, categorical)`` pairs whose columns are
+    the raw products x * 1[z = level]. Centring subtracts every column's own mean (a dummy's mean
+    is the level's proportion; a product column's mean is the proportion times the mean of x
+    within the level, not the product of the means)."""
     categorical = categorical or {}
     y = data[response].to_numpy(dtype=float)
     cols = []
     for term in predictors:
         if term in categorical:
             lab = _labels(data[term])
-            for l in sorted(set(lab.tolist())):
-                if l != str(categorical[term]):
-                    cols.append((lab == l).astype(float))
+            for l in _nonref_levels(data, term, categorical):
+                cols.append((lab == l).astype(float))
         else:
             cols.append(data[term].to_numpy(dtype=float))
+    for x, z in (interactions or []):
+        lab = _labels(data[z]); xv = data[x].to_numpy(dtype=float)
+        for l in _nonref_levels(data, z, categorical):
+            cols.append(xv * (lab == l))
     X = np.column_stack(cols) if cols else np.zeros((len(y), 0))
     xbar = X.mean(0) if center else np.zeros(X.shape[1])
     levels = sorted(data[group].astype(str).unique())
@@ -103,13 +115,13 @@ def build_design(data: pd.DataFrame, response: str, predictors: list[str], group
 
 def reference_logp(point: dict, data: pd.DataFrame, *, response: str, predictors: list[str],
                    group: str, priors: dict, center: bool = True, jacobian: bool = True,
-                   categorical: dict | None = None) -> float:
+                   categorical: dict | None = None, interactions: list | None = None) -> float:
     """``point`` holds a_c, b (array, one entry per design column), log_sigma, log_sd, z (array).
 
     ``priors`` maps 'intercept', 'b' (dict by design column), 'sd', 'sigma' to (name, params).
     """
-    y, Xc, _, gidx, levels = build_design(data, response, predictors, group, center, categorical)
-    columns = design_columns(data, predictors, categorical)
+    y, Xc, _, gidx, levels = build_design(data, response, predictors, group, center, categorical, interactions)
+    columns = design_columns(data, predictors, categorical, interactions)
     a, b = float(point["a_c"]), np.atleast_1d(point["b"])
     log_sigma, log_sd = float(point["log_sigma"]), float(point["log_sd"])
     z = np.asarray(point["z"], dtype=float)
@@ -153,7 +165,7 @@ def conditional_gaussian_posterior(data, *, response, predictors, group, center,
 
 def reference_logp_bernoulli(point: dict, data: pd.DataFrame, *, response: str, predictors: list[str],
                              group: str, priors: dict, center: bool = True, jacobian: bool = True,
-                             categorical: dict | None = None) -> float:
+                             categorical: dict | None = None, interactions: list | None = None) -> float:
     """M1 reference: Bernoulli likelihood with a logit link, same structure as ``reference_logp``.
 
     ``point`` holds a_c, b (array), log_sd, z (array); there is no residual scale. The
@@ -162,8 +174,8 @@ def reference_logp_bernoulli(point: dict, data: pd.DataFrame, *, response: str, 
     """
     from scipy.special import log_expit
 
-    y, Xc, _, gidx, levels = build_design(data, response, predictors, group, center, categorical)
-    columns = design_columns(data, predictors, categorical)
+    y, Xc, _, gidx, levels = build_design(data, response, predictors, group, center, categorical, interactions)
+    columns = design_columns(data, predictors, categorical, interactions)
     assert set(np.unique(y)) <= {0.0, 1.0}
     a, b = float(point["a_c"]), np.atleast_1d(point["b"])
     log_sd = float(point["log_sd"])

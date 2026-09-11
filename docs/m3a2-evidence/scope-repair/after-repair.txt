@@ -1,0 +1,12 @@
+Repair candidate checks (clean locked environment; each line is the real pytest exit code and summary):
+coordinator_after: pytest exit 0 | 15 passed, 12 warnings in 20.86s
+original_inputs: pytest exit 0 | 16 passed in 16.04s
+interaction: pytest exit 0 | 35 passed, 1 warning in 42.04s
+fast: pytest exit 0 | 348 passed, 7 deselected, 1 warning in 342.60s (0:05:42)
+slow: pytest exit 0 | 7 passed, 348 deselected in 48.55s
+independent_label_norm: pytest exit 0 | 12 passed, 4 warnings in 6.88s
+
+Coordinator's extra file (artifacts/2026-09-10-autobayes-m3a2-independent/test_iqss_m3a2_independent.py) after the repair:
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+15 passed, 12 warnings in 20.86s

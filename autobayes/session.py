@@ -85,7 +85,7 @@ def fit_record(model, fit, *, panel: dict | None = None, max_treedepth: int = 10
     s, d, pr = model.spec, model.design, model.priors
     coef = pr.coefficient_priors(s)
     return {
-        "autobayes_version": _version("autobayes") or "0.3.0",
+        "autobayes_version": _version("autobayes") or "0.4.0",
         "model": {
             "formula": s.formula,
             "family": model.family,
@@ -97,6 +97,8 @@ def fit_record(model, fit, *, panel: dict | None = None, max_treedepth: int = 10
                        "sd": str(pr.sd), **({"sigma": str(pr.sigma)} if pr.sigma is not None else {})},
             "terms": list(s.terms),
             "design_columns": list(s.columns),
+            "interactions": [list(pair) for pair in s.interactions],
+            "canonical_formula": s.canonical_formula,
             "categorical": {c.name: {"reference": c.reference, "levels": list(c.levels),
                                      "coefficients": list(c.coefficients), "unused_levels": list(c.unused)}
                             for c in s.categoricals},

@@ -48,6 +48,11 @@ def raw_design(model, df: pd.DataFrame) -> np.ndarray:
             cat = model.spec.categorical(term)
             labels = df[term].astype(str).to_numpy()
             cols.extend((labels == lvl).astype(float) for lvl in cat.coefficients)
+        elif term in model.spec.interaction_names:
+            xn, zn = model.spec.interaction_of(term)
+            labels = df[zn].astype(str).to_numpy()
+            xv = df[xn].to_numpy(dtype=float)
+            cols.extend(xv * (labels == lvl) for lvl in model.spec.levels_of(term))
         else:
             cols.append(df[term].to_numpy(dtype=float))
     return np.column_stack(cols) if cols else np.zeros((len(df), 0))
@@ -58,13 +63,13 @@ def _coefficient_draws(post, model):
     parts = []
     for term in model.spec.terms:
         arr = post[term].to_numpy()
-        parts.append(arr[..., None] if term not in model.spec.categorical_names else arr)
+        parts.append(arr if model.spec.levels_of(term) else arr[..., None])
     return np.concatenate(parts, axis=-1) if parts else None
 
 
 def _check_newdata(model, newdata: pd.DataFrame, *, need_trials: bool = False) -> pd.DataFrame:
     s = model.spec
-    cols = [*s.terms, s.group]
+    cols = [*s.predictors, *s.categorical_names, s.group]
     if need_trials:
         if s.trials not in newdata.columns:
             raise FormulaError(

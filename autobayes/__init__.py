@@ -2,11 +2,12 @@
 
 Three model families on one right-hand side ``x + z + (1 | group)`` with numeric predictors,
 treatment-coded categorical predictors declared with ``categorical={column: reference}``
-(M3a-1) and one varying intercept: Gaussian with identity link (milestone M0), Bernoulli with
+(M3a-1), one numeric-by-categorical interaction ``x:z`` with both main effects (M3a-2) and one
+varying intercept: Gaussian with identity link (milestone M0), Bernoulli with
 logit link for a strictly 0/1 response (M1), and binomial counts ``successes | trials(n)`` with
 logit link (M2). Everything else is refused with an error that names the unsupported
 construct. See ``docs/m0-decision.md``, ``docs/m1-decision.md``, ``docs/m2-decision.md`` and
-``docs/m3a1-decision.md`` for what Bambi supplies and what this layer adds.
+``docs/m3a1-decision.md`` and ``docs/m3a2-decision.md`` for what Bambi supplies and what this layer adds.
 """
 import os as _os
 
@@ -52,4 +53,4 @@ __all__ = [
     "PriorError", "Priors", "StudentT", "bernoulli", "binomial", "compare_records", "environment", "fit", "fit_record",
     "format_comparison", "format_environment", "gaussian", "panel", "parse_formula", "predict",
 ]
-__version__ = "0.3.0"
+__version__ = "0.4.0"
