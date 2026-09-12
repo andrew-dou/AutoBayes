@@ -130,6 +130,98 @@ substituted silently.
   covariate times the one-hot matrix (the kill criterion was never triggered).
 - `tests/test_varying_slope.py`: 18 passed. Fast suite: 365 passed, 8 deselected (312 s; pytest exit 0). Slow suite: 1 failed, 7 passed (54 s; pytest exit 1): the failed test is F7, the prespecified recovery (population-SD gate), reported below and not re-run to pass. Independent
   label-identity, M2 normalisation and M3a-2 original-input regressions: 27 passed (nine label-identity, three M2 normalisation, fifteen M3a-2 original-input).
-- F7 recovery: **FAILED one prespecified gate on both CPU samplers, recorded and investigated, not re-run.** Divergences 0/0; max R-hat 1.0074 (PyMC) and 1.0117 (NumPyro: `1|g_sigma` 1.0117 exceeds the 1.01 gate on that backend; PyMC passes it); min bulk ESS 468 (PyMC) and 395 (NumPyro: `Intercept` 395 misses the 400 gate); `Intercept`, `x`, `1|g_sigma` and `sigma` inside their 99 % HDIs on both backends; `x|g_sigma` posterior mean 0.175/0.174 with 99 % HDI [0.100, 0.272]/[0.100, 0.275] does NOT contain the population truth 0.30 on either backend; backends agree with each other. Frozen: `docs/m3b1-evidence/F7_varying_slope_recovery_FAILED_GATE.json` and the records. Investigation (`docs/m3b1-evidence/F7_investigation.txt`, script alongside; no library design helper): for seed 17 the realised spread of the 30 simulated slopes is 0.220 (population 0.30; 29 s^2/sigma^2 = 15.6, a ~2 % event) and of the 30 intercepts 0.331 (population 0.50; 12.7, a ~0.4 % event). An independent per-group OLS analysis gives a noise-corrected slope spread of 0.171, matching the model's posterior mean 0.177; the posterior 99 % interval [0.111, 0.276] contains the realised slope SD 0.220; the posterior-mean slopes correlate 0.915 with the true slopes (0.951 for the intercepts). The model recovers the realised group effects; the failed gate compares the SD hyperparameter with a population value that 30 realised groups do not pin down in this draw. The prespecified gate stands as failed; no widening, no new seed. Proposed for the coordinator's decision (not applied): gate SD hyperparameters at finite J on the realised SD of the simulated effects (population value reported), and/or a second prespecified design with more groups.
+- F7 recovery: **FAILED at the prespecified thresholds; the failure stands.** Original result (first slow suite,
+  evidence directory `...-p70699-5b76d1`, frozen as `docs/m3b1-evidence/F7_varying_slope_recovery_FAILED_GATE.json`):
+  divergences 0/0; max R-hat 1.0074 (PyMC) and 1.0117 (NumPyro: `1|g_sigma` 1.0117 exceeds the 1.01 gate on that
+  backend); min bulk ESS 468 (PyMC) and 395 (NumPyro: `Intercept` 395 misses the 400 gate); `Intercept`, `x`,
+  `1|g_sigma` and `sigma` inside their 99 % HDIs on both backends; **`x|g_sigma` (posterior mean 0.175/0.174, 99 % HDI
+  [0.100, 0.272] / [0.100, 0.275]) does not contain the generating value 0.30 on either backend**; the two backends
+  agree with each other within 4 combined MCSE. **Actual fit accounting** (each a distinct sampling run; none was a
+  re-run of F7 "to pass" and nothing was widened or reseeded): (1) the original F7 in the first slow suite above;
+  (2) F7 again in the second slow suite `...-p71752-7d0f6b`, run to obtain the suite counts after six old test
+  expectations were updated, same deterministic seed, same failure; (3) one additional investigation fit on the F7
+  data (PyMC, 2 chains x 500 tune + 500 draws, seed 17, `docs/m3b1-evidence/F7_investigation.txt`); (4) one live
+  demonstration fit requested by Andrew on 2026-09-11 (a different model and data: `y ~ dose + arm + (1 + dose ||
+  site)`, NumPyro, 4 x 500 + 500), not part of the evidence. **Estimand statement (corrected 2026-09-12):** the gated
+  parameter `x|g_sigma` is the *population* SD of the Normal group slopes; the realised sample SD of the 30 simulated
+  slopes (0.2197) is a different random quantity and is not a substitute truth for it. The investigation (a ~2 %
+  realised-spread event, an independent per-group OLS spread of 0.171 against the posterior mean 0.177, posterior
+  containing the realised SD) supports rare realised group variation as a *possible explanation* of the failure; it
+  is not proof of sampling correctness and does not fulfil the acceptance gate. A 99 % posterior interval at one
+  fixed generating value does not by itself guarantee 99 % repeated-sample coverage, and no familywise false-failure
+  rate follows automatically for the five intervals. Deterministic correctness (density, Jacobians, gradients on
+  both paths, design) and sampler convergence are established separately from finite-data recovery; see the repair
+  record below for the proposal.
 - Example (`docs/m3b1-evidence/`): both backends recover the population slope and the residual SD, with `1|site_sigma` and `dose|site_sigma` reported with their uncertainty (see the files); PyMC and NumPyro agree within 4 combined MCSE on every population mean; the single-bar form is refused with the guidance; `--device gpu` raises `DeviceError` (captured). Files: `example_pymc_cpu.txt`, `example_numpyro_cpu.txt` (with the comparison), the two fit records, `example_numpyro_gpu_attempt.txt`.
 - Evidence directories of these runs: `evidence-runs/20260911T003657.969678Z-8307a90f204f-dirty-p71239-68410b/` (fast, final), `evidence-runs/20260911T003854.676250Z-8307a90f204f-dirty-p71752-7d0f6b/` (slow, final), `evidence-runs/20260911T002903.692270Z-8307a90f204f-dirty-p70699-5b76d1/` (first slow; F7 files frozen in `docs/m3b1-evidence/`) and `evidence-runs/20260911T002709.385688Z-8307a90f204f-dirty-p69234-feca57/` (first fast, six old-expectation failures); earlier run directories untouched.
+
+## Repair record (2026-09-12): value_point presence validation, combined-feature verification, corrected reporting
+
+**Findings (independent review, `memory/reviews/2026-09-12-autobayes-pr8-review.md`; probes in
+`artifacts/2026-09-12-autobayes-m3b1-review/`, preserved).** (1) `value_point` tested the *conjunction*
+`sd_slope is not None and z_slope is not None`, so on a varying-intercept-only model `sd_slope` alone or
+`z_slope` alone was silently ignored (reproduced by the coordinator: both accepted, no slope variable in the
+returned point). (2) The supported combination of a numeric varying slope with fixed categorical main effects
+and a numeric-by-categorical interaction had no deterministic repository test of its own (the coordinator's
+six composite probes pass with error at most 1.4e-14, without any AutoBayes reference helper). (3) The
+executed-results text treated the realised sample SD of the simulated slopes as if it were the truth for the
+population SD, claimed a nominal 5 % familywise false-failure budget, and said the failed gate was "not
+re-run" although F7 was sampled twice (two slow suites) plus an investigation fit and a separate live demo.
+
+**Repair (decided before coding).**
+
+1. `value_point`: on a model without a varying slope, `sd_slope` or `z_slope` given alone or together is
+   refused (`ValueError` naming the extra argument); on a model with a varying slope both are required and
+   either missing is refused naming the missing one. Valid numerical targets are unchanged. Regression coverage:
+   all four presence combinations on both model forms, valid shapes, wrong shapes, and the returned point's
+   exact key set.
+2. `tests/test_varying_slope_combined.py`: the coordinator's composite probe adopted and extended, from the
+   caller's original rows and labels with no library reference helper: `lhs ~ dose*category + (1 + dose ||
+   site)` for the three families, centring on and off, the binomial positive-trial rows selected by the test;
+   the fixed and group designs, the fully normalised joint density with both SD priors and both log-scale
+   Jacobians (with and without the Jacobian), the full gradient on the PyTensor path (analytic and central
+   differences) and the JAX path, and synthetic-posterior predictions with the (u, v) pairing for known and
+   unseen sites. Plus the **analytic conditional-Gaussian check with both group-effect blocks**: for the Gaussian
+   model at fixed `sigma`, `sd0`, `sd1` the conditional posterior of `(a_c, b, z0, z1)` is Normal with
+   precision `P = diag(prior precisions, 1, 1) + W^T W / sigma^2` and `W = [1, X_c, sd0 Z, sd1 x Z]`, built
+   independently from the original inputs; the graph's gradient with respect to those variables must equal
+   `-P (theta - mean)` at several points and its Hessian must equal `-P`, on both compilation paths. No model
+   fit is involved.
+3. Reporting: the executed-results text above is corrected (estimand statement, coverage statement, actual fit
+   accounting); the same corrections go to `docs/coordination/STATUS.md`, the PR body and the worker memory.
+   The frozen F7 evidence and the original investigation file are not edited; a separate note
+   `docs/m3b1-evidence/F7_reading_correction.txt` records which sentences of the investigation's "Reading"
+   paragraph are superseded. **Correction to the pre-code F7 text of this record:** the sentence "nominal
+   false-failure budget <= 5 % under independence" asserted a repeated-sample property that a single 99 %
+   posterior interval at a fixed generating value does not provide; it is withdrawn and left visible above.
+4. No new F7 sampling, no widened thresholds, no reseeding, no removal, skip or xfail of the failed test; no
+   M3b-2 work. The candidate is verified with targeted deterministic tests and the fast suite only; the slow
+   suite's existing F7 failure is reported separately.
+
+**Decision proposal for the coordinator (not executed here).** Three questions must be answered separately:
+
+- *Deterministic implementation correctness* is established by the density, Jacobian, gradient and design
+  checks (F2, F3, the combined-feature module, the analytic conditional-Gaussian check with both blocks) and does
+  not depend on any sampler or truth value.
+- *Sampler convergence* on the F7 data is established by the diagnostics (0 divergences; PyMC within every
+  R-hat/ESS gate; NumPyro's `1|g_sigma` R-hat 1.0117 and `Intercept` bulk ESS 395 slightly outside) and by the
+  backends' mutual agreement; it says nothing about the truth.
+- *Finite-data recovery of a population SD* from J = 30 groups is a repeated-sample property. One draw cannot
+  establish it, and one failed 99 % interval cannot refute the sampler: the interval's coverage under repeated
+  data generation is unknown a priori, and the realised group spread is itself random.
+
+Recommended next bounded check, for review before any sampling: (i) a **sampler-correctness check of the SD
+posterior without a truth value**: in the Gaussian F7 model with `sigma`, `a_c`, `b` fixed (via `pm.do`), the
+marginal posterior of `sd0` and `sd1` after integrating the offsets is available by 1-D/2-D numerical
+integration of a closed-form Gaussian marginal (each group's residual vector is multivariate Normal with
+covariance `sigma^2 I + sd0^2 11^T + sd1^2 x x^T`); compare NUTS's marginal against that integration on the
+frozen F7 data, one fit per backend, 4 x (1000 + 1000), gates: mean within 4 MCSE and quantiles 0.05/0.5/0.95
+within 0.02. (ii) A **fixed-budget repeated-sample study** of the F7 generator for the population-SD estimand:
+R = 24 replicate data sets from seeds 1701..1724 (fixed now), the same design (J = 30 x 20), PyMC only, 4 x
+(500 + 1000), `target_accept` 0.9, about 25 CPU-minutes; prespecified gates: the empirical coverage of the 90 %
+interval for `x|g_sigma` and `1|g_sigma` between 0.70 and 1.00 (two-sided exact binomial p >= 0.01 against
+0.90 at R = 24), zero divergences in at least 22 of 24 fits, and the rank of the generating value among the
+posterior draws (SBC rank statistic) passing a chi-square uniformity test at 0.01 with 6 bins. (iii) Only if
+(i) passes and (ii) fails is a model or sampler defect indicated; if both pass, the original F7 failure is
+recorded as a single-draw outcome with the design's coverage now measured. No change to F7's threshold, seed
+or estimand in any case.

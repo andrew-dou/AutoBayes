@@ -1,0 +1,9 @@
+Correction note (2026-09-12), see docs/m3b1-decision.md, repair record. The 'Reading:' paragraph appended to
+F7_investigation.txt on 2026-09-11 said that the posterior of each SD hyperparameter "tracks the realised spread of the
+simulated group effects, not the population value" and implied that the failed gate compared the wrong quantity.
+Superseded: the gated parameter x|g_sigma IS the population SD of the Normal group slopes (the generating value 0.30);
+the realised sample SD of the 30 simulated slopes (0.2197) is a different random quantity and is not a substitute truth.
+The investigation's numbers (realised spread, the ~2 % chi-square event, the independent OLS spread 0.171 vs the
+posterior mean 0.177, the posterior interval containing the realised SD) stand as measurements and support rare
+realised group variation as a possible explanation of the failure; they do not establish sampling correctness and do
+not fulfil the acceptance gate. The gate result stays FAILED. The investigation file itself is frozen and unedited.
