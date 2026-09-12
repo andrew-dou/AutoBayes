@@ -38,11 +38,41 @@
   reference density with both SD priors, two offset vectors and both Jacobians against PyTensor and JAX
   values and full gradients; deterministic synthetic-posterior predictions for known and unseen groups in
   both modes with the pairing verified; SD prior forms; describe/record/value_point). Fast suite
-  **365 passed, 8 deselected (312 s; pytest exit 0)**. Slow suite **1 failed, 7 passed (54 s; pytest exit 1): the failed test is F7, the prespecified recovery (population-SD gate), reported below and not re-run to pass** including the prespecified varying-slope recovery: **failed one gate**: `x|g_sigma` 99 % HDI [0.100, 0.27] excludes the population truth 0.30 on both backends (the NumPyro run also has `1|g_sigma` R-hat 1.0117 and `Intercept` bulk ESS 395); the realised spread of the 30 simulated slopes is 0.220 (a ~2 % event) and the model's posterior matches an independent OLS analysis (0.171 vs 0.177) and contains the realised SD; recorded and investigated, not re-run (`docs/m3b1-evidence/F7_*`).
-  Independent regressions 27 passed (nine label-identity, three M2 normalisation, fifteen M3a-2 original-input). Example on both backends in `docs/m3b1-evidence/`.
+  **365 passed, 8 deselected (312 s; pytest exit 0)**. Slow suite **1 failed, 7 passed (54 s; pytest exit 1)**: the failed test is F7, the prespecified
+  recovery, whose `x|g_sigma` 99 % HDI [0.100, 0.27] excludes the generating population SD 0.30 on both backends
+  (NumPyro also has `1|g_sigma` R-hat 1.0117 and `Intercept` bulk ESS 395); FAILED at the original thresholds,
+  evidence frozen (`docs/m3b1-evidence/F7_*`); see the 2026-09-12 repair bullet for the corrected estimand
+  statement, fit accounting and decision proposal. Independent regressions 27 passed (nine label-identity, three M2 normalisation, fifteen M3a-2 original-input). Example on both backends in `docs/m3b1-evidence/`.
 
-- PR: https://github.com/andrew-dou/AutoBayes/pull/8 (base `main`, author andrew-dou). Record `8307a90`; implementation `9b15865`; this STATUS
-  checkpoint follows it (CI runs recorded in the final report and PR checks). Left open for independent
+- **Review repair (2026-09-12, `memory/reviews/2026-09-12-autobayes-pr8-review.md`; probes
+  `artifacts/2026-09-12-autobayes-m3b1-review/`, preserved).** (1) `value_point` tested the conjunction of
+  `sd_slope` and `z_slope`, so either alone was silently ignored on a varying-intercept model; now either extra
+  is refused by name, and a varying-slope model refuses a missing one by name (four-way presence coverage on
+  both model forms, valid and wrong shapes; numerical targets unchanged). (2) New
+  `tests/test_varying_slope_combined.py`: the supported combination `dose*category + (1 + dose || site)` for
+  the three families and both centrings from the ORIGINAL rows and labels with explicit mathematics and no
+  library reference helper (design, fully normalised joint density with both SD priors and both Jacobians,
+  full gradients on both paths against central differences, synthetic-posterior predictions with the (u, v)
+  pairing for known and unseen sites), and the analytic conditional-Gaussian posterior with BOTH group-effect
+  blocks at fixed SDs: prior precision and design built independently from the original inputs, the graph's
+  gradient equals `-P (theta - mean)` and its Hessian equals `-P` on the PyTensor and JAX paths; no fit
+  involved. (3) Reporting corrected in the record, the PR body and this checkpoint: the gated `x|g_sigma` is the
+  population SD of the Normal group slopes; the realised sample SD of the 30 simulated slopes (0.2197) is a
+  different random quantity and not a substitute truth; a single 99 % interval at one generating value carries
+  no repeated-sample coverage guarantee and no 5 % familywise statement follows; the investigation supports
+  rare realised variation as a possible explanation only. **F7 stays FAILED** at the original thresholds, its
+  evidence frozen; actual fit accounting: F7 sampled in two slow suites (same seed, same failure), one
+  investigation fit (PyMC 2 x 500 + 500) and one separate live demonstration fit on other data; nothing widened,
+  reseeded, skipped or removed. A decision proposal (deterministic correctness / sampler convergence /
+  finite-data recovery separated; a truth-free marginal-posterior check of the SDs and a fixed-budget
+  24-replicate coverage study, both prespecified) is in the record for the coordinator; no new recovery fits
+  were run in this repair. Repair record `4a8ea4f`; repair `d572df8`. Checks on the candidate (real pytest exit
+  codes, `docs/m3b1-evidence/checks-repair.txt`): combined module 9 passed (85 s; pytest exit 0); coordinator probe exit 0, six composite cases with max |logp error| 1.42e-14, both partial-argument cases now refused, 0 fits (`docs/m3b1-evidence/coordinator_probe_after_repair.json`);
+  `tests/test_varying_slope.py` 18 passed (pytest exit 0); fast suite **374 passed, 8 deselected (322 s; pytest exit 0)**; independent regressions 27 passed (pytest exit 0). The slow suite was
+  not re-run (it would sample F7 again); its recorded result remains 1 failed (F7), 7 passed.
+- PR: https://github.com/andrew-dou/AutoBayes/pull/8 (base `main`, author andrew-dou). Record `8307a90`; implementation `9b15865`;
+  reviewed head `8907113` (request changes); repair record `4a8ea4f`; repair `d572df8`; this STATUS checkpoint follows it
+  (CI runs recorded in the PR comment and the final report). Left open for independent
   review with the F7 gate failure reported, not merged by this session; the M3b-1 worktree is kept until
   that review passes. Next approved increment after acceptance: correlated varying slopes (LKJ), separate PR.
 
