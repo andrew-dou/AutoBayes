@@ -1,0 +1,19 @@
+M3b-1 review-repair candidate checks (2026-09-12, clean locked environment; each line is the real pytest exit code and
+summary line). No recovery or benchmark fit was run in this repair; the slow suite was NOT re-run (it would sample F7
+again); its recorded result on the reviewed head 8907113 stays 1 failed (F7), 7 passed (see checks.txt).
+
+First chain (14:54:13Z .. 15:06:08Z), library repair in place, before two old message EXPECTATIONS in
+tests/test_varying_slope.py were updated to the new value_point messages:
+  combined: pytest exit 0 | 9 passed in 84.66s                     (tests/test_varying_slope_combined.py)
+  coordinator probe.py: exit 0 | composite max |logp error| 1.42e-14 | partial-argument cases: sd_slope refused, z_slope refused | 0 fits
+      (artifacts/2026-09-12-autobayes-m3b1-review/probe.py run unchanged; output frozen as coordinator_probe_after_repair.json)
+  varying_slope: pytest exit 1 | 1 failed, 17 passed              (the two old expectations of the previous message)
+  fast: pytest exit 1 | 1 failed, 373 passed, 8 deselected        (the same single test)
+  independent: pytest exit 0 | 27 passed                          (9 label-identity + 3 M2 normalisation + 15 M3a-2 original-input)
+
+Second chain (15:06:31Z .. 15:12:24Z), after the expectation updates, same library code:
+  varying_slope2: pytest exit 0 | 18 passed, 2 warnings in 20.35s
+  fast2: pytest exit 0 | 374 passed, 8 deselected, 3 warnings in 322.39s
+
+Evidence directories (evidence-runs/, gitignored): 20260912T150253.675249Z-4a8ea4f6be18-dirty-p17305-20fba2 (first fast),
+20260912T151011.810233Z-4a8ea4f6be18-dirty-p18451-2e2753 (final fast).

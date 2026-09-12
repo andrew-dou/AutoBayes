@@ -282,10 +282,10 @@ def test_describe_record_and_value_point():
     json.dumps(rec)
     pt = m.value_point(intercept=0.1, b=[0.2], sd=0.5, z=np.zeros(m.design.J), sd_slope=0.3, z_slope=np.ones(m.design.J))
     assert set(pt) == {v.name for v in m.pymc_model.value_vars} and float(pt["x|g_sigma_log__"]) == np.log(0.3)
-    with pytest.raises(ValueError, match="sd_slope and z_slope are required"):
+    with pytest.raises(ValueError, match="sd_slope and z_slope missing"):
         m.value_point(intercept=0.1, b=[0.2], sd=0.5, z=np.zeros(m.design.J))
     m0 = ab.gaussian("y ~ x + (1 | g)", df, ab.Priors(intercept=ab.Normal(0, 5), b=ab.Normal(0, 2), sd=ab.HalfNormal(1), sigma=ab.HalfNormal(1)))
     rec0 = ab.fit_record(m0, m0.fit(backend="pymc", chains=1, draws=30, tune=30, seed=2, cores=1))
     assert rec0["model"]["priors"]["sd"] == "HalfNormal(sigma=1)" and rec0["model"]["varying_slope"] is None and "sd_slope" not in m0.names
-    with pytest.raises(ValueError, match="sd_slope and z_slope are required"):
+    with pytest.raises(ValueError, match="sd_slope and z_slope given, but this model has no varying slope"):
         m0.value_point(intercept=0.1, b=[0.2], sd=0.5, z=np.zeros(m0.design.J), sigma=0.4, sd_slope=0.3, z_slope=np.zeros(m0.design.J))

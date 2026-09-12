@@ -1,0 +1,53 @@
+{
+  "six_composite_cases": [
+    {
+      "family": "gaussian",
+      "center": true,
+      "logp_error": 0.0,
+      "design_match": true
+    },
+    {
+      "family": "gaussian",
+      "center": false,
+      "logp_error": 0.0,
+      "design_match": true
+    },
+    {
+      "family": "bernoulli",
+      "center": true,
+      "logp_error": -3.552713678800501e-15,
+      "design_match": true
+    },
+    {
+      "family": "bernoulli",
+      "center": false,
+      "logp_error": -7.105427357601002e-15,
+      "design_match": true
+    },
+    {
+      "family": "binomial",
+      "center": true,
+      "logp_error": -1.4210854715202004e-14,
+      "design_match": true
+    },
+    {
+      "family": "binomial",
+      "center": false,
+      "logp_error": 1.4210854715202004e-14,
+      "design_match": true
+    }
+  ],
+  "partial_argument_validation": [
+    {
+      "argument": "sd_slope",
+      "unexpectedly_accepted": false,
+      "error": "sd_slope given, but this model has no varying slope (its varying part is '(1 | site)'); pass neither"
+    },
+    {
+      "argument": "z_slope",
+      "unexpectedly_accepted": false,
+      "error": "z_slope given, but this model has no varying slope (its varying part is '(1 | site)'); pass neither"
+    }
+  ],
+  "model_fit_calls": 0
+}

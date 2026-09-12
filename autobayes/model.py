@@ -324,8 +324,18 @@ class Model:
         if (sigma is None) != (self.family != "gaussian"):
             raise ValueError("sigma is required for the Gaussian family and must be omitted for Bernoulli and binomial")
         has_slope = self.spec.varying_slope is not None
-        if has_slope != (sd_slope is not None and z_slope is not None):
-            raise ValueError("sd_slope and z_slope are required exactly when the model has a varying slope '(1 + x || g)'")
+        given = [name for name, v in (("sd_slope", sd_slope), ("z_slope", z_slope)) if v is not None]
+        if not has_slope and given:
+            raise ValueError(
+                f"{' and '.join(given)} given, but this model has no varying slope (its varying part is "
+                f"'(1 | {self.spec.group})'); pass neither"
+            )
+        if has_slope and len(given) < 2:
+            missing = [name for name in ("sd_slope", "z_slope") if name not in given]
+            raise ValueError(
+                f"{' and '.join(missing)} missing: a model with the varying slope '(1 + {self.spec.varying_slope} || "
+                f"{self.spec.group})' needs both sd_slope and z_slope"
+            )
         n = self.names
         point = {n["intercept"]: np.asarray(float(intercept)),
                  f"{n['sd']}_log__": np.asarray(np.log(float(sd))),
