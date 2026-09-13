@@ -186,3 +186,45 @@ def test_seeded_f7_ledger_refuses_any_evaluation_under_the_exhausted_cap(tmp_pat
     with pytest.raises(BudgetExhausted, match="would be exceeded by 'batch@0' \\(1 requested, 0 remaining: 4125558 confirmed"):
         ev(np.zeros((1, 3)))
     assert fake.batches == []
+
+
+# Restart identity and strict accounting regression checks (2026-09-13).
+def _valid_accounting_view(**kw):
+    v=dict(reason="complete",requested=10,reserved_uncertain=0,confirmed=10,remaining=0,cap=10,seconds_spent=2.0,unit_deadline_seconds=5.0)
+    v.update(kw);return v
+
+def test_same_attempt_name_cannot_reset_unit_time(tmp_path):
+    clk={"t":0.0}
+    def fake(x):clk["t"]+=3;return np.zeros(len(x))
+    p=tmp_path/"unit.json"
+    a=BudgetedEvaluator(fake,cap_evaluations=100,unit_deadline_seconds=5,ledger_path=p,attempt="retry",clock=lambda:clk["t"])
+    a(np.zeros((1,3)));a.release()
+    with pytest.raises(ValueError,match="already exists"):
+        BudgetedEvaluator(fake,cap_evaluations=100,unit_deadline_seconds=5,ledger_path=p,attempt="retry",clock=lambda:clk["t"])
+    b=BudgetedEvaluator(fake,cap_evaluations=100,unit_deadline_seconds=5,ledger_path=p,attempt="retry2",clock=lambda:clk["t"])
+    with pytest.raises(BudgetExhausted,match="exceeded"):
+        b(np.zeros((1,3)))
+    assert b.time_spent()==6
+
+@pytest.mark.parametrize("key",["reason","requested","reserved_uncertain","confirmed","remaining","cap","seconds_spent","unit_deadline_seconds"])
+def test_missing_accounting_is_rejected(key):
+    v=_valid_accounting_view();del v[key];assert not run_is_valid(v,None)["valid"]
+
+@pytest.mark.parametrize("key,value",[
+    ("confirmed",10.9),("confirmed",True),("confirmed","10"),
+    ("seconds_spent",float("nan")),("seconds_spent",float("inf")),("seconds_spent",-1),
+    ("unit_deadline_seconds",float("nan")),("unit_deadline_seconds",0),
+    ("requested",9),("remaining",2),("reason","stopped")])
+def test_invalid_accounting_rejected(key,value):
+    assert not run_is_valid(_valid_accounting_view(**{key:value}),None)["valid"]
+
+def test_diagnostic_requested_counts_and_closed_time(tmp_path):
+    clk={"t":0.0}
+    e=BudgetedEvaluator(lambda x:np.zeros(len(x)),cap_evaluations=10,unit_deadline_seconds=5,ledger_path=tmp_path/"diag.json",attempt="a",clock=lambda:clk["t"])
+    rid=e.charge(2,"stub")
+    with pytest.raises(StaleLedger):
+        e.confirm_charge(rid,2.1,1)
+    clk["t"]=1;e.confirm_charge(rid,2,1)
+    e.release();clk["t"]=99
+    assert e.time_spent()==1 and e.requested_total==2
+    assert run_is_valid(e.progress("complete"),None)["valid"]

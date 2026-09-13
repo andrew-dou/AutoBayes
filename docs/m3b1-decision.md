@@ -381,3 +381,8 @@ performed real deterministic density and gradient calculations (not posterior qu
 reported separately, not repeated. This repair's local checks were the two allowed fake/stub modules only, run with
 `--noconftest`: 18 passed. Status unchanged: reference incomplete/exploratory, F7 FAILED, PR #8 open, completion
 proposal not executed.
+
+
+## Restart identity and accounting closure (2026-09-13)
+
+Independent mock checks found that reusing an attempt name could reuse its stored maximum duration instead of adding retry time, and that malformed or missing budget fields could pass output validation. Reject previously used attempt names within the same unit ledger, keep closed-attempt time frozen, require complete finite and consistent run accounting, and count external diagnostic reservations in requested work. Confirmation sizes and constructor limits are validated without numeric coercion of fractional counts. Regression checks use only fake clocks, fake evaluators and stub stage records. No real posterior evaluation, quadrature or sampling is part of this correction. Validation is recorded separately; F7 and the numerical reference remain unaccepted.

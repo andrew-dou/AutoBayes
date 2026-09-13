@@ -1,0 +1,14 @@
+{
+  "at": "2026-09-13T05:14:47.897062+00:00",
+  "base": "1a37c3b4de881873bf7e290b47bcc496ab2549d2",
+  "command": ".venv/bin/python -m pytest tests/test_quadrature_budget.py tests/test_marginal_driver_assembly.py --noconftest -q -p no:cacheprovider -o addopts=",
+  "scope": "fake/stub modules only; no posterior evaluation or inference",
+  "result": "39 passed in 0.65s",
+  "exit_code": 0,
+  "posterior_evaluations": 0,
+  "source_sha256": {
+    "tests/quadrature_budget.py": "6a716e188029d7d50dbfba274ee91d5f5c171cf42a0046dd67a512033f92f515",
+    "tests/test_quadrature_budget.py": "d9dd36f801215bfdafe83b60f17c6e10ead8642e35a17101d161d8f5180b9ff7",
+    "tests/test_marginal_driver_assembly.py": "54287c92f32c6e6882a197f5c59453932ce2a61fd6abac6e4ad1e43dabb4e2fd"
+  }
+}

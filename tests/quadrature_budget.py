@@ -51,8 +51,14 @@ class BudgetedEvaluator:
                  batch_size: int = 32768, checkpoint=None, clock=time.perf_counter, takeover: bool = False,
                  reserve_seconds_per_batch: float | None = None):
         self.evaluate = evaluate
+        if isinstance(cap_evaluations, (bool, np.bool_)) or not isinstance(cap_evaluations, (int, np.integer)) or cap_evaluations < 1:
+            raise ValueError("cap_evaluations must be a positive integer")
+        if isinstance(batch_size, (bool, np.bool_)) or not isinstance(batch_size, (int, np.integer)) or batch_size < 1:
+            raise ValueError("batch_size must be a positive integer")
         self.cap = int(cap_evaluations)
-        self.unit_deadline = float(unit_deadline_seconds)
+        self.unit_deadline = _finite_nonneg(unit_deadline_seconds)
+        if self.unit_deadline == 0:
+            raise ValueError("unit_deadline_seconds must be positive")
         self.ledger_path = Path(ledger_path)
         self.attempt = str(attempt)
         self.batch_size = int(batch_size)
@@ -64,6 +70,9 @@ class BudgetedEvaluator:
         self._acquire_lock()
         self.ledger = self._load()
         self._check_caps()
+        if self.attempt in self.ledger["attempts"]:
+            self._release_lock()
+            raise ValueError(f"attempt {self.attempt!r} already exists; use a unique attempt name in the same unit ledger")
         self._disk_owner = self.ledger.get("owner")
         if self.ledger.get("owner") and not self.ledger.get("released", True):
             if not takeover:
@@ -163,7 +172,7 @@ class BudgetedEvaluator:
         total = 0.0
         for name, a in self.ledger["attempts"].items():
             wall = float(a.get("wall_seconds", 0.0))
-            if name == self.attempt:
+            if name == self.attempt and not self._closed:
                 wall = max(wall, self.clock() - self.started_at)
             total += wall + float(a.get("crash_time_penalty_seconds") or 0.0)
             total += sum(float(r.get("seconds_estimate", 0.0)) for r in a.get("open_reservations", []))
@@ -218,7 +227,7 @@ class BudgetedEvaluator:
         if not a["open_reservations"] or a["open_reservations"][-1]["id"] != rid:
             raise StaleLedger(f"confirmation {rid!r} does not name the open reservation of attempt {self.attempt!r}")
         rec = a["open_reservations"][-1]
-        if int(size) != rec["size"]:
+        if isinstance(size, (bool, np.bool_)) or not isinstance(size, (int, np.integer)) or int(size) != rec["size"]:
             raise StaleLedger(f"confirmation size {size} != reserved size {rec['size']} for {rid!r}")
         seconds = _finite_nonneg(seconds)
         a["open_reservations"].pop()
@@ -243,6 +252,10 @@ class BudgetedEvaluator:
     # -- external real work (diagnostics) through the same gate ----------------------------------------------
     def charge(self, n: int, label: str) -> str:
         """Reserve ``n`` evaluation-equivalents of external real work; returns the reservation id to confirm."""
+        self._gate(n, label)
+        self.ledger["requested_total"] += int(n)
+        self.ledger["attempts"][self.attempt]["requested"] += int(n)
+        self._persist()
         return self._reserve(n, label)
 
     def confirm_charge(self, rid: str, n: int, seconds: float) -> None:
@@ -285,20 +298,40 @@ class BudgetedEvaluator:
 
 
 def run_is_valid(view: dict, stopped) -> dict:
-    """Budget/run validity of a unit, independent of the scientific conditions: not stopped, no unconfirmed
-    reservations, confirmed work within the cap (an exact-cap completion is valid), time within the allowance."""
+    """Fail closed on missing, malformed, inconsistent or over-budget accounting."""
     problems = []
     if stopped:
         problems.append(f"run stopped: {stopped}")
-    if int(view.get("reserved_uncertain", 0)) != 0:
-        problems.append(f"unconfirmed reservations: {view.get('reserved_uncertain')}")
-    if int(view.get("confirmed", 0)) > int(view.get("cap", 0)):
-        problems.append(f"confirmed {view.get('confirmed')} exceeds cap {view.get('cap')}")
-    if float(view.get("seconds_spent", 0.0)) > float(view.get("unit_deadline_seconds", 0.0)):
-        problems.append(f"time {view.get('seconds_spent')} s exceeds allowance {view.get('unit_deadline_seconds')} s")
-    for k in ("requested", "reserved_uncertain", "confirmed", "cap"):
-        if int(view.get(k, -1)) < 0:
-            problems.append(f"invalid count {k}={view.get(k)}")
+    if view.get("reason") != "complete":
+        problems.append(f"run not complete: {view.get('reason')!r}")
+    counts = {}
+    for k in ("requested", "reserved_uncertain", "confirmed", "cap", "remaining"):
+        v = view.get(k)
+        if isinstance(v, (bool, np.bool_)) or not isinstance(v, (int, np.integer)) or v < 0:
+            problems.append(f"invalid count {k}={v!r}")
+        else:
+            counts[k] = int(v)
+    times = {}
+    for k in ("seconds_spent", "unit_deadline_seconds"):
+        v = view.get(k)
+        if isinstance(v, (bool, np.bool_)) or not isinstance(v, (int, float, np.integer, np.floating)) or not math.isfinite(v) or v < 0:
+            problems.append(f"invalid time {k}={v!r}")
+        else:
+            times[k] = float(v)
+    if counts.get("cap") == 0:
+        problems.append("cap must be positive")
+    if times.get("unit_deadline_seconds") == 0:
+        problems.append("time allowance must be positive")
+    if counts.get("reserved_uncertain", 0) != 0:
+        problems.append(f"unconfirmed reservations: {counts['reserved_uncertain']}")
+    if {"confirmed", "cap"} <= counts.keys() and counts["confirmed"] > counts["cap"]:
+        problems.append(f"confirmed {counts['confirmed']} exceeds cap {counts['cap']}")
+    if {"seconds_spent", "unit_deadline_seconds"} <= times.keys() and times["seconds_spent"] > times["unit_deadline_seconds"]:
+        problems.append(f"time {times['seconds_spent']} s exceeds allowance {times['unit_deadline_seconds']} s")
+    if {"requested", "confirmed", "reserved_uncertain"} <= counts.keys() and counts["requested"] < counts["confirmed"] + counts["reserved_uncertain"]:
+        problems.append("requested count is below confirmed plus reserved work")
+    if {"remaining", "cap", "confirmed", "reserved_uncertain"} <= counts.keys() and counts["remaining"] != max(counts["cap"] - counts["confirmed"] - counts["reserved_uncertain"], 0):
+        problems.append("remaining count is inconsistent with cap and spent work")
     return {"valid": not problems, "problems": problems}
 
 

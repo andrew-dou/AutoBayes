@@ -1,5 +1,11 @@
 # AutoBayes status
 
+## Current checkpoint — 2026-09-13T05:14:47.897062+00:00
+
+PR8 remains OPEN; original F7 recovery and the marginal-reference protocol remain unaccepted. The reference integration is paused. The prior 1a37c3b hosted checks succeeded.
+
+The restart/accounting correction rejects reuse of an existing attempt identity within the unit ledger, freezes completed-attempt time, checks complete finite and consistent budget fields, counts diagnostic requests and rejects fractional confirmation sizes. Thirty-nine tests in the two allowed fake/stub modules pass (0.65s, exit0); evidence docs/m3b1-evidence/guard_v4_checks.json. No new real posterior evaluation, quadrature or sampling. The correction was integrated after the previous worker completed; its checkout is retained. Await hosted checks on this update, then independent final acceptance review of the controller. Numerical continuation still requires a bounded protocol decision; do not start it automatically.
+
 ## M3b-1 slice (2026-09-11): independent varying intercept and one numeric varying slope
 
 - Dispatched by the coordinator after the M3a-2 acceptance
