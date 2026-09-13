@@ -287,6 +287,42 @@ def test_interruption_during_target_setup_stops_the_unit_with_its_time_counted(b
     assert result["budget"]["requested"] == 0 and result["budget"]["reserved_uncertain"] == 0 and json.loads((unit / "ledger.json").read_text())["released"]
 
 
+def test_setup_failure_assembly_time_is_counted_and_cleanup_survives_an_assembly_error(binding, tmp_path, monkeypatch):
+    """Repair-review residual: the setup-failure branch released the evaluator before assembly, so 7 s of failed setup
+    plus 100 s of assembly reported 7 s. Assembly now runs under the active guard, release happens in finally and the
+    final frozen budget is re-validated; if assembly itself raises, the ledger is still released and the unit consumed."""
+    protocol, plan = toy_protocol(tmp_path); unit = tmp_path / "unit-1"; clock = [0.0]
+    approval = write(tmp_path / "approval.json", synthetic_approval(binding, protocol, unit))
+    def failed_setup(spec):
+        clock[0] += 7.0
+        raise RuntimeError("synthetic setup failure")
+    original = q.assemble
+    def slow_assembly(*args, **kwargs):
+        clock[0] += 100.0
+        return original(*args, **kwargs)
+    monkeypatch.setattr(q, "assemble", slow_assembly)
+    code, log = run(binding, tmp_path, execute_argv(protocol, approval, unit), target_factory=failed_setup, git_state=clean_git, clock=lambda: clock[0])
+    result = json.loads((unit / "result.json").read_text()); ledger = json.loads((unit / "ledger.json").read_text())
+    assert code == 3 and clock[0] == 107.0 and result["budget"]["seconds_spent"] == 107.0 and ledger["attempts"]["stub-attempt"]["wall_seconds"] == 107.0
+    assert result["stopped"].startswith("setup: RuntimeError") and not result["accepted"] and "time 107.0 s exceeds allowance 60.0 s" in result["run_validity"]["problems"]
+    assert result["budget"]["requested"] == 0 and result["budget"]["confirmed"] == 0 and ledger["released"]
+    assert json.loads((unit / "binding_record.json").read_text())["setup_seconds"] == 7.0 and log["phase"] == "setup_failed"
+    # assembly itself raising: the ledger is still released with its time frozen, the record says setup failed, no result, unit consumed
+    unit2 = tmp_path / "unit-2"; approval2 = write(tmp_path / "approval2.json", synthetic_approval(binding, protocol, unit2)); clock[0] = 0.0
+    def broken_assembly(*args, **kwargs):
+        clock[0] += 5.0
+        raise RuntimeError("synthetic assembly failure")
+    monkeypatch.setattr(q, "assemble", broken_assembly)
+    code2, log2 = run(binding, tmp_path, execute_argv(protocol, approval2, unit2), target_factory=failed_setup, git_state=clean_git, clock=lambda: clock[0])
+    ledger2 = json.loads((unit2 / "ledger.json").read_text()); record2 = json.loads((unit2 / "binding_record.json").read_text())
+    assert code2 == 1 and "synthetic assembly failure" in log2["error"] and log2["failure"].startswith("target setup failed") and log2["phase"] == "setup_failed"
+    assert ledger2["released"] and ledger2["attempts"]["stub-attempt"]["wall_seconds"] == 12.0 and ledger2["requested_total"] == 0
+    assert record2["phase"] == "setup_failed" and record2["assembly_error"].startswith("RuntimeError") and not (unit2 / "result.json").exists()
+    monkeypatch.setattr(q, "assemble", original)
+    code3, log3 = run(binding, tmp_path, execute_argv(protocol, approval2, unit2), target_factory=failed_setup, git_state=clean_git, clock=lambda: clock[0])
+    assert code3 == 2 and log3["failed_checks"] == ["unit_dir_new"]
+
+
 def test_target_setup_time_counts_against_the_unit_allowance_and_an_expired_setup_prevents_density_work(binding, tmp_path):
     """Reviewed counterexample B2: 100 s of setup under a 60 s allowance previously vanished (seconds_spent 0, 253 points
     evaluated, run valid). Setup cannot be preempted; its duration is counted and the gate then refuses every evaluation."""

@@ -530,3 +530,36 @@ the repaired binding under the blocker (`artifacts/2026-09-13-autobayes-f7-bindi
 B1 second launch exit 2 with `approval_unit_binding` failed, no directory, one ledger, one stub evaluation in total;
 B2 exit 3, 0 points, 100 s recorded, run invalid. Test approval-like data remain synthetic and temporary; no approval
 file exists; nothing was executed; F7 stays FAILED; PR #8 stays open for independent review of the repair.
+
+### Setup-failure assembly time and execution-readiness proposal (2026-09-13; code and stub checks only)
+
+The independent review of 7e65f63 (hub `memory/reviews/2026-09-13-autobayes-f7-binding-repair-review.md`; evidence
+`artifacts/2026-09-13-autobayes-f7-binding-repair-review/`) verified B1 and B2 fixed (116 checks, original
+counterexamples closed) and found one low-severity residual: the new setup-failure branch released the evaluator
+before assembly, so 7 s of failed setup plus 100 s of assembly reported 7 s (exit 3 and non-acceptance were already
+correct). Corrected in `docs/m3b1-evidence/scripts/f7_direct_cdf_binding.py`, that branch only: assembly runs under the
+active guard, the evaluator is released in `finally`, and the final frozen budget (setup plus assembly) is read and
+re-validated, mirroring `run_protocol`. If assembly itself raises, the ledger is still released with its time frozen,
+the binding record keeps phase `setup_failed` with the assembly error, no result is written, the process exits 1 with
+the traceback logged, and the unit stays consumed (a re-run is refused). The successful path, the preflight stop and
+the B1/B2 repairs are untouched; the controller is unchanged.
+
+Checks (`direct_cdf_binding_checks.json`, same import-blocking launcher): **117 passed in 2.00 s**, exit 0, zero blocked
+target-import attempts, zero F7 evaluations; the one new fake-clock regression covers 7 s setup + 100 s assembly
+(107 s recorded, invalid run, exit 3, zero requests) and the raising-assembly cleanup. The reviewer's residual case
+re-run against the corrected branch (`artifacts/2026-09-13-autobayes-f7-binding-implementation/setup_failure_assembly_time_after_repair.json`)
+now reports 107 s.
+
+Execution-readiness proposal, UNAPPROVED (`docs/m3b1-evidence/direct_cdf_v3r1_execution_readiness_proposal.json`,
+written at the checkpoint commit after this one): the exact reviewed candidate head, the protocol, source,
+implementation, target, model and observed-runtime identity, the canonical unit directory
+`docs/m3b1-evidence/f7-direct-cdf-v3r1-unit-1` with attempt `v3r1-unit-1-attempt-1`, log and wrapper paths outside
+the unit, the dry-run and execute argv, 45 stages and 12,038,157 planned points under one proposed 12,050,000-point /
+720 s unit with zero retries, the diagnostic questions with their limits (all results "not run"), and the remaining
+limitations: non-preemptible setup, batch and assembly granularity (overruns are counted and stop the unit, not
+prevented); throughput unestimated beyond the saved old-driver figures, so an exhausted allowance ends the unit
+inconclusive with no retry; environment identity by versions and BLAS/LAPACK names on the reviewed machine; face
+maxima and crossed agreement as diagnostics, not bounds. The file's `approves_execution` is false and it lacks the
+approval schema, so the binding refuses it. No historical unit is accepted, no ledger reset, no protocol redesign.
+Remaining prerequisite for one bounded run: independent review of this head with green hosted checks, and a
+reviewer-written approval outside the repository matching the recorded identity. F7 stays FAILED; PR #8 stays open.

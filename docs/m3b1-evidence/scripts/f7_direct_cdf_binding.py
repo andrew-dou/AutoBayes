@@ -276,7 +276,9 @@ def execute(report: dict, plan: dict, unit_dir: Path, attempt: str, target_facto
     """The only path that creates files in a unit, touches a ledger or builds the target. The NEW canonical unit
     directory is created first and exclusively; the ledger, and with it the unit allowance, starts next and BEFORE
     the target import/setup, so setup time is counted; any failure after creation consumes the unit (no restart, retry
-    or second allowance) and is reported as an execution/setup failure, never as a refusal."""
+    or second allowance) and is reported as an execution/setup failure, never as a refusal. In that failure branch the
+    assembly runs under the active guard, the evaluator is released in ``finally`` (also when assembly raises) and the
+    final frozen budget, setup plus assembly time, is re-validated (repair review residual, 2026-09-13)."""
     unit_dir = Path(unit_dir).resolve()
     try:
         os.mkdir(unit_dir)  # atomic: any existing directory (previous unit, ledger, restart, duplicate, alias) refuses
@@ -318,12 +320,20 @@ def execute(report: dict, plan: dict, unit_dir: Path, attempt: str, target_facto
     except BaseException as error:
         record.update(setup_seconds=float(evaluator.clock() - t0), error=f"{type(error).__name__}: {error}", traceback=traceback.format_exc())
         stopped = f"setup: {type(error).__name__}: {error}"
-        evaluator.release()
-        output = assemble(plan, {}, evaluator.progress("stopped"), stopped=stopped)
-        output["budget"] = evaluator.progress("stopped")
+        report.update(phase="setup_failed", failure=f"target setup failed after the unit was created (a target import may have been attempted); "
+                                                    f"the unit is consumed: {record['error']}")
+        write_json_atomic(unit_dir / "binding_record.json", dict(record, phase="setup_failed"))
+        try:
+            output = assemble(plan, {}, evaluator.progress("stopped"), stopped=stopped)  # under the active guard: assembly time is unit time
+        except BaseException as assembly_error:
+            record.update(phase="setup_failed", assembly_error=f"{type(assembly_error).__name__}: {assembly_error}")
+            write_json_atomic(unit_dir / "binding_record.json", record)
+            raise
+        finally:
+            evaluator.release()  # released, with its wall time frozen, whether or not assembly raised
+        output["budget"] = evaluator.progress("stopped")  # the final frozen ledger view: setup plus assembly
         output["run_validity"] = run_is_valid(output["budget"], stopped)
         output.update(accepted=False, status="inconclusive", exit_code=3, comparison={})
-        report["failure"] = f"target setup failed after the unit was created (a target import may have been attempted); the unit is consumed: {record['error']}"
         return finish(output, "setup_failed")
     record.update(setup_seconds=float(evaluator.clock() - t0), phase="running", run_started=utc_now())
     write_json_atomic(unit_dir / "binding_record.json", record)
