@@ -100,10 +100,25 @@ def sample_face(evaluate, box, axis, side, n, anchor, ell_reference, *, batch_si
     return {"maximum_log_density": maximum, "deficit": maximum - ell_reference, "evaluations": count + 1}
 
 
+def evaluate_anchor(evaluate, anchor, ell_reference):
+    """One counted evaluation at the UNPROJECTED anchor, compared with the saved reference value. This checks that
+    the supplied evaluator is consistent with the stored reference at one point (it does not establish target
+    identity or any tail property); the face deficits are only meaningful when it holds."""
+    anchor = np.asarray(anchor, dtype=float)
+    if anchor.shape != (3,) or not np.isfinite(anchor).all() or not math.isfinite(ell_reference):
+        raise ValueError("invalid anchor reference")
+    ell_anchor = float(values(evaluate, anchor[None, :])[0])
+    return {"ell_anchor": ell_anchor, "abs_error": abs(ell_anchor - ell_reference), "evaluations": 1}
+
+
 def inventory(plan):
-    """Build a complete fixed stage inventory before any evaluator call."""
+    """Build a complete fixed stage inventory before any evaluator call; the first stage is the anchor
+    reference-consistency evaluation (revision v3r1)."""
     if not isinstance(plan.get("protocol_id"), str) or not plan["protocol_id"]:
         raise ValueError("protocol_id required")
+    tol = plan.get("anchor_reference_tolerance")
+    if isinstance(tol, bool) or not isinstance(tol, (int, float)) or not math.isfinite(tol) or tol <= 0:
+        raise ValueError("anchor_reference_tolerance (finite, positive) required: a plan without the anchor reference gate is refused")
     if set(plan["domains"]) != {"B0", "B1"} or len(plan["nodes_per_axis"]) != 2:
         raise ValueError("two named nested domains and two rules required")
     boxes = {k: box_array(plan["domains"][k]) for k in ("B0", "B1")}
@@ -127,7 +142,8 @@ def inventory(plan):
         raise ValueError("invalid face reference")
     if not np.all((anchor >= inner[:, 0]) & (anchor <= inner[:, 1])):
         raise ValueError("anchor must lie in the inner box")
-    out = {}
+    out = {"anchor:reference": dict(kind="anchor", point=anchor.tolist(), ell_reference=float(plan["fixed_ell_reference"]),
+                                    tolerance=float(tol), evaluations=1)}
     for name, box in boxes.items():
         for level, nodes in enumerate(rules):
             base = f"{name}:r{level}"
@@ -168,6 +184,10 @@ def assemble(plan, stages, budget, *, stopped=None):
             if spec['kind'] == 'integral':
                 means = np.asarray(value['means'], dtype=float)
                 valid = valid and np.isfinite(value['logZ']) and means.shape == (3,) and np.isfinite(means).all() and (means > 0).all()
+            elif spec['kind'] == 'anchor':
+                ell_anchor = value['ell_anchor']
+                valid = valid and isinstance(ell_anchor, (float, int)) and not isinstance(ell_anchor, bool) and math.isfinite(ell_anchor)
+                valid = valid and math.isfinite(value['abs_error']) and value['abs_error'] == abs(ell_anchor - plan['fixed_ell_reference'])
             else:
                 valid = valid and np.isfinite(value['deficit']) and np.isfinite(value['maximum_log_density'])
                 valid = valid and value['deficit'] == value['maximum_log_density'] - plan['fixed_ell_reference']
@@ -211,6 +231,8 @@ def assemble(plan, stages, budget, *, stopped=None):
     for key, spec in expected.items():
         if spec['kind'] == 'face':
             conditions['face:' + key] = parsed[key]['deficit'] <= LIMITS['face'] if key in parsed else None
+    a = expected['anchor:reference']
+    conditions['anchor_reference_consistency'] = (parsed['anchor:reference']['abs_error'] <= a['tolerance']) if 'anchor:reference' in parsed else None
     count = sum(v['evaluations'] for v in expected.values())
     conditions['exact_complete_count'] = budget.get('confirmed') == count and budget.get('requested') == count
     report = acceptance_report(conditions, list(conditions))
@@ -221,7 +243,7 @@ def assemble(plan, stages, budget, *, stopped=None):
                 accepted=accepted, status='diagnostics_passed' if accepted else 'inconclusive',
                 exit_code=0 if accepted else (3 if not validity['valid'] else 4), stopped=stopped,
                 planned_evaluations=count, differences=differences, cdfs=cdfs,
-                comparison={}, interpretation='Numerical diagnostics only; no tail-mass bound, F7 acceptance, convergence or calibration claim.')
+                comparison={}, interpretation='Numerical diagnostics only; the anchor check establishes reference consistency at one point, not target identity; no tail-mass bound, F7 acceptance, convergence or calibration claim.')
 
 
 def run_protocol(evaluator, plan, *, checkpoint=None, batch_size=32768):
@@ -244,6 +266,8 @@ cumulative ledger survive an interruption. There is no restart/retry loop.
         for key, spec in expected.items():
             if spec['kind'] == 'integral':
                 result = integrate_box(evaluator, spec['box'], spec['nodes'], batch_size=batch_size)
+            elif spec['kind'] == 'anchor':
+                result = evaluate_anchor(evaluator, spec['point'], spec['ell_reference'])
             else:
                 result = sample_face(evaluator, spec['box'], spec['axis'], spec['side'], spec['nodes'],
                                      plan['face_mode_anchor'], plan['fixed_ell_reference'], batch_size=batch_size)

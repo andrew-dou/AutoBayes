@@ -12,7 +12,7 @@ from tests.quadrature_budget import BudgetedEvaluator
 def plan():
     return dict(protocol_id='toy-only', domains={'B0': [[-1, 1]] * 3, 'B1': [[-1.1, 1.1]] * 3},
                 nodes_per_axis=[[16, 20, 16], [24, 28, 24]], cdf_points=[dict(scale='sigma', label='zero', value=1.0)],
-                face_nodes=5, face_mode_anchor=[0, 0, 0], fixed_ell_reference=0.0)
+                face_nodes=5, face_mode_anchor=[0, 0, 0], fixed_ell_reference=0.0, anchor_reference_tolerance=1e-6)
 
 
 def evaluator(tmp_path, fun, cap, *, size=32768, clock=None):
@@ -28,6 +28,8 @@ def stub_stages(p):
         value = dict(evaluations=spec['evaluations'], spec=spec, plan_sha256=q.plan_digest(p))
         if spec['kind'] == 'face':
             value.update(maximum_log_density=-30., deficit=-30.)
+        elif spec['kind'] == 'anchor':
+            value.update(ell_anchor=0., abs_error=0.)
         else:
             value.update(logZ=math.log(.5) if ':cdf:' in key else 0., means=[1.,1.,1.])
         out[key] = value
@@ -81,7 +83,8 @@ def test_small_tensor_protocol_exact_count_and_analytic_cdf(tmp_path):
     checkpoints=[]
     out=q.run_protocol(ev,p,checkpoint=lambda stages,b:checkpoints.append((len(stages),b['confirmed'])),batch_size=4096)
     assert out['budget']['confirmed'] == out['planned_evaluations'] == count
-    assert len(checkpoints) == len(q.inventory(p)) == 20
+    assert len(checkpoints) == len(q.inventory(p)) == 21 and checkpoints[0] == (1, 1)     # the anchor stage runs first: one point
+    assert out['stages']['anchor:reference']['evaluations'] == 1 and out['conditions']['anchor_reference_consistency'] is True
     assert max(abs(c-.5) for c in out['cdfs'].values()) < 1e-4
     # Finite-domain normalizer/CDF calculations are accurate, but these toy faces
     # deliberately fail the separate tail diagnostic. Never report full acceptance.
@@ -97,7 +100,7 @@ def test_cap_stops_partial_stage_before_any_extra_call(tmp_path):
     out=q.run_protocol(ev,plan(),batch_size=5)
     assert sum(seen)==out['budget']['confirmed']==7
     assert out['budget']['reserved_uncertain']==0 and out['exit_code']==3 and not out['accepted']
-    assert out['comparison']=={} and not out['stages']
+    assert out['comparison']=={} and list(out['stages']) == ['anchor:reference']          # the one-point anchor fitted; the first integral did not
     assert out['stage_acceptance']['unchecked']
 
 
@@ -105,7 +108,8 @@ def test_interrupt_keeps_reservation_and_returns_inconclusive(tmp_path):
     def fail(x): raise KeyboardInterrupt('fixture interruption')
     ev=evaluator(tmp_path,fail,100,size=4)
     out=q.run_protocol(ev,plan(),batch_size=5)
-    assert out['budget']['confirmed']==0 and out['budget']['reserved_uncertain']==4
+    assert out['budget']['confirmed']==0 and out['budget']['reserved_uncertain']==1      # the interrupted work is the one-point anchor stage
+    assert 'anchor:reference' not in out['stages'] and out['conditions']['anchor_reference_consistency'] is None
     assert out['exit_code']==3 and not out['accepted'] and ev._closed
     assert 'KeyboardInterrupt' in out['stopped'] and out['comparison']=={}
 
@@ -119,10 +123,17 @@ def test_complete_stubs_pass_all_explicit_conditions():
     assert out['comparison']=={}
 
 
-@pytest.mark.parametrize('fault',['missing','nan','metadata','count','cdf_over_one','tail','extra','stopped','budget'])
+@pytest.mark.parametrize('fault',['missing','nan','metadata','count','cdf_over_one','tail','extra','stopped','budget',
+                                   'anchor_missing','anchor_nan','anchor_offset','anchor_count','anchor_inconsistent','anchor_string'])
 def test_fail_closed_assembly(fault):
     p=plan();stages=stub_stages(p);budget=valid_budget(p);stopped=None
     key='B0:r0:full'
+    if fault=='anchor_missing': del stages['anchor:reference']
+    if fault=='anchor_nan': stages['anchor:reference'].update(ell_anchor=float('nan'),abs_error=float('nan'))
+    if fault=='anchor_offset': stages['anchor:reference'].update(ell_anchor=-40.,abs_error=40.)           # shifted evaluator: exceeds 1e-6
+    if fault=='anchor_count': stages['anchor:reference']['evaluations']=2
+    if fault=='anchor_inconsistent': stages['anchor:reference'].update(ell_anchor=-40.,abs_error=0.)       # abs_error not recomputable from ell_anchor
+    if fault=='anchor_string': stages['anchor:reference'].update(ell_anchor='0.0',abs_error=0.)
     if fault=='missing': del stages[key]
     if fault=='nan': stages[key]['logZ']=float('nan')
     if fault=='metadata': stages[key]['spec']=dict(stages[key]['spec'],nodes=[2,2,2])
@@ -134,6 +145,8 @@ def test_fail_closed_assembly(fault):
     if fault=='budget': budget['confirmed']-=1;budget['remaining']+=1
     out=q.assemble(p,stages,budget,stopped=stopped)
     assert not out['accepted'] and out['exit_code'] in (3,4) and out['comparison']=={}
+    if fault.startswith('anchor'):
+        assert out['conditions']['anchor_reference_consistency'] is not True
 
 
 @pytest.mark.parametrize('bad',[0,True,1.5])
@@ -168,11 +181,61 @@ def test_assembly_time_is_included_in_final_deadline(tmp_path, monkeypatch):
     assert out['exit_code']==3 and not out['accepted'] and ev._closed
 
 
-def test_frozen_v3_plan_has_complete_inventory_without_evaluating_target():
-    import json
+def test_constant_offset_target_is_rejected_by_the_anchor_gate(tmp_path):
+    """The reviewed F1 defect: a narrow Gaussian whose faces truly fail, and the same density shifted by -40. Before
+    the anchor gate the shifted run was accepted with identical CDFs; now the anchor check fails closed."""
+    p=plan();p['nodes_per_axis']=[[8,10,8],[12,14,12]];p['face_nodes']=3
+    count=sum(s['evaluations'] for s in q.inventory(p).values())
+    true=lambda x:-np.square(x/.15).sum(axis=1)/2
+    shifted=lambda x:true(x)-40.
+    outs={}
+    for name,fun in (('true',true),('shifted',shifted)):
+        ev=BudgetedEvaluator(fun,cap_evaluations=count+1,unit_deadline_seconds=60,ledger_path=tmp_path/f'{name}.json',attempt='toy',batch_size=4096)
+        outs[name]=q.run_protocol(ev,p,batch_size=4096)
+    assert outs['true']['conditions']['anchor_reference_consistency'] is True and outs['true']['stages']['anchor:reference']['abs_error']==0.
+    assert outs['shifted']['conditions']['anchor_reference_consistency'] is False and outs['shifted']['stages']['anchor:reference']['abs_error']==40.
+    assert 'anchor_reference_consistency' in outs['shifted']['stage_acceptance']['failed'] and not outs['shifted']['accepted'] and outs['shifted']['exit_code']==4
+    assert outs['true']['cdfs']==pytest.approx(outs['shifted']['cdfs'])                    # ratios are offset-invariant: the gate is what catches the shift
+
+
+def test_anchor_is_the_first_stage_and_exactly_one_point(tmp_path):
+    seen=[]
+    p=plan();p['nodes_per_axis']=[[2,3,2],[3,4,3]];p['face_nodes']=2
+    ev=BudgetedEvaluator(lambda x:(seen.append(len(x)) or np.zeros(len(x))),cap_evaluations=10_000,unit_deadline_seconds=60,ledger_path=tmp_path/'u.json',attempt='toy')
+    out=q.run_protocol(ev,p)
+    assert seen[0]==1 and list(q.inventory(p))[0]=='anchor:reference' and out['stages']['anchor:reference']['evaluations']==1
+    assert out['planned_evaluations']==sum(seen)==out['budget']['confirmed']
+
+
+def test_cap_of_one_evaluates_only_the_anchor_then_stops(tmp_path):
+    seen=[]
+    ev=BudgetedEvaluator(lambda x:(seen.append(len(x)) or np.zeros(len(x))),cap_evaluations=1,unit_deadline_seconds=60,ledger_path=tmp_path/'u.json',attempt='toy',batch_size=4)
+    out=q.run_protocol(ev,plan(),batch_size=5)
+    assert seen==[1] and out['budget']['confirmed']==1 and list(out['stages'])==['anchor:reference']
+    assert out['conditions']['anchor_reference_consistency'] is True and not out['accepted'] and out['exit_code']==3
+
+
+def test_plan_without_anchor_tolerance_or_with_invalid_anchor_is_refused():
+    p=plan();del p['anchor_reference_tolerance']
+    with pytest.raises(ValueError,match='anchor_reference_tolerance'):q.inventory(p)
+    for bad in (0,-1e-6,float('nan'),True):
+        p=plan();p['anchor_reference_tolerance']=bad
+        with pytest.raises(ValueError):q.inventory(p)
+    with pytest.raises(ValueError):q.evaluate_anchor(lambda x:np.zeros(len(x)),[0,float('nan'),0],0.)
+    with pytest.raises(ValueError):q.evaluate_anchor(lambda x:np.full(len(x),np.nan),[0,0,0],0.)
+
+
+def test_frozen_plans_v3_history_and_v3r1_inventory_without_evaluating_target():
+    import hashlib, json
     from pathlib import Path
-    p=json.loads((Path(__file__).resolve().parent.parent/'docs/m3b1-evidence/direct_cdf_v3_protocol.json').read_text())
-    inv=q.inventory(p)
-    assert len(inv)==44 and sum(s['evaluations'] for s in inv.values())==12_038_156
-    assert sum(s['evaluations'] for s in inv.values() if s['kind']=='face')==110_604
-    assert len(p['cdf_points'])==7 and p['actual_posterior_evaluations']==0
+    root=Path(__file__).resolve().parent.parent/'docs/m3b1-evidence'
+    v3=json.loads((root/'direct_cdf_v3_protocol.json').read_text())
+    with pytest.raises(ValueError,match='anchor_reference_tolerance'):q.inventory(v3)            # v3 (history) has no anchor gate: refused
+    v3r1=json.loads((root/'direct_cdf_v3r1_protocol.json').read_text())
+    inv=q.inventory(v3r1)
+    assert len(inv)==45 and sum(s['evaluations'] for s in inv.values())==12_038_157==v3r1['planned_evaluations']
+    assert sum(s['evaluations'] for s in inv.values() if s['kind']=='face')==110_604 and inv['anchor:reference']['evaluations']==1
+    assert v3r1['revised_from_protocol_sha256']==hashlib.sha256((root/'direct_cdf_v3_protocol.json').read_bytes()).hexdigest()
+    assert v3r1['proposed_unit_cap']==12_050_000 and v3r1['actual_posterior_evaluations']==0 and len(v3r1['cdf_points'])==7
+    for k in ('domains','nodes_per_axis','cdf_points','face_nodes','face_mode_anchor','fixed_ell_reference'):
+        assert v3r1[k]==v3[k]

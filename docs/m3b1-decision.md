@@ -403,3 +403,26 @@ Finite face samples and agreement across rules/domains are empirical diagnostics
 Validation: 23 new analytic/stub tests plus 39 existing guard/assembly regressions, **62 passed in 0.84 seconds**, exit 0. Target imports were explicitly prohibited by the verification launcher; zero attempts to import the F7 target/model/sampler modules and zero F7 evaluations. Tests cover independent exact integrals, a nonseparable polynomial CDF, shifted-box natural-scale means, large log offsets, face projection, a small tensor run with exact accounting, cap/interruption handling, final assembly time, configuration mismatch and incomplete-result rejection. The small tensor Gaussian fixture intentionally fails its tail diagnostic even while its CDFs are accurate; the result remains inconclusive. The preliminary fixture used too few nodes for its narrower toy, was corrected before integration, and no F7 threshold or data changed. Evidence: `docs/m3b1-evidence/direct_cdf_v3_checks.json`.
 
 PR8 remains open for review. Previous guard-only hosted checks on 6b7ebbe passed; hosted checks on this implementation must be verified separately after push. No F7 quadrature, sampling, GPU, cluster or data work occurred in this implementation.
+
+### Anchor reference-consistency repair, protocol revision v3r1 (2026-09-13; code and stub checks only, no F7 execution)
+
+The worker review of 581123e (`artifacts/2026-09-13-autobayes-direct-cdf-worker-review/`, finding F1; reproduced by the
+coordinator with pure assembly stubs, `artifacts/2026-09-13-autobayes-anchor-reference-review/`) found that the face
+deficits were measured against the saved `fixed_ell_reference` while nothing evaluated the supplied target at the
+unprojected anchor: CDFs and means are ratios and offset-invariant, so a target shifted by a constant passed every
+gate. Repair (`tests/reference_direct_cdf.py`): the inventory's first stage is `anchor:reference`, one counted
+evaluation at the unprojected `face_mode_anchor`, and assembly requires the fail-closed condition
+`anchor_reference_consistency`: `abs(ell(anchor) - fixed_ell_reference) <= anchor_reference_tolerance` (1e-6),
+with the stage's evaluation count exactly 1, its `abs_error` recomputable from `ell_anchor`, the plan digest and
+spec matched, and missing, non-finite, malformed or mismatched anchor data blocking acceptance. A plan without a
+finite positive tolerance is refused, so the original v3 configuration is history and cannot be run under the
+revised implementation. The revised configuration `docs/m3b1-evidence/direct_cdf_v3r1_protocol.json` carries a
+distinct identity, the SHA-256 of the unchanged v3 file, the same domains, rules, CDF points, faces and reference,
+and a planned cost of **12,038,157** evaluations under the unchanged proposed cap of 12,050,000 points and 720 s. This
+remains an unexecuted proposal, not an authorisation. A single anchor point establishes reference consistency, not
+target identity, tail mass or convergence; the face diagnostics keep their sampled, non-bounding character.
+Checks with the coordinator's import-blocking launcher (`direct_cdf_v3r1_checks.json`): 72 passed, exit 0, no
+blocked import attempts, zero F7 evaluations; new stub cases cover correct-reference success, constant-offset
+rejection (the reviewed counterexample now fails closed with identical CDFs), missing/non-finite/mismatched anchor
+data, the exact one-point count and stage order, and cap-of-one and interrupt behaviour. The original F7 recovery
+stays FAILED; the exhausted ledger and all scientific evidence are unchanged; PR #8 stays open.
