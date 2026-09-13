@@ -100,7 +100,7 @@
   targeted deterministic modules 39 passed (exit 0); controller tests 5 passed (exit 0); no fast-suite rerun.
 - PR: https://github.com/andrew-dou/AutoBayes/pull/8 (base `main`, author andrew-dou). Record `8307a90`; implementation `9b15865`;
   reviewed head `8907113` (request changes); repair record `4a8ea4f`; repair `d572df8`; second-review checkpoint `24eefec`;
-  protocol/reference `f596d7b`; cap-overrun correction `{HC}`; this STATUS checkpoint follows it (CI runs recorded in the PR
+  protocol/reference `f596d7b`; cap-overrun correction `d2e8899`; this STATUS checkpoint follows it (CI runs recorded in the PR
   comment and the final report). Left open for independent
   review with the F7 gate failure reported, not merged by this session; the M3b-1 worktree is kept until
   that review passes. Next approved increment after acceptance: correlated varying slopes (LKJ), separate PR.
