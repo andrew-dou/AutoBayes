@@ -119,11 +119,11 @@
   units never accepted; exact-cap valid completion passes); OS-level exclusive lock rejects simultaneous owners.
   Local checks: the two allowed fake/stub modules only, `--noconftest`, 18 passed (exit 0), zero posterior
   evaluations; the coordinator's three cases replayed (`docs/m3b1-evidence/guard_v3_fake_reproduction.txt`).
-  Commit `{HG3}`.
+  Commit `0043517`.
 - PR: https://github.com/andrew-dou/AutoBayes/pull/8 (base `main`, author andrew-dou). Record `8307a90`; implementation `9b15865`;
   reviewed head `8907113` (request changes); repair record `4a8ea4f`; repair `d572df8`; second-review checkpoint `24eefec`;
   protocol/reference `f596d7b`; cap-overrun correction `d2e8899` (checkpoint `fe78c3d`); budget-guard repair `c59c8b8`
-  (checkpoint `37f4334`); third-review guard repair `{HG3}`; this STATUS checkpoint follows it (CI runs recorded in the PR
+  (checkpoint `37f4334`); third-review guard repair `0043517`; this STATUS checkpoint follows it (CI runs recorded in the PR
   comment and the final report). Left open for independent
   review with the F7 gate failure reported, not merged by this session; the M3b-1 worktree is kept until
   that review passes. Next approved increment after acceptance: correlated varying slopes (LKJ), separate PR.
