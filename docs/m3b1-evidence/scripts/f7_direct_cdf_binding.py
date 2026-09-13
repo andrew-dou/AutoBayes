@@ -336,8 +336,9 @@ def main(argv=None, *, target_factory=None, git_state=None, environment=None) ->
         not_performed = sorted(k for k, v in checks.items() if v["ok"] is None)
         report.update(failed_checks=failed, unperformed_checks=not_performed)
         if args.execute:
-            if args.approval is None or args.unit_dir is None or args.attempt is None:
-                report["refusal"] = "--execute requires --approval, --unit-dir and --attempt"
+            missing = [flag for flag, value in (("--approval", args.approval), ("--unit-dir", args.unit_dir), ("--attempt", args.attempt)) if value is None]
+            if missing:
+                report["refusal"] = f"--execute requires {', '.join(missing)}"
             elif failed or not_performed:
                 report["refusal"] = f"identity checks failed or not performed: {failed + not_performed}"
             else:

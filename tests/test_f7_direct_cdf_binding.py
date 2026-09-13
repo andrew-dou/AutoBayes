@@ -201,6 +201,8 @@ def test_execute_refusals_create_nothing_and_evaluate_nothing(binding, tmp_path,
     argv = ["--protocol", str(protocol), "--unit-dir", str(unit), "--attempt", attempt, "--execute"] + ([] if path is None else ["--approval", str(path)])
     code, log = run(binding, tmp_path, argv, target_factory=stub_factory(gaussian, calls), git_state=lambda: git)
     assert code == 2 and log["exit_code"] == 2 and log["refusal"] and calls == []
+    if fault == "no_approval":
+        assert log["refusal"] == "--execute requires --approval"
     assert list(unit.iterdir()) == [] if fault == "unit_exists" else not unit.exists()                         # a pre-existing directory is untouched
     assert not list(tmp_path.glob("**/ledger.json")) and not list(tmp_path.glob("**/result.json")) and not list(tmp_path.glob("**/*.lock"))
     assert log["failed_checks"] == FAULTS[fault], log["checks"]
@@ -213,7 +215,7 @@ def test_cli_execute_without_approval_is_refused_in_a_real_process(tmp_path):
     proc = subprocess.run([sys.executable, str(SCRIPT), "--protocol", str(protocol), "--log-dir", str(log_dir), "--unit-dir", str(unit), "--attempt", "a1", "--execute"],
                           capture_output=True, text=True)
     assert proc.returncode == 2 and not unit.exists() and len(list(log_dir.glob("binding-*.json"))) == 1
-    assert json.loads(proc.stdout)["refusal"] == "--execute requires --approval, --unit-dir and --attempt"
+    assert json.loads(proc.stdout)["refusal"] == "--execute requires --approval"
 
 
 # -- the execution path with stubs only ---------------------------------------------------------------------------------
