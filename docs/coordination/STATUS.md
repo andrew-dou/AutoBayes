@@ -779,3 +779,15 @@ no speedup is claimed.
   import-blocking launcher: **72 passed**, exit 0, zero F7 evaluations (`direct_cdf_v3r1_checks.json`). F7 FAILED,
   reference inconclusive, ledger untouched, PR8 OPEN. Next: independent review, then a separately scoped
   target-binding plan; nothing executed now. Commit `4d6ee8d`.
+- **F7 binding implementation (2026-09-13, code and stub checks only):** the independently reviewed binding plan
+  (`artifacts/2026-09-13-autobayes-f7-binding-plan/`, review with five corrections) is implemented: `run_protocol`
+  stops after the single counted anchor preflight when it fails (assembly before release kept, checkpoint survives,
+  remaining conditions unchecked, exit 3, no second probe); the import-safe opt-in entrypoint
+  `docs/m3b1-evidence/scripts/f7_direct_cdf_binding.py` (`--dry-run | --execute`, refusals on protocol/source/model/
+  environment/git identity, atomic exclusive new unit, no override or retry option, no approval shipped); wrapper
+  logging outside the unit; `run_logged.py` creates its log parent. Blocked-import checks **109 passed**, exit 0,
+  zero target access (`direct_cdf_binding_checks.json`); CLI dry-run on clean head 04f9e08: 45 stages,
+  12,038,157 planned under 12,050,000 / 720 s, all identity checks true, nothing created
+  (`direct_cdf_binding_dryrun_v3r1.json`); execute without approval refused, exit 2 (`direct_cdf_binding_refusal_execute.json`);
+  revised execution identity `direct_cdf_v3r1_execution_identity.json`. Nothing executed; F7 FAILED; exhausted
+  ledger untouched; PR8 OPEN. Next: independent review of the binding; a real run needs a separately written approval.
