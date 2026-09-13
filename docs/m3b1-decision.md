@@ -486,3 +486,47 @@ accounting; wrapper exit codes). Budget guard 32 and driver assembly 7, unchange
 synthetic, generated under the test's temporary directory and routed to stub evaluators only. No F7 import, data
 generation through the target, evaluation, old driver, sampling, dependency or authorisation change occurred. The
 original F7 recovery stays FAILED; PR #8 stays open for independent review; no real run follows automatically.
+
+### Binding repair after independent review (2026-09-13; B1, B2, failure wording, provenance; code and stub checks only)
+
+The independent review of fd07748 (hub `memory/reviews/2026-09-13-autobayes-f7-binding-implementation-review.md`;
+counterexamples in `artifacts/2026-09-13-autobayes-f7-binding-independent-review/`) matched every artifact hash and
+source pin, reproduced 109 passing checks, and demonstrated two defects with tiny stubs. Both are repaired in
+`docs/m3b1-evidence/scripts/f7_direct_cdf_binding.py`; the controller and the helper are unchanged.
+
+- **B1, approval replay under another parent.** The approval bound `unit_id` to the directory basename, so one
+  synthetic approval launched `a/same-unit` and `b/same-unit`, each with a fresh ledger and its own one-point
+  preflight. Now the approval must carry `unit_dir`, an absolute canonical path (equal to its own resolved form), and
+  it must equal the resolved requested directory exactly; the request is resolved before the atomic `os.mkdir`, so
+  `..` and symlink aliases name the same unit and an existing unit refuses. A second parent, a relative or
+  non-canonical approval path, an alias of a consumed unit, and a symlinked parent (which creates the canonical
+  directory once) are regression-tested.
+- **B2, target setup outside the unit clock.** The target was built before the ledger existed, so 100 s of fake
+  setup under a 60 s allowance left `seconds_spent` 0 and 253 toy points were evaluated on a valid run. Now the
+  ledger, and with it the unit allowance, is created immediately after the mkdir and before the target import; the
+  evaluator receives a dispatcher that is bound to the target only after setup. Setup time is measured with the same
+  injected clock and recorded (`setup_seconds`), the attempt's wall time includes it, and once the allowance is
+  exhausted the controller's gate refuses the first reservation, so no density work follows an expired setup (the
+  reviewed 100 s counterexample now ends with exit 3, zero evaluations, 100 s recorded and an invalid run). Granularity,
+  stated honestly: running Python setup cannot be preempted at the deadline; the overrun is counted, not prevented.
+  Setup within the allowance is likewise counted. Count-one anchor accounting, uncertain reservations on
+  interruption, checkpoints, assembly before release and the final ledger re-validation are unchanged.
+- **Failure wording.** A target setup failure or interruption after the unit exists is reported as an execution
+  failure (`failure`, phase `setup_failed`, exit 3, `target_import_attempted: true`) with the consumed unit's ledger,
+  `result.json` (stopped `setup: ...`, invalid run) and summary preserved, never as a refusal. Exit 2 now means
+  exactly: refused before the unit directory existed, nothing created, no target import attempted.
+- **Provenance.** The execution identity's `unchanged_since` wrongly named 6b7ebbe, which predates the v3r1 file.
+  It now records the verified introducing revision 4d6ee8d (`git log --diff-filter=A`), that exactly one commit
+  touches the file, and that the file's own `base_head` field names the helper revision it was written against.
+  Historical protocols, the exhausted ledger and all evidence bytes are unchanged; the implementation hashes are
+  refreshed after the patch.
+
+Checks (`direct_cdf_binding_checks.json`, same import-blocking launcher): **116 passed in 1.99 s**, exit 0, zero
+blocked target-import attempts, zero F7 evaluations: binding 40 tests (23 refusal faults incl. relative, other-parent
+and non-canonical approval paths; setup failure and setup interruption as execution failures with counted time; the
+B2 counterexample and setup within the allowance under a fake clock; the B1 counterexample with an alias; a symlinked
+parent), helper 37, budget guard 32, driver assembly 7. The reviewer's two counterexample scripts were re-run against
+the repaired binding under the blocker (`artifacts/2026-09-13-autobayes-f7-binding-implementation/counterexamples_after_repair.json`):
+B1 second launch exit 2 with `approval_unit_binding` failed, no directory, one ledger, one stub evaluation in total;
+B2 exit 3, 0 points, 100 s recorded, run invalid. Test approval-like data remain synthetic and temporary; no approval
+file exists; nothing was executed; F7 stays FAILED; PR #8 stays open for independent review of the repair.

@@ -55,7 +55,7 @@ def synthetic_approval(binding, protocol_path, unit_dir, attempt="stub-attempt")
     plan = json.loads(protocol_path.read_text())
     pins = {rel: binding.sha256(ROOT / rel) for rel in list(plan.get("source_sha256", {})) + list(binding.IMPLEMENTATION_PINS)}
     return dict(approval_id="synthetic-stub-only", approves_execution=True, reviewer="stub", date="2026-09-13",
-                unit_id=unit_dir.name, attempt=attempt, protocol_id=plan["protocol_id"], protocol_sha256=binding.sha256(protocol_path),
+                unit_dir=str(Path(unit_dir).resolve()), attempt=attempt, protocol_id=plan["protocol_id"], protocol_sha256=binding.sha256(protocol_path),
                 planned_evaluations=plan["planned_evaluations"], cap_evaluations=plan["proposed_unit_cap"],
                 unit_deadline_seconds=plan["proposed_wall_seconds"], max_batch_points=plan["max_batch_points"], git_head=GIT["head"],
                 source_sha256=pins, target=copy.deepcopy(binding.TARGET), model_identity=copy.deepcopy(binding.MODEL_IDENTITY),
@@ -137,6 +137,7 @@ def test_dry_run_on_the_toy_protocol_creates_no_unit_and_no_ledger(binding, tmp_
     assert not unit.exists() and sorted(p.name for p in tmp_path.iterdir()) == ["logs", "toy_protocol.json"]
     assert log["protocol"]["stages"] == 21 and log["protocol"]["planned_evaluations"] == plan["planned_evaluations"] and log["protocol"]["first_stage"] == "anchor:reference"
     assert log["checks"]["unit_dir_new"]["ok"] is True and log["unperformed_checks"] == sorted(binding.APPROVAL_CHECKS) and log["failed_checks"] == []
+    assert log["unit_dir"] == {"requested": str(unit), "resolved": str(unit.resolve())}
     assert set(log["environment"]) == set(binding.ENVIRONMENT_KEYS) and log["git"]["head"] == GIT["head"]
     assert all(log["implementation_sha256"][rel] == binding.sha256(ROOT / rel) for rel in binding.IMPLEMENTATION_PINS)
 
@@ -168,7 +169,8 @@ FAULTS = {"no_approval": [], "unreadable_approval": ["approval_schema"], "not_ap
           "protocol_sha": ["approval_protocol_identity"], "protocol_id": ["approval_protocol_identity"], "planned": ["approval_counts"],
           "cap": ["approval_counts"], "deadline": ["approval_counts"], "batch": ["approval_counts"], "pin_wrong": ["approval_source_pins"],
           "pin_missing": ["approval_source_pins"], "target": ["approval_target"], "model_identity": ["approval_model_identity"],
-          "environment": ["approval_environment"], "git_head": ["approval_git_head"], "dirty": ["git_clean"], "unit_id": ["approval_unit_binding"],
+          "environment": ["approval_environment"], "git_head": ["approval_git_head"], "dirty": ["git_clean"],
+          "unit_dir_relative": ["approval_unit_binding"], "unit_dir_other_parent": ["approval_unit_binding"], "unit_dir_noncanonical": ["approval_unit_binding"],
           "attempt": ["approval_unit_binding"], "unit_exists": ["unit_dir_new"], "parent_missing": ["unit_dir_new"]}
 
 
@@ -191,10 +193,12 @@ def test_execute_refusals_create_nothing_and_evaluate_nothing(binding, tmp_path,
     if fault == "environment": approval["expected_environment"]["numpy_version"] = "0.0.0"
     if fault == "git_head": approval["git_head"] = "f" * 40
     if fault == "dirty": git = dict(GIT, dirty=True, status=" M tests/x.py\n")
-    if fault == "unit_id": approval["unit_id"] = "unit-2"
+    if fault == "unit_dir_relative": approval["unit_dir"] = unit.name
+    if fault == "unit_dir_other_parent": approval["unit_dir"] = str((tmp_path / "b" / unit.name).resolve())
+    if fault == "unit_dir_noncanonical": approval["unit_dir"] = str(tmp_path.resolve() / "x" / ".." / unit.name)
     if fault == "attempt": attempt = "other-attempt"
     if fault == "unit_exists": unit.mkdir()
-    if fault == "parent_missing": unit = tmp_path / "missing" / "unit-1"
+    if fault == "parent_missing": unit = tmp_path / "missing" / "unit-1"; approval["unit_dir"] = str(unit.resolve())
     path = None if fault == "no_approval" else write(tmp_path / "approval.json", approval)
     if fault == "unreadable_approval": path.write_text("{not json")
     calls = []
@@ -231,6 +235,7 @@ def test_execute_with_a_stub_target_runs_the_toy_protocol_and_writes_the_unit(bi
     assert result["budget"]["confirmed"] == result["planned_evaluations"] == plan["planned_evaluations"] and result["comparison"] == {}
     assert result["conditions"]["anchor_reference_consistency"] is True and result["binding"]["approval"]["sha256"] == binding.sha256(approval)
     assert result["binding"]["git"]["head"] == GIT["head"] and set(result["binding"]["environment"]) == set(binding.ENVIRONMENT_KEYS)
+    assert result["binding"]["unit_dir"] == str(unit.resolve()) and result["binding"]["setup_seconds"] >= 0.0 and result["binding"]["target_import_attempted"] is True
     assert ledger["released"] and ledger["confirmed_completed_total"] == plan["planned_evaluations"] and list(ledger["attempts"]) == ["stub-attempt"]
     partial = json.loads((unit / "partial.json").read_text())
     assert len(partial["stages"]) == 21 and partial["budget"]["confirmed"] == plan["planned_evaluations"]
@@ -252,16 +257,94 @@ def test_execute_with_a_shifted_stub_stops_after_one_evaluation_and_consumes_the
     assert code2 == 2 and log2["failed_checks"] == ["unit_dir_new"] and calls[1:] == [1] and (unit / "ledger.json").read_bytes() == ledger_bytes
 
 
-def test_target_build_failure_after_unit_creation_consumes_the_unit_without_a_ledger(binding, tmp_path):
+def test_target_setup_failure_after_unit_creation_is_an_execution_failure_with_a_consumed_unit(binding, tmp_path):
+    """Review wording correction: after the unit exists a target import may have been attempted, so a setup failure is an
+    execution failure (exit 3, ledger and result preserved), not a pre-execution refusal."""
     protocol, plan = toy_protocol(tmp_path); unit = tmp_path / "unit-1"
     approval = write(tmp_path / "approval.json", synthetic_approval(binding, protocol, unit))
     def failing(spec):
         raise ImportError("target import prohibited in this fixture")
     code, log = run(binding, tmp_path, execute_argv(protocol, approval, unit), target_factory=failing, git_state=clean_git)
-    assert code == 2 and log["phase"] == "target_build_failed" and sorted(p.name for p in unit.iterdir()) == ["binding_record.json"]
-    assert json.loads((unit / "binding_record.json").read_text())["phase"] == "target_build_failed"
+    assert code == 3 and log["exit_code"] == 3 and log["phase"] == "setup_failed" and log["refusal"] is None and log["failure"].startswith("target setup failed")
+    assert sorted(p.name for p in unit.iterdir()) == ["binding_record.json", "ledger.json", "ledger.lock", "result.json", "summary.txt"]
+    record = json.loads((unit / "binding_record.json").read_text()); result = json.loads((unit / "result.json").read_text()); ledger = json.loads((unit / "ledger.json").read_text())
+    assert record["phase"] == "setup_failed" and record["target_import_attempted"] is True and record["error"].startswith("ImportError")
+    assert result["exit_code"] == 3 and result["stopped"].startswith("setup: ImportError") and not result["run_validity"]["valid"] and result["stages"] == {}
+    assert ledger["released"] and ledger["requested_total"] == 0 and ledger["confirmed_completed_total"] == 0 and result["comparison"] == {}
     code2, log2 = run(binding, tmp_path, execute_argv(protocol, approval, unit), target_factory=failing, git_state=clean_git)
-    assert code2 == 2 and log2["failed_checks"] == ["unit_dir_new"]
+    assert code2 == 2 and log2["failed_checks"] == ["unit_dir_new"] and json.loads((unit / "ledger.json").read_text()) == ledger
+
+
+def test_interruption_during_target_setup_stops_the_unit_with_its_time_counted(binding, tmp_path):
+    protocol, plan = toy_protocol(tmp_path); unit = tmp_path / "unit-1"; clock = [0.0]
+    approval = write(tmp_path / "approval.json", synthetic_approval(binding, protocol, unit))
+    def interrupted(spec):
+        clock[0] += 7.0
+        raise KeyboardInterrupt("fixture interruption during setup")
+    code, log = run(binding, tmp_path, execute_argv(protocol, approval, unit), target_factory=interrupted, git_state=clean_git, clock=lambda: clock[0])
+    result = json.loads((unit / "result.json").read_text()); record = json.loads((unit / "binding_record.json").read_text())
+    assert code == 3 and result["stopped"].startswith("setup: KeyboardInterrupt") and record["setup_seconds"] == 7.0 and result["budget"]["seconds_spent"] >= 7.0
+    assert result["budget"]["requested"] == 0 and result["budget"]["reserved_uncertain"] == 0 and json.loads((unit / "ledger.json").read_text())["released"]
+
+
+def test_target_setup_time_counts_against_the_unit_allowance_and_an_expired_setup_prevents_density_work(binding, tmp_path):
+    """Reviewed counterexample B2: 100 s of setup under a 60 s allowance previously vanished (seconds_spent 0, 253 points
+    evaluated, run valid). Setup cannot be preempted; its duration is counted and the gate then refuses every evaluation."""
+    protocol, plan = toy_protocol(tmp_path); unit = tmp_path / "unit-1"; clock = [0.0]; evals = []
+    approval = write(tmp_path / "approval.json", synthetic_approval(binding, protocol, unit))
+    def slow_setup(spec):
+        clock[0] += 100.0
+        def evaluate(x):
+            evals.append(len(x)); return gaussian(x)
+        return evaluate
+    code, log = run(binding, tmp_path, execute_argv(protocol, approval, unit), target_factory=slow_setup, git_state=clean_git, clock=lambda: clock[0])
+    result = json.loads((unit / "result.json").read_text()); ledger = json.loads((unit / "ledger.json").read_text()); record = json.loads((unit / "binding_record.json").read_text())
+    assert plan["proposed_wall_seconds"] == 60 and evals == [] and code == 3 and result["exit_code"] == 3 and log["exit_code"] == 3
+    assert result["budget"]["seconds_spent"] >= 100.0 and not result["run_validity"]["valid"] and "unit time allowance 60 s reached (100.0 s)" in result["stopped"]
+    assert result["stages"] == {} and result["budget"]["confirmed"] == 0 and result["budget"]["reserved_uncertain"] == 0
+    assert result["budget"]["requested"] == 1                                 # the controller records the refused anchor request; nothing was reserved or evaluated
+    attempt = ledger["attempts"]["stub-attempt"]
+    assert attempt["wall_seconds"] >= 100.0 and attempt["stopped"].startswith("unit time allowance") and ledger["released"] and ledger["confirmed_completed_total"] == 0
+    assert record["setup_seconds"] == 100.0 and record["target_import_attempted"] is True and record["phase"] == "finished" and not (unit / "partial.json").exists()
+    assert "target setup 100.000 s counted" in (unit / "summary.txt").read_text()
+
+
+def test_setup_within_the_allowance_is_counted_in_the_same_clock(binding, tmp_path):
+    protocol, plan = toy_protocol(tmp_path); unit = tmp_path / "unit-1"; clock = [0.0]; calls = []
+    approval = write(tmp_path / "approval.json", synthetic_approval(binding, protocol, unit))
+    def setup(spec):
+        clock[0] += 10.0
+        return stub_factory(gaussian, calls)(spec)
+    code, log = run(binding, tmp_path, execute_argv(protocol, approval, unit), target_factory=setup, git_state=clean_git, clock=lambda: clock[0])
+    result = json.loads((unit / "result.json").read_text())
+    assert code == 4 and result["run_validity"]["valid"] and 10.0 <= result["budget"]["seconds_spent"] <= 60.0 and sum(calls[1:]) == plan["planned_evaluations"]
+    assert json.loads((unit / "binding_record.json").read_text())["setup_seconds"] == 10.0
+    assert json.loads((unit / "ledger.json").read_text())["attempts"]["stub-attempt"]["wall_seconds"] >= 10.0
+
+
+def test_one_approval_cannot_launch_the_same_unit_name_under_another_parent_or_through_an_alias(binding, tmp_path):
+    """Reviewed counterexample B1: the approval names the canonical full unit directory, not only its basename."""
+    protocol, plan = toy_protocol(tmp_path); (tmp_path / "a").mkdir(); (tmp_path / "b").mkdir()
+    first, second = tmp_path / "a" / "same-unit", tmp_path / "b" / "same-unit"
+    approval = write(tmp_path / "approval.json", synthetic_approval(binding, protocol, first)); calls = []
+    code1, log1 = run(binding, tmp_path, execute_argv(protocol, approval, first), target_factory=stub_factory(lambda x: gaussian(x) - 40., calls), git_state=clean_git)
+    assert code1 == 3 and calls[1:] == [1] and json.loads((first / "ledger.json").read_text())["confirmed_completed_total"] == 1
+    code2, log2 = run(binding, tmp_path, execute_argv(protocol, approval, second), target_factory=stub_factory(gaussian, calls), git_state=clean_git)
+    assert code2 == 2 and log2["failed_checks"] == ["approval_unit_binding"] and not second.exists() and calls[1:] == [1]
+    alias = tmp_path / "a" / ".." / "a" / "same-unit"                                            # a path alias of the consumed unit
+    code3, log3 = run(binding, tmp_path, execute_argv(protocol, approval, alias), target_factory=stub_factory(gaussian, calls), git_state=clean_git)
+    assert code3 == 2 and log3["failed_checks"] == ["unit_dir_new"] and log3["unit_dir"]["resolved"] == str(first.resolve()) and calls[1:] == [1]
+    assert list((tmp_path / "b").iterdir()) == [] and len(list(tmp_path.glob("**/ledger.json"))) == 1
+
+
+def test_a_symlinked_parent_resolves_to_the_canonical_unit_and_creates_it_once(binding, tmp_path):
+    protocol, plan = toy_protocol(tmp_path); (tmp_path / "a").mkdir(); (tmp_path / "link").symlink_to(tmp_path / "a", target_is_directory=True)
+    canonical, via_link = tmp_path / "a" / "unit-2", tmp_path / "link" / "unit-2"
+    approval = write(tmp_path / "approval.json", synthetic_approval(binding, protocol, canonical)); calls = []
+    code, log = run(binding, tmp_path, execute_argv(protocol, approval, via_link), target_factory=stub_factory(gaussian, calls), git_state=clean_git)
+    assert code == 4 and log["unit_dir"]["resolved"] == str(canonical.resolve()) and (canonical / "result.json").exists()
+    code2, log2 = run(binding, tmp_path, execute_argv(protocol, approval, canonical), target_factory=stub_factory(gaussian, calls), git_state=clean_git)
+    assert code2 == 2 and log2["failed_checks"] == ["unit_dir_new"] and sum(calls[1:]) == plan["planned_evaluations"]
 
 
 def test_interrupt_during_execution_keeps_the_reservation_and_writes_the_result(binding, tmp_path):

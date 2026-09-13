@@ -1,10 +1,11 @@
 """F7 binding for the direct truncated-box CDF reference (docs/m3b1-decision.md, binding implementation 2026-09-13).
 
-Safety contract. Importing this module, ``--help``, ``--dry-run`` and every refusal import NO F7 target, model
-library or sampler and perform ZERO evaluations. The target module (``tests.reference_marginal``) is imported only
+Safety contract. Importing this module, ``--help``, ``--dry-run`` and every refusal (exit 2, before a unit exists) import
+NO F7 target, model library or sampler and perform ZERO evaluations. The target module (``tests.reference_marginal``) is imported only
 inside ``build_f7_target``, which only the explicit ``--execute`` path reaches, after every identity check passed
-and a NEW unit directory was created exclusively (``os.mkdir`` is atomic; an existing directory, ledger, restart or
-duplicate refuses). A dry-run creates no directory and neither acquires nor writes a ledger; it reports the stage
+and a NEW unit directory was created exclusively (``os.mkdir`` on the canonical resolved path is atomic; an existing
+directory, ledger, restart, duplicate or path alias refuses). The approval names the canonical full unit directory, so
+one approval cannot launch the same unit name under another parent (independent review, B1). A dry-run creates no directory and neither acquires nor writes a ledger; it reports the stage
 inventory, planned cost, observed source and implementation hashes, the saved model identity, the git state and the
 ACTUAL runtime environment (interpreter, NumPy, SciPy, BLAS/LAPACK; uv.lock pins declarations, not what is
 installed) so that a reviewer can write an approval. No approval file ships with the repository and none is
@@ -17,9 +18,15 @@ path OUTSIDE the unit directory; this script never imports that wrapper and writ
       --log-dir EXISTING_DIR --dry-run [--approval FILE --unit-dir DIR --attempt NAME]
   ... --log-dir EXISTING_DIR --execute --approval FILE --unit-dir NEW_DIR --attempt NAME   (future, separately reviewed)
 
-Exit codes: 0 dry-run report produced, or every protocol condition met on a valid run; 2 refused before any
-evaluation (also argparse usage errors); 3 unit stopped (including the failed counted anchor preflight), invalid or
-over-budget accounting; 4 a protocol condition failed on a valid run; 1 an unexpected error (logged with traceback).
+Exit codes: 0 dry-run report produced, or every protocol condition met on a valid run; 2 refused before the unit
+directory exists (nothing created, no target import attempted; also argparse usage errors); 3 unit stopped or invalid
+after creation: the failed counted anchor preflight, an exhausted allowance, or a target setup failure or interruption,
+which may have attempted the target import (the consumed unit keeps its ledger and result); 4 a protocol condition
+failed on a valid run; 1 an unexpected error (logged with traceback).
+Unit clock (independent review, B2): the ledger is created, and the unit allowance starts, immediately after the
+exclusive mkdir and BEFORE the target import/setup, so setup time counts against the same allowance. Running Python
+setup cannot be preempted at the deadline; its full duration is recorded and, once the allowance is exhausted, the
+controller's gate refuses every evaluation, so no density work follows an expired setup.
 """
 from __future__ import annotations
 
@@ -32,6 +39,7 @@ import os
 import platform
 import subprocess
 import sys
+import time
 import traceback
 from pathlib import Path
 
@@ -55,7 +63,7 @@ MODEL_IDENTITY = {
 }
 ENVIRONMENT_KEYS = ("python_version", "python_implementation", "system", "machine", "numpy_version", "scipy_version",
                     "blas", "lapack", "executable")
-APPROVAL_KEYS = ("approval_id", "approves_execution", "reviewer", "date", "unit_id", "attempt", "protocol_id", "protocol_sha256",
+APPROVAL_KEYS = ("approval_id", "approves_execution", "reviewer", "date", "unit_dir", "attempt", "protocol_id", "protocol_sha256",
                  "planned_evaluations", "cap_evaluations", "unit_deadline_seconds", "max_batch_points", "git_head", "source_sha256",
                  "target", "model_identity", "expected_environment")
 APPROVAL_CHECKS = ("approval_schema", "approval_protocol_identity", "approval_counts", "approval_source_pins", "approval_target",
@@ -188,10 +196,13 @@ def run_checks(protocol_path, approval_path, unit_dir, attempt, git: dict, envir
     except Exception as error:
         add("records_model_identity", False, f"{type(error).__name__}: {error}")
     facts.update(git=git, environment=environment, target=TARGET, model_identity=MODEL_IDENTITY)
+    resolved = None
     if unit_dir is not None:
-        unit_dir = Path(unit_dir)
-        fresh = unit_dir.parent.is_dir() and not unit_dir.exists() and not unit_dir.is_symlink()
-        add("unit_dir_new", fresh, f"{unit_dir}: parent exists and the directory is absent" if fresh else f"{unit_dir} exists, or its parent does not")
+        requested = Path(unit_dir)
+        resolved = requested.resolve()  # canonical: symlinks and '..' collapse, so every alias names the same unit
+        fresh = resolved.parent.is_dir() and not resolved.exists() and not requested.is_symlink()
+        facts["unit_dir"] = {"requested": str(requested), "resolved": str(resolved)}
+        add("unit_dir_new", fresh, f"{resolved}: parent exists and the directory is absent" if fresh else f"{resolved} exists, or its parent does not")
     if approval_path is None:
         for name in APPROVAL_CHECKS:
             add(name, None, "no approval supplied; a real execution would be refused")
@@ -232,9 +243,11 @@ def run_checks(protocol_path, approval_path, unit_dir, attempt, git: dict, envir
     add("approval_git_head", isinstance(git.get("head"), str) and approval.get("git_head") == git.get("head"),
         f"approval head {str(approval.get('git_head'))[:12]} vs checkout {str(git.get('head'))[:12]}")
     add("git_clean", git.get("dirty") is False, "clean checkout" if git.get("dirty") is False else f"dirty or unknown checkout: {git.get('status')!r}")
-    bound = unit_dir is not None and attempt is not None and approval.get("unit_id") == Path(unit_dir).name and approval.get("attempt") == attempt
-    add("approval_unit_binding", bound, f"approval unit {approval.get('unit_id')!r} attempt {approval.get('attempt')!r} vs requested "
-        f"{None if unit_dir is None else Path(unit_dir).name!r} {attempt!r}")
+    approved_dir = approval.get("unit_dir")
+    canonical = isinstance(approved_dir, str) and Path(approved_dir).is_absolute() and str(Path(approved_dir).resolve()) == approved_dir
+    bound = canonical and resolved is not None and approved_dir == str(resolved) and attempt is not None and approval.get("attempt") == attempt
+    add("approval_unit_binding", bound, f"approval unit_dir {approved_dir!r} (canonical: {canonical}) attempt {approval.get('attempt')!r} vs requested "
+        f"{None if resolved is None else str(resolved)!r} {attempt!r}")
     return checks, facts, plan
 
 
@@ -252,49 +265,74 @@ def summary_text(out: dict) -> str:
         lines.append(f"anchor ell {anchor['ell_anchor']!r} abs_error {anchor['abs_error']!r}")
     if acc["failed"]:
         lines.append("failed: " + ", ".join(acc["failed"]))
+    setup = (out.get("binding") or {}).get("setup_seconds")
+    if setup is not None:
+        lines.append(f"target setup {setup:.3f} s counted in the unit allowance (not preemptible; an exhausted allowance refuses every evaluation)")
     lines.append("comparison with stored MCMC summaries: empty (separate scientific review); no F7 acceptance, tail bound, calibration or convergence claim")
     return "\n".join(lines) + "\n"
 
 
-def execute(report: dict, plan: dict, unit_dir: Path, attempt: str, target_factory) -> int:
-    """The only path that creates files in a unit, touches a ledger or builds the target. The NEW unit directory is
-    created first and exclusively; a failure after that point consumes the unit (no restart, retry or second allowance)."""
+def execute(report: dict, plan: dict, unit_dir: Path, attempt: str, target_factory, clock) -> int:
+    """The only path that creates files in a unit, touches a ledger or builds the target. The NEW canonical unit
+    directory is created first and exclusively; the ledger, and with it the unit allowance, starts next and BEFORE
+    the target import/setup, so setup time is counted; any failure after creation consumes the unit (no restart, retry
+    or second allowance) and is reported as an execution/setup failure, never as a refusal."""
+    unit_dir = Path(unit_dir).resolve()
     try:
-        os.mkdir(unit_dir)  # atomic: any existing directory (previous unit, ledger, restart, duplicate) refuses
+        os.mkdir(unit_dir)  # atomic: any existing directory (previous unit, ledger, restart, duplicate, alias) refuses
     except FileExistsError:
         report["refusal"] = f"unit directory {unit_dir} already exists; a restarted or duplicated unit is refused"
         return EXIT_REFUSED
-    record = dict(report, phase="unit_created", unit_dir=str(unit_dir), attempt=attempt, unit_created_at=utc_now())
-    write_json_atomic(unit_dir / "binding_record.json", record)
-    try:
-        evaluate = target_factory(TARGET)  # the lazy F7 import happens inside build_f7_target; no evaluation yet
-    except BaseException as error:
-        record.update(phase="target_build_failed", error=f"{type(error).__name__}: {error}", traceback=traceback.format_exc())
-        write_json_atomic(unit_dir / "binding_record.json", record)
-        report.update(phase="target_build_failed", refusal=f"target build failed after the unit directory was created; the unit is consumed: {record['error']}")
-        return EXIT_REFUSED
-    from tests.quadrature_budget import BudgetedEvaluator
-    from tests.reference_direct_cdf import run_protocol
+    from tests.quadrature_budget import BudgetedEvaluator, run_is_valid
+    from tests.reference_direct_cdf import assemble, run_protocol
 
     batch = int(plan["max_batch_points"])
-    evaluator = BudgetedEvaluator(evaluate, cap_evaluations=int(plan["proposed_unit_cap"]), unit_deadline_seconds=float(plan["proposed_wall_seconds"]),
-                                  ledger_path=unit_dir / "ledger.json", attempt=attempt, batch_size=batch)  # takeover stays False; no override exists
+    target = {}
+
+    def dispatch(points):
+        return target["evaluate"](points)
+
+    evaluator = BudgetedEvaluator(dispatch, cap_evaluations=int(plan["proposed_unit_cap"]), unit_deadline_seconds=float(plan["proposed_wall_seconds"]),
+                                  ledger_path=unit_dir / "ledger.json", attempt=attempt, batch_size=batch, clock=clock)  # takeover stays False; no override exists
+    record = dict(report, phase="unit_created", unit_dir=str(unit_dir), attempt=attempt, unit_created_at=utc_now(), target_import_attempted=False,
+                  setup_seconds=None, setup_note="the unit allowance started at ledger creation, before target setup; setup is not preemptible, its full "
+                                                 "duration is counted, and an exhausted allowance makes the controller's gate refuse every evaluation")
+    write_json_atomic(unit_dir / "binding_record.json", record)
+
+    def finish(output, phase):
+        output["binding"] = {k: record.get(k) for k in ("argv", "started", "run_started", "git", "environment", "implementation_sha256", "protocol",
+                                                         "protocol_source_sha256_observed", "approval", "target", "model_identity", "unit_dir", "attempt",
+                                                         "target_import_attempted", "setup_seconds", "setup_note")}
+        output["binding"]["finished"] = utc_now()
+        write_json_atomic(unit_dir / "result.json", output)
+        (unit_dir / "summary.txt").write_text(summary_text(output))
+        record.update(phase=phase, exit_code=int(output["exit_code"]), status=output["status"], stopped=output["stopped"], budget=output["budget"])
+        write_json_atomic(unit_dir / "binding_record.json", record)
+        report.update(phase=phase, status=output["status"], stopped=output["stopped"], budget=output["budget"])
+        return int(output["exit_code"])
+
+    record["target_import_attempted"] = True
+    t0 = evaluator.clock()
+    try:
+        target["evaluate"] = target_factory(TARGET)  # the lazy F7 import happens inside build_f7_target; no evaluation yet
+    except BaseException as error:
+        record.update(setup_seconds=float(evaluator.clock() - t0), error=f"{type(error).__name__}: {error}", traceback=traceback.format_exc())
+        stopped = f"setup: {type(error).__name__}: {error}"
+        evaluator.release()
+        output = assemble(plan, {}, evaluator.progress("stopped"), stopped=stopped)
+        output["budget"] = evaluator.progress("stopped")
+        output["run_validity"] = run_is_valid(output["budget"], stopped)
+        output.update(accepted=False, status="inconclusive", exit_code=3, comparison={})
+        report["failure"] = f"target setup failed after the unit was created (a target import may have been attempted); the unit is consumed: {record['error']}"
+        return finish(output, "setup_failed")
+    record.update(setup_seconds=float(evaluator.clock() - t0), phase="running", run_started=utc_now())
+    write_json_atomic(unit_dir / "binding_record.json", record)
 
     def checkpoint(stages, budget):
         write_json_atomic(unit_dir / "partial.json", {"written_at": utc_now(), "budget": budget, "stages": stages})
 
-    record.update(phase="running", run_started=utc_now())
-    write_json_atomic(unit_dir / "binding_record.json", record)
     output = run_protocol(evaluator, plan, checkpoint=checkpoint, batch_size=batch)
-    output["binding"] = {k: record.get(k) for k in ("argv", "started", "run_started", "git", "environment", "implementation_sha256",
-                                                     "protocol", "protocol_source_sha256_observed", "approval", "target", "model_identity", "unit_dir", "attempt")}
-    output["binding"]["finished"] = utc_now()
-    write_json_atomic(unit_dir / "result.json", output)
-    (unit_dir / "summary.txt").write_text(summary_text(output))
-    record.update(phase="finished", exit_code=int(output["exit_code"]), status=output["status"], stopped=output["stopped"], budget=output["budget"])
-    write_json_atomic(unit_dir / "binding_record.json", record)
-    report.update(phase="finished", status=output["status"], stopped=output["stopped"], budget=output["budget"])
-    return int(output["exit_code"])
+    return finish(output, "finished")
 
 
 # -- entrypoint ------------------------------------------------------------------------------------------------------
@@ -313,9 +351,9 @@ def parse_args(argv):
     return parser.parse_args(argv)
 
 
-def main(argv=None, *, target_factory=None, git_state=None, environment=None) -> int:
-    """Keyword injections exist only so stub tests can exercise the execution path without the F7 target; the
-    command line never sets them."""
+def main(argv=None, *, target_factory=None, git_state=None, environment=None, clock=None) -> int:
+    """Keyword injections exist only so stub tests can exercise the execution path without the F7 target and with a
+    fake clock; the command line never sets them."""
     argv = list(sys.argv[1:] if argv is None else argv)
     args = parse_args(argv)
     started = utc_now()
@@ -324,7 +362,7 @@ def main(argv=None, *, target_factory=None, git_state=None, environment=None) ->
     if not log_dir.is_dir():
         print(f"refused: --log-dir {log_dir} must be an existing directory (outside the unit)", file=sys.stderr)
         return EXIT_REFUSED
-    report = {"mode": mode, "argv": argv, "started": started, "repo": str(REPO), "pid": os.getpid(), "refusal": None, "phase": "checking"}
+    report = {"mode": mode, "argv": argv, "started": started, "repo": str(REPO), "pid": os.getpid(), "refusal": None, "failure": None, "phase": "checking"}
     code = EXIT_REFUSED
     try:
         git = (git_state or probe_git)()
@@ -342,7 +380,7 @@ def main(argv=None, *, target_factory=None, git_state=None, environment=None) ->
             elif failed or not_performed:
                 report["refusal"] = f"identity checks failed or not performed: {failed + not_performed}"
             else:
-                code = execute(report, plan, Path(args.unit_dir), args.attempt, target_factory or build_f7_target)
+                code = execute(report, plan, Path(args.unit_dir), args.attempt, target_factory or build_f7_target, clock or time.perf_counter)
         else:
             report["would_execute"] = args.approval is not None and not failed and not not_performed
             report["refusal"] = None if not failed else f"a real execution would be refused: {failed}"
@@ -356,7 +394,7 @@ def main(argv=None, *, target_factory=None, git_state=None, environment=None) ->
         log_path = log_dir / f"binding-{stamp}-{mode}-{os.getpid()}.json"
         write_json_atomic(log_path, report)
         report["log_path"] = str(log_path)
-        brief = {k: report.get(k) for k in ("mode", "exit_code", "refusal", "failed_checks", "unperformed_checks", "would_execute", "phase", "status", "stopped", "log_path")}
+        brief = {k: report.get(k) for k in ("mode", "exit_code", "refusal", "failure", "failed_checks", "unperformed_checks", "would_execute", "phase", "status", "stopped", "log_path")}
         brief["protocol"] = report.get("protocol")
         brief["environment"] = report.get("environment")
         brief["git"] = {k: report.get("git", {}).get(k) for k in ("head", "dirty")}
