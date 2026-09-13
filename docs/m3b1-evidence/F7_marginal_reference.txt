@@ -1,0 +1,23 @@
+F7 marginal reference: 1738745 evaluations in 38 s (caps 2000000, 900 s)
+mode (sd0, sd1, sigma) = [0.34621, 0.17334, 0.42351], log posterior at mode -407.026360; low-rank minus dense at mode -9.66e-13
+curvature scales (theta) [0.1434, 0.1821, 0.0305]; face maxima of ell - ell*: 1|g_sigma:lo -63.6, 1|g_sigma:hi -27.1, x|g_sigma:lo -20.0, x|g_sigma:hi -55.6, sigma:lo -37.9, sigma:hi -27.4
+3-D Gauss-Legendre levels (n, logZ, means):
+  n=24: logZ -411.39193094  means [0.354925, 0.1760118, 0.4244722]
+  n=32: logZ -411.38584871  means [0.3549404, 0.1758285, 0.4244571]
+  n=48: logZ -411.38570194  means [0.3549405, 0.1758225, 0.4244566]
+  n=64: logZ -411.38570192  means [0.3549405, 0.1758225, 0.4244566]
+  B(10) n=64: logZ -411.38570192  means [0.3549405, 0.1758225, 0.4244566]
+refinement error of means {'1|g_sigma': '3.74e-11', 'x|g_sigma': '3.56e-10', 'sigma': '8.75e-11'}; domain error {'1|g_sigma': '2.76e-11', 'x|g_sigma': '2.35e-10', 'sigma': '7.61e-11'}
+logZ refinement error 1.45e-08, domain error 2.20e-09; marginal-vs-3D mean consistency {'1|g_sigma': '2.93e-09', 'x|g_sigma': '2.48e-14', 'sigma': '9.27e-09'}
+marginal mass minus logZ {'1|g_sigma': '-1.89e-06', 'x|g_sigma': '-4.25e-11', 'sigma': '-1.89e-06'}
+CDF P(x|g_sigma <= 0.30 | y) = 0.998123 (B8, 40 nodes) vs 0.997997 (B10, 48 nodes), change 1.26e-04
+targets met: True
+1|g_sigma: quadrature mean 0.354941, median 0.349457, central 90% [0.27847, 0.45011], central 99% [0.24704, 0.52735]
+x|g_sigma: quadrature mean 0.175823, median 0.172951, central 90% [0.12627, 0.23539], central 99% [0.1041, 0.28182]
+sigma: quadrature mean 0.424457, median 0.424127, central 90% [0.40365, 0.44639], central 99% [0.39276, 0.45989]
+compare pymc 1|g_sigma: quad 0.354941 vs mcmc 0.354191 |diff| 7.49e-04 tol(4 mcse + err) 7.60e-03 within True
+compare pymc x|g_sigma: quad 0.175823 vs mcmc 0.175386 |diff| 4.37e-04 tol(4 mcse + err) 3.60e-03 within True
+compare pymc sigma: quad 0.424457 vs mcmc 0.424134 |diff| 3.22e-04 tol(4 mcse + err) 8.03e-04 within True
+compare numpyro 1|g_sigma: quad 0.354941 vs mcmc 0.354425 |diff| 5.16e-04 tol(4 mcse + err) 8.30e-03 within True
+compare numpyro x|g_sigma: quad 0.175823 vs mcmc 0.173907 |diff| 1.92e-03 tol(4 mcse + err) 3.91e-03 within True
+compare numpyro sigma: quad 0.424457 vs mcmc 0.424737 |diff| 2.80e-04 tol(4 mcse + err) 7.94e-04 within True

@@ -70,9 +70,38 @@
   codes, `docs/m3b1-evidence/checks-repair.txt`): combined module 9 passed (85 s; pytest exit 0); coordinator probe exit 0, six composite cases with max |logp error| 1.42e-14, both partial-argument cases now refused, 0 fits (`docs/m3b1-evidence/coordinator_probe_after_repair.json`);
   `tests/test_varying_slope.py` 18 passed (pytest exit 0); fast suite **374 passed, 8 deselected (322 s; pytest exit 0)**; independent regressions 27 passed (pytest exit 0). The slow suite was
   not re-run (it would sample F7 again); its recorded result remains 1 failed (F7), 7 passed.
+- **Second review correction, marginal reference and cap overrun (2026-09-12/13,
+  `memory/reviews/2026-09-12-autobayes-pr8-repair-acceptance-review.md`;
+  `artifacts/2026-09-13-autobayes-marginal-cap-review/`).** The value_point repair and the deterministic checks
+  were independently confirmed (17 tests incl. 8 crossed-fixture variants, 0 fits); the crossed category/site
+  fixture is adopted in `tests/test_varying_slope_combined.py`. Proposal corrected (history kept): the
+  24-replicate fixed-hyperparameter study is a fixed-parameter coverage study, not SBC (true SBC draws parameters
+  from the fitting prior, then data, and handles posterior autocorrelation; Stan User's Guide), its uniform-rank
+  gate and the "coverage failure implies a defect" claim withdrawn and the study not approved or run; the
+  `pm.do` conditional check withdrawn (it changes the target); "convergence established" withdrawn for the F7
+  run (NumPyro missed the R-hat/ESS gates); coverage, computation and convergence kept distinct. New independent
+  deterministic reference for the FULL Gaussian F7 posterior of the three scales (`tests/reference_marginal.py`,
+  Gaussian coefficients and both group blocks integrated analytically from the original rows; low-rank algebra
+  equal to dense covariance on a crossed fixture and the F7 data, `tests/test_marginal_reference.py`); protocol
+  recorded before evaluation (`f596d7b`). **Cap overrun:** the quadrature driver checked its evaluation counter
+  after computing each batch and reset it per process; attempt 1 (2,289,209 evaluations, raised, no output),
+  attempt 2 (1,738,745, wrote the saved result) and a tail addendum (97,600, no budget check) total 4,125,554
+  evaluations against the 2,000,000-evaluation unit cap (206 %); the shell wrappers also mis-reported exit codes.
+  The saved `targets_met=True` is withdrawn: the lower log-sd1 face missed the -25 tail criterion (-20.04) and the
+  CDF-stability condition was not checked at every reference point with resolution and domain separated; the
+  reference is **incomplete/exploratory** (means 0.3549/0.1758/0.4245, P(sd1 <= 0.30 | y) = 0.9981, saved MCMC
+  means within 4 stored MCSE: exploratory observations about computation only). F7 stays FAILED, its data, seed,
+  estimand, thresholds, test and evidence untouched; no sampling. Repair, code only and not run: budget
+  controller `tests/quadrature_budget.py` (cumulative persisted ledger never reset, pre-batch remaining check,
+  completed vs attempted, deadline, checkpoints, stop on exhaustion) with fake-evaluator tests (5 passed), the
+  driver refactored onto it with acceptance requiring every condition, `scripts/run_logged.py` for real exit
+  codes, the ledger seeded with the 4,125,554 spent evaluations so any rerun is refused. A scoped completion
+  proposal (about 1.0 million evaluations, new authorisation required) is in the record. Checks in this unit:
+  targeted deterministic modules 39 passed (exit 0); controller tests 5 passed (exit 0); no fast-suite rerun.
 - PR: https://github.com/andrew-dou/AutoBayes/pull/8 (base `main`, author andrew-dou). Record `8307a90`; implementation `9b15865`;
-  reviewed head `8907113` (request changes); repair record `4a8ea4f`; repair `d572df8`; this STATUS checkpoint follows it
-  (CI runs recorded in the PR comment and the final report). Left open for independent
+  reviewed head `8907113` (request changes); repair record `4a8ea4f`; repair `d572df8`; second-review checkpoint `24eefec`;
+  protocol/reference `f596d7b`; cap-overrun correction `{HC}`; this STATUS checkpoint follows it (CI runs recorded in the PR
+  comment and the final report). Left open for independent
   review with the F7 gate failure reported, not merged by this session; the M3b-1 worktree is kept until
   that review passes. Next approved increment after acceptance: correlated varying slopes (LKJ), separate PR.
 

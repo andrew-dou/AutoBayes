@@ -1,0 +1,41 @@
+F7 marginal reference: evaluation accounting and corrected status (2026-09-13)
+
+Unit cap (docs/m3b1-decision.md, protocol): 2,000,000 marginal-density evaluations and 15 minutes, for the UNIT.
+What actually ran (each a distinct process; the old driver checked its counter only after computing each whole batch
+and reset the counter at every process start; the tail script had no budget check):
+  attempt 1  2026-09-13T02:54:50Z  f7_marginal_reference.py  2,289,209 evaluations (52 s)  raised after the overrun; no output written
+  attempt 2  2026-09-13T02:56:19Z  f7_marginal_reference.py  1,738,745 evaluations (38 s)  wrote F7_marginal_reference.json / .txt
+  addendum   2026-09-13T02:57Z     f7_marginal_tail.py          97,600 evaluations (2 s)  wrote F7_marginal_tail.txt
+  cumulative                                                  4,125,554 evaluations = 206 % of the unit cap
+The unit cap was exceeded, first inside attempt 1 (the check came after the computation) and then again by attempts 2
+and the addendum, which treated the cap as a per-retry allowance. Both wrapper shell commands mis-reported exit codes
+(grep's status after a pipe; an empty zsh pipestatus), so attempt 1's Python traceback was summarised as "exit 0".
+The coordinator's stop record: artifacts/2026-09-13-autobayes-marginal-cap-review/iqss-autobayes-quadrature-stop.json.
+
+Status of the saved attempt-2 result (F7_marginal_reference.json, targets_met=True as written by the old driver):
+WITHDRAWN as an unconditional claim. Against the recorded protocol:
+  tail faces <= -25 ............ NOT MET on the lower log x|g_sigma face (-20.04 after the three permitted expansions);
+                                 met on the other five faces (-27.0 to -63.6)
+  refinement of means <= 1e-4 .. met (3.7e-11, 3.6e-10, 8.8e-11)
+  domain change of means <= 1e-4 met (2.8e-11, 2.4e-10, 7.6e-11)
+  logZ refinement/domain <= 1e-4 met (1.5e-8, 2.2e-9)
+  marginal-vs-3-D means <= 1e-4  met (2.9e-9, 2.5e-14, 9.3e-9)
+  CDF stability <= 1e-3 at EVERY reference point, resolution and domain separately
+                              .. NOT CHECKED as specified: only x|g_sigma at 0.30 was recomputed, and with resolution
+                                 and domain changed together (change 1.26e-4); the six MCMC-mean reference points and
+                                 the other two scales were not checked
+  tail addendum ................ measured mass of x|g_sigma below the unmet face 3.3e-9 (exploratory; computed after
+                                 the cap had already been exceeded)
+Therefore the reference is INCOMPLETE / EXPLORATORY. Its numbers (means 0.354941 / 0.175823 / 0.424457; central 99 %
+intervals; P(x|g_sigma <= 0.30 | y) = 0.9981; agreement of the means with the saved F7 MCMC means within 4 stored MCSE)
+are preserved as exploratory observations only. They do not constitute acceptance, calibration or convergence; the
+original F7 recovery remains FAILED and PR #8 remains open.
+
+Prospective repair (code only, not run): tests/quadrature_budget.py (cumulative ledger persisted across retries and
+never reset; remaining budget checked before every batch; batches never larger than the remainder; completed and
+attempted counts distinct; wall deadline; partial checkpoints; stop on an exhausted cap), tests/test_quadrature_budget.py
+(fake evaluator, no density evaluation: 4 passed), the driver refactored onto the controller with acceptance requiring
+every condition and reporting missing ones, scripts/run_logged.py capturing the real return code. The ledger
+F7_marginal_reference_ledger.json is seeded with the 4,125,554 completed evaluations, so any run under the same cap is
+refused before evaluating anything. Completing the reference needs a new written authorisation (proposal in
+docs/m3b1-decision.md).

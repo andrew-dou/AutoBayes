@@ -296,3 +296,52 @@ CDF at the population slope SD, $P(sd_1 \le 0.30 \mid y)$, and central 99 % and 
 quadrature marginals are reported as a **new deterministic reference**, distinct from the sampled HDIs.
 Nothing about F7 (data, seed, estimand, thresholds, test, evidence) changes; no calibration or convergence
 claim follows from this check.
+
+### Executed marginal-reference runs and corrected status (2026-09-13; coordinator scope correction)
+
+**Evaluation accounting (unit cap 2,000,000 evaluations, 15 minutes).** Three processes ran
+(`docs/m3b1-evidence/F7_marginal_reference_ACCOUNTING.txt`): attempt 1 (02:54:50Z) evaluated 2,289,209
+densities before raising, because the driver checked its counter only after computing each whole batch;
+attempt 2 (02:56:19Z) reset the counter at process start and evaluated 1,738,745, writing
+`F7_marginal_reference.json/.txt`; a tail addendum (02:57Z, `f7_marginal_tail.py`, no budget check) evaluated
+97,600. **Cumulative: 4,125,554 evaluations, 206 % of the unit cap.** The cap was exceeded inside attempt 1
+and then treated as a per-retry allowance; that was wrong. Both shell wrappers mis-reported exit codes (a grep
+status after a pipe; an empty zsh `pipestatus`), so attempt 1's traceback was summarised as "exit 0". The
+coordinator's stop record is `artifacts/2026-09-13-autobayes-marginal-cap-review/`. No further evaluation of
+any kind has been run since; none is authorised.
+
+**Status of the attempt-2 result: incomplete / exploratory.** The file's `targets_met = True` is withdrawn as an
+unconditional claim. Against the recorded protocol: five faces met the $-25$ tail criterion ($-27.0$ to
+$-63.6$); the lower $\log sd_1$ face did **not** ($-20.04$ after the three permitted expansions); refinement,
+domain, $\log Z$ and marginal-consistency targets were met (means to $4\times10^{-10}$, $\log Z$ to $1.5\times10^{-8}$);
+the CDF-stability condition was **not checked as specified** (only $sd_1$ at $0.30$ was recomputed, with
+resolution and domain changed together, change $1.3\times10^{-4}$; the six MCMC-mean reference points and the other
+two scales were not checked). The addendum's measured mass below the unmet face, $3.3\times10^{-9}$, is an
+exploratory observation obtained after the cap was already exceeded.
+
+**Exploratory numbers, preserved and labelled as such (not acceptance, calibration or convergence).** Quadrature
+means $0.354941$ ($sd_0$), $0.175823$ ($sd_1$), $0.424457$ ($\sigma$); $P(sd_1 \le 0.30 \mid y) = 0.9981$; central
+99 % intervals $[0.247, 0.527]$, $[0.104, 0.282]$, $[0.393, 0.460]$ (distinct from the sampled HDIs); the saved
+F7 MCMC means differ from the quadrature means by $7.5\times10^{-4}$ / $4.4\times10^{-4}$ / $3.2\times10^{-4}$ (PyMC)
+and $5.2\times10^{-4}$ / $1.9\times10^{-3}$ / $2.8\times10^{-4}$ (NumPyro), each below $4 \times$ its stored MCSE.
+Numerical closeness of these means is a diagnostic observation about computation on this data set only; the
+original F7 recovery remains **FAILED** and PR #8 remains open.
+
+**Prospective repair (code only; nothing re-run).** `tests/quadrature_budget.py`: a cumulative ledger persisted
+across processes and never reset; the remaining budget checked before every batch and batches never larger than
+the remainder; completed and attempted counts kept distinct; wall-deadline checks; partial checkpoints; a stop
+on an exhausted cap. `tests/test_quadrature_budget.py` (fake evaluator, no density evaluation; 5 tests) covers
+each rule, including that a copy of the seeded ledger `F7_marginal_reference_ledger.json` (4,125,554 completed)
+refuses the first batch. The driver and the tail script are refactored onto the controller, acceptance requires
+every prespecified condition with missing ones reported explicitly, and `scripts/run_logged.py` records the real
+subprocess return code. The refactored driver has not been executed.
+
+**Scoped proposal (needs a new written authorisation; not executed).** Completing the reference as specified
+needs about 3.0 million evaluations at the protocol's resolutions (the CDF-stability variants alone are
+1.65 million), i.e. more than the original unit cap. A reduced completion of roughly 1.0 million evaluations
+and under two minutes of wall time would: (a) extend the lower $\log sd_1$ face by two further curvature scales
+and re-check all six faces (about 28,000 evaluations); (b) compute the CDF at all seven reference points for all
+three scales with 81-point fine grids under a resolution variant (48 nodes) and a domain variant (40 nodes on
+$B(10)$) separately (about 950,000 evaluations), reusing the saved attempt-2 marginals as the base. It would run
+only through the ledger-based controller with a fresh cap and ledger named in the authorisation, with
+`run_logged.py`, and would report every condition. Its outcome would bear on computation only.

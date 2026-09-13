@@ -1,0 +1,4 @@
+tail addendum: 97600 evaluations in 2.2 s; total with the main run 1836345 (cap 2000000)
+lower face of log x|g_sigma at theta = -4.3023 (sd1 = 0.01354); face value ell - ell* = -20.04
+marginal log density on the extension: at the face -19.259, at theta = lo - 3 -22.801, at lo - 6 -25.802; d/dtheta near the face 1.863 (Jacobian-dominated, ~1)
+relative posterior mass of x|g_sigma below the face: 3.273e-09  (error targets were 1e-4 for means, 1e-3 for CDFs)

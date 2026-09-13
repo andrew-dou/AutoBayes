@@ -1,0 +1,5 @@
+Attempt 1 (2026-09-13T02:54:50Z): docs/m3b1-evidence/scripts/f7_marginal_reference.py with 48-node 1-D marginals plus a
+64-node CDF-stability recomputation on B(10) exceeded the prespecified cap of 2,000,000 marginal-density evaluations
+(2,289,209 at 52 s) and aborted by design before any comparison was written; no result was produced or used. The
+budget allocation (not the model, seed, estimand, domain rule or error targets) was reduced for attempt 2: 40-node
+marginals and a 48-node stability recomputation, about 1.70 million evaluations planned.

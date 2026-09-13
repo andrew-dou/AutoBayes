@@ -1,0 +1,26 @@
+{
+ "cap_evaluations": 2000000,
+ "completed_total": 4125554,
+ "attempted_total": 4125554,
+ "attempts": {
+  "attempt1_2026-09-13T02:54:50Z": {
+   "completed": 2289209,
+   "attempted": 2289209,
+   "refused_batches": 0,
+   "stopped": "old driver: counter checked AFTER computing the whole batch; raised at 2,289,209 (cap 2,000,000 already exceeded); no result written"
+  },
+  "attempt2_2026-09-13T02:56:19Z": {
+   "completed": 1738745,
+   "attempted": 1738745,
+   "refused_batches": 0,
+   "stopped": "old driver: counter RESET at process start; completed; wrote F7_marginal_reference.json/.txt"
+  },
+  "tail_addendum_2026-09-13T02:57Z": {
+   "completed": 97600,
+   "attempted": 97600,
+   "refused_batches": 0,
+   "stopped": "f7_marginal_tail.py (no budget check at all); completed; wrote F7_marginal_tail.txt"
+  }
+ },
+ "note": "Unit cap 2,000,000 evaluations total. Cumulative completed 4,125,554 (206 % of the cap). Any further run under this cap must be refused; a new cap needs a new authorization and a new ledger."
+}
