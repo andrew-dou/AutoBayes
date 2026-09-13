@@ -16,10 +16,15 @@ import autobayes as ab
 LHS = {"gaussian": "y", "bernoulli": "binary", "binomial": "k | trials(n)"}
 
 
-def original_frame(family):
+CROSSED_SITES = ["g3", "g1", "g2", "g2", "g3", "g1", "g1", "g2", "g3", "g3", "g1", "g2", "g2", "g3", "g1", "g1", "g2", "g3"]
+
+
+def original_frame(family, crossed=False):
+    """``crossed=True`` uses the coordinator's site assignment (artifacts/2026-09-12-autobayes-pr8-repair-independent/
+    test_crossed.py) so that category and site are not aliased."""
     df = pd.DataFrame({"dose": np.array([-.7, .2, 1.4, 2.5, -1.2, .8] * 3) + 2.3, "category": ["c", "a", "b"] * 6,
-                       "site": ["g1", "g2", "g3"] * 6, "y": np.linspace(-.8, 2.1, 18), "binary": [0, 1] * 9,
-                       "k": [0, 1, 2] * 6, "n": [3] * 18})
+                       "site": CROSSED_SITES if crossed else ["g1", "g2", "g3"] * 6, "y": np.linspace(-.8, 2.1, 18),
+                       "binary": [0, 1] * 9, "k": [0, 1, 2] * 6, "n": [3] * 18})
     if family == "binomial":
         df.loc[0, ["k", "n"]] = 0                                   # one zero-trial row the model must drop
     return df
@@ -82,11 +87,12 @@ def test_value_point_presence_validation():
 # -- the supported combination, from original inputs, both paths --------------------------------------------
 @pytest.mark.parametrize("family", ["gaussian", "bernoulli", "binomial"])
 @pytest.mark.parametrize("center", [True, False])
-def test_slope_with_categorical_and_interaction_from_original_inputs(family, center):
+@pytest.mark.parametrize("crossed", [False, True])
+def test_slope_with_categorical_and_interaction_from_original_inputs(family, center, crossed):
     jax = pytest.importorskip("jax")
     from pymc.sampling.jax import get_jaxified_logp
 
-    df = original_frame(family)
+    df = original_frame(family, crossed)
     m = getattr(ab, family)(LHS[family] + " ~ dose*category + (1 + dose || site)", df, priors_for(family),
                             categorical={"category": "b"}, center_predictors=center)
     original = df[df.n > 0] if family == "binomial" else df                    # positive-trial rows chosen here
@@ -181,11 +187,12 @@ def test_slope_with_categorical_and_interaction_from_original_inputs(family, cen
 
 # -- analytic conditional-Gaussian posterior with both group-effect blocks at fixed SDs ----------------------
 @pytest.mark.parametrize("center", [True, False])
-def test_conditional_gaussian_with_both_group_blocks_gradient_and_hessian(center):
+@pytest.mark.parametrize("crossed", [False, True])
+def test_conditional_gaussian_with_both_group_blocks_gradient_and_hessian(center, crossed):
     jax = pytest.importorskip("jax")
     from pymc.sampling.jax import get_jaxified_logp
 
-    df = original_frame("gaussian")
+    df = original_frame("gaussian", crossed)
     m = ab.gaussian("y ~ dose*category + (1 + dose || site)", df, priors_for("gaussian"), categorical={"category": "b"}, center_predictors=center)
     x, X, Z, gi = hand_design(df)
     Xc = X - X.mean(0) if center else X

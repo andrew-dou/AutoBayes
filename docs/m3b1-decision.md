@@ -225,3 +225,74 @@ posterior draws (SBC rank statistic) passing a chi-square uniformity test at 0.0
 (i) passes and (ii) fails is a model or sampler defect indicated; if both pass, the original F7 failure is
 recorded as a single-draw outcome with the design's coverage now measured. No change to F7's threshold, seed
 or estimand in any case.
+
+### Correction of the decision proposal (2026-09-12, second review; the paragraph above is superseded, not erased)
+
+- The proposed 24-replicate study fixes the generating hyperparameters and repeatedly simulates data. That
+  is a **fixed-parameter coverage study, not simulation-based calibration**: the posterior ranks of a fixed
+  truth carry no uniformity guarantee. True SBC draws the parameters from the *fitting prior*, then the data
+  from the likelihood, and must handle posterior autocorrelation when forming ranks
+  (https://mc-stan.org/docs/stan-users-guide/simulation-based-calibration.html, sections "Bayes is
+  calibrated by construction" and "Simulation-based calibration checking"). The uniform-rank acceptance gate
+  is withdrawn, and so is the claim that a failed fixed-truth coverage study with a passing conditional
+  check would indicate a model or sampler defect: a failure of nominal coverage at one fixed truth does not
+  by itself diagnose either. The 24-fit study is **not approved and is not run**.
+- The proposed `pm.do` check fixed `sigma`, the intercept and the slope, which changes the target; its
+  result must not be compared with the full F7 summaries. Withdrawn in favour of the full-posterior
+  marginal reference below.
+- "Sampler convergence is established" is withdrawn for the F7 run: the NumPyro chains missed the original
+  R-hat (1.0117 on `1|g_sigma`) and bulk-ESS (395 on `Intercept`) gates. Coverage, computation and
+  convergence are kept distinct: the marginal reference below bears on computation (does the sampler's
+  posterior for the scales agree with an independent deterministic evaluation of the same posterior on the
+  same data), on nothing else.
+
+### Marginal-reference protocol (recorded 2026-09-12 before any posterior comparison was evaluated)
+
+**Target.** The full F7 Gaussian model on the frozen seed-17 data (generator reproduced exactly in
+`tests/reference_marginal.py::f7_data`) with exactly the recorded priors. Integrating the Gaussian
+coefficients $\beta = (a_c, b) \sim N(m, V)$, $m = 0$, $V = \mathrm{diag}(25, 4)$, and both Gaussian
+group-effect blocks analytically leaves the three positive scales:
+
+$$y \sim N\!\big(A m,\; \sigma^2 I + A V A^\top + sd_0^2 Z Z^\top + sd_1^2 Z_x Z_x^\top\big),\qquad
+A = [1,\; x - \bar x],\; Z = \text{one-hot groups},\; Z_x = x \odot Z\ (\text{raw } x),$$
+
+and on $\theta = (\log sd_0, \log sd_1, \log \sigma)$ the target is $\ell(\theta) = \log N(y; Am, \Sigma(\theta))
++ \sum_k [\log \mathrm{HalfNormal}(e^{\theta_k}; 1) + \theta_k]$ (the three log-scale Jacobians included). The
+evaluation uses group-block low-rank algebra (each block $\sigma^2 I + U_j D U_j^\top$ with $U_j = [1, x_j]$,
+$D = \mathrm{diag}(sd_0^2, sd_1^2)$; the fixed-effect term a global rank-2 update; Woodbury and the matrix
+determinant lemma), built from the original rows, never from a library design helper. It must equal a
+dense $n \times n$ multivariate-normal evaluation on a small crossed fixture over random scale points (four
+decades, near-degenerate blocks included) and on the F7 data at fixed points before any quadrature
+(`tests/test_marginal_reference.py`).
+
+**Domain selection (from the analytic target only).** Mode $\theta^*$ by numerical optimisation of $\ell$
+(Nelder–Mead, refined by BFGS); curvature scales $s_k = ((H^{-1})_{kk})^{1/2}$ from the central-difference
+Hessian at $\theta^*$; box $B(c) = \prod_k [\theta^*_k - c s_k, \theta^*_k + c s_k]$ with $c = 8$ (primary) and
+$c = 10$ (expansion check). Tail check: on each of the six faces of $B(8)$, sampled by a $48 \times 48$
+Gauss–Legendre grid, $\max(\ell - \ell^*) \le -25$ (density ratio $\le 1.4 \times 10^{-11}$); a violated face
+expands that axis by $2 s_k$, at most three times.
+
+**Quadrature.** Tensor-product Gauss–Legendre on $B(8)$ with $n \in \{24, 32, 48, 64\}$ nodes per axis;
+$\log Z = \mathrm{logsumexp}(\ell + \log w)$; $E[sd_k] = \sum e^{\theta_k} w\, e^{\ell - \log Z}$. Refinement error:
+the change from $n = 48$ to $n = 64$. Domain error: the change from $B(8)$ to $B(10)$ at $n = 64$. One-dimensional
+marginals: for each $k$, 141 equally spaced $\theta_k$ over $B(8)_k$, the other two axes integrated with 48-node
+Gauss–Legendre; each marginal normalised by its own trapezoid integral, its mass compared with the $Z$-based
+normalisation and its mean with the three-dimensional mean (consistency); CDF by cumulative trapezoid;
+quantiles by inverse linear interpolation.
+
+**Error targets, fixed now.** $|\Delta E[sd_k]| \le 10^{-4}$ under refinement and under domain expansion;
+$|\Delta \mathrm{CDF}| \le 10^{-3}$ at the reference points ($sd_1 = 0.30$ and each stored MCMC mean);
+$|\Delta \log Z| \le 10^{-4}$; marginal-versus-3-D mean consistency $\le 10^{-4}$. Achieved errors are reported.
+If the targets are not met within the caps the check is reported **inconclusive** with the partial evidence;
+no criterion is relaxed.
+
+**Caps.** Local CPU only; at most 15 minutes of quadrature runtime and 2,000,000 marginal-density
+evaluations (counted); no sampling, no new generated data, no new dependency, no GPU or cluster.
+
+**Comparison rule (applied only after the targets are met).** For each scale and each stored backend record,
+$|E_{quad}[sd_k] - \bar{sd}_{k,MCMC}|$ against $4 \times \mathrm{MCSE}_{stored} + \mathrm{err}_{quad}$: a diagnostic
+tolerance, not a proof; agreement or discrepancy is labelled with the quadrature uncertainty. The marginal
+CDF at the population slope SD, $P(sd_1 \le 0.30 \mid y)$, and central 99 % and 90 % intervals from the
+quadrature marginals are reported as a **new deterministic reference**, distinct from the sampled HDIs.
+Nothing about F7 (data, seed, estimand, thresholds, test, evidence) changes; no calibration or convergence
+claim follows from this check.
