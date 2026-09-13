@@ -603,3 +603,25 @@ coverage, calibration or acceptance of the original F7 gate, which stays FAILED.
 exploratory attempt-2 means (0.354941 / 0.175823 / 0.424457, saved under the over-cap unit) coincide with Q6 to their
 printed precision; the reviewed Q7 comparison is a separate step. PR #8 stays open. No further unit is scheduled or
 implied by this result; any continuation needs its own written approval.
+
+
+## F7 closeout and convergence-plan proposal (2026-09-13; read-only, documentation only)
+
+After the executed reference unit was independently verified (`memory/reviews/2026-09-13-autobayes-f7-reference-outcome-review.md`,
+136 read-only assertions, Q7 completed by the reviewer), this unit assessed the interpretation from saved inputs only.
+`docs/m3b1-evidence/F7_closeout_note.md` and `F7_closeout_inputs.json` record: the Q7 table recomputed and identical to the
+reviewer's (largest discrepancy 1.959 MCSE, NumPyro slope SD); the reference CDF 0.9981845983506333 at x|g_sigma = 0.30, so the
+correctly computed posterior itself excludes the population truth from any central 99 % interval on this realisation; no saved
+posterior draws anywhere (the F7 test persists only JSON summaries), so chain-level diagnostics of the original NumPyro run are
+impossible and were not recreated; the two distinct NumPyro offenders, R-hat 1.011748 on 1|g_sigma (between-chain
+disagreement, ESS adequate) and bulk ESS 395.25 on Intercept (R-hat 1.0026), neither erased by the mean agreement. Supported
+interpretation: agreement of three posterior scale means with the deterministic reference on this data set; not convergence,
+calibration, coverage or full-distribution correctness.
+
+`docs/m3b1-evidence/F7_convergence_followup_proposal.json` (UNAPPROVED) predeclares one NumPyro convergence diagnostic on the
+frozen data (same model, priors, seed 17, runtime; 4 chains, 2,000 tune, 4,000 draws, target_accept 0.9; 300 s cap; zero
+retries; existing panel gates; agreement with the frozen reference in means and in P̂(x|g_sigma ≤ 0.30); draws retained) and the
+acceptance-policy proposal: the one-realisation truth-in-99%-HDI assertion is not a test of posterior computation; keep the
+original F7 test and its failed observation unchanged pending review; add a separately named computation-and-convergence test
+as the milestone gate; scope calibration separately. No test or code change, fit, evaluation, threshold change, reseeding or
+until-pass loop was made or is authorised; original F7 FAILED; PR #8 open; M3b-2 not started.

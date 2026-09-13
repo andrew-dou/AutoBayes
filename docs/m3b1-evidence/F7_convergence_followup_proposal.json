@@ -1,0 +1,140 @@
+{
+ "proposal_id": "f7-numpyro-convergence-diagnostic-proposal-2026-09-13",
+ "status": "UNAPPROVED proposal for independent review; no execution, fit, evaluation or test change is authorised by this file",
+ "question": "Do the NumPyro diagnostic misses at the original configuration (R-hat 1.011748 on 1|g_sigma; bulk ESS 395.25 on Intercept; 4 chains x 1000 tune x 1000 draws, seed 17) persist in ONE longer predeclared run of the same model, priors, data, seed and runtime, and do the longer chains still agree with the frozen deterministic reference?",
+ "why_not_repeat_the_original_configuration": "NumPyro/JAX with a fixed seed on the same CPU is deterministic; repeating 4x1000/1000 seed 17 reproduces the same draws and the same diagnostics and adds no information",
+ "model_and_data": {
+  "formula": "y ~ x + (1 + x || g)",
+  "family": "gaussian",
+  "data": "the F7 generator in tests/test_sampling.py (rng seed 17, J=30 groups of 20; identical to tests.reference_marginal.f7_data)",
+  "priors": {
+   "intercept": "Normal(mu=0, sigma=5)",
+   "b:x": "Normal(mu=0, sigma=2)",
+   "sd:Intercept": "HalfNormal(sigma=1)",
+   "sd:x": "HalfNormal(sigma=1)",
+   "sigma": "HalfNormal(sigma=1)"
+  },
+  "center_predictors": true,
+  "noncentered": true,
+  "unchanged": "no reseeding, no data regeneration, no prior or threshold change"
+ },
+ "runtime": {
+  "backend": "numpyro",
+  "device": "cpu",
+  "chain_method": "parallel",
+  "dtype": "float64",
+  "python": "3.11.0",
+  "versions_from_records": {
+   "numpyro": "0.21.0",
+   "jax": "0.10.2",
+   "jaxlib": "0.10.2",
+   "pymc": "5.28.5",
+   "pytensor": "2.38.3",
+   "bambi": "0.17.2",
+   "arviz": "0.23.4",
+   "numpy": "2.4.6"
+  },
+  "machine": "the same arm64 macOS machine as the saved records; the executing environment must be recorded and compared with the records before interpretation"
+ },
+ "fixed_settings": {
+  "chains": 4,
+  "tune": 2000,
+  "draws": 4000,
+  "target_accept": 0.9,
+  "seed": 17,
+  "max_treedepth": 10,
+  "rationale": "four times the original draws per chain with doubled adaptation; if bulk ESS of Intercept scales with draws it should reach about 1,600 and the 1|g_sigma R-hat should fall below 1.01 for a chain-length miss; a persistent miss is then a real mixing problem"
+ },
+ "cap": {
+  "cpu_wall_seconds_total": 300,
+  "expected_seconds": "about 15 (the original 4x1000/1000 took 3.1 s)",
+  "retries": 0,
+  "restarts": 0,
+  "reseeding": false,
+  "until_pass_loop": false,
+  "second_backend": "none; the PyMC panel passed"
+ },
+ "predeclared_checks": {
+  "convergence_existing_panel_thresholds_unchanged": [
+   "divergence_fraction == 0",
+   "max_rhat <= 1.01 over every reported parameter including 1|g_sigma and Intercept",
+   "min_ess_bulk > 400",
+   "min_ess_tail > 400",
+   "min_bfmi > 0.3",
+   "treedepth_saturation < 0.01"
+  ],
+  "reference_agreement_frozen_unit_result": [
+   "|mean_k - reference_k| <= 4 * MCSE_k + spread_k for k in (1|g_sigma, x|g_sigma, sigma); reference {'1|g_sigma': 0.3549405195125328, 'x|g_sigma': 0.17582251766578189, 'sigma': 0.42445655045206676}; spread {'1|g_sigma': 1.2486946476819583e-09, 'x|g_sigma': 9.993902982952108e-09, 'sigma': 3.1115626741851088e-09}",
+   "|P_hat(x|g_sigma <= 0.30) - 0.9981845983506333| <= 4 * sqrt(p (1 - p) / ess_tail(x|g_sigma)) with p = 0.9981845983506333, P_hat from the new draws"
+  ],
+  "recorded_not_gated": [
+   "truth-in-99%-HDI for each population parameter (a coverage observation on one realisation, not a gate)",
+   "per-parameter R-hat / ESS table",
+   "reference CDF positions of the new means are not recomputed (no new quadrature)"
+  ]
+ },
+ "outputs_retained": [
+  "InferenceData written as evidence-runs/<run>/F7_numpyro_convergence_2000_4000.nc (gitignored) with its SHA-256 in the committed summary",
+  "committed JSON summary: settings, environment, panel values and statuses, per-parameter table, reference-agreement rows, wall time, hashes of the frozen reference inputs",
+  "the original F7 files, the executed unit, its ledger and approval stay unchanged"
+ ],
+ "interpretation_rules": {
+  "all convergence checks pass and both agreement checks hold": "the original NumPyro miss is attributable to chain length at 4x1000/1000; posterior computation on this data set is consistent with the deterministic reference; this is still not calibration, coverage or full-distribution correctness",
+  "any convergence check fails": "a persistent mixing or between-chain deficiency of the NumPyro path at this configuration; record it, do not retry; the next question (separately scoped) is parameterisation or adaptation, not more draws",
+  "an agreement check fails with convergence passing": "a computation discrepancy between sampler and reference to be investigated before any acceptance"
+ },
+ "answers": [
+  "whether the two NumPyro diagnostic misses are chain-length artefacts",
+  "whether longer NumPyro chains agree with the deterministic reference in means and in the tail probability at 0.30"
+ ],
+ "does_not_answer": [
+  "calibration or repeated-realisation coverage (needs a separately scoped study; the withdrawn 24-fit study stays withdrawn; SBC would need its own design)",
+  "acceptance of the original F7 assertion",
+  "rigorous tail bounds or full-distribution agreement"
+ ],
+ "excluded": [
+  "no PyMC rerun",
+  "no threshold change",
+  "no reseeding",
+  "no until-pass loop",
+  "no campaign",
+  "no new run controller",
+  "no execution under this file"
+ ],
+ "acceptance_policy_proposal": {
+  "issue": "tests/test_sampling.py::test_varying_slope_recovery_both_backends asserts on ONE realisation that every population truth lies inside the 99% HDI. Under perfect calibration that assertion misses about 1% per parameter per realisation, and on this realisation the correctly computed posterior itself has P(x|g_sigma > 0.30 | y) = 0.18%, so no correct computation can pass it. It therefore cannot distinguish an incorrect computation from a correct one on an unlucky draw and is not an acceptance test of posterior computation.",
+  "proposed_change_for_review_not_implemented": {
+   "keep": "the original test, its slow marker and its FAILED observation, unchanged, until the review decides its disposition",
+   "add": "tests/test_sampling.py::test_varying_slope_computation_and_convergence_both_backends (new, separately named): same model, data, priors, seed and the settings above for each backend; assert panel(fit.idata)['overall'] == 'pass' (existing thresholds); assert |mean_k - REFERENCE_k| <= 4 * mcse_k + SPREAD_k for the three scales with REFERENCE/SPREAD read from the committed unit result (hash pinned); assert |P_hat(x|g_sigma <= 0.30) - 0.9981845983506333| <= 4 * sqrt(p(1-p)/ess_tail); record inside_99 per parameter in the evidence JSON without asserting it",
+   "decision_rule": "M3b-1 acceptance of the varying-slope feature requires the new test to pass on both backends; the original F7 observation is retained in evidence with the reading 'coverage miss on a realisation whose slope spread was a ~2% event, consistent with the reference posterior'; calibration and coverage become a separately scoped study and are not this milestone's gate",
+   "disposition_options_for_the_original_test": {
+    "A": "retain unchanged and failing in the slow suite (honest; the slow suite stays red; hosted fast checks unaffected)",
+    "B": "after review sign-off, convert its inside_99 assertion into a recorded observation with a change note citing the reference evidence (a reviewed modification, not done here)",
+    "C": "retain unchanged under a new 'calibration' marker excluded from the acceptance suite and documented as a one-realisation coverage observation"
+   },
+   "recommendation": "the new test as the milestone gate; the original test retained unchanged now; option B or C decided by the independent reviewer, never by the worker",
+   "not_proposed": [
+    "deleting, skipping, xfailing, weakening or relabelling F7 in this unit",
+    "threshold tuning",
+    "reseeding",
+    "until-pass sampling",
+    "replacing the population SD by the realised group spread"
+   ]
+  }
+ },
+ "inputs_sha256": {
+  "docs/m3b1-evidence/F7_varying_slope_recovery_records.json": "72bec95cff15f168b2fa93dd0564400a368687785518e523dd3b00342e17a0f0",
+  "docs/m3b1-evidence/F7_varying_slope_recovery_FAILED_GATE.json": "db193c18b6e982eb206447c937f0f39869cd95f6930e8f0e1046349f5f8266dd",
+  "docs/m3b1-evidence/F7_investigation.txt": "e7dc77fdedcdfc220c9728ed492bc8e0c5e11bb7c586a29b5c6bd9729971845e",
+  "docs/m3b1-evidence/F7_marginal_reference.json": "532017f2a0ec7a524657ed62e2e0d385072443b1341d03055b22e3412e444f24",
+  "docs/m3b1-evidence/F7_marginal_reference_ledger.json": "aa30fcb665f4aed387a7c9d75732c8af7b5c4e8f5a22cd16f77d9850fa8d3b87",
+  "docs/m3b1-evidence/direct_cdf_v3r1_protocol.json": "7143626a834c0e35b4fcdbef8adb34b5a351997d46c438dfb437257d58324182",
+  "docs/m3b1-evidence/f7-direct-cdf-v3r1-unit-1/result.json": "3d2a80294c59e92b31af26bf01cd2a313333f6a2f10d15a97c0a50c67ad8544e",
+  "docs/m3b1-evidence/f7-direct-cdf-v3r1-unit-1/ledger.json": "5e41bbd2e96b5526dbbeedcc688df657f1758ad1ab3a7f8b13601d348b9147d3",
+  "docs/m3b1-evidence/f7-direct-cdf-v3r1-unit-1/binding_record.json": "cf8e329dab8f9cb8281714f34b0117e268ec0faa1c27ee4d4c626a7032ae0748",
+  "/Users/andrewdou/iqss-research/artifacts/2026-09-13-autobayes-f7-reference-outcome-review/verification.json": "f1f57ea1b11086bcd030a00fac3fd0e5e4737357448c1ae4a22cac76f7267348",
+  "/Users/andrewdou/iqss-research/memory/reviews/2026-09-13-autobayes-f7-reference-outcome-review.md": "592ac421d3e79b117f24c601adc055ddcb64d39da39e0421d802494118764272",
+  "tests/test_sampling.py": "d5ab0ed05b7e38296bf0925db4c0727dcc7eb6c399d93bdc4315849c1d3c68ec",
+  "autobayes/diagnostics.py": "79bd2634824c19180afff1882896098d72d82a631ebfdb00aba90081ee7bd9b9"
+ }
+}

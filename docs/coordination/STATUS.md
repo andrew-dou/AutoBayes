@@ -829,3 +829,11 @@ no speedup is claimed.
   0.5389 / 0.5118 / 0.5188. `comparison` left empty for separate read-only review (Q7); no tail bound, convergence,
   coverage or calibration claim (Q8). Outputs `docs/m3b1-evidence/f7-direct-cdf-v3r1-unit-1/` and
   `…-external-logs/`; exhausted old ledger untouched. F7 FAILED, PR8 OPEN; no further unit scheduled.
+- **F7 closeout and convergence-plan proposal (2026-09-13, read-only docs):** Q7 recomputed from saved inputs and
+  identical to the reviewer's table (max 1.959 MCSE); reference CDF at x|g_sigma = 0.30 is 0.99818460, so the correct
+  posterior itself excludes the truth from a central 99 % interval on this realisation; no saved draws exist (F7 test
+  persists JSON only), so the original NumPyro chains cannot be diagnosed further; two distinct offenders: R-hat 1.0117 on
+  1|g_sigma, bulk ESS 395 on Intercept; mean agreement erases neither. `F7_closeout_note.md`, `F7_closeout_inputs.json`
+  and UNAPPROVED `F7_convergence_followup_proposal.json` (one NumPyro 4x2000/4000 seed-17 diagnostic with predeclared panel
+  and reference-agreement checks; acceptance-policy proposal: new computation-and-convergence gate, original F7 retained
+  unchanged, calibration scoped separately). Nothing executed; F7 FAILED; PR8 OPEN; M3b-2 not started.
