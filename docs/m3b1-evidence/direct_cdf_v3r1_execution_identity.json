@@ -1,12 +1,16 @@
 {
  "identity_id": "f7-direct-cdf-v3r1-execution-identity-2026-09-13",
  "status": "revised execution identity for the unexecuted v3r1 proposal; NOT an approval and NOT a run; no approval file exists",
- "recorded_at_head": "04f9e08a874a87dcb3b6f1981566a27cbc802df5",
+ "recorded_at_head": "62cf3f6087b34f766ddbf4e5a693d218e2a23296",
  "protocol": {
   "path": "docs/m3b1-evidence/direct_cdf_v3r1_protocol.json",
   "sha256": "7143626a834c0e35b4fcdbef8adb34b5a351997d46c438dfb437257d58324182",
   "protocol_id": "f7-direct-cdf-crossed-grid-v3r1-proposal",
-  "unchanged_since": "6b7ebbe90ae686a6fea06a417273e667a99d07db",
+  "introduced_in": "4d6ee8db39ff77f0956da67b7e61c636744d86e8",
+  "commits_touching_file": 1,
+  "bytes_unchanged_since_introduction": true,
+  "base_head_named_inside_file": "6b7ebbe90ae686a6fea06a417273e667a99d07db",
+  "provenance_note": "introduced_in is the verified revision that added this file (git log --diff-filter=A); the file's own base_head field names the helper revision it was written against and predates the file",
   "stages": 45,
   "planned_evaluations": 12038157,
   "cap_evaluations": 12050000,
@@ -28,7 +32,7 @@
   "tests/reference_direct_cdf.py": "dc2aa754432afd4a038e13925066a50b0c7e51273c566f32c3730cba2da71216",
   "tests/quadrature_budget.py": "6a716e188029d7d50dbfba274ee91d5f5c171cf42a0046dd67a512033f92f515",
   "tests/reference_marginal.py": "b185e26baf49697f38e258cf24825b8d9e43e7991af9a8774dc470cea7dbc0dc",
-  "docs/m3b1-evidence/scripts/f7_direct_cdf_binding.py": "a69ae7a36346a2edca8e61f224ba03d6349c70821a7df2f338e541c402791eb6"
+  "docs/m3b1-evidence/scripts/f7_direct_cdf_binding.py": "35e5deb072886c640181d587a59a12078661178aecb97a00895d2f3ce56ed20f"
  },
  "implementation_note": "expected implementation hashes are those of the files at recorded_at_head (tests/reference_direct_cdf.py carries the counted-anchor preflight stop; the binding script is new); cdeb477's helper hash no longer applies",
  "target": {
