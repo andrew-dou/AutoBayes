@@ -251,6 +251,12 @@ def run_protocol(evaluator, plan, *, checkpoint=None, batch_size=32768):
 
 The caller owns authorization and output-file handling. Partial stages and the
 cumulative ledger survive an interruption. There is no restart/retry loop.
+Preflight (binding implementation, 2026-09-13): if the single counted anchor
+evaluation disagrees with the saved reference, nothing else is evaluated in
+this unit; the recorded stage and its checkpoint survive, every remaining
+condition stays unchecked, assembly still runs under the active guard, the
+evaluator is released afterwards and the frozen final ledger is re-validated.
+There is no second probe, retry or allowance.
 """
     try:
         plan = copy.deepcopy(plan)
@@ -274,6 +280,10 @@ cumulative ledger survive an interruption. There is no restart/retry loop.
             stages[key] = dict(result, spec=spec, plan_sha256=digest)
             if checkpoint is not None:
                 checkpoint(copy.deepcopy(stages), evaluator.progress('in_progress'))
+            if spec['kind'] == 'anchor' and not (math.isfinite(result['abs_error']) and result['abs_error'] <= spec['tolerance']):
+                stopped = (f"preflight: anchor reference mismatch abs_error={result['abs_error']!r} > tolerance={spec['tolerance']!r}; "
+                           "no further evaluation in this unit")
+                break
     except (Exception, KeyboardInterrupt) as error:
         stopped = f'{type(error).__name__}: {error}'
     reason = 'stopped' if stopped else 'complete'

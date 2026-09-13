@@ -426,3 +426,63 @@ blocked import attempts, zero F7 evaluations; new stub cases cover correct-refer
 rejection (the reviewed counterexample now fails closed with identical CDFs), missing/non-finite/mismatched anchor
 data, the exact one-point count and stage order, and cap-of-one and interrupt behaviour. The original F7 recovery
 stays FAILED; the exhausted ledger and all scientific evidence are unchanged; PR #8 stays open.
+
+### F7 binding implementation for the direct-CDF reference (2026-09-13; code and stub checks only, no F7 execution)
+
+The independent review of the binding plan (hub `memory/reviews/2026-09-13-autobayes-f7-binding-plan-review.md`; plan
+artifacts `artifacts/2026-09-13-autobayes-f7-binding-plan/`) accepted the plan for a bounded code-only implementation
+with five corrections. All five are implemented in this commit; nothing was executed, no approval exists, and the
+v3r1 protocol, the exhausted ledger and all scientific evidence are unchanged.
+
+1. **Preflight stop** (`tests/reference_direct_cdf.py::run_protocol`): after the single counted `anchor:reference`
+   evaluation is recorded and checkpointed, a non-finite or out-of-tolerance absolute error sets
+   `stopped = "preflight: anchor reference mismatch ..."` and breaks before the first integral. Assembly still runs
+   under the active guard, the evaluator is released afterwards in `finally`, and the frozen final ledger is
+   re-validated, exactly as before (the plan's release-before-assembly wording was wrong and is not implemented).
+   A mismatched binding costs one evaluation; every remaining condition stays unchecked; exit 3. A further attempt on
+   the same ledger is refused by the existing fresh-unit rule, so there is no second probe, retry or allowance.
+2. **Safe opt-in entrypoint** `docs/m3b1-evidence/scripts/f7_direct_cdf_binding.py`: functions only at import; the
+   target `tests.reference_marginal` is imported only inside `build_f7_target`, which only `--execute` reaches, after
+   every identity check passed and the new unit directory was created. `--help`, `--dry-run` and every refusal import
+   no F7 target, model library or sampler and evaluate nothing; a dry-run creates no directory, neither acquires nor
+   writes a ledger, and reports the inventory (45 stages, 12,038,157 planned under 12,050,000 points / 720 s, batch
+   32,768), the observed protocol and implementation hashes, the model identity of both saved backend records, the git
+   state and the actual runtime environment. The options are exactly `--protocol --log-dir --approval --unit-dir
+   --attempt` and `--dry-run | --execute`; there is no allow-dirty, override, takeover or retry option and no default
+   approval path. The stored-MCMC comparison stays empty for a separate scientific review.
+3. **Logging**: the binding writes its own log (argv, checks, head, hashes, environment, phase, real exit code) to an
+   existing `--log-dir` outside any unit on every invocation, so refusals and dry-runs are recorded even though no
+   unit directory exists; `run_logged.py` now creates its log parent, records cwd and child pid, and keeps only
+   command, times and return code; the binding never imports it. Provenance also lives in `binding_record.json` and
+   `result.json["binding"]` inside a created unit.
+4. **Environment**: the approval must carry an `expected_environment` (Python version and implementation, system,
+   machine, NumPy, SciPy, BLAS, LAPACK, executable) equal to what the process observes; `uv.lock` pins declarations,
+   not installed packages, and is not treated as such. Observed on this machine at implementation (an observation,
+   not an approval): Python 3.11.0, arm64 macOS, NumPy 2.4.6, SciPy 1.17.1, Accelerate BLAS/LAPACK.
+5. **Atomic new unit, complete identity**: `--execute` requires an approval JSON whose protocol id and SHA-256,
+   planned count, cap, allowance, batch, source pins (the protocol's seven files plus `tests/reference_direct_cdf.py`,
+   `tests/quadrature_budget.py`, `tests/reference_marginal.py` and the binding script itself), target constants
+   (generator seed 17, J 30, per 20, prior mean (0, 0), prior SD (5, 2), centred, unit HalfNormal scales), model
+   identity (formula, family, link, n, J, group, centring, non-centred parameterisation, priors, group effects, read
+   from both backend records), environment, git head and unit id/attempt all match, plus a clean checkout; then
+   `os.mkdir` creates the unit atomically, so an existing directory, ledger, restart or duplicate refuses. A failure
+   after creation (for example a target build error) consumes the unit. The expected implementation hashes are those
+   of this commit, recorded in `direct_cdf_v3r1_execution_identity.json` at the following checkpoint commit, not
+   cdeb477's helper hash.
+
+Checks (`docs/m3b1-evidence/direct_cdf_binding_checks.json`; launcher
+`artifacts/2026-09-13-autobayes-f7-binding-implementation/iqss-check-binding.py`, the same import blocker as before):
+**109 passed in 1.64 s**, exit 0, zero blocked target-import attempts, zero F7 evaluations. Direct-CDF helper: 37
+tests (4 new: the failed preflight stops after exactly one counted evaluation with the checkpoint surviving, the
+remaining conditions unchecked and a second attempt on the ledger refused; non-finite and malformed anchor values
+stop with one reservation, confirmed or kept uncertain as the controller records it; the tolerance boundary is
+inclusive; pure-assembly evidence that the original offset counterexample still fails on the anchor condition alone
+with identical ratios; and the shifted-target run updated to stop after one evaluation). Binding: 33 tests (source
+guards for the lazy import and the option inventory; help, toy dry-run and the real v3r1 dry-run with no target
+access and nothing created; 21 refusal faults that create nothing and evaluate nothing; a real-process refusal; a stub
+execution on a tiny synthetic protocol writing the unit files with exact accounting and an empty comparison; a
+shifted stub consuming the unit after one evaluation with the re-run refused; target-build failure; interruption
+accounting; wrapper exit codes). Budget guard 32 and driver assembly 7, unchanged. Test approval-like data are
+synthetic, generated under the test's temporary directory and routed to stub evaluators only. No F7 import, data
+generation through the target, evaluation, old driver, sampling, dependency or authorisation change occurred. The
+original F7 recovery stays FAILED; PR #8 stays open for independent review; no real run follows automatically.

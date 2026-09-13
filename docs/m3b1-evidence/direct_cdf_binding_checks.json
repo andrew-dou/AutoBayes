@@ -1,0 +1,10 @@
+{
+  "command": ".venv/bin/python /Users/andrewdou/iqss-research/artifacts/2026-09-13-autobayes-f7-binding-implementation/iqss-check-binding.py (pytest.main --noconftest -p no:cacheprovider -q tests/test_reference_direct_cdf.py tests/test_quadrature_budget.py tests/test_marginal_driver_assembly.py tests/test_f7_direct_cdf_binding.py)",
+  "exit_code": 0,
+  "seconds": 1.699,
+  "summary_line": "109 passed in 1.64s",
+  "blocked_target_import_attempts": [],
+  "F7_target_imported": false,
+  "actual_F7_evaluations": 0,
+  "scope": "analytic/stub/guard tests only under an import blocker; no F7 target import, data generation, evaluation, old driver or sampling"
+}
