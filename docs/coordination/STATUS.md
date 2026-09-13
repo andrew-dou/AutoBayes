@@ -805,3 +805,17 @@ no speedup is claimed.
   artifacts dir); CLI dry-run on clean head 62cf3f6: 45 stages, 12,038,157 planned, identity true, nothing created;
   execute without approval refused. Nothing executed; F7 FAILED; exhausted ledger untouched; PR8 OPEN. Next:
   independent review of the repair; a real run needs a separately written approval.
+- **F7 binding: setup-failure assembly time and execution-readiness proposal (2026-09-13, code and stub checks
+  only):** the repair review verified B1/B2 fixed and found one residual: the setup-failure branch released the
+  evaluator before assembly (7 s setup + 100 s assembly reported 7 s). Corrected in
+  `docs/m3b1-evidence/scripts/f7_direct_cdf_binding.py` (assemble under the active guard, release in finally, final
+  frozen budget re-validated; cleanup and consumed unit preserved when assembly raises). Blocked-import checks
+  **117 passed**, exit 0, zero target access (`direct_cdf_binding_checks.json`); reviewer's residual case re-run:
+  107 s recorded, exit 3 (`setup_failure_assembly_time_after_repair.json` in the artifacts dir). CLI dry-run on clean
+  head 156dfa8: 45 stages, 12,038,157 planned under 12,050,000 / 720 s, identity true, nothing created; execute
+  without approval refused; identity refreshed (`direct_cdf_v3r1_execution_identity.json`). UNAPPROVED
+  execution-readiness proposal `direct_cdf_v3r1_execution_readiness_proposal.json` (candidate head 156dfa8,
+  canonical unit `docs/m3b1-evidence/f7-direct-cdf-v3r1-unit-1`, attempt `v3r1-unit-1-attempt-1`, argv, one unit,
+  zero retries, question table, limitations). Nothing executed; F7 FAILED; exhausted ledger untouched; PR8 OPEN.
+  Remaining prerequisite: independent review of this head with green hosted checks and a reviewer-written approval
+  outside the repository.

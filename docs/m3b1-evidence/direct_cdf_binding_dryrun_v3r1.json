@@ -7,9 +7,9 @@
   "/Users/andrewdou/iqss-research/artifacts/2026-09-13-autobayes-f7-binding-implementation/binding-logs",
   "--dry-run"
  ],
- "started": "2026-09-13T13:49:08.457023+00:00",
+ "started": "2026-09-13T13:59:41.799438+00:00",
  "repo": "/Users/andrewdou/iqss-research/projects/AutoBayes-worktrees/m3b1-varying-slope",
- "pid": 42029,
+ "pid": 42935,
  "refusal": null,
  "failure": null,
  "phase": "checking",
@@ -37,10 +37,10 @@
   "tests/reference_direct_cdf.py": "dc2aa754432afd4a038e13925066a50b0c7e51273c566f32c3730cba2da71216",
   "tests/quadrature_budget.py": "6a716e188029d7d50dbfba274ee91d5f5c171cf42a0046dd67a512033f92f515",
   "tests/reference_marginal.py": "b185e26baf49697f38e258cf24825b8d9e43e7991af9a8774dc470cea7dbc0dc",
-  "docs/m3b1-evidence/scripts/f7_direct_cdf_binding.py": "35e5deb072886c640181d587a59a12078661178aecb97a00895d2f3ce56ed20f"
+  "docs/m3b1-evidence/scripts/f7_direct_cdf_binding.py": "ea586dfd2180cc6516beceb1438223d9735ed7849938d7e8f35fcb84b6391876"
  },
  "git": {
-  "head": "62cf3f6087b34f766ddbf4e5a693d218e2a23296",
+  "head": "156dfa8b3dde372141b9ae1be01c2969b4485f89",
   "dirty": false,
   "status": ""
  },
@@ -184,6 +184,6 @@
   "git_clean"
  ],
  "would_execute": false,
- "finished": "2026-09-13T13:49:08.751255+00:00",
+ "finished": "2026-09-13T13:59:42.132352+00:00",
  "exit_code": 0
 }

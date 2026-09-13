@@ -1,0 +1,237 @@
+{
+ "proposal_id": "f7-direct-cdf-v3r1-execution-readiness-proposal-2026-09-13",
+ "status": "UNAPPROVED PROPOSAL. Not an approval, not runnable as one: approves_execution is false and the approval schema is deliberately incomplete. No numerical run is authorised by this file.",
+ "approves_execution": false,
+ "candidate_head": "156dfa8b3dde372141b9ae1be01c2969b4485f89",
+ "candidate_head_note": "the exact reviewed code head for one bounded run; the approval's git_head must equal it and the checkout must be clean",
+ "identity": {
+  "protocol": {
+   "path": "docs/m3b1-evidence/direct_cdf_v3r1_protocol.json",
+   "sha256": "7143626a834c0e35b4fcdbef8adb34b5a351997d46c438dfb437257d58324182",
+   "protocol_id": "f7-direct-cdf-crossed-grid-v3r1-proposal",
+   "introduced_in": "4d6ee8db39ff77f0956da67b7e61c636744d86e8",
+   "commits_touching_file": 1,
+   "bytes_unchanged_since_introduction": true,
+   "base_head_named_inside_file": "6b7ebbe90ae686a6fea06a417273e667a99d07db",
+   "provenance_note": "introduced_in is the verified revision that added this file (git log --diff-filter=A); the file's own base_head field names the helper revision it was written against and predates the file",
+   "stages": 45,
+   "planned_evaluations": 12038157,
+   "cap_evaluations": 12050000,
+   "unit_deadline_seconds": 720,
+   "max_batch_points": 32768,
+   "first_stage": "anchor:reference",
+   "automatic_retries": 0
+  },
+  "protocol_source_sha256": {
+   "tests/reference_marginal.py": "b185e26baf49697f38e258cf24825b8d9e43e7991af9a8774dc470cea7dbc0dc",
+   "tests/test_marginal_reference.py": "2b3dfa3e0151f1ddf1a7652e595fb0cc8f0914a4c531b96d6903722052781231",
+   "tests/quadrature_budget.py": "6a716e188029d7d50dbfba274ee91d5f5c171cf42a0046dd67a512033f92f515",
+   "docs/m3b1-evidence/F7_marginal_reference.json": "532017f2a0ec7a524657ed62e2e0d385072443b1341d03055b22e3412e444f24",
+   "docs/m3b1-evidence/F7_varying_slope_recovery_records.json": "72bec95cff15f168b2fa93dd0564400a368687785518e523dd3b00342e17a0f0",
+   "uv.lock": "e7c971d50ca835c42c0de9cc8ee05a3a9eabb86f50f2977b7790552f3a0fda08",
+   "pyproject.toml": "6386afef8d8fb6dacec8f8edddc6bde754f1cf8eb14f2375a29487ca33f8e3b4"
+  },
+  "implementation_sha256": {
+   "tests/reference_direct_cdf.py": "dc2aa754432afd4a038e13925066a50b0c7e51273c566f32c3730cba2da71216",
+   "tests/quadrature_budget.py": "6a716e188029d7d50dbfba274ee91d5f5c171cf42a0046dd67a512033f92f515",
+   "tests/reference_marginal.py": "b185e26baf49697f38e258cf24825b8d9e43e7991af9a8774dc470cea7dbc0dc",
+   "docs/m3b1-evidence/scripts/f7_direct_cdf_binding.py": "ea586dfd2180cc6516beceb1438223d9735ed7849938d7e8f35fcb84b6391876"
+  },
+  "target": {
+   "callable": "tests.reference_marginal.GaussianSlopeMarginal.log_posterior_theta",
+   "generator": "tests.reference_marginal.f7_data",
+   "seed": 17,
+   "J": 30,
+   "per": 20,
+   "prior_mean": [
+    0.0,
+    0.0
+   ],
+   "prior_sd": [
+    5.0,
+    2.0
+   ],
+   "center": true,
+   "prior_scales": [
+    1.0,
+    1.0,
+    1.0
+   ],
+   "theta": "(log sd0, log sd1, log sigma); HalfNormal(1) priors on the natural scales and the three log-scale Jacobians included"
+  },
+  "model_identity": {
+   "formula": "y ~ x + (1 + x || g)",
+   "canonical_formula": "y ~ x + (1 + x || g)",
+   "family": "gaussian",
+   "link": "identity",
+   "n": 600,
+   "J": 30,
+   "group": "g",
+   "center_predictors": true,
+   "noncentered": true,
+   "varying_slope": "x",
+   "group_effects": [
+    "Intercept",
+    "x"
+   ],
+   "priors": {
+    "intercept": "Normal(mu=0, sigma=5)",
+    "b:x": "Normal(mu=0, sigma=2)",
+    "sd:Intercept": "HalfNormal(sigma=1)",
+    "sd:x": "HalfNormal(sigma=1)",
+    "sigma": "HalfNormal(sigma=1)"
+   }
+  },
+  "records_model_identity_check": {
+   "ok": true,
+   "detail": "both saved backend records match the binding's model identity"
+  },
+  "runtime_environment_observed": {
+   "python_version": "3.11.0",
+   "python_implementation": "CPython",
+   "system": "Darwin",
+   "machine": "arm64",
+   "numpy_version": "2.4.6",
+   "scipy_version": "1.17.1",
+   "blas": "accelerate",
+   "lapack": "accelerate",
+   "executable": "/Users/andrewdou/iqss-research/projects/AutoBayes-worktrees/m3b1-varying-slope/.venv/bin/python"
+  },
+  "runtime_note": "the approval's expected_environment must equal what the executing process observes (versions and BLAS/LAPACK names, not binary identity); uv.lock pins declarations only"
+ },
+ "unit": {
+  "unit_dir_canonical": "/Users/andrewdou/iqss-research/projects/AutoBayes-worktrees/m3b1-varying-slope/docs/m3b1-evidence/f7-direct-cdf-v3r1-unit-1",
+  "attempt": "v3r1-unit-1-attempt-1",
+  "ledger": "/Users/andrewdou/iqss-research/projects/AutoBayes-worktrees/m3b1-varying-slope/docs/m3b1-evidence/f7-direct-cdf-v3r1-unit-1/ledger.json (new; created by --execute)",
+  "outputs": [
+   "/Users/andrewdou/iqss-research/projects/AutoBayes-worktrees/m3b1-varying-slope/docs/m3b1-evidence/f7-direct-cdf-v3r1-unit-1/binding_record.json",
+   "/Users/andrewdou/iqss-research/projects/AutoBayes-worktrees/m3b1-varying-slope/docs/m3b1-evidence/f7-direct-cdf-v3r1-unit-1/partial.json (rewritten after every completed stage)",
+   "/Users/andrewdou/iqss-research/projects/AutoBayes-worktrees/m3b1-varying-slope/docs/m3b1-evidence/f7-direct-cdf-v3r1-unit-1/result.json",
+   "/Users/andrewdou/iqss-research/projects/AutoBayes-worktrees/m3b1-varying-slope/docs/m3b1-evidence/f7-direct-cdf-v3r1-unit-1/summary.txt"
+  ],
+  "log_dir": "/Users/andrewdou/iqss-research/artifacts/<run-date>-autobayes-f7-direct-cdf-unit-1/binding-logs (must exist before the run; outside the unit)",
+  "wrapper_log": "/Users/andrewdou/iqss-research/artifacts/<run-date>-autobayes-f7-direct-cdf-unit-1/run_logged.json",
+  "reviewed_approval_location": "/Users/andrewdou/iqss-research/artifacts/<run-date>-autobayes-f7-direct-cdf-unit-1/approval.json (outside the repository; never committed; written by the reviewer, not generated)",
+  "planned_evaluations": 12038157,
+  "stages": 45,
+  "cap_evaluations": 12050000,
+  "unit_deadline_seconds": 720,
+  "max_batch_points": 32768,
+  "retries": 0,
+  "one_unit": "one unit, one attempt, no retry, no takeover, no second allowance; an existing directory, ledger or alias refuses; the exhausted F7_marginal_reference_ledger.json is never opened or reset"
+ },
+ "argv": {
+  "cwd": "/Users/andrewdou/iqss-research/projects/AutoBayes-worktrees/m3b1-varying-slope",
+  "dry_run_first": [
+   ".venv/bin/python",
+   "docs/m3b1-evidence/scripts/f7_direct_cdf_binding.py",
+   "--protocol",
+   "docs/m3b1-evidence/direct_cdf_v3r1_protocol.json",
+   "--log-dir",
+   "/Users/andrewdou/iqss-research/artifacts/<run-date>-autobayes-f7-direct-cdf-unit-1/binding-logs",
+   "--approval",
+   "/Users/andrewdou/iqss-research/artifacts/<run-date>-autobayes-f7-direct-cdf-unit-1/approval.json",
+   "--unit-dir",
+   "docs/m3b1-evidence/f7-direct-cdf-v3r1-unit-1",
+   "--attempt",
+   "v3r1-unit-1-attempt-1",
+   "--dry-run"
+  ],
+  "execute": [
+   ".venv/bin/python",
+   "docs/m3b1-evidence/scripts/run_logged.py",
+   "/Users/andrewdou/iqss-research/artifacts/<run-date>-autobayes-f7-direct-cdf-unit-1/run_logged.json",
+   "--",
+   ".venv/bin/python",
+   "docs/m3b1-evidence/scripts/f7_direct_cdf_binding.py",
+   "--protocol",
+   "docs/m3b1-evidence/direct_cdf_v3r1_protocol.json",
+   "--log-dir",
+   "/Users/andrewdou/iqss-research/artifacts/<run-date>-autobayes-f7-direct-cdf-unit-1/binding-logs",
+   "--approval",
+   "/Users/andrewdou/iqss-research/artifacts/<run-date>-autobayes-f7-direct-cdf-unit-1/approval.json",
+   "--unit-dir",
+   "docs/m3b1-evidence/f7-direct-cdf-v3r1-unit-1",
+   "--attempt",
+   "v3r1-unit-1-attempt-1",
+   "--execute"
+  ],
+  "argv_note": "the dry-run must report would_execute true with no failed or unperformed checks before the execute command is considered"
+ },
+ "diagnostic_questions": [
+  {
+   "id": "Q1",
+   "question": "Is the injected evaluator consistent with the saved reference at the unprojected anchor?",
+   "measure": "one counted evaluation; abs(ell(anchor) - (-407.0263603952741))",
+   "limit": "<= 1e-6 (fail -> stop after this one evaluation, exit 3)",
+   "result": "not run (UNAPPROVED)"
+  },
+  {
+   "id": "Q2",
+   "question": "Do the two rules agree within each box?",
+   "measure": "|d logZ|, |d mean_k| (k=1,2,3), |d CDF_i| (i=1..7) between [48,96,48] and [64,128,64] on B0 and on B1",
+   "limit": "logZ 1e-4, means 1e-4, CDF 1e-3",
+   "result": "not run (UNAPPROVED)"
+  },
+  {
+   "id": "Q3",
+   "question": "Do the two nested domains agree per rule?",
+   "measure": "the same differences between B0 and B1 for each rule",
+   "limit": "logZ 1e-4, means 1e-4, CDF 1e-3",
+   "result": "not run (UNAPPROVED)"
+  },
+  {
+   "id": "Q4",
+   "question": "Is the sampled log density on every box face far below the reference?",
+   "measure": "12 faces x (96^2 + projected anchor) samples; deficit = max ell - reference",
+   "limit": "<= -25 on every face (a sample, not a bound)",
+   "result": "not run (UNAPPROVED)"
+  },
+  {
+   "id": "Q5",
+   "question": "Are the truncated-box CDF ratios finite and in [0, 1] without clipping?",
+   "measure": "exp(logZ_truncated - logZ_full) for 7 points x 2 boxes x 2 rules",
+   "limit": "ratio <= 1 else fail closed",
+   "result": "not run (UNAPPROVED)"
+  },
+  {
+   "id": "Q6",
+   "question": "Where do the population slope SD 0.30 and the six stored MCMC means sit in the deterministic truncated-box CDFs, and what are the three deterministic scale means?",
+   "measure": "reported values from the B1 [64,128,64] run, cross-checked by Q2/Q3",
+   "limit": "reported, not gated",
+   "result": "not run (UNAPPROVED)"
+  },
+  {
+   "id": "Q7",
+   "question": "Do the stored F7 MCMC means lie within 4 stored MCSE plus crossed quadrature error of the deterministic means?",
+   "measure": "separate reviewed comparison step reading result.json and the records; result.json['comparison'] stays empty in the run",
+   "limit": "diagnostic only",
+   "result": "not part of the run"
+  },
+  {
+   "id": "Q8",
+   "question": "Rigorous tail-mass or total-error bound; original F7 calibration or coverage; MCMC convergence; acceptance of the original F7 gate",
+   "measure": "none",
+   "limit": "not answerable by this protocol",
+   "result": "not answerable"
+  }
+ ],
+ "acceptance": "exit 0 (diagnostics_passed) requires every Q1-Q5 condition true on a valid run: exact count 12,038,157 requested and confirmed, no unconfirmed reservation, within cap and allowance, not stopped; anything else is inconclusive (exit 3 or 4) with no retry",
+ "limitations": [
+  "non-preemptible granularity: target setup and each batch (<= 32,768 points) run to completion; an overrun of the 720 s allowance is counted and stops the unit afterwards, it is not prevented; the same holds for output assembly time",
+  "throughput unestimated here: the only saved figures are the old driver's 1,738,745 evaluations in 38.5 s and 2,289,209 in 52 s on this machine; if the allowance runs out the unit ends inconclusive with no retry or second allowance",
+  "environment identity is by versions and BLAS/LAPACK names, not binary identity; the 1e-6 anchor tolerance presumes the reviewed machine and venv",
+  "face maxima are finite samples, not bounds on omitted mass; crossed agreement is a diagnostic, not a certified error bound; cdf_range fails closed on a ratio above 1",
+  "a matching MCMC mean would not establish sampler convergence, fixed-truth coverage or SBC; the original F7 recovery stays FAILED regardless of the outcome"
+ ],
+ "prerequisites_for_one_bounded_run": [
+  "independent review of the candidate head's final correction and green hosted checks on that exact head",
+  "a reviewer-written approval JSON outside the repository with approves_execution true, canonical unit_dir and attempt as above, protocol id/sha, planned/cap/allowance/batch, source and implementation pins, target and model identity, expected_environment equal to the dry-run's observation, and git_head equal to the candidate head",
+  "a clean checkout at the candidate head, the log directory created, and a dry-run reporting would_execute true"
+ ],
+ "excluded": [
+  "no historical numerical unit is accepted or its ledger reset",
+  "no numerical-protocol redesign without a new specific scientific defect",
+  "no automatic execution; this file authorises nothing"
+ ]
+}
