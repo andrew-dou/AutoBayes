@@ -1,26 +1,49 @@
 {
  "cap_evaluations": 2000000,
- "completed_total": 4125554,
- "attempted_total": 4125554,
+ "unit_deadline_seconds": 900.0,
+ "version": 3,
+ "requested_total": 4125558,
+ "reserved_uncertain_total": 0,
+ "confirmed_completed_total": 4125558,
+ "seconds_confirmed_total": 92.2,
+ "seconds_reserved_uncertain_total": 0.0,
+ "owner": null,
+ "released": true,
  "attempts": {
   "attempt1_2026-09-13T02:54:50Z": {
-   "completed": 2289209,
-   "attempted": 2289209,
+   "requested": 2289211,
+   "reserved_uncertain": 0,
+   "confirmed": 2289211,
+   "seconds_confirmed": 52.0,
+   "seconds_reserved_uncertain": 0.0,
    "refused_batches": 0,
-   "stopped": "old driver: counter checked AFTER computing the whole batch; raised at 2,289,209 (cap 2,000,000 already exceeded); no result written"
+   "stopped": "old driver: counter checked AFTER computing the whole batch; raised at 2,289,209 (cap 2,000,000 already exceeded); no result written. +2 uncounted dense/low-rank diagnostic calls at the mode (historical convention excluded them)",
+   "deadline_overrun_seconds": 0.0,
+   "failed_reservations": []
   },
   "attempt2_2026-09-13T02:56:19Z": {
-   "completed": 1738745,
-   "attempted": 1738745,
+   "requested": 1738747,
+   "reserved_uncertain": 0,
+   "confirmed": 1738747,
+   "seconds_confirmed": 38.5,
+   "seconds_reserved_uncertain": 0.0,
    "refused_batches": 0,
-   "stopped": "old driver: counter RESET at process start; completed; wrote F7_marginal_reference.json/.txt"
+   "stopped": "old driver: counter RESET at process start; completed; wrote F7_marginal_reference.json/.txt. +2 uncounted diagnostic calls",
+   "deadline_overrun_seconds": 0.0,
+   "failed_reservations": []
   },
   "tail_addendum_2026-09-13T02:57Z": {
-   "completed": 97600,
-   "attempted": 97600,
+   "requested": 97600,
+   "reserved_uncertain": 0,
+   "confirmed": 97600,
+   "seconds_confirmed": 2.2,
+   "seconds_reserved_uncertain": 0.0,
    "refused_batches": 0,
-   "stopped": "f7_marginal_tail.py (no budget check at all); completed; wrote F7_marginal_tail.txt"
+   "stopped": "f7_marginal_tail.py (no budget check at all); completed; wrote F7_marginal_tail.txt",
+   "deadline_overrun_seconds": 0.0,
+   "failed_reservations": []
   }
  },
- "note": "Unit cap 2,000,000 evaluations total. Cumulative completed 4,125,554 (206 % of the cap). Any further run under this cap must be refused; a new cap needs a new authorization and a new ledger."
+ "count_convention": "one evaluation = one log_posterior_theta point (batched low-rank algebra). The historical driver counter reported 4,125,554; the four dense/low-rank diagnostic calls at the mode (two per full driver run) were outside it and are counted here as one each (4,125,558). The historical raw outputs keep their own counts.",
+ "note": "Unit cap 2,000,000 evaluations and 900 s total. Cumulative confirmed 4,125,558 (206.3 % of the cap), 92.7 s. Any further run under this cap/deadline is refused before evaluating anything; a new cap needs a new written authorisation and a new ledger."
 }

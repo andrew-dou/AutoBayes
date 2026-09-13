@@ -98,10 +98,22 @@
   codes, the ledger seeded with the 4,125,554 spent evaluations so any rerun is refused. A scoped completion
   proposal (about 1.0 million evaluations, new authorisation required) is in the record. Checks in this unit:
   targeted deterministic modules 39 passed (exit 0); controller tests 5 passed (exit 0); no fast-suite rerun.
+- **Second budget-guard review (2026-09-13, `memory/reviews/2026-09-13-autobayes-budget-guard-independent-review.md`),
+  repaired in code only, nothing run:** reservations persisted before work and never refunded (a raising or crashing
+  batch stays counted; requested / reserved-uncertain / confirmed distinct; explicit ownership with recorded takeovers;
+  stale writes refused); one unit deadline in the ledger with cumulative measured time, conservative estimates for
+  unconfirmed batches, expired retries refused, post-batch overrun recorded (granularity one batch); fail-closed
+  acceptance against an explicit complete inventory (omitted/unchecked/false/NumPy-false/malformed/unexpected all
+  block); driver restructured (guarded main, attempt name no longer shadowed, the two diagnostic marginal calls
+  charged, full inventory of six faces and 14 CDF conditions always present, stub-tested assembly for complete,
+  unmet-face, stopped and exhausted paths); tail reporter reports ledger cumulative counts; historical spend
+  restated as 4,125,558 under the new convention (raw outputs keep 4,125,554). Fake/stub tests 36 passed (exit 0);
+  the coordinator's reproduction now stops at the cap, refuses the expired retry and rejects the malformed
+  acceptance inputs. Reference still incomplete/exploratory; F7 FAILED; PR open. Commit `{HG}`.
 - PR: https://github.com/andrew-dou/AutoBayes/pull/8 (base `main`, author andrew-dou). Record `8307a90`; implementation `9b15865`;
   reviewed head `8907113` (request changes); repair record `4a8ea4f`; repair `d572df8`; second-review checkpoint `24eefec`;
-  protocol/reference `f596d7b`; cap-overrun correction `d2e8899`; this STATUS checkpoint follows it (CI runs recorded in the PR
-  comment and the final report). Left open for independent
+  protocol/reference `f596d7b`; cap-overrun correction `d2e8899` (checkpoint `fe78c3d`); budget-guard repair `{HG}`; this
+  STATUS checkpoint follows it (CI runs recorded in the PR comment and the final report). Left open for independent
   review with the F7 gate failure reported, not merged by this session; the M3b-1 worktree is kept until
   that review passes. Next approved increment after acceptance: correlated varying slopes (LKJ), separate PR.
 

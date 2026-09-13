@@ -14,7 +14,7 @@ y, x, g = f7_data(); ref = GaussianSlopeMarginal(y, x, g, prior_mean=(0.0, 0.0),
 B8 = np.array(res["box8"]); logZ = res["levels"][-1]["logZ"]; ell_star = res["log_posterior_at_mode"]
 lo = B8[1, 0]
 t0 = time.perf_counter(); evals = 0
-evaluator = BudgetedEvaluator(lambda th: ref.log_posterior_theta(th), cap_evaluations=2_000_000, deadline_seconds=900, ledger_path=sys.argv[3], attempt=sys.argv[4])
+evaluator = BudgetedEvaluator(lambda th: ref.log_posterior_theta(th), cap_evaluations=2_000_000, unit_deadline_seconds=900, ledger_path=sys.argv[3], attempt=sys.argv[4])
 
 
 def gl(n, a, b):
@@ -32,7 +32,8 @@ for th1 in ext:
 logm = np.array(logm)
 mass_below = np.exp(logsumexp(np.log(np.gradient(ext)) + logm)) / np.exp(logZ)   # trapezoid-like on the extension
 slope = np.gradient(logm, ext)
-lines = [f"tail addendum: {evals} evaluations in {time.perf_counter() - t0:.1f} s; total with the main run {res['evaluations'] + evals} (cap {res['caps']['evaluations']})",
+p = evaluator.progress("done")
+lines = [f"tail addendum: {evals} evaluations this run in {time.perf_counter() - t0:.1f} s; ledger cumulative requested {p['requested']}, reserved-uncertain {p['reserved_uncertain']}, confirmed {p['confirmed']} (unit cap {evaluator.cap})",
          f"lower face of log x|g_sigma at theta = {lo:.4f} (sd1 = {np.exp(lo):.5f}); face value ell - ell* = {res['face_max_ell_minus_ellstar']['x|g_sigma:lo']:.2f}",
          f"marginal log density on the extension: at the face {logm[-1] - logZ:.3f}, at theta = lo - 3 {logm[30] - logZ:.3f}, at lo - 6 {logm[0] - logZ:.3f}; d/dtheta near the face {slope[-3:].mean():.3f} (Jacobian-dominated, ~1)",
          f"relative posterior mass of x|g_sigma below the face: {mass_below:.3e}  (error targets were 1e-4 for means, 1e-3 for CDFs)"]

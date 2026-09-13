@@ -6,7 +6,10 @@ and reset the counter at every process start; the tail script had no budget chec
   attempt 1  2026-09-13T02:54:50Z  f7_marginal_reference.py  2,289,209 evaluations (52 s)  raised after the overrun; no output written
   attempt 2  2026-09-13T02:56:19Z  f7_marginal_reference.py  1,738,745 evaluations (38 s)  wrote F7_marginal_reference.json / .txt
   addendum   2026-09-13T02:57Z     f7_marginal_tail.py          97,600 evaluations (2 s)  wrote F7_marginal_tail.txt
-  cumulative                                                  4,125,554 evaluations = 206 % of the unit cap
+  cumulative (historical counter)                             4,125,554 evaluations = 206 % of the unit cap
+  + 4 dense/low-rank diagnostic marginal calls at the mode (two per full driver run, attempts 1 and 2), which the
+    historical counter did not include; under the ledger convention (one evaluation per log-posterior point, and one
+    per diagnostic call) the cumulative count is 4,125,558. The raw historical outputs keep their own counts.
 The unit cap was exceeded, first inside attempt 1 (the check came after the computation) and then again by attempts 2
 and the addendum, which treated the cap as a per-retry allowance. Both wrapper shell commands mis-reported exit codes
 (grep's status after a pipe; an empty zsh pipestatus), so attempt 1's Python traceback was summarised as "exit 0".
@@ -34,8 +37,31 @@ original F7 recovery remains FAILED and PR #8 remains open.
 Prospective repair (code only, not run): tests/quadrature_budget.py (cumulative ledger persisted across retries and
 never reset; remaining budget checked before every batch; batches never larger than the remainder; completed and
 attempted counts distinct; wall deadline; partial checkpoints; stop on an exhausted cap), tests/test_quadrature_budget.py
-(fake evaluator, no density evaluation: 4 passed), the driver refactored onto the controller with acceptance requiring
+(fake evaluator, no density evaluation), the driver refactored onto the controller with acceptance requiring
 every condition and reporting missing ones, scripts/run_logged.py capturing the real return code. The ledger
-F7_marginal_reference_ledger.json is seeded with the 4,125,554 completed evaluations, so any run under the same cap is
+F7_marginal_reference_ledger.json is seeded with the 4,125,558 confirmed evaluations, so any run under the same cap is
 refused before evaluating anything. Completing the reference needs a new written authorisation (proposal in
 docs/m3b1-decision.md).
+
+Second independent review (2026-09-13, memory/reviews/2026-09-13-autobayes-budget-guard-independent-review.md; fake-only
+reproduction artifacts/2026-09-13-autobayes-budget-guard-independent/review.py): five defects in the first controller and
+driver, all repaired in code only, verified with fake evaluators and stubs (no density evaluation, no driver run):
+  1. a batch that raised after consuming work was not counted and a retry re-spent it -> every batch is RESERVED in the
+     ledger before work and moved to confirmed only after it returns; an unconfirmed reservation stays counted for ever
+     (requested / reserved-uncertain / confirmed kept distinct); the coordinator's reproduction now stops at 10 = cap;
+  2. the deadline reset per constructor -> one unit deadline lives in the ledger; measured batch time is accumulated
+     across attempts and an unconfirmed batch keeps its conservative time estimate; an expired retry is refused at
+     construction; the deadline is also checked after the last batch and an overrun (bounded by one batch) is recorded;
+  3. acceptance_report accepted an empty dictionary, an incomplete all-true dictionary and numpy.bool_(False) -> it now
+     requires an explicit complete inventory of prespecified names and reports omitted, unchecked, failed (Python or
+     NumPy false), malformed (numbers incl. NaN/inf, strings, lists) and unexpected entries, each blocking acceptance;
+     the driver's inventory always carries all six faces and every reference point x {resolution, domain} CDF condition;
+  4. the driver's face-expansion loop overwrote the attempt name with an integer and the output then indexed the ledger
+     with it -> loop variable renamed; the driver split into numerical stages and a pure assemble_output that is
+     unit-tested with stubs for the complete, unmet-face, stopped-after-faces and exhausted-during-CDF paths;
+  5. the two dense/low-rank diagnostic calls at the mode bypassed the counter -> charged through the controller (one
+     each); the tail reporter, which printed "total with the main run" from the last attempt only, now reports the
+     ledger's cumulative requested/reserved/confirmed counts. Ledger ownership is explicit (a second live owner is
+     rejected unless a takeover is declared and recorded) and stale writes are refused by version.
+Targeted tests after the repair (fake/stub only): tests/test_quadrature_budget.py 9, tests/test_marginal_driver_assembly.py 6,
+tests/test_marginal_reference.py 4, tests/test_varying_slope_combined.py 17 -> 36 passed, pytest exit 0.

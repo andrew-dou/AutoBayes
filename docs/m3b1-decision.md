@@ -345,3 +345,22 @@ three scales with 81-point fine grids under a resolution variant (48 nodes) and 
 $B(10)$) separately (about 950,000 evaluations), reusing the saved attempt-2 marginals as the base. It would run
 only through the ledger-based controller with a fresh cap and ledger named in the authorisation, with
 `run_logged.py`, and would report every condition. Its outcome would bear on computation only.
+
+### Second budget-guard review and repair (2026-09-13; code and bookkeeping only, nothing run)
+
+The independent fake-only reproduction (`artifacts/2026-09-13-autobayes-budget-guard-independent/`) found that the
+first controller did not reserve work before doing it (a batch that raised was refunded and a retry re-spent it),
+reset its deadline per constructor, accepted empty, incomplete and NumPy-false condition dictionaries, and that the
+driver shadowed the attempt name with an integer loop index and left two diagnostic marginal calls uncounted. All
+five are repaired: reservations persisted before work and never refunded (requested / reserved-uncertain /
+confirmed kept distinct; a crash leaves its reservation counted; a second live owner needs an explicit, recorded
+takeover; stale writes are refused by version); one unit deadline carried in the ledger with measured batch time
+accumulated across attempts, unconfirmed batches keeping a conservative estimate, expired retries refused at
+construction, and a post-batch check that records an overrun bounded by one batch; fail-closed acceptance against
+an explicit complete inventory (omitted, unchecked, false, NumPy false, malformed and unexpected entries all
+block); the driver restructured with a guarded `main`, counted diagnostic calls, the full condition inventory
+always present, and a stub-tested output assembly; the tail reporter reporting the ledger's cumulative counts.
+Count convention: one evaluation per log-posterior point plus one per diagnostic call, so the historical spend is
+4,125,558 (the raw outputs keep the old counter's 4,125,554). Status unchanged: the reference is
+**incomplete/exploratory**, F7 **FAILED**, PR #8 open; the completion proposal above stands (its budget now includes
+the two diagnostic charges) and is not executed.
