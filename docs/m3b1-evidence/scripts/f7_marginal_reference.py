@@ -24,7 +24,7 @@ from scipy import optimize
 from scipy.special import logsumexp
 
 sys.path.insert(0, ".")
-from tests.quadrature_budget import BudgetExhausted, BudgetedEvaluator, acceptance_report   # noqa: E402
+from tests.quadrature_budget import BudgetExhausted, BudgetedEvaluator, acceptance_report, run_is_valid   # noqa: E402
 
 CAP_EVALS, CAP_SECONDS = 2_000_000, 15 * 60
 NAMES = ["1|g_sigma", "x|g_sigma", "sigma"]
@@ -76,10 +76,14 @@ def compute_stages(ref, evaluator, records, stages: dict) -> dict:
                 ea, eb = np.eye(3)[a] * h, np.eye(3)[b] * h
                 H[a, b] = -(ell(theta_star + ea + eb)[0] - ell(theta_star + ea - eb)[0] - ell(theta_star - ea + eb)[0] + ell(theta_star - ea - eb)[0]) / (4 * h * h)
         scales = np.sqrt(np.diag(np.linalg.inv(H)))
-        evaluator.charge(2, "dense and low-rank diagnostic marginal at the mode"); t0 = time.perf_counter()
-        dense_at_mode = ref.dense_log_marginal(*np.exp(theta_star))
-        lowrank_at_mode = float(ref.log_marginal(*[np.array([v]) for v in np.exp(theta_star)])[0])
-        evaluator.confirm_charge(2, time.perf_counter() - t0)
+        rid = evaluator.charge(2, "dense and low-rank diagnostic marginal at the mode"); t0 = evaluator.clock()
+        try:
+            dense_at_mode = ref.dense_log_marginal(*np.exp(theta_star))
+            lowrank_at_mode = float(ref.log_marginal(*[np.array([v]) for v in np.exp(theta_star)])[0])
+        except BaseException as e:
+            evaluator.fail_charge(rid, f"{type(e).__name__}: {e}", evaluator.clock() - t0)
+            raise
+        evaluator.confirm_charge(rid, 2, evaluator.clock() - t0)
         stages["mode"] = dict(theta_star=theta_star.tolist(), ell_star=float(ell_star), scales=scales.tolist(), lowrank_minus_dense=lowrank_at_mode - dense_at_mode)
 
         def box(c, extra):
@@ -194,7 +198,10 @@ def assemble_output(stages: dict, ledger_view: dict, records: dict, attempt: str
                     change = abs(cdf_at(alt, val) - cdf_points[f"{k}@{lab}"])
                     errors[f"cdf_stability:{k}@{lab}:{variant}"] = change
                     conditions[f"cdf_stability:{k}@{lab}:{variant}"] = bool(change <= TARGETS["cdf"])
-    acceptance = acceptance_report(conditions, required)
+    protocol = acceptance_report(conditions, required)
+    run = run_is_valid(ledger_view, stages.get("stopped"))
+    acceptance = {**protocol, "protocol_accepted": protocol["accepted"], "run_valid": run["valid"], "run_problems": run["problems"],
+                  "accepted": bool(protocol["accepted"] and run["valid"])}
     comparison = {}
     if acceptance["accepted"]:
         for be, rec in records.items():
@@ -211,9 +218,21 @@ def assemble_output(stages: dict, ledger_view: dict, records: dict, attempt: str
             "budget": ledger_view, "stopped": stages.get("stopped"), "mode": stages.get("mode"), "box8": stages.get("box8"), "box10": stages.get("box10"),
             "expansions": stages.get("expansions"), "face_max_ell_minus_ellstar": faces, "levels": levels, "expanded_B10_n64": expanded,
             "errors": errors, "cdf_points": cdf_points, "conditions": conditions, "required_conditions": required, "acceptance": acceptance,
-            "status": "complete" if acceptance["accepted"] else "incomplete: " + ", ".join(f"{k}={len(v)}" for k, v in acceptance.items() if isinstance(v, list) and v and k != "met"),
+            "status": "complete" if acceptance["accepted"] else "incomplete: " + "; ".join(
+                [f"{k}={len(v)}" for k, v in protocol.items() if isinstance(v, list) and v and k != "met"] + list(run["problems"])),
+            "exit_code": exit_code(acceptance),
             "comparison": comparison, "intervals": intervals,
             "marginals": {k: {kk: margs[k][kk] for kk in ("theta_grid", "density_theta", "cdf")} for k in margs}}
+
+
+def exit_code(acceptance: dict) -> int:
+    """0 only for a valid run whose every protocol condition is met; 3 stopped/over-budget/invalid accounting;
+    4 protocol conditions failed, unchecked, omitted, malformed or unexpected."""
+    if acceptance["accepted"]:
+        return 0
+    if not acceptance["run_valid"]:
+        return 3
+    return 4
 
 
 def write_summary(result: dict, out_txt: Path) -> None:
@@ -243,12 +262,13 @@ def main(argv):
     evaluator = BudgetedEvaluator(lambda th: ref.log_posterior_theta(th), cap_evaluations=CAP_EVALS, unit_deadline_seconds=CAP_SECONDS,
                                   ledger_path=ledger_path, attempt=attempt, batch_size=32768, checkpoint=checkpoint)
     outcome = compute_stages(ref, evaluator, records, stages)
+    view = evaluator.progress(outcome)
     if outcome == "complete":
         evaluator.release()
-    result = assemble_output(stages, evaluator.progress(outcome), records, attempt, caps)
+    result = assemble_output(stages, view, records, attempt, caps)
     out_json.write_text(json.dumps(result, indent=1) + "\n"); write_summary(result, out_txt)
     print(f"[f7_marginal_reference] {result['status']}; budget {result['budget']}")
-    return 0 if outcome == "complete" else 3
+    return result["exit_code"]
 
 
 if __name__ == "__main__":

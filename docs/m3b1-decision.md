@@ -364,3 +364,20 @@ Count convention: one evaluation per log-posterior point plus one per diagnostic
 4,125,558 (the raw outputs keep the old counter's 4,125,554). Status unchanged: the reference is
 **incomplete/exploratory**, F7 **FAILED**, PR #8 open; the completion proposal above stands (its budget now includes
 the two diagnostic charges) and is not executed.
+
+### Third budget-guard review and repair (2026-09-13; code and bookkeeping only, nothing numerical run)
+
+The fake-only reproduction (`artifacts/2026-09-13-autobayes-guard-v2-independent/`) found that external charges
+bypassed the cap and deadline checks, that a batch which raised after 6 s recorded 0 s so a retry ran under a 5 s
+unit, and that a stopped, over-budget unit with all scientific conditions met was still accepted. Repaired: one
+central gate for every reservation (batches and diagnostic charges) with validated confirmations; measured failure
+time recorded, whole-attempt wall time (driver overhead included) counted, unknown crash duration charged as the
+allowance remaining at the attempt's last write, expired units refused at construction, post-batch check with a
+recorded one-batch overrun; acceptance and the exit code require run validity (not stopped, no unconfirmed
+reservations, within cap and allowance) as well as every scientific condition, with a valid exact-cap completion
+still passing; an OS-level exclusive lock rejects simultaneous owners (sole-owner controller; no concurrency is
+permitted). Reporting correction: of the 36 targeted tests cited on 2026-09-13 only 15 were fake/stub; the other 21
+performed real deterministic density and gradient calculations (not posterior quadrature under the cap) and are
+reported separately, not repeated. This repair's local checks were the two allowed fake/stub modules only, run with
+`--noconftest`: 18 passed. Status unchanged: reference incomplete/exploratory, F7 FAILED, PR #8 open, completion
+proposal not executed.

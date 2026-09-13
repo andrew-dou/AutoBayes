@@ -63,5 +63,30 @@ driver, all repaired in code only, verified with fake evaluators and stubs (no d
      each); the tail reporter, which printed "total with the main run" from the last attempt only, now reports the
      ledger's cumulative requested/reserved/confirmed counts. Ledger ownership is explicit (a second live owner is
      rejected unless a takeover is declared and recorded) and stale writes are refused by version.
-Targeted tests after the repair (fake/stub only): tests/test_quadrature_budget.py 9, tests/test_marginal_driver_assembly.py 6,
-tests/test_marginal_reference.py 4, tests/test_varying_slope_combined.py 17 -> 36 passed, pytest exit 0.
+Targeted tests after that repair: 36 passed, pytest exit 0 -- CORRECTION (third review): only 15 of them were fake/stub
+(tests/test_quadrature_budget.py 9, tests/test_marginal_driver_assembly.py 6). The other 21 perform real deterministic
+numerical work: tests/test_marginal_reference.py (4; low-rank and dense marginal-density evaluations on the crossed
+fixture and on the F7 data, run twice, in guard_v3 and guard_v4) and tests/test_varying_slope_combined.py (17; PyMC/JAX
+log densities and gradients). Those are not posterior quadrature evaluations under the unit cap and are not added to
+the 4,125,558; they are reported here separately and were not repeated afterwards.
+
+Third independent review (2026-09-13, memory/reviews/2026-09-13-autobayes-guard-v2-review.md; fake-only reproduction
+artifacts/2026-09-13-autobayes-guard-v2-independent/): three remaining defects, repaired in code only:
+  1. charge() bypassed the cap/deadline checks (cap 1, charge(2) reserved 2) -> one central gate for batches and charges
+     (ownership, integer size >= 1, remaining cap, remaining time); confirmations must name the open reservation and its
+     exact size, with finite non-negative seconds; a failed charge keeps its reservation (fail_charge);
+  2. a batch that took 6 s then raised recorded 0 s and a retry ran under a 5 s unit -> measured failure elapsed is recorded;
+     unit time is whole-attempt wall time from the injected clock (driver overhead included); an attempt that died without
+     releasing is charged, on takeover, the allowance that remained when it last wrote (its true duration is unknown);
+     an expired unit refuses further attempts at construction; the allowance is checked at the gate and after every
+     batch, so an overrun is bounded by one batch and is recorded;
+  3. complete stub stages plus stopped='unit deadline exceeded' and 6 s against 5 still produced accepted=True -> acceptance
+     and the exit code now require run validity (not stopped, no unconfirmed reservations, confirmed <= cap, time <=
+     allowance) in addition to every scientific condition; a valid exact-cap, exact-allowance completion still passes;
+     exit codes 0 accepted / 3 stopped, over budget or invalid accounting / 4 protocol conditions not all met.
+  Ownership: an OS-level exclusive lock (fcntl.flock on a sidecar file) is held for the evaluator's life, so a simultaneous
+  owner is rejected immediately; the ledger's owner/version fields add takeover records and stale-write rejection. The
+  controller is sole-owner by construction; no concurrent job is permitted.
+Local checks for this repair (allowlist only, --noconftest, fake/stub, zero posterior evaluations):
+  tests/test_quadrature_budget.py 12 + tests/test_marginal_driver_assembly.py 6 -> 18 passed, pytest exit 0;
+  guard_v3_fake_reproduction.txt replays the coordinator's three cases against the repaired code.

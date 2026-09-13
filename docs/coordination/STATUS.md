@@ -107,13 +107,24 @@
   block); driver restructured (guarded main, attempt name no longer shadowed, the two diagnostic marginal calls
   charged, full inventory of six faces and 14 CDF conditions always present, stub-tested assembly for complete,
   unmet-face, stopped and exhausted paths); tail reporter reports ledger cumulative counts; historical spend
-  restated as 4,125,558 under the new convention (raw outputs keep 4,125,554). Fake/stub tests 36 passed (exit 0);
-  the coordinator's reproduction now stops at the cap, refuses the expired retry and rejects the malformed
-  acceptance inputs. Reference still incomplete/exploratory; F7 FAILED; PR open. Commit `c59c8b8`.
+  restated as 4,125,558 under the new convention (raw outputs keep 4,125,554). Targeted tests 36 passed (exit 0),
+  of which only 15 were fake/stub; the other 21 (marginal-reference validation, combined-feature module) performed
+  real deterministic density/gradient calculations, reported separately (correction of the earlier "fake/stub"
+  wording). Reference still incomplete/exploratory; F7 FAILED; PR open. Commit `c59c8b8`.
+- **Third budget-guard review (2026-09-13, `memory/reviews/2026-09-13-autobayes-guard-v2-review.md`), repaired in code
+  only:** one central gate for batches and diagnostic charges (charge over cap now refused before work; confirmations
+  validated by reservation id, size and finite time); measured failure time recorded and whole-attempt wall time
+  counted, unknown crash duration conservatively charged on takeover, expired units refused at construction,
+  post-batch overrun recorded; acceptance and exit code require run validity (stopped/over-budget/unconfirmed
+  units never accepted; exact-cap valid completion passes); OS-level exclusive lock rejects simultaneous owners.
+  Local checks: the two allowed fake/stub modules only, `--noconftest`, 18 passed (exit 0), zero posterior
+  evaluations; the coordinator's three cases replayed (`docs/m3b1-evidence/guard_v3_fake_reproduction.txt`).
+  Commit `{HG3}`.
 - PR: https://github.com/andrew-dou/AutoBayes/pull/8 (base `main`, author andrew-dou). Record `8307a90`; implementation `9b15865`;
   reviewed head `8907113` (request changes); repair record `4a8ea4f`; repair `d572df8`; second-review checkpoint `24eefec`;
-  protocol/reference `f596d7b`; cap-overrun correction `d2e8899` (checkpoint `fe78c3d`); budget-guard repair `c59c8b8`; this
-  STATUS checkpoint follows it (CI runs recorded in the PR comment and the final report). Left open for independent
+  protocol/reference `f596d7b`; cap-overrun correction `d2e8899` (checkpoint `fe78c3d`); budget-guard repair `c59c8b8`
+  (checkpoint `37f4334`); third-review guard repair `{HG3}`; this STATUS checkpoint follows it (CI runs recorded in the PR
+  comment and the final report). Left open for independent
   review with the F7 gate failure reported, not merged by this session; the M3b-1 worktree is kept until
   that review passes. Next approved increment after acceptance: correlated varying slopes (LKJ), separate PR.
 

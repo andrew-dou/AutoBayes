@@ -1,0 +1,5 @@
+external charge over cap: refused before any work -> cap 1 would be exceeded by 'two fake diagnostic calls' (2 requested, 1 remaining: 0 confirmed + 0 reserved-uncertain); reserved 0
+failed-batch time: fake elapsed 6.0 s, recorded after failure 6.0 s, batches [1], retry refused at construction -> unit time allowance 5 s already consumed (6.0 s incl. unconfirmed work); attempt refused
+stopped output: accepted False, protocol_accepted True, run_valid False, exit_code 3, status 'incomplete: run stopped: unit deadline exceeded; time 6.0 s exceeds allowance 5.0 s'
+exact-cap valid completion: accepted True, exit_code 0
+posterior-density evaluations performed by this replay: 0
