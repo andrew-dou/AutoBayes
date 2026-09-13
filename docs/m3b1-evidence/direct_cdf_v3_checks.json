@@ -1,0 +1,17 @@
+{
+  "command": "python -m pytest --noconftest -p no:cacheprovider -q tests/test_reference_direct_cdf.py tests/test_quadrature_budget.py tests/test_marginal_driver_assembly.py",
+  "exit_code": 0,
+  "seconds": 0.9134500410000328,
+  "stdout": "..............................................................           [100%]\n62 passed in 0.84s\n",
+  "blocked_target_import_attempts": [],
+  "F7_target_imported": false,
+  "actual_F7_evaluations": 0,
+  "scope": "23 new analytic/stub tests plus 39 existing guard/assembly regression tests; no F7 target imports or execution permitted",
+  "verified_at": "2026-09-13T09:42:27.363121+00:00",
+  "base_head": "6b7ebbe90ae686a6fea06a417273e667a99d07db",
+  "files_sha256": {
+    "tests/reference_direct_cdf.py": "6a2f3713fac17d124e07c604575382e735c60ebbf61f573bf2836c24c60583e1",
+    "tests/test_reference_direct_cdf.py": "ec1959067518d93e661937f06084ae84fe8621a08fc8ca9c17d20449b21cbfc7",
+    "docs/m3b1-evidence/direct_cdf_v3_protocol.json": "be550a8e4f76b6f1892e78296a94885b9fb3870075b9d3cdbdc48614a7221df7"
+  }
+}

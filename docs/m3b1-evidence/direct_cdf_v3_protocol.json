@@ -1,0 +1,181 @@
+{
+  "protocol_id": "f7-direct-cdf-crossed-grid-v3-proposal",
+  "created_at": "2026-09-13T09:32:47.337661+00:00",
+  "base_head": "6b7ebbe90ae686a6fea06a417273e667a99d07db",
+  "target": "unchanged full frozen-seed17 Gaussian F7 posterior for log sd0, log sd1, log sigma; analytic Gaussian integration of coefficients and group effects; original priors/Jacobians",
+  "domains": {
+    "B0": [
+      [
+        -2.4943885044446974,
+        0.3729744161360616
+      ],
+      [
+        -10.0,
+        0.7972928210443353
+      ],
+      [
+        -1.102796756328083,
+        -0.6155602710086596
+      ]
+    ],
+    "B1": [
+      [
+        -2.7811247965027732,
+        0.6597107081941374
+      ],
+      [
+        -12.0,
+        1.5258055777984008
+      ],
+      [
+        -1.1637013169930108,
+        -0.5546557103437317
+      ]
+    ]
+  },
+  "nodes_per_axis": [
+    [
+      48,
+      96,
+      48
+    ],
+    [
+      64,
+      128,
+      64
+    ]
+  ],
+  "cdf_points": [
+    {
+      "scale": "x|g_sigma",
+      "label": "population_0.30",
+      "value": 0.3
+    },
+    {
+      "scale": "1|g_sigma",
+      "label": "mcmc_mean_pymc",
+      "value": 0.35419142903843587
+    },
+    {
+      "scale": "x|g_sigma",
+      "label": "mcmc_mean_pymc",
+      "value": 0.17538564808362558
+    },
+    {
+      "scale": "sigma",
+      "label": "mcmc_mean_pymc",
+      "value": 0.4241341038705768
+    },
+    {
+      "scale": "1|g_sigma",
+      "label": "mcmc_mean_numpyro",
+      "value": 0.3544247570097451
+    },
+    {
+      "scale": "x|g_sigma",
+      "label": "mcmc_mean_numpyro",
+      "value": 0.17390741511114013
+    },
+    {
+      "scale": "sigma",
+      "label": "mcmc_mean_numpyro",
+      "value": 0.42473688922555414
+    }
+  ],
+  "face_nodes": 96,
+  "face_mode_anchor": [
+    -1.0607070441543178,
+    -1.7525018275948943,
+    -0.8591785136683713
+  ],
+  "fixed_ell_reference": -407.0263603952741,
+  "stage_counts": [
+    {
+      "domain": "B0",
+      "nodes": [
+        48,
+        96,
+        48
+      ],
+      "integrals": 8,
+      "points_per_integral": 221184,
+      "evaluations": 1769472
+    },
+    {
+      "domain": "B0",
+      "nodes": [
+        64,
+        128,
+        64
+      ],
+      "integrals": 8,
+      "points_per_integral": 524288,
+      "evaluations": 4194304
+    },
+    {
+      "domain": "B1",
+      "nodes": [
+        48,
+        96,
+        48
+      ],
+      "integrals": 8,
+      "points_per_integral": 221184,
+      "evaluations": 1769472
+    },
+    {
+      "domain": "B1",
+      "nodes": [
+        64,
+        128,
+        64
+      ],
+      "integrals": 8,
+      "points_per_integral": 524288,
+      "evaluations": 4194304
+    }
+  ],
+  "face_evaluations": 110604,
+  "planned_evaluations": 12038156,
+  "proposed_unit_cap": 12050000,
+  "proposed_wall_seconds": 720,
+  "max_batch_points": 32768,
+  "automatic_retries": 0,
+  "actual_posterior_evaluations": 0,
+  "source_sha256": {
+    "tests/reference_marginal.py": "b185e26baf49697f38e258cf24825b8d9e43e7991af9a8774dc470cea7dbc0dc",
+    "tests/test_marginal_reference.py": "2b3dfa3e0151f1ddf1a7652e595fb0cc8f0914a4c531b96d6903722052781231",
+    "tests/quadrature_budget.py": "6a716e188029d7d50dbfba274ee91d5f5c171cf42a0046dd67a512033f92f515",
+    "docs/m3b1-evidence/F7_marginal_reference.json": "532017f2a0ec7a524657ed62e2e0d385072443b1341d03055b22e3412e444f24",
+    "docs/m3b1-evidence/F7_varying_slope_recovery_records.json": "72bec95cff15f168b2fa93dd0564400a368687785518e523dd3b00342e17a0f0",
+    "uv.lock": "e7c971d50ca835c42c0de9cc8ee05a3a9eabb86f50f2977b7790552f3a0fda08",
+    "pyproject.toml": "6386afef8d8fb6dacec8f8edddc6bde754f1cf8eb14f2375a29487ca33f8e3b4"
+  },
+  "outputs": [
+    "normalizer and three scale means for each domain/resolution",
+    "seven direct truncated-box CDFs for each domain/resolution",
+    "all12sampled face maxima incl stored-mode projection",
+    "crossed resolution/domain errors",
+    "ledger, checkpoints, exit status, optional stored-MCMC diagnostic comparison only after gates pass"
+  ],
+  "exclusions": [
+    "no quantiles/HDIs or one-dimensional marginal grids",
+    "no new sampling, data, model, dependencies, GPU or cluster",
+    "no original-F7 acceptance or calibration/convergence assertion",
+    "no automatic run authorization"
+  ],
+  "acceptance_gates_proposed": {
+    "all_stages_complete_and_budget_valid": true,
+    "finite_unclipped_cdfs_in_unit_interval": true,
+    "crossed_comparisons": {
+      "means_abs": 0.0001,
+      "log_normalizer_abs": 0.0001,
+      "cdf_abs": 0.001
+    },
+    "sampled_face_log_density_deficit_max": -25,
+    "failure_outcome": "inconclusive; no automatic retry or refinement",
+    "interpretation": "Numerical consistency diagnostics only, not rigorous tail mass bounds or original F7 convergence/calibration acceptance"
+  },
+  "status": "implementation_only_not_F7_executed",
+  "execution_scope": "No F7 evaluation is authorized by this configuration. This is a proposed new protocol and cap, not a reset of the exhausted old unit."
+}
