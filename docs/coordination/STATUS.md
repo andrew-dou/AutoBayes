@@ -109,10 +109,10 @@
   unmet-face, stopped and exhausted paths); tail reporter reports ledger cumulative counts; historical spend
   restated as 4,125,558 under the new convention (raw outputs keep 4,125,554). Fake/stub tests 36 passed (exit 0);
   the coordinator's reproduction now stops at the cap, refuses the expired retry and rejects the malformed
-  acceptance inputs. Reference still incomplete/exploratory; F7 FAILED; PR open. Commit `{HG}`.
+  acceptance inputs. Reference still incomplete/exploratory; F7 FAILED; PR open. Commit `c59c8b8`.
 - PR: https://github.com/andrew-dou/AutoBayes/pull/8 (base `main`, author andrew-dou). Record `8307a90`; implementation `9b15865`;
   reviewed head `8907113` (request changes); repair record `4a8ea4f`; repair `d572df8`; second-review checkpoint `24eefec`;
-  protocol/reference `f596d7b`; cap-overrun correction `d2e8899` (checkpoint `fe78c3d`); budget-guard repair `{HG}`; this
+  protocol/reference `f596d7b`; cap-overrun correction `d2e8899` (checkpoint `fe78c3d`); budget-guard repair `c59c8b8`; this
   STATUS checkpoint follows it (CI runs recorded in the PR comment and the final report). Left open for independent
   review with the F7 gate failure reported, not merged by this session; the M3b-1 worktree is kept until
   that review passes. Next approved increment after acceptance: correlated varying slopes (LKJ), separate PR.
