@@ -768,3 +768,14 @@ GPU (H100, matched to the CPU posterior). One recovery run is not a calibration 
 no speedup is claimed.
 
 - **Direct-CDF generic implementation (2026-09-13, code and analytic/stub checks only):** the proposed v3 reference now has an injected-evaluator, batched integration/assembly path in `tests/reference_direct_cdf.py`. Exact independent integrals, nonseparable CDFs, stage/cost checks, partial-stop behavior and final assembly timing are covered. **62 tests passed in 0.84 s** (23 new +39 guard/assembly), exit 0; target imports explicitly prohibited, **zero F7 evaluations**. Evidence: `docs/m3b1-evidence/direct_cdf_v3_checks.json`; protocol: `direct_cdf_v3_protocol.json`. The uniform-node precursor failed an analytic toy resolution check; v3 uses [48,96,48]/[64,128,64], planned 12,038,156 points under a proposed 12.05M/720-second cap. No F7 run is authorized by this implementation, no target-binding CLI was enabled, and the old evidence/ledger stay intact. F7 FAILED, reference inconclusive, PR8 OPEN; next review code and hosted checks, then separately scope any actual target binding/run. Do not repeat the completed guard repair or generic implementation.
+- **Anchor reference-consistency repair, v3r1 (2026-09-13, code and stub checks only):** the worker review of
+  581123e found (F1) that face deficits used the saved reference without ever evaluating the target at the
+  unprojected anchor, so a constant-shifted target passed every gate; reproduced by the coordinator with stubs.
+  Repaired in `tests/reference_direct_cdf.py`: one counted `anchor:reference` stage first, fail-closed condition
+  `abs(ell(anchor) - fixed_ell_reference) <= 1e-6`, exact one-point count, plan identity, missing/non-finite/
+  mismatched data rejected; plans without the tolerance refused (v3 is history). Revised configuration
+  `direct_cdf_v3r1_protocol.json` (distinct id, v3 SHA recorded, same grids/points/faces), planned **12,038,157**
+  under the unchanged proposed 12,050,000/720 s cap: unexecuted proposal, not an authorisation. Coordinator's
+  import-blocking launcher: **72 passed**, exit 0, zero F7 evaluations (`direct_cdf_v3r1_checks.json`). F7 FAILED,
+  reference inconclusive, ledger untouched, PR8 OPEN. Next: independent review, then a separately scoped
+  target-binding plan; nothing executed now. Commit `4d6ee8d`.
