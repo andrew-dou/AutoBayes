@@ -563,3 +563,43 @@ maxima and crossed agreement as diagnostics, not bounds. The file's `approves_ex
 approval schema, so the binding refuses it. No historical unit is accepted, no ledger reset, no protocol redesign.
 Remaining prerequisite for one bounded run: independent review of this head with green hosted checks, and a
 reviewer-written approval outside the repository matching the recorded identity. F7 stays FAILED; PR #8 stays open.
+
+## Executed F7 direct-CDF reference unit v3r1-unit-1-attempt-1 (2026-09-13; one approved unit, real outcome)
+
+Authorisation: the coordinator's reviewer-written approval (`artifacts/2026-09-13-autobayes-f7-direct-cdf-unit-1/approval.json`,
+SHA-256 897b2065…, kept outside the repository) for one bounded local CPU unit at the exact clean head d63981c, after the
+final binding review (`memory/reviews/2026-09-13-autobayes-f7-binding-final-review.md`). The reviewer's dry-run and the
+worker's own target-free dry-run under the import blocker both reported `would_execute` true with every check true
+(head, nine source and implementation pins, model identity from both backend records, observed runtime, canonical unit
+absent). Executed once, 2026-09-13T14:21:00Z to 14:25:28Z, through `run_logged.py` with the exact approved argv; wrapper
+and child return code 0, empty stderr. Unit outputs: `docs/m3b1-evidence/f7-direct-cdf-v3r1-unit-1/` (binding record,
+ledger, lock, partial checkpoint, result, summary); external logs copied to
+`docs/m3b1-evidence/f7-direct-cdf-v3r1-unit-1-external-logs/`; originals in the artifacts directory.
+
+Accounting (ledger, released, version 1181, no takeover, no retry): requested 12,038,157 = confirmed 12,038,157,
+reserved-uncertain 0, remaining 11,843 of the 12,050,000 cap; 267.9 s of the 720 s allowance including 1.0 s of
+target setup and assembly; maximum batch 1.06 s; no refused or failed reservation; no deadline overrun. All 45 stages
+completed; 132 of 132 prespecified conditions met, none failed or unchecked; run valid; status `diagnostics_passed`,
+exit 0. The exhausted 2,000,000-evaluation ledger of the earlier attempts was never opened.
+
+Results by question (the protocol's limits in parentheses):
+
+| Q | Diagnostic | Result |
+|---|---|---|
+| Q1 | anchor reference consistency, one counted evaluation (≤ 1e-6) | ℓ(anchor) = −407.0263603952741, absolute error 0.0 |
+| Q2 | rule agreement within each box: logZ, three means, seven CDFs (1e-4, 1e-4, 1e-3) | all met; largest difference 5.27e-7 (B1 logZ) |
+| Q3 | domain agreement per rule, same quantities (same limits) | all met; largest difference 5.27e-7 (rule 0 logZ); every mean difference below 3e-7 |
+| Q4 | twelve sampled face deficits (≤ −25) | all met; closest B0 lower log-sd1 face −26.26, B0 upper log-sd0 face −26.95; B1 faces ≤ −28.26 |
+| Q5 | 28 truncated-box CDF ratios finite and ≤ 1 without clipping | all met |
+| Q6 | full-box B1 [64,128,64]: logZ −411.38570192; means sd0 0.35494052, sd1 0.17582252, σ 0.42445655; P(sd1 ≤ 0.30 \| y, box) = 0.99818460 (B0 rule 1: 0.99818460; B1 rule 0: 0.99818407); CDF positions of the stored MCMC means: PyMC 0.5371 / 0.5301 / 0.5002, NumPyro 0.5389 / 0.5118 / 0.5188 for sd0 / sd1 / σ | reported, not gated |
+| Q7 | comparison with the stored MCMC summaries | `result["comparison"]` left empty for a separate read-only review |
+| Q8 | rigorous tail or total-error bound, calibration, coverage, sampler convergence, original F7 acceptance | not answerable by this protocol |
+
+Interpretation, kept to what the run shows: on the frozen seed-17 data set the analytically integrated Gaussian
+posterior of the three scales was integrated deterministically with exact accounting, and its rule, domain, face and
+CDF-range diagnostics agreed far inside the prespecified limits. The finite face samples are not a bound on omitted
+mass and crossed agreement is not a certified error bound; nothing here establishes sampler convergence, fixed-truth
+coverage, calibration or acceptance of the original F7 gate, which stays FAILED. As an observation only, the
+exploratory attempt-2 means (0.354941 / 0.175823 / 0.424457, saved under the over-cap unit) coincide with Q6 to their
+printed precision; the reviewed Q7 comparison is a separate step. PR #8 stays open. No further unit is scheduled or
+implied by this result; any continuation needs its own written approval.

@@ -1,0 +1,23 @@
+{
+ "command": [
+  ".venv/bin/python",
+  "docs/m3b1-evidence/scripts/f7_direct_cdf_binding.py",
+  "--protocol",
+  "docs/m3b1-evidence/direct_cdf_v3r1_protocol.json",
+  "--log-dir",
+  "/Users/andrewdou/iqss-research/artifacts/2026-09-13-autobayes-f7-direct-cdf-unit-1/binding-logs",
+  "--approval",
+  "/Users/andrewdou/iqss-research/artifacts/2026-09-13-autobayes-f7-direct-cdf-unit-1/approval.json",
+  "--unit-dir",
+  "/Users/andrewdou/iqss-research/projects/AutoBayes-worktrees/m3b1-varying-slope/docs/m3b1-evidence/f7-direct-cdf-v3r1-unit-1",
+  "--attempt",
+  "v3r1-unit-1-attempt-1",
+  "--execute"
+ ],
+ "cwd": "/Users/andrewdou/iqss-research/projects/AutoBayes-worktrees/m3b1-varying-slope",
+ "child_pid": 45288,
+ "started": "2026-09-13T14:21:00.339998+00:00",
+ "finished": "2026-09-13T14:25:28.917612+00:00",
+ "returncode": 0,
+ "status": "ok"
+}

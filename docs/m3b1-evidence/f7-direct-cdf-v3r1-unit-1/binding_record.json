@@ -1,0 +1,210 @@
+{
+ "mode": "execute",
+ "argv": [
+  "--protocol",
+  "docs/m3b1-evidence/direct_cdf_v3r1_protocol.json",
+  "--log-dir",
+  "/Users/andrewdou/iqss-research/artifacts/2026-09-13-autobayes-f7-direct-cdf-unit-1/binding-logs",
+  "--approval",
+  "/Users/andrewdou/iqss-research/artifacts/2026-09-13-autobayes-f7-direct-cdf-unit-1/approval.json",
+  "--unit-dir",
+  "/Users/andrewdou/iqss-research/projects/AutoBayes-worktrees/m3b1-varying-slope/docs/m3b1-evidence/f7-direct-cdf-v3r1-unit-1",
+  "--attempt",
+  "v3r1-unit-1-attempt-1",
+  "--execute"
+ ],
+ "started": "2026-09-13T14:21:00.402986+00:00",
+ "repo": "/Users/andrewdou/iqss-research/projects/AutoBayes-worktrees/m3b1-varying-slope",
+ "pid": 45288,
+ "refusal": null,
+ "failure": null,
+ "phase": "finished",
+ "protocol": {
+  "path": "docs/m3b1-evidence/direct_cdf_v3r1_protocol.json",
+  "sha256": "7143626a834c0e35b4fcdbef8adb34b5a351997d46c438dfb437257d58324182",
+  "protocol_id": "f7-direct-cdf-crossed-grid-v3r1-proposal",
+  "stages": 45,
+  "planned_evaluations": 12038157,
+  "first_stage": "anchor:reference",
+  "cap_evaluations": 12050000,
+  "unit_deadline_seconds": 720,
+  "max_batch_points": 32768
+ },
+ "protocol_source_sha256_observed": {
+  "tests/reference_marginal.py": "b185e26baf49697f38e258cf24825b8d9e43e7991af9a8774dc470cea7dbc0dc",
+  "tests/test_marginal_reference.py": "2b3dfa3e0151f1ddf1a7652e595fb0cc8f0914a4c531b96d6903722052781231",
+  "tests/quadrature_budget.py": "6a716e188029d7d50dbfba274ee91d5f5c171cf42a0046dd67a512033f92f515",
+  "docs/m3b1-evidence/F7_marginal_reference.json": "532017f2a0ec7a524657ed62e2e0d385072443b1341d03055b22e3412e444f24",
+  "docs/m3b1-evidence/F7_varying_slope_recovery_records.json": "72bec95cff15f168b2fa93dd0564400a368687785518e523dd3b00342e17a0f0",
+  "uv.lock": "e7c971d50ca835c42c0de9cc8ee05a3a9eabb86f50f2977b7790552f3a0fda08",
+  "pyproject.toml": "6386afef8d8fb6dacec8f8edddc6bde754f1cf8eb14f2375a29487ca33f8e3b4"
+ },
+ "implementation_sha256": {
+  "tests/reference_direct_cdf.py": "dc2aa754432afd4a038e13925066a50b0c7e51273c566f32c3730cba2da71216",
+  "tests/quadrature_budget.py": "6a716e188029d7d50dbfba274ee91d5f5c171cf42a0046dd67a512033f92f515",
+  "tests/reference_marginal.py": "b185e26baf49697f38e258cf24825b8d9e43e7991af9a8774dc470cea7dbc0dc",
+  "docs/m3b1-evidence/scripts/f7_direct_cdf_binding.py": "ea586dfd2180cc6516beceb1438223d9735ed7849938d7e8f35fcb84b6391876"
+ },
+ "git": {
+  "head": "d63981c608e55e37b3abc238000e1d5554031279",
+  "dirty": false,
+  "status": ""
+ },
+ "environment": {
+  "python_version": "3.11.0",
+  "python_implementation": "CPython",
+  "system": "Darwin",
+  "machine": "arm64",
+  "numpy_version": "2.4.6",
+  "scipy_version": "1.17.1",
+  "blas": "accelerate",
+  "lapack": "accelerate",
+  "executable": "/Users/andrewdou/iqss-research/projects/AutoBayes-worktrees/m3b1-varying-slope/.venv/bin/python"
+ },
+ "target": {
+  "callable": "tests.reference_marginal.GaussianSlopeMarginal.log_posterior_theta",
+  "generator": "tests.reference_marginal.f7_data",
+  "seed": 17,
+  "J": 30,
+  "per": 20,
+  "prior_mean": [
+   0.0,
+   0.0
+  ],
+  "prior_sd": [
+   5.0,
+   2.0
+  ],
+  "center": true,
+  "prior_scales": [
+   1.0,
+   1.0,
+   1.0
+  ],
+  "theta": "(log sd0, log sd1, log sigma); HalfNormal(1) priors on the natural scales and the three log-scale Jacobians included"
+ },
+ "model_identity": {
+  "formula": "y ~ x + (1 + x || g)",
+  "canonical_formula": "y ~ x + (1 + x || g)",
+  "family": "gaussian",
+  "link": "identity",
+  "n": 600,
+  "J": 30,
+  "group": "g",
+  "center_predictors": true,
+  "noncentered": true,
+  "varying_slope": "x",
+  "group_effects": [
+   "Intercept",
+   "x"
+  ],
+  "priors": {
+   "intercept": "Normal(mu=0, sigma=5)",
+   "b:x": "Normal(mu=0, sigma=2)",
+   "sd:Intercept": "HalfNormal(sigma=1)",
+   "sd:x": "HalfNormal(sigma=1)",
+   "sigma": "HalfNormal(sigma=1)"
+  }
+ },
+ "unit_dir": "/Users/andrewdou/iqss-research/projects/AutoBayes-worktrees/m3b1-varying-slope/docs/m3b1-evidence/f7-direct-cdf-v3r1-unit-1",
+ "approval": {
+  "path": "/Users/andrewdou/iqss-research/artifacts/2026-09-13-autobayes-f7-direct-cdf-unit-1/approval.json",
+  "sha256": "897b2065419c70fca2d75183a829453bdc435cd3b01872f40be178543c9b1305",
+  "approval_id": "f7-direct-cdf-v3r1-unit-1-reviewed-20260913"
+ },
+ "checks": {
+  "protocol_inventory": {
+   "ok": true,
+   "detail": "45 stages, 12038157 planned evaluations, first stage anchor:reference"
+  },
+  "planned_matches_protocol": {
+   "ok": true,
+   "detail": "protocol planned_evaluations 12038157 vs inventory 12038157"
+  },
+  "protocol_caps": {
+   "ok": true,
+   "detail": "cap 12050000 >= planned 12038157; allowance 720 s; batch 32768"
+  },
+  "protocol_first_stage_is_anchor": {
+   "ok": true,
+   "detail": "anchor:reference"
+  },
+  "protocol_source_pins": {
+   "ok": true,
+   "detail": "all pinned files match"
+  },
+  "implementation_files_present": {
+   "ok": true,
+   "detail": "all present"
+  },
+  "records_model_identity": {
+   "ok": true,
+   "detail": "both saved backend records match the binding's model identity"
+  },
+  "unit_dir_new": {
+   "ok": true,
+   "detail": "/Users/andrewdou/iqss-research/projects/AutoBayes-worktrees/m3b1-varying-slope/docs/m3b1-evidence/f7-direct-cdf-v3r1-unit-1: parent exists and the directory is absent"
+  },
+  "approval_schema": {
+   "ok": true,
+   "detail": "complete; approves_execution is true"
+  },
+  "approval_protocol_identity": {
+   "ok": true,
+   "detail": "approval protocol 'f7-direct-cdf-crossed-grid-v3r1-proposal' 7143626a834c0e35 vs file 'f7-direct-cdf-crossed-grid-v3r1-proposal' 7143626a834c0e35"
+  },
+  "approval_counts": {
+   "ok": true,
+   "detail": "approval planned/cap/allowance/batch 12038157/12050000/720/32768 vs protocol 12038157/12050000/720/32768"
+  },
+  "approval_source_pins": {
+   "ok": true,
+   "detail": "every protocol and implementation file is pinned and matches"
+  },
+  "approval_target": {
+   "ok": true,
+   "detail": "matches the binding's target"
+  },
+  "approval_model_identity": {
+   "ok": true,
+   "detail": "matches"
+  },
+  "approval_environment": {
+   "ok": true,
+   "detail": "observed environment matches the reviewed one"
+  },
+  "approval_git_head": {
+   "ok": true,
+   "detail": "approval head d63981c608e5 vs checkout d63981c608e5"
+  },
+  "git_clean": {
+   "ok": true,
+   "detail": "clean checkout"
+  },
+  "approval_unit_binding": {
+   "ok": true,
+   "detail": "approval unit_dir '/Users/andrewdou/iqss-research/projects/AutoBayes-worktrees/m3b1-varying-slope/docs/m3b1-evidence/f7-direct-cdf-v3r1-unit-1' (canonical: True) attempt 'v3r1-unit-1-attempt-1' vs requested '/Users/andrewdou/iqss-research/projects/AutoBayes-worktrees/m3b1-varying-slope/docs/m3b1-evidence/f7-direct-cdf-v3r1-unit-1' 'v3r1-unit-1-attempt-1'"
+  }
+ },
+ "failed_checks": [],
+ "unperformed_checks": [],
+ "attempt": "v3r1-unit-1-attempt-1",
+ "unit_created_at": "2026-09-13T14:21:00.905475+00:00",
+ "target_import_attempted": true,
+ "setup_seconds": 0.9983249170036288,
+ "setup_note": "the unit allowance started at ledger creation, before target setup; setup is not preemptible, its full duration is counted, and an exhausted allowance makes the controller's gate refuse every evaluation",
+ "run_started": "2026-09-13T14:21:01.904244+00:00",
+ "exit_code": 0,
+ "status": "diagnostics_passed",
+ "stopped": null,
+ "budget": {
+  "reason": "complete",
+  "requested": 12038157,
+  "reserved_uncertain": 0,
+  "confirmed": 12038157,
+  "remaining": 11843,
+  "seconds_spent": 267.91294945799746,
+  "cap": 12050000,
+  "unit_deadline_seconds": 720.0
+ }
+}

@@ -1,0 +1,39 @@
+{
+ "mode": "dry-run",
+ "exit_code": 0,
+ "refusal": null,
+ "failure": null,
+ "failed_checks": [],
+ "unperformed_checks": [],
+ "would_execute": true,
+ "phase": "checking",
+ "status": null,
+ "stopped": null,
+ "log_path": "/Users/andrewdou/iqss-research/artifacts/2026-09-13-autobayes-f7-direct-cdf-unit-1/binding-logs/binding-20260913T142042573340Z-dry-run-45194.json",
+ "protocol": {
+  "path": "docs/m3b1-evidence/direct_cdf_v3r1_protocol.json",
+  "sha256": "7143626a834c0e35b4fcdbef8adb34b5a351997d46c438dfb437257d58324182",
+  "protocol_id": "f7-direct-cdf-crossed-grid-v3r1-proposal",
+  "stages": 45,
+  "planned_evaluations": 12038157,
+  "first_stage": "anchor:reference",
+  "cap_evaluations": 12050000,
+  "unit_deadline_seconds": 720,
+  "max_batch_points": 32768
+ },
+ "environment": {
+  "python_version": "3.11.0",
+  "python_implementation": "CPython",
+  "system": "Darwin",
+  "machine": "arm64",
+  "numpy_version": "2.4.6",
+  "scipy_version": "1.17.1",
+  "blas": "accelerate",
+  "lapack": "accelerate",
+  "executable": "/Users/andrewdou/iqss-research/projects/AutoBayes-worktrees/m3b1-varying-slope/.venv/bin/python"
+ },
+ "git": {
+  "head": "d63981c608e55e37b3abc238000e1d5554031279",
+  "dirty": false
+ }
+}

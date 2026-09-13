@@ -819,3 +819,13 @@ no speedup is claimed.
   zero retries, question table, limitations). Nothing executed; F7 FAILED; exhausted ledger untouched; PR8 OPEN.
   Remaining prerequisite: independent review of this head with green hosted checks and a reviewer-written approval
   outside the repository.
+- **Executed F7 direct-CDF unit v3r1-unit-1-attempt-1 (2026-09-13; one approved unit, real outcome):** reviewer
+  approval outside the repository for the exact clean head d63981c; reviewer and worker dry-runs `would_execute` true,
+  every check true; executed once via `run_logged.py` (14:21:00Z to 14:25:28Z, return code 0, empty stderr). Ledger:
+  12,038,157 requested = confirmed, 0 uncertain, 267.9 s of 720 s, no overrun, released, no retry. 45/45 stages,
+  132/132 conditions met, run valid, **diagnostics_passed** (exit 0). Q1 anchor abs_error 0.0; Q2/Q3 largest crossed
+  difference 5.27e-7; Q4 faces all ≤ −26.26; Q5 all ratios ≤ 1; Q6 means 0.35494052 / 0.17582252 / 0.42445655,
+  P(sd1 ≤ 0.30 | y, box) 0.99818460, CDF positions of stored MCMC means PyMC 0.5371 / 0.5301 / 0.5002, NumPyro
+  0.5389 / 0.5118 / 0.5188. `comparison` left empty for separate read-only review (Q7); no tail bound, convergence,
+  coverage or calibration claim (Q8). Outputs `docs/m3b1-evidence/f7-direct-cdf-v3r1-unit-1/` and
+  `…-external-logs/`; exhausted old ledger untouched. F7 FAILED, PR8 OPEN; no further unit scheduled.

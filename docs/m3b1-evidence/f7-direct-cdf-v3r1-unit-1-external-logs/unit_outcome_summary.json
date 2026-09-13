@@ -1,0 +1,235 @@
+{
+ "unit_dir": "/Users/andrewdou/iqss-research/projects/AutoBayes-worktrees/m3b1-varying-slope/docs/m3b1-evidence/f7-direct-cdf-v3r1-unit-1",
+ "files": [
+  "binding_record.json",
+  "ledger.json",
+  "ledger.lock",
+  "partial.json",
+  "result.json",
+  "summary.txt"
+ ],
+ "wrapper": {
+  "command": [
+   ".venv/bin/python",
+   "docs/m3b1-evidence/scripts/f7_direct_cdf_binding.py",
+   "--protocol",
+   "docs/m3b1-evidence/direct_cdf_v3r1_protocol.json",
+   "--log-dir",
+   "/Users/andrewdou/iqss-research/artifacts/2026-09-13-autobayes-f7-direct-cdf-unit-1/binding-logs",
+   "--approval",
+   "/Users/andrewdou/iqss-research/artifacts/2026-09-13-autobayes-f7-direct-cdf-unit-1/approval.json",
+   "--unit-dir",
+   "/Users/andrewdou/iqss-research/projects/AutoBayes-worktrees/m3b1-varying-slope/docs/m3b1-evidence/f7-direct-cdf-v3r1-unit-1",
+   "--attempt",
+   "v3r1-unit-1-attempt-1",
+   "--execute"
+  ],
+  "cwd": "/Users/andrewdou/iqss-research/projects/AutoBayes-worktrees/m3b1-varying-slope",
+  "child_pid": 45288,
+  "started": "2026-09-13T14:21:00.339998+00:00",
+  "finished": "2026-09-13T14:25:28.917612+00:00",
+  "returncode": 0,
+  "status": "ok"
+ },
+ "timing_file": "start 2026-09-13T14:21:00Z\nwrapper exit 0\nend 2026-09-13T14:25:28Z\n",
+ "stderr_bytes": 0,
+ "binding_execute_logs": [
+  "binding-20260913T142528823865Z-execute-45288.json"
+ ],
+ "status": "diagnostics_passed",
+ "accepted": true,
+ "exit_code": 0,
+ "stopped": null,
+ "run_validity": {
+  "valid": true,
+  "problems": []
+ },
+ "budget": {
+  "reason": "complete",
+  "requested": 12038157,
+  "reserved_uncertain": 0,
+  "confirmed": 12038157,
+  "remaining": 11843,
+  "seconds_spent": 267.91294945799746,
+  "cap": 12050000,
+  "unit_deadline_seconds": 720.0
+ },
+ "planned_evaluations": 12038157,
+ "stages_recorded": 45,
+ "stages_planned": 45,
+ "conditions_met": 132,
+ "conditions_failed": [],
+ "conditions_unchecked": 0,
+ "n_required": 132,
+ "anchor": {
+  "ell_anchor": -407.0263603952741,
+  "abs_error": 0.0
+ },
+ "gates": {
+  "Q1_anchor_reference_consistency": true,
+  "Q2_resolution_agreement_all_true": true,
+  "Q2_resolution_unmet": [],
+  "Q3_domain_agreement_all_true": true,
+  "Q3_domain_unmet": [],
+  "Q4_faces_all_true": true,
+  "Q4_faces_unmet": [],
+  "Q5_cdf_range_all_true": true,
+  "Q5_cdf_range_unmet": [],
+  "exact_complete_count": true,
+  "no_unexpected_stages": true
+ },
+ "Q6_full_box": {
+  "B0:r0:full": {
+   "logZ": -411.3857019194285,
+   "means": {
+    "1|g_sigma": 0.35494051951079764,
+    "x|g_sigma": 0.17582251758952497,
+    "sigma": 0.42445655045042613
+   }
+  },
+  "B0:r1:full": {
+   "logZ": -411.38570191968813,
+   "means": {
+    "1|g_sigma": 0.354940519512674,
+    "x|g_sigma": 0.17582251767537646,
+    "sigma": 0.42445655045180136
+   }
+  },
+  "B1:r0:full": {
+   "logZ": -411.38570139244916,
+   "means": {
+    "1|g_sigma": 0.3549405207594923,
+    "x|g_sigma": 0.17582250768147348,
+    "sigma": 0.4244565473405041
+   }
+  },
+  "B1:r1:full": {
+   "logZ": -411.38570191968597,
+   "means": {
+    "1|g_sigma": 0.3549405195125328,
+    "x|g_sigma": 0.17582251766578189,
+    "sigma": 0.42445655045206676
+   }
+  }
+ },
+ "Q6_cdfs": {
+  "B0:r0 P(x|g_sigma <= 0.3) [population_0.30]": 0.9981845980860536,
+  "B0:r0 P(1|g_sigma <= 0.354191) [mcmc_mean_pymc]": 0.537062888758028,
+  "B0:r0 P(x|g_sigma <= 0.175386) [mcmc_mean_pymc]": 0.5300569776262971,
+  "B0:r0 P(sigma <= 0.424134) [mcmc_mean_pymc]": 0.5002432239809862,
+  "B0:r0 P(1|g_sigma <= 0.354425) [mcmc_mean_numpyro]": 0.53885953554504,
+  "B0:r0 P(x|g_sigma <= 0.173907) [mcmc_mean_numpyro]": 0.5118360992015731,
+  "B0:r0 P(sigma <= 0.424737) [mcmc_mean_numpyro]": 0.5187870873362725,
+  "B0:r1 P(x|g_sigma <= 0.3) [population_0.30]": 0.998184598345243,
+  "B0:r1 P(1|g_sigma <= 0.354191) [mcmc_mean_pymc]": 0.5370628887436185,
+  "B0:r1 P(x|g_sigma <= 0.175386) [mcmc_mean_pymc]": 0.5300569777640225,
+  "B0:r1 P(sigma <= 0.424134) [mcmc_mean_pymc]": 0.5002432239375936,
+  "B0:r1 P(1|g_sigma <= 0.354425) [mcmc_mean_numpyro]": 0.5388595355306436,
+  "B0:r1 P(x|g_sigma <= 0.173907) [mcmc_mean_numpyro]": 0.511836099334506,
+  "B0:r1 P(sigma <= 0.424737) [mcmc_mean_numpyro]": 0.5187870872932178,
+  "B1:r0 P(x|g_sigma <= 0.3) [population_0.30]": 0.9981840720580613,
+  "B1:r0 P(1|g_sigma <= 0.354191) [mcmc_mean_pymc]": 0.5370628791205194,
+  "B1:r0 P(x|g_sigma <= 0.175386) [mcmc_mean_pymc]": 0.5300566983002348,
+  "B1:r0 P(sigma <= 0.424134) [mcmc_mean_pymc]": 0.5002433190685716,
+  "B1:r0 P(1|g_sigma <= 0.354425) [mcmc_mean_numpyro]": 0.5388595259183574,
+  "B1:r0 P(x|g_sigma <= 0.173907) [mcmc_mean_numpyro]": 0.5118358294777248,
+  "B1:r0 P(sigma <= 0.424737) [mcmc_mean_numpyro]": 0.5187871814904529,
+  "B1:r1 P(x|g_sigma <= 0.3) [population_0.30]": 0.9981845983506333,
+  "B1:r1 P(1|g_sigma <= 0.354191) [mcmc_mean_pymc]": 0.5370628887463356,
+  "B1:r1 P(x|g_sigma <= 0.175386) [mcmc_mean_pymc]": 0.5300569777703197,
+  "B1:r1 P(sigma <= 0.424134) [mcmc_mean_pymc]": 0.5002432239321055,
+  "B1:r1 P(1|g_sigma <= 0.354425) [mcmc_mean_numpyro]": 0.5388595355333697,
+  "B1:r1 P(x|g_sigma <= 0.173907) [mcmc_mean_numpyro]": 0.5118360993409359,
+  "B1:r1 P(sigma <= 0.424737) [mcmc_mean_numpyro]": 0.5187870872876147
+ },
+ "differences": {
+  "resolution:B0:logZ": 2.596038939373102e-10,
+  "resolution:B0:mean:0": 1.876387933918977e-12,
+  "resolution:B0:mean:1": 8.58514925816678e-11,
+  "resolution:B0:mean:2": 1.3752332606031814e-12,
+  "resolution:B0:cdf:0": 2.5918933665991517e-10,
+  "resolution:B0:cdf:1": 1.4409473614307444e-11,
+  "resolution:B0:cdf:2": 1.3772538665079992e-10,
+  "resolution:B0:cdf:3": 4.3392622828264393e-11,
+  "resolution:B0:cdf:4": 1.4396372982616867e-11,
+  "resolution:B0:cdf:5": 1.329328869204005e-10,
+  "resolution:B0:cdf:6": 4.305478196187096e-11,
+  "resolution:B1:logZ": 5.272368071018718e-07,
+  "resolution:B1:mean:0": 1.2469594801167716e-09,
+  "resolution:B1:mean:1": 9.984308407817721e-09,
+  "resolution:B1:mean:2": 3.1115626741851088e-09,
+  "resolution:B1:cdf:0": 5.262925720783684e-07,
+  "resolution:B1:cdf:1": 9.625816144165356e-09,
+  "resolution:B1:cdf:2": 2.7947008485185165e-07,
+  "resolution:B1:cdf:3": 9.513646603842574e-08,
+  "resolution:B1:cdf:4": 9.615012341868123e-09,
+  "resolution:B1:cdf:5": 2.6986321111088785e-07,
+  "resolution:B1:cdf:6": 9.420283819672193e-08,
+  "domain:r0:logZ": 5.269793632578512e-07,
+  "domain:r0:mean:0": 1.2486946476819583e-09,
+  "domain:r0:mean:1": 9.90805149037044e-09,
+  "domain:r0:mean:2": 3.109922042110469e-09,
+  "domain:r0:cdf:0": 5.260279923868794e-07,
+  "domain:r0:cdf:1": 9.637508568971498e-09,
+  "domain:r0:cdf:2": 2.793260622802052e-07,
+  "domain:r0:cdf:3": 9.508758536114215e-08,
+  "domain:r0:cdf:4": 9.626682562213773e-09,
+  "domain:r0:cdf:5": 2.6972384836732033e-07,
+  "domain:r0:cdf:6": 9.415418034119938e-08,
+  "domain:r1:logZ": 2.1600499167107046e-12,
+  "domain:r1:mean:0": 1.412203687323199e-13,
+  "domain:r1:mean:1": 9.594575134386218e-12,
+  "domain:r1:mean:2": 2.6539881403664367e-13,
+  "domain:r1:cdf:0": 5.39035482916006e-12,
+  "domain:r1:cdf:1": 2.7170488081651456e-12,
+  "domain:r1:cdf:2": 6.297184995673888e-12,
+  "domain:r1:cdf:3": 5.488054455327074e-12,
+  "domain:r1:cdf:4": 2.726152636967072e-12,
+  "domain:r1:cdf:5": 6.429856647116594e-12,
+  "domain:r1:cdf:6": 5.60307356067824e-12
+ },
+ "face_deficits": {
+  "B0:face:0:0": -63.55202632838581,
+  "B0:face:0:1": -26.947777979973694,
+  "B0:face:1:0": -26.25516263583853,
+  "B0:face:1:1": -55.55793015419391,
+  "B0:face:2:0": -37.89049806991267,
+  "B0:face:2:1": -27.407669580947925,
+  "B1:face:0:0": -79.24471399696677,
+  "B1:face:0:1": -35.39355485837672,
+  "B1:face:1:0": -28.259860405294035,
+  "B1:face:1:1": -84.01067433870537,
+  "B1:face:2:0": -62.0278688588474,
+  "B1:face:2:1": -41.26724029426066
+ },
+ "comparison_is_empty": true,
+ "binding": {
+  "setup_seconds": 0.9983249170036288,
+  "started": "2026-09-13T14:21:00.402986+00:00",
+  "run_started": "2026-09-13T14:21:01.904244+00:00",
+  "finished": "2026-09-13T14:25:28.821487+00:00",
+  "target_import_attempted": true
+ },
+ "interpretation": "Numerical diagnostics only; the anchor check establishes reference consistency at one point, not target identity; no tail-mass bound, F7 acceptance, convergence or calibration claim.",
+ "ledger": {
+  "cap_evaluations": 12050000,
+  "unit_deadline_seconds": 720.0,
+  "requested_total": 12038157,
+  "reserved_uncertain_total": 0,
+  "confirmed_completed_total": 12038157,
+  "released": true,
+  "version": 1181,
+  "attempt": {
+   "requested": 12038157,
+   "reserved_uncertain": 0,
+   "confirmed": 12038157,
+   "wall_seconds": 267.91294945799746,
+   "max_batch_seconds": 1.0633633329998702,
+   "refused": 0,
+   "stopped": null,
+   "deadline_overrun_seconds": 0.0
+  },
+  "open_reservations": 0,
+  "failed_reservations": 0
+ }
+}

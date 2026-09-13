@@ -1,0 +1,8 @@
+protocol f7-direct-cdf-crossed-grid-v3r1-proposal plan_sha256 bc08f7fc47c8c38a4f16a5e009e86127a66796b7cbdf4a8b6ebe732f06ba1f67
+status diagnostics_passed exit_code 0 stopped None
+evaluations requested 12038157 confirmed 12038157 reserved_uncertain 0 planned 12038157 cap 12050000; 267.9 s of 720.0 s
+stages recorded 45; conditions met 132 failed 0 unchecked 0 of 132
+run_validity {'valid': True, 'problems': []}
+anchor ell -407.0263603952741 abs_error 0.0
+target setup 0.998 s counted in the unit allowance (not preemptible; an exhausted allowance refuses every evaluation)
+comparison with stored MCMC summaries: empty (separate scientific review); no F7 acceptance, tail bound, calibration or convergence claim

@@ -1,0 +1,27 @@
+{
+ "cap_evaluations": 12050000,
+ "unit_deadline_seconds": 720.0,
+ "version": 1181,
+ "requested_total": 12038157,
+ "reserved_uncertain_total": 0,
+ "confirmed_completed_total": 12038157,
+ "time_spent_at_last_write": 267.9129507079997,
+ "attempts": {
+  "v3r1-unit-1-attempt-1": {
+   "requested": 12038157,
+   "reserved_uncertain": 0,
+   "confirmed": 12038157,
+   "wall_seconds": 267.91294945799746,
+   "max_batch_seconds": 1.0633633329998702,
+   "refused": 0,
+   "stopped": null,
+   "deadline_overrun_seconds": 0.0,
+   "open_reservations": [],
+   "failed_reservations": [],
+   "crash_time_penalty_seconds": null
+  }
+ },
+ "owner": "12c597a49b3744ed8c583726d0defe4c",
+ "released": true,
+ "owner_attempt": "v3r1-unit-1-attempt-1"
+}

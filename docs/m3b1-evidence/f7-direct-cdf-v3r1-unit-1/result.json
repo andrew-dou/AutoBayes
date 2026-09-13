@@ -1,0 +1,2026 @@
+{
+ "protocol_id": "f7-direct-cdf-crossed-grid-v3r1-proposal",
+ "plan_sha256": "bc08f7fc47c8c38a4f16a5e009e86127a66796b7cbdf4a8b6ebe732f06ba1f67",
+ "stages": {
+  "anchor:reference": {
+   "ell_anchor": -407.0263603952741,
+   "abs_error": 0.0,
+   "evaluations": 1,
+   "spec": {
+    "kind": "anchor",
+    "point": [
+     -1.0607070441543178,
+     -1.7525018275948943,
+     -0.8591785136683713
+    ],
+    "ell_reference": -407.0263603952741,
+    "tolerance": 1e-06,
+    "evaluations": 1
+   },
+   "plan_sha256": "bc08f7fc47c8c38a4f16a5e009e86127a66796b7cbdf4a8b6ebe732f06ba1f67"
+  },
+  "B0:r0:full": {
+   "logZ": -411.3857019194285,
+   "means": [
+    0.35494051951079764,
+    0.17582251758952497,
+    0.42445655045042613
+   ],
+   "evaluations": 221184,
+   "spec": {
+    "kind": "integral",
+    "box": [
+     [
+      -2.4943885044446974,
+      0.3729744161360616
+     ],
+     [
+      -10.0,
+      0.7972928210443353
+     ],
+     [
+      -1.102796756328083,
+      -0.6155602710086596
+     ]
+    ],
+    "nodes": [
+     48,
+     96,
+     48
+    ],
+    "evaluations": 221184
+   },
+   "plan_sha256": "bc08f7fc47c8c38a4f16a5e009e86127a66796b7cbdf4a8b6ebe732f06ba1f67"
+  },
+  "B0:r0:cdf:0": {
+   "logZ": -411.3875189711816,
+   "means": [
+    0.3549370235642761,
+    0.17556271735013596,
+    0.42445848774204975
+   ],
+   "evaluations": 221184,
+   "spec": {
+    "kind": "integral",
+    "box": [
+     [
+      -2.4943885044446974,
+      0.3729744161360616
+     ],
+     [
+      -10.0,
+      -1.2039728043259361
+     ],
+     [
+      -1.102796756328083,
+      -0.6155602710086596
+     ]
+    ],
+    "nodes": [
+     48,
+     96,
+     48
+    ],
+    "evaluations": 221184
+   },
+   "plan_sha256": "bc08f7fc47c8c38a4f16a5e009e86127a66796b7cbdf4a8b6ebe732f06ba1f67"
+  },
+  "B0:r0:cdf:1": {
+   "logZ": -412.00734199947755,
+   "means": [
+    0.3163787854281186,
+    0.17545166962280453,
+    0.4246435724598167
+   ],
+   "evaluations": 221184,
+   "spec": {
+    "kind": "integral",
+    "box": [
+     [
+      -2.4943885044446974,
+      -1.037917752010779
+     ],
+     [
+      -10.0,
+      0.7972928210443353
+     ],
+     [
+      -1.102796756328083,
+      -0.6155602710086596
+     ]
+    ],
+    "nodes": [
+     48,
+     96,
+     48
+    ],
+    "evaluations": 221184
+   },
+   "plan_sha256": "bc08f7fc47c8c38a4f16a5e009e86127a66796b7cbdf4a8b6ebe732f06ba1f67"
+  },
+  "B0:r0:cdf:2": {
+   "logZ": -412.02047269268746,
+   "means": [
+    0.3543488304740342,
+    0.15112443777603243,
+    0.42511809416159807
+   ],
+   "evaluations": 221184,
+   "spec": {
+    "kind": "integral",
+    "box": [
+     [
+      -2.4943885044446974,
+      0.3729744161360616
+     ],
+     [
+      -10.0,
+      -1.7407680263164118
+     ],
+     [
+      -1.102796756328083,
+      -0.6155602710086596
+     ]
+    ],
+    "nodes": [
+     48,
+     96,
+     48
+    ],
+    "evaluations": 221184
+   },
+   "plan_sha256": "bc08f7fc47c8c38a4f16a5e009e86127a66796b7cbdf4a8b6ebe732f06ba1f67"
+  },
+  "B0:r0:cdf:3": {
+   "logZ": -412.07836277030395,
+   "means": [
+    0.3557527771929677,
+    0.1776291761890281,
+    0.41411904900383295
+   ],
+   "evaluations": 221184,
+   "spec": {
+    "kind": "integral",
+    "box": [
+     [
+      -2.4943885044446974,
+      0.3729744161360616
+     ],
+     [
+      -10.0,
+      0.7972928210443353
+     ],
+     [
+      -1.102796756328083,
+      -0.8577055910433883
+     ]
+    ],
+    "nodes": [
+     48,
+     96,
+     48
+    ],
+    "evaluations": 221184
+   },
+   "plan_sha256": "bc08f7fc47c8c38a4f16a5e009e86127a66796b7cbdf4a8b6ebe732f06ba1f67"
+  },
+  "B0:r0:cdf:4": {
+   "logZ": -412.0040022634215,
+   "means": [
+    0.31650524792026935,
+    0.17545321603028885,
+    0.42464261113651075
+   ],
+   "evaluations": 221184,
+   "spec": {
+    "kind": "integral",
+    "box": [
+     [
+      -2.4943885044446974,
+      -1.037259206568731
+     ],
+     [
+      -10.0,
+      0.7972928210443353
+     ],
+     [
+      -1.102796756328083,
+      -0.6155602710086596
+     ]
+    ],
+    "nodes": [
+     48,
+     96,
+     48
+    ],
+    "evaluations": 221184
+   },
+   "plan_sha256": "bc08f7fc47c8c38a4f16a5e009e86127a66796b7cbdf4a8b6ebe732f06ba1f67"
+  },
+  "B0:r0:cdf:5": {
+   "logZ": -412.055452743367,
+   "means": [
+    0.35432356934257186,
+    0.1502871194993304,
+    0.4251535485894715
+   ],
+   "evaluations": 221184,
+   "spec": {
+    "kind": "integral",
+    "box": [
+     [
+      -2.4943885044446974,
+      0.3729744161360616
+     ],
+     [
+      -10.0,
+      -1.7492322184439
+     ],
+     [
+      -1.102796756328083,
+      -0.6155602710086596
+     ]
+    ],
+    "nodes": [
+     48,
+     96,
+     48
+    ],
+    "evaluations": 221184
+   },
+   "plan_sha256": "bc08f7fc47c8c38a4f16a5e009e86127a66796b7cbdf4a8b6ebe732f06ba1f67"
+  },
+  "B0:r0:cdf:6": {
+   "logZ": -412.041963635761,
+   "means": [
+    0.3557243795590641,
+    0.17756646350705885,
+    0.41448780057205403
+   ],
+   "evaluations": 221184,
+   "spec": {
+    "kind": "integral",
+    "box": [
+     [
+      -2.4943885044446974,
+      0.3729744161360616
+     ],
+     [
+      -10.0,
+      0.7972928210443353
+     ],
+     [
+      -1.102796756328083,
+      -0.8562853859446228
+     ]
+    ],
+    "nodes": [
+     48,
+     96,
+     48
+    ],
+    "evaluations": 221184
+   },
+   "plan_sha256": "bc08f7fc47c8c38a4f16a5e009e86127a66796b7cbdf4a8b6ebe732f06ba1f67"
+  },
+  "B0:r1:full": {
+   "logZ": -411.38570191968813,
+   "means": [
+    0.354940519512674,
+    0.17582251767537646,
+    0.42445655045180136
+   ],
+   "evaluations": 524288,
+   "spec": {
+    "kind": "integral",
+    "box": [
+     [
+      -2.4943885044446974,
+      0.3729744161360616
+     ],
+     [
+      -10.0,
+      0.7972928210443353
+     ],
+     [
+      -1.102796756328083,
+      -0.6155602710086596
+     ]
+    ],
+    "nodes": [
+     64,
+     128,
+     64
+    ],
+    "evaluations": 524288
+   },
+   "plan_sha256": "bc08f7fc47c8c38a4f16a5e009e86127a66796b7cbdf4a8b6ebe732f06ba1f67"
+  },
+  "B0:r1:cdf:0": {
+   "logZ": -411.3875189711815,
+   "means": [
+    0.35493702356423573,
+    0.17556271735012596,
+    0.42445848774204975
+   ],
+   "evaluations": 524288,
+   "spec": {
+    "kind": "integral",
+    "box": [
+     [
+      -2.4943885044446974,
+      0.3729744161360616
+     ],
+     [
+      -10.0,
+      -1.2039728043259361
+     ],
+     [
+      -1.102796756328083,
+      -0.6155602710086596
+     ]
+    ],
+    "nodes": [
+     64,
+     128,
+     64
+    ],
+    "evaluations": 524288
+   },
+   "plan_sha256": "bc08f7fc47c8c38a4f16a5e009e86127a66796b7cbdf4a8b6ebe732f06ba1f67"
+  },
+  "B0:r1:cdf:1": {
+   "logZ": -412.007341999764,
+   "means": [
+    0.3163787854286581,
+    0.17545166970736792,
+    0.4246435724614098
+   ],
+   "evaluations": 524288,
+   "spec": {
+    "kind": "integral",
+    "box": [
+     [
+      -2.4943885044446974,
+      -1.037917752010779
+     ],
+     [
+      -10.0,
+      0.7972928210443353
+     ],
+     [
+      -1.102796756328083,
+      -0.6155602710086596
+     ]
+    ],
+    "nodes": [
+     64,
+     128,
+     64
+    ],
+    "evaluations": 524288
+   },
+   "plan_sha256": "bc08f7fc47c8c38a4f16a5e009e86127a66796b7cbdf4a8b6ebe732f06ba1f67"
+  },
+  "B0:r1:cdf:2": {
+   "logZ": -412.02047269268724,
+   "means": [
+    0.35434883047405435,
+    0.15112443777603243,
+    0.4251180941615739
+   ],
+   "evaluations": 524288,
+   "spec": {
+    "kind": "integral",
+    "box": [
+     [
+      -2.4943885044446974,
+      0.3729744161360616
+     ],
+     [
+      -10.0,
+      -1.7407680263164118
+     ],
+     [
+      -1.102796756328083,
+      -0.6155602710086596
+     ]
+    ],
+    "nodes": [
+     64,
+     128,
+     64
+    ],
+    "evaluations": 524288
+   },
+   "plan_sha256": "bc08f7fc47c8c38a4f16a5e009e86127a66796b7cbdf4a8b6ebe732f06ba1f67"
+  },
+  "B0:r1:cdf:3": {
+   "logZ": -412.0783627706503,
+   "means": [
+    0.35575277719581905,
+    0.1776291763108793,
+    0.41411904900446855
+   ],
+   "evaluations": 524288,
+   "spec": {
+    "kind": "integral",
+    "box": [
+     [
+      -2.4943885044446974,
+      0.3729744161360616
+     ],
+     [
+      -10.0,
+      0.7972928210443353
+     ],
+     [
+      -1.102796756328083,
+      -0.8577055910433883
+     ]
+    ],
+    "nodes": [
+     64,
+     128,
+     64
+    ],
+    "evaluations": 524288
+   },
+   "plan_sha256": "bc08f7fc47c8c38a4f16a5e009e86127a66796b7cbdf4a8b6ebe732f06ba1f67"
+  },
+  "B0:r1:cdf:4": {
+   "logZ": -412.00400226370783,
+   "means": [
+    0.31650524792082707,
+    0.17545321611485298,
+    0.4246426111380797
+   ],
+   "evaluations": 524288,
+   "spec": {
+    "kind": "integral",
+    "box": [
+     [
+      -2.4943885044446974,
+      -1.037259206568731
+     ],
+     [
+      -10.0,
+      0.7972928210443353
+     ],
+     [
+      -1.102796756328083,
+      -0.6155602710086596
+     ]
+    ],
+    "nodes": [
+     64,
+     128,
+     64
+    ],
+    "evaluations": 524288
+   },
+   "plan_sha256": "bc08f7fc47c8c38a4f16a5e009e86127a66796b7cbdf4a8b6ebe732f06ba1f67"
+  },
+  "B0:r1:cdf:5": {
+   "logZ": -412.0554527433669,
+   "means": [
+    0.3543235693426323,
+    0.15028711949936457,
+    0.42515354858949567
+   ],
+   "evaluations": 524288,
+   "spec": {
+    "kind": "integral",
+    "box": [
+     [
+      -2.4943885044446974,
+      0.3729744161360616
+     ],
+     [
+      -10.0,
+      -1.7492322184439
+     ],
+     [
+      -1.102796756328083,
+      -0.6155602710086596
+     ]
+    ],
+    "nodes": [
+     64,
+     128,
+     64
+    ],
+    "evaluations": 524288
+   },
+   "plan_sha256": "bc08f7fc47c8c38a4f16a5e009e86127a66796b7cbdf4a8b6ebe732f06ba1f67"
+  },
+  "B0:r1:cdf:6": {
+   "logZ": -412.0419636361036,
+   "means": [
+    0.35572437956183434,
+    0.1775664636272218,
+    0.41448780057264306
+   ],
+   "evaluations": 524288,
+   "spec": {
+    "kind": "integral",
+    "box": [
+     [
+      -2.4943885044446974,
+      0.3729744161360616
+     ],
+     [
+      -10.0,
+      0.7972928210443353
+     ],
+     [
+      -1.102796756328083,
+      -0.8562853859446228
+     ]
+    ],
+    "nodes": [
+     64,
+     128,
+     64
+    ],
+    "evaluations": 524288
+   },
+   "plan_sha256": "bc08f7fc47c8c38a4f16a5e009e86127a66796b7cbdf4a8b6ebe732f06ba1f67"
+  },
+  "B0:face:0:0": {
+   "maximum_log_density": -470.5783867236599,
+   "deficit": -63.55202632838581,
+   "evaluations": 9217,
+   "spec": {
+    "kind": "face",
+    "box": [
+     [
+      -2.4943885044446974,
+      0.3729744161360616
+     ],
+     [
+      -10.0,
+      0.7972928210443353
+     ],
+     [
+      -1.102796756328083,
+      -0.6155602710086596
+     ]
+    ],
+    "axis": 0,
+    "side": 0,
+    "nodes": 96,
+    "evaluations": 9217
+   },
+   "plan_sha256": "bc08f7fc47c8c38a4f16a5e009e86127a66796b7cbdf4a8b6ebe732f06ba1f67"
+  },
+  "B0:face:0:1": {
+   "maximum_log_density": -433.9741383752478,
+   "deficit": -26.947777979973694,
+   "evaluations": 9217,
+   "spec": {
+    "kind": "face",
+    "box": [
+     [
+      -2.4943885044446974,
+      0.3729744161360616
+     ],
+     [
+      -10.0,
+      0.7972928210443353
+     ],
+     [
+      -1.102796756328083,
+      -0.6155602710086596
+     ]
+    ],
+    "axis": 0,
+    "side": 1,
+    "nodes": 96,
+    "evaluations": 9217
+   },
+   "plan_sha256": "bc08f7fc47c8c38a4f16a5e009e86127a66796b7cbdf4a8b6ebe732f06ba1f67"
+  },
+  "B0:face:1:0": {
+   "maximum_log_density": -433.2815230311126,
+   "deficit": -26.25516263583853,
+   "evaluations": 9217,
+   "spec": {
+    "kind": "face",
+    "box": [
+     [
+      -2.4943885044446974,
+      0.3729744161360616
+     ],
+     [
+      -10.0,
+      0.7972928210443353
+     ],
+     [
+      -1.102796756328083,
+      -0.6155602710086596
+     ]
+    ],
+    "axis": 1,
+    "side": 0,
+    "nodes": 96,
+    "evaluations": 9217
+   },
+   "plan_sha256": "bc08f7fc47c8c38a4f16a5e009e86127a66796b7cbdf4a8b6ebe732f06ba1f67"
+  },
+  "B0:face:1:1": {
+   "maximum_log_density": -462.584290549468,
+   "deficit": -55.55793015419391,
+   "evaluations": 9217,
+   "spec": {
+    "kind": "face",
+    "box": [
+     [
+      -2.4943885044446974,
+      0.3729744161360616
+     ],
+     [
+      -10.0,
+      0.7972928210443353
+     ],
+     [
+      -1.102796756328083,
+      -0.6155602710086596
+     ]
+    ],
+    "axis": 1,
+    "side": 1,
+    "nodes": 96,
+    "evaluations": 9217
+   },
+   "plan_sha256": "bc08f7fc47c8c38a4f16a5e009e86127a66796b7cbdf4a8b6ebe732f06ba1f67"
+  },
+  "B0:face:2:0": {
+   "maximum_log_density": -444.91685846518675,
+   "deficit": -37.89049806991267,
+   "evaluations": 9217,
+   "spec": {
+    "kind": "face",
+    "box": [
+     [
+      -2.4943885044446974,
+      0.3729744161360616
+     ],
+     [
+      -10.0,
+      0.7972928210443353
+     ],
+     [
+      -1.102796756328083,
+      -0.6155602710086596
+     ]
+    ],
+    "axis": 2,
+    "side": 0,
+    "nodes": 96,
+    "evaluations": 9217
+   },
+   "plan_sha256": "bc08f7fc47c8c38a4f16a5e009e86127a66796b7cbdf4a8b6ebe732f06ba1f67"
+  },
+  "B0:face:2:1": {
+   "maximum_log_density": -434.434029976222,
+   "deficit": -27.407669580947925,
+   "evaluations": 9217,
+   "spec": {
+    "kind": "face",
+    "box": [
+     [
+      -2.4943885044446974,
+      0.3729744161360616
+     ],
+     [
+      -10.0,
+      0.7972928210443353
+     ],
+     [
+      -1.102796756328083,
+      -0.6155602710086596
+     ]
+    ],
+    "axis": 2,
+    "side": 1,
+    "nodes": 96,
+    "evaluations": 9217
+   },
+   "plan_sha256": "bc08f7fc47c8c38a4f16a5e009e86127a66796b7cbdf4a8b6ebe732f06ba1f67"
+  },
+  "B1:r0:full": {
+   "logZ": -411.38570139244916,
+   "means": [
+    0.3549405207594923,
+    0.17582250768147348,
+    0.4244565473405041
+   ],
+   "evaluations": 221184,
+   "spec": {
+    "kind": "integral",
+    "box": [
+     [
+      -2.7811247965027732,
+      0.6597107081941374
+     ],
+     [
+      -12.0,
+      1.5258055777984008
+     ],
+     [
+      -1.1637013169930108,
+      -0.5546557103437317
+     ]
+    ],
+    "nodes": [
+     48,
+     96,
+     48
+    ],
+    "evaluations": 221184
+   },
+   "plan_sha256": "bc08f7fc47c8c38a4f16a5e009e86127a66796b7cbdf4a8b6ebe732f06ba1f67"
+  },
+  "B1:r0:cdf:0": {
+   "logZ": -411.38751897118703,
+   "means": [
+    0.3549370235576584,
+    0.175562717348639,
+    0.4244584877423634
+   ],
+   "evaluations": 221184,
+   "spec": {
+    "kind": "integral",
+    "box": [
+     [
+      -2.7811247965027732,
+      0.6597107081941374
+     ],
+     [
+      -12.0,
+      -1.2039728043259361
+     ],
+     [
+      -1.1637013169930108,
+      -0.5546557103437317
+     ]
+    ],
+    "nodes": [
+     48,
+     96,
+     48
+    ],
+    "evaluations": 221184
+   },
+   "plan_sha256": "bc08f7fc47c8c38a4f16a5e009e86127a66796b7cbdf4a8b6ebe732f06ba1f67"
+  },
+  "B1:r0:cdf:1": {
+   "logZ": -412.007341490443,
+   "means": [
+    0.3163787859454478,
+    0.1754516634517823,
+    0.42464356939795944
+   ],
+   "evaluations": 221184,
+   "spec": {
+    "kind": "integral",
+    "box": [
+     [
+      -2.7811247965027732,
+      -1.037917752010779
+     ],
+     [
+      -12.0,
+      1.5258055777984008
+     ],
+     [
+      -1.1637013169930108,
+      -0.5546557103437317
+     ]
+    ],
+    "nodes": [
+     48,
+     96,
+     48
+    ],
+    "evaluations": 221184
+   },
+   "plan_sha256": "bc08f7fc47c8c38a4f16a5e009e86127a66796b7cbdf4a8b6ebe732f06ba1f67"
+  },
+  "B1:r0:cdf:2": {
+   "logZ": -412.0204726926819,
+   "means": [
+    0.35434883046664195,
+    0.15112443777386764,
+    0.42511809416203306
+   ],
+   "evaluations": 221184,
+   "spec": {
+    "kind": "integral",
+    "box": [
+     [
+      -2.7811247965027732,
+      0.6597107081941374
+     ],
+     [
+      -12.0,
+      -1.7407680263164118
+     ],
+     [
+      -1.1637013169930108,
+      -0.5546557103437317
+     ]
+    ],
+    "nodes": [
+     48,
+     96,
+     48
+    ],
+    "evaluations": 221184
+   },
+   "plan_sha256": "bc08f7fc47c8c38a4f16a5e009e86127a66796b7cbdf4a8b6ebe732f06ba1f67"
+  },
+  "B1:r0:cdf:3": {
+   "logZ": -412.0783620532419,
+   "means": [
+    0.35575277846263903,
+    0.1776291561459616,
+    0.4141190474624611
+   ],
+   "evaluations": 221184,
+   "spec": {
+    "kind": "integral",
+    "box": [
+     [
+      -2.7811247965027732,
+      0.6597107081941374
+     ],
+     [
+      -12.0,
+      1.5258055777984008
+     ],
+     [
+      -1.1637013169930108,
+      -0.8577055910433883
+     ]
+    ],
+    "nodes": [
+     48,
+     96,
+     48
+    ],
+    "evaluations": 221184
+   },
+   "plan_sha256": "bc08f7fc47c8c38a4f16a5e009e86127a66796b7cbdf4a8b6ebe732f06ba1f67"
+  },
+  "B1:r0:cdf:4": {
+   "logZ": -412.00400175430707,
+   "means": [
+    0.3165052484389028,
+    0.17545320984414248,
+    0.42464260807437076
+   ],
+   "evaluations": 221184,
+   "spec": {
+    "kind": "integral",
+    "box": [
+     [
+      -2.7811247965027732,
+      -1.037259206568731
+     ],
+     [
+      -12.0,
+      1.5258055777984008
+     ],
+     [
+      -1.1637013169930108,
+      -0.5546557103437317
+     ]
+    ],
+    "nodes": [
+     48,
+     96,
+     48
+    ],
+    "evaluations": 221184
+   },
+   "plan_sha256": "bc08f7fc47c8c38a4f16a5e009e86127a66796b7cbdf4a8b6ebe732f06ba1f67"
+  },
+  "B1:r0:cdf:5": {
+   "logZ": -412.0554527433609,
+   "means": [
+    0.35432356933513987,
+    0.15028711949713489,
+    0.425153548589979
+   ],
+   "evaluations": 221184,
+   "spec": {
+    "kind": "integral",
+    "box": [
+     [
+      -2.7811247965027732,
+      0.6597107081941374
+     ],
+     [
+      -12.0,
+      -1.7492322184439
+     ],
+     [
+      -1.1637013169930108,
+      -0.5546557103437317
+     ]
+    ],
+    "nodes": [
+     48,
+     96,
+     48
+    ],
+    "evaluations": 221184
+   },
+   "plan_sha256": "bc08f7fc47c8c38a4f16a5e009e86127a66796b7cbdf4a8b6ebe732f06ba1f67"
+  },
+  "B1:r0:cdf:6": {
+   "logZ": -412.0419629272926,
+   "means": [
+    0.35572438082675356,
+    0.17756644398110244,
+    0.41448779900025906
+   ],
+   "evaluations": 221184,
+   "spec": {
+    "kind": "integral",
+    "box": [
+     [
+      -2.7811247965027732,
+      0.6597107081941374
+     ],
+     [
+      -12.0,
+      1.5258055777984008
+     ],
+     [
+      -1.1637013169930108,
+      -0.8562853859446228
+     ]
+    ],
+    "nodes": [
+     48,
+     96,
+     48
+    ],
+    "evaluations": 221184
+   },
+   "plan_sha256": "bc08f7fc47c8c38a4f16a5e009e86127a66796b7cbdf4a8b6ebe732f06ba1f67"
+  },
+  "B1:r1:full": {
+   "logZ": -411.38570191968597,
+   "means": [
+    0.3549405195125328,
+    0.17582251766578189,
+    0.42445655045206676
+   ],
+   "evaluations": 524288,
+   "spec": {
+    "kind": "integral",
+    "box": [
+     [
+      -2.7811247965027732,
+      0.6597107081941374
+     ],
+     [
+      -12.0,
+      1.5258055777984008
+     ],
+     [
+      -1.1637013169930108,
+      -0.5546557103437317
+     ]
+    ],
+    "nodes": [
+     64,
+     128,
+     64
+    ],
+    "evaluations": 524288
+   },
+   "plan_sha256": "bc08f7fc47c8c38a4f16a5e009e86127a66796b7cbdf4a8b6ebe732f06ba1f67"
+  },
+  "B1:r1:cdf:0": {
+   "logZ": -411.38751897117396,
+   "means": [
+    0.3549370235643971,
+    0.1755627173488386,
+    0.4244584877422669
+   ],
+   "evaluations": 524288,
+   "spec": {
+    "kind": "integral",
+    "box": [
+     [
+      -2.7811247965027732,
+      0.6597107081941374
+     ],
+     [
+      -12.0,
+      -1.2039728043259361
+     ],
+     [
+      -1.1637013169930108,
+      -0.5546557103437317
+     ]
+    ],
+    "nodes": [
+     64,
+     128,
+     64
+    ],
+    "evaluations": 524288
+   },
+   "plan_sha256": "bc08f7fc47c8c38a4f16a5e009e86127a66796b7cbdf4a8b6ebe732f06ba1f67"
+  },
+  "B1:r1:cdf:1": {
+   "logZ": -412.00734199975676,
+   "means": [
+    0.31637878542853226,
+    0.1754516696974545,
+    0.42464357246172363
+   ],
+   "evaluations": 524288,
+   "spec": {
+    "kind": "integral",
+    "box": [
+     [
+      -2.7811247965027732,
+      -1.037917752010779
+     ],
+     [
+      -12.0,
+      1.5258055777984008
+     ],
+     [
+      -1.1637013169930108,
+      -0.5546557103437317
+     ]
+    ],
+    "nodes": [
+     64,
+     128,
+     64
+    ],
+    "evaluations": 524288
+   },
+   "plan_sha256": "bc08f7fc47c8c38a4f16a5e009e86127a66796b7cbdf4a8b6ebe732f06ba1f67"
+  },
+  "B1:r1:cdf:2": {
+   "logZ": -412.0204726926732,
+   "means": [
+    0.35434883047413496,
+    0.15112443777396212,
+    0.42511809416198476
+   ],
+   "evaluations": 524288,
+   "spec": {
+    "kind": "integral",
+    "box": [
+     [
+      -2.7811247965027732,
+      0.6597107081941374
+     ],
+     [
+      -12.0,
+      -1.7407680263164118
+     ],
+     [
+      -1.1637013169930108,
+      -0.5546557103437317
+     ]
+    ],
+    "nodes": [
+     64,
+     128,
+     64
+    ],
+    "evaluations": 524288
+   },
+   "plan_sha256": "bc08f7fc47c8c38a4f16a5e009e86127a66796b7cbdf4a8b6ebe732f06ba1f67"
+  },
+  "B1:r1:cdf:3": {
+   "logZ": -412.0783627706591,
+   "means": [
+    0.35575277719557635,
+    0.17762917629898498,
+    0.41411904900446855
+   ],
+   "evaluations": 524288,
+   "spec": {
+    "kind": "integral",
+    "box": [
+     [
+      -2.7811247965027732,
+      0.6597107081941374
+     ],
+     [
+      -12.0,
+      1.5258055777984008
+     ],
+     [
+      -1.1637013169930108,
+      -0.8577055910433883
+     ]
+    ],
+    "nodes": [
+     64,
+     128,
+     64
+    ],
+    "evaluations": 524288
+   },
+   "plan_sha256": "bc08f7fc47c8c38a4f16a5e009e86127a66796b7cbdf4a8b6ebe732f06ba1f67"
+  },
+  "B1:r1:cdf:4": {
+   "logZ": -412.0040022637006,
+   "means": [
+    0.31650524792068313,
+    0.17545321610492948,
+    0.4246426111383694
+   ],
+   "evaluations": 524288,
+   "spec": {
+    "kind": "integral",
+    "box": [
+     [
+      -2.7811247965027732,
+      -1.037259206568731
+     ],
+     [
+      -12.0,
+      1.5258055777984008
+     ],
+     [
+      -1.1637013169930108,
+      -0.5546557103437317
+     ]
+    ],
+    "nodes": [
+     64,
+     128,
+     64
+    ],
+    "evaluations": 524288
+   },
+   "plan_sha256": "bc08f7fc47c8c38a4f16a5e009e86127a66796b7cbdf4a8b6ebe732f06ba1f67"
+  },
+  "B1:r1:cdf:5": {
+   "logZ": -412.0554527433522,
+   "means": [
+    0.3543235693426323,
+    0.15028711949720325,
+    0.4251535485898582
+   ],
+   "evaluations": 524288,
+   "spec": {
+    "kind": "integral",
+    "box": [
+     [
+      -2.7811247965027732,
+      0.6597107081941374
+     ],
+     [
+      -12.0,
+      -1.7492322184439
+     ],
+     [
+      -1.1637013169930108,
+      -0.5546557103437317
+     ]
+    ],
+    "nodes": [
+     64,
+     128,
+     64
+    ],
+    "evaluations": 524288
+   },
+   "plan_sha256": "bc08f7fc47c8c38a4f16a5e009e86127a66796b7cbdf4a8b6ebe732f06ba1f67"
+  },
+  "B1:r1:cdf:6": {
+   "logZ": -412.04196363611226,
+   "means": [
+    0.3557243795616321,
+    0.17756646361549316,
+    0.4144878005726902
+   ],
+   "evaluations": 524288,
+   "spec": {
+    "kind": "integral",
+    "box": [
+     [
+      -2.7811247965027732,
+      0.6597107081941374
+     ],
+     [
+      -12.0,
+      1.5258055777984008
+     ],
+     [
+      -1.1637013169930108,
+      -0.8562853859446228
+     ]
+    ],
+    "nodes": [
+     64,
+     128,
+     64
+    ],
+    "evaluations": 524288
+   },
+   "plan_sha256": "bc08f7fc47c8c38a4f16a5e009e86127a66796b7cbdf4a8b6ebe732f06ba1f67"
+  },
+  "B1:face:0:0": {
+   "maximum_log_density": -486.27107439224085,
+   "deficit": -79.24471399696677,
+   "evaluations": 9217,
+   "spec": {
+    "kind": "face",
+    "box": [
+     [
+      -2.7811247965027732,
+      0.6597107081941374
+     ],
+     [
+      -12.0,
+      1.5258055777984008
+     ],
+     [
+      -1.1637013169930108,
+      -0.5546557103437317
+     ]
+    ],
+    "axis": 0,
+    "side": 0,
+    "nodes": 96,
+    "evaluations": 9217
+   },
+   "plan_sha256": "bc08f7fc47c8c38a4f16a5e009e86127a66796b7cbdf4a8b6ebe732f06ba1f67"
+  },
+  "B1:face:0:1": {
+   "maximum_log_density": -442.4199152536508,
+   "deficit": -35.39355485837672,
+   "evaluations": 9217,
+   "spec": {
+    "kind": "face",
+    "box": [
+     [
+      -2.7811247965027732,
+      0.6597107081941374
+     ],
+     [
+      -12.0,
+      1.5258055777984008
+     ],
+     [
+      -1.1637013169930108,
+      -0.5546557103437317
+     ]
+    ],
+    "axis": 0,
+    "side": 1,
+    "nodes": 96,
+    "evaluations": 9217
+   },
+   "plan_sha256": "bc08f7fc47c8c38a4f16a5e009e86127a66796b7cbdf4a8b6ebe732f06ba1f67"
+  },
+  "B1:face:1:0": {
+   "maximum_log_density": -435.2862208005681,
+   "deficit": -28.259860405294035,
+   "evaluations": 9217,
+   "spec": {
+    "kind": "face",
+    "box": [
+     [
+      -2.7811247965027732,
+      0.6597107081941374
+     ],
+     [
+      -12.0,
+      1.5258055777984008
+     ],
+     [
+      -1.1637013169930108,
+      -0.5546557103437317
+     ]
+    ],
+    "axis": 1,
+    "side": 0,
+    "nodes": 96,
+    "evaluations": 9217
+   },
+   "plan_sha256": "bc08f7fc47c8c38a4f16a5e009e86127a66796b7cbdf4a8b6ebe732f06ba1f67"
+  },
+  "B1:face:1:1": {
+   "maximum_log_density": -491.03703473397945,
+   "deficit": -84.01067433870537,
+   "evaluations": 9217,
+   "spec": {
+    "kind": "face",
+    "box": [
+     [
+      -2.7811247965027732,
+      0.6597107081941374
+     ],
+     [
+      -12.0,
+      1.5258055777984008
+     ],
+     [
+      -1.1637013169930108,
+      -0.5546557103437317
+     ]
+    ],
+    "axis": 1,
+    "side": 1,
+    "nodes": 96,
+    "evaluations": 9217
+   },
+   "plan_sha256": "bc08f7fc47c8c38a4f16a5e009e86127a66796b7cbdf4a8b6ebe732f06ba1f67"
+  },
+  "B1:face:2:0": {
+   "maximum_log_density": -469.0542292541215,
+   "deficit": -62.0278688588474,
+   "evaluations": 9217,
+   "spec": {
+    "kind": "face",
+    "box": [
+     [
+      -2.7811247965027732,
+      0.6597107081941374
+     ],
+     [
+      -12.0,
+      1.5258055777984008
+     ],
+     [
+      -1.1637013169930108,
+      -0.5546557103437317
+     ]
+    ],
+    "axis": 2,
+    "side": 0,
+    "nodes": 96,
+    "evaluations": 9217
+   },
+   "plan_sha256": "bc08f7fc47c8c38a4f16a5e009e86127a66796b7cbdf4a8b6ebe732f06ba1f67"
+  },
+  "B1:face:2:1": {
+   "maximum_log_density": -448.29360068953474,
+   "deficit": -41.26724029426066,
+   "evaluations": 9217,
+   "spec": {
+    "kind": "face",
+    "box": [
+     [
+      -2.7811247965027732,
+      0.6597107081941374
+     ],
+     [
+      -12.0,
+      1.5258055777984008
+     ],
+     [
+      -1.1637013169930108,
+      -0.5546557103437317
+     ]
+    ],
+    "axis": 2,
+    "side": 1,
+    "nodes": 96,
+    "evaluations": 9217
+   },
+   "plan_sha256": "bc08f7fc47c8c38a4f16a5e009e86127a66796b7cbdf4a8b6ebe732f06ba1f67"
+  }
+ },
+ "budget": {
+  "reason": "complete",
+  "requested": 12038157,
+  "reserved_uncertain": 0,
+  "confirmed": 12038157,
+  "remaining": 11843,
+  "seconds_spent": 267.91294945799746,
+  "cap": 12050000,
+  "unit_deadline_seconds": 720.0
+ },
+ "required_conditions": [
+  "stage:anchor:reference",
+  "stage:B0:r0:full",
+  "stage:B0:r0:cdf:0",
+  "stage:B0:r0:cdf:1",
+  "stage:B0:r0:cdf:2",
+  "stage:B0:r0:cdf:3",
+  "stage:B0:r0:cdf:4",
+  "stage:B0:r0:cdf:5",
+  "stage:B0:r0:cdf:6",
+  "stage:B0:r1:full",
+  "stage:B0:r1:cdf:0",
+  "stage:B0:r1:cdf:1",
+  "stage:B0:r1:cdf:2",
+  "stage:B0:r1:cdf:3",
+  "stage:B0:r1:cdf:4",
+  "stage:B0:r1:cdf:5",
+  "stage:B0:r1:cdf:6",
+  "stage:B0:face:0:0",
+  "stage:B0:face:0:1",
+  "stage:B0:face:1:0",
+  "stage:B0:face:1:1",
+  "stage:B0:face:2:0",
+  "stage:B0:face:2:1",
+  "stage:B1:r0:full",
+  "stage:B1:r0:cdf:0",
+  "stage:B1:r0:cdf:1",
+  "stage:B1:r0:cdf:2",
+  "stage:B1:r0:cdf:3",
+  "stage:B1:r0:cdf:4",
+  "stage:B1:r0:cdf:5",
+  "stage:B1:r0:cdf:6",
+  "stage:B1:r1:full",
+  "stage:B1:r1:cdf:0",
+  "stage:B1:r1:cdf:1",
+  "stage:B1:r1:cdf:2",
+  "stage:B1:r1:cdf:3",
+  "stage:B1:r1:cdf:4",
+  "stage:B1:r1:cdf:5",
+  "stage:B1:r1:cdf:6",
+  "stage:B1:face:0:0",
+  "stage:B1:face:0:1",
+  "stage:B1:face:1:0",
+  "stage:B1:face:1:1",
+  "stage:B1:face:2:0",
+  "stage:B1:face:2:1",
+  "no_unexpected_stages",
+  "cdf_range:B0:r0:cdf:0",
+  "cdf_range:B0:r0:cdf:1",
+  "cdf_range:B0:r0:cdf:2",
+  "cdf_range:B0:r0:cdf:3",
+  "cdf_range:B0:r0:cdf:4",
+  "cdf_range:B0:r0:cdf:5",
+  "cdf_range:B0:r0:cdf:6",
+  "cdf_range:B0:r1:cdf:0",
+  "cdf_range:B0:r1:cdf:1",
+  "cdf_range:B0:r1:cdf:2",
+  "cdf_range:B0:r1:cdf:3",
+  "cdf_range:B0:r1:cdf:4",
+  "cdf_range:B0:r1:cdf:5",
+  "cdf_range:B0:r1:cdf:6",
+  "cdf_range:B1:r0:cdf:0",
+  "cdf_range:B1:r0:cdf:1",
+  "cdf_range:B1:r0:cdf:2",
+  "cdf_range:B1:r0:cdf:3",
+  "cdf_range:B1:r0:cdf:4",
+  "cdf_range:B1:r0:cdf:5",
+  "cdf_range:B1:r0:cdf:6",
+  "cdf_range:B1:r1:cdf:0",
+  "cdf_range:B1:r1:cdf:1",
+  "cdf_range:B1:r1:cdf:2",
+  "cdf_range:B1:r1:cdf:3",
+  "cdf_range:B1:r1:cdf:4",
+  "cdf_range:B1:r1:cdf:5",
+  "cdf_range:B1:r1:cdf:6",
+  "resolution:B0:logZ",
+  "resolution:B0:mean:0",
+  "resolution:B0:mean:1",
+  "resolution:B0:mean:2",
+  "resolution:B0:cdf:0",
+  "resolution:B0:cdf:1",
+  "resolution:B0:cdf:2",
+  "resolution:B0:cdf:3",
+  "resolution:B0:cdf:4",
+  "resolution:B0:cdf:5",
+  "resolution:B0:cdf:6",
+  "resolution:B1:logZ",
+  "resolution:B1:mean:0",
+  "resolution:B1:mean:1",
+  "resolution:B1:mean:2",
+  "resolution:B1:cdf:0",
+  "resolution:B1:cdf:1",
+  "resolution:B1:cdf:2",
+  "resolution:B1:cdf:3",
+  "resolution:B1:cdf:4",
+  "resolution:B1:cdf:5",
+  "resolution:B1:cdf:6",
+  "domain:r0:logZ",
+  "domain:r0:mean:0",
+  "domain:r0:mean:1",
+  "domain:r0:mean:2",
+  "domain:r0:cdf:0",
+  "domain:r0:cdf:1",
+  "domain:r0:cdf:2",
+  "domain:r0:cdf:3",
+  "domain:r0:cdf:4",
+  "domain:r0:cdf:5",
+  "domain:r0:cdf:6",
+  "domain:r1:logZ",
+  "domain:r1:mean:0",
+  "domain:r1:mean:1",
+  "domain:r1:mean:2",
+  "domain:r1:cdf:0",
+  "domain:r1:cdf:1",
+  "domain:r1:cdf:2",
+  "domain:r1:cdf:3",
+  "domain:r1:cdf:4",
+  "domain:r1:cdf:5",
+  "domain:r1:cdf:6",
+  "face:B0:face:0:0",
+  "face:B0:face:0:1",
+  "face:B0:face:1:0",
+  "face:B0:face:1:1",
+  "face:B0:face:2:0",
+  "face:B0:face:2:1",
+  "face:B1:face:0:0",
+  "face:B1:face:0:1",
+  "face:B1:face:1:0",
+  "face:B1:face:1:1",
+  "face:B1:face:2:0",
+  "face:B1:face:2:1",
+  "anchor_reference_consistency",
+  "exact_complete_count"
+ ],
+ "conditions": {
+  "stage:anchor:reference": true,
+  "stage:B0:r0:full": true,
+  "stage:B0:r0:cdf:0": true,
+  "stage:B0:r0:cdf:1": true,
+  "stage:B0:r0:cdf:2": true,
+  "stage:B0:r0:cdf:3": true,
+  "stage:B0:r0:cdf:4": true,
+  "stage:B0:r0:cdf:5": true,
+  "stage:B0:r0:cdf:6": true,
+  "stage:B0:r1:full": true,
+  "stage:B0:r1:cdf:0": true,
+  "stage:B0:r1:cdf:1": true,
+  "stage:B0:r1:cdf:2": true,
+  "stage:B0:r1:cdf:3": true,
+  "stage:B0:r1:cdf:4": true,
+  "stage:B0:r1:cdf:5": true,
+  "stage:B0:r1:cdf:6": true,
+  "stage:B0:face:0:0": true,
+  "stage:B0:face:0:1": true,
+  "stage:B0:face:1:0": true,
+  "stage:B0:face:1:1": true,
+  "stage:B0:face:2:0": true,
+  "stage:B0:face:2:1": true,
+  "stage:B1:r0:full": true,
+  "stage:B1:r0:cdf:0": true,
+  "stage:B1:r0:cdf:1": true,
+  "stage:B1:r0:cdf:2": true,
+  "stage:B1:r0:cdf:3": true,
+  "stage:B1:r0:cdf:4": true,
+  "stage:B1:r0:cdf:5": true,
+  "stage:B1:r0:cdf:6": true,
+  "stage:B1:r1:full": true,
+  "stage:B1:r1:cdf:0": true,
+  "stage:B1:r1:cdf:1": true,
+  "stage:B1:r1:cdf:2": true,
+  "stage:B1:r1:cdf:3": true,
+  "stage:B1:r1:cdf:4": true,
+  "stage:B1:r1:cdf:5": true,
+  "stage:B1:r1:cdf:6": true,
+  "stage:B1:face:0:0": true,
+  "stage:B1:face:0:1": true,
+  "stage:B1:face:1:0": true,
+  "stage:B1:face:1:1": true,
+  "stage:B1:face:2:0": true,
+  "stage:B1:face:2:1": true,
+  "no_unexpected_stages": true,
+  "cdf_range:B0:r0:cdf:0": true,
+  "cdf_range:B0:r0:cdf:1": true,
+  "cdf_range:B0:r0:cdf:2": true,
+  "cdf_range:B0:r0:cdf:3": true,
+  "cdf_range:B0:r0:cdf:4": true,
+  "cdf_range:B0:r0:cdf:5": true,
+  "cdf_range:B0:r0:cdf:6": true,
+  "cdf_range:B0:r1:cdf:0": true,
+  "cdf_range:B0:r1:cdf:1": true,
+  "cdf_range:B0:r1:cdf:2": true,
+  "cdf_range:B0:r1:cdf:3": true,
+  "cdf_range:B0:r1:cdf:4": true,
+  "cdf_range:B0:r1:cdf:5": true,
+  "cdf_range:B0:r1:cdf:6": true,
+  "cdf_range:B1:r0:cdf:0": true,
+  "cdf_range:B1:r0:cdf:1": true,
+  "cdf_range:B1:r0:cdf:2": true,
+  "cdf_range:B1:r0:cdf:3": true,
+  "cdf_range:B1:r0:cdf:4": true,
+  "cdf_range:B1:r0:cdf:5": true,
+  "cdf_range:B1:r0:cdf:6": true,
+  "cdf_range:B1:r1:cdf:0": true,
+  "cdf_range:B1:r1:cdf:1": true,
+  "cdf_range:B1:r1:cdf:2": true,
+  "cdf_range:B1:r1:cdf:3": true,
+  "cdf_range:B1:r1:cdf:4": true,
+  "cdf_range:B1:r1:cdf:5": true,
+  "cdf_range:B1:r1:cdf:6": true,
+  "resolution:B0:logZ": true,
+  "resolution:B0:mean:0": true,
+  "resolution:B0:mean:1": true,
+  "resolution:B0:mean:2": true,
+  "resolution:B0:cdf:0": true,
+  "resolution:B0:cdf:1": true,
+  "resolution:B0:cdf:2": true,
+  "resolution:B0:cdf:3": true,
+  "resolution:B0:cdf:4": true,
+  "resolution:B0:cdf:5": true,
+  "resolution:B0:cdf:6": true,
+  "resolution:B1:logZ": true,
+  "resolution:B1:mean:0": true,
+  "resolution:B1:mean:1": true,
+  "resolution:B1:mean:2": true,
+  "resolution:B1:cdf:0": true,
+  "resolution:B1:cdf:1": true,
+  "resolution:B1:cdf:2": true,
+  "resolution:B1:cdf:3": true,
+  "resolution:B1:cdf:4": true,
+  "resolution:B1:cdf:5": true,
+  "resolution:B1:cdf:6": true,
+  "domain:r0:logZ": true,
+  "domain:r0:mean:0": true,
+  "domain:r0:mean:1": true,
+  "domain:r0:mean:2": true,
+  "domain:r0:cdf:0": true,
+  "domain:r0:cdf:1": true,
+  "domain:r0:cdf:2": true,
+  "domain:r0:cdf:3": true,
+  "domain:r0:cdf:4": true,
+  "domain:r0:cdf:5": true,
+  "domain:r0:cdf:6": true,
+  "domain:r1:logZ": true,
+  "domain:r1:mean:0": true,
+  "domain:r1:mean:1": true,
+  "domain:r1:mean:2": true,
+  "domain:r1:cdf:0": true,
+  "domain:r1:cdf:1": true,
+  "domain:r1:cdf:2": true,
+  "domain:r1:cdf:3": true,
+  "domain:r1:cdf:4": true,
+  "domain:r1:cdf:5": true,
+  "domain:r1:cdf:6": true,
+  "face:B0:face:0:0": true,
+  "face:B0:face:0:1": true,
+  "face:B0:face:1:0": true,
+  "face:B0:face:1:1": true,
+  "face:B0:face:2:0": true,
+  "face:B0:face:2:1": true,
+  "face:B1:face:0:0": true,
+  "face:B1:face:0:1": true,
+  "face:B1:face:1:0": true,
+  "face:B1:face:1:1": true,
+  "face:B1:face:2:0": true,
+  "face:B1:face:2:1": true,
+  "anchor_reference_consistency": true,
+  "exact_complete_count": true
+ },
+ "stage_acceptance": {
+  "accepted": true,
+  "n_required": 132,
+  "met": [
+   "anchor_reference_consistency",
+   "cdf_range:B0:r0:cdf:0",
+   "cdf_range:B0:r0:cdf:1",
+   "cdf_range:B0:r0:cdf:2",
+   "cdf_range:B0:r0:cdf:3",
+   "cdf_range:B0:r0:cdf:4",
+   "cdf_range:B0:r0:cdf:5",
+   "cdf_range:B0:r0:cdf:6",
+   "cdf_range:B0:r1:cdf:0",
+   "cdf_range:B0:r1:cdf:1",
+   "cdf_range:B0:r1:cdf:2",
+   "cdf_range:B0:r1:cdf:3",
+   "cdf_range:B0:r1:cdf:4",
+   "cdf_range:B0:r1:cdf:5",
+   "cdf_range:B0:r1:cdf:6",
+   "cdf_range:B1:r0:cdf:0",
+   "cdf_range:B1:r0:cdf:1",
+   "cdf_range:B1:r0:cdf:2",
+   "cdf_range:B1:r0:cdf:3",
+   "cdf_range:B1:r0:cdf:4",
+   "cdf_range:B1:r0:cdf:5",
+   "cdf_range:B1:r0:cdf:6",
+   "cdf_range:B1:r1:cdf:0",
+   "cdf_range:B1:r1:cdf:1",
+   "cdf_range:B1:r1:cdf:2",
+   "cdf_range:B1:r1:cdf:3",
+   "cdf_range:B1:r1:cdf:4",
+   "cdf_range:B1:r1:cdf:5",
+   "cdf_range:B1:r1:cdf:6",
+   "domain:r0:cdf:0",
+   "domain:r0:cdf:1",
+   "domain:r0:cdf:2",
+   "domain:r0:cdf:3",
+   "domain:r0:cdf:4",
+   "domain:r0:cdf:5",
+   "domain:r0:cdf:6",
+   "domain:r0:logZ",
+   "domain:r0:mean:0",
+   "domain:r0:mean:1",
+   "domain:r0:mean:2",
+   "domain:r1:cdf:0",
+   "domain:r1:cdf:1",
+   "domain:r1:cdf:2",
+   "domain:r1:cdf:3",
+   "domain:r1:cdf:4",
+   "domain:r1:cdf:5",
+   "domain:r1:cdf:6",
+   "domain:r1:logZ",
+   "domain:r1:mean:0",
+   "domain:r1:mean:1",
+   "domain:r1:mean:2",
+   "exact_complete_count",
+   "face:B0:face:0:0",
+   "face:B0:face:0:1",
+   "face:B0:face:1:0",
+   "face:B0:face:1:1",
+   "face:B0:face:2:0",
+   "face:B0:face:2:1",
+   "face:B1:face:0:0",
+   "face:B1:face:0:1",
+   "face:B1:face:1:0",
+   "face:B1:face:1:1",
+   "face:B1:face:2:0",
+   "face:B1:face:2:1",
+   "no_unexpected_stages",
+   "resolution:B0:cdf:0",
+   "resolution:B0:cdf:1",
+   "resolution:B0:cdf:2",
+   "resolution:B0:cdf:3",
+   "resolution:B0:cdf:4",
+   "resolution:B0:cdf:5",
+   "resolution:B0:cdf:6",
+   "resolution:B0:logZ",
+   "resolution:B0:mean:0",
+   "resolution:B0:mean:1",
+   "resolution:B0:mean:2",
+   "resolution:B1:cdf:0",
+   "resolution:B1:cdf:1",
+   "resolution:B1:cdf:2",
+   "resolution:B1:cdf:3",
+   "resolution:B1:cdf:4",
+   "resolution:B1:cdf:5",
+   "resolution:B1:cdf:6",
+   "resolution:B1:logZ",
+   "resolution:B1:mean:0",
+   "resolution:B1:mean:1",
+   "resolution:B1:mean:2",
+   "stage:B0:face:0:0",
+   "stage:B0:face:0:1",
+   "stage:B0:face:1:0",
+   "stage:B0:face:1:1",
+   "stage:B0:face:2:0",
+   "stage:B0:face:2:1",
+   "stage:B0:r0:cdf:0",
+   "stage:B0:r0:cdf:1",
+   "stage:B0:r0:cdf:2",
+   "stage:B0:r0:cdf:3",
+   "stage:B0:r0:cdf:4",
+   "stage:B0:r0:cdf:5",
+   "stage:B0:r0:cdf:6",
+   "stage:B0:r0:full",
+   "stage:B0:r1:cdf:0",
+   "stage:B0:r1:cdf:1",
+   "stage:B0:r1:cdf:2",
+   "stage:B0:r1:cdf:3",
+   "stage:B0:r1:cdf:4",
+   "stage:B0:r1:cdf:5",
+   "stage:B0:r1:cdf:6",
+   "stage:B0:r1:full",
+   "stage:B1:face:0:0",
+   "stage:B1:face:0:1",
+   "stage:B1:face:1:0",
+   "stage:B1:face:1:1",
+   "stage:B1:face:2:0",
+   "stage:B1:face:2:1",
+   "stage:B1:r0:cdf:0",
+   "stage:B1:r0:cdf:1",
+   "stage:B1:r0:cdf:2",
+   "stage:B1:r0:cdf:3",
+   "stage:B1:r0:cdf:4",
+   "stage:B1:r0:cdf:5",
+   "stage:B1:r0:cdf:6",
+   "stage:B1:r0:full",
+   "stage:B1:r1:cdf:0",
+   "stage:B1:r1:cdf:1",
+   "stage:B1:r1:cdf:2",
+   "stage:B1:r1:cdf:3",
+   "stage:B1:r1:cdf:4",
+   "stage:B1:r1:cdf:5",
+   "stage:B1:r1:cdf:6",
+   "stage:B1:r1:full",
+   "stage:anchor:reference"
+  ],
+  "failed": [],
+  "unchecked": [],
+  "omitted": [],
+  "malformed": [],
+  "unexpected": []
+ },
+ "run_validity": {
+  "valid": true,
+  "problems": []
+ },
+ "accepted": true,
+ "status": "diagnostics_passed",
+ "exit_code": 0,
+ "stopped": null,
+ "planned_evaluations": 12038157,
+ "differences": {
+  "resolution:B0:logZ": 2.596038939373102e-10,
+  "resolution:B0:mean:0": 1.876387933918977e-12,
+  "resolution:B0:mean:1": 8.58514925816678e-11,
+  "resolution:B0:mean:2": 1.3752332606031814e-12,
+  "resolution:B0:cdf:0": 2.5918933665991517e-10,
+  "resolution:B0:cdf:1": 1.4409473614307444e-11,
+  "resolution:B0:cdf:2": 1.3772538665079992e-10,
+  "resolution:B0:cdf:3": 4.3392622828264393e-11,
+  "resolution:B0:cdf:4": 1.4396372982616867e-11,
+  "resolution:B0:cdf:5": 1.329328869204005e-10,
+  "resolution:B0:cdf:6": 4.305478196187096e-11,
+  "resolution:B1:logZ": 5.272368071018718e-07,
+  "resolution:B1:mean:0": 1.2469594801167716e-09,
+  "resolution:B1:mean:1": 9.984308407817721e-09,
+  "resolution:B1:mean:2": 3.1115626741851088e-09,
+  "resolution:B1:cdf:0": 5.262925720783684e-07,
+  "resolution:B1:cdf:1": 9.625816144165356e-09,
+  "resolution:B1:cdf:2": 2.7947008485185165e-07,
+  "resolution:B1:cdf:3": 9.513646603842574e-08,
+  "resolution:B1:cdf:4": 9.615012341868123e-09,
+  "resolution:B1:cdf:5": 2.6986321111088785e-07,
+  "resolution:B1:cdf:6": 9.420283819672193e-08,
+  "domain:r0:logZ": 5.269793632578512e-07,
+  "domain:r0:mean:0": 1.2486946476819583e-09,
+  "domain:r0:mean:1": 9.90805149037044e-09,
+  "domain:r0:mean:2": 3.109922042110469e-09,
+  "domain:r0:cdf:0": 5.260279923868794e-07,
+  "domain:r0:cdf:1": 9.637508568971498e-09,
+  "domain:r0:cdf:2": 2.793260622802052e-07,
+  "domain:r0:cdf:3": 9.508758536114215e-08,
+  "domain:r0:cdf:4": 9.626682562213773e-09,
+  "domain:r0:cdf:5": 2.6972384836732033e-07,
+  "domain:r0:cdf:6": 9.415418034119938e-08,
+  "domain:r1:logZ": 2.1600499167107046e-12,
+  "domain:r1:mean:0": 1.412203687323199e-13,
+  "domain:r1:mean:1": 9.594575134386218e-12,
+  "domain:r1:mean:2": 2.6539881403664367e-13,
+  "domain:r1:cdf:0": 5.39035482916006e-12,
+  "domain:r1:cdf:1": 2.7170488081651456e-12,
+  "domain:r1:cdf:2": 6.297184995673888e-12,
+  "domain:r1:cdf:3": 5.488054455327074e-12,
+  "domain:r1:cdf:4": 2.726152636967072e-12,
+  "domain:r1:cdf:5": 6.429856647116594e-12,
+  "domain:r1:cdf:6": 5.60307356067824e-12
+ },
+ "cdfs": {
+  "B0:r0:cdf:0": 0.9981845980860536,
+  "B0:r0:cdf:1": 0.537062888758028,
+  "B0:r0:cdf:2": 0.5300569776262971,
+  "B0:r0:cdf:3": 0.5002432239809862,
+  "B0:r0:cdf:4": 0.53885953554504,
+  "B0:r0:cdf:5": 0.5118360992015731,
+  "B0:r0:cdf:6": 0.5187870873362725,
+  "B0:r1:cdf:0": 0.998184598345243,
+  "B0:r1:cdf:1": 0.5370628887436185,
+  "B0:r1:cdf:2": 0.5300569777640225,
+  "B0:r1:cdf:3": 0.5002432239375936,
+  "B0:r1:cdf:4": 0.5388595355306436,
+  "B0:r1:cdf:5": 0.511836099334506,
+  "B0:r1:cdf:6": 0.5187870872932178,
+  "B1:r0:cdf:0": 0.9981840720580613,
+  "B1:r0:cdf:1": 0.5370628791205194,
+  "B1:r0:cdf:2": 0.5300566983002348,
+  "B1:r0:cdf:3": 0.5002433190685716,
+  "B1:r0:cdf:4": 0.5388595259183574,
+  "B1:r0:cdf:5": 0.5118358294777248,
+  "B1:r0:cdf:6": 0.5187871814904529,
+  "B1:r1:cdf:0": 0.9981845983506333,
+  "B1:r1:cdf:1": 0.5370628887463356,
+  "B1:r1:cdf:2": 0.5300569777703197,
+  "B1:r1:cdf:3": 0.5002432239321055,
+  "B1:r1:cdf:4": 0.5388595355333697,
+  "B1:r1:cdf:5": 0.5118360993409359,
+  "B1:r1:cdf:6": 0.5187870872876147
+ },
+ "comparison": {},
+ "interpretation": "Numerical diagnostics only; the anchor check establishes reference consistency at one point, not target identity; no tail-mass bound, F7 acceptance, convergence or calibration claim.",
+ "binding": {
+  "argv": [
+   "--protocol",
+   "docs/m3b1-evidence/direct_cdf_v3r1_protocol.json",
+   "--log-dir",
+   "/Users/andrewdou/iqss-research/artifacts/2026-09-13-autobayes-f7-direct-cdf-unit-1/binding-logs",
+   "--approval",
+   "/Users/andrewdou/iqss-research/artifacts/2026-09-13-autobayes-f7-direct-cdf-unit-1/approval.json",
+   "--unit-dir",
+   "/Users/andrewdou/iqss-research/projects/AutoBayes-worktrees/m3b1-varying-slope/docs/m3b1-evidence/f7-direct-cdf-v3r1-unit-1",
+   "--attempt",
+   "v3r1-unit-1-attempt-1",
+   "--execute"
+  ],
+  "started": "2026-09-13T14:21:00.402986+00:00",
+  "run_started": "2026-09-13T14:21:01.904244+00:00",
+  "git": {
+   "head": "d63981c608e55e37b3abc238000e1d5554031279",
+   "dirty": false,
+   "status": ""
+  },
+  "environment": {
+   "python_version": "3.11.0",
+   "python_implementation": "CPython",
+   "system": "Darwin",
+   "machine": "arm64",
+   "numpy_version": "2.4.6",
+   "scipy_version": "1.17.1",
+   "blas": "accelerate",
+   "lapack": "accelerate",
+   "executable": "/Users/andrewdou/iqss-research/projects/AutoBayes-worktrees/m3b1-varying-slope/.venv/bin/python"
+  },
+  "implementation_sha256": {
+   "tests/reference_direct_cdf.py": "dc2aa754432afd4a038e13925066a50b0c7e51273c566f32c3730cba2da71216",
+   "tests/quadrature_budget.py": "6a716e188029d7d50dbfba274ee91d5f5c171cf42a0046dd67a512033f92f515",
+   "tests/reference_marginal.py": "b185e26baf49697f38e258cf24825b8d9e43e7991af9a8774dc470cea7dbc0dc",
+   "docs/m3b1-evidence/scripts/f7_direct_cdf_binding.py": "ea586dfd2180cc6516beceb1438223d9735ed7849938d7e8f35fcb84b6391876"
+  },
+  "protocol": {
+   "path": "docs/m3b1-evidence/direct_cdf_v3r1_protocol.json",
+   "sha256": "7143626a834c0e35b4fcdbef8adb34b5a351997d46c438dfb437257d58324182",
+   "protocol_id": "f7-direct-cdf-crossed-grid-v3r1-proposal",
+   "stages": 45,
+   "planned_evaluations": 12038157,
+   "first_stage": "anchor:reference",
+   "cap_evaluations": 12050000,
+   "unit_deadline_seconds": 720,
+   "max_batch_points": 32768
+  },
+  "protocol_source_sha256_observed": {
+   "tests/reference_marginal.py": "b185e26baf49697f38e258cf24825b8d9e43e7991af9a8774dc470cea7dbc0dc",
+   "tests/test_marginal_reference.py": "2b3dfa3e0151f1ddf1a7652e595fb0cc8f0914a4c531b96d6903722052781231",
+   "tests/quadrature_budget.py": "6a716e188029d7d50dbfba274ee91d5f5c171cf42a0046dd67a512033f92f515",
+   "docs/m3b1-evidence/F7_marginal_reference.json": "532017f2a0ec7a524657ed62e2e0d385072443b1341d03055b22e3412e444f24",
+   "docs/m3b1-evidence/F7_varying_slope_recovery_records.json": "72bec95cff15f168b2fa93dd0564400a368687785518e523dd3b00342e17a0f0",
+   "uv.lock": "e7c971d50ca835c42c0de9cc8ee05a3a9eabb86f50f2977b7790552f3a0fda08",
+   "pyproject.toml": "6386afef8d8fb6dacec8f8edddc6bde754f1cf8eb14f2375a29487ca33f8e3b4"
+  },
+  "approval": {
+   "path": "/Users/andrewdou/iqss-research/artifacts/2026-09-13-autobayes-f7-direct-cdf-unit-1/approval.json",
+   "sha256": "897b2065419c70fca2d75183a829453bdc435cd3b01872f40be178543c9b1305",
+   "approval_id": "f7-direct-cdf-v3r1-unit-1-reviewed-20260913"
+  },
+  "target": {
+   "callable": "tests.reference_marginal.GaussianSlopeMarginal.log_posterior_theta",
+   "generator": "tests.reference_marginal.f7_data",
+   "seed": 17,
+   "J": 30,
+   "per": 20,
+   "prior_mean": [
+    0.0,
+    0.0
+   ],
+   "prior_sd": [
+    5.0,
+    2.0
+   ],
+   "center": true,
+   "prior_scales": [
+    1.0,
+    1.0,
+    1.0
+   ],
+   "theta": "(log sd0, log sd1, log sigma); HalfNormal(1) priors on the natural scales and the three log-scale Jacobians included"
+  },
+  "model_identity": {
+   "formula": "y ~ x + (1 + x || g)",
+   "canonical_formula": "y ~ x + (1 + x || g)",
+   "family": "gaussian",
+   "link": "identity",
+   "n": 600,
+   "J": 30,
+   "group": "g",
+   "center_predictors": true,
+   "noncentered": true,
+   "varying_slope": "x",
+   "group_effects": [
+    "Intercept",
+    "x"
+   ],
+   "priors": {
+    "intercept": "Normal(mu=0, sigma=5)",
+    "b:x": "Normal(mu=0, sigma=2)",
+    "sd:Intercept": "HalfNormal(sigma=1)",
+    "sd:x": "HalfNormal(sigma=1)",
+    "sigma": "HalfNormal(sigma=1)"
+   }
+  },
+  "unit_dir": "/Users/andrewdou/iqss-research/projects/AutoBayes-worktrees/m3b1-varying-slope/docs/m3b1-evidence/f7-direct-cdf-v3r1-unit-1",
+  "attempt": "v3r1-unit-1-attempt-1",
+  "target_import_attempted": true,
+  "setup_seconds": 0.9983249170036288,
+  "setup_note": "the unit allowance started at ledger creation, before target setup; setup is not preemptible, its full duration is counted, and an exhausted allowance makes the controller's gate refuse every evaluation",
+  "finished": "2026-09-13T14:25:28.821487+00:00"
+ }
+}
