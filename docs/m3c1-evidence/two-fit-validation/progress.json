@@ -1,0 +1,57 @@
+{
+ "started": "2026-09-19T16:27:37.957843+00:00",
+ "pid": 68382,
+ "phases": [
+  {
+   "phase": "frozen_before_sampling",
+   "at": "2026-09-19T16:27:42.541719+00:00",
+   "elapsed_s": 4.584
+  },
+  {
+   "phase": "fit_1_pymc_start",
+   "at": "2026-09-19T16:27:42.541928+00:00",
+   "elapsed_s": 4.584
+  },
+  {
+   "phase": "fit_1_pymc_saved",
+   "at": "2026-09-19T16:28:05.270843+00:00",
+   "elapsed_s": 27.313,
+   "fit_wall_seconds": 22.376299750001635,
+   "netcdf_sha256": "3bab0591c321f4a2833a8ce62677240740f7d26f80c2a0354e33b4429d6f12e1",
+   "bytes": 530222
+  },
+  {
+   "phase": "fit_1_pymc_diagnosed",
+   "at": "2026-09-19T16:28:05.346989+00:00",
+   "elapsed_s": 27.389,
+   "gates_pass": false,
+   "actual_ok": true
+  },
+  {
+   "phase": "fit_2_numpyro_start",
+   "at": "2026-09-19T16:28:05.347187+00:00",
+   "elapsed_s": 27.389
+  },
+  {
+   "phase": "fit_2_numpyro_saved",
+   "at": "2026-09-19T16:28:08.516403+00:00",
+   "elapsed_s": 30.559,
+   "fit_wall_seconds": 3.1093629999959376,
+   "netcdf_sha256": "cbb97d1bdd776c5fe5d0744c2967491bf6ed78b666a9dffa9132b8f6e3d4b294",
+   "bytes": 389902
+  },
+  {
+   "phase": "fit_2_numpyro_diagnosed",
+   "at": "2026-09-19T16:28:08.648187+00:00",
+   "elapsed_s": 30.69,
+   "gates_pass": true,
+   "actual_ok": true
+  },
+  {
+   "phase": "finished",
+   "at": "2026-09-19T16:28:08.741594+00:00",
+   "elapsed_s": 30.784,
+   "all_gates_pass": false
+  }
+ ]
+}

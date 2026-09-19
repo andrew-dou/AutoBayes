@@ -1,0 +1,88 @@
+{
+ "m3c1_two_fit_1_pymc.nc": {
+  "sha256": "3bab0591c321f4a2",
+  "posterior_all_finite": true,
+  "sample_stats_variables": [
+   "step_size_bar",
+   "energy",
+   "acceptance_rate",
+   "tree_depth",
+   "max_energy_error",
+   "divergences",
+   "perf_counter_start",
+   "lp",
+   "reached_max_treedepth",
+   "perf_counter_diff",
+   "index_in_trajectory",
+   "energy_error",
+   "n_steps",
+   "diverging",
+   "smallest_eigval",
+   "largest_eigval",
+   "step_size",
+   "process_time_diff"
+  ],
+  "non_finite_sample_stats": {
+   "smallest_eigval": {
+    "non_finite": 4000,
+    "total": 4000,
+    "all_nan": true
+   },
+   "largest_eigval": {
+    "non_finite": 4000,
+    "total": 4000,
+    "all_nan": true
+   }
+  },
+  "panel_values_finite": {
+   "divergence_fraction": true,
+   "max_rhat": true,
+   "min_ess_bulk": true,
+   "min_ess_tail": true,
+   "min_bfmi": true,
+   "treedepth_saturation": true
+  },
+  "panel_statuses": {
+   "divergence_fraction": "pass",
+   "max_rhat": "pass",
+   "min_ess_bulk": "pass",
+   "min_ess_tail": "pass",
+   "min_bfmi": "pass",
+   "treedepth_saturation": "pass"
+  },
+  "lp_finite": true,
+  "energy_finite": true
+ },
+ "m3c1_two_fit_2_numpyro.nc": {
+  "sha256": "cbb97d1bdd776c5f",
+  "posterior_all_finite": true,
+  "sample_stats_variables": [
+   "acceptance_rate",
+   "step_size",
+   "diverging",
+   "energy",
+   "n_steps",
+   "tree_depth",
+   "lp"
+  ],
+  "non_finite_sample_stats": {},
+  "panel_values_finite": {
+   "divergence_fraction": true,
+   "max_rhat": true,
+   "min_ess_bulk": true,
+   "min_ess_tail": true,
+   "min_bfmi": true,
+   "treedepth_saturation": true
+  },
+  "panel_statuses": {
+   "divergence_fraction": "pass",
+   "max_rhat": "pass",
+   "min_ess_bulk": "pass",
+   "min_ess_tail": "pass",
+   "min_bfmi": "pass",
+   "treedepth_saturation": "pass"
+  },
+  "lp_finite": true,
+  "energy_finite": true
+ }
+}

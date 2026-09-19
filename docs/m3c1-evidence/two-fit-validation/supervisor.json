@@ -1,0 +1,17 @@
+{
+ "attempt_dir": "/Users/andrewdou/iqss-research/artifacts/2026-09-19-autobayes-m3c1-two-fit-validation/attempt-1",
+ "deadline_seconds": 600,
+ "python": "/Users/andrewdou/iqss-research/projects/AutoBayes-worktrees/m3c1-population-only/.venv/bin/python",
+ "child_script": "/Users/andrewdou/iqss-research/projects/AutoBayes-worktrees/m3c1-population-only/docs/m3c1-evidence/scripts/m3c1_two_fit_validation.py",
+ "launched_at": "2026-09-19T16:27:37.909787+00:00",
+ "supervisor_pid": 68381,
+ "cwd": "/Users/andrewdou/iqss-research/projects/AutoBayes-worktrees/m3c1-population-only",
+ "child_pid": 68382,
+ "child_pgid": 68382,
+ "timed_out": false,
+ "terminated_with": null,
+ "returncode": 1,
+ "wall_seconds": 31.459,
+ "finished_at": "2026-09-19T16:28:09.368961+00:00",
+ "status": "completed with returncode 1"
+}

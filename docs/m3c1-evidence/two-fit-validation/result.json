@@ -1,0 +1,797 @@
+{
+ "unit": "m3c1-two-fit-validation",
+ "head": "cbe7141374b2ec83deb4f57b03198cc886214561",
+ "dirty": false,
+ "started": "2026-09-19T16:27:37.957843+00:00",
+ "finished": "2026-09-19T16:28:08.740308+00:00",
+ "total_child_seconds": 30.782,
+ "settings": {
+  "chains": 4,
+  "draws": 1000,
+  "tune": 1000,
+  "seed": 29,
+  "target_accept": 0.9,
+  "max_treedepth": 10,
+  "device": "cpu",
+  "dtype": "float64"
+ },
+ "backends_in_order": [
+  "pymc",
+  "numpyro"
+ ],
+ "fits": {
+  "pymc": {
+   "backend": "pymc",
+   "order": 1,
+   "report": "AutoBayes fit report\n  backend          : pymc\n  device requested : cpu\n  device actual    : cpu (platform cpu)\n  dtype            : float64\n  chain method     : n/a\n  chains/tune/draws: 4/1000/1000, target_accept 0.9\n  seed             : 29\n  wall time        : 22.4 s (includes compilation)",
+   "execution": {
+    "backend": "pymc",
+    "device_requested": "cpu",
+    "device_actual": "cpu",
+    "platform": "cpu",
+    "dtype": "float64",
+    "chain_method": null,
+    "chains": 4,
+    "draws": 1000,
+    "tune": 1000,
+    "target_accept": 0.9,
+    "seed": 29,
+    "wall_seconds": 22.376,
+    "notes": []
+   },
+   "requested_extra": {
+    "cores": 4
+   },
+   "actual_configuration_ok": true,
+   "netcdf": "/Users/andrewdou/iqss-research/artifacts/2026-09-19-autobayes-m3c1-two-fit-validation/attempt-1/m3c1_two_fit_1_pymc.nc",
+   "netcdf_sha256": "3bab0591c321f4a2833a8ce62677240740f7d26f80c2a0354e33b4429d6f12e1",
+   "netcdf_bytes": 530222,
+   "gates": {
+    "panel": {
+     "values": {
+      "divergences": 0.0,
+      "divergence_fraction": 0.0,
+      "max_rhat": 1.0025040134457028,
+      "min_ess_bulk": 2655.700129660159,
+      "min_ess_tail": 2430.429128992054,
+      "min_bfmi": 1.0239420861719764,
+      "treedepth_saturation": 0.0,
+      "n_draws": 4000
+     },
+     "status": {
+      "divergence_fraction": "pass",
+      "max_rhat": "pass",
+      "min_ess_bulk": "pass",
+      "min_ess_tail": "pass",
+      "min_bfmi": "pass",
+      "treedepth_saturation": "pass"
+     },
+     "overall": "pass"
+    },
+    "finite_posterior": true,
+    "finite_sample_stats": false,
+    "every_status_pass_and_finite": true,
+    "statuses_not_pass": {},
+    "pass": false,
+    "posterior_variables": {
+     "sigma": [
+      4,
+      1000
+     ],
+     "Intercept": [
+      4,
+      1000
+     ],
+     "dose": [
+      4,
+      1000
+     ],
+     "arm": [
+      4,
+      1000,
+      2
+     ],
+     "dose:arm": [
+      4,
+      1000,
+      2
+     ]
+    },
+    "sample_stats_variables": [
+     "step_size_bar",
+     "energy",
+     "acceptance_rate",
+     "tree_depth",
+     "max_energy_error",
+     "divergences",
+     "perf_counter_start",
+     "lp",
+     "reached_max_treedepth",
+     "perf_counter_diff",
+     "index_in_trajectory",
+     "energy_error",
+     "n_steps",
+     "diverging",
+     "smallest_eigval",
+     "largest_eigval",
+     "step_size",
+     "process_time_diff"
+    ]
+   },
+   "record_group_null_J0": true
+  },
+  "numpyro": {
+   "backend": "numpyro",
+   "order": 2,
+   "report": "AutoBayes fit report\n  backend          : numpyro\n  device requested : cpu\n  device actual    : cpu:cpu(id=0) (platform cpu)\n  dtype            : float64\n  chain method     : parallel\n  chains/tune/draws: 4/1000/1000, target_accept 0.9\n  seed             : 29\n  wall time        : 3.1 s (includes compilation)",
+   "execution": {
+    "backend": "numpyro",
+    "device_requested": "cpu",
+    "device_actual": "cpu:cpu(id=0)",
+    "platform": "cpu",
+    "dtype": "float64",
+    "chain_method": "parallel",
+    "chains": 4,
+    "draws": 1000,
+    "tune": 1000,
+    "target_accept": 0.9,
+    "seed": 29,
+    "wall_seconds": 3.109,
+    "notes": []
+   },
+   "requested_extra": {},
+   "actual_configuration_ok": true,
+   "netcdf": "/Users/andrewdou/iqss-research/artifacts/2026-09-19-autobayes-m3c1-two-fit-validation/attempt-1/m3c1_two_fit_2_numpyro.nc",
+   "netcdf_sha256": "cbb97d1bdd776c5fe5d0744c2967491bf6ed78b666a9dffa9132b8f6e3d4b294",
+   "netcdf_bytes": 389902,
+   "gates": {
+    "panel": {
+     "values": {
+      "divergences": 0.0,
+      "divergence_fraction": 0.0,
+      "max_rhat": 1.0016529190712142,
+      "min_ess_bulk": 2312.8332734086302,
+      "min_ess_tail": 2648.6787780039376,
+      "min_bfmi": 0.8959462886260883,
+      "treedepth_saturation": 0.0,
+      "n_draws": 4000
+     },
+     "status": {
+      "divergence_fraction": "pass",
+      "max_rhat": "pass",
+      "min_ess_bulk": "pass",
+      "min_ess_tail": "pass",
+      "min_bfmi": "pass",
+      "treedepth_saturation": "pass"
+     },
+     "overall": "pass"
+    },
+    "finite_posterior": true,
+    "finite_sample_stats": true,
+    "every_status_pass_and_finite": true,
+    "statuses_not_pass": {},
+    "pass": true,
+    "posterior_variables": {
+     "Intercept": [
+      4,
+      1000
+     ],
+     "dose": [
+      4,
+      1000
+     ],
+     "arm": [
+      4,
+      1000,
+      2
+     ],
+     "dose:arm": [
+      4,
+      1000,
+      2
+     ],
+     "sigma": [
+      4,
+      1000
+     ]
+    },
+    "sample_stats_variables": [
+     "acceptance_rate",
+     "step_size",
+     "diverging",
+     "energy",
+     "n_steps",
+     "tree_depth",
+     "lp"
+    ]
+   },
+   "record_group_null_J0": true
+  }
+ },
+ "records": {
+  "pymc": {
+   "autobayes_version": "0.5.0",
+   "model": {
+    "formula": "y ~ dose + arm + dose:arm",
+    "family": "gaussian",
+    "link": "identity",
+    "n": 240,
+    "J": 0,
+    "group": null,
+    "center_predictors": true,
+    "noncentered": null,
+    "priors": {
+     "intercept": "Normal(mu=0, sigma=5)",
+     "b:dose": "Normal(mu=0, sigma=2)",
+     "b:arm[high]": "Normal(mu=0, sigma=2)",
+     "b:arm[low]": "Normal(mu=0, sigma=2)",
+     "b:dose:arm[high]": "Normal(mu=0, sigma=1)",
+     "b:dose:arm[low]": "Normal(mu=0, sigma=1)",
+     "sigma": "HalfNormal(sigma=1)"
+    },
+    "terms": [
+     "dose",
+     "arm",
+     "dose:arm"
+    ],
+    "design_columns": [
+     "dose",
+     "arm[high]",
+     "arm[low]",
+     "dose:arm[high]",
+     "dose:arm[low]"
+    ],
+    "interactions": [
+     [
+      "dose",
+      "arm"
+     ]
+    ],
+    "canonical_formula": "y ~ dose + arm + dose:arm",
+    "categorical": {
+     "arm": {
+      "reference": "control",
+      "levels": [
+       "control",
+       "high",
+       "low"
+      ],
+      "coefficients": [
+       "high",
+       "low"
+      ],
+      "unused_levels": []
+     }
+    },
+    "intercept_prior_applies_to": "centred intercept (at the numeric predictor means and the sample proportions of the categorical levels)",
+    "warnings": []
+   },
+   "execution": {
+    "backend": "pymc",
+    "device_requested": "cpu",
+    "device_actual": "cpu",
+    "platform": "cpu",
+    "dtype": "float64",
+    "chain_method": null,
+    "chains": 4,
+    "draws": 1000,
+    "tune": 1000,
+    "target_accept": 0.9,
+    "seed": 29,
+    "wall_seconds": 22.376,
+    "notes": []
+   },
+   "environment": {
+    "python": "3.11.0",
+    "platform": "macOS-26.6.1-arm64-arm-64bit",
+    "versions": {
+     "pymc": "5.28.5",
+     "pytensor": "2.38.3",
+     "bambi": "0.17.2",
+     "formulae": "0.6.2",
+     "arviz": "0.23.4",
+     "numpyro": "0.21.0",
+     "jax": "0.10.2",
+     "jaxlib": "0.10.2",
+     "numpy": "2.4.6"
+    },
+    "jax_devices": [
+     "cpu:cpu(id=0)",
+     "cpu:cpu(id=1)",
+     "cpu:cpu(id=2)",
+     "cpu:cpu(id=3)",
+     "cpu:cpu(id=4)",
+     "cpu:cpu(id=5)",
+     "cpu:cpu(id=6)",
+     "cpu:cpu(id=7)"
+    ],
+    "jax_x64": true
+   },
+   "diagnostics": {
+    "values": {
+     "divergences": 0.0,
+     "divergence_fraction": 0.0,
+     "max_rhat": 1.0025040134457028,
+     "min_ess_bulk": 2655.700129660159,
+     "min_ess_tail": 2430.429128992054,
+     "min_bfmi": 1.0239420861719764,
+     "treedepth_saturation": 0.0,
+     "n_draws": 4000.0
+    },
+    "status": {
+     "divergence_fraction": "pass",
+     "max_rhat": "pass",
+     "min_ess_bulk": "pass",
+     "min_ess_tail": "pass",
+     "min_bfmi": "pass",
+     "treedepth_saturation": "pass"
+    },
+    "overall": "pass"
+   },
+   "posterior": {
+    "Intercept": {
+     "mean": 1.9759803510065546,
+     "sd": 0.035537325151445684,
+     "hdi_3%": 1.9091635795878632,
+     "hdi_97%": 2.0409286468252636,
+     "mcse_mean": 0.0005544727492075741,
+     "ess_bulk": 4100.996696366386,
+     "ess_tail": 2877.044238853038,
+     "r_hat": 1.0011293493187403
+    },
+    "dose": {
+     "mean": 0.48396404664115006,
+     "sd": 0.03341105508718232,
+     "hdi_3%": 0.4235925254964216,
+     "hdi_97%": 0.5468002733787384,
+     "mcse_mean": 0.0006260974872184089,
+     "ess_bulk": 2852.097742825233,
+     "ess_tail": 2901.14574598626,
+     "r_hat": 1.0009920582145113
+    },
+    "arm[high]": {
+     "mean": 0.9661784882519996,
+     "sd": 0.09092572653438104,
+     "hdi_3%": 0.7899861990553884,
+     "hdi_97%": 1.1304234782467448,
+     "mcse_mean": 0.0016726086744811989,
+     "ess_bulk": 2953.910948370545,
+     "ess_tail": 2430.429128992054,
+     "r_hat": 1.001582464321893
+    },
+    "arm[low]": {
+     "mean": -0.5816002496693111,
+     "sd": 0.07307483789303977,
+     "hdi_3%": -0.7222636433435774,
+     "hdi_97%": -0.44202779870821957,
+     "mcse_mean": 0.0012793865635389139,
+     "ess_bulk": 3263.551777067417,
+     "ess_tail": 2871.8159479144233,
+     "r_hat": 1.0017548784508816
+    },
+    "dose:arm[high]": {
+     "mean": -0.5842065650851875,
+     "sd": 0.09202900100662961,
+     "hdi_3%": -0.7601922042629528,
+     "hdi_97%": -0.4132209530607421,
+     "mcse_mean": 0.0017854795394726098,
+     "ess_bulk": 2655.700129660159,
+     "ess_tail": 2779.9610743567823,
+     "r_hat": 1.001034551569283
+    },
+    "dose:arm[low]": {
+     "mean": 0.28838131958012636,
+     "sd": 0.05438146093272292,
+     "hdi_3%": 0.18479774003833638,
+     "hdi_97%": 0.3853442912394943,
+     "mcse_mean": 0.0010423543379478753,
+     "ess_bulk": 2720.5606754489227,
+     "ess_tail": 2475.3181375308827,
+     "r_hat": 1.0025040134457028
+    },
+    "sigma": {
+     "mean": 0.39227409335307023,
+     "sd": 0.017630571745189838,
+     "hdi_3%": 0.36125714935852365,
+     "hdi_97%": 0.4274904880607421,
+     "mcse_mean": 0.00025722102136622066,
+     "ess_bulk": 4716.554809885161,
+     "ess_tail": 3038.130230344899,
+     "r_hat": 1.0001640580124882
+    }
+   }
+  },
+  "numpyro": {
+   "autobayes_version": "0.5.0",
+   "model": {
+    "formula": "y ~ dose + arm + dose:arm",
+    "family": "gaussian",
+    "link": "identity",
+    "n": 240,
+    "J": 0,
+    "group": null,
+    "center_predictors": true,
+    "noncentered": null,
+    "priors": {
+     "intercept": "Normal(mu=0, sigma=5)",
+     "b:dose": "Normal(mu=0, sigma=2)",
+     "b:arm[high]": "Normal(mu=0, sigma=2)",
+     "b:arm[low]": "Normal(mu=0, sigma=2)",
+     "b:dose:arm[high]": "Normal(mu=0, sigma=1)",
+     "b:dose:arm[low]": "Normal(mu=0, sigma=1)",
+     "sigma": "HalfNormal(sigma=1)"
+    },
+    "terms": [
+     "dose",
+     "arm",
+     "dose:arm"
+    ],
+    "design_columns": [
+     "dose",
+     "arm[high]",
+     "arm[low]",
+     "dose:arm[high]",
+     "dose:arm[low]"
+    ],
+    "interactions": [
+     [
+      "dose",
+      "arm"
+     ]
+    ],
+    "canonical_formula": "y ~ dose + arm + dose:arm",
+    "categorical": {
+     "arm": {
+      "reference": "control",
+      "levels": [
+       "control",
+       "high",
+       "low"
+      ],
+      "coefficients": [
+       "high",
+       "low"
+      ],
+      "unused_levels": []
+     }
+    },
+    "intercept_prior_applies_to": "centred intercept (at the numeric predictor means and the sample proportions of the categorical levels)",
+    "warnings": []
+   },
+   "execution": {
+    "backend": "numpyro",
+    "device_requested": "cpu",
+    "device_actual": "cpu:cpu(id=0)",
+    "platform": "cpu",
+    "dtype": "float64",
+    "chain_method": "parallel",
+    "chains": 4,
+    "draws": 1000,
+    "tune": 1000,
+    "target_accept": 0.9,
+    "seed": 29,
+    "wall_seconds": 3.109,
+    "notes": []
+   },
+   "environment": {
+    "python": "3.11.0",
+    "platform": "macOS-26.6.1-arm64-arm-64bit",
+    "versions": {
+     "pymc": "5.28.5",
+     "pytensor": "2.38.3",
+     "bambi": "0.17.2",
+     "formulae": "0.6.2",
+     "arviz": "0.23.4",
+     "numpyro": "0.21.0",
+     "jax": "0.10.2",
+     "jaxlib": "0.10.2",
+     "numpy": "2.4.6"
+    },
+    "jax_devices": [
+     "cpu:cpu(id=0)",
+     "cpu:cpu(id=1)",
+     "cpu:cpu(id=2)",
+     "cpu:cpu(id=3)",
+     "cpu:cpu(id=4)",
+     "cpu:cpu(id=5)",
+     "cpu:cpu(id=6)",
+     "cpu:cpu(id=7)"
+    ],
+    "jax_x64": true
+   },
+   "diagnostics": {
+    "values": {
+     "divergences": 0.0,
+     "divergence_fraction": 0.0,
+     "max_rhat": 1.0016529190712142,
+     "min_ess_bulk": 2312.8332734086302,
+     "min_ess_tail": 2648.6787780039376,
+     "min_bfmi": 0.8959462886260883,
+     "treedepth_saturation": 0.0,
+     "n_draws": 4000.0
+    },
+    "status": {
+     "divergence_fraction": "pass",
+     "max_rhat": "pass",
+     "min_ess_bulk": "pass",
+     "min_ess_tail": "pass",
+     "min_bfmi": "pass",
+     "treedepth_saturation": "pass"
+    },
+    "overall": "pass"
+   },
+   "posterior": {
+    "Intercept": {
+     "mean": 1.976112147510938,
+     "sd": 0.03522825956124326,
+     "hdi_3%": 1.913707533380595,
+     "hdi_97%": 2.04305995548946,
+     "mcse_mean": 0.0005304691179502291,
+     "ess_bulk": 4417.532339092627,
+     "ess_tail": 3531.0982654180816,
+     "r_hat": 0.9998931177751162
+    },
+    "dose": {
+     "mean": 0.48375824889967123,
+     "sd": 0.03268590565069875,
+     "hdi_3%": 0.4214406673935707,
+     "hdi_97%": 0.5427501807585322,
+     "mcse_mean": 0.0006367090962276196,
+     "ess_bulk": 2638.9353158904714,
+     "ess_tail": 2917.9936302025276,
+     "r_hat": 0.9995975231949428
+    },
+    "arm[high]": {
+     "mean": 0.9631057900649913,
+     "sd": 0.09255498509918964,
+     "hdi_3%": 0.782859581046886,
+     "hdi_97%": 1.1316298950728299,
+     "mcse_mean": 0.0017845933615563997,
+     "ess_bulk": 2703.7170105120827,
+     "ess_tail": 2815.634958830507,
+     "r_hat": 1.0005594204257728
+    },
+    "arm[low]": {
+     "mean": -0.5809894096877979,
+     "sd": 0.07200399886672491,
+     "hdi_3%": -0.7129140616280141,
+     "hdi_97%": -0.44058011808688036,
+     "mcse_mean": 0.0012629454815738974,
+     "ess_bulk": 3259.5902820559804,
+     "ess_tail": 2851.9237959422353,
+     "r_hat": 1.0016416832872785
+    },
+    "dose:arm[high]": {
+     "mean": -0.5855403516145431,
+     "sd": 0.09566839240497998,
+     "hdi_3%": -0.7610553769945504,
+     "hdi_97%": -0.3955804741318975,
+     "mcse_mean": 0.0018513985036337822,
+     "ess_bulk": 2674.2472625532487,
+     "ess_tail": 3098.3159870088257,
+     "r_hat": 1.0006161937285676
+    },
+    "dose:arm[low]": {
+     "mean": 0.2886684659168549,
+     "sd": 0.05332110834954009,
+     "hdi_3%": 0.18792567467858753,
+     "hdi_97%": 0.38721304895455644,
+     "mcse_mean": 0.0011090480111503945,
+     "ess_bulk": 2312.8332734086302,
+     "ess_tail": 2868.33261401619,
+     "r_hat": 1.0012400746878882
+    },
+    "sigma": {
+     "mean": 0.3929332464125779,
+     "sd": 0.018296795492248125,
+     "hdi_3%": 0.35879199910038717,
+     "hdi_97%": 0.4260444753880342,
+     "mcse_mean": 0.00030265262351907924,
+     "ess_bulk": 3739.190557586596,
+     "ess_tail": 2648.6787780039376,
+     "r_hat": 1.0016529190712142
+    }
+   }
+  }
+ },
+ "comparison_4_combined_mcse": {
+  "k": 4.0,
+  "rows": {
+   "Intercept": {
+    "mean_a": 1.9759803510065546,
+    "mean_b": 1.976112147510938,
+    "diff": 0.00013179650438344126,
+    "tol": 0.0030694299528419267,
+    "agree": true
+   },
+   "dose": {
+    "mean_a": 0.48396404664115006,
+    "mean_b": 0.48375824889967123,
+    "diff": 0.00020579774147883034,
+    "tol": 0.00357188249912048,
+    "agree": true
+   },
+   "arm[high]": {
+    "mean_a": 0.9661784882519996,
+    "mean_b": 0.9631057900649913,
+    "diff": 0.0030726981870082826,
+    "tol": 0.0097835725532637,
+    "agree": true
+   },
+   "arm[low]": {
+    "mean_a": -0.5816002496693111,
+    "mean_b": -0.5809894096877979,
+    "diff": 0.0006108399815132337,
+    "tol": 0.00719095127881349,
+    "agree": true
+   },
+   "dose:arm[high]": {
+    "mean_a": -0.5842065650851875,
+    "mean_b": -0.5855403516145431,
+    "diff": 0.0013337865293555629,
+    "tol": 0.010288334057665686,
+    "agree": true
+   },
+   "dose:arm[low]": {
+    "mean_a": 0.28838131958012636,
+    "mean_b": 0.2886684659168549,
+    "diff": 0.00028714633672854983,
+    "tol": 0.00608800795909519,
+    "agree": true
+   },
+   "sigma": {
+    "mean_a": 0.39227409335307023,
+    "mean_b": 0.3929332464125779,
+    "diff": 0.0006591530595076445,
+    "tol": 0.0015887668896633679,
+    "agree": true
+   }
+  },
+  "agree": true,
+  "a": "cpu",
+  "b": "cpu:cpu(id=0)"
+ },
+ "comparison_rows_are_the_seven_labels": true,
+ "hdi99_descriptive": {
+  "pymc": {
+   "Intercept": {
+    "mean": 1.9759803510065546,
+    "hdi_0.5%": 1.886558610321668,
+    "hdi_99.5%": 2.072195289300536,
+    "truth": 2.0,
+    "truth_inside_99_hdi_descriptive": true
+   },
+   "dose": {
+    "mean": 0.48396404664115006,
+    "hdi_0.5%": 0.393614896003487,
+    "hdi_99.5%": 0.5626953196033097,
+    "truth": 0.5,
+    "truth_inside_99_hdi_descriptive": true
+   },
+   "arm[high]": {
+    "mean": 0.9661784882519996,
+    "hdi_0.5%": 0.7353302454320966,
+    "hdi_99.5%": 1.185751518386991,
+    "truth": 0.9,
+    "truth_inside_99_hdi_descriptive": true
+   },
+   "arm[low]": {
+    "mean": -0.5816002496693111,
+    "hdi_0.5%": -0.7689348981892695,
+    "hdi_99.5%": -0.39236447581638245,
+    "truth": -0.6,
+    "truth_inside_99_hdi_descriptive": true
+   },
+   "dose:arm[high]": {
+    "mean": -0.5842065650851875,
+    "hdi_0.5%": -0.813638216020865,
+    "hdi_99.5%": -0.3402018798229752,
+    "truth": -0.8,
+    "truth_inside_99_hdi_descriptive": true
+   },
+   "dose:arm[low]": {
+    "mean": 0.28838131958012636,
+    "hdi_0.5%": 0.14378866622546382,
+    "hdi_99.5%": 0.42171667491193615,
+    "truth": 0.3,
+    "truth_inside_99_hdi_descriptive": true
+   },
+   "sigma": {
+    "mean": 0.39227409335307023,
+    "hdi_0.5%": 0.34845936704129804,
+    "hdi_99.5%": 0.43968609379159873,
+    "truth": 0.4,
+    "truth_inside_99_hdi_descriptive": true
+   }
+  },
+  "numpyro": {
+   "Intercept": {
+    "mean": 1.976112147510938,
+    "hdi_0.5%": 1.8837472776774211,
+    "hdi_99.5%": 2.0637904646325156,
+    "truth": 2.0,
+    "truth_inside_99_hdi_descriptive": true
+   },
+   "dose": {
+    "mean": 0.48375824889967123,
+    "hdi_0.5%": 0.4033429526082916,
+    "hdi_99.5%": 0.572290528425284,
+    "truth": 0.5,
+    "truth_inside_99_hdi_descriptive": true
+   },
+   "arm[high]": {
+    "mean": 0.9631057900649913,
+    "hdi_0.5%": 0.7249342424965503,
+    "hdi_99.5%": 1.2011069056907118,
+    "truth": 0.9,
+    "truth_inside_99_hdi_descriptive": true
+   },
+   "arm[low]": {
+    "mean": -0.5809894096877979,
+    "hdi_0.5%": -0.7646114265505157,
+    "hdi_99.5%": -0.39614098402761444,
+    "truth": -0.6,
+    "truth_inside_99_hdi_descriptive": true
+   },
+   "dose:arm[high]": {
+    "mean": -0.5855403516145431,
+    "hdi_0.5%": -0.8247034494875161,
+    "hdi_99.5%": -0.3224388235606137,
+    "truth": -0.8,
+    "truth_inside_99_hdi_descriptive": true
+   },
+   "dose:arm[low]": {
+    "mean": 0.2886684659168549,
+    "hdi_0.5%": 0.15055136208989195,
+    "hdi_99.5%": 0.42756180293752927,
+    "truth": 0.3,
+    "truth_inside_99_hdi_descriptive": true
+   },
+   "sigma": {
+    "mean": 0.3929332464125779,
+    "hdi_0.5%": 0.349053373763828,
+    "hdi_99.5%": 0.4418263271036777,
+    "truth": 0.4,
+    "truth_inside_99_hdi_descriptive": true
+   }
+  }
+ },
+ "predict_new_rows_check": {
+  "pymc": {
+   "max_abs_diff": 0.0,
+   "new_groups_attr": "not_applicable",
+   "new_levels_attr": [],
+   "expected_y_means": [
+    2.942159,
+    2.841916,
+    1.97598,
+    2.166725
+   ],
+   "ok": true
+  },
+  "numpyro": {
+   "max_abs_diff": 0.0,
+   "new_groups_attr": "not_applicable",
+   "new_levels_attr": [],
+   "expected_y_means": [
+    2.939218,
+    2.837436,
+    1.976112,
+    2.167549
+   ],
+   "ok": true
+  }
+ },
+ "gates": {
+  "pymc_diagnostics": false,
+  "numpyro_diagnostics": true,
+  "pymc_configuration": true,
+  "numpyro_configuration": true,
+  "backends_agree_7_labels": true,
+  "predict_pymc": true,
+  "predict_numpyro": true,
+  "records_group_null_J0": true
+ },
+ "all_gates_pass": false,
+ "interpretation": "a predeclared gate failed; no repair fit, no changed threshold; see gates"
+}

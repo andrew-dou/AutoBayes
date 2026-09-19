@@ -159,3 +159,76 @@ own-package line only, `autobayes.__version__`). Reference helpers `tests/refere
   change in between. Evidence `docs/m3c1-evidence/`.
 - Not executed: any sampler fit, the example, the slow suite, a GPU run. The bounded smoke stays a proposal for the
   coordinator's review. Version bump note: PR #8 names `0.5.0` too; whichever lands second renumbers.
+
+## Bounded two-fit validation (2026-09-19; the coordinator's superseding unit): a predeclared gate FAILED: ['pymc_diagnostics']
+
+Exactly two `model.fit` calls on the committed example's Gaussian dose-by-arm population-only model
+(`examples/m3c1_population_only.py`: `simulate(rows=240, seed=29)`, priors Normal(0, 5) intercept, Normal(0, 2) dose and
+arm, Normal(0, 1) dose:arm, HalfNormal(1) sigma, reference `control`, centring on), PyMC CPU (cores 4) then NumPyro/JAX
+CPU (parallel chains) on identical frozen data; 4 chains, 1,000 tune, 1,000 draws, seed 29, target_accept 0.9, tree
+depth 10, float64. Runner and supervisor frozen at `cbe7141374b2` (clean) before the one invocation; one 600 s
+deadline from launch covering imports, compilation, both fits and serialization; zero retries. Supervisor: return code
+1 (see the exit-guard defect below), timed out False, wall 31.459 s; child 30.782 s. Data SHA-256
+743dcb01f8029952… (n = 240, arms {'control': 124, 'low': 79, 'high': 37}); frozen labels
+['Intercept', 'dose', 'arm[high]', 'arm[low]', 'dose:arm[high]', 'dose:arm[low]', 'sigma']; source pins in `freeze.json`. Full InferenceData with sampler statistics per fit, retained outside the
+repository: `artifacts/2026-09-19-autobayes-m3c1-two-fit-validation/attempt-1/m3c1_two_fit_1_pymc.nc` (SHA-256
+3bab0591c321f4a2833a8ce62677240740f7d26f80c2a0354e33b4429d6f12e1, 530222 bytes) and `m3c1_two_fit_2_numpyro.nc` (SHA-256 cbb97d1bdd776c5fe5d0744c2967491bf6ed78b666a9dffa9132b8f6e3d4b294,
+389902 bytes). Small outputs copied to `docs/m3c1-evidence/two-fit-validation/`.
+
+| Fit | device | dtype | chains | wall s | divergences | max R-hat | min bulk ESS | min tail ESS | min E-BFMI | depth saturation | gates |
+|---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---|
+| pymc | cpu | float64 | n/a (PyMC NUTS, cores 4) | 22.376 | 0 | 1.00250 | 2656 | 2430 | 1.024 | 0.0000 | FAILED: {} |
+| numpyro | cpu:cpu(id=0) | float64 | parallel | 3.109 | 0 | 1.00165 | 2313 | 2649 | 0.896 | 0.0000 | all pass, finite |
+
+Configuration as approved on both routes: True. Every posterior array and
+numeric sampler statistic finite on both: False.
+
+Between-backend agreement of the seven labelled scalar means, |diff| against 4 × sqrt(MCSE_a² + MCSE_b²) (labels from
+`az.summary`, never coordinate order); rows are exactly the seven labels: True; agree: True.
+
+| Parameter | PyMC mean | NumPyro mean | diff | 4 combined MCSE | within |
+|---|---:|---:|---:|---:|---|
+| Intercept | 1.97598 | 1.97611 | 1.32e-04 | 3.07e-03 | yes |
+| dose | 0.48396 | 0.48376 | 2.06e-04 | 3.57e-03 | yes |
+| arm[high] | 0.96618 | 0.96311 | 3.07e-03 | 9.78e-03 | yes |
+| arm[low] | -0.58160 | -0.58099 | 6.11e-04 | 7.19e-03 | yes |
+| dose:arm[high] | -0.58421 | -0.58554 | 1.33e-03 | 1.03e-02 | yes |
+| dose:arm[low] | 0.28838 | 0.28867 | 2.87e-04 | 6.09e-03 | yes |
+| sigma | 0.39227 | 0.39293 | 6.59e-04 | 1.59e-03 | yes |
+
+Descriptive only (one realisation, not calibration, no pass/fail): the example's truths against each fit's 99 % HDI.
+
+| Parameter | truth | PyMC 99 % HDI | NumPyro 99 % HDI |
+|---|---:|---|---|
+| Intercept | 2.0 | [1.8866, 2.0722] inside | [1.8837, 2.0638] inside |
+| dose | 0.5 | [0.3936, 0.5627] inside | [0.4033, 0.5723] inside |
+| arm[high] | 0.9 | [0.7353, 1.1858] inside | [0.7249, 1.2011] inside |
+| arm[low] | -0.6 | [-0.7689, -0.3924] inside | [-0.7646, -0.3961] inside |
+| dose:arm[high] | -0.8 | [-0.8136, -0.3402] inside | [-0.8247, -0.3224] inside |
+| dose:arm[low] | 0.3 | [0.1438, 0.4217] inside | [0.1506, 0.4276] inside |
+| sigma | 0.4 | [0.3485, 0.4397] inside | [0.3491, 0.4418] inside |
+
+`model.predict` on the example's four new rows without a grouping column equals the hand computation from the retained
+raw intercept and coefficient draws (max |diff| 0.0e+00 / 0.0e+00; attribute
+`new_groups = "not_applicable"`); expected y means PyMC [2.942159, 2.841916, 1.97598, 2.166725], NumPyro
+[2.939218, 2.837436, 1.976112, 2.167549]. Both fit records carry `group: null` and `J: 0`: True.
+
+Interpretation: a predeclared gate failed; no repair fit, no changed threshold; see gates. Not claimed: calibration, coverage, GPU validation, brms equivalence, or anything about the
+Bernoulli and binomial population-only routes, which were not sampled.
+
+Failed-gate analysis (read-only inspection of the retained netCDF, `nonfinite_inspection.json`; no new fit). The PyMC fit
+failed only the runner's literal gate "every numeric sampler statistic finite": the non-finite statistics are exactly
+['largest_eigval', 'smallest_eigval'] (smallest_eigval: 4000 of 4000 NaN, largest_eigval: 4000 of 4000 NaN), placeholder fields that
+PyMC's default diagonal adaptation never populates. Every posterior array, `lp`, `energy` and the six required panel
+diagnostics are finite on both routes, and NumPyro has no non-finite statistic. The dispatch's gate text says "finite
+complete posterior and sample statistics" and "all required diagnostics finite (n/a is not pass)"; the runner implemented
+the broader literal reading, so the outcome under the narrower reading (required diagnostics finite) would be a pass on
+both routes. A second defect in the frozen runner: its `except BaseException` guard caught its own `SystemExit(4)`, so
+the child exited 1 with a `SystemExit: 4` traceback in `error.txt` after `result.json` was fully written; the supervisor's
+return code 1 is that defect, not an incomplete run. The runner is left as frozen at `cbe7141374b2`.
+
+Proposed next step (one, not automatic): the coordinator rules on the gate wording. If "required diagnostics finite" is
+the intended gate, the retained draws can be re-evaluated read-only by an independent reviewer with no new fit; if the
+literal "all sampler statistics finite" gate stands, a corrected runner (excluding PyMC's documented NaN placeholder
+fields and fixing the exit guard) would need its own approved single invocation. No repair fit, threshold change or
+second attempt was made here.
