@@ -1,0 +1,24 @@
+{
+  "started": "2026-09-19T18:25:52.578791+00:00",
+  "cwd": "/Users/andrewdou/iqss-research/projects/AutoBayes-worktrees/m3c2-intercept-controls",
+  "command": [
+    "/Users/andrewdou/iqss-research/projects/AutoBayes-worktrees/m3c2-intercept-controls/.venv/bin/python",
+    "-m",
+    "pytest",
+    "tests",
+    "-q",
+    "-m",
+    "not slow",
+    "-p",
+    "no:cacheprovider",
+    "--junitxml=/Users/andrewdou/iqss-research/artifacts/2026-09-19-autobayes-intercept-validation/junit.xml"
+  ],
+  "deadline_seconds": 600,
+  "head": "f85b4db1dd49c80f952b0f3da4de2ada9ae6fc8f",
+  "pid": 80707,
+  "timeout": false,
+  "policy": "One full fast suite; inherited CPU sampling fixtures authorized. No new feature fit.",
+  "exit_code": 1,
+  "wall_seconds": 473.8152974580007,
+  "finished": "2026-09-19T18:33:46.458074+00:00"
+}

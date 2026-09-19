@@ -354,7 +354,7 @@ def test_describe_and_fit_record():
     assert "raw-scale intercept (x = 0, reference level, group effect zero)" in mg.describe()
     fit = m.fit(backend="pymc", chains=2, draws=60, tune=60, seed=2, cores=1)
     rec = ab.fit_record(m, fit)
-    assert rec["model"]["categorical"] == {"z": {"reference": "b", "levels": ["a", "b", "c"], "coefficients": ["a", "c"], "unused_levels": []}}
+    assert rec["model"]["categorical"] == {"z": {"reference": "b", "levels": ["a", "b", "c"], "coefficients": ["a", "c"], "unused_levels": [], "coding": "treatment"}}
     assert rec["model"]["design_columns"] == ["x", "z[a]", "z[c]"] and rec["model"]["terms"] == ["x", "z"]
     assert rec["model"]["priors"]["b:z[a]"] == "StudentT(nu=4, mu=0, sigma=1)" and rec["model"]["priors"]["b:z[c]"] == "StudentT(nu=6, mu=0.2, sigma=2)"
     assert list(rec["posterior"]) == ["Intercept", "x", "z[a]", "z[c]", "1|g_sigma"]

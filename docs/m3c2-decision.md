@@ -36,3 +36,11 @@ Version 0.6.0 candidate. Initial targeted run: 83 passed, one refusal-message mi
 | Fixed-draw in-sample/new-row, known/new-group predictions and synthetic fit records | test_fixed_draw_predictions_and_records |
 
 Synthetic constant-scale draws can produce undefined ArviZ scale diagnostics; their records use a clearly labelled panel stub and are not diagnostic acceptance evidence. CPU feature sampling and GPU validation remain pending.
+
+## Full regression outcome and assertion repair (2026-09-19)
+
+The ONE local full fast-suite invocation at f85b4db finished (no timeout) in 473.82 wall seconds, pytest 466.82s: **474 passed, 3 failed, 7 slow checks deselected**. All 84 new intercept-control checks passed in this invocation. Preserve `m3c2-evidence/fast-suite-initial.*`; this historical full run is failed, not relabeled successful. The inherited CPU fixture fits ran; this was not a no-sampling invocation. No new feature recovery fit or GPU run occurred.
+
+The three failures were test expectations left behind by the API extension: binomial and interaction refusal tests expected FormulaError for now-supported intercept removal, whereas their supplied intercept prior is correctly rejected with PriorError; the categorical fit-record test expected an exact dictionary without the newly explicit `coding: treatment` field. No density/gradient/prediction failure occurred. Only assertions were aligned, with no library-code or numerical-threshold change after that full run. An added default-intercept synthetic-record check verifies the new metadata and preserved semantics without sampling. The two affected refusal checks plus this synthetic check passed: **3 passed in 2.18s**. The previously sampled categorical record test was not rerun locally. No second local full suite was launched. Hosted exact-head checks and independent review remain pending.
+
+Build-only example executed successfully. Skill metadata validation passed with the existing system Python/PyYAML; the first check in the locked library venv lacked PyYAML, so no dependency was added to that stack. Only the own-package version changed in uv.lock (0.5.0 → 0.6.0).

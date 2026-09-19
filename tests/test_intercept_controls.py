@@ -233,3 +233,13 @@ def test_fixed_draw_predictions_and_records(family, group):
     assert not record["model"]["center_predictors"] and record["model"]["center_predictors_requested"] is True
     assert "intercept" not in record["model"]["priors"] and "Intercept" not in record["posterior"]
     assert record["model"]["categorical"]["z"]["coding"]=="full_level"
+
+
+def test_default_intercept_categorical_record_retains_semantics():
+    from tests.test_population_only import synthetic_fit
+    m=ab.gaussian("y ~ x + z",source(),ab.Priors(ab.Normal(0,1),ab.Normal(0,1),sigma=ab.HalfNormal(1)),categorical={"z":"b"})
+    record=ab.fit_record(m,synthetic_fit(m),panel=PANEL_STUB)
+    assert record["model"]["categorical"]=={"z":{"reference":"b","levels":["a","b","c"],"coefficients":["a","c"],"unused_levels":[],"coding":"treatment"}}
+    assert record["model"]["intercept"] and record["model"]["center_predictors"]
+    assert record["model"]["center_predictors_requested"]
+    assert "Intercept" in record["posterior"] and "intercept" in record["model"]["priors"]

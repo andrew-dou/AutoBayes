@@ -1,3 +1,9 @@
+# M3c-2 candidate: intercept controls (2026-09-19)
+
+General foundations increment from merged main516d8f4, isolated branchm3c2/intercept-controls. Decision3affc5f preceded implementationf85b4db. `0+`/`-1` across the three families, optional group, first factor full-level coding, interaction differences, explicit prior/value rejection, effective uncentered design, predictions and records. Version0.6.0; no third-party dependency change.
+
+Twenty build-only probes passed. New84deterministic checks passed inside one capped full regression:474passed/3failed/7deselected,473.82swall,no timeout. Failures were2obsolete refusal assertions and1exact record-dictionary expectation; corrected without library changes,3targeted deterministic checks thenpassed2.18s. Fullfailedrun preserved; no local full rerun. InheritedCPUfixture sampling ran; newfeature sampling/GPUevidence remains pending. Build-onlyexample andskillmetadatavalidationpassed. See docs/m3c2-decision.md for testmap, commands and retained outcomes. Independent code review, exact-head CI and bounded sampling acceptance remain outstanding; do not merge on deterministic checks alone. PR8 is separate and untouched.
+
 # AutoBayes status
 
 ## M3c-1 acceptance update (2026-09-19)
