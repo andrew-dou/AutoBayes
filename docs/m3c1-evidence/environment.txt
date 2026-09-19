@@ -1,0 +1,6 @@
+0.5.0 /Users/andrewdou/iqss-research/projects/AutoBayes-worktrees/m3c1-population-only/autobayes/__init__.py
+AutoBayes environment
+  python    : 3.11.0 (macOS-26.6.1-arm64-arm-64bit)
+  versions  : pymc 5.28.5, pytensor 2.38.3, bambi 0.17.2, formulae 0.6.2, arviz 0.23.4, numpyro 0.21.0, jax 0.10.2, jaxlib 0.10.2, numpy 2.4.6
+  jax       : cpu:cpu(id=0), cpu:cpu(id=1), cpu:cpu(id=2), cpu:cpu(id=3), cpu:cpu(id=4), cpu:cpu(id=5), cpu:cpu(id=6), cpu:cpu(id=7)
+  jax x64   : True

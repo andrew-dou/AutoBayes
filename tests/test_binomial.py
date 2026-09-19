@@ -450,12 +450,12 @@ def test_invalid_inputs(cdata):
         ab.binomial(FORMULA, cdata.assign(n=cdata.n.astype(np.int64).where(cdata.index > 0, COUNT_CAP + 5)), PRIORS)
     with pytest.raises(ab.PriorError, match="no residual SD"):
         ab.binomial(FORMULA, cdata, ab.Priors(intercept=ab.Normal(0, 1.5), b=ab.Normal(0, 1), sd=ab.HalfNormal(1), sigma=ab.HalfNormal(1)))
-    with pytest.raises(TypeError):
-        ab.Priors(intercept=ab.Normal(0, 1.5), b=ab.Normal(0, 1))
+    with pytest.raises(ab.PriorError, match="needs a prior on the SD of its varying intercept"):   # sd missing (M3c-1: refused at build)
+        ab.binomial(FORMULA, cdata, ab.Priors(intercept=ab.Normal(0, 1.5), b=ab.Normal(0, 1)))
     for bad_formula, needle in [
         ("k ~ x + (1 | g)", "needs 'successes | trials"), ("p(k, n) ~ x + (1 | g)", "Bambi's 'p"),
         ("k | trials(n) ~ x + (1 + x | g)", "varying slopes"), ("k | trials(n) ~ x + (1 | g/h)", "nested"),
-        ("k | trials(n) ~ 0 + x + (1 | g)", "no intercept"), ("k | trials(n) ~ x", "exactly one varying-intercept"),
+        ("k | trials(n) ~ 0 + x + (1 | g)", "no intercept"),
         ("k | trials(n) ~ n + (1 | g)", "cannot also be a predictor"), ("k | trials(n) ~ x + (1 | n)", "cannot also be a predictor"),
         ("k | trials(k) ~ x + (1 | g)", "cannot also be the response"), ("k | n ~ x + (1 | g)", "exactly 'successes | trials"),
         ("k | weights(n) ~ x + (1 | g)", "exactly 'successes | trials"),

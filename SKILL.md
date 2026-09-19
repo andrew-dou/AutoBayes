@@ -2,8 +2,8 @@
 name: autobayes
 description: >
   Fit and check a Bayesian hierarchical regression in Python the way a careful
-  researcher would: brms-style formula `y ~ x + (1 | group)` with a Gaussian outcome or
-  a binary (Bernoulli, logit) outcome, explicit priors, an inspectable PyMC model built
+  researcher would: brms-style formula `y ~ x + (1 | group)`, or `y ~ x` without a group
+  term, with a Gaussian outcome or a binary (Bernoulli, logit) outcome, explicit priors, an inspectable PyMC model built
   through Bambi, NUTS on the CPU or through JAX/NumPyro on an explicitly chosen GPU, a
   diagnostic panel with fixed thresholds, predictive draws with named new-group
   semantics (probabilities versus 0/1 outcomes), and a fit record that a later session
@@ -24,11 +24,12 @@ model family, then the routing for everything else.
 **What is verified.** One formula subset with numeric predictors, treatment-coded
 categorical predictors declared with `categorical={column: reference}`, one
 numeric-by-categorical interaction `x:z` with both main effects present (`x*z` is the
-shorthand for `x + z + x:z`), and one varying intercept,
+shorthand for `x + z + x:z`), and at most one varying intercept, which is optional
+(milestone M3c-1: a formula without it is a population-only model, as in brms),
 
-    y ~ [1 +] x1 [+ x2 ...] [+ z ...] [+ x:z ...] + (1 | group)
+    y ~ [1 +] x1 [+ x2 ...] [+ z ...] [+ x:z ...] [+ (1 | group)]
 
-for two outcome families:
+for the outcome families:
 
 - **Gaussian, identity link (M0)**: `ab.gaussian(...)`, priors on the intercept, every
   slope, the group SD and the residual SD `sigma`. Log density equals an independent
@@ -57,9 +58,11 @@ for two outcome families:
   (`docs/m2-decision.md`, repair record). GPU execution **pending**. Evidence
   `docs/m2-evidence/`, checks in `docs/m2-decision.md`.
 
-**What is not verified.** Every other formula and family (other links, varying slopes,
-nested or crossed groups, categorical predictors, beta-binomial). The library refuses
-them with an error naming the construct. Do not loosen the parser to get past that
+**What is not verified.** Every other formula and family (other links, intercept removal
+with `0 +` or `- 1`, varying slopes, nested or crossed groups, several group terms,
+beta-binomial). The library refuses them with an error naming the construct. Population-only
+models (M3c-1) are verified deterministically (density, gradients, closed form, predictions)
+but have not yet been sampled as evidence; the proposed smoke is in `docs/m3c1-decision.md`. Do not loosen the parser to get past that
 error; go to "Outside the verified family" below.
 
 ## Session start, every time
@@ -100,8 +103,9 @@ Run the steps in order. Each has a check; a step whose check fails is not done.
 
 ### 1. Data
 
-A pandas data frame with a response, predictors, and a grouping column (any dtype; it
-is coded as a factor with levels in **sorted** order). Predictors are numeric, or
+A pandas data frame with a response, predictors, and, for a hierarchical model, a grouping
+column (any dtype; it is coded as a factor with levels in **sorted** order; a population-only
+formula needs none). Predictors are numeric, or
 categorical when you **declare** them with `categorical={"column": reference_level}`
 (string, pandas Categorical, or integer codes; an undeclared integer column is numeric,
 an undeclared label column is refused with the declaration to use). Gaussian: a numeric
@@ -121,11 +125,27 @@ import autobayes as ab
 priors = ab.Priors(
     intercept=ab.Normal(0, 5),   # applies to the CENTRED intercept: E[y] at the predictor means
     b=ab.Normal(0, 2),           # one prior for every slope, or {"x": ..., "w": ...}
-    sd=ab.HalfNormal(1),         # SD of the varying intercepts (brms class "sd")
+    sd=ab.HalfNormal(1),         # SD of the varying intercepts (brms class "sd"); omit it for a model without (1 | group)
     sigma=ab.HalfNormal(1),      # residual SD
 )
 model = ab.gaussian("y ~ x + (1 | school)", df, priors)
 ```
+
+For a model without a group-level term (milestone M3c-1; brms's base case, where
+group-level terms are optional):
+
+```python
+priors = ab.Priors(intercept=ab.Normal(0, 5), b=ab.Normal(0, 2), sigma=ab.HalfNormal(1))   # no sd
+model = ab.gaussian("y ~ x + arm", df, priors, categorical={"arm": "control"})           # y ~ 1 is intercept-only
+```
+
+The same predictor vocabulary applies (numeric terms, declared categorical terms, one
+interaction); the data need no grouping column. Passing `sd=` here is refused ("has no
+group-level term"), and a grouped formula without `sd=` is refused at build ("needs a prior
+on the SD of its varying intercept"): nothing is filled in or ignored. `describe()` says
+"no group-level term (population-level model)" and lists `Intercept`, one variable per term
+and `sigma_log__` as the sampled variables. Predictions take `newdata` without a grouping
+column; `new_groups` does not apply and any value other than the default is refused.
 
 For a binary outcome:
 
@@ -428,6 +448,9 @@ The worked examples do all six steps and write a record:
 | `FormulaError: ... is complex-valued` | A complex column (pandas counts it as numeric; a cast would drop the imaginary part) | Take the real part explicitly if that is what you mean |
 | `PriorError: the Bernoulli family has no residual SD` | `sigma` given to `ab.bernoulli` | Drop `sigma`; the priors are on the logit scale |
 | `PriorError: prior for 'sd' must be a positive-support prior` | Wrong class of prior | Location classes for intercept and slopes, scale classes for `sd` and `sigma` |
+| `PriorError: the formula has no group-level term ... do not pass sd` | `sd=` given to a population-only formula (M3c-1) | Drop `sd`, or add `(1 \| group)` if a varying intercept was intended |
+| `PriorError: ... needs a prior on the SD of its varying intercept` | `sd=` missing for a grouped formula | Pass `sd=`; it is required whenever the formula has `(1 \| group)` |
+| `ValueError: this model has no group-level term; new_groups does not apply` | `new_groups=` set on a population-only model | Leave `new_groups` at its default; every row is a population-level prediction |
 | Bernoulli fit: divergences or a group SD posterior stuck at its prior | Separation, or very few groups | Check for a group or predictor that perfectly predicts the outcome; tighten the logit-scale priors deliberately, and say so |
 | A hand-written PyMC logistic likelihood gives NaN gradients at large logits | `pm.Bernoulli(logit_p=...)` (PyTensor path) or `pt.softplus` (JAX path) branch on the untaken side | Use `autobayes.likelihoods.stable_softplus`, or verify values and gradients on both paths at logits up to 1e6 before trusting any form |
 | `DeviceError: ... JAX sees no GPU` | No CUDA jaxlib, or no GPU on this machine | Check `jax.devices()`. On a GPU host install `"jax[cuda12]"`; else `device="cpu"`. Do not "fix" this by catching it |

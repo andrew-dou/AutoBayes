@@ -1,5 +1,25 @@
 # AutoBayes status
 
+## M3c-1 slice (2026-09-19): population-only models, no group-level term
+
+- Andrew's September 19 foundation-first direction (`plans/2026-09-19-autobayes-foundations.md`, step 3, first
+  increment) and the coordinator's dispatch; brms `brmsformula` blueprint (group-level terms optional). Branch
+  `m3c1/population-only-models` from `origin/main` at `95dce8c` in the worktree
+  `projects/AutoBayes-worktrees/m3c1-population-only` with its own locked venv; decision record `docs/m3c1-decision.md`
+  committed at `55437e6` before any code, after a build-only probe of Bambi's population-only coding. PR #8 (M3b-1
+  varying slope) is untouched and not cherry-picked; its worktree and evidence are unchanged.
+- **Delivered:** `y ~ 1`, `y ~ x`, `y ~ 1 + x`, `y ~ x + w`, `y ~ x + z [+ x:z]`, `k | trials(n) ~ x` with the existing
+  categorical/interaction vocabulary and no grouping column; `Priors.sd` optional and refused without a group term,
+  required with one (build-time `PriorError`); empty group design, group-free names and `value_point`; `describe()`
+  and fit records that say so; predictions without a grouping column with `new_groups` refused rather than ignored;
+  grouped behaviour preserved. Version 0.5.0. README support matrix corrected (M3a-1/M3a-2 rows added, stale
+  "categorical refused" row replaced), SKILL guidance and an unexecuted example added.
+- **Tests** (clean locked environment, fresh evidence directories): `tests/test_population_only.py` **48 passed
+  (24 s)**; fast suite **395 passed, 7 deselected (320 s)**, exit 0. Evidence `docs/m3c1-evidence/`.
+  No sampler fit, slow suite, GPU run or dependency change; the sampling smoke is a proposal in the decision record.
+- **Next:** independent coordinator review of the PR; then, if approved, the proposed bounded smoke (both CPU
+  backends, predeclared gates) before any merge; then intercept control (`0 +`) as the following increment.
+
 ## M3a-2 slice (2026-09-10): one numeric-by-categorical fixed interaction
 
 - Dispatched by the coordinator after the M3a-1 acceptance

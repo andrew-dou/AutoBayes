@@ -12,7 +12,9 @@ TRUE)``). Binomial predictions are computed in this layer from the posterior; fo
 with zero trials gives ``expected = 0`` and ``y = 0``.
 
 ``new_groups`` decides what happens when ``newdata`` contains a level of the grouping
-factor that was not in the training data:
+factor that was not in the training data (a population-only model has no grouping factor: it
+needs no such column, its result carries ``new_groups = "not_applicable"``, and any value other
+than the default ``"error"`` is refused rather than ignored):
 
 - ``"error"`` (default): refuse. The safe default.
 - ``"resample_observed"``: brms's default ``sample_new_levels="uncertainty"``: for each
@@ -69,7 +71,7 @@ def _coefficient_draws(post, model):
 
 def _check_newdata(model, newdata: pd.DataFrame, *, need_trials: bool = False) -> pd.DataFrame:
     s = model.spec
-    cols = [*s.predictors, *s.categorical_names, s.group]
+    cols = [*s.predictors, *s.categorical_names] + ([s.group] if s.group is not None else [])
     if need_trials:
         if s.trials not in newdata.columns:
             raise FormulaError(
@@ -100,7 +102,8 @@ def _check_newdata(model, newdata: pd.DataFrame, *, need_trials: bool = False) -
         df[cat.name] = pd.Categorical(labels, categories=list(cat.categories), ordered=True)
     if need_trials:
         df[s.trials] = check_counts(f"newdata trials {s.trials!r}", df[s.trials])
-    df[s.group] = df[s.group].astype(str)
+    if s.group is not None:
+        df[s.group] = df[s.group].astype(str)
     return df.reset_index(drop=True)
 
 
@@ -119,26 +122,28 @@ def _predict_by_hand(model, idata, df: pd.DataFrame | None, kind: str, seed, new
     rng = np.random.default_rng(seed)
     a = post[n["intercept"]].to_numpy()                         # (chain, draw) raw-scale intercept
     b = _coefficient_draws(post, model)                         # (chain, draw, P) or None
-    sd = post[n["sd"]].to_numpy()
-    u = post[n["group_effect"]].to_numpy()                      # (chain, draw, J)
-    levels = list(model.design.levels)
     X = raw_design(model, df)                                   # raw scale: a is raw-scale intercept
     mu = np.repeat(a[..., None], len(df), axis=-1)
     if b is not None:
         mu = mu + np.einsum("cdp,np->cdn", b, X)
-    new_levels = sorted(set(df[model.spec.group]) - set(levels))
-    new_effects = {}
-    for lvl in new_levels:                                      # one effect per label per draw
-        if new_groups == "population":
-            new_effects[lvl] = rng.normal(0.0, 1.0, size=sd.shape) * sd
-        else:                                                   # resample_observed
-            chosen = rng.integers(0, len(levels), size=sd.shape)
-            new_effects[lvl] = np.take_along_axis(u, chosen[..., None], axis=-1)[..., 0]
-    for i, lvl in enumerate(df[model.spec.group]):
-        if lvl in new_effects:
-            mu[..., i] += new_effects[lvl]
-        else:
-            mu[..., i] += u[..., levels.index(lvl)]
+    new_levels: list = []
+    if model.spec.group is not None:
+        sd = post[n["sd"]].to_numpy()
+        u = post[n["group_effect"]].to_numpy()                  # (chain, draw, J)
+        levels = list(model.design.levels)
+        new_levels = sorted(set(df[model.spec.group]) - set(levels))
+        new_effects = {}
+        for lvl in new_levels:                                  # one effect per label per draw
+            if new_groups == "population":
+                new_effects[lvl] = rng.normal(0.0, 1.0, size=sd.shape) * sd
+            else:                                               # resample_observed
+                chosen = rng.integers(0, len(levels), size=sd.shape)
+                new_effects[lvl] = np.take_along_axis(u, chosen[..., None], axis=-1)[..., 0]
+        for i, lvl in enumerate(df[model.spec.group]):
+            if lvl in new_effects:
+                mu[..., i] += new_effects[lvl]
+            else:
+                mu[..., i] += u[..., levels.index(lvl)]
     if model.family == "gaussian":
         out = {"mu": (("chain", "draw", "__obs__"), mu)}
         if kind == "response":
@@ -174,10 +179,15 @@ def predict(model, fit_result, *, newdata: pd.DataFrame | None = None, kind: str
         raise ValueError("kind must be 'mean' or 'response'" + (" ('probability' is for binomial models; here 'mean' is p)" if model.family == "bernoulli" else ""))
     if new_groups not in _NEW_GROUPS:
         raise ValueError(f"new_groups must be one of {sorted(_NEW_GROUPS)}")
+    if model.spec.group is None and new_groups != "error":
+        raise ValueError(
+            "this model has no group-level term; new_groups does not apply (every row is a population-level "
+            "prediction), so leave it at its default rather than have it ignored"
+        )
     idata = getattr(fit_result, "idata", fit_result)
     if model.family == "binomial":
         df = None if newdata is None else _check_newdata(model, newdata, need_trials=(kind != "probability"))
-        if df is not None:
+        if df is not None and model.spec.group is not None:
             unseen = sorted(set(df[model.spec.group]) - set(model.design.levels))
             if unseen and new_groups == "error":
                 raise FormulaError(
@@ -186,12 +196,14 @@ def predict(model, fit_result, *, newdata: pd.DataFrame | None = None, kind: str
                     "new_groups='resample_observed' for brms's default 'uncertainty' behaviour."
                 )
         ds = _predict_by_hand(model, idata, df, kind, seed, new_groups)
-        if df is None:
+        if model.spec.group is None:
+            ds.attrs["new_groups"] = "not_applicable"
+        elif df is None:
             ds.attrs["new_groups"] = "in_sample"
         return ds
     df = None if newdata is None else _check_newdata(model, newdata)
 
-    if df is not None:
+    if df is not None and model.spec.group is not None:
         unseen = sorted(set(df[model.spec.group]) - set(model.design.levels))
         if unseen and new_groups == "error":
             raise FormulaError(
@@ -216,5 +228,7 @@ def predict(model, fit_result, *, newdata: pd.DataFrame | None = None, kind: str
         data["y"] = y.rename({y.dims[-1]: "__obs__"}) if y.dims[-1] != "__obs__" else y
     ds = xr.Dataset({k: v.drop_vars([c for c in v.coords if c not in ("chain", "draw")]) for k, v in data.items()})
     ds = ds.assign_coords(__obs__=np.arange(ds.sizes["__obs__"]))
-    ds.attrs["new_groups"] = new_groups if df is not None else "in_sample"
+    ds.attrs["new_groups"] = "not_applicable" if model.spec.group is None else (new_groups if df is not None else "in_sample")
+    if model.spec.group is None:
+        ds.attrs["new_levels"] = []
     return ds

@@ -1,0 +1,12 @@
+command: PYTENSOR_FLAGS=base_compiledir=<scratch> AUTOBAYES_EVIDENCE_DIR=evidence-runs/m3c1-module PYTHONDONTWRITEBYTECODE=1 uv run --no-sync pytest tests/test_population_only.py -q -p no:cacheprovider
+started 2026-09-19T15:51:20Z
+................................................                         [100%]
+=============================== warnings summary ===============================
+tests/test_population_only.py::test_describe_and_fit_record_without_sampling
+  /Users/andrewdou/iqss-research/projects/AutoBayes-worktrees/m3c1-population-only/.venv/lib/python3.11/site-packages/arviz/stats/diagnostics.py:596: RuntimeWarning: invalid value encountered in scalar divide
+    (between_chain_variance / within_chain_variance + num_samples - 1) / (num_samples)
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+48 passed, 1 warning in 23.55s
+pytest exit 0
+finished 2026-09-19T15:51:49Z

@@ -134,3 +134,28 @@ prior defaulting, threshold change or sampling is used to get past it.
 No intercept removal; no `y ~ (1 | g)` shorthand; one interaction per model and one categorical side
 per interaction as before; no Student-t or count families; no GPU evidence for this slice; the
 smoke above is a proposal. The `TypeError` for a missing `sd` becomes a `PriorError` at build.
+
+## Executed results (2026-09-19, clean locked environment, Python 3.11.0, fresh evidence directories)
+
+Implementation: `autobayes/formula.py` (optional group term, `has_group`, canonical `y ~ 1`), `autobayes/priors.py`
+(`sd` optional; refused without a group term, required with one, at build), `autobayes/model.py` (empty group
+design, names without group entries, `value_point` refusals, `describe()` statements), `autobayes/predict.py`
+(no grouping column needed, `new_groups` refused, `not_applicable` attributes), `autobayes/session.py`
+(`group: null`, `J: 0`, `noncentered: null`, priors without `sd`), version `0.5.0` (`pyproject.toml`, `uv.lock`
+own-package line only, `autobayes.__version__`). Reference helpers `tests/reference_logp.py` and
+`tests/reference_binomial.py` accept `group=None` with the grouped paths unchanged. Two existing assertions that a
+`Priors` construction without `sd` raises `TypeError` now assert the build-time `PriorError` (default 3).
+
+- `tests/test_population_only.py`: **48 passed in 24 s** (P1 grammar and refusals; P2 data without a
+  grouping column; P3 prior refusals and coverage; P4 design against the independent construction for three families
+  x three term structures x two centrings; P5 density, Jacobian and gradients on the PyTensor and JAX paths for nine
+  family/prior/structure cases x two centrings including intercept-only models; P6 the closed-form posterior with
+  `sigma` fixed; P7 graph names and `value_point` refusals in both directions; P8 `describe()` and the fit record from
+  a synthetic posterior with a stub panel; P9 predictions by hand from fixed draws for three families, mixed rows,
+  unseen category refused, `new_groups` refused; P10/P11 grouped models unchanged and the label contract).
+- Fast suite (CI command form): **395 passed, 7 deselected in 320 s**, exit 0. A first full run
+  (3 failed, 393 passed, exit 1, kept as `fast_suite_before_assertion_updates.txt`) found three stale assertions that a formula
+  without a group term must be refused; they were updated to the documented contract (default 1) with no library
+  change in between. Evidence `docs/m3c1-evidence/`.
+- Not executed: any sampler fit, the example, the slow suite, a GPU run. The bounded smoke stays a proposal for the
+  coordinator's review. Version bump note: PR #8 names `0.5.0` too; whichever lands second renumbers.

@@ -1,7 +1,8 @@
 """Explicit priors, by parameter class, in brms terms.
 
-brms classes: ``Intercept``, ``b`` (slopes and dummy coefficients), ``sd`` (group SD) and, for the Gaussian family
-only, ``sigma`` (residual SD). Every class the family has must be given; there are no
+brms classes: ``Intercept``, ``b`` (slopes and dummy coefficients), ``sd`` (group SD, exactly when the formula
+has a ``(1 | group)`` term) and, for the Gaussian family only, ``sigma`` (residual SD). Every class the model has
+must be given, and a class the model does not have is refused (M3c-1: ``sd`` without a group term); there are no
 silent defaults here (Bambi would supply some, and that is exactly what this layer refuses
 to let happen). For the Bernoulli family the intercept and slope priors are on the logit
 scale and ``sigma`` must be omitted.
@@ -81,7 +82,7 @@ class Priors:
 
     intercept: Prior
     b: Prior | Mapping[str, Prior | Mapping[str, Prior]]
-    sd: Prior
+    sd: Prior | None = None            # required with a '(1 | group)' term, refused without one (M3c-1)
     sigma: Prior | None = None
 
     # -- coefficient priors -----------------------------------------------------------------
@@ -92,7 +93,7 @@ class Priors:
         from autobayes.formula import ModelSpec
 
         if not isinstance(spec, ModelSpec):
-            spec = ModelSpec(formula="", response="", predictors=tuple(spec), group="")
+            spec = ModelSpec(formula="", response="", predictors=tuple(spec), group=None)
         cat_names = spec.categorical_names
         if isinstance(self.b, Prior):
             return {col: self.b for col in spec.columns}
@@ -176,6 +177,16 @@ class Priors:
         return self.coefficient_priors(tuple(predictors))
 
     def validate(self, spec, family: str = "gaussian") -> None:
+        group = getattr(spec, "group", None)
+        if group is not None and self.sd is None:
+            raise PriorError(
+                f"the varying intercept '(1 | {group})' needs a prior on the SD of its varying intercept: pass sd=..."
+            )
+        if group is None and self.sd is not None:
+            raise PriorError(
+                "the formula has no group-level term '(1 | group)'; do not pass sd (a group SD prior applies only to a "
+                "varying intercept, and nothing is created or ignored silently)"
+            )
         if family == "gaussian" and self.sigma is None:
             raise PriorError("the Gaussian family needs a prior on the residual SD: pass sigma=...")
         if family != "gaussian" and self.sigma is not None:
@@ -190,7 +201,7 @@ class Priors:
                 raise PriorError(
                     f"prior for {label!r} must be a location prior ({sorted(_LOCATION)}), got {prior}"
                 )
-        scales = [("sd", self.sd)] + ([("sigma", self.sigma)] if self.sigma is not None else [])
+        scales = ([("sd", self.sd)] if self.sd is not None else []) + ([("sigma", self.sigma)] if self.sigma is not None else [])
         for label, prior in scales:
             if not isinstance(prior, Prior):
                 raise PriorError(f"prior for {label!r} must be a Prior, got {type(prior).__name__}")
@@ -199,16 +210,17 @@ class Priors:
                     f"prior for {label!r} must be a positive-support prior ({sorted(_SCALE)}), got {prior}"
                 )
 
-    def to_bambi(self, spec, group: str, family: str = "gaussian") -> dict:
+    def to_bambi(self, spec, family: str = "gaussian") -> dict:
         """Bambi's prior dict: one prior per term (array-valued parameters for the levels of a
-        categorical term). The group term is Normal(0, sd) with ``sd`` as hyperprior."""
+        categorical term). With a group term, it is Normal(0, sd) with ``sd`` as hyperprior; without one
+        no group prior is emitted (Bambi would accept a stray ``1|g`` entry silently)."""
         import bambi as bmb
         import numpy as np
         from autobayes.formula import ModelSpec
 
         self.validate(spec, family)
         if not isinstance(spec, ModelSpec):
-            spec = ModelSpec(formula="", response="", predictors=tuple(spec), group="")
+            spec = ModelSpec(formula="", response="", predictors=tuple(spec), group=None)
         per_column = self.coefficient_priors(spec)
         out = {"Intercept": self.intercept.to_bambi()}
         if self.sigma is not None:
@@ -221,5 +233,6 @@ class Priors:
             name = priors[0].name
             params = {k: np.array([float(pr.params[k]) for pr in priors]) for k in priors[0].params}
             out[term] = bmb.Prior(name, **params)
-        out[f"1|{group}"] = bmb.Prior("Normal", mu=0.0, sigma=self.sd.to_bambi())
+        if spec.group is not None:
+            out[f"1|{spec.group}"] = bmb.Prior("Normal", mu=0.0, sigma=self.sd.to_bambi())
         return out

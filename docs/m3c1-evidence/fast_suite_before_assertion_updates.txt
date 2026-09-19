@@ -1,0 +1,200 @@
+command: PYTENSOR_FLAGS=base_compiledir=<scratch> AUTOBAYES_EVIDENCE_DIR=evidence-runs/m3c1-fast PYTHONDONTWRITEBYTECODE=1 uv run --no-sync pytest tests -q -m "not slow" -p no:cacheprovider
+started 2026-09-19T15:42:08Z
+.........F.................................................F............ [ 18%]
+........................................................................ [ 36%]
+........................................................................ [ 54%]
+....F................................................................... [ 72%]
+........................................................................ [ 90%]
+....................................                                     [100%]
+=================================== FAILURES ===================================
+_____________________________ test_invalid_inputs ______________________________
+
+bdata =             x      g  y
+0   -0.436435  lvl05  1
+1   -1.169802  lvl03  0
+2    1.739368  lvl03  1
+3   -0.495911  lvl01  ...116 -1.473888  lvl04  0
+117  1.028854  lvl01  0
+118 -1.934960  lvl04  0
+119 -0.239937  lvl00  1
+
+[120 rows x 3 columns]
+
+    def test_invalid_inputs(bdata):
+        with pytest.raises(ab.FormulaError, match="outside \\{0, 1\\}"):
+            ab.bernoulli("y ~ x + (1 | g)", bdata.assign(y=bdata.y * 2), PRIORS)
+        with pytest.raises(ab.FormulaError, match="outside \\{0, 1\\}"):
+            ab.bernoulli("y ~ x + (1 | g)", bdata.assign(y=bdata.y + 0.5), PRIORS)
+        with pytest.raises(ab.FormulaError, match="boolean"):
+            ab.bernoulli("y ~ x + (1 | g)", bdata.assign(y=bdata.y.astype(bool)), PRIORS)
+        with pytest.raises(ab.FormulaError, match="numeric 0/1"):
+            ab.bernoulli("y ~ x + (1 | g)", bdata.assign(y=bdata.y.map({0: "no", 1: "yes"})), PRIORS)
+        with pytest.raises(ab.FormulaError, match="constant"):
+            ab.bernoulli("y ~ x + (1 | g)", bdata.assign(y=1), PRIORS)
+        with pytest.raises(ab.FormulaError, match="missing values"):
+            ab.bernoulli("y ~ x + (1 | g)", bdata.assign(y=bdata.y.where(bdata.index > 0)), PRIORS)
+        with pytest.raises(ab.PriorError, match="no residual SD"):
+            ab.bernoulli("y ~ x + (1 | g)", bdata, ab.Priors(intercept=ab.Normal(0, 1.5), b=ab.Normal(0, 1),
+                                                              sd=ab.HalfNormal(1), sigma=ab.HalfNormal(1)))
+        with pytest.raises(ab.PriorError, match="needs a prior on the SD of its varying intercept"):   # sd missing (M3c-1: refused at build)
+            ab.bernoulli("y ~ x + (1 | g)", bdata, ab.Priors(intercept=ab.Normal(0, 1.5), b=ab.Normal(0, 1)))
+        with pytest.raises(ab.PriorError, match="positive-support"):
+            ab.bernoulli("y ~ x + (1 | g)", bdata, ab.Priors(intercept=ab.Normal(0, 1.5), b=ab.Normal(0, 1), sd=ab.Normal(0, 1)))
+        with pytest.raises(ab.PriorError, match="needs a prior on the residual SD"):
+            ab.gaussian("y ~ x + (1 | g)", bdata, PRIORS)
+        with pytest.raises(ValueError, match="family must be"):
+            ab.Model("y ~ x + (1 | g)", bdata, PRIORS, family="poisson")
+        for bad, needle in [("y ~ x + (1 + x | g)", "varying slopes"), ("y ~ x + (1 | g/h)", "nested"),
+                            ("y ~ 0 + x + (1 | g)", "no intercept"), ("y ~ x", "exactly one varying-intercept")]:
+            with pytest.raises(ab.FormulaError, match=needle):
+>               ab.bernoulli(bad, bdata, PRIORS)
+
+tests/test_bernoulli.py:248: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+autobayes/model.py:508: in bernoulli
+    return Model(formula, data, priors, family="bernoulli", center_predictors=center_predictors, categorical=categorical)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+autobayes/model.py:88: in __init__
+    priors.validate(spec0, family)                  # structure now; per-level coverage once levels are known
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = Priors(intercept=Prior(name='Normal', params={'mu': 0.0, 'sigma': 1.5}), b=Prior(name='Normal', params={'mu': 0.0, 'sigma': 1.0}), sd=Prior(name='HalfNormal', params={'sigma': 1.0}), sigma=None)
+spec = ModelSpec(formula='y ~ x', response='y', predictors=('x',), group=None, intercept=True, levels=(), trials=None, rhs='x', terms=('x',), categoricals=(), interactions=())
+family = 'bernoulli'
+
+    def validate(self, spec, family: str = "gaussian") -> None:
+        group = getattr(spec, "group", None)
+        if group is not None and self.sd is None:
+            raise PriorError(
+                f"the varying intercept '(1 | {group})' needs a prior on the SD of its varying intercept: pass sd=..."
+            )
+        if group is None and self.sd is not None:
+>           raise PriorError(
+                "the formula has no group-level term '(1 | group)'; do not pass sd (a group SD prior applies only to a "
+                "varying intercept, and nothing is created or ignored silently)"
+            )
+E           autobayes.priors.PriorError: the formula has no group-level term '(1 | group)'; do not pass sd (a group SD prior applies only to a varying intercept, and nothing is created or ignored silently)
+
+autobayes/priors.py:186: PriorError
+_____________________________ test_invalid_inputs ______________________________
+
+cdata =             x      g   n   k
+0   -0.661528  lvl05  47   8
+1    0.935050  lvl01  32  15
+2    0.049055  lvl00  45   6
+3 ...  37  21
+117 -0.050604  lvl03  15  10
+118 -0.283125  lvl01  23   4
+119  1.643252  lvl05  21  10
+
+[120 rows x 4 columns]
+
+    def test_invalid_inputs(cdata):
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", np.exceptions.ComplexWarning)
+            warnings.simplefilter("error", RuntimeWarning)
+            bad = [
+                (cdata.assign(k=cdata.k.astype(bool)), "boolean"),
+                (cdata.assign(n=cdata.n.astype(complex)), "complex"),
+                (cdata.assign(k=cdata.k + 0.5), "non-integral"),
+                (cdata.assign(n=cdata.n.astype(float).where(cdata.index > 0, np.inf)), "non-finite"),
+                (cdata.assign(k=cdata.k.where(cdata.index > 0, -1)), "negative"),
+                (cdata.assign(k=cdata.n + 1), "exceed trials"),
+                (cdata.assign(n=cdata.n.where(cdata.index > 0, 0)), "zero trials is impossible"),
+                (cdata.assign(n=0, k=0), "no trials in the data"),
+                (cdata.assign(k=cdata.k.astype(float).where(cdata.index > 0, np.nan)), "missing values"),
+            ]
+            for df, needle in bad:
+                with pytest.raises(ab.FormulaError, match=needle):
+                    ab.binomial(FORMULA, df, PRIORS)
+        with pytest.raises(ab.FormulaError, match="above the tested limit"):
+            ab.binomial(FORMULA, cdata.assign(n=cdata.n.astype(np.int64).where(cdata.index > 0, COUNT_CAP + 5)), PRIORS)
+        with pytest.raises(ab.PriorError, match="no residual SD"):
+            ab.binomial(FORMULA, cdata, ab.Priors(intercept=ab.Normal(0, 1.5), b=ab.Normal(0, 1), sd=ab.HalfNormal(1), sigma=ab.HalfNormal(1)))
+        with pytest.raises(ab.PriorError, match="needs a prior on the SD of its varying intercept"):   # sd missing (M3c-1: refused at build)
+            ab.binomial(FORMULA, cdata, ab.Priors(intercept=ab.Normal(0, 1.5), b=ab.Normal(0, 1)))
+        for bad_formula, needle in [
+            ("k ~ x + (1 | g)", "needs 'successes | trials"), ("p(k, n) ~ x + (1 | g)", "Bambi's 'p"),
+            ("k | trials(n) ~ x + (1 + x | g)", "varying slopes"), ("k | trials(n) ~ x + (1 | g/h)", "nested"),
+            ("k | trials(n) ~ 0 + x + (1 | g)", "no intercept"), ("k | trials(n) ~ x", "exactly one varying-intercept"),
+            ("k | trials(n) ~ n + (1 | g)", "cannot also be a predictor"), ("k | trials(n) ~ x + (1 | n)", "cannot also be a predictor"),
+            ("k | trials(k) ~ x + (1 | g)", "cannot also be the response"), ("k | n ~ x + (1 | g)", "exactly 'successes | trials"),
+            ("k | weights(n) ~ x + (1 | g)", "exactly 'successes | trials"),
+        ]:
+            with pytest.raises(ab.FormulaError, match=needle):
+>               ab.binomial(bad_formula, cdata, PRIORS)
+
+tests/test_binomial.py:464: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+autobayes/model.py:514: in binomial
+    return Model(formula, data, priors, family="binomial", center_predictors=center_predictors, categorical=categorical)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+autobayes/model.py:88: in __init__
+    priors.validate(spec0, family)                  # structure now; per-level coverage once levels are known
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = Priors(intercept=Prior(name='Normal', params={'mu': 0.0, 'sigma': 1.5}), b=Prior(name='Normal', params={'mu': 0.0, 'sigma': 1.0}), sd=Prior(name='HalfNormal', params={'sigma': 1.0}), sigma=None)
+spec = ModelSpec(formula='k | trials(n) ~ x', response='k', predictors=('x',), group=None, intercept=True, levels=(), trials='n', rhs='x', terms=('x',), categoricals=(), interactions=())
+family = 'binomial'
+
+    def validate(self, spec, family: str = "gaussian") -> None:
+        group = getattr(spec, "group", None)
+        if group is not None and self.sd is None:
+            raise PriorError(
+                f"the varying intercept '(1 | {group})' needs a prior on the SD of its varying intercept: pass sd=..."
+            )
+        if group is None and self.sd is not None:
+>           raise PriorError(
+                "the formula has no group-level term '(1 | group)'; do not pass sd (a group SD prior applies only to a "
+                "varying intercept, and nothing is created or ignored silently)"
+            )
+E           autobayes.priors.PriorError: the formula has no group-level term '(1 | group)'; do not pass sd (a group SD prior applies only to a varying intercept, and nothing is created or ignored silently)
+
+autobayes/priors.py:186: PriorError
+_____ test_rejects_unsupported_syntax[y ~ x-exactly one varying-intercept] _____
+
+formula = 'y ~ x', needle = 'exactly one varying-intercept'
+
+    @pytest.mark.parametrize("formula,needle", [
+        ("y ~ x + (1 + x | g)", "varying slopes"),
+        ("y ~ x + (x | g)", "varying slopes"),
+        ("y ~ x + (1 | g/h)", "nested"),
+        ("y ~ x + (1 | g:h)", "nested"),
+        ("y ~ x + (1 | g) + (1 | h)", "more than one grouping"),
+        ("y ~ x + (1 || g)", "'||'"),
+        ("y ~ 0 + x + (1 | g)", "no intercept"),
+        ("y ~ x - 1 + (1 | g)", "'-'"),
+        ("y ~ x * w + (1 | g)", "two numeric terms"),          # M3a-2: only numeric-by-declared-categorical interactions
+        ("y ~ x:w + (1 | g)", "main effect 'x' is missing"),
+        ("y ~ log(x) + (1 | g)", "function calls"),
+        ("y ~ x", "exactly one varying-intercept"),
+        ("y ~ (1 | g)", "no population-level predictor"),
+        ("y x + (1 | g)", "expected 'response ~ terms'"),
+        ("y ~ x + x + (1 | g)", "duplicated"),
+        ("y ~ y + (1 | g)", "response cannot also be"),
+        ("y ~ x + (1 | x)", "grouping factor cannot also be"),
+    ])
+    def test_rejects_unsupported_syntax(formula, needle):
+>       with pytest.raises(ab.FormulaError, match=needle):
+E       Failed: DID NOT RAISE FormulaError
+
+tests/test_formula.py:29: Failed
+=============================== warnings summary ===============================
+tests/test_interaction.py::test_describe_and_fit_record
+  /Users/andrewdou/iqss-research/projects/AutoBayes-worktrees/m3c1-population-only/autobayes/diagnostics.py:37: RuntimeWarning: All-NaN slice encountered
+    "max_rhat": float(max(np.nanmax(np.asarray(v)) for v in rhat.data_vars.values())),
+
+tests/test_population_only.py::test_describe_and_fit_record_without_sampling
+  /Users/andrewdou/iqss-research/projects/AutoBayes-worktrees/m3c1-population-only/.venv/lib/python3.11/site-packages/arviz/stats/diagnostics.py:596: RuntimeWarning: invalid value encountered in scalar divide
+    (between_chain_variance / within_chain_variance + num_samples - 1) / (num_samples)
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+FAILED tests/test_bernoulli.py::test_invalid_inputs - autobayes.priors.PriorE...
+FAILED tests/test_binomial.py::test_invalid_inputs - autobayes.priors.PriorEr...
+FAILED tests/test_formula.py::test_rejects_unsupported_syntax[y ~ x-exactly one varying-intercept]
+3 failed, 393 passed, 7 deselected, 2 warnings in 464.98s (0:07:44)
+pytest exit 1
+finished 2026-09-19T15:50:00Z

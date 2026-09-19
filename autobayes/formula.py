@@ -2,8 +2,11 @@
 
 Supported::
 
-    response ~ [1 +] predictor [+ predictor ...] [+ x:z ...] + (1 | group)               (Gaussian, Bernoulli)
-    successes | trials(n) ~ [1 +] predictor [+ predictor ...] [+ x:z ...] + (1 | group)  (binomial, brms syntax)
+    response ~ [1 +] predictor [+ predictor ...] [+ x:z ...] [+ (1 | group)]               (Gaussian, Bernoulli)
+    successes | trials(n) ~ [1 +] predictor [+ predictor ...] [+ x:z ...] [+ (1 | group)]  (binomial, brms syntax)
+
+The varying-intercept term is optional (milestone M3c-1): a formula without it is a population-only
+model, as in brms ``brmsformula`` where group-level terms are optional; ``y ~ 1`` is intercept-only.
 
 with ``x:z`` (or the shorthand ``x*z`` = ``x + z + x:z``) one interaction between a numeric term
 and a declared categorical term whose main effects are both present (milestone M3a-2).
@@ -73,7 +76,7 @@ class ModelSpec:
     formula: str
     response: str
     predictors: tuple[str, ...]        # numeric predictor terms, in formula order
-    group: str
+    group: str | None                  # None: a population-only model without a group-level term (M3c-1)
     intercept: bool = True
     levels: tuple[str, ...] = field(default_factory=tuple)
     trials: str | None = None          # binomial only: the trials column of ``successes | trials(n)``
@@ -87,7 +90,13 @@ class ModelSpec:
             object.__setattr__(self, "terms", tuple(self.predictors))
 
     @property
+    def has_group(self) -> bool:
+        return self.group is not None
+
+    @property
     def group_term(self) -> str:
+        if self.group is None:
+            raise ValueError("this model has no group-level term")
         return f"1|{self.group}"
 
     @property
@@ -344,8 +353,8 @@ def parse_formula(formula: str, data: pd.DataFrame | None = None, family: str = 
         if not m:
             raise FormulaError(
                 f"{formula!r}: expected 'response ~ terms'. Supported: "
-                "'y ~ [1 +] x1 [+ x2 ...] + (1 | group)' and, for ab.binomial, "
-                "'successes | trials(n) ~ [1 +] x1 [+ x2 ...] + (1 | group)'."
+                "'y ~ [1 +] x1 [+ x2 ...] [+ (1 | group)]' and, for ab.binomial, "
+                "'successes | trials(n) ~ [1 +] x1 [+ x2 ...] [+ (1 | group)]'."
             )
         if family == "binomial":
             raise FormulaError(
@@ -431,10 +440,6 @@ def parse_formula(formula: str, data: pd.DataFrame | None = None, family: str = 
                     "model (the level intercepts or the reference slope are forced to zero and formulae changes the "
                     "interaction's coding) and is not part of the verified subset (docs/m3a2-decision.md)."
                 )
-    if len(groups) == 0:
-        raise FormulaError(
-            f"{formula!r}: M0 requires exactly one varying-intercept term '(1 | group)'."
-        )
     if len(groups) > 1:
         raise FormulaError(
             f"{formula!r}: more than one grouping factor ({groups}) is not supported in "
@@ -445,8 +450,8 @@ def parse_formula(formula: str, data: pd.DataFrame | None = None, family: str = 
             f"{formula!r}: no population-level predictor; write 'y ~ 1 + (1 | group)' "
             "for an intercept-only model."
         )
-    group = groups[0]
-    if group in predictors or group == response:
+    group = groups[0] if groups else None            # None: population-only model (M3c-1)
+    if group is not None and (group in predictors or group == response):
         raise FormulaError(f"{group!r}: the grouping factor cannot also be a predictor or the response")
     if trials is not None and (trials in predictors or trials == group):
         raise FormulaError(f"{trials!r}: the trials column cannot also be a predictor or the grouping factor")
@@ -482,7 +487,8 @@ def parse_formula(formula: str, data: pd.DataFrame | None = None, family: str = 
             "numeric-by-categorical interaction per model, whether or not they share a side "
             "(docs/m3a2-decision.md, repair record). Fit one interaction, or wait for a slice that verifies several."
         )
-    canonical_rhs = " + ".join([*predictors, *(f"{x}:{z}" for x, z in interactions), f"(1 | {group})"])
+    parts = [*predictors, *(f"{x}:{z}" for x, z in interactions)] + ([f"(1 | {group})"] if group is not None else [])
+    canonical_rhs = " + ".join(parts) if parts else "1"           # intercept-only population model: 'y ~ 1'
     spec = ModelSpec(
         formula=formula.strip(), response=response,
         predictors=tuple(p for p in predictors if p not in cat_names),
@@ -595,7 +601,8 @@ def validate_data(spec: ModelSpec, data: pd.DataFrame, family: str = "gaussian")
     """Check columns exist, are numeric where required, and have no missing values."""
     if (spec.trials is not None) != (family == "binomial"):
         raise FormulaError("a trials column is present exactly for the binomial family")
-    needed = [spec.response, *spec.predictors, *spec.categorical_names, spec.group] + ([spec.trials] if spec.trials else [])
+    needed = ([spec.response, *spec.predictors, *spec.categorical_names] + ([spec.group] if spec.group is not None else [])
+              + ([spec.trials] if spec.trials else []))
     missing = [c for c in needed if c not in data.columns]
     if missing:
         raise FormulaError(f"columns not in data: {missing}")
@@ -637,12 +644,14 @@ def validate_data(spec: ModelSpec, data: pd.DataFrame, family: str = "gaussian")
         )
     if len(data) < 2:
         raise FormulaError("need at least two observations")
-    levels = tuple(str(v) for v in sorted(data[spec.group].astype(str).unique()))
-    if len(levels) < 2:
-        raise FormulaError(
-            f"grouping factor {spec.group!r} has a single level; a varying intercept "
-            "needs at least two."
-        )
+    levels: tuple[str, ...] = ()
+    if spec.group is not None:
+        levels = tuple(str(v) for v in sorted(data[spec.group].astype(str).unique()))
+        if len(levels) < 2:
+            raise FormulaError(
+                f"grouping factor {spec.group!r} has a single level; a varying intercept "
+                "needs at least two."
+            )
     for c in spec.predictors:
         if np.isclose(np.std(data[c].to_numpy(dtype=float)), 0.0):
             raise FormulaError(f"predictor {c!r} is constant")
