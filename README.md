@@ -17,8 +17,9 @@ Three parts:
   inspectable PyMC model through Bambi, requires explicit priors, samples on the CPU
   with PyMC's NUTS or through JAX/NumPyro with an explicit device choice, and returns
   posterior and predictive draws. Three families on one formula subset
-  `y ~ x + z + x:z + (1 | group)` with numeric and declared categorical predictors (M3a-1)
-  and one numeric-by-categorical interaction (M3a-2):
+  `y ~ x + z + x:z [+ (1 | group)]` with numeric and declared categorical predictors (M3a-1)
+  and one numeric-by-categorical interaction (M3a-2); the varying intercept is optional
+  since M3c-1, and a formula without it is a population-only model:
   Gaussian (M0), Bernoulli with a logit link for a 0/1
   outcome (M1), and binomial counts `successes | trials(n)` with a logit link (M2);
   anything else is refused with an error naming the construct. See
@@ -88,7 +89,7 @@ Mid-project, the skills are symptom-triggered. When a gradient comes back `nan` 
 likelihood will not differentiate, `autobayes-custom-op` loads on its own and — before
 showing you the pattern — tries to talk you out of needing it.
 
-## Library (milestones M0, M1, M2, M3a-1 and M3a-2)
+## Library (milestones M0, M1, M2, M3a-1, M3a-2 and M3c-1)
 
 ### Install and test (the pinned, tested stack)
 
@@ -130,7 +131,11 @@ versions.
 | Gaussian, `y ~ [1 +] x… + (1 \| g)` | CPU-validated | CPU-validated | GPU-validated once, H100 (`docs/m0-gpu-validation.md`) | M0, merged |
 | Bernoulli (logit), `y ~ [1 +] x… + (1 \| g)`, y strictly 0/1 | CPU-validated | CPU-validated | **pending** (same code path, not run on a GPU) | M1, PR #3 |
 | Binomial (logit), `k \| trials(n) ~ [1 +] x… + (1 \| g)`, integer counts up to 1e6 per row | CPU-validated | CPU-validated | **pending** (same code path, not run on a GPU) | M2 |
-| Categorical predictors, interactions, varying slopes, several groups, other families | refused with an error naming the construct | same | same | later slices, `docs/coordination/NEXT_MILESTONES_PROPOSAL.md` |
+| Declared categorical predictors `z` (treatment coding, `categorical={"z": reference}`), all three families | CPU-validated (`docs/m3a1-decision.md`) | CPU-validated | **pending** | M3a-1, merged (PR #6) |
+| One numeric-by-categorical interaction `x:z` (`x*z`) with both main effects, all three families | CPU-validated (`docs/m3a2-decision.md`) | CPU-validated | **pending** | M3a-2, merged (PR #7) |
+| Population-only models, no group-level term: `y ~ 1`, `y ~ x`, `y ~ x + z + x:z`, `k \| trials(n) ~ x`, all three families | deterministic density/gradient/design/prediction checks for all three families; Gaussian example CPU sampling accepted after explicit finite-statistic policy correction ([review](docs/m3c1-decision.md#independent-acceptance-review-2026-09-19)) | same deterministic coverage; Gaussian example CPU sampling and seven-mean agreement accepted in the same review | **pending** | M3c-1, PR #9; implementation and bounded evidence reviewed, final checks/merge pending |
+| One independent varying slope `(1 + x \|\| g)` | under independent review, not merged | same | same | M3b-1, PR #8 open |
+| Intercept removal (`0 +`, `- 1`), several or correlated group terms, nested/crossed factors, other families and links | refused with an error naming the construct | same | same | later slices, `docs/coordination/NEXT_MILESTONES_PROPOSAL.md` |
 
 Device rules on every path: `device="gpu"` without a visible GPU raises `DeviceError`
 (no silent CPU fallback); the fit report states the actual device, dtype (float64) and
@@ -169,6 +174,11 @@ amodel = ab.gaussian("y ~ x + arm + (1 | site)", df, cpriors, categorical={"arm"
 amodel.coefficients                                               # (("x","x",None), ("arm[high]","arm",0), ("arm[low]","arm",1))
 amodel.predict(afit, newdata=new_df, kind="mean")                 # an arm that was not fitted is refused
 
+# a population-only model (no group-level term): the same priors without sd; predictions need no grouping column
+ppriors = ab.Priors(intercept=ab.Normal(0, 5), b=ab.Normal(0, 2), sigma=ab.HalfNormal(1))
+pmodel = ab.gaussian("y ~ x + arm", df, ppriors, categorical={"arm": "control"})    # sd= here would be refused
+pmodel.predict(pfit, newdata=new_df_without_site, kind="mean")                   # new_groups does not apply
+
 # a numeric-by-categorical interaction: each arm gets its own dose slope (x*z is x + z + x:z)
 ipriors = ab.Priors(intercept=ab.Normal(0, 5), b={"dose": ab.Normal(0, 2), "arm": ab.Normal(0, 2), "dose:arm": ab.Normal(0, 1)},
                     sd=ab.HalfNormal(1), sigma=ab.HalfNormal(1))
@@ -196,9 +206,11 @@ order, reference validation, prior forms, the naming map, what the centred inter
 with dummies, and what a change of reference level does and does not preserve) and
 `docs/m3a2-decision.md` (the interaction: canonical expansion, both main effects required,
 expanded-column centring and the reported-intercept transformation, the reference change
-with slopes); the acceptance checks and their evidence are in those records and
-`docs/m0-evidence/`, `docs/m1-evidence/`, `docs/m2-evidence/`, `docs/m3a1-evidence/`,
-`docs/m3a2-evidence/`.
+with slopes) and `docs/m3c1-decision.md` (population-only models: the optional group term,
+the `sd` prior refused without one and required with one, `new_groups` not applicable, the
+deterministic checks and the independently reviewed two-backend Gaussian CPU example); the acceptance checks and
+their evidence are in those records and `docs/m0-evidence/`, `docs/m1-evidence/`,
+`docs/m2-evidence/`, `docs/m3a1-evidence/`, `docs/m3a2-evidence/`, `docs/m3c1-evidence/`.
 `docs/coordination/STATUS.md` is the live milestone status; the roadmap is
 `docs/coordination/NEXT_MILESTONES_PROPOSAL.md`. No speed claim is made anywhere.
 

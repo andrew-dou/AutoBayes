@@ -18,7 +18,6 @@ from tests.conftest import PRIORS, simulate
     ("y ~ x * w + (1 | g)", "two numeric terms"),          # M3a-2: only numeric-by-declared-categorical interactions
     ("y ~ x:w + (1 | g)", "main effect 'x' is missing"),
     ("y ~ log(x) + (1 | g)", "function calls"),
-    ("y ~ x", "exactly one varying-intercept"),
     ("y ~ (1 | g)", "no population-level predictor"),
     ("y x + (1 | g)", "expected 'response ~ terms'"),
     ("y ~ x + x + (1 | g)", "duplicated"),
@@ -37,6 +36,8 @@ def test_accepts_supported_syntax():
     assert s.predictors == ()
     s = ab.parse_formula("y~x+(1|g)")
     assert s.predictors == ("x",)
+    s = ab.parse_formula("y ~ x")                                     # M3c-1: the group term is optional
+    assert s.predictors == ("x",) and s.group is None and s.rhs == "x"
 
 
 def test_data_validation():

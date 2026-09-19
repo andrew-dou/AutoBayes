@@ -1,5 +1,59 @@
 # AutoBayes status
 
+## M3c-1 acceptance update (2026-09-19)
+
+Independent source/test review and retained-draw Gaussian CPU validation are complete. Both backends
+have zero divergences and pass the required convergence/MCSE/prediction checks. The finite-statistic
+policy was explicitly corrected after the run to exclude only PyMC's documented unused eigenvalue
+placeholders. The original literal failure and exit 1 remain preserved; no new fit was run in review.
+See `docs/m3c1-decision.md` and `docs/m3c1-evidence/independent-review.json` for the exact correction,
+evidence, source justification and limitations. The frozen runner scripts are historical, not reusable
+successful commands. Three-family deterministic checks are separate from this one Gaussian CPU example.
+
+Both hosted checks on `525c8d5` passed. PR #9 awaits final documentation-head checks and merge;
+intercept-control work has not started. PR #8 and its original F7 failure remain separate. Entries
+below describe earlier checkpoints and are superseded by this acceptance update where noted.
+
+## M3c-1 slice (2026-09-19): population-only models, no group-level term
+
+- Andrew's September 19 foundation-first direction (`plans/2026-09-19-autobayes-foundations.md`, step 3, first
+  increment) and the coordinator's dispatch; brms `brmsformula` blueprint (group-level terms optional). Branch
+  `m3c1/population-only-models` from `origin/main` at `95dce8c` in the worktree
+  `projects/AutoBayes-worktrees/m3c1-population-only` with its own locked venv; decision record `docs/m3c1-decision.md`
+  committed at `55437e6` before any code, after a build-only probe of Bambi's population-only coding. PR #8 (M3b-1
+  varying slope) is untouched and not cherry-picked; its worktree and evidence are unchanged.
+- **Delivered:** `y ~ 1`, `y ~ x`, `y ~ 1 + x`, `y ~ x + w`, `y ~ x + z [+ x:z]`, `k | trials(n) ~ x` with the existing
+  categorical/interaction vocabulary and no grouping column; `Priors.sd` optional and refused without a group term,
+  required with one (build-time `PriorError`); empty group design, group-free names and `value_point`; `describe()`
+  and fit records that say so; predictions without a grouping column with `new_groups` refused rather than ignored;
+  grouped behaviour preserved. Version 0.5.0. README support matrix corrected (M3a-1/M3a-2 rows added, stale
+  "categorical refused" row replaced), SKILL guidance and an unexecuted example added.
+- **Tests** (clean locked environment, fresh evidence directories): `tests/test_population_only.py` **48 passed
+  (24 s)**; fast suite **395 passed, 7 deselected (320 s)**, exit 0. Evidence `docs/m3c1-evidence/`.
+  No sampler fit, slow suite, GPU run or dependency change; the sampling smoke is a proposal in the decision record.
+- **Correction (2026-09-19, independent review of `6d8e234`):** "no sampler fit was executed" was true of the new
+  module and of population-only models, false of the inherited fast suite, whose own CPU regression sampling
+  (`small_fit`, `test_numpyro_cpu_report`, `bfit`/`cfit`, prediction tests) ran as part of the required suite; the
+  dispatch's two requirements conflicted. Static call-site inventory `docs/m3c1-evidence/fit_sites_inventory.txt`
+  (not an execution count); raw transcripts and old commits unchanged. Review: 48 tests and 12 fixed-draw prediction
+  probes passed independently, both hosted checks on `6d8e234` green, no blocking defect; merge pending the bounded
+  two-fit validation.
+- **Two-fit validation executed (2026-09-19, runner head `cbe7141`, one supervised invocation, no timeout, wall
+  31.5 s):** exactly two fits of the example's frozen dose-by-arm Gaussian model (seed 29, 4×1000/1000, target_accept
+  0.9): PyMC CPU cores 4 (float64, wall 22.4 s: 0 divergences, max R-hat 1.0025, min bulk ESS 2,656, min tail ESS
+  2,430, E-BFMI 1.024, saturation 0) then NumPyro CPU parallel (float64, wall 3.1 s: 0 divergences, max R-hat 1.0017,
+  min bulk ESS 2,313, min tail ESS 2,649, E-BFMI 0.896, saturation 0). Seven labelled means agree within 4 combined
+  MCSE; predictions on the four new rows equal the hand computation on both routes; records carry `group: null`,
+  `J: 0`; truth-in-99%-HDI recorded descriptively only. **One predeclared gate failed as literally implemented:** the
+  PyMC fit's placeholder statistics `largest_eigval`/`smallest_eigval` are NaN for all 4,000 draws (never populated by
+  PyMC's default diagonal adaptation), so the runner's "every numeric sampler statistic finite" gate failed although
+  every posterior array and all six required diagnostics are finite; a second runner defect turned the child's exit 4
+  into exit 1. No repair fit, no threshold change. Draws retained as netCDF outside the repository
+  (`artifacts/2026-09-19-autobayes-m3c1-two-fit-validation/attempt-1/`, SHA-256 in `docs/m3c1-evidence/two-fit-validation/`).
+- **Next:** the coordinator rules on the gate wording: required-diagnostics-finite (re-evaluated read-only on the
+  retained draws, no new fit) or the literal all-statistics gate under a corrected runner with its own approval; no
+  merge and no intercept control yet.
+
 ## M3a-2 slice (2026-09-10): one numeric-by-categorical fixed interaction
 
 - Dispatched by the coordinator after the M3a-1 acceptance

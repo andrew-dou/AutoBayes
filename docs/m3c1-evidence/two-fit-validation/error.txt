@@ -1,0 +1,4 @@
+Traceback (most recent call last):
+  File "/Users/andrewdou/iqss-research/projects/AutoBayes-worktrees/m3c1-population-only/docs/m3c1-evidence/scripts/m3c1_two_fit_validation.py", line 167, in <module>
+    sys.exit(main(out_dir))
+SystemExit: 4

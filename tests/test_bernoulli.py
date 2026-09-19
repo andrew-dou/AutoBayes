@@ -234,8 +234,8 @@ def test_invalid_inputs(bdata):
     with pytest.raises(ab.PriorError, match="no residual SD"):
         ab.bernoulli("y ~ x + (1 | g)", bdata, ab.Priors(intercept=ab.Normal(0, 1.5), b=ab.Normal(0, 1),
                                                           sd=ab.HalfNormal(1), sigma=ab.HalfNormal(1)))
-    with pytest.raises(TypeError):
-        ab.Priors(intercept=ab.Normal(0, 1.5), b=ab.Normal(0, 1))       # sd missing
+    with pytest.raises(ab.PriorError, match="needs a prior on the SD of its varying intercept"):   # sd missing (M3c-1: refused at build)
+        ab.bernoulli("y ~ x + (1 | g)", bdata, ab.Priors(intercept=ab.Normal(0, 1.5), b=ab.Normal(0, 1)))
     with pytest.raises(ab.PriorError, match="positive-support"):
         ab.bernoulli("y ~ x + (1 | g)", bdata, ab.Priors(intercept=ab.Normal(0, 1.5), b=ab.Normal(0, 1), sd=ab.Normal(0, 1)))
     with pytest.raises(ab.PriorError, match="needs a prior on the residual SD"):
@@ -243,7 +243,7 @@ def test_invalid_inputs(bdata):
     with pytest.raises(ValueError, match="family must be"):
         ab.Model("y ~ x + (1 | g)", bdata, PRIORS, family="poisson")
     for bad, needle in [("y ~ x + (1 + x | g)", "varying slopes"), ("y ~ x + (1 | g/h)", "nested"),
-                        ("y ~ 0 + x + (1 | g)", "no intercept"), ("y ~ x", "exactly one varying-intercept")]:
+                        ("y ~ 0 + x + (1 | g)", "no intercept")]:
         with pytest.raises(ab.FormulaError, match=needle):
             ab.bernoulli(bad, bdata, PRIORS)
     m = ab.bernoulli("y ~ x + (1 | g)", bdata, PRIORS)

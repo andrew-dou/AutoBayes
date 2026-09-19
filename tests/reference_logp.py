@@ -108,6 +108,8 @@ def build_design(data: pd.DataFrame, response: str, predictors: list[str], group
             cols.append(xv * (lab == l))
     X = np.column_stack(cols) if cols else np.zeros((len(y), 0))
     xbar = X.mean(0) if center else np.zeros(X.shape[1])
+    if group is None:                                   # population-only model (M3c-1): no levels, no index
+        return y, X - xbar, xbar, None, []
     levels = sorted(data[group].astype(str).unique())
     gidx = np.array([levels.index(v) for v in data[group].astype(str)])
     return y, X - xbar, xbar, gidx, levels
@@ -123,34 +125,38 @@ def reference_logp(point: dict, data: pd.DataFrame, *, response: str, predictors
     y, Xc, _, gidx, levels = build_design(data, response, predictors, group, center, categorical, interactions)
     columns = design_columns(data, predictors, categorical, interactions)
     a, b = float(point["a_c"]), np.atleast_1d(point["b"])
-    log_sigma, log_sd = float(point["log_sigma"]), float(point["log_sd"])
-    z = np.asarray(point["z"], dtype=float)
-    assert z.shape == (len(levels),)
-    sigma, sd = np.exp(log_sigma), np.exp(log_sd)
-
-    mu = a + Xc @ b + sd * z[gidx]
-    lp = np.sum(stats.norm.logpdf(y, loc=mu, scale=sigma))
-    lp += np.sum(stats.norm.logpdf(z, 0.0, 1.0))
-    lp += prior_logpdf(*priors["intercept"], a)
+    log_sigma = float(point["log_sigma"])
+    sigma = np.exp(log_sigma)
+    mu = a + Xc @ b
+    lp = prior_logpdf(*priors["intercept"], a)
+    if group is not None:                               # the group block: offsets, their prior, the SD prior
+        log_sd = float(point["log_sd"]); sd = np.exp(log_sd)
+        z = np.asarray(point["z"], dtype=float)
+        assert z.shape == (len(levels),)
+        mu = mu + sd * z[gidx]
+        lp += np.sum(stats.norm.logpdf(z, 0.0, 1.0)) + prior_logpdf(*priors["sd"], sd) + (log_sd if jacobian else 0.0)
+    lp += np.sum(stats.norm.logpdf(y, loc=mu, scale=sigma))
     for i, p in enumerate(columns):
         lp += prior_logpdf(*priors["b"][p], b[i])
-    lp += prior_logpdf(*priors["sd"], sd)
     lp += prior_logpdf(*priors["sigma"], sigma)
     if jacobian:
-        lp += log_sigma + log_sd
+        lp += log_sigma
     return float(lp)
 
 
-def conditional_gaussian_posterior(data, *, response, predictors, group, center, sigma, sd,
+def conditional_gaussian_posterior(data, *, response, predictors, group, center, sigma, sd=None,
                                    prior_intercept, prior_b):
-    """Exact posterior of (a_c, b, z) given fixed sigma and sd, all priors Normal.
+    """Exact posterior of (a_c, b, z) given fixed sigma and sd, all priors Normal; with ``group=None``
+    (M3c-1) the posterior of (a_c, b) given sigma, no offsets.
 
     Returns (mean, cov) in the order [a_c, b_1..b_p, z_1..z_J].
     """
     y, Xc, _, gidx, levels = build_design(data, response, predictors, group, center)
     n, p, J = len(y), Xc.shape[1], len(levels)
-    Z = np.zeros((n, J)); Z[np.arange(n), gidx] = 1.0
-    W = np.column_stack([np.ones(n), Xc, sd * Z])
+    Z = np.zeros((n, J))
+    if group is not None:
+        Z[np.arange(n), gidx] = 1.0
+    W = np.column_stack([np.ones(n), Xc, sd * Z]) if group is not None else np.column_stack([np.ones(n), Xc])
     prior_prec = np.zeros(1 + p + J)
     prior_mean = np.zeros(1 + p + J)
     prior_prec[0] = 1.0 / prior_intercept["sigma"] ** 2; prior_mean[0] = prior_intercept["mu"]
@@ -178,18 +184,15 @@ def reference_logp_bernoulli(point: dict, data: pd.DataFrame, *, response: str, 
     columns = design_columns(data, predictors, categorical, interactions)
     assert set(np.unique(y)) <= {0.0, 1.0}
     a, b = float(point["a_c"]), np.atleast_1d(point["b"])
-    log_sd = float(point["log_sd"])
-    z = np.asarray(point["z"], dtype=float)
-    assert z.shape == (len(levels),)
-    sd = np.exp(log_sd)
-
-    eta = a + Xc @ b + sd * z[gidx]
-    lp = np.sum(y * log_expit(eta) + (1.0 - y) * log_expit(-eta))
-    lp += np.sum(stats.norm.logpdf(z, 0.0, 1.0))
-    lp += prior_logpdf(*priors["intercept"], a)
+    eta = a + Xc @ b
+    lp = prior_logpdf(*priors["intercept"], a)
+    if group is not None:
+        log_sd = float(point["log_sd"]); sd = np.exp(log_sd)
+        z = np.asarray(point["z"], dtype=float)
+        assert z.shape == (len(levels),)
+        eta = eta + sd * z[gidx]
+        lp += np.sum(stats.norm.logpdf(z, 0.0, 1.0)) + prior_logpdf(*priors["sd"], sd) + (log_sd if jacobian else 0.0)
+    lp += np.sum(y * log_expit(eta) + (1.0 - y) * log_expit(-eta))
     for i, p in enumerate(columns):
         lp += prior_logpdf(*priors["b"][p], b[i])
-    lp += prior_logpdf(*priors["sd"], sd)
-    if jacobian:
-        lp += log_sd
     return float(lp)

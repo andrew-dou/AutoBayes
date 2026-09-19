@@ -1,0 +1,182 @@
+{
+  "recorded_at": "2026-09-19T16:40:30.138930+00:00",
+  "head": "525c8d56312ffa21cd9652cd11f09f431a8aa955",
+  "runner_head": "cbe7141374b2ec83deb4f57b03198cc886214561",
+  "source_hashes_verified": 14,
+  "netcdf_sha256": {
+    "m3c1_two_fit_1_pymc.nc": "3bab0591c321f4a2833a8ce62677240740f7d26f80c2a0354e33b4429d6f12e1",
+    "m3c1_two_fit_2_numpyro.nc": "cbb97d1bdd776c5fe5d0744c2967491bf6ed78b666a9dffa9132b8f6e3d4b294"
+  },
+  "datasets_reproduced_from_frozen_generator": true,
+  "original_gate_status": "failed_preserved",
+  "independent_saved_draw_checks": {
+    "pymc": {
+      "panel": {
+        "divergences": 0.0,
+        "divergence_fraction": 0.0,
+        "max_rhat": 1.0025040134457028,
+        "min_ess_bulk": 2655.700129660159,
+        "min_ess_tail": 2430.429128992054,
+        "min_bfmi": 1.0239420861719764,
+        "treedepth_saturation": 0.0,
+        "n_draws": 4000
+      },
+      "nonfinite_stats": {
+        "smallest_eigval": 4000,
+        "largest_eigval": 4000
+      },
+      "shape": [
+        4,
+        1000
+      ],
+      "all_posterior_finite": true,
+      "prediction_max_error": 0.0,
+      "record_group_null_J0": true,
+      "observed_configuration": {
+        "backend": "pymc",
+        "device_requested": "cpu",
+        "device_actual": "cpu",
+        "platform": "cpu",
+        "dtype": "float64",
+        "chain_method": null,
+        "chains": 4,
+        "draws": 1000,
+        "tune": 1000,
+        "target_accept": 0.9,
+        "seed": 29,
+        "wall_seconds": 22.376,
+        "notes": []
+      },
+      "truth_hdi_membership_descriptive": {
+        "Intercept": true,
+        "dose": true,
+        "arm[high]": true,
+        "arm[low]": true,
+        "dose:arm[high]": true,
+        "dose:arm[low]": true,
+        "sigma": true
+      }
+    },
+    "numpyro": {
+      "panel": {
+        "divergences": 0.0,
+        "divergence_fraction": 0.0,
+        "max_rhat": 1.0016529190712142,
+        "min_ess_bulk": 2312.8332734086302,
+        "min_ess_tail": 2648.6787780039376,
+        "min_bfmi": 0.8959462886260883,
+        "treedepth_saturation": 0.0,
+        "n_draws": 4000
+      },
+      "nonfinite_stats": {},
+      "shape": [
+        4,
+        1000
+      ],
+      "all_posterior_finite": true,
+      "prediction_max_error": 0.0,
+      "record_group_null_J0": true,
+      "observed_configuration": {
+        "backend": "numpyro",
+        "device_requested": "cpu",
+        "device_actual": "cpu:cpu(id=0)",
+        "platform": "cpu",
+        "dtype": "float64",
+        "chain_method": "parallel",
+        "chains": 4,
+        "draws": 1000,
+        "tune": 1000,
+        "target_accept": 0.9,
+        "seed": 29,
+        "wall_seconds": 3.109,
+        "notes": []
+      },
+      "truth_hdi_membership_descriptive": {
+        "Intercept": true,
+        "dose": true,
+        "arm[high]": true,
+        "arm[low]": true,
+        "dose:arm[high]": true,
+        "dose:arm[low]": true,
+        "sigma": true
+      }
+    }
+  },
+  "comparison": {
+    "Intercept": {
+      "mean_pymc": 1.9759803510065546,
+      "mean_numpyro": 1.976112147510938,
+      "abs_diff": 0.00013179650438344126,
+      "four_combined_mcse": 0.0030694299528419267,
+      "pass": true
+    },
+    "dose": {
+      "mean_pymc": 0.48396404664115006,
+      "mean_numpyro": 0.48375824889967123,
+      "abs_diff": 0.00020579774147883034,
+      "four_combined_mcse": 0.00357188249912048,
+      "pass": true
+    },
+    "arm[high]": {
+      "mean_pymc": 0.9661784882519996,
+      "mean_numpyro": 0.9631057900649913,
+      "abs_diff": 0.0030726981870082826,
+      "four_combined_mcse": 0.0097835725532637,
+      "pass": true
+    },
+    "arm[low]": {
+      "mean_pymc": -0.5816002496693111,
+      "mean_numpyro": -0.5809894096877979,
+      "abs_diff": 0.0006108399815132337,
+      "four_combined_mcse": 0.00719095127881349,
+      "pass": true
+    },
+    "dose:arm[high]": {
+      "mean_pymc": -0.5842065650851875,
+      "mean_numpyro": -0.5855403516145431,
+      "abs_diff": 0.0013337865293555629,
+      "four_combined_mcse": 0.010288334057665686,
+      "pass": true
+    },
+    "dose:arm[low]": {
+      "mean_pymc": 0.28838131958012636,
+      "mean_numpyro": 0.2886684659168549,
+      "abs_diff": 0.00028714633672854983,
+      "four_combined_mcse": 0.00608800795909519,
+      "pass": true
+    },
+    "sigma": {
+      "mean_pymc": 0.39227409335307023,
+      "mean_numpyro": 0.3929332464125779,
+      "abs_diff": 0.0006591530595076445,
+      "four_combined_mcse": 0.0015887668896633679,
+      "pass": true
+    }
+  },
+  "new_fits": 0,
+  "new_reference_evaluations": 0,
+  "source_basis": {
+    "installed": "pymc5.28.5 QuadPotential.stats returns largest_eigval/smallest_eigval NaN; default diagonal adaptation inherits stats. NUTS docstring documents NaN if unused.",
+    "official": "https://www.pymc.io/projects/docs/en/v5.8.1/api/generated/pymc.NUTS.html"
+  },
+  "decision": "Accept this retained-draw CPU validation after an explicit coordinator correction to exclude only documented unused PyMC eigenvalue placeholder statistics. Original literal all-statistics-finite result and nonzero runner exit stay failed in historical evidence. All posterior values, other numeric sample statistics, required diagnostics and seven mean comparisons pass. No new fit needed. Final documentation/required-check review still precedes PR9 merge.",
+  "limitations": "One Gaussian development example on CPU; not calibration, all-family sampling validation or GPU evidence.",
+  "external_manifest_files_verified": 17,
+  "committed_small_outputs_matching_external": 11,
+  "hosted_checks": {
+    "head": "525c8d56312ffa21cd9652cd11f09f431a8aa955",
+    "push": {
+      "run": 35455327313,
+      "conclusion": "SUCCESS",
+      "completed_at": "2026-09-19T16:43:29Z"
+    },
+    "pull_request": {
+      "run": 35455330024,
+      "conclusion": "SUCCESS",
+      "completed_at": "2026-09-19T16:41:35Z"
+    }
+  },
+  "gate_correction_scope": "Only smallest_eigval and largest_eigval may be NaN when unused by this PyMC default diagonal adaptation. All posterior, all other numeric sampler statistics, and required diagnostics must be finite. Numeric thresholds unchanged. Explicit post-run policy correction, not a predeclared pass.",
+  "runner_defect": "Historical runner catches its own SystemExit(4) in except BaseException; return code 1 is preserved. Do not rerun it.",
+  "review_artifacts_relative_to_iqss_hub": "artifacts/2026-09-19-autobayes-population-validation-independent/"
+}

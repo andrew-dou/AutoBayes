@@ -76,22 +76,20 @@ def reference_logp_binomial(point: dict, data: pd.DataFrame, *, response: str, t
     k = data[response].to_numpy(dtype=np.int64)
     n = data[trials].to_numpy(dtype=np.int64)
     a, b = float(point["a_c"]), np.atleast_1d(point["b"])
-    log_sd = float(point["log_sd"])
-    z = np.asarray(point["z"], dtype=float)
-    assert z.shape == (len(levels),)
-    sd = np.exp(log_sd)
-    eta = a + Xc @ b + sd * z[gidx]                      # float64, like the model's linear predictor
+    eta = a + Xc @ b                                     # float64, like the model's linear predictor
+    lp = prior_logpdf(*priors["intercept"], a)
+    if group is not None:
+        log_sd = float(point["log_sd"]); sd = np.exp(log_sd)
+        z = np.asarray(point["z"], dtype=float)
+        assert z.shape == (len(levels),)
+        eta = eta + sd * z[gidx]
+        lp += float(np.sum(__import__("scipy").stats.norm.logpdf(z, 0.0, 1.0))) + prior_logpdf(*priors["sd"], sd) + (log_sd if jacobian else 0.0)
     lik = Decimal(0)
     for ki, ni, ei in zip(k, n, eta):
         lik += row_loglik_dec(int(ki), int(ni), float(ei), coefficient=coefficient)
-    lp = float(lik)
-    lp += float(np.sum(__import__("scipy").stats.norm.logpdf(z, 0.0, 1.0)))
-    lp += prior_logpdf(*priors["intercept"], a)
+    lp += float(lik)
     for i, p in enumerate(design_columns(data, predictors, categorical, interactions)):
         lp += prior_logpdf(*priors["b"][p], b[i])
-    lp += prior_logpdf(*priors["sd"], sd)
-    if jacobian:
-        lp += log_sd
     return lp
 
 
@@ -104,13 +102,16 @@ def reference_grad_binomial(point: dict, data: pd.DataFrame, *, response: str, t
     k = data[response].to_numpy(dtype=np.int64)
     n = data[trials].to_numpy(dtype=np.int64)
     a, b = float(point["a_c"]), np.atleast_1d(point["b"])
-    sd = float(np.exp(point["log_sd"]))
-    z = np.asarray(point["z"], dtype=float)
-    eta = a + Xc @ b + sd * z[gidx]
+    eta = a + Xc @ b
+    if group is not None:
+        sd = float(np.exp(point["log_sd"]))
+        z = np.asarray(point["z"], dtype=float)
+        eta = eta + sd * z[gidx]
     r = np.array([float(row_grad_dec(int(ki), int(ni), float(ei))) for ki, ni, ei in zip(k, n, eta)])
     out = {"Intercept": r.sum() - a / prior_intercept_sigma ** 2}
     for i, p in enumerate(design_columns(data, predictors, categorical, interactions)):
         out[p] = (r * Xc[:, i]).sum() - b[i] / prior_b_sigma ** 2
-    out["1|g_sigma_log__"] = (r * z[gidx]).sum() * sd - sd ** 2 + (1.0 if jacobian else 0.0)
-    out["1|g_offset"] = np.array([r[gidx == j].sum() * sd - z[j] for j in range(len(levels))])
+    if group is not None:
+        out["1|g_sigma_log__"] = (r * z[gidx]).sum() * sd - sd ** 2 + (1.0 if jacobian else 0.0)
+        out["1|g_offset"] = np.array([r[gidx == j].sum() * sd - z[j] for j in range(len(levels))])
     return out
