@@ -242,8 +242,7 @@ def test_invalid_inputs(bdata):
         ab.gaussian("y ~ x + (1 | g)", bdata, PRIORS)
     with pytest.raises(ValueError, match="family must be"):
         ab.Model("y ~ x + (1 | g)", bdata, PRIORS, family="poisson")
-    for bad, needle in [("y ~ x + (1 + x | g)", "varying slopes"), ("y ~ x + (1 | g/h)", "nested"),
-                        ("y ~ 0 + x + (1 | g)", "no intercept")]:
+    for bad, needle in [("y ~ x + (1 + x | g)", "varying slopes"), ("y ~ x + (1 | g/h)", "nested")]:
         with pytest.raises(ab.FormulaError, match=needle):
             ab.bernoulli(bad, bdata, PRIORS)
     m = ab.bernoulli("y ~ x + (1 | g)", bdata, PRIORS)

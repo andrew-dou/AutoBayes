@@ -21,3 +21,18 @@ Without a free intercept the effective design is raw for either centering reques
 Meaningful deterministic original-input design, normalized density/Jacobian, PyTensor/JAX gradients, graph names, explicit-prior coverage, fixed-draw predictions (in-sample/new rows/known and new groups), describe and synthetic fit-record checks. Cover numeric, categorical, interaction, multiple-factor ordering and both centering requests across Gaussian/Bernoulli/binomial; retain existing default/grouped regressions. Update obsolete refusal tests to supported forms with positive coverage, never relax numerical criteria.
 
 Run targeted tests, then ONE inherited fast suite under a 600-second process-group wall deadline. Existing CPU sampling fixtures are authorized regression sampling; no new feature sampling, slow runs, GPU, dependency upgrades or retry campaign. Preserve failure/timeout. Update skill/example/support matrix and test mapping, distinguishing deterministic evidence from unperformed no-intercept sampling/GPU validation. Open a focused PR and leave it open for independent review and bounded sampling acceptance. PR8 and the original dirty checkout remain untouched.
+
+## Implementation checkpoint
+
+Version 0.6.0 candidate. Initial targeted run: 83 passed, one refusal-message mismatch (66.47s); numerical/prediction checks passed. Moved the empty-predictor refusal after missing interaction-main-effect diagnostics. Affected grammar rerun: 30 passed (0.48s). Historical first failure is retained under m3c2-evidence. No sampling in these new tests. One full inherited fast suite is next under the committed supervisor's 600-second wall cap. Results pending.
+
+| Contract | Tests in tests/test_intercept_controls.py |
+|---|---|
+| Equivalent grammar and narrow refusals | test_spellings, test_scoped_refusals |
+| Raw design, graph, both centering requests, 3 families, group/no group | test_design_graph_and_prior_contract |
+| Normalized density, log-scale Jacobians, PyTensor/JAX gradients against original-input SciPy reference | test_density_jacobian_and_gradients |
+| Required/forbidden priors, per-level Normal/StudentT and default-intercept compatibility | test_prior_coverage_and_default_intercept_compatibility |
+| First categorical full-level, second treatment, interaction reduced | test_multiple_factors_only_first_spans_intercept |
+| Fixed-draw in-sample/new-row, known/new-group predictions and synthetic fit records | test_fixed_draw_predictions_and_records |
+
+Synthetic constant-scale draws can produce undefined ArviZ scale diagnostics; their records use a clearly labelled panel stub and are not diagnostic acceptance evidence. CPU feature sampling and GPU validation remain pending.

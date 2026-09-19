@@ -85,6 +85,7 @@ class Model:
         self.warnings: list[str] = []
 
         spec0 = parse_formula(formula, None, family, categorical)
+        self.effective_center_predictors = self.center_predictors and spec0.intercept
         priors.validate(spec0, family)                  # structure now; per-level coverage once levels are known
         cols = ([spec0.response, *spec0.predictors, *spec0.categorical_names] + ([spec0.group] if spec0.group is not None else [])
                 + ([spec0.trials] if spec0.trials else []))
@@ -120,6 +121,9 @@ class Model:
             if np.all(k_kept == 0) or np.all(k_kept == n_kept):
                 which = "zero successes" if np.all(k_kept == 0) else "all successes"
                 self.warnings.append(
+                    (f"every fitted row has {which}. There is no population intercept; any separating direction "
+                     "depends on the design. Check coefficient-prior sensitivity, without assuming an intercept direction.")
+                    if not spec0.intercept else
                     f"every fitted row has {which}: the data are separated along the intercept "
                     "direction, the likelihood is monotone there, and the posterior in that direction "
                     "is set by the intercept prior's tail and the data's extent. Check prior sensitivity "
@@ -158,7 +162,7 @@ class Model:
         self.bambi_model = bmb.Model(
             self.spec.bambi_formula, self.data, family=bambi_family,
             priors=priors.to_bambi(self.spec, family),
-            noncentered=True, center_predictors=self.center_predictors,
+            noncentered=True, center_predictors=self.effective_center_predictors,
         )
         self.bambi_model.build()
         self.pymc_model = self.bambi_model.backend.model
@@ -179,14 +183,14 @@ class Model:
         common = comp.design.common
         group = comp.design.group
         names = list(common.terms)
-        if names[0] != "Intercept" or names[1:] != list(self.spec.terms):
+        if names != (["Intercept"] if self.spec.intercept else []) + list(self.spec.terms):
             raise RuntimeError(f"unexpected common terms from Bambi: {names}")
         Xfull = np.asarray(common.design_matrix, dtype=float)
-        if not np.allclose(Xfull[:, 0], 1.0):
+        if self.spec.intercept and not np.allclose(Xfull[:, 0], 1.0):
             raise RuntimeError("Bambi's first common column is not an intercept column")
         # Verify Bambi's columns one by one against the data: numeric columns as given, a
         # categorical term as one dummy per non-reference level in the recorded order.
-        col = 1
+        col = int(self.spec.intercept)
         for term in self.spec.terms:
             if term in self.spec.predictors:
                 if not np.array_equal(Xfull[:, col], self.data[term].to_numpy(dtype=float)):
@@ -199,30 +203,31 @@ class Model:
             bterm = common.terms[term]
             expected_kind = "interaction" if is_inter else "categoric"
             cols = self.spec.term_columns(term)
-            if getattr(bterm, "kind", None) != expected_kind or list(bterm.levels) != list(cat.coefficients) \
+            coefficient_levels = self.spec.levels_of(term)
+            if getattr(bterm, "kind", None) != expected_kind or list(bterm.levels) != list(coefficient_levels) \
                     or list(bterm.labels) != list(cols):
                 raise RuntimeError(
                     f"Bambi coded {term!r} as {getattr(bterm, 'kind', None)} with levels {getattr(bterm, 'levels', None)} "
                     f"and labels {getattr(bterm, 'labels', None)}; expected {expected_kind} coding with reference "
-                    f"{cat.reference!r}, levels {list(cat.coefficients)} and labels {list(cols)}"
+                    f"{cat.reference!r}, levels {list(coefficient_levels)} and labels {list(cols)}"
                 )
             labels = self.original_labels[zname]                       # the supplied values' labels, not the recoded column
             if not np.array_equal(labels, self.data[zname].astype(str).to_numpy()):
                 raise RuntimeError(f"the recoded column {zname!r} does not reproduce the supplied labels")
             xval = self.data[xname].to_numpy(dtype=float) if is_inter else np.ones(len(labels))
-            for j, lvl in enumerate(cat.coefficients):
+            for j, lvl in enumerate(coefficient_levels):
                 if not np.array_equal(Xfull[:, col + j], xval * (labels == lvl)):
                     what = f"x * indicator of level {lvl!r}" if is_inter else f"the indicator of level {lvl!r}"
                     raise RuntimeError(f"Bambi's column {cols[j]!r} is not {what}")
-            if not is_inter and not np.array_equal(Xfull[:, col:col + len(cat.coefficients)].sum(1) + (labels == cat.reference), np.ones(len(labels))):
+            if not is_inter and not np.array_equal(Xfull[:, col:col + len(coefficient_levels)].sum(1) + (0 if cat.full_rank else (labels == cat.reference)), np.ones(len(labels))):
                 raise RuntimeError(f"the dummies of {term!r} and the reference indicator do not partition the rows")
             coords = [str(c) for c in self.pymc_model.coords.get(f"{term}_dim", ())]
-            if coords != list(cat.coefficients):
-                raise RuntimeError(f"PyMC coordinates {term}_dim = {coords} differ from the coefficient levels {list(cat.coefficients)}")
-            col += len(cat.coefficients)
+            if coords != list(coefficient_levels):
+                raise RuntimeError(f"PyMC coordinates {term}_dim = {coords} differ from the coefficient levels {list(coefficient_levels)}")
+            col += len(coefficient_levels)
         if col != Xfull.shape[1]:
-            raise RuntimeError(f"Bambi's common design has {Xfull.shape[1] - 1} columns, expected {col - 1}")
-        X_raw = Xfull[:, 1:]
+            raise RuntimeError(f"Bambi's common design has {Xfull.shape[1]} columns, expected {col}")
+        X_raw = Xfull[:, int(self.spec.intercept):]
         if self.spec.group is None:                       # population-only model: no group design at all
             if group is not None:
                 raise RuntimeError("Bambi built a group design for a formula without a group-level term")
@@ -239,7 +244,7 @@ class Model:
             if Z.shape != (len(X_raw), len(levels)) or not np.array_equal(Z.sum(1), np.ones(len(X_raw))):
                 raise RuntimeError("group design matrix is not one-hot")
             group_index = Z.argmax(1)
-        if self.center_predictors:
+        if self.effective_center_predictors:
             x_means = X_raw.mean(0)
             X_model = X_raw - x_means
         else:
@@ -249,7 +254,7 @@ class Model:
         trials = np.asarray(self.data[self.spec.trials], dtype=np.int64) if self.spec.trials else None
         return Design(y=y, X_raw=X_raw, X_model=X_model, x_means=x_means,
                       predictors=self.spec.predictors, Z=Z, group_index=group_index,
-                      levels=levels, centered=self.center_predictors, trials=trials,
+                      levels=levels, centered=self.effective_center_predictors, trials=trials,
                       columns=self.spec.columns, categoricals=self.spec.categoricals)
 
     # -- naming ------------------------------------------------------------------------
@@ -265,7 +270,7 @@ class Model:
         or ``p``). ``"sigma"`` exists only for the Gaussian family."""
         g = self.spec.group
         out = {
-            "intercept": "Intercept",
+            **({"intercept": "Intercept"} if self.spec.intercept else {}),
             **({"sd": f"1|{g}_sigma", "offset": f"1|{g}_offset", "group_effect": f"1|{g}"} if g is not None else {}),
             "linpred": _FAMILIES[self.family][0],
             "mean": "mu" if self.family == "gaussian" else "p",
@@ -284,7 +289,7 @@ class Model:
         (the variable ``z`` has dims ``z_dim`` with the coefficient levels as coordinates)."""
         return self.spec.column_terms
 
-    def value_point(self, *, intercept: float, b, sd: float | None = None, z=None, sigma: float | None = None) -> dict[str, np.ndarray]:
+    def value_point(self, *, intercept: float | None = None, b, sd: float | None = None, z=None, sigma: float | None = None) -> dict[str, np.ndarray]:
         """A point in PyMC's sampled (value) space, from natural-scale quantities.
 
         ``intercept`` is the *model* intercept (at the predictor means when centred),
@@ -308,7 +313,11 @@ class Model:
         if (sigma is None) != (self.family != "gaussian"):
             raise ValueError("sigma is required for the Gaussian family and must be omitted for Bernoulli and binomial")
         n = self.names
-        point = {n["intercept"]: np.asarray(float(intercept))}
+        if self.spec.intercept and intercept is None:
+            raise ValueError("intercept is required for a model with a population intercept")
+        if not self.spec.intercept and intercept is not None:
+            raise ValueError("no population intercept exists; omit intercept (or pass None)")
+        point = {n["intercept"]: np.asarray(float(intercept))} if self.spec.intercept else {}
         if self.spec.group is not None:
             point[f"{n['sd']}_log__"] = np.asarray(np.log(float(sd)))
             point[n["offset"]] = z
@@ -347,7 +356,7 @@ class Model:
         gaussian = self.family == "gaussian"
         binomial = self.family == "binomial"
         lp = "mu" if gaussian else "eta"
-        a = f"a{'_c' if d.centered else ''}"
+        a = f"a{'_c' if d.centered else ''}" if s.intercept else "0"
         tag = {"gaussian": "M0", "bernoulli": "M1", "binomial": "M2"}[self.family]
         grouping = f"J = {d.J} levels of {s.group}" if s.group is not None else "no group-level term (population-level model)"
         data_line = f"  data      : n = {d.n} observations, {grouping}"
@@ -370,7 +379,7 @@ class Model:
             labels = self.data[cat.name].astype(str).to_numpy()
             props = ", ".join(f"{l} {np.mean(labels == l):.3f}" for l in cat.levels)
             lines += [
-                f"  {cat.name:<10}: categorical, treatment coding, reference {cat.reference!r}; levels (sorted) "
+                f"  {cat.name:<10}: categorical, {'full-level coding' if cat.full_rank else 'treatment coding'}, reference {cat.reference!r}; levels (sorted) "
                 f"{', '.join(cat.levels)}; coefficients b_{cat.name}[{', '.join(cat.coefficients)}]"
                 + (f"; unused declared categories {list(cat.unused)}" if cat.unused else ""),
                 f"              proportions among fitted rows: {props}",
@@ -383,6 +392,9 @@ class Model:
         scale = "response" if gaussian else "log-odds"
         for cat in s.categoricals:
             partners = [xn for xn, zn in s.interactions if zn == cat.name]
+            if cat.full_rank:
+                lines += [f"  b_{cat.name}[l] is the level-specific {scale} baseline at numeric predictors zero, other categorical references, and group effect zero; the reference also has a coefficient."]
+                continue
             if partners:
                 xn = partners[0]
                 lines += [f"  b_{cat.name}[l] is the difference between level l and the reference {cat.reference!r} on the "
@@ -394,8 +406,11 @@ class Model:
                           f"on the {scale} scale at the same predictors{' and group' if s.group is not None else ''}; the reference has no coefficient."]
         for xn, zn in s.interactions:
             ref = s.categorical(zn).reference
-            lines += [f"  {xn}:{zn}: the reference level {ref!r} has the raw intercept a and slope b_{xn}; level l has intercept "
-                      f"difference b_{zn}[l] and slope difference b_{xn}:{zn}[l], so its slope in {xn} is b_{xn} + b_{xn}:{zn}[l]."]
+            if s.intercept:
+                lines += [f"  {xn}:{zn}: the reference level {ref!r} has the raw intercept a and slope b_{xn}; level l has intercept "
+                          f"difference b_{zn}[l] and slope difference b_{xn}:{zn}[l], so its slope in {xn} is b_{xn} + b_{xn}:{zn}[l]."]
+            else:
+                lines += [f"  {xn}:{zn}: the reference level {ref!r} has slope b_{xn}; non-reference level l has slope difference b_{xn}:{zn}[l], so its slope in {xn} is b_{xn} + b_{xn}:{zn}[l]."]
         if binomial:
             lines += [f"  P(success) = p_i = expit(eta_i); {s.response}_i ~ Binomial({s.trials}_i, p_i); eta is on the log-odds scale."]
         elif not gaussian:
@@ -432,6 +447,11 @@ class Model:
             if s.categoricals and not gaussian:
                 lines += ["  expit(a_c) is the probability at that proportion-weighted predictor; it is NOT the",
                           "  average probability across the levels (the link is nonlinear)."]
+        elif not s.intercept:
+            lines += ["  No population intercept or intercept prior. The raw design is used without back-transformation;",
+                      f"  center_predictors requested={self.center_predictors}, effective=False (centering requires a free intercept)."]
+            if len(s.categoricals) > 1:
+                lines += ["  Only the first categorical main effect is full-level coded. Reordering factors changes independent prior meaning."]
         else:
             lines += ["  Predictors are not centred (center_predictors=False); a is the raw-scale intercept"
                       + ((" (x = 0, reference level" + (", group effect zero)." if s.group is not None else ").")) if s.categoricals else ".")]
@@ -440,7 +460,9 @@ class Model:
                       f"  u[j] = sd_{s.group} * z[j],  z[j] ~ Normal(0, 1),  j = 0..{d.J - 1}"]
         else:
             lines += ["", "Group effects", "  none: a population-only model (no '(1 | group)' term)"]
-        lines += ["", "Priors" + ("" if gaussian else " (a_c and b on the logit scale)"), f"  {a} ~ {pr.intercept}"]
+        lines += ["", "Priors" + ("" if gaussian else " (location coefficients on the logit scale)")]
+        if s.intercept:
+            lines += [f"  {a} ~ {pr.intercept}"]
         lines += [f"  b_{col} ~ {coef[col]}" for col in s.columns]
         if s.group is not None:
             lines += [f"  sd_{s.group} ~ {pr.sd}"]
@@ -454,7 +476,7 @@ class Model:
                 "  with log C computed inside the graph from the evaluated value and a softplus whose gradient",
                 "  is finite on both the PyTensor and the JAX path. Validated (docs/m2-decision.md) for counts",
                 "  up to 1e6 per row at logits to 1e6 against a 60-digit reference; larger counts are refused.",
-                "  Zero-trial rows are dropped before centring; predictors are centred at the means of the fitted rows.",
+                "  Zero-trial rows are dropped before design construction; centering, when effective, uses only fitted rows.",
             ]
         else:
             lines += [
@@ -467,7 +489,7 @@ class Model:
             lines += ["", "WARNING: " + w]
         lines += ["", "PyMC variables sampled (value space)"]
         n = self.names
-        roles = {n["intercept"]: "a_c" if d.centered else "a"}
+        roles = {n["intercept"]: "a_c" if d.centered else "a"} if s.intercept else {}
         if s.group is not None:
             roles[f"{n['sd']}_log__"] = f"log(sd_{s.group})"
             roles[n["offset"]] = "z"

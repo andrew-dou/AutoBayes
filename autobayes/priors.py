@@ -77,11 +77,13 @@ class Priors:
     coefficients of categorical predictors) or a mapping from formula term to prior, which
     must cover every predictor term exactly. For a categorical term the entry is one prior
     (the same for every non-reference level) or a mapping ``{level: prior}`` covering exactly
-    the non-reference levels (docs/m3a1-decision.md); nothing is filled in silently.
+    the actual coefficient levels (all levels for the first categorical main effect
+    without an intercept; non-reference levels otherwise). Omit intercept exactly
+    when the formula removes it. No automatic priors are filled in silently.
     """
 
-    intercept: Prior
-    b: Prior | Mapping[str, Prior | Mapping[str, Prior]]
+    intercept: Prior | None = None
+    b: Prior | Mapping[str, Prior | Mapping[str, Prior]] | None = None
     sd: Prior | None = None            # required with a '(1 | group)' term, refused without one (M3c-1)
     sigma: Prior | None = None
 
@@ -152,14 +154,14 @@ class Priors:
                     if not isinstance(v, Prior):
                         raise PriorError(f"prior for {term!r} level {lab!r} must be a Prior, got {type(v).__name__}")
                 continue
-            wanted = list(cat.coefficients)
+            wanted = list(spec.levels_of(term))
             missing_l = [l for l in wanted if l not in keyed]
             extra_l = [l for l in keyed if l not in wanted]
             if missing_l or extra_l:
                 ref_note = (f" ({cat.reference!r} is the reference level and has no coefficient)"
-                            if cat.reference in extra_l else "")
+                            if cat.reference in extra_l and cat.reference not in wanted else "")
                 raise PriorError(
-                    f"per-level priors for {term!r} must cover exactly the non-reference levels {wanted}; "
+                    f"per-level priors for {term!r} must cover exactly the {'coefficient levels' if cat.reference in wanted else 'non-reference levels'} {wanted}; "
                     f"missing {missing_l}, unexpected {extra_l}{ref_note}"
                 )
             names = {keyed[l].name for l in wanted if isinstance(keyed[l], Prior)}
@@ -177,6 +179,11 @@ class Priors:
         return self.coefficient_priors(tuple(predictors))
 
     def validate(self, spec, family: str = "gaussian") -> None:
+        has_intercept = getattr(spec, "intercept", True)
+        if has_intercept and self.intercept is None:
+            raise PriorError("the formula has a population intercept; an intercept prior is required")
+        if not has_intercept and self.intercept is not None:
+            raise PriorError("the formula has no population intercept; omit the intercept prior (or pass None)")
         group = getattr(spec, "group", None)
         if group is not None and self.sd is None:
             raise PriorError(
@@ -194,7 +201,7 @@ class Priors:
                 f"the {family} family has no residual SD; do not pass sigma. Its intercept and "
                 "slope priors are on the logit scale."
             )
-        for label, prior in [("intercept", self.intercept), *self.coefficient_priors(spec).items()]:
+        for label, prior in ([("intercept", self.intercept)] if has_intercept else []) + list(self.coefficient_priors(spec).items()):
             if not isinstance(prior, Prior):
                 raise PriorError(f"prior for {label!r} must be a Prior, got {type(prior).__name__}")
             if prior.name not in _LOCATION:
@@ -222,7 +229,7 @@ class Priors:
         if not isinstance(spec, ModelSpec):
             spec = ModelSpec(formula="", response="", predictors=tuple(spec), group=None)
         per_column = self.coefficient_priors(spec)
-        out = {"Intercept": self.intercept.to_bambi()}
+        out = {"Intercept": self.intercept.to_bambi()} if spec.intercept else {}
         if self.sigma is not None:
             out["sigma"] = self.sigma.to_bambi()
         for term in spec.terms:

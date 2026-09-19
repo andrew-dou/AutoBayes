@@ -1,0 +1,30 @@
+...................F.................................................... [ 85%]
+............                                                             [100%]
+=================================== FAILURES ===================================
+__________________ test_scoped_refusals[0 + x:z-main effect] ___________________
+
+rhs = '0 + x:z', match = 'main effect'
+
+    @pytest.mark.parametrize("rhs,match", [("0", "at least one"), ("0 + (1|g)", "at least one"),
+        ("x - 2", "only subtracting"), ("x - z", "only subtracting"), ("x - 1.0", "only subtracting"),
+        ("x - 1*x", "only subtracting"), ("1 + 0 + x", "conflicting"), ("0 + x + 1", "conflicting"),
+        ("x + (0|g)", "varying slopes"), ("0 + x:z", "main effect"), ("0 + x + (1+x|g)", "varying slopes")])
+    def test_scoped_refusals(rhs, match):
+>       with pytest.raises(ab.FormulaError, match=match):
+E       AssertionError: Regex pattern did not match.
+E         Expected regex: 'main effect'
+E         Actual message: "'y ~ 0 + x:z': no intercept requires at least one population-level predictor"
+
+tests/test_intercept_controls.py:60: AssertionError
+=============================== warnings summary ===============================
+tests/test_intercept_controls.py::test_fixed_draw_predictions_and_records[False-gaussian]
+tests/test_intercept_controls.py::test_fixed_draw_predictions_and_records[True-gaussian]
+tests/test_intercept_controls.py::test_fixed_draw_predictions_and_records[True-bernoulli]
+tests/test_intercept_controls.py::test_fixed_draw_predictions_and_records[True-binomial]
+  /Users/andrewdou/iqss-research/projects/AutoBayes-worktrees/m3c2-intercept-controls/.venv/lib/python3.11/site-packages/arviz/stats/diagnostics.py:596: RuntimeWarning: invalid value encountered in scalar divide
+    (between_chain_variance / within_chain_variance + num_samples - 1) / (num_samples)
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+FAILED tests/test_intercept_controls.py::test_scoped_refusals[0 + x:z-main effect]
+1 failed, 83 passed, 4 warnings in 66.47s (0:01:06)
