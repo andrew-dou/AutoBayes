@@ -191,10 +191,10 @@ repository: `artifacts/2026-09-19-autobayes-m3c1-two-fit-validation/attempt-1/m3
 3bab0591c321f4a2833a8ce62677240740f7d26f80c2a0354e33b4429d6f12e1, 530222 bytes) and `m3c1_two_fit_2_numpyro.nc` (SHA-256 cbb97d1bdd776c5fe5d0744c2967491bf6ed78b666a9dffa9132b8f6e3d4b294,
 389902 bytes). Small outputs copied to `docs/m3c1-evidence/two-fit-validation/`.
 
-| Fit | device | dtype | chains | wall s | divergences | max R-hat | min bulk ESS | min tail ESS | min E-BFMI | depth saturation | gates |
-|---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---|
-| pymc | cpu | float64 | n/a (PyMC NUTS, cores 4) | 22.376 | 0 | 1.00250 | 2656 | 2430 | 1.024 | 0.0000 | FAILED: {} |
-| numpyro | cpu:cpu(id=0) | float64 | parallel | 3.109 | 0 | 1.00165 | 2313 | 2649 | 0.896 | 0.0000 | all pass, finite |
+| Fit | device | dtype | chains | chain method / cores | wall s | divergences | max R-hat | min bulk ESS | min tail ESS | min E-BFMI | depth saturation | gates |
+|---|---|---|---:|---|---:|---:|---:|---:|---:|---:|---:|---|
+| pymc | cpu | float64 | 4 | PyMC NUTS, cores 4 | 22.376 | 0 | 1.00250 | 2656 | 2430 | 1.024 | 0.0000 | FAILED: {} |
+| numpyro | cpu:cpu(id=0) | float64 | 4 | parallel | 3.109 | 0 | 1.00165 | 2313 | 2649 | 0.896 | 0.0000 | all pass, finite |
 
 Configuration as approved on both routes: True. Every posterior array and
 numeric sampler statistic finite on both: False.
@@ -248,3 +248,44 @@ the intended gate, the retained draws can be re-evaluated read-only by an indepe
 literal "all sampler statistics finite" gate stands, a corrected runner (excluding PyMC's documented NaN placeholder
 fields and fixing the exit guard) would need its own approved single invocation. No repair fit, threshold change or
 second attempt was made here.
+
+## Independent acceptance review (2026-09-19)
+
+The population-only implementation and its **Gaussian CPU example** are accepted for this increment;
+PR #9 remains open until the final documentation head passes required checks. This does not validate
+population-only sampling for every supported family, GPU execution, calibration or brms parity.
+
+The independent review at `525c8d5` reproduced the frozen data hashes and checked 14 source hashes,
+both saved netCDF hashes, 17 external-manifest files and 11 committed output copies. It recomputed
+diagnostics, labelled means/MCSE and new-row predictions directly from the retained draws with the
+`Model.fit` entry point disabled. **Zero new fits or reference evaluations were performed.** Results
+are in [`independent-review.json`](m3c1-evidence/independent-review.json); the review script and full
+log are retained in the IQSS hub at `artifacts/2026-09-19-autobayes-population-validation-independent/`.
+Both hosted fast checks on `525c8d5` passed (runs 35455327313 and 35455330024).
+
+An explicit **post-run policy correction** excludes only the unused PyMC `smallest_eigval` and
+`largest_eigval` placeholders from the finite-statistic requirement. This is not a claim that the
+original predeclared gate passed. In pinned PyMC 5.28.5, `QuadPotential.stats` returns NaN for both
+fields, and the default `QuadPotentialDiagAdapt` inherits it; the `NUTS` docstring states that these
+experimental fields are NaN when unused. The same contract appears in the
+[official PyMC NUTS documentation](https://www.pymc.io/projects/docs/en/v5.8.1/api/generated/pymc.NUTS.html).
+Every posterior value, every other numeric sampler statistic and every required diagnostic must
+remain finite. No numerical threshold was changed. This exclusion applies to these documented
+unused fields, not arbitrary missing diagnostics or other samplers.
+
+Both 4-chain, 1,000-draw fits have zero divergences and zero depth saturation. PyMC/NumPyro maxima
+of R-hat are 1.002504/1.001653; minimum bulk ESS 2655.70/2312.83; minimum tail ESS 2430.43/2648.68;
+minimum E-BFMI 1.02394/0.895946. All seven means agree within four combined MCSE, predictions equal
+the independent hand calculation on all four new rows, and records correctly contain `group: null`,
+`J: 0`. Truth membership in 99% HDIs remains descriptive, not an acceptance or calibration result.
+
+The original `result.json` still says `all_gates_pass: false`, and the original supervisor return
+code remains 1. Its frozen runner catches its own `SystemExit(4)` in `except BaseException`, converting
+the intended gate-failure exit to 1 after saving the complete results. Both scripts under
+`m3c1-evidence/scripts/` are **historical evidence, not reusable successful validation commands**;
+they and the run outputs were preserved byte-for-byte. No refit is needed to interpret the saved
+draws. Source pins identify the original runner head `cbe7141`; the example's later docstring
+correction changes no executable code. The earlier broader smoke proposal was superseded, not run.
+
+Next, after the final required checks and merge, continue with the separately scoped intercept-control
+increment. PR #8, its original F7 failure and its varying-slope worktree remain separate and unchanged.

@@ -133,7 +133,7 @@ versions.
 | Binomial (logit), `k \| trials(n) ~ [1 +] x… + (1 \| g)`, integer counts up to 1e6 per row | CPU-validated | CPU-validated | **pending** (same code path, not run on a GPU) | M2 |
 | Declared categorical predictors `z` (treatment coding, `categorical={"z": reference}`), all three families | CPU-validated (`docs/m3a1-decision.md`) | CPU-validated | **pending** | M3a-1, merged (PR #6) |
 | One numeric-by-categorical interaction `x:z` (`x*z`) with both main effects, all three families | CPU-validated (`docs/m3a2-decision.md`) | CPU-validated | **pending** | M3a-2, merged (PR #7) |
-| Population-only models, no group-level term: `y ~ 1`, `y ~ x`, `y ~ x + z + x:z`, `k \| trials(n) ~ x`, all three families | deterministic checks in the clean environment (density, Jacobian, gradients on both paths, closed-form posterior, predictions from fixed draws; `docs/m3c1-decision.md`); **no sampling run yet**, smoke proposed | same graph, same deterministic checks; not sampled | **pending** | M3c-1, **pending review** (this branch) |
+| Population-only models, no group-level term: `y ~ 1`, `y ~ x`, `y ~ x + z + x:z`, `k \| trials(n) ~ x`, all three families | deterministic density/gradient/design/prediction checks for all three families; Gaussian example CPU sampling accepted after explicit finite-statistic policy correction ([review](docs/m3c1-decision.md#independent-acceptance-review-2026-09-19)) | same deterministic coverage; Gaussian example CPU sampling and seven-mean agreement accepted in the same review | **pending** | M3c-1, PR #9; implementation and bounded evidence reviewed, final checks/merge pending |
 | One independent varying slope `(1 + x \|\| g)` | under independent review, not merged | same | same | M3b-1, PR #8 open |
 | Intercept removal (`0 +`, `- 1`), several or correlated group terms, nested/crossed factors, other families and links | refused with an error naming the construct | same | same | later slices, `docs/coordination/NEXT_MILESTONES_PROPOSAL.md` |
 
@@ -208,7 +208,7 @@ with dummies, and what a change of reference level does and does not preserve) a
 expanded-column centring and the reported-intercept transformation, the reference change
 with slopes) and `docs/m3c1-decision.md` (population-only models: the optional group term,
 the `sd` prior refused without one and required with one, `new_groups` not applicable, the
-deterministic checks and the proposed, unexecuted sampling smoke); the acceptance checks and
+deterministic checks and the independently reviewed two-backend Gaussian CPU example); the acceptance checks and
 their evidence are in those records and `docs/m0-evidence/`, `docs/m1-evidence/`,
 `docs/m2-evidence/`, `docs/m3a1-evidence/`, `docs/m3a2-evidence/`, `docs/m3c1-evidence/`.
 `docs/coordination/STATUS.md` is the live milestone status; the roadmap is

@@ -18,3 +18,16 @@ follows the decision record `55437e6` (the implementation commit records the exa
   by file, line and marker; it is not an execution count. The example `examples/m3c1_population_only.py` was
   unexecuted at `6d8e234`; its model was then sampled exactly twice by the bounded two-fit validation recorded in
   `two-fit-validation/` (freeze, panels, labelled comparison, inspection of the retained draws, supervisor record).
+
+## Acceptance update (2026-09-19)
+
+`independent-review.json` contains the independent retained-draw review of the two Gaussian CPU fits:
+all required diagnostics and seven mean comparisons pass. The decision record explicitly corrects the
+finite-statistic policy after the run to exclude only PyMC's documented unused eigenvalue placeholders.
+The original `all_gates_pass: false`, nonzero exit, raw outputs and frozen runner scripts remain unchanged.
+Those scripts are historical evidence and must not be rerun as successful validation commands; the
+`BaseException` exit guard also catches its own `SystemExit`. No additional fit was performed in review.
+
+The implementation's three-family evidence remains deterministic; only the Gaussian population-only
+example has been sampled and independently reviewed on both CPU backends. No new GPU or calibration
+claim. Hosted fast checks on `525c8d5` passed; the final documentation head must pass required checks.

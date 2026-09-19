@@ -6,7 +6,8 @@
     uv run --no-sync python examples/m3c1_population_only.py                    # PyMC NUTS on CPU
     uv run --no-sync python examples/m3c1_population_only.py --backend numpyro  # JAX/NumPyro on CPU
 
-Not yet executed as evidence: the sampling smoke for this slice is a proposal in docs/m3c1-decision.md.
+The frozen model was sampled on both CPU backends in the bounded validation recorded in
+docs/m3c1-decision.md; its independent review and explicit gate correction are recorded there.
 The priors have no ``sd`` (there is no varying intercept) and predictions take rows without any grouping column.
 """
 import argparse

@@ -1,5 +1,19 @@
 # AutoBayes status
 
+## M3c-1 acceptance update (2026-09-19)
+
+Independent source/test review and retained-draw Gaussian CPU validation are complete. Both backends
+have zero divergences and pass the required convergence/MCSE/prediction checks. The finite-statistic
+policy was explicitly corrected after the run to exclude only PyMC's documented unused eigenvalue
+placeholders. The original literal failure and exit 1 remain preserved; no new fit was run in review.
+See `docs/m3c1-decision.md` and `docs/m3c1-evidence/independent-review.json` for the exact correction,
+evidence, source justification and limitations. The frozen runner scripts are historical, not reusable
+successful commands. Three-family deterministic checks are separate from this one Gaussian CPU example.
+
+Both hosted checks on `525c8d5` passed. PR #9 awaits final documentation-head checks and merge;
+intercept-control work has not started. PR #8 and its original F7 failure remain separate. Entries
+below describe earlier checkpoints and are superseded by this acceptance update where noted.
+
 ## M3c-1 slice (2026-09-19): population-only models, no group-level term
 
 - Andrew's September 19 foundation-first direction (`plans/2026-09-19-autobayes-foundations.md`, step 3, first
