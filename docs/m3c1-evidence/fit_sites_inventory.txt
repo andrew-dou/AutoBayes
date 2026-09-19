@@ -1,0 +1,47 @@
+Static inventory of fit call sites in tests/ at 6d8e234 (grep -n '\.fit(' tests/*.py), 2026-09-19.
+A SOURCE inventory only: fixtures are shared across tests, some sites are parametrised or skipped (GPU refusals never sample),
+some run in fresh subprocesses, and no invocation counter exists; it is not an execution count.
+
+== fast suite (no slow marker): real CPU sampling sites inherited from earlier milestones
+tests/conftest.py:64:    return model.fit(backend="pymc", chains=2, draws=150, tune=150, seed=1, cores=1)
+tests/test_device.py:29:    r = model.fit(backend="numpyro", device="cpu", chains=2, draws=100, tune=100, seed=2)
+tests/test_bernoulli.py:44:    return bmodel.fit(backend="pymc", chains=2, draws=200, tune=200, seed=1, cores=1)
+tests/test_bernoulli.py:318:    grec = ab.fit_record(g, g.fit(backend="pymc", chains=2, draws=20, tune=20, seed=1, cores=1))
+tests/test_bernoulli.py:360:    fit = m.fit(backend="pymc", chains=1, draws=10, tune=10, seed=1, cores=1)
+tests/test_binomial.py:73:    return cmodel.fit(backend="pymc", chains=2, draws=200, tune=200, seed=1, cores=1)
+tests/test_binomial.py:379:    fit = bin_m.fit(backend="pymc", chains=2, draws=60, tune=60, seed=2, cores=1)
+tests/test_binomial.py:568:    r = cmodel.fit(backend="numpyro", device="cpu", chains=2, draws=40, tune=40, seed=3)
+tests/test_categorical.py:355:    fit = m.fit(backend="pymc", chains=2, draws=60, tune=60, seed=2, cores=1)
+tests/test_categorical.py:383:    fit = m.fit(backend="pymc", chains=2, draws=80, tune=80, seed=3, cores=1)
+tests/test_categorical.py:425:    fit = m.fit(backend="pymc", chains=1, draws=30, tune=30, seed=1, cores=1)
+tests/test_fresh_process.py:41:r = m.fit(backend="numpyro", device="cpu", chains=2, draws=30, tune=30, seed=1)
+tests/test_fresh_process.py:50:r = m.fit(backend="numpyro", device="cpu", chains=2, draws=30, tune=30, seed=1)
+tests/test_fresh_process.py:64:r = m.fit(backend="numpyro", device="cpu", chains=2, draws=30, tune=30, seed=1)
+tests/test_fresh_process.py:75:r = m.fit(backend="numpyro", device="cpu", chains=2, draws=30, tune=30, seed=1)
+tests/test_fresh_process.py:91:    m.fit(backend="numpyro", device="cpu", chains=1, draws=5, tune=5)
+tests/test_fresh_process.py:95:r = m.fit(backend="pymc", chains=1, draws=10, tune=10, seed=1, cores=1)
+tests/test_interaction.py:171:    fit = m.fit(backend="pymc", chains=1, draws=60, tune=60, seed=4, cores=1, discard_tuned_samples=True)
+tests/test_interaction.py:365:    fit = m.fit(backend="pymc", chains=1, draws=40, tune=40, seed=2, cores=1)
+tests/test_interaction.py:380:    fit = m.fit(backend="pymc", chains=2, draws=80, tune=80, seed=3, cores=1)
+tests/test_label_integrity.py:115:    fit = m.fit(backend="pymc", chains=1, draws=40, tune=40, seed=1, cores=1)
+tests/test_priors_families.py:36:    fit = m.fit(backend="pymc", chains=2, draws=20, tune=20, seed=1, cores=1)
+tests/test_priors_families.py:55:    fit = m.fit(backend="pymc", chains=2, draws=20, tune=20, seed=1, cores=1)
+tests/test_multi_predictor_predict.py:19:    fit = m.fit(backend="pymc", chains=2, draws=60, tune=60, seed=3, cores=1)
+
+== fast suite: refusal sites that never sample (GPU/TPU/unknown backend refused before sampling)
+tests/test_device.py:9:        model.fit(backend="pymc", device="gpu", chains=1, draws=5, tune=5)
+tests/test_device.py:17:        model.fit(backend="numpyro", device="gpu", chains=1, draws=5, tune=5)
+tests/test_device.py:22:        model.fit(backend="pymc", device="tpu")
+tests/test_device.py:24:        model.fit(backend="stan")
+tests/test_binomial.py:563:        cmodel.fit(backend="numpyro", device="gpu", chains=1, draws=5, tune=5)
+tests/test_bernoulli.py:328:        bmodel.fit(backend="numpyro", device="gpu", chains=1, draws=5, tune=5)
+
+== slow-marked module (deselected by -m 'not slow'; not run in this slice)
+61:        r = m.fit(backend=backend, device="cpu", chains=4, draws=2500, tune=1000, seed=7, cores=4)
+102:        r = m.fit(backend=backend, device="cpu", chains=4, draws=2000, tune=1000, seed=7, cores=4)
+151:        r = m.fit(backend=backend, device="cpu", chains=4, draws=2000, tune=1000, seed=7, cores=4)
+188:        fit = m.fit(backend=backend, device="cpu", chains=4, draws=1000, tune=1000, seed=11, target_accept=0.9)
+235:        fit = m.fit(backend=backend, device="cpu", chains=4, draws=1000, tune=1000, seed=13, target_accept=0.9)
+
+== the new module tests/test_population_only.py: no fit call site (synthetic draws only)
+0
