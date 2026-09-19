@@ -1,0 +1,52 @@
+{
+  "unit_id": "F7_numpyro_convergence_2000_4000_unit_1",
+  "approved_by": "Independent IQSS coordinator under Andrew standing CPU roadmap",
+  "approved_at": "2026-09-13T14:44:23.748550+00:00",
+  "review": "/Users/andrewdou/iqss-research/memory/reviews/2026-09-13-autobayes-f7-closeout-and-convergence-review.md",
+  "base_head": "b1c08ff114e7b9524886480ab8bb0aa345a8f861",
+  "scope": "one prospective NumPyro-only CPU fit with original seed17 data, not original-F7 acceptance",
+  "settings": {
+    "backend": "numpyro",
+    "device": "cpu",
+    "chain_method": "parallel",
+    "dtype": "float64",
+    "chains": 4,
+    "tune": 2000,
+    "draws": 4000,
+    "seed": 17,
+    "target_accept": 0.9,
+    "max_treedepth": 10
+  },
+  "max_total_wall_seconds": 300,
+  "retries": 0,
+  "attempt_dir": "/Users/andrewdou/iqss-research/artifacts/2026-09-13-autobayes-f7-numpyro-convergence-unit-1/attempt-1",
+  "input_sha256": {
+    "tests/test_sampling.py": "d5ab0ed05b7e38296bf0925db4c0727dcc7eb6c399d93bdc4315849c1d3c68ec",
+    "tests/reference_marginal.py": "b185e26baf49697f38e258cf24825b8d9e43e7991af9a8774dc470cea7dbc0dc",
+    "autobayes/model.py": "09a5eab5bffeba065d101befe90c4b0bd889671ac81f4222064acb0328d21e23",
+    "autobayes/inference.py": "8d21b5adaba9349bf5f90028a0bb3e9b59c59781bde0172ef9d48dbe6a000d4b",
+    "autobayes/diagnostics.py": "79bd2634824c19180afff1882896098d72d82a631ebfdb00aba90081ee7bd9b9",
+    "autobayes/session.py": "65454b45cf2328ff9eb46eb6cd1fe542153e4c6c042b53a5fd1090e66126a378",
+    "uv.lock": "e7c971d50ca835c42c0de9cc8ee05a3a9eabb86f50f2977b7790552f3a0fda08",
+    "pyproject.toml": "6386afef8d8fb6dacec8f8edddc6bde754f1cf8eb14f2375a29487ca33f8e3b4",
+    "docs/m3b1-evidence/f7-direct-cdf-v3r1-unit-1/result.json": "3d2a80294c59e92b31af26bf01cd2a313333f6a2f10d15a97c0a50c67ad8544e"
+  },
+  "model_identity": {
+    "formula": "y ~ x + (1 + x || g)",
+    "family": "gaussian",
+    "data": "the F7 generator in tests/test_sampling.py (rng seed 17, J=30 groups of 20; identical to tests.reference_marginal.f7_data)",
+    "priors": {
+      "intercept": "Normal(mu=0, sigma=5)",
+      "b:x": "Normal(mu=0, sigma=2)",
+      "sd:Intercept": "HalfNormal(sigma=1)",
+      "sd:x": "HalfNormal(sigma=1)",
+      "sigma": "HalfNormal(sigma=1)"
+    },
+    "center_predictors": true,
+    "noncentered": true,
+    "unchanged": "no reseeding, no data regeneration, no prior or threshold change"
+  },
+  "reference_agreement": "three frozen means within4MCSE+observed spread; tail indicator descriptive with its own MCSE",
+  "keep_original_F7_failed": true,
+  "proposal_corrections": "/Users/andrewdou/iqss-research/memory/reviews/2026-09-13-autobayes-f7-closeout-and-convergence-review.md"
+}

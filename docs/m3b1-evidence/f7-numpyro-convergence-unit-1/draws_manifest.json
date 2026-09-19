@@ -1,0 +1,52 @@
+{
+ "path": "/Users/andrewdou/iqss-research/artifacts/2026-09-13-autobayes-f7-numpyro-convergence-unit-1/attempt-1/F7_numpyro_convergence_2000_4000.nc",
+ "sha256": "26a09a45694d0b6b86ce8064049196b15aa68ac4591b177c17292e5bec613664",
+ "bytes": 8476505,
+ "groups": [
+  "posterior",
+  "sample_stats",
+  "observed_data"
+ ],
+ "posterior_variables": {
+  "Intercept": [
+   4,
+   4000
+  ],
+  "x": [
+   4,
+   4000
+  ],
+  "sigma": [
+   4,
+   4000
+  ],
+  "1|g_sigma": [
+   4,
+   4000
+  ],
+  "x|g_sigma": [
+   4,
+   4000
+  ],
+  "1|g": [
+   4,
+   4000,
+   30
+  ],
+  "x|g": [
+   4,
+   4000,
+   30
+  ]
+ },
+ "sample_stats_variables": [
+  "acceptance_rate",
+  "step_size",
+  "diverging",
+  "energy",
+  "n_steps",
+  "tree_depth",
+  "lp"
+ ],
+ "written_at": "2026-09-19T15:07:30.312364+00:00"
+}

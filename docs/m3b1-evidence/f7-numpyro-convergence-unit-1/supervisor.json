@@ -1,0 +1,16 @@
+{
+ "attempt_dir": "/Users/andrewdou/iqss-research/artifacts/2026-09-13-autobayes-f7-numpyro-convergence-unit-1/attempt-1",
+ "allowance_seconds": 300,
+ "python": "/Users/andrewdou/iqss-research/projects/AutoBayes-worktrees/m3b1-varying-slope/.venv/bin/python",
+ "child_script": "/Users/andrewdou/iqss-research/artifacts/2026-09-13-autobayes-f7-numpyro-convergence-unit-1/f7_numpyro_convergence_run.py",
+ "launched_at": "2026-09-19T15:07:17.668088+00:00",
+ "supervisor_pid": 59046,
+ "child_pid": 59047,
+ "child_pgid": 59047,
+ "timed_out": false,
+ "terminated_with": null,
+ "returncode": 0,
+ "wall_seconds": 15.232,
+ "finished_at": "2026-09-19T15:07:32.897632+00:00",
+ "status": "completed"
+}

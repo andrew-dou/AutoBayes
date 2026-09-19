@@ -625,3 +625,72 @@ acceptance-policy proposal: the one-realisation truth-in-99%-HDI assertion is no
 original F7 test and its failed observation unchanged pending review; add a separately named computation-and-convergence test
 as the milestone gate; scope calibration separately. No test or code change, fit, evaluation, threshold change, reseeding or
 until-pass loop was made or is authorised; original F7 FAILED; PR #8 open; M3b-2 not started.
+
+## Prospective NumPyro convergence diagnostic F7_numpyro_convergence_2000_4000_unit_1 (2026-09-19; one approved run, real outcome)
+
+**Corrections adopted from the closeout review** (`memory/reviews/2026-09-13-autobayes-f7-closeout-and-convergence-review.md`).
+They supersede the corresponding statements of 2026-09-13 in `F7_closeout_note.md`, `F7_convergence_followup_proposal.json`
+and the closeout entry above, which stay in place as historical evidence:
+1. The proposed tail-error formula sqrt(p(1−p)/ess_tail(sd1)) is withdrawn: ArviZ 0.23.4's tail ESS is the minimum of the
+   5 % and 95 % quantile ESS and is not the uncertainty of the indicator at 0.30. The indicator I(x|g_sigma ≤ 0.30) is now
+   measured chain by draw with `az.mcse`/`az.ess` (method "mean") and per-chain counts; a nonfinite or zero MCSE or no
+   variation would be uninformative, never exact agreement; the estimate is descriptive, not a gate.
+2. The "chain-length artefact" causal wording is withdrawn: doubling tuning and quadrupling draws changes two settings, so a
+   pass supports adequate diagnostics for the new configuration only and cannot establish that the original miss was caused
+   by chain length; a persistent miss would not uniquely identify parameterisation or adaptation either.
+3. The "no correct computation can pass" and "correctly computed posterior" wording is withdrawn: the reference CDF 0.99818460
+   establishes exclusion of 0.30 from a central 99 % interval within the reviewed numerical box, not an exact HDI or a
+   rigorous full-posterior tail bound; the saved HDI failures are consistent with it; one fixed-truth realisation carries no
+   nominal-coverage guarantee; the ≈2 % realised-spread observation is historical evidence, not proof of mechanism.
+4. Test-policy options B and C are not adopted. The original F7 test, its slow marker, thresholds and failed observation stay
+   unchanged; no merge and no M3b-2.
+
+**Authorisation and execution.** Coordinator approval `reviewed-unit.json` (copied into
+`docs/m3b1-evidence/f7-numpyro-convergence-unit-1/`; SHA-256 recorded in `summary.json`) for one NumPyro-only run at base
+head b1c08ff; Andrew's September 19 direction (`plans/2026-09-19-autobayes-foundations.md`) authorised the unit. Target-free
+pre-check on the clean head: nine input hashes, dependency versions (numpyro 0.21.0, jax/jaxlib 0.10.2, arviz 0.23.4, pymc
+5.28.5, numpy 2.4.6, Python 3.11.0), x64 enabled, 8 JAX CPU devices, h5netcdf engine, attempt directory absent. One child
+under the stdlib supervisor (`docs/m3b1-evidence/scripts/f7_numpyro_convergence_supervisor.py`, exclusive attempt directory,
+own process group, 300 s total cap): launched 2026-09-19T15:07:17Z, returned 15:07:32Z, return code 0, no timeout, wall
+15.232 s (child 14.18 s, fit 7.0 s). The data were reconstructed from the seed-17 generator and are identical to
+`tests.reference_marginal.f7_data` (arrays SHA-256 689134ee…). Configuration as approved: numpyro, cpu, parallel, float64, 4
+chains, tune 2,000, draws 4,000, seed 17, target_accept 0.9, tree depth 10, no notes. Retained draws, full InferenceData
+with sampler statistics: `artifacts/2026-09-13-autobayes-f7-numpyro-convergence-unit-1/attempt-1/F7_numpyro_convergence_2000_4000.nc`
+(8,476,505 bytes; SHA-256 26a09a45694d0b6b86ce8064049196b15aa68ac4591b177c17292e5bec613664), reopened read-only after the run
+with the panel recomputed from disk identically.
+
+**Results** (`summary.json`, `per_parameter.json`, `population_hdi99.json`). Full panel over every posterior variable
+(five population parameters and 60 group effects), every status pass and every value finite, judged component by component:
+0 divergences, max R-hat 1.00304 (Intercept), min bulk ESS 1,842.8 (Intercept), min tail ESS 4,052.6 (Intercept), min E-BFMI
+0.6434, tree-depth saturation 0. The population-only panel is identical because the extremes sit on population parameters.
+Prospective convergence success for this configuration: yes.
+
+| Parameter | mean | R-hat | bulk ESS | tail ESS | 99 % HDI | truth inside (observation) |
+|---|---:|---:|---:|---:|---|---|
+| Intercept | 1.054960 | 1.00304 | 1,843 | 4,053 | [0.8807, 1.2359] | yes |
+| x | 0.499958 | 1.00065 | 3,569 | 5,847 | [0.3997, 0.5993] | yes |
+| 1\|g_sigma | 0.356067 | 1.00197 | 2,431 | 4,990 | [0.2421, 0.5214] | yes |
+| x\|g_sigma | 0.175537 | 1.00064 | 4,891 | 7,797 | [0.0949, 0.2729] | no (0.30 excluded, as in the original fits) |
+| sigma | 0.424540 | 1.00010 | 14,227 | 11,232 | [0.3916, 0.4597] | yes |
+
+Frozen reference means (4·MCSE + observed reference spread): 1|g_sigma 0.356067 vs 0.354941, 1.02 MCSE; x|g_sigma 0.175537 vs
+0.175823, 0.59 MCSE; sigma 0.424540 vs 0.424457, 0.76 MCSE; all within. Tail indicator, descriptive: p̂(x|g_sigma ≤ 0.30) =
+0.9981875, per-chain draws above 0.30 of 4,000: 2, 3, 10, 14; indicator MCSE 4.27e-4 with ESS 9,939 (informative); reference
+0.9981846 (spread over boxes and rules 5.3e-7); difference 2.9e-6, 0.007 indicator MCSE.
+
+**Interpretation.** At this configuration the NumPyro path meets every diagnostic gate and agrees with the deterministic
+reference in the three scale means and, descriptively, in the tail probability at 0.30. This is evidence for the 4×2,000/4,000
+configuration only; it does not isolate the cause of the original 4×1,000/1,000 miss, does not establish calibration or
+coverage, and does not accept or relabel the original F7 test, whose failed observation is unchanged. The scientific
+acceptance-policy decision stays open for independent review; no second numerical unit follows automatically.
+
+**Smallest next composability increment (plan step 2–3; not started).** The parser today requires exactly one varying term
+and refuses `0 +`, `- 1`, a second grouping factor and a second varying slope (`autobayes/formula.py`, probed read-only).
+The dependency root is population-only models: accept `y ~ x`, `y ~ 1 + x` and `y ~ x + z` with no group term, following
+brms `brmsformula` semantics where group-level terms are optional (https://paulbuerkner.com/brms/reference/brmsformula.html),
+with intercept control (`0 +`, brms's `0 + Intercept` idiom for an uncentred intercept prior) as the immediately following
+slice. Concrete tests: parser acceptance and canonical form; design matrix columns, centring and labels; prior assignment
+(intercept and coefficients, `sd` priors refused without a group); log density and gradients on both backends against an
+independent conditional-Gaussian reference; predictions without a grouping column; describe/record fields; one bounded
+stochastic recovery check kept separate from the fast suite. Everything else in the sequence (interactions with several
+terms, several grouping factors, several and correlated slopes) builds on this.

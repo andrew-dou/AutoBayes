@@ -1,0 +1,64 @@
+{
+ "checked_at": "2026-09-19T15:07:22.196962+00:00",
+ "ok": true,
+ "problems": [],
+ "git": {
+  "head": "b1c08ff114e7b9524886480ab8bb0aa345a8f861",
+  "dirty": false,
+  "status": ""
+ },
+ "input_sha256": {
+  "tests/test_sampling.py": "d5ab0ed05b7e38296bf0925db4c0727dcc7eb6c399d93bdc4315849c1d3c68ec",
+  "tests/reference_marginal.py": "b185e26baf49697f38e258cf24825b8d9e43e7991af9a8774dc470cea7dbc0dc",
+  "autobayes/model.py": "09a5eab5bffeba065d101befe90c4b0bd889671ac81f4222064acb0328d21e23",
+  "autobayes/inference.py": "8d21b5adaba9349bf5f90028a0bb3e9b59c59781bde0172ef9d48dbe6a000d4b",
+  "autobayes/diagnostics.py": "79bd2634824c19180afff1882896098d72d82a631ebfdb00aba90081ee7bd9b9",
+  "autobayes/session.py": "65454b45cf2328ff9eb46eb6cd1fe542153e4c6c042b53a5fd1090e66126a378",
+  "uv.lock": "e7c971d50ca835c42c0de9cc8ee05a3a9eabb86f50f2977b7790552f3a0fda08",
+  "pyproject.toml": "6386afef8d8fb6dacec8f8edddc6bde754f1cf8eb14f2375a29487ca33f8e3b4",
+  "docs/m3b1-evidence/f7-direct-cdf-v3r1-unit-1/result.json": "3d2a80294c59e92b31af26bf01cd2a313333f6a2f10d15a97c0a50c67ad8544e"
+ },
+ "script_sha256": "eb250840db78c29fb2d7e45b383131b9c63861299c728f9c17d81ac679beecc3",
+ "approval_sha256": "09eaf1446f8547c3c80a45c8b192df05ec7d16d98d6db8081bdf03f2e67d4210",
+ "settings": {
+  "backend": "numpyro",
+  "device": "cpu",
+  "chain_method": "parallel",
+  "dtype": "float64",
+  "chains": 4,
+  "tune": 2000,
+  "draws": 4000,
+  "seed": 17,
+  "target_accept": 0.9,
+  "max_treedepth": 10
+ },
+ "environment": {
+  "python": "3.11.0",
+  "platform": "macOS-26.6.1-arm64-arm-64bit",
+  "versions": {
+   "pymc": "5.28.5",
+   "pytensor": "2.38.3",
+   "bambi": "0.17.2",
+   "formulae": "0.6.2",
+   "arviz": "0.23.4",
+   "numpyro": "0.21.0",
+   "jax": "0.10.2",
+   "jaxlib": "0.10.2",
+   "numpy": "2.4.6"
+  },
+  "jax_devices": [
+   "cpu:cpu(id=0)",
+   "cpu:cpu(id=1)",
+   "cpu:cpu(id=2)",
+   "cpu:cpu(id=3)",
+   "cpu:cpu(id=4)",
+   "cpu:cpu(id=5)",
+   "cpu:cpu(id=6)",
+   "cpu:cpu(id=7)"
+  ],
+  "jax_x64": true
+ },
+ "jax_cpu_devices": 8,
+ "cpu_count": 10,
+ "netcdf_engine": "h5netcdf"
+}

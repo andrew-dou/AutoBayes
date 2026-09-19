@@ -1,0 +1,297 @@
+{
+ "unit_id": "F7_numpyro_convergence_2000_4000_unit_1",
+ "approval_sha256": "09eaf1446f8547c3c80a45c8b192df05ec7d16d98d6db8081bdf03f2e67d4210",
+ "script_sha256": "eb250840db78c29fb2d7e45b383131b9c63861299c728f9c17d81ac679beecc3",
+ "head": "b1c08ff114e7b9524886480ab8bb0aa345a8f861",
+ "started": "2026-09-19T15:07:17.819077+00:00",
+ "finished": "2026-09-19T15:07:31.993352+00:00",
+ "child_wall_seconds": 14.177,
+ "configuration": {
+  "backend": "numpyro",
+  "device_requested": "cpu",
+  "device_actual": "cpu:cpu(id=0)",
+  "platform": "cpu",
+  "dtype": "float64",
+  "chain_method": "parallel",
+  "chains": 4,
+  "draws": 4000,
+  "tune": 2000,
+  "target_accept": 0.9,
+  "seed": 17,
+  "fit_wall_seconds": 7.046531500003766,
+  "notes": [],
+  "ok": true
+ },
+ "data": {
+  "generator": "tests/test_sampling.py::test_varying_slope_recovery_both_backends lines 260-266, seed 17, J=30, per=20",
+  "identical_to_tests_reference_marginal_f7_data": true,
+  "n": 600,
+  "J": 30,
+  "per": 20,
+  "sha256_arrays_y_x_g": "689134eec4932710a23e906d03aa657745aff1d347c80bd545310d230dc49310",
+  "sha256_csv_17g": "2879eefdb4c08508546839c490a3a4ff1dbe93ee17c0b8917e0d7f913c16e681",
+  "y_mean": 1.0425487367881783,
+  "x_mean": -0.04715277799659193
+ },
+ "draws": {
+  "path": "/Users/andrewdou/iqss-research/artifacts/2026-09-13-autobayes-f7-numpyro-convergence-unit-1/attempt-1/F7_numpyro_convergence_2000_4000.nc",
+  "sha256": "26a09a45694d0b6b86ce8064049196b15aa68ac4591b177c17292e5bec613664",
+  "bytes": 8476505,
+  "groups": [
+   "posterior",
+   "sample_stats",
+   "observed_data"
+  ],
+  "posterior_variables": {
+   "Intercept": [
+    4,
+    4000
+   ],
+   "x": [
+    4,
+    4000
+   ],
+   "sigma": [
+    4,
+    4000
+   ],
+   "1|g_sigma": [
+    4,
+    4000
+   ],
+   "x|g_sigma": [
+    4,
+    4000
+   ],
+   "1|g": [
+    4,
+    4000,
+    30
+   ],
+   "x|g": [
+    4,
+    4000,
+    30
+   ]
+  },
+  "sample_stats_variables": [
+   "acceptance_rate",
+   "step_size",
+   "diverging",
+   "energy",
+   "n_steps",
+   "tree_depth",
+   "lp"
+  ],
+  "written_at": "2026-09-19T15:07:30.312364+00:00"
+ },
+ "panel_full": {
+  "values": {
+   "divergences": 0.0,
+   "divergence_fraction": 0.0,
+   "max_rhat": 1.0030396221393973,
+   "min_ess_bulk": 1842.8112795549762,
+   "min_ess_tail": 4052.6316827339383,
+   "min_bfmi": 0.6434033733245503,
+   "treedepth_saturation": 0.0,
+   "n_draws": 16000
+  },
+  "status": {
+   "divergence_fraction": "pass",
+   "max_rhat": "pass",
+   "min_ess_bulk": "pass",
+   "min_ess_tail": "pass",
+   "min_bfmi": "pass",
+   "treedepth_saturation": "pass"
+  },
+  "overall": "pass",
+  "strict": {
+   "every_status_pass": true,
+   "every_value_finite": true,
+   "finite": {
+    "divergence_fraction": true,
+    "max_rhat": true,
+    "min_ess_bulk": true,
+    "min_ess_tail": true,
+    "min_bfmi": true,
+    "treedepth_saturation": true
+   },
+   "statuses_not_pass": {}
+  }
+ },
+ "panel_population_only": {
+  "values": {
+   "divergences": 0.0,
+   "divergence_fraction": 0.0,
+   "max_rhat": 1.0030396221393973,
+   "min_ess_bulk": 1842.8112795549762,
+   "min_ess_tail": 4052.6316827339383,
+   "min_bfmi": 0.6434033733245503,
+   "treedepth_saturation": 0.0,
+   "n_draws": 16000
+  },
+  "status": {
+   "divergence_fraction": "pass",
+   "max_rhat": "pass",
+   "min_ess_bulk": "pass",
+   "min_ess_tail": "pass",
+   "min_bfmi": "pass",
+   "treedepth_saturation": "pass"
+  },
+  "overall": "pass",
+  "strict": {
+   "every_status_pass": true,
+   "every_value_finite": true,
+   "finite": {
+    "divergence_fraction": true,
+    "max_rhat": true,
+    "min_ess_bulk": true,
+    "min_ess_tail": true,
+    "min_bfmi": true,
+    "treedepth_saturation": true
+   },
+   "statuses_not_pass": {}
+  }
+ },
+ "thresholds": {
+  "divergence_fraction": "== 0",
+  "max_rhat": "<= 1.01",
+  "min_ess_bulk": "> 400",
+  "min_ess_tail": "> 400",
+  "min_bfmi": "> 0.3",
+  "treedepth_saturation": "< 0.01"
+ },
+ "prospective_convergence_success_full_panel": true,
+ "prospective_success_definition": "configuration as approved AND every full-panel status pass AND every value finite (n/a is not accepted through the overall aggregation)",
+ "reference_mean_agreement": {
+  "rows": [
+   {
+    "parameter": "1|g_sigma",
+    "new_mean": 0.3560665417307182,
+    "new_mcse": 0.0011035560673609793,
+    "reference_mean": 0.3549405195125328,
+    "reference_spread": 1.2486946476819583e-09,
+    "abs_diff": 0.0011260222181854185,
+    "diff_in_mcse": 1.0203579604959847,
+    "limit": 0.004414225518138565,
+    "within": true
+   },
+   {
+    "parameter": "x|g_sigma",
+    "new_mean": 0.17553668388689048,
+    "new_mcse": 0.0004828921985144438,
+    "reference_mean": 0.17582251766578189,
+    "reference_spread": 9.993902982952108e-09,
+    "abs_diff": 0.00028583377889140893,
+    "diff_in_mcse": 0.5919204737014597,
+    "limit": 0.0019315787879607583,
+    "within": true
+   },
+   {
+    "parameter": "sigma",
+    "new_mean": 0.42454038193604965,
+    "new_mcse": 0.00011007000888596975,
+    "reference_mean": 0.42445655045206676,
+    "reference_spread": 3.1115626741851088e-09,
+    "abs_diff": 8.383148398288798e-05,
+    "diff_in_mcse": 0.7616196712560972,
+    "limit": 0.0004402831471065532,
+    "within": true
+   }
+  ],
+  "all_within": true,
+  "rule": "|new_mean - reference| <= 4 * new MCSE + observed reference spread; an estimated diagnostic allowance, not a full-distribution error bound"
+ },
+ "tail_indicator_descriptive": {
+  "event": "I(x|g_sigma <= 0.30) on the retained draws",
+  "p_hat": 0.9981875,
+  "per_chain_below": [
+   3998,
+   3997,
+   3990,
+   3986
+  ],
+  "per_chain_above": [
+   2,
+   3,
+   10,
+   14
+  ],
+  "n_draws": 16000,
+  "mcse_indicator_mean_arviz_method_mean": 0.00042667275612257976,
+  "ess_indicator_mean_arviz_method_mean": 9938.651450357915,
+  "informative": true,
+  "reference_cdf_B1_r1": 0.9981845983506333,
+  "reference_cdf_spread_four_boxes": 5.262925720783684e-07,
+  "abs_diff_to_reference": 2.901649366671144e-06,
+  "diff_in_indicator_mcse": 0.006800643643245698,
+  "descriptive_only": "not an acceptance gate; generic ess_tail(x|g_sigma) does not enter this estimate; nonfinite/zero MCSE or no variation would be uninformative"
+ },
+ "population_hdi99_observations": {
+  "Intercept": {
+   "mean": 1.0549601410835667,
+   "sd": 0.06754273229735604,
+   "hdi_0.5%": 0.8806904576068733,
+   "hdi_99.5%": 1.2358856691777262,
+   "mcse_mean": 0.001572794806503491,
+   "ess_bulk": 1842.8112795549762,
+   "ess_tail": 4052.6316827339383,
+   "r_hat": 1.0030396221393973,
+   "truth": 1.0,
+   "truth_inside_99_hdi_observation": true
+  },
+  "x": {
+   "mean": 0.49995823212383295,
+   "sd": 0.03793273687753603,
+   "hdi_0.5%": 0.3997086264017011,
+   "hdi_99.5%": 0.5993424603685308,
+   "mcse_mean": 0.0006369447650770175,
+   "ess_bulk": 3568.787845448599,
+   "ess_tail": 5846.647466851383,
+   "r_hat": 1.0006510012513032,
+   "truth": 0.5,
+   "truth_inside_99_hdi_observation": true
+  },
+  "1|g_sigma": {
+   "mean": 0.3560665417307182,
+   "sd": 0.05445941811872341,
+   "hdi_0.5%": 0.2420574845769901,
+   "hdi_99.5%": 0.5214324854297036,
+   "mcse_mean": 0.0011035560673609793,
+   "ess_bulk": 2431.0191248584133,
+   "ess_tail": 4990.069921609671,
+   "r_hat": 1.0019661458251754,
+   "truth": 0.5,
+   "truth_inside_99_hdi_observation": true
+  },
+  "x|g_sigma": {
+   "mean": 0.17553668388689048,
+   "sd": 0.033532651735906985,
+   "hdi_0.5%": 0.09491352956803185,
+   "hdi_99.5%": 0.27291106754420724,
+   "mcse_mean": 0.0004828921985144438,
+   "ess_bulk": 4891.428103878234,
+   "ess_tail": 7796.964402199364,
+   "r_hat": 1.0006425571869746,
+   "truth": 0.3,
+   "truth_inside_99_hdi_observation": false
+  },
+  "sigma": {
+   "mean": 0.42454038193604965,
+   "sd": 0.013099950335021178,
+   "hdi_0.5%": 0.39159506837414026,
+   "hdi_99.5%": 0.4596913233643343,
+   "mcse_mean": 0.00011007000888596975,
+   "ess_bulk": 14227.224509072887,
+   "ess_tail": 11232.269217197021,
+   "r_hat": 1.0000967399802785,
+   "truth": 0.4,
+   "truth_inside_99_hdi_observation": true
+  }
+ },
+ "interpretation_limits": [
+  "evidence for this configuration only; does not isolate the cause of the original 4x1000/1000 miss (two settings changed)",
+  "not calibration, coverage or full-posterior correctness; truth-in-HDI rows are observations, not gates",
+  "does not accept or relabel the original F7 test or its failed observation"
+ ]
+}

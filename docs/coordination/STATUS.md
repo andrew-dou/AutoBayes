@@ -837,3 +837,14 @@ no speedup is claimed.
   and UNAPPROVED `F7_convergence_followup_proposal.json` (one NumPyro 4x2000/4000 seed-17 diagnostic with predeclared panel
   and reference-agreement checks; acceptance-policy proposal: new computation-and-convergence gate, original F7 retained
   unchanged, calibration scoped separately). Nothing executed; F7 FAILED; PR8 OPEN; M3b-2 not started.
+- **Prospective NumPyro convergence diagnostic executed (2026-09-19; one approved run):** three closeout-review corrections
+  adopted (indicator MCSE measured directly, no chain-length causal claim, central-interval wording only); policy options
+  B/C not adopted. Run at clean b1c08ff under the stdlib supervisor: return code 0, no timeout, 15.232 s wall (fit 7.0 s);
+  4×2000/4000 seed 17 parallel float64 as approved; data identical to `f7_data`. Full panel every status pass and finite:
+  0 divergences, max R-hat 1.00304, min bulk ESS 1,843, min tail ESS 4,053, BFMI 0.643, saturation 0. Reference means
+  within 4 MCSE + spread (1.02 / 0.59 / 0.76 MCSE); tail p̂ 0.9981875 vs reference 0.9981846 (0.007 indicator MCSE,
+  descriptive). Truth-in-HDI observations unchanged (x|g_sigma excludes 0.30). Draws retained:
+  `artifacts/2026-09-13-autobayes-f7-numpyro-convergence-unit-1/attempt-1/F7_numpyro_convergence_2000_4000.nc`
+  (sha256 26a09a45…). Summaries and scripts committed under `docs/m3b1-evidence/f7-numpyro-convergence-unit-1/` and
+  `scripts/`. Evidence for this configuration only; original F7 FAILED; PR8 OPEN; M3b-2 not started; next: independent
+  review, then the acceptance-policy decision; smallest next increment: population-only (no-group) models.

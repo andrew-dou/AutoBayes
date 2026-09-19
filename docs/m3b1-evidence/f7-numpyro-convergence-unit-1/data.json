@@ -1,0 +1,11 @@
+{
+ "generator": "tests/test_sampling.py::test_varying_slope_recovery_both_backends lines 260-266, seed 17, J=30, per=20",
+ "identical_to_tests_reference_marginal_f7_data": true,
+ "n": 600,
+ "J": 30,
+ "per": 20,
+ "sha256_arrays_y_x_g": "689134eec4932710a23e906d03aa657745aff1d347c80bd545310d230dc49310",
+ "sha256_csv_17g": "2879eefdb4c08508546839c490a3a4ff1dbe93ee17c0b8917e0d7f913c16e681",
+ "y_mean": 1.0425487367881783,
+ "x_mean": -0.04715277799659193
+}
