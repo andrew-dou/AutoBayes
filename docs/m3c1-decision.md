@@ -160,6 +160,22 @@ own-package line only, `autobayes.__version__`). Reference helpers `tests/refere
 - Not executed: any sampler fit, the example, the slow suite, a GPU run. The bounded smoke stays a proposal for the
   coordinator's review. Version bump note: PR #8 names `0.5.0` too; whichever lands second renumbers.
 
+## Correction (2026-09-19, after the independent review): sampling in the inherited fast suite
+
+The executed-results section above, the evidence README, the STATUS entry and the PR description said that no sampler
+fit was executed in this slice. That is true of the new module `tests/test_population_only.py` (deterministic:
+synthetic draws, no `fit` call; independently confirmed with zero fits) and of the population-only models themselves
+(no population-only fit had been run), but false for the fast suite as a whole: the inherited suite runs real CPU
+samplers in fixtures and tests that predate this slice (for example `tests/conftest.py::small_fit`,
+`tests/test_device.py::test_numpyro_cpu_report`, the module-scoped `bfit`/`cfit` fixtures and several prediction
+tests). The dispatch required that suite while stating no sampler fits; the coordinator has recorded the conflict.
+`docs/m3c1-evidence/fit_sites_inventory.txt` lists every static `fit(` call site under `tests/` by file and line with
+its marker; it is a source inventory, not an execution count (fixtures are shared, sites are parametrised or skipped,
+some run in subprocesses, and no invocation counter was recorded). The superseding wording: **no population-only
+sampling run was executed in this slice; the inherited fast suite's regression sampling ran as part of the required
+suite.** The raw transcripts and earlier commits are unchanged. The multi-family smoke proposed above is superseded
+by the coordinator's bounded two-fit validation (next section).
+
 ## Bounded two-fit validation (2026-09-19; the coordinator's superseding unit): a predeclared gate FAILED: ['pymc_diagnostics']
 
 Exactly two `model.fit` calls on the committed example's Gaussian dose-by-arm population-only model

@@ -12,5 +12,9 @@ follows the decision record `55437e6` (the implementation commit records the exa
   failures were the stale assertions that `y ~ x` (and `k | trials(n) ~ x`) must be refused with "exactly one
   varying-intercept" (`tests/test_formula.py`, `tests/test_bernoulli.py`, `tests/test_binomial.py`); they assert the
   documented contract change now, and the acceptance run above followed. No library code changed between the two runs.
-- No sampling run was executed in this slice; the proposed smoke is in `docs/m3c1-decision.md`. The example
-  `examples/m3c1_population_only.py` is unexecuted.
+- Correction (after the independent review): no **population-only** sampling run was executed in this slice and the new
+  module contains no `fit` call, but the inherited fast suite's own CPU regression sampling (fixtures and tests that
+  predate this slice) ran as part of the required suite. `fit_sites_inventory.txt` is the static call-site inventory
+  by file, line and marker; it is not an execution count. The example `examples/m3c1_population_only.py` was
+  unexecuted at `6d8e234`; its model was then sampled exactly twice by the bounded two-fit validation recorded in
+  `two-fit-validation/` (freeze, panels, labelled comparison, inspection of the retained draws, supervisor record).
