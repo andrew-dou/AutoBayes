@@ -136,7 +136,7 @@ versions.
 | Population-only models, no group-level term: `y ~ 1`, `y ~ x`, `y ~ x + z + x:z`, `k \| trials(n) ~ x`, all three families | deterministic density/gradient/design/prediction checks for all three families; Gaussian example CPU sampling accepted after explicit finite-statistic policy correction ([review](docs/m3c1-decision.md#independent-acceptance-review-2026-09-19)) | same deterministic coverage; Gaussian example CPU sampling and seven-mean agreement accepted in the same review | **pending** | M3c-1, PR #9; merged; one Gaussian development example, not calibration |
 | One independent varying slope `(1 + x \|\| g)` | under independent review, not merged | same | same | M3b-1, PR #8 open |
 | No population intercept: `0 + x`, `x - 1`, categorical and one interaction, optional group | three-family deterministic checks; one Gaussian CPU example accepted at `target_accept=0.99` | same deterministic coverage and Gaussian CPU acceptance | **pending** | M3c-2, PR #10; [review and preserved initial failures](docs/m3c2-decision.md#independent-acceptance-review-2026-09-20-utc) |
-| Multiple independent intercepts `(1 \| county) + (1 \| year)`, all three families | deterministic density/gradient/design/prediction checks passed; feature sampling pending | same | **pending** | M3c-3 candidate; [decision](docs/m3c3-decision.md) |
+| Multiple independent intercepts `(1 \| county) + (1 \| year)`, all three families | three-family deterministic checks; one crossed Gaussian CPU example independently accepted | same deterministic coverage and Gaussian CPU acceptance | **pending** | M3c-3, PR #11; [decision](docs/m3c3-decision.md) |
 | Correlated effects, grouping `/` or `:`, slopes, other families and links | refused with an error naming the construct | same | same | later slices, `docs/coordination/NEXT_MILESTONES_PROPOSAL.md` |
 
 Device rules on every path: `device="gpu"` without a visible GPU raises `DeviceError`
@@ -175,7 +175,9 @@ Distinct additive factors can describe crossed or observationally nested members
 the library never expands nesting syntax or combines labels with their parent. Slopes,
 duplicate factors, correlation IDs, `||`, grouping `/` or `:` and multimembership remain
 refused. See the build-only [example](examples/m3c3_multiple_intercepts.py) and
-[decision](docs/m3c3-decision.md). Feature-specific sampling and GPU validation are pending.
+[decision](docs/m3c3-decision.md). One crossed Gaussian CPU example passed independent
+validation on PyMC and NumPyro at `target_accept=0.99`; see the [evidence and limits](docs/m3c3-evidence/cpu-validation/README.md).
+Other-family sampling, calibration and GPU validation remain pending.
 
 ### Removing the population intercept
 

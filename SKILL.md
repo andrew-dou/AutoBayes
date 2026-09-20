@@ -29,6 +29,11 @@ shorthand for `x + z + x:z`), and optional independent varying intercepts for di
 
     y ~ [1 +] x1 [+ x2 ...] [+ z ...] [+ x:z ...] [+ (1 | factor) ...]
 
+Multiple grouping factors have deterministic coverage across these three families and one
+independently accepted crossed Gaussian CPU example on both backends; see
+`docs/m3c3-evidence/cpu-validation/README.md`. This does not extend the M0 GPU evidence
+or establish calibration or other-family sampling validation.
+
 for the outcome families:
 
 - **Gaussian, identity link (M0)**: `ab.gaussian(...)`, priors on the intercept, every

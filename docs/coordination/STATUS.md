@@ -1,3 +1,7 @@
+# M3c-3 independently accepted; final documentation CI pending (2026-09-20 UTC)
+
+Implementation 40613ed passed independent source review, 530 hosted tests and a bounded two-backend crossed-Gaussian CPU unit. Root reopened saved draws: zero divergences, max R-hat 1.00624, minbulkESS 1073.24, mintailESS 1330.02; five scalar mean gates and 528,000 prediction checks pass. No calibration/GPU/speed or broader sampling claim. Details: ../m3c3-evidence/cpu-validation/README.md and ../m3c3-decision.md. Final documentation commit/CI precedes PR #11 merge; no fit or full suite should be repeated. Entries below preserve historical states.
+
 # M3c-3 implementation complete; independent review pending (2026-09-20 UTC)
 
 Branch `m3c3/multiple-intercepts` starts at merged main `9755f1d82ac9ba5aa0fcda86b0d32c0806422cff` (PR #10). Decision `0f7ce72` preceded implementation. Multiple distinct additive varying intercepts now have explicit factor priors/value points, separately checked design blocks, stable names/coordinates, mixed new-group prediction policies and complete fit records. Zero/one-group constructors/access are retained; ambiguous singular fields raise for multiple groups. AutoBayes 0.7.0; no third-party dependency or sampler-default change.

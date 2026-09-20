@@ -1,0 +1,21 @@
+{
+  "path": "/private/tmp/autobayes-multiple-intercepts-cpu-validation-1/numpyro.nc",
+  "sha256": "454311f7a379669d8716820b7681c366e8cbe95e0089b9ac084816e44de14171",
+  "bytes": 680171,
+  "fit_wall_seconds": 4.7683077919937205,
+  "fit_and_serialization_seconds": 4.839904583001044,
+  "metadata": {
+    "backend": "numpyro",
+    "device_requested": "cpu",
+    "device_actual": "cpu:cpu(id=0)",
+    "platform": "cpu",
+    "dtype": "float64",
+    "chain_method": "parallel",
+    "chains": 4,
+    "draws": 1000,
+    "tune": 1000,
+    "target_accept": 0.99,
+    "seed": 113,
+    "notes": []
+  }
+}

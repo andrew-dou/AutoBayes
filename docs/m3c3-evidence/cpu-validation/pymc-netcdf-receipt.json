@@ -1,0 +1,21 @@
+{
+  "path": "/private/tmp/autobayes-multiple-intercepts-cpu-validation-1/pymc.nc",
+  "sha256": "e46fb305624d0ed1283da14d2b1d0df50858b2f72ab54ff2a3e2353c192d9665",
+  "bytes": 823220,
+  "fit_wall_seconds": 19.687293750001118,
+  "fit_and_serialization_seconds": 20.08878587500658,
+  "metadata": {
+    "backend": "pymc",
+    "device_requested": "cpu",
+    "device_actual": "cpu",
+    "platform": "cpu",
+    "dtype": "float64",
+    "chain_method": null,
+    "chains": 4,
+    "draws": 1000,
+    "tune": 1000,
+    "target_accept": 0.99,
+    "seed": 109,
+    "notes": []
+  }
+}

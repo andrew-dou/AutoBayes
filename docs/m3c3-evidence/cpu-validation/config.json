@@ -1,0 +1,144 @@
+{
+  "formula": "y ~ x + (1 | county) + (1 | year)",
+  "levels": {
+    "county": [
+      "C0",
+      "C1",
+      "C2",
+      "C3",
+      "C4",
+      "C5"
+    ],
+    "year": [
+      "Y0",
+      "Y1",
+      "Y2",
+      "Y3",
+      "Y4"
+    ]
+  },
+  "center_predictors": true,
+  "new_row_positions": [
+    59,
+    0,
+    31,
+    12,
+    47,
+    8
+  ],
+  "scalar_parameters": [
+    "Intercept",
+    "x",
+    "1|county_sigma",
+    "1|year_sigma",
+    "sigma"
+  ],
+  "record_priors": {
+    "intercept": "Normal(mu=0, sigma=1.5)",
+    "b:x": "Normal(mu=0, sigma=1)",
+    "sd:county": "HalfNormal(sigma=0.8)",
+    "sd:year": "Exponential(lam=2)",
+    "sigma": "HalfNormal(sigma=1)"
+  },
+  "fits": [
+    {
+      "backend": "pymc",
+      "device": "cpu",
+      "chains": 4,
+      "draws": 1000,
+      "tune": 1000,
+      "seed": 109,
+      "target_accept": 0.99,
+      "cores": 4,
+      "progressbar": false
+    },
+    {
+      "backend": "numpyro",
+      "device": "cpu",
+      "chains": 4,
+      "draws": 1000,
+      "tune": 1000,
+      "seed": 113,
+      "target_accept": 0.99,
+      "cores": 4,
+      "progressbar": false
+    }
+  ],
+  "unused_eigenvalue_placeholders": [
+    "smallest_eigval",
+    "largest_eigval"
+  ],
+  "core_sampler_statistics": {
+    "pymc": [
+      "diverging",
+      "energy",
+      "tree_depth",
+      "lp",
+      "acceptance_rate",
+      "step_size",
+      "n_steps"
+    ],
+    "numpyro": [
+      "diverging",
+      "energy",
+      "tree_depth",
+      "lp",
+      "acceptance_rate",
+      "step_size",
+      "n_steps"
+    ]
+  },
+  "expected_versions": {
+    "pymc": "5.28.5",
+    "pytensor": "2.38.3",
+    "bambi": "0.17.2",
+    "formulae": "0.6.2",
+    "arviz": "0.23.4",
+    "numpyro": "0.21.0",
+    "jax": "0.10.2",
+    "jaxlib": "0.10.2",
+    "numpy": "2.4.6",
+    "pandas": "3.0.5",
+    "scipy": "1.17.1",
+    "xarray": "2026.7.0"
+  },
+  "depth_source": {
+    "pymc": {
+      "path": "/Users/andrewdou/iqss-research/projects/AutoBayes-worktrees/m3c3-multiple-intercepts/.venv/lib/python3.11/site-packages/pymc/step_methods/hmc/nuts.py",
+      "line": 132,
+      "parameter": "max_treedepth",
+      "default": 10
+    },
+    "numpyro": {
+      "path": "/Users/andrewdou/iqss-research/projects/AutoBayes-worktrees/m3c3-multiple-intercepts/.venv/lib/python3.11/site-packages/numpyro/infer/hmc.py",
+      "line": 925,
+      "parameter": "max_tree_depth",
+      "default": 10
+    },
+    "method": "Pinned constructor defaults and runtime signature assertions; no conflicting kwargs forwarded."
+  },
+  "gates": {
+    "oracle_precision_atol_rtol": 1e-09,
+    "oracle_gradient_atol": 1e-08,
+    "rhat_max": 1.01,
+    "ess_bulk_min": 400,
+    "ess_tail_min": 400,
+    "bfmi_min": 0.3,
+    "divergences": 0,
+    "tree_depth_limit_exclusive": 10,
+    "five_scalar_mean_combined_mcse": 4,
+    "prediction_atol_rtol": 1e-10
+  },
+  "env_overrides": {
+    "PYTHONDONTWRITEBYTECODE": "1",
+    "JAX_PLATFORMS": "cpu",
+    "AUTOBAYES_HOST_DEVICES": "4",
+    "JAX_ENABLE_X64": "true",
+    "PYTENSOR_FLAGS": "floatX=float64,compiledir=/private/tmp/autobayes-multiple-intercepts-cpu-validation-1/pytensor-cache",
+    "MPLCONFIGDIR": "/private/tmp/autobayes-multiple-intercepts-cpu-validation-1/mpl-cache",
+    "NUMBA_CACHE_DIR": "/private/tmp/autobayes-multiple-intercepts-cpu-validation-1/numba-cache",
+    "OPENBLAS_NUM_THREADS": "1",
+    "OMP_NUM_THREADS": "1",
+    "VECLIB_MAXIMUM_THREADS": "1"
+  }
+}

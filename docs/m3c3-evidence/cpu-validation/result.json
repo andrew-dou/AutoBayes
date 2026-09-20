@@ -1,0 +1,1145 @@
+{
+  "passed": true,
+  "fit_attempts": 2,
+  "fits_saved": 2,
+  "fit_errors": {},
+  "oracle_passed": true,
+  "backends": {
+    "pymc": {
+      "diagnostics": {
+        "parameters": {
+          "Intercept": {
+            "mean": 0.32534065172599347,
+            "sd": 0.2643011106636768,
+            "rhat": 1.006239810848344,
+            "ess_bulk": 1073.2375866791574,
+            "ess_tail": 1748.8200036099975,
+            "mcse_mean": 0.008095946317506951
+          },
+          "x": {
+            "mean": 0.5991266882405701,
+            "sd": 0.1310092563651733,
+            "rhat": 1.0003074456529082,
+            "ess_bulk": 3797.6862486019295,
+            "ess_tail": 2754.9595796614694,
+            "mcse_mean": 0.0021237617279552777
+          },
+          "1|county_sigma": {
+            "mean": 0.539710457937866,
+            "sd": 0.23132935992355677,
+            "rhat": 1.0007639062217086,
+            "ess_bulk": 1255.134367340699,
+            "ess_tail": 1497.336751378408,
+            "mcse_mean": 0.00629066045947568
+          },
+          "1|year_sigma": {
+            "mean": 0.14251056915378618,
+            "sd": 0.1295662379438892,
+            "rhat": 1.00277546618137,
+            "ess_bulk": 1594.4993337687986,
+            "ess_tail": 1478.3784131537539,
+            "mcse_mean": 0.0028530207239580822
+          },
+          "sigma": {
+            "mean": 0.7472097967382404,
+            "sd": 0.07405962402735734,
+            "rhat": 1.0003649812217703,
+            "ess_bulk": 3123.0293878350644,
+            "ess_tail": 2468.8824350195064,
+            "mcse_mean": 0.001364794858196294
+          },
+          "1|county[C0]": {
+            "mean": -0.4196364385060547,
+            "sd": 0.31061438273620795,
+            "rhat": 1.00266639500142,
+            "ess_bulk": 1721.5558558802304,
+            "ess_tail": 2437.4014978581495,
+            "mcse_mean": 0.007532573348486553
+          },
+          "1|county[C1]": {
+            "mean": -0.5254081555754715,
+            "sd": 0.31887374443524763,
+            "rhat": 1.0032175385508866,
+            "ess_bulk": 1517.8929868220396,
+            "ess_tail": 2288.100280948149,
+            "mcse_mean": 0.008199799403057794
+          },
+          "1|county[C2]": {
+            "mean": -0.025006660622442094,
+            "sd": 0.2945268454194039,
+            "rhat": 1.0060561397676835,
+            "ess_bulk": 1433.2682735215265,
+            "ess_tail": 2213.9480083436906,
+            "mcse_mean": 0.007770067324418124
+          },
+          "1|county[C3]": {
+            "mean": 0.3352443202985672,
+            "sd": 0.3055817317427382,
+            "rhat": 1.0017694567540336,
+            "ess_bulk": 1544.0276629465393,
+            "ess_tail": 2070.5966845619964,
+            "mcse_mean": 0.0077047302052885396
+          },
+          "1|county[C4]": {
+            "mean": 0.35021638459959187,
+            "sd": 0.31064091731344945,
+            "rhat": 1.0024462428127408,
+            "ess_bulk": 1525.0519208357841,
+            "ess_tail": 2269.0712381457975,
+            "mcse_mean": 0.007962395813069012
+          },
+          "1|county[C5]": {
+            "mean": 0.29410531712615035,
+            "sd": 0.3014862315759846,
+            "rhat": 1.0039682772967193,
+            "ess_bulk": 1424.969373922653,
+            "ess_tail": 2325.647476006766,
+            "mcse_mean": 0.007969230555255256
+          },
+          "1|year[Y0]": {
+            "mean": 0.03815848928374672,
+            "sd": 0.13848521792825425,
+            "rhat": 1.0004518802299218,
+            "ess_bulk": 3446.641802756426,
+            "ess_tail": 3275.127459787875,
+            "mcse_mean": 0.002448261365786589
+          },
+          "1|year[Y1]": {
+            "mean": -0.05098680864627497,
+            "sd": 0.13928662677867296,
+            "rhat": 1.0000058630154058,
+            "ess_bulk": 3272.6413134848194,
+            "ess_tail": 3174.051643575851,
+            "mcse_mean": 0.002336954278432449
+          },
+          "1|year[Y2]": {
+            "mean": -0.0450140396341776,
+            "sd": 0.14196305308224316,
+            "rhat": 1.0021120814157092,
+            "ess_bulk": 3260.558057081145,
+            "ess_tail": 3211.8448600591287,
+            "mcse_mean": 0.002477661728539535
+          },
+          "1|year[Y3]": {
+            "mean": 0.009690126082602784,
+            "sd": 0.12634348989039487,
+            "rhat": 1.0026635434337614,
+            "ess_bulk": 3652.845983147406,
+            "ess_tail": 3384.4648262607475,
+            "mcse_mean": 0.0021253656631476867
+          },
+          "1|year[Y4]": {
+            "mean": 0.06131161656834332,
+            "sd": 0.14144818149316482,
+            "rhat": 1.0015471082850513,
+            "ess_bulk": 3005.267080387623,
+            "ess_tail": 3185.6890285606933,
+            "mcse_mean": 0.0025523077240930114
+          }
+        },
+        "posterior_checks": {
+          "sigma": {
+            "dims": [
+              "chain",
+              "draw"
+            ],
+            "shape": [
+              4,
+              1000
+            ],
+            "complete": true,
+            "finite": true
+          },
+          "Intercept": {
+            "dims": [
+              "chain",
+              "draw"
+            ],
+            "shape": [
+              4,
+              1000
+            ],
+            "complete": true,
+            "finite": true
+          },
+          "x": {
+            "dims": [
+              "chain",
+              "draw"
+            ],
+            "shape": [
+              4,
+              1000
+            ],
+            "complete": true,
+            "finite": true
+          },
+          "1|county_sigma": {
+            "dims": [
+              "chain",
+              "draw"
+            ],
+            "shape": [
+              4,
+              1000
+            ],
+            "complete": true,
+            "finite": true
+          },
+          "1|year_sigma": {
+            "dims": [
+              "chain",
+              "draw"
+            ],
+            "shape": [
+              4,
+              1000
+            ],
+            "complete": true,
+            "finite": true
+          },
+          "1|county": {
+            "dims": [
+              "chain",
+              "draw",
+              "county__factor_dim"
+            ],
+            "shape": [
+              4,
+              1000,
+              6
+            ],
+            "complete": true,
+            "finite": true
+          },
+          "1|year": {
+            "dims": [
+              "chain",
+              "draw",
+              "year__factor_dim"
+            ],
+            "shape": [
+              4,
+              1000,
+              5
+            ],
+            "complete": true,
+            "finite": true
+          }
+        },
+        "sample_stats_checks": {
+          "energy_error": {
+            "shape": [
+              4,
+              1000
+            ],
+            "complete": true,
+            "finite": true,
+            "excluded_unused_all_nan": false,
+            "nonfinite_count": 0
+          },
+          "divergences": {
+            "shape": [
+              4,
+              1000
+            ],
+            "complete": true,
+            "finite": true,
+            "excluded_unused_all_nan": false,
+            "nonfinite_count": 0
+          },
+          "smallest_eigval": {
+            "shape": [
+              4,
+              1000
+            ],
+            "complete": true,
+            "finite": false,
+            "excluded_unused_all_nan": true,
+            "nonfinite_count": 4000
+          },
+          "acceptance_rate": {
+            "shape": [
+              4,
+              1000
+            ],
+            "complete": true,
+            "finite": true,
+            "excluded_unused_all_nan": false,
+            "nonfinite_count": 0
+          },
+          "tree_depth": {
+            "shape": [
+              4,
+              1000
+            ],
+            "complete": true,
+            "finite": true,
+            "excluded_unused_all_nan": false,
+            "nonfinite_count": 0
+          },
+          "n_steps": {
+            "shape": [
+              4,
+              1000
+            ],
+            "complete": true,
+            "finite": true,
+            "excluded_unused_all_nan": false,
+            "nonfinite_count": 0
+          },
+          "reached_max_treedepth": {
+            "shape": [
+              4,
+              1000
+            ],
+            "complete": true,
+            "finite": true,
+            "excluded_unused_all_nan": false,
+            "nonfinite_count": 0
+          },
+          "max_energy_error": {
+            "shape": [
+              4,
+              1000
+            ],
+            "complete": true,
+            "finite": true,
+            "excluded_unused_all_nan": false,
+            "nonfinite_count": 0
+          },
+          "index_in_trajectory": {
+            "shape": [
+              4,
+              1000
+            ],
+            "complete": true,
+            "finite": true,
+            "excluded_unused_all_nan": false,
+            "nonfinite_count": 0
+          },
+          "step_size": {
+            "shape": [
+              4,
+              1000
+            ],
+            "complete": true,
+            "finite": true,
+            "excluded_unused_all_nan": false,
+            "nonfinite_count": 0
+          },
+          "lp": {
+            "shape": [
+              4,
+              1000
+            ],
+            "complete": true,
+            "finite": true,
+            "excluded_unused_all_nan": false,
+            "nonfinite_count": 0
+          },
+          "perf_counter_start": {
+            "shape": [
+              4,
+              1000
+            ],
+            "complete": true,
+            "finite": true,
+            "excluded_unused_all_nan": false,
+            "nonfinite_count": 0
+          },
+          "largest_eigval": {
+            "shape": [
+              4,
+              1000
+            ],
+            "complete": true,
+            "finite": false,
+            "excluded_unused_all_nan": true,
+            "nonfinite_count": 4000
+          },
+          "perf_counter_diff": {
+            "shape": [
+              4,
+              1000
+            ],
+            "complete": true,
+            "finite": true,
+            "excluded_unused_all_nan": false,
+            "nonfinite_count": 0
+          },
+          "energy": {
+            "shape": [
+              4,
+              1000
+            ],
+            "complete": true,
+            "finite": true,
+            "excluded_unused_all_nan": false,
+            "nonfinite_count": 0
+          },
+          "diverging": {
+            "shape": [
+              4,
+              1000
+            ],
+            "complete": true,
+            "finite": true,
+            "excluded_unused_all_nan": false,
+            "nonfinite_count": 0
+          },
+          "process_time_diff": {
+            "shape": [
+              4,
+              1000
+            ],
+            "complete": true,
+            "finite": true,
+            "excluded_unused_all_nan": false,
+            "nonfinite_count": 0
+          },
+          "step_size_bar": {
+            "shape": [
+              4,
+              1000
+            ],
+            "complete": true,
+            "finite": true,
+            "excluded_unused_all_nan": false,
+            "nonfinite_count": 0
+          }
+        },
+        "metric_errors": {},
+        "bfmi": [
+          0.8420578587940616,
+          0.7591163260505265,
+          0.774361220664839,
+          0.7365781225481478
+        ],
+        "divergences": 0.0,
+        "divergences_per_chain": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "max_depth": 7.0,
+        "depth_saturated_draws": 0.0,
+        "max_depth_flags": 0.0,
+        "gates": {
+          "complete_finite_posterior": true,
+          "core_stats_present": true,
+          "complete_finite_active_stats": true,
+          "finite_diagnostics": true,
+          "zero_divergences": true,
+          "no_depth_saturation": true,
+          "no_max_depth_flags": true,
+          "rhat_le_1_01": true,
+          "ess_bulk_ge_400": true,
+          "ess_tail_ge_400": true,
+          "every_chain_bfmi_ge_0_3": true
+        },
+        "passed": true
+      },
+      "semantics": {
+        "gates": {
+          "formula": true,
+          "groups": true,
+          "group_metadata": true,
+          "posterior_labels": true,
+          "intercept_and_centering": true,
+          "coefficient_order": true,
+          "exact_priors": true,
+          "five_record_parameters": true,
+          "record_means": true,
+          "record_diagnostics": true,
+          "mean_predictions": true,
+          "record_json_serializes": true,
+          "execution_settings": true,
+          "cpu_float64": true,
+          "chain_method": true
+        },
+        "predictions": {
+          "training": {
+            "dims": [
+              "chain",
+              "draw",
+              "__obs__"
+            ],
+            "shape": [
+              4,
+              1000,
+              60
+            ],
+            "max_abs_error": 4.440892098500626e-16,
+            "finite": true,
+            "passed": true
+          },
+          "six_reordered_rows": {
+            "dims": [
+              "chain",
+              "draw",
+              "__obs__"
+            ],
+            "shape": [
+              4,
+              1000,
+              6
+            ],
+            "max_abs_error": 4.440892098500626e-16,
+            "finite": true,
+            "passed": true
+          }
+        },
+        "passed": true
+      },
+      "retained_hash_matches": true,
+      "passed": true
+    },
+    "numpyro": {
+      "diagnostics": {
+        "parameters": {
+          "Intercept": {
+            "mean": 0.3315964626534278,
+            "sd": 0.25980429045719344,
+            "rhat": 1.0019815435704496,
+            "ess_bulk": 1373.2641228601328,
+            "ess_tail": 1579.9485303409604,
+            "mcse_mean": 0.00712283226601412
+          },
+          "x": {
+            "mean": 0.6016617592712928,
+            "sd": 0.12628042171567028,
+            "rhat": 1.0008947139164437,
+            "ess_bulk": 3534.9390393668227,
+            "ess_tail": 2783.5361333690466,
+            "mcse_mean": 0.0021223623061158805
+          },
+          "1|county_sigma": {
+            "mean": 0.5304923801098657,
+            "sd": 0.2317784900701333,
+            "rhat": 1.0035679962397976,
+            "ess_bulk": 1247.245829657018,
+            "ess_tail": 1330.0240803800898,
+            "mcse_mean": 0.006454107270277218
+          },
+          "1|year_sigma": {
+            "mean": 0.14584232173848743,
+            "sd": 0.13254661262109144,
+            "rhat": 1.0013960778680395,
+            "ess_bulk": 1703.6283845604808,
+            "ess_tail": 1724.2991013151834,
+            "mcse_mean": 0.00287840879613765
+          },
+          "sigma": {
+            "mean": 0.7490353792776885,
+            "sd": 0.07917906269980667,
+            "rhat": 1.0004993987802695,
+            "ess_bulk": 2707.767483323795,
+            "ess_tail": 2489.8127619159754,
+            "mcse_mean": 0.001560885523577658
+          },
+          "1|county[C0]": {
+            "mean": -0.4247383671649432,
+            "sd": 0.3101172355057591,
+            "rhat": 1.000960043470974,
+            "ess_bulk": 1767.8119268900593,
+            "ess_tail": 1995.7442471864174,
+            "mcse_mean": 0.007475678798462079
+          },
+          "1|county[C1]": {
+            "mean": -0.5281553243595747,
+            "sd": 0.3215908612914662,
+            "rhat": 1.00408845476963,
+            "ess_bulk": 1754.3236525493912,
+            "ess_tail": 1949.06041723936,
+            "mcse_mean": 0.007797361696321412
+          },
+          "1|county[C2]": {
+            "mean": -0.032291618991251186,
+            "sd": 0.2960337909245781,
+            "rhat": 1.003006102254847,
+            "ess_bulk": 1695.191576456563,
+            "ess_tail": 2209.824407704077,
+            "mcse_mean": 0.007245713048714403
+          },
+          "1|county[C3]": {
+            "mean": 0.3287571218752961,
+            "sd": 0.30134275030226676,
+            "rhat": 1.0023272021100103,
+            "ess_bulk": 1772.2164154393704,
+            "ess_tail": 2264.7494675796906,
+            "mcse_mean": 0.007114332490762987
+          },
+          "1|county[C4]": {
+            "mean": 0.34565613341576423,
+            "sd": 0.30784725991036005,
+            "rhat": 1.0020158531257135,
+            "ess_bulk": 1721.4408412949708,
+            "ess_tail": 2415.195923511744,
+            "mcse_mean": 0.007418677741491647
+          },
+          "1|county[C5]": {
+            "mean": 0.2846962744101497,
+            "sd": 0.30411204461733915,
+            "rhat": 1.0032966328583075,
+            "ess_bulk": 1764.8095567941389,
+            "ess_tail": 1950.6007899518447,
+            "mcse_mean": 0.0072272178677714035
+          },
+          "1|year[Y0]": {
+            "mean": 0.039558654921172734,
+            "sd": 0.1346984711791679,
+            "rhat": 1.0002803872908752,
+            "ess_bulk": 2774.5404138576328,
+            "ess_tail": 2563.1222552997087,
+            "mcse_mean": 0.0025995652017487677
+          },
+          "1|year[Y1]": {
+            "mean": -0.054063808570779366,
+            "sd": 0.14012848975724948,
+            "rhat": 1.0009058905830432,
+            "ess_bulk": 2974.631691368895,
+            "ess_tail": 3115.626665096958,
+            "mcse_mean": 0.002519651901748071
+          },
+          "1|year[Y2]": {
+            "mean": -0.04631345381328476,
+            "sd": 0.1387312698291307,
+            "rhat": 1.002037036394746,
+            "ess_bulk": 3004.2251491131433,
+            "ess_tail": 3176.175449021378,
+            "mcse_mean": 0.0024987401554072333
+          },
+          "1|year[Y3]": {
+            "mean": 0.006536885441377942,
+            "sd": 0.13357173017440457,
+            "rhat": 1.0006403457895776,
+            "ess_bulk": 3406.0662398727854,
+            "ess_tail": 3218.81582886157,
+            "mcse_mean": 0.0023327349219050965
+          },
+          "1|year[Y4]": {
+            "mean": 0.06397706865847452,
+            "sd": 0.14414214985036305,
+            "rhat": 1.0013645754989802,
+            "ess_bulk": 2652.511054638092,
+            "ess_tail": 3268.8707966297657,
+            "mcse_mean": 0.0028172912644515366
+          }
+        },
+        "posterior_checks": {
+          "Intercept": {
+            "dims": [
+              "chain",
+              "draw"
+            ],
+            "shape": [
+              4,
+              1000
+            ],
+            "complete": true,
+            "finite": true
+          },
+          "x": {
+            "dims": [
+              "chain",
+              "draw"
+            ],
+            "shape": [
+              4,
+              1000
+            ],
+            "complete": true,
+            "finite": true
+          },
+          "sigma": {
+            "dims": [
+              "chain",
+              "draw"
+            ],
+            "shape": [
+              4,
+              1000
+            ],
+            "complete": true,
+            "finite": true
+          },
+          "1|county_sigma": {
+            "dims": [
+              "chain",
+              "draw"
+            ],
+            "shape": [
+              4,
+              1000
+            ],
+            "complete": true,
+            "finite": true
+          },
+          "1|year_sigma": {
+            "dims": [
+              "chain",
+              "draw"
+            ],
+            "shape": [
+              4,
+              1000
+            ],
+            "complete": true,
+            "finite": true
+          },
+          "1|county": {
+            "dims": [
+              "chain",
+              "draw",
+              "county__factor_dim"
+            ],
+            "shape": [
+              4,
+              1000,
+              6
+            ],
+            "complete": true,
+            "finite": true
+          },
+          "1|year": {
+            "dims": [
+              "chain",
+              "draw",
+              "year__factor_dim"
+            ],
+            "shape": [
+              4,
+              1000,
+              5
+            ],
+            "complete": true,
+            "finite": true
+          }
+        },
+        "sample_stats_checks": {
+          "acceptance_rate": {
+            "shape": [
+              4,
+              1000
+            ],
+            "complete": true,
+            "finite": true,
+            "excluded_unused_all_nan": false,
+            "nonfinite_count": 0
+          },
+          "step_size": {
+            "shape": [
+              4,
+              1000
+            ],
+            "complete": true,
+            "finite": true,
+            "excluded_unused_all_nan": false,
+            "nonfinite_count": 0
+          },
+          "diverging": {
+            "shape": [
+              4,
+              1000
+            ],
+            "complete": true,
+            "finite": true,
+            "excluded_unused_all_nan": false,
+            "nonfinite_count": 0
+          },
+          "energy": {
+            "shape": [
+              4,
+              1000
+            ],
+            "complete": true,
+            "finite": true,
+            "excluded_unused_all_nan": false,
+            "nonfinite_count": 0
+          },
+          "n_steps": {
+            "shape": [
+              4,
+              1000
+            ],
+            "complete": true,
+            "finite": true,
+            "excluded_unused_all_nan": false,
+            "nonfinite_count": 0
+          },
+          "tree_depth": {
+            "shape": [
+              4,
+              1000
+            ],
+            "complete": true,
+            "finite": true,
+            "excluded_unused_all_nan": false,
+            "nonfinite_count": 0
+          },
+          "lp": {
+            "shape": [
+              4,
+              1000
+            ],
+            "complete": true,
+            "finite": true,
+            "excluded_unused_all_nan": false,
+            "nonfinite_count": 0
+          }
+        },
+        "metric_errors": {},
+        "bfmi": [
+          0.7135725698329876,
+          0.7612903015015701,
+          0.8051697912178593,
+          0.8090233015617527
+        ],
+        "divergences": 0.0,
+        "divergences_per_chain": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "max_depth": 7.0,
+        "depth_saturated_draws": 0.0,
+        "max_depth_flags": 0.0,
+        "gates": {
+          "complete_finite_posterior": true,
+          "core_stats_present": true,
+          "complete_finite_active_stats": true,
+          "finite_diagnostics": true,
+          "zero_divergences": true,
+          "no_depth_saturation": true,
+          "no_max_depth_flags": true,
+          "rhat_le_1_01": true,
+          "ess_bulk_ge_400": true,
+          "ess_tail_ge_400": true,
+          "every_chain_bfmi_ge_0_3": true
+        },
+        "passed": true
+      },
+      "semantics": {
+        "gates": {
+          "formula": true,
+          "groups": true,
+          "group_metadata": true,
+          "posterior_labels": true,
+          "intercept_and_centering": true,
+          "coefficient_order": true,
+          "exact_priors": true,
+          "five_record_parameters": true,
+          "record_means": true,
+          "record_diagnostics": true,
+          "mean_predictions": true,
+          "record_json_serializes": true,
+          "execution_settings": true,
+          "cpu_float64": true,
+          "chain_method": true
+        },
+        "predictions": {
+          "training": {
+            "dims": [
+              "chain",
+              "draw",
+              "__obs__"
+            ],
+            "shape": [
+              4,
+              1000,
+              60
+            ],
+            "max_abs_error": 4.440892098500626e-16,
+            "finite": true,
+            "passed": true
+          },
+          "six_reordered_rows": {
+            "dims": [
+              "chain",
+              "draw",
+              "__obs__"
+            ],
+            "shape": [
+              4,
+              1000,
+              6
+            ],
+            "max_abs_error": 4.440892098500626e-16,
+            "finite": true,
+            "passed": true
+          }
+        },
+        "passed": true
+      },
+      "retained_hash_matches": true,
+      "passed": true
+    }
+  },
+  "backend_mean_comparison": {
+    "Intercept": {
+      "pymc_mean": 0.32534065172599347,
+      "numpyro_mean": 0.3315964626534278,
+      "pymc_mcse": 0.008095946317506951,
+      "numpyro_mcse": 0.00712283226601412,
+      "absolute_difference": 0.006255810927434324,
+      "four_combined_mcse": 0.04313311234135116,
+      "passed": true,
+      "acceptance_gate": true
+    },
+    "x": {
+      "pymc_mean": 0.5991266882405701,
+      "numpyro_mean": 0.6016617592712928,
+      "pymc_mcse": 0.0021237617279552777,
+      "numpyro_mcse": 0.0021223623061158805,
+      "absolute_difference": 0.002535071030722702,
+      "four_combined_mcse": 0.012009853045261865,
+      "passed": true,
+      "acceptance_gate": true
+    },
+    "1|county_sigma": {
+      "pymc_mean": 0.539710457937866,
+      "numpyro_mean": 0.5304923801098657,
+      "pymc_mcse": 0.00629066045947568,
+      "numpyro_mcse": 0.006454107270277218,
+      "absolute_difference": 0.009218077828000326,
+      "four_combined_mcse": 0.036050611017880076,
+      "passed": true,
+      "acceptance_gate": true
+    },
+    "1|year_sigma": {
+      "pymc_mean": 0.14251056915378618,
+      "numpyro_mean": 0.14584232173848743,
+      "pymc_mcse": 0.0028530207239580822,
+      "numpyro_mcse": 0.00287840879613765,
+      "absolute_difference": 0.003331752584701253,
+      "four_combined_mcse": 0.016211089759305828,
+      "passed": true,
+      "acceptance_gate": true
+    },
+    "sigma": {
+      "pymc_mean": 0.7472097967382404,
+      "numpyro_mean": 0.7490353792776885,
+      "pymc_mcse": 0.001364794858196294,
+      "numpyro_mcse": 0.001560885523577658,
+      "absolute_difference": 0.0018255825394480896,
+      "four_combined_mcse": 0.008293639608927643,
+      "passed": true,
+      "acceptance_gate": true
+    },
+    "1|county[C0]": {
+      "pymc_mean": -0.4196364385060547,
+      "numpyro_mean": -0.4247383671649432,
+      "pymc_mcse": 0.007532573348486553,
+      "numpyro_mcse": 0.007475678798462079,
+      "absolute_difference": 0.005101928658888477,
+      "four_combined_mcse": 0.04245005248488729,
+      "passed": true,
+      "acceptance_gate": false
+    },
+    "1|county[C1]": {
+      "pymc_mean": -0.5254081555754715,
+      "numpyro_mean": -0.5281553243595747,
+      "pymc_mcse": 0.008199799403057794,
+      "numpyro_mcse": 0.007797361696321412,
+      "absolute_difference": 0.0027471687841031933,
+      "four_combined_mcse": 0.04526111968100609,
+      "passed": true,
+      "acceptance_gate": false
+    },
+    "1|county[C2]": {
+      "pymc_mean": -0.025006660622442094,
+      "numpyro_mean": -0.032291618991251186,
+      "pymc_mcse": 0.007770067324418124,
+      "numpyro_mcse": 0.007245713048714403,
+      "absolute_difference": 0.007284958368809092,
+      "four_combined_mcse": 0.04249692766500664,
+      "passed": true,
+      "acceptance_gate": false
+    },
+    "1|county[C3]": {
+      "pymc_mean": 0.3352443202985672,
+      "numpyro_mean": 0.3287571218752961,
+      "pymc_mcse": 0.0077047302052885396,
+      "numpyro_mcse": 0.007114332490762987,
+      "absolute_difference": 0.006487198423271112,
+      "four_combined_mcse": 0.041947890402338275,
+      "passed": true,
+      "acceptance_gate": false
+    },
+    "1|county[C4]": {
+      "pymc_mean": 0.35021638459959187,
+      "numpyro_mean": 0.34565613341576423,
+      "pymc_mcse": 0.007962395813069012,
+      "numpyro_mcse": 0.007418677741491647,
+      "absolute_difference": 0.004560251183827635,
+      "four_combined_mcse": 0.04353141881741647,
+      "passed": true,
+      "acceptance_gate": false
+    },
+    "1|county[C5]": {
+      "pymc_mean": 0.29410531712615035,
+      "numpyro_mean": 0.2846962744101497,
+      "pymc_mcse": 0.007969230555255256,
+      "numpyro_mcse": 0.0072272178677714035,
+      "absolute_difference": 0.009409042716000626,
+      "four_combined_mcse": 0.043033254815511825,
+      "passed": true,
+      "acceptance_gate": false
+    },
+    "1|year[Y0]": {
+      "pymc_mean": 0.03815848928374672,
+      "numpyro_mean": 0.039558654921172734,
+      "pymc_mcse": 0.002448261365786589,
+      "numpyro_mcse": 0.0025995652017487677,
+      "absolute_difference": 0.0014001656374260166,
+      "four_combined_mcse": 0.014283821871387966,
+      "passed": true,
+      "acceptance_gate": false
+    },
+    "1|year[Y1]": {
+      "pymc_mean": -0.05098680864627497,
+      "numpyro_mean": -0.054063808570779366,
+      "pymc_mcse": 0.002336954278432449,
+      "numpyro_mcse": 0.002519651901748071,
+      "absolute_difference": 0.0030769999245043936,
+      "four_combined_mcse": 0.013746272807108929,
+      "passed": true,
+      "acceptance_gate": false
+    },
+    "1|year[Y2]": {
+      "pymc_mean": -0.0450140396341776,
+      "numpyro_mean": -0.04631345381328476,
+      "pymc_mcse": 0.002477661728539535,
+      "numpyro_mcse": 0.0024987401554072333,
+      "absolute_difference": 0.0012994141791071653,
+      "four_combined_mcse": 0.01407551633457989,
+      "passed": true,
+      "acceptance_gate": false
+    },
+    "1|year[Y3]": {
+      "pymc_mean": 0.009690126082602784,
+      "numpyro_mean": 0.006536885441377942,
+      "pymc_mcse": 0.0021253656631476867,
+      "numpyro_mcse": 0.0023327349219050965,
+      "absolute_difference": 0.003153240641224842,
+      "four_combined_mcse": 0.012623046489948633,
+      "passed": true,
+      "acceptance_gate": false
+    },
+    "1|year[Y4]": {
+      "pymc_mean": 0.06131161656834332,
+      "numpyro_mean": 0.06397706865847452,
+      "pymc_mcse": 0.0025523077240930114,
+      "numpyro_mcse": 0.0028172912644515366,
+      "absolute_difference": 0.0026654520901312,
+      "four_combined_mcse": 0.01520600133485186,
+      "passed": true,
+      "acceptance_gate": false
+    }
+  },
+  "five_scalar_mean_gate": true,
+  "record_comparison": {
+    "k": 4.0,
+    "rows": {
+      "Intercept": {
+        "mean_a": 0.32534065172599347,
+        "mean_b": 0.3315964626534278,
+        "diff": 0.006255810927434324,
+        "tol": 0.04313311234135112,
+        "agree": true
+      },
+      "x": {
+        "mean_a": 0.5991266882405701,
+        "mean_b": 0.6016617592712928,
+        "diff": 0.002535071030722702,
+        "tol": 0.012009853045262456,
+        "agree": true
+      },
+      "1|county_sigma": {
+        "mean_a": 0.539710457937866,
+        "mean_b": 0.5304923801098657,
+        "diff": 0.009218077828000326,
+        "tol": 0.03605061101787999,
+        "agree": true
+      },
+      "1|year_sigma": {
+        "mean_a": 0.14251056915378618,
+        "mean_b": 0.14584232173848743,
+        "diff": 0.003331752584701253,
+        "tol": 0.016211089759305804,
+        "agree": true
+      },
+      "sigma": {
+        "mean_a": 0.7472097967382404,
+        "mean_b": 0.7490353792776885,
+        "diff": 0.0018255825394480896,
+        "tol": 0.008293639608927527,
+        "agree": true
+      }
+    },
+    "agree": true,
+    "a": "cpu",
+    "b": "cpu:cpu(id=0)",
+    "unequal_parameter_sets_refused": true,
+    "passed": true
+  },
+  "outputs": {
+    "pymc": {
+      "path": "/private/tmp/autobayes-multiple-intercepts-cpu-validation-1/pymc.nc",
+      "sha256": "e46fb305624d0ed1283da14d2b1d0df50858b2f72ab54ff2a3e2353c192d9665",
+      "bytes": 823220,
+      "fit_wall_seconds": 19.687293750001118,
+      "fit_and_serialization_seconds": 20.08878587500658,
+      "metadata": {
+        "backend": "pymc",
+        "device_requested": "cpu",
+        "device_actual": "cpu",
+        "platform": "cpu",
+        "dtype": "float64",
+        "chain_method": null,
+        "chains": 4,
+        "draws": 1000,
+        "tune": 1000,
+        "target_accept": 0.99,
+        "seed": 109,
+        "notes": []
+      }
+    },
+    "numpyro": {
+      "path": "/private/tmp/autobayes-multiple-intercepts-cpu-validation-1/numpyro.nc",
+      "sha256": "454311f7a379669d8716820b7681c366e8cbe95e0089b9ac084816e44de14171",
+      "bytes": 680171,
+      "fit_wall_seconds": 4.7683077919937205,
+      "fit_and_serialization_seconds": 4.839904583001044,
+      "metadata": {
+        "backend": "numpyro",
+        "device_requested": "cpu",
+        "device_actual": "cpu:cpu(id=0)",
+        "platform": "cpu",
+        "dtype": "float64",
+        "chain_method": "parallel",
+        "chains": 4,
+        "draws": 1000,
+        "tune": 1000,
+        "target_accept": 0.99,
+        "seed": 113,
+        "notes": []
+      }
+    }
+  },
+  "initial_integrity": {
+    "head": "40613ed44db44a7ab84af46b38cad0421f49eb25",
+    "status": "",
+    "hashes_verified": 37
+  },
+  "final_integrity": {
+    "head": "40613ed44db44a7ab84af46b38cad0421f49eb25",
+    "status": "",
+    "hashes_verified": 37
+  },
+  "new_response_draws": 0,
+  "limitations": "One crossed Gaussian CPU backend/API check; no statistical calibration, all-family sampling, novel-group accuracy or GPU claim."
+}

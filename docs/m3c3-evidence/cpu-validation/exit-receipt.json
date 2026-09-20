@@ -1,0 +1,36 @@
+{
+  "started_utc": "2026-09-20T14:21:13.523073+00:00",
+  "command": [
+    "/Users/andrewdou/iqss-research/projects/AutoBayes-worktrees/m3c3-multiple-intercepts/.venv/bin/python",
+    "-B",
+    "-u",
+    "/private/tmp/autobayes-multiple-intercepts-cpu-validation-1/run.py"
+  ],
+  "cwd": "/private/tmp/autobayes-multiple-intercepts-cpu-validation-1",
+  "env_overrides": {
+    "PYTHONDONTWRITEBYTECODE": "1",
+    "JAX_PLATFORMS": "cpu",
+    "AUTOBAYES_HOST_DEVICES": "4",
+    "JAX_ENABLE_X64": "true",
+    "PYTENSOR_FLAGS": "floatX=float64,compiledir=/private/tmp/autobayes-multiple-intercepts-cpu-validation-1/pytensor-cache",
+    "MPLCONFIGDIR": "/private/tmp/autobayes-multiple-intercepts-cpu-validation-1/mpl-cache",
+    "NUMBA_CACHE_DIR": "/private/tmp/autobayes-multiple-intercepts-cpu-validation-1/numba-cache",
+    "OPENBLAS_NUM_THREADS": "1",
+    "OMP_NUM_THREADS": "1",
+    "VECLIB_MAXIMUM_THREADS": "1"
+  },
+  "deadline_seconds": 600,
+  "termination_grace_seconds": 3,
+  "timeout": false,
+  "term_sent": false,
+  "kill_sent": false,
+  "freeze_sha256": "79c6bee9fa74758dd1b6b79d8cff43e5e1eb1d49f9379bdb4df7ddbfc44bef10",
+  "pid": 3775,
+  "pgid": 3775,
+  "child_exit_code": 0,
+  "exit_code": 0,
+  "wall_seconds": 86.42034725000849,
+  "finished_utc": "2026-09-20T14:22:39.944185+00:00",
+  "child_reaped": true,
+  "owned_group_still_live": false
+}
