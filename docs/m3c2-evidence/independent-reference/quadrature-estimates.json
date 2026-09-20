@@ -1,0 +1,418 @@
+{
+  "estimates": {
+    "primary128": {
+      "log_normalizer": -9.835717167656217,
+      "means": {
+        "dose": 0.2623834605516127,
+        "arm[control]": 0.42007499119357233,
+        "arm[treated]": 1.6390087133758529,
+        "dose:arm[treated]": -0.0660977768461912,
+        "sigma": 0.6464413266722232
+      },
+      "sigma_cdf": {
+        "0.2": 0.0014127149681933632,
+        "0.3": 0.053161091819665746,
+        "0.4": 0.2012431235165989,
+        "0.6": 0.5401858876500026,
+        "1.0": 0.8798363217074394
+      }
+    },
+    "primary256": {
+      "log_normalizer": -9.835717167656208,
+      "means": {
+        "dose": 0.26238346055161266,
+        "arm[control]": 0.42007499119357267,
+        "arm[treated]": 1.639008713375852,
+        "dose:arm[treated]": -0.06609777684619109,
+        "sigma": 0.646441326672223
+      },
+      "sigma_cdf": {
+        "0.2": 0.00141271496819321,
+        "0.3": 0.05316109181966244,
+        "0.4": 0.20124312351659068,
+        "0.6": 0.5401858876499902,
+        "1.0": 0.8798363217074316
+      }
+    },
+    "expanded256": {
+      "log_normalizer": -9.835717167656208,
+      "means": {
+        "dose": 0.26238346055161266,
+        "arm[control]": 0.4200749911935722,
+        "arm[treated]": 1.639008713375852,
+        "dose:arm[treated]": -0.06609777684619116,
+        "sigma": 0.6464413266722226
+      },
+      "sigma_cdf": {
+        "0.2": 0.0014127149681932303,
+        "0.3": 0.0531610918196631,
+        "0.4": 0.20124312351659174,
+        "0.6": 0.5401858876499911,
+        "1.0": 0.8798363217074316
+      }
+    }
+  },
+  "evaluations": 3840,
+  "rules": [
+    {
+      "name": "primary128_full",
+      "sigma_interval": [
+        0.02,
+        12.0
+      ],
+      "nodes": 128,
+      "log_normalizer": -9.835717167656217,
+      "means": {
+        "dose": 0.2623834605516127,
+        "arm[control]": 0.42007499119357233,
+        "arm[treated]": 1.6390087133758529,
+        "dose:arm[treated]": -0.0660977768461912,
+        "sigma": 0.6464413266722232
+      },
+      "min_log_integrand": -604.8247935065733,
+      "max_log_integrand": -9.962024870379606,
+      "weights_underflowing_to_zero": 0,
+      "cumulative_target_evaluations": 128
+    },
+    {
+      "name": "primary128_cdf_0p2",
+      "sigma_interval": [
+        0.02,
+        0.2
+      ],
+      "nodes": 128,
+      "log_normalizer": -16.39795908430819,
+      "means": {
+        "dose": 0.2934332292784496,
+        "arm[control]": 0.40538087032665604,
+        "arm[treated]": 1.7837606622104023,
+        "dose:arm[treated]": -0.18241066840124,
+        "sigma": 0.18702009238009953
+      },
+      "min_log_integrand": -605.2542885723117,
+      "max_log_integrand": -13.850762372689823,
+      "weights_underflowing_to_zero": 0,
+      "cumulative_target_evaluations": 256
+    },
+    {
+      "name": "primary128_cdf_0p3",
+      "sigma_interval": [
+        0.02,
+        0.3
+      ],
+      "nodes": 128,
+      "log_normalizer": -12.770145674635788,
+      "means": {
+        "dose": 0.28766534157264323,
+        "arm[control]": 0.40992308400128963,
+        "arm[treated]": 1.7682111586190419,
+        "dose:arm[treated]": -0.16626351590225694,
+        "sigma": 0.2641645956125542
+      },
+      "min_log_integrand": -605.2117416978768,
+      "max_log_integrand": -10.983331797010948,
+      "weights_underflowing_to_zero": 0,
+      "cumulative_target_evaluations": 384
+    },
+    {
+      "name": "primary128_cdf_0p4",
+      "sigma_interval": [
+        0.02,
+        0.4
+      ],
+      "nodes": 128,
+      "log_normalizer": -11.43895869978507,
+      "means": {
+        "dose": 0.2819964015155999,
+        "arm[control]": 0.4141506369127589,
+        "arm[treated]": 1.751293825354784,
+        "dose:arm[treated]": -0.14951734316263504,
+        "sigma": 0.33023365198358584
+      },
+      "min_log_integrand": -605.1815560452501,
+      "max_log_integrand": -10.187603523934257,
+      "weights_underflowing_to_zero": 0,
+      "cumulative_target_evaluations": 512
+    },
+    {
+      "name": "primary128_cdf_0p6",
+      "sigma_interval": [
+        0.02,
+        0.6
+      ],
+      "nodes": 128,
+      "log_normalizer": -10.451559129926892,
+      "means": {
+        "dose": 0.2729978990489371,
+        "arm[control]": 0.42003212726532885,
+        "arm[treated]": 1.718832174158641,
+        "dose:arm[treated]": -0.11999530122218531,
+        "sigma": 0.43444276313594876
+      },
+      "min_log_integrand": -605.1390143392197,
+      "max_log_integrand": -9.961081426655713,
+      "weights_underflowing_to_zero": 0,
+      "cumulative_target_evaluations": 640
+    },
+    {
+      "name": "primary128_cdf_1p0",
+      "sigma_interval": [
+        0.02,
+        1.0
+      ],
+      "nodes": 128,
+      "log_normalizer": -9.963736554525614,
+      "means": {
+        "dose": 0.2647487087222242,
+        "arm[control]": 0.42287373251928817,
+        "arm[treated]": 1.6726214803857749,
+        "dose:arm[treated]": -0.08475138420247001,
+        "sigma": 0.5600900057734083
+      },
+      "min_log_integrand": -605.0854224315366,
+      "max_log_integrand": -9.961370277020855,
+      "weights_underflowing_to_zero": 0,
+      "cumulative_target_evaluations": 768
+    },
+    {
+      "name": "primary256_full",
+      "sigma_interval": [
+        0.02,
+        12.0
+      ],
+      "nodes": 256,
+      "log_normalizer": -9.835717167656208,
+      "means": {
+        "dose": 0.26238346055161266,
+        "arm[control]": 0.42007499119357267,
+        "arm[treated]": 1.639008713375852,
+        "dose:arm[treated]": -0.06609777684619109,
+        "sigma": 0.646441326672223
+      },
+      "min_log_integrand": -605.3274417001408,
+      "max_log_integrand": -9.96106601872815,
+      "weights_underflowing_to_zero": 0,
+      "cumulative_target_evaluations": 1024
+    },
+    {
+      "name": "primary256_cdf_0p2",
+      "sigma_interval": [
+        0.02,
+        0.2
+      ],
+      "nodes": 256,
+      "log_normalizer": -16.39795908430829,
+      "means": {
+        "dose": 0.29343322927844945,
+        "arm[control]": 0.4053808703266546,
+        "arm[treated]": 1.7837606622104036,
+        "dose:arm[treated]": -0.18241066840124018,
+        "sigma": 0.18702009238009806
+      },
+      "min_log_integrand": -605.4352988159571,
+      "max_log_integrand": -13.849115939999884,
+      "weights_underflowing_to_zero": 0,
+      "cumulative_target_evaluations": 1280
+    },
+    {
+      "name": "primary256_cdf_0p3",
+      "sigma_interval": [
+        0.02,
+        0.3
+      ],
+      "nodes": 256,
+      "log_normalizer": -12.770145674635842,
+      "means": {
+        "dose": 0.28766534157264373,
+        "arm[control]": 0.409923084001289,
+        "arm[treated]": 1.7682111586190423,
+        "dose:arm[treated]": -0.16626351590225755,
+        "sigma": 0.2641645956125526
+      },
+      "min_log_integrand": -605.424616802932,
+      "max_log_integrand": -10.982600840512879,
+      "weights_underflowing_to_zero": 0,
+      "cumulative_target_evaluations": 1536
+    },
+    {
+      "name": "primary256_cdf_0p4",
+      "sigma_interval": [
+        0.02,
+        0.4
+      ],
+      "nodes": 256,
+      "log_normalizer": -11.438958699785102,
+      "means": {
+        "dose": 0.281996401515601,
+        "arm[control]": 0.4141506369127587,
+        "arm[treated]": 1.7512938253547867,
+        "dose:arm[treated]": -0.14951734316263698,
+        "sigma": 0.3302336519835839
+      },
+      "min_log_integrand": -605.417037908173,
+      "max_log_integrand": -10.187284427794221,
+      "weights_underflowing_to_zero": 0,
+      "cumulative_target_evaluations": 1792
+    },
+    {
+      "name": "primary256_cdf_0p6",
+      "sigma_interval": [
+        0.02,
+        0.6
+      ],
+      "nodes": 256,
+      "log_normalizer": -10.451559129926906,
+      "means": {
+        "dose": 0.27299789904893734,
+        "arm[control]": 0.4200321272653289,
+        "arm[treated]": 1.7188321741586423,
+        "dose:arm[treated]": -0.11999530122218603,
+        "sigma": 0.43444276313594554
+      },
+      "min_log_integrand": -605.4063562202177,
+      "max_log_integrand": -9.961069647132355,
+      "weights_underflowing_to_zero": 0,
+      "cumulative_target_evaluations": 2048
+    },
+    {
+      "name": "primary256_cdf_1p0",
+      "sigma_interval": [
+        0.02,
+        1.0
+      ],
+      "nodes": 256,
+      "log_normalizer": -9.963736554525614,
+      "means": {
+        "dose": 0.26474870872222434,
+        "arm[control]": 0.42287373251928784,
+        "arm[treated]": 1.6726214803857757,
+        "dose:arm[treated]": -0.08475138420247078,
+        "sigma": 0.5600900057734053
+      },
+      "min_log_integrand": -605.3928991553958,
+      "max_log_integrand": -9.96106259850538,
+      "weights_underflowing_to_zero": 0,
+      "cumulative_target_evaluations": 2304
+    },
+    {
+      "name": "expanded256_full",
+      "sigma_interval": [
+        0.01,
+        16.0
+      ],
+      "nodes": 256,
+      "log_normalizer": -9.835717167656208,
+      "means": {
+        "dose": 0.26238346055161266,
+        "arm[control]": 0.4200749911935722,
+        "arm[treated]": 1.639008713375852,
+        "dose:arm[treated]": -0.06609777684619116,
+        "sigma": 0.6464413266722226
+      },
+      "min_log_integrand": -2404.0245165855417,
+      "max_log_integrand": -9.961134562319714,
+      "weights_underflowing_to_zero": 46,
+      "cumulative_target_evaluations": 2560
+    },
+    {
+      "name": "expanded256_cdf_0p2",
+      "sigma_interval": [
+        0.01,
+        0.2
+      ],
+      "nodes": 256,
+      "log_normalizer": -16.397959084308276,
+      "means": {
+        "dose": 0.29343322927845056,
+        "arm[control]": 0.40538087032665454,
+        "arm[treated]": 1.7837606622104034,
+        "dose:arm[treated]": -0.18241066840124093,
+        "sigma": 0.18702009238009806
+      },
+      "min_log_integrand": -2404.4865308580283,
+      "max_log_integrand": -13.849281989942758,
+      "weights_underflowing_to_zero": 74,
+      "cumulative_target_evaluations": 2816
+    },
+    {
+      "name": "expanded256_cdf_0p3",
+      "sigma_interval": [
+        0.01,
+        0.3
+      ],
+      "nodes": 256,
+      "log_normalizer": -12.77014567463583,
+      "means": {
+        "dose": 0.28766534157264373,
+        "arm[control]": 0.4099230840012892,
+        "arm[treated]": 1.768211158619043,
+        "dose:arm[treated]": -0.16626351590225716,
+        "sigma": 0.2641645956125529
+      },
+      "min_log_integrand": -2404.443777364007,
+      "max_log_integrand": -10.982663518597018,
+      "weights_underflowing_to_zero": 69,
+      "cumulative_target_evaluations": 3072
+    },
+    {
+      "name": "expanded256_cdf_0p4",
+      "sigma_interval": [
+        0.01,
+        0.4
+      ],
+      "nodes": 256,
+      "log_normalizer": -11.438958699785097,
+      "means": {
+        "dose": 0.2819964015156006,
+        "arm[control]": 0.4141506369127583,
+        "arm[treated]": 1.7512938253547863,
+        "dose:arm[treated]": -0.1495173431626365,
+        "sigma": 0.3302336519835838
+      },
+      "min_log_integrand": -2404.413443706104,
+      "max_log_integrand": -10.187309158245846,
+      "weights_underflowing_to_zero": 67,
+      "cumulative_target_evaluations": 3328
+    },
+    {
+      "name": "expanded256_cdf_0p6",
+      "sigma_interval": [
+        0.01,
+        0.6
+      ],
+      "nodes": 256,
+      "log_normalizer": -10.451559129926904,
+      "means": {
+        "dose": 0.2729978990489375,
+        "arm[control]": 0.4200321272653293,
+        "arm[treated]": 1.718832174158644,
+        "dose:arm[treated]": -0.11999530122218613,
+        "sigma": 0.4344427631359462
+      },
+      "min_log_integrand": -2404.370691486624,
+      "max_log_integrand": -9.961075272210804,
+      "weights_underflowing_to_zero": 63,
+      "cumulative_target_evaluations": 3584
+    },
+    {
+      "name": "expanded256_cdf_1p0",
+      "sigma_interval": [
+        0.01,
+        1.0
+      ],
+      "nodes": 256,
+      "log_normalizer": -9.963736554525614,
+      "means": {
+        "dose": 0.2647487087222244,
+        "arm[control]": 0.4228737325192876,
+        "arm[treated]": 1.6726214803857755,
+        "dose:arm[treated]": -0.08475138420247064,
+        "sigma": 0.5600900057734055
+      },
+      "min_log_integrand": -2404.3168311594754,
+      "max_log_integrand": -9.961226959077777,
+      "weights_underflowing_to_zero": 59,
+      "cumulative_target_evaluations": 3840
+    }
+  ]
+}

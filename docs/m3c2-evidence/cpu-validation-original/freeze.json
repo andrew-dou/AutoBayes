@@ -1,0 +1,283 @@
+{
+  "frozen_at": "2026-09-19T20:17:48.883192+00:00",
+  "head": "6a58eb3c9b8ab510aa8bd5d3d04936e64990dace",
+  "config": {
+    "formula": "y ~ 0 + dose + arm + dose:arm",
+    "data": [
+      {
+        "y": 0.2,
+        "dose": 0.0,
+        "arm": "control"
+      },
+      {
+        "y": 1.1,
+        "dose": 1.0,
+        "arm": "control"
+      },
+      {
+        "y": 0.8,
+        "dose": 2.0,
+        "arm": "control"
+      },
+      {
+        "y": 2.0,
+        "dose": 0.0,
+        "arm": "treated"
+      },
+      {
+        "y": 1.5,
+        "dose": 1.0,
+        "arm": "treated"
+      },
+      {
+        "y": 2.2,
+        "dose": 2.0,
+        "arm": "treated"
+      }
+    ],
+    "newdata": [
+      {
+        "dose": 0.0,
+        "arm": "control"
+      },
+      {
+        "dose": -1.5,
+        "arm": "treated"
+      },
+      {
+        "dose": 3.0,
+        "arm": "control"
+      },
+      {
+        "dose": 0.5,
+        "arm": "treated"
+      }
+    ],
+    "coefficient_labels": [
+      "dose",
+      "arm[control]",
+      "arm[treated]",
+      "dose:arm[treated]"
+    ],
+    "parameter_labels": [
+      "dose",
+      "arm[control]",
+      "arm[treated]",
+      "dose:arm[treated]",
+      "sigma"
+    ],
+    "record_priors": {
+      "b:dose": "Normal(mu=0, sigma=1)",
+      "b:arm[control]": "Normal(mu=0, sigma=2)",
+      "b:arm[treated]": "Normal(mu=0, sigma=2)",
+      "b:dose:arm[treated]": "Normal(mu=0, sigma=1)",
+      "sigma": "HalfNormal(sigma=1)"
+    },
+    "fits": [
+      {
+        "backend": "pymc",
+        "device": "cpu",
+        "chains": 4,
+        "tune": 1000,
+        "draws": 1000,
+        "target_accept": 0.9,
+        "seed": 37,
+        "cores": 4,
+        "progressbar": false
+      },
+      {
+        "backend": "numpyro",
+        "device": "cpu",
+        "chains": 4,
+        "tune": 1000,
+        "draws": 1000,
+        "target_accept": 0.9,
+        "seed": 41,
+        "chain_method": "parallel",
+        "progressbar": false
+      }
+    ],
+    "deadline_seconds": 600,
+    "depth_policy": "Use inspected pinned defaults, asserted by runtime signatures before fitting. No sampler depth kwargs forwarded. PyMC early warmup depth defaults to8; retained sampling maximum10. NumPyro maximum10.",
+    "maximum_tree_depth": 10,
+    "thresholds": {
+      "rhat_max": 1.01,
+      "ess_bulk_min": 400,
+      "ess_tail_min": 400,
+      "bfmi_min": 0.3,
+      "divergences_max": 0,
+      "saturated_draws_max": 0,
+      "mean_agreement_combined_mcse_factor": 4,
+      "prediction_atol": 1e-10,
+      "prediction_rtol": 1e-10
+    },
+    "unused_eigenvalue_placeholders": [
+      "smallest_eigval",
+      "largest_eigval"
+    ],
+    "placeholder_rule": "Exclude only these PyMC fields when entirely NaN; a mixed nonfinite field fails. All other sample_stats must be complete and finite.",
+    "core_sampler_statistics": {
+      "pymc": [
+        "diverging",
+        "energy",
+        "lp",
+        "tree_depth",
+        "n_steps",
+        "acceptance_rate",
+        "step_size",
+        "step_size_bar",
+        "reached_max_treedepth"
+      ],
+      "numpyro": [
+        "diverging",
+        "energy",
+        "lp",
+        "tree_depth",
+        "n_steps",
+        "acceptance_rate",
+        "step_size"
+      ]
+    },
+    "execution_policy": "Execute each prespecified backend once, serialize immediately, then evaluate retained draws. Any execution exception stops. Gate failures remain failures, with no retry or repair.",
+    "expected_versions": {
+      "pymc": "5.28.5",
+      "pytensor": "2.38.3",
+      "bambi": "0.17.2",
+      "formulae": "0.6.2",
+      "arviz": "0.23.4",
+      "numpy": "2.4.6",
+      "pandas": "3.0.5",
+      "scipy": "1.17.1",
+      "xarray": "2026.7.0",
+      "matplotlib": "3.10.9",
+      "jax": "0.10.2",
+      "jaxlib": "0.10.2",
+      "numpyro": "0.21.0",
+      "pytest": "9.1.1"
+    },
+    "env_overrides": {
+      "PYTHONDONTWRITEBYTECODE": "1",
+      "PYTHONPATH": "/Users/andrewdou/iqss-research/projects/AutoBayes-worktrees/m3c2-intercept-controls",
+      "PYTENSOR_FLAGS": "compiledir=/private/tmp/autobayes-intercept-cpu-validation/attempt-1/pytensor-cache",
+      "JAX_PLATFORMS": "cpu",
+      "AUTOBAYES_HOST_DEVICES": "4",
+      "MPLCONFIGDIR": "/private/tmp/autobayes-intercept-cpu-validation/attempt-1/matplotlib-cache",
+      "OMP_NUM_THREADS": "1",
+      "OPENBLAS_NUM_THREADS": "1",
+      "MKL_NUM_THREADS": "1"
+    }
+  },
+  "inputs": [
+    {
+      "path": "/Users/andrewdou/iqss-research/projects/AutoBayes-worktrees/m3c2-intercept-controls/autobayes/__init__.py",
+      "sha256": "4a67d899c0e51191e1a704bde58ba5477ecb7c2758a619b7fc131c5a94706ebd",
+      "bytes": 2802
+    },
+    {
+      "path": "/Users/andrewdou/iqss-research/projects/AutoBayes-worktrees/m3c2-intercept-controls/autobayes/diagnostics.py",
+      "sha256": "79bd2634824c19180afff1882896098d72d82a631ebfdb00aba90081ee7bd9b9",
+      "bytes": 3045
+    },
+    {
+      "path": "/Users/andrewdou/iqss-research/projects/AutoBayes-worktrees/m3c2-intercept-controls/autobayes/formula.py",
+      "sha256": "3f3a46d065d90cc16aeda38aef1cae3c1d88117b0f2f7f5ddbd6526dcb3ce460",
+      "bytes": 33672
+    },
+    {
+      "path": "/Users/andrewdou/iqss-research/projects/AutoBayes-worktrees/m3c2-intercept-controls/autobayes/inference.py",
+      "sha256": "8d21b5adaba9349bf5f90028a0bb3e9b59c59781bde0172ef9d48dbe6a000d4b",
+      "bytes": 7209
+    },
+    {
+      "path": "/Users/andrewdou/iqss-research/projects/AutoBayes-worktrees/m3c2-intercept-controls/autobayes/likelihoods.py",
+      "sha256": "70156b9f74d6e0c2e330cfe20806bddffd3d1ed7dabf183c683a68351e8a2988",
+      "bytes": 8907
+    },
+    {
+      "path": "/Users/andrewdou/iqss-research/projects/AutoBayes-worktrees/m3c2-intercept-controls/autobayes/model.py",
+      "sha256": "cd6dae82567f9825317c9d3e07cdfc1a7e6a3bf331aa885fafccf5d6935f68b5",
+      "bytes": 33218
+    },
+    {
+      "path": "/Users/andrewdou/iqss-research/projects/AutoBayes-worktrees/m3c2-intercept-controls/autobayes/predict.py",
+      "sha256": "ad606f068f89e80802b70c6b1a18c6fcc7c328b669466fd79e44df9b1f23cbdd",
+      "bytes": 13211
+    },
+    {
+      "path": "/Users/andrewdou/iqss-research/projects/AutoBayes-worktrees/m3c2-intercept-controls/autobayes/priors.py",
+      "sha256": "4343b64a044da3c5424bd4a78c745a24ccb22dba84477922d4a903e8a97e2fe7",
+      "bytes": 12549
+    },
+    {
+      "path": "/Users/andrewdou/iqss-research/projects/AutoBayes-worktrees/m3c2-intercept-controls/autobayes/session.py",
+      "sha256": "5fbdf38c54638b594926522acf6b6ad4610f52cd298f44e448d7fb1efa6e776d",
+      "bytes": 7964
+    },
+    {
+      "path": "/Users/andrewdou/iqss-research/projects/AutoBayes-worktrees/m3c2-intercept-controls/examples/m3c2_no_intercept.py",
+      "sha256": "973161a5c2d402dc9e593470668ef364e8fb0cd57358466737e2cba4206a9614",
+      "bytes": 900
+    },
+    {
+      "path": "/Users/andrewdou/iqss-research/projects/AutoBayes-worktrees/m3c2-intercept-controls/pyproject.toml",
+      "sha256": "62447b3350715558fde9041ae873112933b0c1615cc4aaac77c6a9a7261aa36b",
+      "bytes": 1299
+    },
+    {
+      "path": "/Users/andrewdou/iqss-research/projects/AutoBayes-worktrees/m3c2-intercept-controls/uv.lock",
+      "sha256": "79d8c3389fa83e046f0f8a6d433fb844725b15412a5aaa985f18a3479d2d99ce",
+      "bytes": 84024
+    },
+    {
+      "path": "/Users/andrewdou/iqss-research/plans/2026-09-19-autobayes-intercept-cpu-validation.md",
+      "sha256": "facda950f273eb3e273da414906ad943199f54899068c35066a3a7521d94f789",
+      "bytes": 3026
+    },
+    {
+      "path": "/private/tmp/autobayes-intercept-cpu-validation/acceptance.py",
+      "sha256": "c7c27eae26e6221650be4a2abf691b41ab66f522b70424ea072cd68cfe1a9254",
+      "bytes": 16274
+    },
+    {
+      "path": "/private/tmp/autobayes-intercept-cpu-validation/supervisor.py",
+      "sha256": "bd46917ff7c4f5cb2ae53797215a1f2e902b4024adb2b96c1b55adf6e8f9a7df",
+      "bytes": 3019
+    },
+    {
+      "path": "/Users/andrewdou/iqss-research/projects/AutoBayes-worktrees/m3c2-intercept-controls/.venv/lib/python3.11/site-packages/pymc/step_methods/hmc/nuts.py",
+      "sha256": "40281225a811b3c70e2868240bb5989e3a4ed58b2ea68afc54fa42c2e63b15ac",
+      "bytes": 20053
+    },
+    {
+      "path": "/Users/andrewdou/iqss-research/projects/AutoBayes-worktrees/m3c2-intercept-controls/.venv/lib/python3.11/site-packages/numpyro/infer/hmc.py",
+      "sha256": "49200c359acb25f50d9c99ab6fe0f2b1508832ebd85bb138eca9326cdba83b8f",
+      "bytes": 42343
+    },
+    {
+      "path": "/Users/andrewdou/iqss-research/projects/AutoBayes-worktrees/m3c2-intercept-controls/.venv/lib/python3.11/site-packages/pymc/sampling/jax.py",
+      "sha256": "862dced2f52acb6cc07511835a405854c58754867035fdc7e17c8bf5afa30746",
+      "bytes": 25749
+    },
+    {
+      "path": "/Users/andrewdou/iqss-research/projects/AutoBayes-worktrees/m3c2-intercept-controls/.venv/lib/python3.11/site-packages/bambi/backend/pymc.py",
+      "sha256": "7aae6a5b8f9438198f8da94746f3399e007f7ba362c2e6ceb7afb85b25827517",
+      "bytes": 15996
+    }
+  ],
+  "depth_default_sources": [
+    {
+      "path": "/Users/andrewdou/iqss-research/projects/AutoBayes-worktrees/m3c2-intercept-controls/.venv/lib/python3.11/site-packages/pymc/step_methods/hmc/nuts.py",
+      "line": 132,
+      "package": "pymc",
+      "version": "5.28.5",
+      "declaration": "def __init__(self, vars=None, max_treedepth=10, early_max_treedepth=8, **kwargs)"
+    },
+    {
+      "path": "/Users/andrewdou/iqss-research/projects/AutoBayes-worktrees/m3c2-intercept-controls/.venv/lib/python3.11/site-packages/numpyro/infer/hmc.py",
+      "line": 925,
+      "package": "numpyro",
+      "version": "0.21.0",
+      "declaration": "NUTS.__init__: max_tree_depth=10"
+    }
+  ]
+}

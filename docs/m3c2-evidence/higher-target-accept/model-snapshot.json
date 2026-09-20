@@ -1,0 +1,87 @@
+{
+  "data": [
+    {
+      "y": 0.2,
+      "dose": 0.0,
+      "arm": "control"
+    },
+    {
+      "y": 1.1,
+      "dose": 1.0,
+      "arm": "control"
+    },
+    {
+      "y": 0.8,
+      "dose": 2.0,
+      "arm": "control"
+    },
+    {
+      "y": 2.0,
+      "dose": 0.0,
+      "arm": "treated"
+    },
+    {
+      "y": 1.5,
+      "dose": 1.0,
+      "arm": "treated"
+    },
+    {
+      "y": 2.2,
+      "dose": 2.0,
+      "arm": "treated"
+    }
+  ],
+  "formula": "y ~ 0 + dose + arm + dose:arm",
+  "priors": {
+    "b:dose": "Normal(mu=0, sigma=1)",
+    "b:arm[control]": "Normal(mu=0, sigma=2)",
+    "b:arm[treated]": "Normal(mu=0, sigma=2)",
+    "b:dose:arm[treated]": "Normal(mu=0, sigma=1)",
+    "sigma": "HalfNormal(sigma=1)"
+  },
+  "columns": [
+    "dose",
+    "arm[control]",
+    "arm[treated]",
+    "dose:arm[treated]"
+  ],
+  "X_raw": [
+    [
+      0.0,
+      1.0,
+      0.0,
+      0.0
+    ],
+    [
+      1.0,
+      1.0,
+      0.0,
+      0.0
+    ],
+    [
+      2.0,
+      1.0,
+      0.0,
+      0.0
+    ],
+    [
+      0.0,
+      0.0,
+      1.0,
+      0.0
+    ],
+    [
+      1.0,
+      0.0,
+      1.0,
+      1.0
+    ],
+    [
+      2.0,
+      0.0,
+      1.0,
+      2.0
+    ]
+  ],
+  "describe": "AutoBayes M0 model with categorical predictor(s) and interaction(s) (population-level only)\n  formula   : y ~ 0 + dose + arm + dose:arm\n  family    : gaussian, identity link\n  data      : n = 6 observations, no group-level term (population-level model)\n  arm       : categorical, full-level coding, reference 'control'; levels (sorted) control, treated; coefficients b_arm[control, treated]\n              proportions among fitted rows: control 0.500, treated 0.500\n\nLinear predictor\n  mu_i = 0 + x_dose * b_dose + 1[arm_i = control] * b_arm[control] + 1[arm_i = treated] * b_arm[treated] + x_dose * 1[arm_i = treated] * b_dose:arm[treated]\n  b_arm[l] is the level-specific response baseline at numeric predictors zero, other categorical references, and group effect zero; the reference also has a coefficient.\n  dose:arm: the reference level 'control' has slope b_dose; non-reference level l has slope difference b_dose:arm[l], so its slope in dose is b_dose + b_dose:arm[l].\n  No population intercept or intercept prior. The raw design is used without back-transformation;\n  center_predictors requested=True, effective=False (centering requires a free intercept).\n\nGroup effects\n  none: a population-only model (no '(1 | group)' term)\n\nPriors\n  b_dose ~ Normal(mu=0, sigma=1)\n  b_arm[control] ~ Normal(mu=0, sigma=2)\n  b_arm[treated] ~ Normal(mu=0, sigma=2)\n  b_dose:arm[treated] ~ Normal(mu=0, sigma=1)\n  sigma ~ HalfNormal(sigma=1)\n\nLikelihood\n  y_i ~ Normal(mu_i, sigma)\n\nPyMC variables sampled (value space)\n  sigma_log__              log(sigma)\n  dose                     b_dose\n  arm                      b_arm[control, treated] (vector; dims arm_dim, posterior rows arm[control], arm[treated])\n  dose:arm                 b_dose:arm[treated] (vector; dims dose:arm_dim, posterior rows dose:arm[treated])\nDeterministic: mu = linear predictor"
+}

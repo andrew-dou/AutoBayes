@@ -1,0 +1,84 @@
+{
+  "checked_at": "2026-09-19T20:20:30.863917+00:00",
+  "head": "6a58eb3c9b8ab510aa8bd5d3d04936e64990dace",
+  "status_porcelain": "",
+  "frozen_inputs": [
+    {
+      "path": "/Users/andrewdou/iqss-research/projects/AutoBayes-worktrees/m3c2-intercept-controls/autobayes/__init__.py",
+      "matches": true
+    },
+    {
+      "path": "/Users/andrewdou/iqss-research/projects/AutoBayes-worktrees/m3c2-intercept-controls/autobayes/diagnostics.py",
+      "matches": true
+    },
+    {
+      "path": "/Users/andrewdou/iqss-research/projects/AutoBayes-worktrees/m3c2-intercept-controls/autobayes/formula.py",
+      "matches": true
+    },
+    {
+      "path": "/Users/andrewdou/iqss-research/projects/AutoBayes-worktrees/m3c2-intercept-controls/autobayes/inference.py",
+      "matches": true
+    },
+    {
+      "path": "/Users/andrewdou/iqss-research/projects/AutoBayes-worktrees/m3c2-intercept-controls/autobayes/likelihoods.py",
+      "matches": true
+    },
+    {
+      "path": "/Users/andrewdou/iqss-research/projects/AutoBayes-worktrees/m3c2-intercept-controls/autobayes/model.py",
+      "matches": true
+    },
+    {
+      "path": "/Users/andrewdou/iqss-research/projects/AutoBayes-worktrees/m3c2-intercept-controls/autobayes/predict.py",
+      "matches": true
+    },
+    {
+      "path": "/Users/andrewdou/iqss-research/projects/AutoBayes-worktrees/m3c2-intercept-controls/autobayes/priors.py",
+      "matches": true
+    },
+    {
+      "path": "/Users/andrewdou/iqss-research/projects/AutoBayes-worktrees/m3c2-intercept-controls/autobayes/session.py",
+      "matches": true
+    },
+    {
+      "path": "/Users/andrewdou/iqss-research/projects/AutoBayes-worktrees/m3c2-intercept-controls/examples/m3c2_no_intercept.py",
+      "matches": true
+    },
+    {
+      "path": "/Users/andrewdou/iqss-research/projects/AutoBayes-worktrees/m3c2-intercept-controls/pyproject.toml",
+      "matches": true
+    },
+    {
+      "path": "/Users/andrewdou/iqss-research/projects/AutoBayes-worktrees/m3c2-intercept-controls/uv.lock",
+      "matches": true
+    },
+    {
+      "path": "/Users/andrewdou/iqss-research/plans/2026-09-19-autobayes-intercept-cpu-validation.md",
+      "matches": true
+    },
+    {
+      "path": "/private/tmp/autobayes-intercept-cpu-validation/acceptance.py",
+      "matches": true
+    },
+    {
+      "path": "/private/tmp/autobayes-intercept-cpu-validation/supervisor.py",
+      "matches": true
+    },
+    {
+      "path": "/Users/andrewdou/iqss-research/projects/AutoBayes-worktrees/m3c2-intercept-controls/.venv/lib/python3.11/site-packages/pymc/step_methods/hmc/nuts.py",
+      "matches": true
+    },
+    {
+      "path": "/Users/andrewdou/iqss-research/projects/AutoBayes-worktrees/m3c2-intercept-controls/.venv/lib/python3.11/site-packages/numpyro/infer/hmc.py",
+      "matches": true
+    },
+    {
+      "path": "/Users/andrewdou/iqss-research/projects/AutoBayes-worktrees/m3c2-intercept-controls/.venv/lib/python3.11/site-packages/pymc/sampling/jax.py",
+      "matches": true
+    },
+    {
+      "path": "/Users/andrewdou/iqss-research/projects/AutoBayes-worktrees/m3c2-intercept-controls/.venv/lib/python3.11/site-packages/bambi/backend/pymc.py",
+      "matches": true
+    }
+  ],
+  "all_frozen_inputs_match": true
+}

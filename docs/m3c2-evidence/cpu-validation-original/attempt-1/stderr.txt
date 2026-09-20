@@ -1,0 +1,18 @@
+Matplotlib is building the font cache; this may take a moment.
+Initializing NUTS using jitter+adapt_diag...
+Multiprocess sampling (4 chains in 4 jobs)
+NUTS: [sigma, dose, arm, dose:arm]
+Sampling 4 chains for 1_000 tune and 1_000 draw iterations (4_000 + 4_000 draws total) took 1 seconds.
+There were 3 divergences after tuning. Increase `target_accept` or reparameterize.
+There were 6 divergences after tuning. Increase `target_accept` or reparameterize.
+Traceback (most recent call last):
+  File "/private/tmp/autobayes-intercept-cpu-validation/acceptance.py", line 258, in <module>
+    exit_code = main()
+                ^^^^^^
+  File "/private/tmp/autobayes-intercept-cpu-validation/acceptance.py", line 228, in main
+    diagnostics = analyze_draws(fit.idata, backend, config)
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/private/tmp/autobayes-intercept-cpu-validation/acceptance.py", line 88, in analyze_draws
+    'mcse_mean': float(az.mcse(value, method='mean')),
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+TypeError: only 0-dimensional arrays can be converted to Python scalars

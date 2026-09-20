@@ -1,0 +1,294 @@
+{
+  "review_type": "Independent retained-draw review of the prospective0.99 configuration; no new fits. Historical0.9 failure remains unchanged.",
+  "backends": {
+    "pymc": {
+      "sha256": "35e4589927a113cd53413ce53b1d8072e4c479eaed1dc8b0a6a69b2ad0a9db66",
+      "parameters": {
+        "dose": {
+          "shape": [
+            4,
+            1000
+          ],
+          "finite": true,
+          "mean": 0.2506996345924467,
+          "rhat": 1.001866579948222,
+          "ess_bulk": 1532.0489209101954,
+          "ess_tail": 2009.4275145746137,
+          "mcse_mean": 0.009519320488028104
+        },
+        "arm[control]": {
+          "shape": [
+            4,
+            1000
+          ],
+          "finite": true,
+          "mean": 0.438246472340788,
+          "rhat": 1.0008814301075117,
+          "ess_bulk": 1675.7382040516336,
+          "ess_tail": 1670.286371286137,
+          "mcse_mean": 0.012763267365134473
+        },
+        "arm[treated]": {
+          "shape": [
+            4,
+            1000
+          ],
+          "finite": true,
+          "mean": 1.6527167946328918,
+          "rhat": 1.00347463071881,
+          "ess_bulk": 1712.3519873132163,
+          "ess_tail": 1767.714321802367,
+          "mcse_mean": 0.012826316570447497
+        },
+        "dose:arm[treated]": {
+          "shape": [
+            4,
+            1000
+          ],
+          "finite": true,
+          "mean": -0.06280580434716974,
+          "rhat": 1.0021880126467464,
+          "ess_bulk": 1278.0242530878666,
+          "ess_tail": 1682.3756450173855,
+          "mcse_mean": 0.013704680582783691
+        },
+        "sigma": {
+          "shape": [
+            4,
+            1000
+          ],
+          "finite": true,
+          "mean": 0.6300077397891196,
+          "rhat": 1.0014414429576641,
+          "ess_bulk": 909.5806410751114,
+          "ess_tail": 2035.0544672855397,
+          "mcse_mean": 0.009243938085557166
+        }
+      },
+      "divergences": 0,
+      "max_tree_depth": 7,
+      "depth_saturation": 0,
+      "bfmi": [
+        0.704669114928662,
+        0.7201983471802358,
+        0.7682361698226027,
+        0.7146949042640622
+      ],
+      "finite_sampler_statistics": {
+        "step_size_bar": true,
+        "smallest_eigval": false,
+        "energy": true,
+        "lp": true,
+        "energy_error": true,
+        "diverging": true,
+        "acceptance_rate": true,
+        "process_time_diff": true,
+        "n_steps": true,
+        "step_size": true,
+        "index_in_trajectory": true,
+        "max_energy_error": true,
+        "perf_counter_diff": true,
+        "reached_max_treedepth": true,
+        "perf_counter_start": true,
+        "divergences": true,
+        "tree_depth": true,
+        "largest_eigval": false
+      },
+      "declared_unused_exclusions": [
+        "smallest_eigval",
+        "largest_eigval"
+      ],
+      "no_intercept": true,
+      "gates": {
+        "complete_finite": true,
+        "zero_divergences": true,
+        "rhat_le_1_01": true,
+        "bulk_ess_ge_400": true,
+        "tail_ess_ge_400": true,
+        "bfmi_ge_0_3": true,
+        "no_depth_saturation": true,
+        "active_stats_finite": true
+      }
+    },
+    "numpyro": {
+      "sha256": "83395a2419032ca4e13f08a51dd053087d212cf61332fcab9d78c130f5e81f39",
+      "parameters": {
+        "dose": {
+          "shape": [
+            4,
+            1000
+          ],
+          "finite": true,
+          "mean": 0.27278203221549,
+          "rhat": 1.0005412590770766,
+          "ess_bulk": 1531.72150178791,
+          "ess_tail": 1602.79212797835,
+          "mcse_mean": 0.009746090954196332
+        },
+        "arm[control]": {
+          "shape": [
+            4,
+            1000
+          ],
+          "finite": true,
+          "mean": 0.3940979459083261,
+          "rhat": 1.002920420920318,
+          "ess_bulk": 1470.7277157907486,
+          "ess_tail": 1655.4848138878012,
+          "mcse_mean": 0.014184572115759565
+        },
+        "arm[treated]": {
+          "shape": [
+            4,
+            1000
+          ],
+          "finite": true,
+          "mean": 1.6395378114664445,
+          "rhat": 1.003681486554672,
+          "ess_bulk": 1608.562376333691,
+          "ess_tail": 1604.1506795255293,
+          "mcse_mean": 0.014461917199215836
+        },
+        "dose:arm[treated]": {
+          "shape": [
+            4,
+            1000
+          ],
+          "finite": true,
+          "mean": -0.068139550343807,
+          "rhat": 1.0012762456685838,
+          "ess_bulk": 1523.8447734767083,
+          "ess_tail": 2061.477550903015,
+          "mcse_mean": 0.012677581244473551
+        },
+        "sigma": {
+          "shape": [
+            4,
+            1000
+          ],
+          "finite": true,
+          "mean": 0.6500683515316443,
+          "rhat": 1.003448678038653,
+          "ess_bulk": 1013.7820091533237,
+          "ess_tail": 1786.227359432854,
+          "mcse_mean": 0.00982770264475421
+        }
+      },
+      "divergences": 0,
+      "max_tree_depth": 7,
+      "depth_saturation": 0,
+      "bfmi": [
+        0.694202128608545,
+        0.7551560506470468,
+        0.7000469480738701,
+        0.6640137327694864
+      ],
+      "finite_sampler_statistics": {
+        "acceptance_rate": true,
+        "step_size": true,
+        "diverging": true,
+        "energy": true,
+        "n_steps": true,
+        "tree_depth": true,
+        "lp": true
+      },
+      "declared_unused_exclusions": [],
+      "no_intercept": true,
+      "gates": {
+        "complete_finite": true,
+        "zero_divergences": true,
+        "rhat_le_1_01": true,
+        "bulk_ess_ge_400": true,
+        "tail_ess_ge_400": true,
+        "bfmi_ge_0_3": true,
+        "no_depth_saturation": true,
+        "active_stats_finite": true
+      }
+    }
+  },
+  "comparisons": {
+    "dose": {
+      "abs_difference": 0.022082397623043315,
+      "four_combined_mcse": 0.05449458709872153,
+      "passes": true
+    },
+    "arm[control]": {
+      "abs_difference": 0.04414852643246192,
+      "four_combined_mcse": 0.076325941062377,
+      "passes": true
+    },
+    "arm[treated]": {
+      "abs_difference": 0.013178983166447278,
+      "four_combined_mcse": 0.0773212980586654,
+      "passes": true
+    },
+    "dose:arm[treated]": {
+      "abs_difference": 0.00533374599663726,
+      "four_combined_mcse": 0.07467683293620381,
+      "passes": true
+    },
+    "sigma": {
+      "abs_difference": 0.020060611742524714,
+      "four_combined_mcse": 0.05396800987300876,
+      "passes": true
+    }
+  },
+  "reference_mean_comparisons": {
+    "pymc": {
+      "dose": {
+        "absolute_difference": 0.01168382595916595,
+        "tolerance": 0.038077291952112416,
+        "passed": true
+      },
+      "arm[control]": {
+        "absolute_difference": 0.018171481147215784,
+        "tolerance": 0.051053079460537894,
+        "passed": true
+      },
+      "arm[treated]": {
+        "absolute_difference": 0.013708081257039817,
+        "tolerance": 0.05130527628178999,
+        "passed": true
+      },
+      "dose:arm[treated]": {
+        "absolute_difference": 0.0032919724990214116,
+        "tolerance": 0.05481873233113477,
+        "passed": true
+      },
+      "sigma": {
+        "absolute_difference": 0.016433586883103035,
+        "tolerance": 0.036975762342228664,
+        "passed": true
+      }
+    },
+    "numpyro": {
+      "dose": {
+        "absolute_difference": 0.010398571663877365,
+        "tolerance": 0.03898437381678533,
+        "passed": true
+      },
+      "arm[control]": {
+        "absolute_difference": 0.025977045285246136,
+        "tolerance": 0.05673829846303826,
+        "passed": true
+      },
+      "arm[treated]": {
+        "absolute_difference": 0.0005290980905925391,
+        "tolerance": 0.057847678796863346,
+        "passed": true
+      },
+      "dose:arm[treated]": {
+        "absolute_difference": 0.002041773497615848,
+        "tolerance": 0.050710334977894206,
+        "passed": true
+      },
+      "sigma": {
+        "absolute_difference": 0.003627024859421679,
+        "tolerance": 0.039310820579016845,
+        "passed": true
+      }
+    }
+  },
+  "configuration_passed": true,
+  "conclusion": "All independently recomputed diagnostic and mean-comparison gates pass for target_accept0.99. Original0.9failure remains unchanged. This is one Gaussian example, not calibration, tail accuracy or GPU validation."
+}

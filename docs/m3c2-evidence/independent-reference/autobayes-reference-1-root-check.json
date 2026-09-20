@@ -1,0 +1,17 @@
+{
+  "frozen_input_hashes": 39,
+  "saved_rules_reaggregated": 18,
+  "stored_node_count": 3840,
+  "new_target_evaluations": 0,
+  "mean_aggregation_max_abs_error": 1.9984014443252818e-15,
+  "cdf_reaggregations": 15,
+  "comparison_arithmetic_checks": 20,
+  "descriptive_flags": [
+    [
+      "numpyro",
+      "sigma_cdf",
+      "0.2"
+    ]
+  ],
+  "decision": "Reference numerical stability and arithmetic supported; original sampler acceptance remains failed. Rare-event MCSE with a single NumPyro indicator hit is not a reliable tail-accuracy gate."
+}

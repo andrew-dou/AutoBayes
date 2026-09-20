@@ -1,0 +1,167 @@
+{
+  "autobayes_version": "0.6.0",
+  "model": {
+    "formula": "y ~ 0 + dose + arm + dose:arm",
+    "family": "gaussian",
+    "link": "identity",
+    "n": 6,
+    "J": 0,
+    "group": null,
+    "intercept": false,
+    "center_predictors": false,
+    "center_predictors_requested": true,
+    "noncentered": null,
+    "priors": {
+      "b:dose": "Normal(mu=0, sigma=1)",
+      "b:arm[control]": "Normal(mu=0, sigma=2)",
+      "b:arm[treated]": "Normal(mu=0, sigma=2)",
+      "b:dose:arm[treated]": "Normal(mu=0, sigma=1)",
+      "sigma": "HalfNormal(sigma=1)"
+    },
+    "terms": [
+      "dose",
+      "arm",
+      "dose:arm"
+    ],
+    "design_columns": [
+      "dose",
+      "arm[control]",
+      "arm[treated]",
+      "dose:arm[treated]"
+    ],
+    "interactions": [
+      [
+        "dose",
+        "arm"
+      ]
+    ],
+    "canonical_formula": "y ~ 0 + dose + arm + dose:arm",
+    "categorical": {
+      "arm": {
+        "reference": "control",
+        "levels": [
+          "control",
+          "treated"
+        ],
+        "coefficients": [
+          "control",
+          "treated"
+        ],
+        "unused_levels": [],
+        "coding": "full_level"
+      }
+    },
+    "intercept_prior_applies_to": null,
+    "warnings": []
+  },
+  "execution": {
+    "backend": "numpyro",
+    "device_requested": "cpu",
+    "device_actual": "cpu:cpu(id=0)",
+    "platform": "cpu",
+    "dtype": "float64",
+    "chain_method": "parallel",
+    "chains": 4,
+    "draws": 1000,
+    "tune": 1000,
+    "target_accept": 0.9,
+    "seed": 41,
+    "wall_seconds": 2.863,
+    "notes": []
+  },
+  "environment": {
+    "python": "3.11.0",
+    "platform": "macOS-26.6.1-arm64-arm-64bit",
+    "versions": {
+      "pymc": "5.28.5",
+      "pytensor": "2.38.3",
+      "bambi": "0.17.2",
+      "formulae": "0.6.2",
+      "arviz": "0.23.4",
+      "numpyro": "0.21.0",
+      "jax": "0.10.2",
+      "jaxlib": "0.10.2",
+      "numpy": "2.4.6"
+    },
+    "jax_devices": [
+      "cpu:cpu(id=0)",
+      "cpu:cpu(id=1)",
+      "cpu:cpu(id=2)",
+      "cpu:cpu(id=3)"
+    ],
+    "jax_x64": true
+  },
+  "diagnostics": {
+    "values": {
+      "divergences": 6.0,
+      "divergence_fraction": 0.0015,
+      "max_rhat": 1.0045394047410467,
+      "min_ess_bulk": 935.6172550311173,
+      "min_ess_tail": 1309.310648637091,
+      "min_bfmi": 0.6885170369688883,
+      "treedepth_saturation": 0.0,
+      "n_draws": 4000.0
+    },
+    "status": {
+      "divergence_fraction": "fail",
+      "max_rhat": "pass",
+      "min_ess_bulk": "pass",
+      "min_ess_tail": "pass",
+      "min_bfmi": "pass",
+      "treedepth_saturation": "pass"
+    },
+    "overall": "fail"
+  },
+  "posterior": {
+    "dose": {
+      "mean": 0.2712277135329128,
+      "sd": 0.3711372239179748,
+      "hdi_3%": -0.4497574378982262,
+      "hdi_97%": 0.9522217393973504,
+      "mcse_mean": 0.009800131207352961,
+      "ess_bulk": 1452.2145348026338,
+      "ess_tail": 1674.513890219697,
+      "r_hat": 1.0022338988712818
+    },
+    "arm[control]": {
+      "mean": 0.41067899785275436,
+      "sd": 0.5309279309695496,
+      "hdi_3%": -0.5801975408464187,
+      "hdi_97%": 1.4631728685540526,
+      "mcse_mean": 0.01333052093456445,
+      "ess_bulk": 1605.5083945376732,
+      "ess_tail": 1834.7313734631005,
+      "r_hat": 1.001013392281249
+    },
+    "arm[treated]": {
+      "mean": 1.6509847382291418,
+      "sd": 0.5781944139911709,
+      "hdi_3%": 0.48876036868849965,
+      "hdi_97%": 2.674699292014458,
+      "mcse_mean": 0.01450033899638708,
+      "ess_bulk": 1684.3213033353102,
+      "ess_tail": 1589.6349985929896,
+      "r_hat": 1.0023994702252286
+    },
+    "dose:arm[treated]": {
+      "mean": -0.07769181283576447,
+      "sd": 0.516707275467491,
+      "hdi_3%": -1.073449903931329,
+      "hdi_97%": 0.9000427978170433,
+      "mcse_mean": 0.013344848278862577,
+      "ess_bulk": 1555.18287216873,
+      "ess_tail": 1556.9916735501095,
+      "r_hat": 1.0023013000217746
+    },
+    "sigma": {
+      "mean": 0.6561991126543918,
+      "sd": 0.308034674644057,
+      "hdi_3%": 0.21235829123822073,
+      "hdi_97%": 1.2192861087186835,
+      "mcse_mean": 0.009848086835891737,
+      "ess_bulk": 935.6172550311173,
+      "ess_tail": 1309.310648637091,
+      "r_hat": 1.0045394047410467
+    }
+  }
+}

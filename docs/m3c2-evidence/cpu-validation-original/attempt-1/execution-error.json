@@ -1,0 +1,6 @@
+{
+  "time": "2026-09-19T20:18:57.155387+00:00",
+  "type": "TypeError",
+  "message": "only 0-dimensional arrays can be converted to Python scalars",
+  "traceback": "Traceback (most recent call last):\n  File \"/private/tmp/autobayes-intercept-cpu-validation/acceptance.py\", line 258, in <module>\n    exit_code = main()\n                ^^^^^^\n  File \"/private/tmp/autobayes-intercept-cpu-validation/acceptance.py\", line 228, in main\n    diagnostics = analyze_draws(fit.idata, backend, config)\n                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/private/tmp/autobayes-intercept-cpu-validation/acceptance.py\", line 88, in analyze_draws\n    'mcse_mean': float(az.mcse(value, method='mean')),\n                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nTypeError: only 0-dimensional arrays can be converted to Python scalars\n"
+}

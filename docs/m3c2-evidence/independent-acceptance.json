@@ -1,0 +1,35 @@
+{
+  "recorded_at": "2026-09-20T02:06:43.976744+00:00",
+  "evidence_type": "direct_observation",
+  "reviewed_code_head": "6a58eb3c9b8ab510aa8bd5d3d04936e64990dace",
+  "bundle_hashes_verified": 21,
+  "frozen_inputs_verified": 68,
+  "independent_saved_draw_review": "artifacts/2026-09-19-autobayes-intercept-higher-accept-1/autobayes-intercept-higher-accept-root-review.json",
+  "artifacts": "artifacts/2026-09-19-autobayes-intercept-higher-accept-1",
+  "decision": "Accept the intercept-control implementation with deterministic coverage across the existing families and bounded CPU sampling evidence for one Gaussian example at target_accept0.99. Preserve original0.9failure and limits; no default change. Merge only after final documentation checks.",
+  "diagnostics": {
+    "pymc": {
+      "divergences": 0,
+      "max_rhat": 1.00347463071881,
+      "min_bulk_ess": 909.5806410751114,
+      "min_tail_ess": 1670.286371286137,
+      "min_bfmi": 0.704669114928662
+    },
+    "numpyro": {
+      "divergences": 0,
+      "max_rhat": 1.003681486554672,
+      "min_bulk_ess": 1013.7820091533237,
+      "min_tail_ess": 1602.79212797835,
+      "min_bfmi": 0.6640137327694864
+    }
+  },
+  "reference_mean_checks": 10,
+  "between_backend_mean_checks": 5,
+  "retained_semantics": "Reviewed14gates perbackend;80,000predictions,maxerror8.9e-16; originalrawinputdesign and names preserved.",
+  "preserved_failures": "Original0.9PyMC3/NumPyro6divergences and MCSErunnerTypeError remain unchanged. No thresholds weakened.",
+  "limits": [
+    "One Gaussian development example; no scientific calibration, rare-tail guarantee, all-family sampling coverage or GPU validation.",
+    "Single-hit NumPyro lower-tail estimate remains descriptive, not a reliable MCSE accuracy gate.",
+    "No change to library default target_accept; users must inspect diagnostics."
+  ]
+}

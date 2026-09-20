@@ -1,0 +1,341 @@
+{
+  "diagnostics": {
+    "parameters": {
+      "dose": {
+        "mean": 0.27278203221549,
+        "sd": 0.38231505470657695,
+        "rhat": 1.0005412590770766,
+        "ess_bulk": 1531.72150178791,
+        "ess_tail": 1602.79212797835,
+        "mcse_mean": 0.009746090954196332
+      },
+      "arm[control]": {
+        "mean": 0.3940979459083261,
+        "sd": 0.5423349351403751,
+        "rhat": 1.002920420920318,
+        "ess_bulk": 1470.7277157907486,
+        "ess_tail": 1655.4848138878012,
+        "mcse_mean": 0.014184572115759565
+      },
+      "arm[treated]": {
+        "mean": 1.6395378114664445,
+        "sd": 0.565228530744061,
+        "rhat": 1.003681486554672,
+        "ess_bulk": 1608.562376333691,
+        "ess_tail": 1604.1506795255293,
+        "mcse_mean": 0.014461917199215836
+      },
+      "dose:arm[treated]": {
+        "mean": -0.068139550343807,
+        "sd": 0.4913515885010963,
+        "rhat": 1.0012762456685838,
+        "ess_bulk": 1523.8447734767083,
+        "ess_tail": 2061.477550903015,
+        "mcse_mean": 0.012677581244473551
+      },
+      "sigma": {
+        "mean": 0.6500683515316443,
+        "sd": 0.30868733471856663,
+        "rhat": 1.003448678038653,
+        "ess_bulk": 1013.7820091533237,
+        "ess_tail": 1786.227359432854,
+        "mcse_mean": 0.00982770264475421
+      }
+    },
+    "posterior_checks": {
+      "dose": {
+        "shape": [
+          4,
+          1000
+        ],
+        "complete": true,
+        "finite": true
+      },
+      "arm": {
+        "shape": [
+          4,
+          1000,
+          2
+        ],
+        "complete": true,
+        "finite": true
+      },
+      "dose:arm": {
+        "shape": [
+          4,
+          1000,
+          1
+        ],
+        "complete": true,
+        "finite": true
+      },
+      "sigma": {
+        "shape": [
+          4,
+          1000
+        ],
+        "complete": true,
+        "finite": true
+      }
+    },
+    "sample_stats_checks": {
+      "acceptance_rate": {
+        "shape": [
+          4,
+          1000
+        ],
+        "complete": true,
+        "finite": true,
+        "excluded_unused_all_nan": false,
+        "nonfinite_count": 0
+      },
+      "step_size": {
+        "shape": [
+          4,
+          1000
+        ],
+        "complete": true,
+        "finite": true,
+        "excluded_unused_all_nan": false,
+        "nonfinite_count": 0
+      },
+      "diverging": {
+        "shape": [
+          4,
+          1000
+        ],
+        "complete": true,
+        "finite": true,
+        "excluded_unused_all_nan": false,
+        "nonfinite_count": 0
+      },
+      "energy": {
+        "shape": [
+          4,
+          1000
+        ],
+        "complete": true,
+        "finite": true,
+        "excluded_unused_all_nan": false,
+        "nonfinite_count": 0
+      },
+      "n_steps": {
+        "shape": [
+          4,
+          1000
+        ],
+        "complete": true,
+        "finite": true,
+        "excluded_unused_all_nan": false,
+        "nonfinite_count": 0
+      },
+      "tree_depth": {
+        "shape": [
+          4,
+          1000
+        ],
+        "complete": true,
+        "finite": true,
+        "excluded_unused_all_nan": false,
+        "nonfinite_count": 0
+      },
+      "lp": {
+        "shape": [
+          4,
+          1000
+        ],
+        "complete": true,
+        "finite": true,
+        "excluded_unused_all_nan": false,
+        "nonfinite_count": 0
+      }
+    },
+    "bfmi": [
+      0.694202128608545,
+      0.7551560506470468,
+      0.7000469480738701,
+      0.6640137327694864
+    ],
+    "divergences": 0,
+    "divergences_per_chain": [
+      0,
+      0,
+      0,
+      0
+    ],
+    "max_depth": 7,
+    "depth_saturated_draws": 0,
+    "max_depth_flags": 0,
+    "gates": {
+      "complete_finite_posterior": true,
+      "core_stats_present": true,
+      "complete_finite_active_stats": true,
+      "finite_diagnostics": true,
+      "zero_divergences": true,
+      "rhat_le_1_01": true,
+      "ess_bulk_ge_400": true,
+      "ess_tail_ge_400": true,
+      "every_chain_bfmi_ge_0_3": true,
+      "no_depth_saturation": true,
+      "no_max_depth_flags": true
+    },
+    "passed": true
+  },
+  "semantics": {
+    "gates": {
+      "original_formula": true,
+      "no_intercept_graph_names": true,
+      "no_intercept_posterior": true,
+      "no_intercept_prior": true,
+      "record_intercept_absent": true,
+      "requested_effective_centering": true,
+      "raw_design_and_means": true,
+      "coefficient_order": true,
+      "coordinate_order": true,
+      "exact_record_priors": true,
+      "record_five_parameters": true,
+      "full_level_factor_record": true,
+      "complete_retained_arrays": true,
+      "mean_predictions": true
+    },
+    "predictions": {
+      "fitted": {
+        "shape": [
+          4,
+          1000,
+          6
+        ],
+        "max_abs_error": 0.0,
+        "finite": true,
+        "passed": true
+      },
+      "new": {
+        "shape": [
+          4,
+          1000,
+          4
+        ],
+        "max_abs_error": 8.881784197001252e-16,
+        "finite": true,
+        "passed": true
+      }
+    },
+    "passed": true
+  },
+  "reference_means": {
+    "dose": {
+      "reference": 0.26238346055161266,
+      "mean": 0.27278203221549,
+      "mcse_mean": 0.009746090954196332,
+      "absolute_difference": 0.010398571663877365,
+      "tolerance": 0.03898437381678533,
+      "passed": true
+    },
+    "arm[control]": {
+      "reference": 0.4200749911935722,
+      "mean": 0.3940979459083261,
+      "mcse_mean": 0.014184572115759565,
+      "absolute_difference": 0.025977045285246136,
+      "tolerance": 0.05673829846303826,
+      "passed": true
+    },
+    "arm[treated]": {
+      "reference": 1.639008713375852,
+      "mean": 1.6395378114664445,
+      "mcse_mean": 0.014461917199215836,
+      "absolute_difference": 0.0005290980905925391,
+      "tolerance": 0.057847678796863346,
+      "passed": true
+    },
+    "dose:arm[treated]": {
+      "reference": -0.06609777684619116,
+      "mean": -0.068139550343807,
+      "mcse_mean": 0.012677581244473551,
+      "absolute_difference": 0.002041773497615848,
+      "tolerance": 0.050710334977894206,
+      "passed": true
+    },
+    "sigma": {
+      "reference": 0.6464413266722226,
+      "mean": 0.6500683515316443,
+      "mcse_mean": 0.00982770264475421,
+      "absolute_difference": 0.003627024859421679,
+      "tolerance": 0.039310820579016845,
+      "passed": true
+    }
+  },
+  "sigma_cdf_descriptive": {
+    "0.2": {
+      "reference": 0.0014127149681932303,
+      "empirical": 0.00025,
+      "indicator_count": 1,
+      "chain_shape": [
+        4,
+        1000
+      ],
+      "indicator_mean_mcse": 0.00024949849698946083,
+      "four_mcse": 0.0009979939879578433,
+      "signed_difference": -0.0011627149681932303,
+      "descriptive_only": true
+    },
+    "0.3": {
+      "reference": 0.0531610918196631,
+      "empirical": 0.04975,
+      "indicator_count": 199,
+      "chain_shape": [
+        4,
+        1000
+      ],
+      "indicator_mean_mcse": 0.005085331931577489,
+      "four_mcse": 0.020341327726309956,
+      "signed_difference": -0.0034110918196630993,
+      "descriptive_only": true
+    },
+    "0.4": {
+      "reference": 0.20124312351659174,
+      "empirical": 0.2025,
+      "indicator_count": 810,
+      "chain_shape": [
+        4,
+        1000
+      ],
+      "indicator_mean_mcse": 0.01047173694228886,
+      "four_mcse": 0.04188694776915544,
+      "signed_difference": 0.0012568764834082757,
+      "descriptive_only": true
+    },
+    "0.6": {
+      "reference": 0.5401858876499911,
+      "empirical": 0.53,
+      "indicator_count": 2120,
+      "chain_shape": [
+        4,
+        1000
+      ],
+      "indicator_mean_mcse": 0.015115552562172195,
+      "four_mcse": 0.06046221024868878,
+      "signed_difference": -0.010185887649991066,
+      "descriptive_only": true
+    },
+    "1.0": {
+      "reference": 0.8798363217074316,
+      "empirical": 0.878,
+      "indicator_count": 3512,
+      "chain_shape": [
+        4,
+        1000
+      ],
+      "indicator_mean_mcse": 0.008502825731307126,
+      "four_mcse": 0.034011302925228505,
+      "signed_difference": -0.001836321707431643,
+      "descriptive_only": true
+    }
+  },
+  "execution_gates": {
+    "cpu_float64": true,
+    "settings_match": true,
+    "parallel_numpyro": true,
+    "retained_hash_matches": true
+  },
+  "passed": true
+}

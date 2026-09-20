@@ -18,4 +18,4 @@ if __name__ == "__main__":
     model = build_example()
     print(model.describe())
     print("Coefficient order:", model.spec.columns)
-    print("No feature sampling/GPU acceptance has run for this increment.")
+    print("This command builds only; see docs/m3c2-decision.md for bounded CPU evidence and GPU limitations.")

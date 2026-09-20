@@ -44,3 +44,24 @@ The ONE local full fast-suite invocation at f85b4db finished (no timeout) in 473
 The three failures were test expectations left behind by the API extension: binomial and interaction refusal tests expected FormulaError for now-supported intercept removal, whereas their supplied intercept prior is correctly rejected with PriorError; the categorical fit-record test expected an exact dictionary without the newly explicit `coding: treatment` field. No density/gradient/prediction failure occurred. Only assertions were aligned, with no library-code or numerical-threshold change after that full run. An added default-intercept synthetic-record check verifies the new metadata and preserved semantics without sampling. The two affected refusal checks plus this synthetic check passed: **3 passed in 2.18s**. The previously sampled categorical record test was not rerun locally. No second local full suite was launched. Hosted exact-head checks and independent review remain pending.
 
 Build-only example executed successfully. Skill metadata validation passed with the existing system Python/PyYAML; the first check in the locked library venv lacked PyYAML, so no dependency was added to that stack. Only the own-package version changed in uv.lock (0.5.0 → 0.6.0).
+
+## Independent acceptance review (2026-09-20 UTC)
+
+Implementation head `6a58eb3` passed both hosted checks (478 tests, 7 slow checks deselected), independent code review, and 12 build / 48 synthetic prediction cases. The original local regression failure and its assertion repairs remain historical evidence above.
+
+The first feature-specific CPU run used the unchanged six-observation example, four chains, 1000 tuning/1000 retained draws, seeds37/41, target_accept0.9. PyMC reported3divergences and NumPyro6. A separate external analysis-runner scalar-conversion error interrupted post-processing. That run remains failed and unchanged. Independent read-only analysis of saved draws recovered diagnostics and confirmed14semantic checks perbackend, including80,000mean predictions.
+
+An independent marginal Gaussian reference integrated the four Normal coefficients analytically and sigma using fixed log-scale quadrature. It completed3840evaluations in24.81seconds. The largest grid/bound-expansion change was1.25e-14; this is empirical numerical stability, not a rigorous tail bound. Mean agreement did not cancel the divergence failure.
+
+A separately frozen diagnostic changed only target_accept to0.99, retaining the example, priors, seeds and other sampler settings. Exactly two fits completed in48.11seconds, without retry. Independent retained-draw recomputation confirms:
+
+| Backend | Divergences | Maximum rank R-hat | Minimum bulk ESS | Minimum tail ESS | Minimum chain BFMI | Maximum tree depth |
+|---|---:|---:|---:|---:|---:|---:|
+| PyMC CPU |0|1.00347|909.6|1670.3|0.7047|7|
+| NumPyro CPU |0|1.00368|1013.8|1602.8|0.6640|7|
+
+All active statistics are finite; only the prospectively excluded unused PyMC eigenvalue placeholders are NaN. All14semantic checks perbackend pass, including raw-design predictions, prior assignments, labels and requested/effective centering. Five backend mean differences meet4combinedMCSE, and each backend's five means agree with the independent reference within4MCSE plus the prespecified1e-8numerical allowance. Both retained netCDF hashes and all68frozen inputs were independently checked.
+
+**Decision:** accept this implementation with three-family deterministic coverage and bounded CPU sampling evidence for this one Gaussian example at target_accept0.99. The library default is unchanged. Original0.9 failures remain documented; users must inspect convergence and divergence diagnostics for their own models. This is not calibration, whole-library brms parity, all-family sampling validation or GPU evidence. Sigma≤0.2 has only7PyMC and1NumPyro hits; those sparse-tail estimates and their MCSE are descriptive, not accuracy guarantees.
+
+Evidence and exact scripts/configurations: `m3c2-evidence/{cpu-validation-original,retained-semantics,independent-reference,higher-target-accept}/`; independent decision: `m3c2-evidence/independent-acceptance.json`. Full retained draws and quadrature-node arrays remain in the named external evidence bundles with SHA-256 manifests. Historical supervisors use exclusive paths and must not be rerun in place. Final documentation-head CI and merge are tracked on PR #10.

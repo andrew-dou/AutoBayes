@@ -1,0 +1,370 @@
+{
+  "frozen_at": "2026-09-20T01:45:21.659418+00:00",
+  "head": "6a58eb3c9b8ab510aa8bd5d3d04936e64990dace",
+  "config": {
+    "y": [
+      0.2,
+      1.1,
+      0.8,
+      2.0,
+      1.5,
+      2.2
+    ],
+    "X": [
+      [
+        0.0,
+        1.0,
+        0.0,
+        0.0
+      ],
+      [
+        1.0,
+        1.0,
+        0.0,
+        0.0
+      ],
+      [
+        2.0,
+        1.0,
+        0.0,
+        0.0
+      ],
+      [
+        0.0,
+        0.0,
+        1.0,
+        0.0
+      ],
+      [
+        1.0,
+        0.0,
+        1.0,
+        1.0
+      ],
+      [
+        2.0,
+        0.0,
+        1.0,
+        2.0
+      ]
+    ],
+    "D_diagonal": [
+      1.0,
+      4.0,
+      4.0,
+      1.0
+    ],
+    "data": [
+      {
+        "y": 0.2,
+        "dose": 0.0,
+        "arm": "control"
+      },
+      {
+        "y": 1.1,
+        "dose": 1.0,
+        "arm": "control"
+      },
+      {
+        "y": 0.8,
+        "dose": 2.0,
+        "arm": "control"
+      },
+      {
+        "y": 2.0,
+        "dose": 0.0,
+        "arm": "treated"
+      },
+      {
+        "y": 1.5,
+        "dose": 1.0,
+        "arm": "treated"
+      },
+      {
+        "y": 2.2,
+        "dose": 2.0,
+        "arm": "treated"
+      }
+    ],
+    "record_priors": {
+      "b:dose": "Normal(mu=0, sigma=1)",
+      "b:arm[control]": "Normal(mu=0, sigma=2)",
+      "b:arm[treated]": "Normal(mu=0, sigma=2)",
+      "b:dose:arm[treated]": "Normal(mu=0, sigma=1)",
+      "sigma": "HalfNormal(sigma=1)"
+    },
+    "parameter_labels": [
+      "dose",
+      "arm[control]",
+      "arm[treated]",
+      "dose:arm[treated]",
+      "sigma"
+    ],
+    "original_freeze": "/private/tmp/autobayes-intercept-cpu-validation/freeze.json",
+    "rules": [
+      {
+        "label": "primary128",
+        "lower": 0.02,
+        "upper": 12.0,
+        "nodes": 128
+      },
+      {
+        "label": "primary256",
+        "lower": 0.02,
+        "upper": 12.0,
+        "nodes": 256
+      },
+      {
+        "label": "expanded256",
+        "lower": 0.01,
+        "upper": 16.0,
+        "nodes": 256
+      }
+    ],
+    "cdf_points": [
+      0.2,
+      0.3,
+      0.4,
+      0.6,
+      1.0
+    ],
+    "expected_target_evaluations": 3840,
+    "hard_evaluation_cap": 4000,
+    "stability_atol": 1e-08,
+    "reference_choice": "expanded256",
+    "integration_variable": "t=log(sigma), including +t Jacobian",
+    "normalization": "normalized six-dimensional Gaussian marginal and HalfNormal(1) sigma prior; logsumexp weighted quadrature; no ad hoc node discard",
+    "root_review": "/Users/andrewdou/iqss-research/artifacts/2026-09-19-autobayes-intercept-cpu-validation/autobayes-intercept-retained-review.json",
+    "netcdf_receipts": {
+      "pymc": "/private/tmp/autobayes-intercept-cpu-validation/attempt-1/pymc-netcdf-receipt.json",
+      "numpyro": "/private/tmp/autobayes-intercept-cpu-validation/attempt-1/numpyro-netcdf-receipt.json"
+    },
+    "expected_versions": {
+      "pymc": "5.28.5",
+      "pytensor": "2.38.3",
+      "bambi": "0.17.2",
+      "formulae": "0.6.2",
+      "arviz": "0.23.4",
+      "numpy": "2.4.6",
+      "pandas": "3.0.5",
+      "scipy": "1.17.1",
+      "xarray": "2026.7.0",
+      "matplotlib": "3.10.9",
+      "jax": "0.10.2",
+      "jaxlib": "0.10.2",
+      "numpyro": "0.21.0",
+      "pytest": "9.1.1"
+    },
+    "comparison_policy": "Five means use existing saved-draw MCSE; CDF indicators retain4x1000 chain structure and all divergences; four-MCSE bands are descriptive only and do not determine reference exit status.",
+    "limitations": [
+      "Empirical rule/interval stability is not a rigorous tail/error bound.",
+      "Original3/6-divergence acceptance failure and runner TypeError remain immutable."
+    ],
+    "env_overrides": {
+      "PYTHONDONTWRITEBYTECODE": "1",
+      "PYTHONPATH": "/private/tmp/autobayes-intercept-reference-1",
+      "MPLCONFIGDIR": "/private/tmp/autobayes-intercept-reference-1/matplotlib-cache",
+      "JAX_PLATFORMS": "cpu",
+      "OMP_NUM_THREADS": "1",
+      "OPENBLAS_NUM_THREADS": "1",
+      "MKL_NUM_THREADS": "1"
+    }
+  },
+  "inputs": [
+    {
+      "path": "/Users/andrewdou/iqss-research/artifacts/2026-09-19-autobayes-intercept-cpu-validation/autobayes-intercept-retained-review.json",
+      "sha256": "82706a501fe29fe2e8c89c86bf5ebebb4f169f29d32506ce15e5b10ed3f27512",
+      "bytes": 6791
+    },
+    {
+      "path": "/Users/andrewdou/iqss-research/memory/dispatches/2026-09-19-autobayes-intercept-reference-1.txt",
+      "sha256": "bdf477832d502b57b5c972546621594b2e3cb3581e599bcd924ad84075f809ab",
+      "bytes": 3877
+    },
+    {
+      "path": "/Users/andrewdou/iqss-research/plans/2026-09-19-autobayes-intercept-cpu-validation.md",
+      "sha256": "facda950f273eb3e273da414906ad943199f54899068c35066a3a7521d94f789",
+      "bytes": 3026
+    },
+    {
+      "path": "/Users/andrewdou/iqss-research/projects/AutoBayes-worktrees/m3c2-intercept-controls/.venv/lib/python3.11/site-packages/bambi/backend/pymc.py",
+      "sha256": "7aae6a5b8f9438198f8da94746f3399e007f7ba362c2e6ceb7afb85b25827517",
+      "bytes": 15996
+    },
+    {
+      "path": "/Users/andrewdou/iqss-research/projects/AutoBayes-worktrees/m3c2-intercept-controls/.venv/lib/python3.11/site-packages/numpyro/infer/hmc.py",
+      "sha256": "49200c359acb25f50d9c99ab6fe0f2b1508832ebd85bb138eca9326cdba83b8f",
+      "bytes": 42343
+    },
+    {
+      "path": "/Users/andrewdou/iqss-research/projects/AutoBayes-worktrees/m3c2-intercept-controls/.venv/lib/python3.11/site-packages/pymc/sampling/jax.py",
+      "sha256": "862dced2f52acb6cc07511835a405854c58754867035fdc7e17c8bf5afa30746",
+      "bytes": 25749
+    },
+    {
+      "path": "/Users/andrewdou/iqss-research/projects/AutoBayes-worktrees/m3c2-intercept-controls/.venv/lib/python3.11/site-packages/pymc/step_methods/hmc/nuts.py",
+      "sha256": "40281225a811b3c70e2868240bb5989e3a4ed58b2ea68afc54fa42c2e63b15ac",
+      "bytes": 20053
+    },
+    {
+      "path": "/Users/andrewdou/iqss-research/projects/AutoBayes-worktrees/m3c2-intercept-controls/autobayes/__init__.py",
+      "sha256": "4a67d899c0e51191e1a704bde58ba5477ecb7c2758a619b7fc131c5a94706ebd",
+      "bytes": 2802
+    },
+    {
+      "path": "/Users/andrewdou/iqss-research/projects/AutoBayes-worktrees/m3c2-intercept-controls/autobayes/diagnostics.py",
+      "sha256": "79bd2634824c19180afff1882896098d72d82a631ebfdb00aba90081ee7bd9b9",
+      "bytes": 3045
+    },
+    {
+      "path": "/Users/andrewdou/iqss-research/projects/AutoBayes-worktrees/m3c2-intercept-controls/autobayes/formula.py",
+      "sha256": "3f3a46d065d90cc16aeda38aef1cae3c1d88117b0f2f7f5ddbd6526dcb3ce460",
+      "bytes": 33672
+    },
+    {
+      "path": "/Users/andrewdou/iqss-research/projects/AutoBayes-worktrees/m3c2-intercept-controls/autobayes/inference.py",
+      "sha256": "8d21b5adaba9349bf5f90028a0bb3e9b59c59781bde0172ef9d48dbe6a000d4b",
+      "bytes": 7209
+    },
+    {
+      "path": "/Users/andrewdou/iqss-research/projects/AutoBayes-worktrees/m3c2-intercept-controls/autobayes/likelihoods.py",
+      "sha256": "70156b9f74d6e0c2e330cfe20806bddffd3d1ed7dabf183c683a68351e8a2988",
+      "bytes": 8907
+    },
+    {
+      "path": "/Users/andrewdou/iqss-research/projects/AutoBayes-worktrees/m3c2-intercept-controls/autobayes/model.py",
+      "sha256": "cd6dae82567f9825317c9d3e07cdfc1a7e6a3bf331aa885fafccf5d6935f68b5",
+      "bytes": 33218
+    },
+    {
+      "path": "/Users/andrewdou/iqss-research/projects/AutoBayes-worktrees/m3c2-intercept-controls/autobayes/predict.py",
+      "sha256": "ad606f068f89e80802b70c6b1a18c6fcc7c328b669466fd79e44df9b1f23cbdd",
+      "bytes": 13211
+    },
+    {
+      "path": "/Users/andrewdou/iqss-research/projects/AutoBayes-worktrees/m3c2-intercept-controls/autobayes/priors.py",
+      "sha256": "4343b64a044da3c5424bd4a78c745a24ccb22dba84477922d4a903e8a97e2fe7",
+      "bytes": 12549
+    },
+    {
+      "path": "/Users/andrewdou/iqss-research/projects/AutoBayes-worktrees/m3c2-intercept-controls/autobayes/session.py",
+      "sha256": "5fbdf38c54638b594926522acf6b6ad4610f52cd298f44e448d7fb1efa6e776d",
+      "bytes": 7964
+    },
+    {
+      "path": "/Users/andrewdou/iqss-research/projects/AutoBayes-worktrees/m3c2-intercept-controls/examples/m3c2_no_intercept.py",
+      "sha256": "973161a5c2d402dc9e593470668ef364e8fb0cd57358466737e2cba4206a9614",
+      "bytes": 900
+    },
+    {
+      "path": "/Users/andrewdou/iqss-research/projects/AutoBayes-worktrees/m3c2-intercept-controls/pyproject.toml",
+      "sha256": "62447b3350715558fde9041ae873112933b0c1615cc4aaac77c6a9a7261aa36b",
+      "bytes": 1299
+    },
+    {
+      "path": "/Users/andrewdou/iqss-research/projects/AutoBayes-worktrees/m3c2-intercept-controls/uv.lock",
+      "sha256": "79d8c3389fa83e046f0f8a6d433fb844725b15412a5aaa985f18a3479d2d99ce",
+      "bytes": 84024
+    },
+    {
+      "path": "/private/tmp/autobayes-intercept-cpu-validation/CHECKSUMS.sha256",
+      "sha256": "3bdf67cc108f80c03d07d92a85108833816e0d882fd8ec327ad8d07987d724dc",
+      "bytes": 1518
+    },
+    {
+      "path": "/private/tmp/autobayes-intercept-cpu-validation/REPORT.md",
+      "sha256": "d4f794f4b10a067546241be8f93e944e5a23b53e5e569089622d65c2e023cb65",
+      "bytes": 3874
+    },
+    {
+      "path": "/private/tmp/autobayes-intercept-cpu-validation/acceptance.py",
+      "sha256": "c7c27eae26e6221650be4a2abf691b41ab66f522b70424ea072cd68cfe1a9254",
+      "bytes": 16274
+    },
+    {
+      "path": "/private/tmp/autobayes-intercept-cpu-validation/attempt-1/environment.json",
+      "sha256": "091d2260c8b03e85923162a7bbb9bdb711c95b1da11878cd7af34cc53e49a5cb",
+      "bytes": 1626
+    },
+    {
+      "path": "/private/tmp/autobayes-intercept-cpu-validation/attempt-1/events.jsonl",
+      "sha256": "5f8e60248ee9b193c379ac85bc25975bc606a1c6da50fdc72b0f05116726c50b",
+      "bytes": 1725
+    },
+    {
+      "path": "/private/tmp/autobayes-intercept-cpu-validation/attempt-1/execution-error.json",
+      "sha256": "f14d6d39a0506cfcf9407a7f1fe0f7a89a55d5557c07d724d023fad07dde7194",
+      "bytes": 849
+    },
+    {
+      "path": "/private/tmp/autobayes-intercept-cpu-validation/attempt-1/exit-receipt.json",
+      "sha256": "0e3b8a1315b74d1dff9a03302c4d7ec92f41952dc8875b23e26cc76c755a0880",
+      "bytes": 1273
+    },
+    {
+      "path": "/private/tmp/autobayes-intercept-cpu-validation/attempt-1/launch.json",
+      "sha256": "d86e4314441778333bf49b9c259e9131e28c72a5b245219fe6633bd70d676d22",
+      "bytes": 1122
+    },
+    {
+      "path": "/private/tmp/autobayes-intercept-cpu-validation/attempt-1/model-snapshot.json",
+      "sha256": "aeeac60e7cf0cd96169ae6aeebb0a5d9c0d3caa911cda0f1d182a99f38ad88b1",
+      "bytes": 3724
+    },
+    {
+      "path": "/private/tmp/autobayes-intercept-cpu-validation/attempt-1/numpyro-netcdf-receipt.json",
+      "sha256": "85d40a557a69a3996d4ffb425c1c1e7f15894cf557602060ffdc2fa151822b1f",
+      "bytes": 597
+    },
+    {
+      "path": "/private/tmp/autobayes-intercept-cpu-validation/attempt-1/numpyro.nc",
+      "sha256": "db33a43459b91da6bb7154a29a1acdfd357b0b644d8b3230dcb966b558a220a7",
+      "bytes": 328676
+    },
+    {
+      "path": "/private/tmp/autobayes-intercept-cpu-validation/attempt-1/pymc-netcdf-receipt.json",
+      "sha256": "8bf5903f28032d470eb61f68715bf9b98dac580ee9d0b78a37b7985242d57227",
+      "bytes": 573
+    },
+    {
+      "path": "/private/tmp/autobayes-intercept-cpu-validation/attempt-1/pymc.nc",
+      "sha256": "041046187d8edc38ccbfc85a04e09951dc83d0397c89c67956d262a94082a3ee",
+      "bytes": 475066
+    },
+    {
+      "path": "/private/tmp/autobayes-intercept-cpu-validation/attempt-1/stderr.txt",
+      "sha256": "686a5e272a24ef01ca68d25aaa3c7449eaf7cfd74e2c55a12bad6bc9a344122e",
+      "bytes": 1119
+    },
+    {
+      "path": "/private/tmp/autobayes-intercept-cpu-validation/attempt-1/stdout.txt",
+      "sha256": "5f8e60248ee9b193c379ac85bc25975bc606a1c6da50fdc72b0f05116726c50b",
+      "bytes": 1725
+    },
+    {
+      "path": "/private/tmp/autobayes-intercept-cpu-validation/freeze.json",
+      "sha256": "b4872cbbe9ce8759b0391e48a4fa170e48948fc43f3077f2741855ae8a1cb996",
+      "bytes": 9688
+    },
+    {
+      "path": "/private/tmp/autobayes-intercept-cpu-validation/post-attempt-preservation.json",
+      "sha256": "d619521331560c0af15c9fa66e6f7060cb8ad4114d67d38d3d92fb3c5459386c",
+      "bytes": 3221
+    },
+    {
+      "path": "/private/tmp/autobayes-intercept-cpu-validation/supervisor.py",
+      "sha256": "bd46917ff7c4f5cb2ae53797215a1f2e902b4024adb2b96c1b55adf6e8f9a7df",
+      "bytes": 3019
+    },
+    {
+      "path": "/private/tmp/autobayes-intercept-reference-1/reference.py",
+      "sha256": "bc40154b73a38d8c54cd83531c7bd2c01ea7d8ea8aa1f14ee6dffd426525ceb9",
+      "bytes": 11031
+    },
+    {
+      "path": "/private/tmp/autobayes-intercept-reference-1/supervisor.py",
+      "sha256": "998077b5bdacf7a532122b1a4dc3e679b8dbf14c1e0b1cbf7dc50b7cc6c3a6f7",
+      "bytes": 2310
+    }
+  ]
+}
