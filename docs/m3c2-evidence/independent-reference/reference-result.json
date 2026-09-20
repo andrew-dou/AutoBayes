@@ -1,0 +1,359 @@
+{
+  "finished": "2026-09-20T01:46:02.024384+00:00",
+  "reference_checks_passed": true,
+  "target_evaluations": 3840,
+  "hard_cap": 4000,
+  "rule_count": 18,
+  "reference_choice": "expanded256 (prespecified)",
+  "reference": {
+    "log_normalizer": -9.835717167656208,
+    "means": {
+      "dose": 0.26238346055161266,
+      "arm[control]": 0.4200749911935722,
+      "arm[treated]": 1.639008713375852,
+      "dose:arm[treated]": -0.06609777684619116,
+      "sigma": 0.6464413266722226
+    },
+    "sigma_cdf": {
+      "0.2": 0.0014127149681932303,
+      "0.3": 0.0531610918196631,
+      "0.4": 0.20124312351659174,
+      "0.6": 0.5401858876499911,
+      "1.0": 0.8798363217074316
+    }
+  },
+  "estimates": {
+    "primary128": {
+      "log_normalizer": -9.835717167656217,
+      "means": {
+        "dose": 0.2623834605516127,
+        "arm[control]": 0.42007499119357233,
+        "arm[treated]": 1.6390087133758529,
+        "dose:arm[treated]": -0.0660977768461912,
+        "sigma": 0.6464413266722232
+      },
+      "sigma_cdf": {
+        "0.2": 0.0014127149681933632,
+        "0.3": 0.053161091819665746,
+        "0.4": 0.2012431235165989,
+        "0.6": 0.5401858876500026,
+        "1.0": 0.8798363217074394
+      }
+    },
+    "primary256": {
+      "log_normalizer": -9.835717167656208,
+      "means": {
+        "dose": 0.26238346055161266,
+        "arm[control]": 0.42007499119357267,
+        "arm[treated]": 1.639008713375852,
+        "dose:arm[treated]": -0.06609777684619109,
+        "sigma": 0.646441326672223
+      },
+      "sigma_cdf": {
+        "0.2": 0.00141271496819321,
+        "0.3": 0.05316109181966244,
+        "0.4": 0.20124312351659068,
+        "0.6": 0.5401858876499902,
+        "1.0": 0.8798363217074316
+      }
+    },
+    "expanded256": {
+      "log_normalizer": -9.835717167656208,
+      "means": {
+        "dose": 0.26238346055161266,
+        "arm[control]": 0.4200749911935722,
+        "arm[treated]": 1.639008713375852,
+        "dose:arm[treated]": -0.06609777684619116,
+        "sigma": 0.6464413266722226
+      },
+      "sigma_cdf": {
+        "0.2": 0.0014127149681932303,
+        "0.3": 0.0531610918196631,
+        "0.4": 0.20124312351659174,
+        "0.6": 0.5401858876499911,
+        "1.0": 0.8798363217074316
+      }
+    }
+  },
+  "stability": {
+    "primary128_vs_primary256": {
+      "absolute_changes": {
+        "log_normalizer": 8.881784197001252e-15,
+        "mean:dose": 5.551115123125783e-17,
+        "mean:arm[control]": 3.3306690738754696e-16,
+        "mean:arm[treated]": 8.881784197001252e-16,
+        "mean:dose:arm[treated]": 1.1102230246251565e-16,
+        "mean:sigma": 2.220446049250313e-16,
+        "cdf:0.2": 1.5308934675495323e-16,
+        "cdf:0.3": 3.3029134982598407e-15,
+        "cdf:0.4": 8.215650382226158e-15,
+        "cdf:0.6": 1.2434497875801753e-14,
+        "cdf:1.0": 7.771561172376096e-15
+      },
+      "max_absolute_change": 1.2434497875801753e-14,
+      "passed": true
+    },
+    "primary256_vs_expanded256": {
+      "absolute_changes": {
+        "log_normalizer": 0.0,
+        "mean:dose": 0.0,
+        "mean:arm[control]": 4.440892098500626e-16,
+        "mean:arm[treated]": 0.0,
+        "mean:dose:arm[treated]": 6.938893903907228e-17,
+        "mean:sigma": 3.3306690738754696e-16,
+        "cdf:0.2": 2.0166160408230382e-17,
+        "cdf:0.3": 6.591949208711867e-16,
+        "cdf:0.4": 1.0547118733938987e-15,
+        "cdf:0.6": 8.881784197001252e-16,
+        "cdf:1.0": 0.0
+      },
+      "max_absolute_change": 1.0547118733938987e-15,
+      "passed": true
+    }
+  },
+  "retained_draw_comparisons": {
+    "pymc": {
+      "netcdf_sha256": "041046187d8edc38ccbfc85a04e09951dc83d0397c89c67956d262a94082a3ee",
+      "divergences_retained": 3,
+      "means": {
+        "dose": {
+          "reference": 0.26238346055161266,
+          "retained_mean": 0.26472615147845274,
+          "retained_mcse_mean": 0.009263266374128875,
+          "signed_difference": 0.0023426909268400853,
+          "four_mcse": 0.0370530654965155,
+          "within_four_mcse_descriptive": true
+        },
+        "arm[control]": {
+          "reference": 0.4200749911935722,
+          "retained_mean": 0.41384834748867716,
+          "retained_mcse_mean": 0.01232193510403536,
+          "signed_difference": -0.006226643704895063,
+          "four_mcse": 0.04928774041614144,
+          "within_four_mcse_descriptive": true
+        },
+        "arm[treated]": {
+          "reference": 1.639008713375852,
+          "retained_mean": 1.6522014492517254,
+          "retained_mcse_mean": 0.01286522489637785,
+          "signed_difference": 0.01319273587587344,
+          "four_mcse": 0.0514608995855114,
+          "within_four_mcse_descriptive": true
+        },
+        "dose:arm[treated]": {
+          "reference": -0.06609777684619116,
+          "retained_mean": -0.07249679861768152,
+          "retained_mcse_mean": 0.01279312029733401,
+          "signed_difference": -0.0063990217714903624,
+          "four_mcse": 0.05117248118933604,
+          "within_four_mcse_descriptive": true
+        },
+        "sigma": {
+          "reference": 0.6464413266722226,
+          "retained_mean": 0.636765495002948,
+          "retained_mcse_mean": 0.008775425975120104,
+          "signed_difference": -0.00967583166927466,
+          "four_mcse": 0.03510170390048042,
+          "within_four_mcse_descriptive": true
+        }
+      },
+      "sigma_cdf": {
+        "0.2": {
+          "reference": 0.0014127149681932303,
+          "retained_cdf": 0.001,
+          "indicator_mean_mcse": 0.0006111925600842014,
+          "signed_difference": -0.00041271496819323024,
+          "four_mcse": 0.0024447702403368058,
+          "within_four_mcse_descriptive": true,
+          "indicator_count": 4,
+          "indicator_shape": [
+            4,
+            1000
+          ]
+        },
+        "0.3": {
+          "reference": 0.0531610918196631,
+          "retained_cdf": 0.0465,
+          "indicator_mean_mcse": 0.004426225869014773,
+          "signed_difference": -0.006661091819663102,
+          "four_mcse": 0.017704903476059092,
+          "within_four_mcse_descriptive": true,
+          "indicator_count": 186,
+          "indicator_shape": [
+            4,
+            1000
+          ]
+        },
+        "0.4": {
+          "reference": 0.20124312351659174,
+          "retained_cdf": 0.197,
+          "indicator_mean_mcse": 0.010138062159098167,
+          "signed_difference": -0.004243123516591729,
+          "four_mcse": 0.04055224863639267,
+          "within_four_mcse_descriptive": true,
+          "indicator_count": 788,
+          "indicator_shape": [
+            4,
+            1000
+          ]
+        },
+        "0.6": {
+          "reference": 0.5401858876499911,
+          "retained_cdf": 0.5505,
+          "indicator_mean_mcse": 0.013987665064212628,
+          "signed_difference": 0.010314112350008897,
+          "four_mcse": 0.05595066025685051,
+          "within_four_mcse_descriptive": true,
+          "indicator_count": 2202,
+          "indicator_shape": [
+            4,
+            1000
+          ]
+        },
+        "1.0": {
+          "reference": 0.8798363217074316,
+          "retained_cdf": 0.89425,
+          "indicator_mean_mcse": 0.007334999740255838,
+          "signed_difference": 0.014413678292568344,
+          "four_mcse": 0.029339998961023354,
+          "within_four_mcse_descriptive": true,
+          "indicator_count": 3577,
+          "indicator_shape": [
+            4,
+            1000
+          ]
+        }
+      }
+    },
+    "numpyro": {
+      "netcdf_sha256": "db33a43459b91da6bb7154a29a1acdfd357b0b644d8b3230dcb966b558a220a7",
+      "divergences_retained": 6,
+      "means": {
+        "dose": {
+          "reference": 0.26238346055161266,
+          "retained_mean": 0.2712277135329128,
+          "retained_mcse_mean": 0.009800131207352942,
+          "signed_difference": 0.00884425298130015,
+          "four_mcse": 0.03920052482941177,
+          "within_four_mcse_descriptive": true
+        },
+        "arm[control]": {
+          "reference": 0.4200749911935722,
+          "retained_mean": 0.4106789978527546,
+          "retained_mcse_mean": 0.01333052093456447,
+          "signed_difference": -0.009395993340817643,
+          "four_mcse": 0.05332208373825788,
+          "within_four_mcse_descriptive": true
+        },
+        "arm[treated]": {
+          "reference": 1.639008713375852,
+          "retained_mean": 1.6509847382291447,
+          "retained_mcse_mean": 0.014500338996387356,
+          "signed_difference": 0.011976024853292744,
+          "four_mcse": 0.058001355985549424,
+          "within_four_mcse_descriptive": true
+        },
+        "dose:arm[treated]": {
+          "reference": -0.06609777684619116,
+          "retained_mean": -0.07769181283576447,
+          "retained_mcse_mean": 0.013344848278862583,
+          "signed_difference": -0.011594035989573315,
+          "four_mcse": 0.053379393115450334,
+          "within_four_mcse_descriptive": true
+        },
+        "sigma": {
+          "reference": 0.6464413266722226,
+          "retained_mean": 0.6561991126543918,
+          "retained_mcse_mean": 0.009848086835891636,
+          "signed_difference": 0.009757785982169143,
+          "four_mcse": 0.039392347343566544,
+          "within_four_mcse_descriptive": true
+        }
+      },
+      "sigma_cdf": {
+        "0.2": {
+          "reference": 0.0014127149681932303,
+          "retained_cdf": 0.00025,
+          "indicator_mean_mcse": 0.0002494984969894608,
+          "signed_difference": -0.0011627149681932303,
+          "four_mcse": 0.0009979939879578431,
+          "within_four_mcse_descriptive": false,
+          "indicator_count": 1,
+          "indicator_shape": [
+            4,
+            1000
+          ]
+        },
+        "0.3": {
+          "reference": 0.0531610918196631,
+          "retained_cdf": 0.052,
+          "indicator_mean_mcse": 0.00605820969843402,
+          "signed_difference": -0.0011610918196631043,
+          "four_mcse": 0.02423283879373608,
+          "within_four_mcse_descriptive": true,
+          "indicator_count": 208,
+          "indicator_shape": [
+            4,
+            1000
+          ]
+        },
+        "0.4": {
+          "reference": 0.20124312351659174,
+          "retained_cdf": 0.19175,
+          "indicator_mean_mcse": 0.010124334970310046,
+          "signed_difference": -0.009493123516591734,
+          "four_mcse": 0.040497339881240185,
+          "within_four_mcse_descriptive": true,
+          "indicator_count": 767,
+          "indicator_shape": [
+            4,
+            1000
+          ]
+        },
+        "0.6": {
+          "reference": 0.5401858876499911,
+          "retained_cdf": 0.52925,
+          "indicator_mean_mcse": 0.014018941024995497,
+          "signed_difference": -0.010935887649991094,
+          "four_mcse": 0.05607576409998199,
+          "within_four_mcse_descriptive": true,
+          "indicator_count": 2117,
+          "indicator_shape": [
+            4,
+            1000
+          ]
+        },
+        "1.0": {
+          "reference": 0.8798363217074316,
+          "retained_cdf": 0.863,
+          "indicator_mean_mcse": 0.008874460166966507,
+          "signed_difference": -0.016836321707431656,
+          "four_mcse": 0.03549784066786603,
+          "within_four_mcse_descriptive": true,
+          "indicator_count": 3452,
+          "indicator_shape": [
+            4,
+            1000
+          ]
+        }
+      }
+    }
+  },
+  "initial_integrity": {
+    "head": "6a58eb3c9b8ab510aa8bd5d3d04936e64990dace",
+    "status_porcelain": "",
+    "input_hashes_verified": 39
+  },
+  "final_integrity": {
+    "head": "6a58eb3c9b8ab510aa8bd5d3d04936e64990dace",
+    "status_porcelain": "",
+    "input_hashes_verified": 39
+  },
+  "new_sampling": false,
+  "original_pr_acceptance_remains_failed": true,
+  "limitations": [
+    "Fixed-rule/interval stability is empirical, not a rigorous tail or error bound.",
+    "MCSE comparisons are descriptive and not valid uncertainty guarantees for divergent chains.",
+    "No AutoBayes/Bambi/PyMC/NumPyro import or fit; original sampler and runner failures unchanged."
+  ]
+}

@@ -138,7 +138,7 @@ def test_grammar_accepts_population_only_forms_and_keeps_refusals():
     assert ab.parse_formula("y ~ 1 + (1 | g)").rhs == "(1 | g)"
     with pytest.raises(ValueError, match="no group-level term"):
         ab.parse_formula("y ~ x").group_term
-    for formula, needle in [("y ~ 0 + x", "no intercept"), ("y ~ x - 1", "'-'"), ("y ~ x + (1 | g) + (1 | h)", "more than one grouping"),
+    for formula, needle in [("y ~ x + (1 | g) + (1 | h)", "more than one grouping"),
                             ("y ~ x + (1 + x | g)", "varying slopes"), ("y ~ (1 | g)", "no population-level predictor"), ("y ~ x + (1 || g)", "'\\|\\|'"),
                             ("y ~ log(x)", "function calls"), ("y ~ x + x", "duplicated"), ("y ~ y", "response cannot also be"),
                             ("y ~ x:z", "main effect 'x' is missing"), ("y ~ x + (1 | g/h)", "nested"), ("y x", "expected 'response ~ terms'")]:

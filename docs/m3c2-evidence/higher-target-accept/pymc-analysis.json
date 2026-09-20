@@ -1,0 +1,451 @@
+{
+  "diagnostics": {
+    "parameters": {
+      "dose": {
+        "mean": 0.2506996345924467,
+        "sd": 0.36995756353507375,
+        "rhat": 1.001866579948222,
+        "ess_bulk": 1532.0489209101954,
+        "ess_tail": 2009.4275145746137,
+        "mcse_mean": 0.009519320488028104
+      },
+      "arm[control]": {
+        "mean": 0.438246472340788,
+        "sd": 0.5104949046541204,
+        "rhat": 1.0008814301075117,
+        "ess_bulk": 1675.7382040516336,
+        "ess_tail": 1670.286371286137,
+        "mcse_mean": 0.012763267365134473
+      },
+      "arm[treated]": {
+        "mean": 1.6527167946328918,
+        "sd": 0.5329269117867903,
+        "rhat": 1.00347463071881,
+        "ess_bulk": 1712.3519873132163,
+        "ess_tail": 1767.714321802367,
+        "mcse_mean": 0.012826316570447497
+      },
+      "dose:arm[treated]": {
+        "mean": -0.06280580434716974,
+        "sd": 0.4842741271677795,
+        "rhat": 1.0021880126467464,
+        "ess_bulk": 1278.0242530878666,
+        "ess_tail": 1682.3756450173855,
+        "mcse_mean": 0.013704680582783691
+      },
+      "sigma": {
+        "mean": 0.6300077397891196,
+        "sd": 0.2917896951994657,
+        "rhat": 1.0014414429576641,
+        "ess_bulk": 909.5806410751114,
+        "ess_tail": 2035.0544672855397,
+        "mcse_mean": 0.009243938085557166
+      }
+    },
+    "posterior_checks": {
+      "sigma": {
+        "shape": [
+          4,
+          1000
+        ],
+        "complete": true,
+        "finite": true
+      },
+      "dose": {
+        "shape": [
+          4,
+          1000
+        ],
+        "complete": true,
+        "finite": true
+      },
+      "arm": {
+        "shape": [
+          4,
+          1000,
+          2
+        ],
+        "complete": true,
+        "finite": true
+      },
+      "dose:arm": {
+        "shape": [
+          4,
+          1000,
+          1
+        ],
+        "complete": true,
+        "finite": true
+      }
+    },
+    "sample_stats_checks": {
+      "step_size_bar": {
+        "shape": [
+          4,
+          1000
+        ],
+        "complete": true,
+        "finite": true,
+        "excluded_unused_all_nan": false,
+        "nonfinite_count": 0
+      },
+      "smallest_eigval": {
+        "shape": [
+          4,
+          1000
+        ],
+        "complete": true,
+        "finite": false,
+        "excluded_unused_all_nan": true,
+        "nonfinite_count": 4000
+      },
+      "energy": {
+        "shape": [
+          4,
+          1000
+        ],
+        "complete": true,
+        "finite": true,
+        "excluded_unused_all_nan": false,
+        "nonfinite_count": 0
+      },
+      "lp": {
+        "shape": [
+          4,
+          1000
+        ],
+        "complete": true,
+        "finite": true,
+        "excluded_unused_all_nan": false,
+        "nonfinite_count": 0
+      },
+      "energy_error": {
+        "shape": [
+          4,
+          1000
+        ],
+        "complete": true,
+        "finite": true,
+        "excluded_unused_all_nan": false,
+        "nonfinite_count": 0
+      },
+      "diverging": {
+        "shape": [
+          4,
+          1000
+        ],
+        "complete": true,
+        "finite": true,
+        "excluded_unused_all_nan": false,
+        "nonfinite_count": 0
+      },
+      "acceptance_rate": {
+        "shape": [
+          4,
+          1000
+        ],
+        "complete": true,
+        "finite": true,
+        "excluded_unused_all_nan": false,
+        "nonfinite_count": 0
+      },
+      "process_time_diff": {
+        "shape": [
+          4,
+          1000
+        ],
+        "complete": true,
+        "finite": true,
+        "excluded_unused_all_nan": false,
+        "nonfinite_count": 0
+      },
+      "n_steps": {
+        "shape": [
+          4,
+          1000
+        ],
+        "complete": true,
+        "finite": true,
+        "excluded_unused_all_nan": false,
+        "nonfinite_count": 0
+      },
+      "step_size": {
+        "shape": [
+          4,
+          1000
+        ],
+        "complete": true,
+        "finite": true,
+        "excluded_unused_all_nan": false,
+        "nonfinite_count": 0
+      },
+      "index_in_trajectory": {
+        "shape": [
+          4,
+          1000
+        ],
+        "complete": true,
+        "finite": true,
+        "excluded_unused_all_nan": false,
+        "nonfinite_count": 0
+      },
+      "max_energy_error": {
+        "shape": [
+          4,
+          1000
+        ],
+        "complete": true,
+        "finite": true,
+        "excluded_unused_all_nan": false,
+        "nonfinite_count": 0
+      },
+      "perf_counter_diff": {
+        "shape": [
+          4,
+          1000
+        ],
+        "complete": true,
+        "finite": true,
+        "excluded_unused_all_nan": false,
+        "nonfinite_count": 0
+      },
+      "reached_max_treedepth": {
+        "shape": [
+          4,
+          1000
+        ],
+        "complete": true,
+        "finite": true,
+        "excluded_unused_all_nan": false,
+        "nonfinite_count": 0
+      },
+      "perf_counter_start": {
+        "shape": [
+          4,
+          1000
+        ],
+        "complete": true,
+        "finite": true,
+        "excluded_unused_all_nan": false,
+        "nonfinite_count": 0
+      },
+      "divergences": {
+        "shape": [
+          4,
+          1000
+        ],
+        "complete": true,
+        "finite": true,
+        "excluded_unused_all_nan": false,
+        "nonfinite_count": 0
+      },
+      "tree_depth": {
+        "shape": [
+          4,
+          1000
+        ],
+        "complete": true,
+        "finite": true,
+        "excluded_unused_all_nan": false,
+        "nonfinite_count": 0
+      },
+      "largest_eigval": {
+        "shape": [
+          4,
+          1000
+        ],
+        "complete": true,
+        "finite": false,
+        "excluded_unused_all_nan": true,
+        "nonfinite_count": 4000
+      }
+    },
+    "bfmi": [
+      0.704669114928662,
+      0.7201983471802358,
+      0.7682361698226027,
+      0.7146949042640622
+    ],
+    "divergences": 0,
+    "divergences_per_chain": [
+      0,
+      0,
+      0,
+      0
+    ],
+    "max_depth": 7,
+    "depth_saturated_draws": 0,
+    "max_depth_flags": 0,
+    "gates": {
+      "complete_finite_posterior": true,
+      "core_stats_present": true,
+      "complete_finite_active_stats": true,
+      "finite_diagnostics": true,
+      "zero_divergences": true,
+      "rhat_le_1_01": true,
+      "ess_bulk_ge_400": true,
+      "ess_tail_ge_400": true,
+      "every_chain_bfmi_ge_0_3": true,
+      "no_depth_saturation": true,
+      "no_max_depth_flags": true
+    },
+    "passed": true
+  },
+  "semantics": {
+    "gates": {
+      "original_formula": true,
+      "no_intercept_graph_names": true,
+      "no_intercept_posterior": true,
+      "no_intercept_prior": true,
+      "record_intercept_absent": true,
+      "requested_effective_centering": true,
+      "raw_design_and_means": true,
+      "coefficient_order": true,
+      "coordinate_order": true,
+      "exact_record_priors": true,
+      "record_five_parameters": true,
+      "full_level_factor_record": true,
+      "complete_retained_arrays": true,
+      "mean_predictions": true
+    },
+    "predictions": {
+      "fitted": {
+        "shape": [
+          4,
+          1000,
+          6
+        ],
+        "max_abs_error": 0.0,
+        "finite": true,
+        "passed": true
+      },
+      "new": {
+        "shape": [
+          4,
+          1000,
+          4
+        ],
+        "max_abs_error": 8.881784197001252e-16,
+        "finite": true,
+        "passed": true
+      }
+    },
+    "passed": true
+  },
+  "reference_means": {
+    "dose": {
+      "reference": 0.26238346055161266,
+      "mean": 0.2506996345924467,
+      "mcse_mean": 0.009519320488028104,
+      "absolute_difference": 0.01168382595916595,
+      "tolerance": 0.038077291952112416,
+      "passed": true
+    },
+    "arm[control]": {
+      "reference": 0.4200749911935722,
+      "mean": 0.438246472340788,
+      "mcse_mean": 0.012763267365134473,
+      "absolute_difference": 0.018171481147215784,
+      "tolerance": 0.051053079460537894,
+      "passed": true
+    },
+    "arm[treated]": {
+      "reference": 1.639008713375852,
+      "mean": 1.6527167946328918,
+      "mcse_mean": 0.012826316570447497,
+      "absolute_difference": 0.013708081257039817,
+      "tolerance": 0.05130527628178999,
+      "passed": true
+    },
+    "dose:arm[treated]": {
+      "reference": -0.06609777684619116,
+      "mean": -0.06280580434716974,
+      "mcse_mean": 0.013704680582783691,
+      "absolute_difference": 0.0032919724990214116,
+      "tolerance": 0.05481873233113477,
+      "passed": true
+    },
+    "sigma": {
+      "reference": 0.6464413266722226,
+      "mean": 0.6300077397891196,
+      "mcse_mean": 0.009243938085557166,
+      "absolute_difference": 0.016433586883103035,
+      "tolerance": 0.036975762342228664,
+      "passed": true
+    }
+  },
+  "sigma_cdf_descriptive": {
+    "0.2": {
+      "reference": 0.0014127149681932303,
+      "empirical": 0.00175,
+      "indicator_count": 7,
+      "chain_shape": [
+        4,
+        1000
+      ],
+      "indicator_mean_mcse": 0.000893042186640077,
+      "four_mcse": 0.003572168746560308,
+      "signed_difference": 0.0003372850318067698,
+      "descriptive_only": true
+    },
+    "0.3": {
+      "reference": 0.0531610918196631,
+      "empirical": 0.05525,
+      "indicator_count": 221,
+      "chain_shape": [
+        4,
+        1000
+      ],
+      "indicator_mean_mcse": 0.00508019390662937,
+      "four_mcse": 0.02032077562651748,
+      "signed_difference": 0.0020889081803368986,
+      "descriptive_only": true
+    },
+    "0.4": {
+      "reference": 0.20124312351659174,
+      "empirical": 0.202,
+      "indicator_count": 808,
+      "chain_shape": [
+        4,
+        1000
+      ],
+      "indicator_mean_mcse": 0.010585786842380202,
+      "four_mcse": 0.04234314736952081,
+      "signed_difference": 0.0007568764834082753,
+      "descriptive_only": true
+    },
+    "0.6": {
+      "reference": 0.5401858876499911,
+      "empirical": 0.5525,
+      "indicator_count": 2210,
+      "chain_shape": [
+        4,
+        1000
+      ],
+      "indicator_mean_mcse": 0.014126228070437412,
+      "four_mcse": 0.05650491228174965,
+      "signed_difference": 0.012314112350008899,
+      "descriptive_only": true
+    },
+    "1.0": {
+      "reference": 0.8798363217074316,
+      "empirical": 0.8975,
+      "indicator_count": 3590,
+      "chain_shape": [
+        4,
+        1000
+      ],
+      "indicator_mean_mcse": 0.006988145797965511,
+      "four_mcse": 0.027952583191862043,
+      "signed_difference": 0.01766367829256832,
+      "descriptive_only": true
+    }
+  },
+  "execution_gates": {
+    "cpu_float64": true,
+    "settings_match": true,
+    "parallel_numpyro": true,
+    "retained_hash_matches": true
+  },
+  "passed": true
+}

@@ -1,0 +1,33 @@
+{
+  "command": [
+    "/Users/andrewdou/iqss-research/projects/AutoBayes-worktrees/m3c2-intercept-controls/.venv/bin/python",
+    "-B",
+    "-u",
+    "/private/tmp/autobayes-intercept-cpu-validation/acceptance.py"
+  ],
+  "cwd": "/private/tmp/autobayes-intercept-cpu-validation/attempt-1",
+  "env_overrides": {
+    "PYTHONDONTWRITEBYTECODE": "1",
+    "PYTHONPATH": "/Users/andrewdou/iqss-research/projects/AutoBayes-worktrees/m3c2-intercept-controls",
+    "PYTENSOR_FLAGS": "compiledir=/private/tmp/autobayes-intercept-cpu-validation/attempt-1/pytensor-cache",
+    "JAX_PLATFORMS": "cpu",
+    "AUTOBAYES_HOST_DEVICES": "4",
+    "MPLCONFIGDIR": "/private/tmp/autobayes-intercept-cpu-validation/attempt-1/matplotlib-cache",
+    "OMP_NUM_THREADS": "1",
+    "OPENBLAS_NUM_THREADS": "1",
+    "MKL_NUM_THREADS": "1"
+  },
+  "started": "2026-09-19T20:18:04.606021+00:00",
+  "deadline_seconds": 600,
+  "term_grace_seconds": 3,
+  "freeze_sha256": "b4872cbbe9ce8759b0391e48a4fa170e48948fc43f3077f2741855ae8a1cb996",
+  "head": "6a58eb3c9b8ab510aa8bd5d3d04936e64990dace",
+  "timeout": false,
+  "term_sent": false,
+  "kill_sent": false,
+  "pid": 88432,
+  "child_exit_code": 2,
+  "wall_seconds": 53.160824416,
+  "finished": "2026-09-19T20:18:57.767164+00:00",
+  "supervisor_exit_code": 2
+}

@@ -1,0 +1,203 @@
+...........................................................F............ [ 15%]
+........................................................................ [ 30%]
+....................................F................................... [ 45%]
+.................F...................................................... [ 60%]
+........................................................................ [ 75%]
+........................................................................ [ 90%]
+.............................................                            [100%]
+=================================== FAILURES ===================================
+_____________________________ test_invalid_inputs ______________________________
+
+cdata =             x      g   n   k
+0   -0.661528  lvl05  47   8
+1    0.935050  lvl01  32  15
+2    0.049055  lvl00  45   6
+3 ...  37  21
+117 -0.050604  lvl03  15  10
+118 -0.283125  lvl01  23   4
+119  1.643252  lvl05  21  10
+
+[120 rows x 4 columns]
+
+    def test_invalid_inputs(cdata):
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", np.exceptions.ComplexWarning)
+            warnings.simplefilter("error", RuntimeWarning)
+            bad = [
+                (cdata.assign(k=cdata.k.astype(bool)), "boolean"),
+                (cdata.assign(n=cdata.n.astype(complex)), "complex"),
+                (cdata.assign(k=cdata.k + 0.5), "non-integral"),
+                (cdata.assign(n=cdata.n.astype(float).where(cdata.index > 0, np.inf)), "non-finite"),
+                (cdata.assign(k=cdata.k.where(cdata.index > 0, -1)), "negative"),
+                (cdata.assign(k=cdata.n + 1), "exceed trials"),
+                (cdata.assign(n=cdata.n.where(cdata.index > 0, 0)), "zero trials is impossible"),
+                (cdata.assign(n=0, k=0), "no trials in the data"),
+                (cdata.assign(k=cdata.k.astype(float).where(cdata.index > 0, np.nan)), "missing values"),
+            ]
+            for df, needle in bad:
+                with pytest.raises(ab.FormulaError, match=needle):
+                    ab.binomial(FORMULA, df, PRIORS)
+        with pytest.raises(ab.FormulaError, match="above the tested limit"):
+            ab.binomial(FORMULA, cdata.assign(n=cdata.n.astype(np.int64).where(cdata.index > 0, COUNT_CAP + 5)), PRIORS)
+        with pytest.raises(ab.PriorError, match="no residual SD"):
+            ab.binomial(FORMULA, cdata, ab.Priors(intercept=ab.Normal(0, 1.5), b=ab.Normal(0, 1), sd=ab.HalfNormal(1), sigma=ab.HalfNormal(1)))
+        with pytest.raises(ab.PriorError, match="needs a prior on the SD of its varying intercept"):   # sd missing (M3c-1: refused at build)
+            ab.binomial(FORMULA, cdata, ab.Priors(intercept=ab.Normal(0, 1.5), b=ab.Normal(0, 1)))
+        for bad_formula, needle in [
+            ("k ~ x + (1 | g)", "needs 'successes | trials"), ("p(k, n) ~ x + (1 | g)", "Bambi's 'p"),
+            ("k | trials(n) ~ x + (1 + x | g)", "varying slopes"), ("k | trials(n) ~ x + (1 | g/h)", "nested"),
+            ("k | trials(n) ~ 0 + x + (1 | g)", "no intercept"),
+            ("k | trials(n) ~ n + (1 | g)", "cannot also be a predictor"), ("k | trials(n) ~ x + (1 | n)", "cannot also be a predictor"),
+            ("k | trials(k) ~ x + (1 | g)", "cannot also be the response"), ("k | n ~ x + (1 | g)", "exactly 'successes | trials"),
+            ("k | weights(n) ~ x + (1 | g)", "exactly 'successes | trials"),
+        ]:
+            with pytest.raises(ab.FormulaError, match=needle):
+>               ab.binomial(bad_formula, cdata, PRIORS)
+
+tests/test_binomial.py:464: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+autobayes/model.py:536: in binomial
+    return Model(formula, data, priors, family="binomial", center_predictors=center_predictors, categorical=categorical)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+autobayes/model.py:89: in __init__
+    priors.validate(spec0, family)                  # structure now; per-level coverage once levels are known
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = Priors(intercept=Prior(name='Normal', params={'mu': 0.0, 'sigma': 1.5}), b=Prior(name='Normal', params={'mu': 0.0, 'sigma': 1.0}), sd=Prior(name='HalfNormal', params={'sigma': 1.0}), sigma=None)
+spec = ModelSpec(formula='k | trials(n) ~ 0 + x + (1 | g)', response='k', predictors=('x',), group='g', intercept=False, levels=(), trials='n', rhs='0 + x + (1 | g)', terms=('x',), categoricals=(), interactions=())
+family = 'binomial'
+
+    def validate(self, spec, family: str = "gaussian") -> None:
+        has_intercept = getattr(spec, "intercept", True)
+        if has_intercept and self.intercept is None:
+            raise PriorError("the formula has a population intercept; an intercept prior is required")
+        if not has_intercept and self.intercept is not None:
+>           raise PriorError("the formula has no population intercept; omit the intercept prior (or pass None)")
+E           autobayes.priors.PriorError: the formula has no population intercept; omit the intercept prior (or pass None)
+
+autobayes/priors.py:186: PriorError
+_________________________ test_describe_and_fit_record _________________________
+
+    def test_describe_and_fit_record():
+        df = simulate_cat()
+        priors = ab.Priors(intercept=ab.Normal(0, 1.5), b={"x": ab.Normal(0, 1), "z": {"a": ab.StudentT(4, 0, 1), "c": ab.StudentT(6, 0.2, 2)}},
+                           sd=ab.HalfNormal(1))                                     # per-level priors keyed for reference 'b'
+        m = build("bernoulli", df, priors, categorical={"z": "b"})
+        text = m.describe()
+        for s in ["reference 'b'", "levels (sorted) a, b, c", "coefficients b_z[a, c]", "proportions among fitted rows: a 0.",
+                  "(1[z_i = a] - p_z[a]) * b_z[a]", "difference between level l and the reference 'b' on the log-odds scale",
+                  "sample proportions of the categorical levels", "NOT the", "average probability across the levels",
+                  "b_z[a] ~ StudentT(nu=4, mu=0, sigma=1)", "b_z[c] ~ StudentT(nu=6, mu=0.2, sigma=2)",
+                  "posterior rows z[a], z[c]", "b_x ~ Normal(mu=0, sigma=1)"]:
+            assert s in text, s
+        mg = build("gaussian", df, G_PRIORS, categorical={"z": "a"}, center_predictors=False)
+        assert "raw-scale intercept (x = 0, reference level, group effect zero)" in mg.describe()
+        fit = m.fit(backend="pymc", chains=2, draws=60, tune=60, seed=2, cores=1)
+        rec = ab.fit_record(m, fit)
+>       assert rec["model"]["categorical"] == {"z": {"reference": "b", "levels": ["a", "b", "c"], "coefficients": ["a", "c"], "unused_levels": []}}
+E       AssertionError: assert {'z': {'refer...ls': [], ...}} == {'z': {'refer..._levels': []}}
+E         
+E         Differing items:
+E         {'z': {'reference': 'b', 'levels': ['a', 'b', 'c'], 'coefficients': ['a', 'c'], 'unused_levels': [], ...}} != {'z': {'reference': 'b', 'levels': ['a', 'b', 'c'], 'coefficients': ['a', 'c'], 'unused_levels': []}}
+E         Use -v to get more diff
+
+tests/test_categorical.py:357: AssertionError
+------------------------------ Captured log call -------------------------------
+WARNING  pymc.sampling.mcmc:mcmc.py:810 Only 60 samples per chain. Reliable r-hat and ESS diagnostics require longer chains for accurate estimate.
+______________ test_canonical_expansion_equivalence_and_refusals _______________
+
+    def test_canonical_expansion_equivalence_and_refusals():
+        df = simulate_int()
+        base = build("gaussian", df, G_PRIORS)
+        assert base.spec.terms == ("x", "z", "x:z") and base.spec.columns == ("x", "z[a]", "z[c]", "x:z[a]", "x:z[c]")
+        assert base.spec.rhs == "x + z + x:z + (1 | g)" and base.spec.canonical_formula == "y ~ x + z + x:z + (1 | g)"
+        shuffled = df.sample(frac=1.0, random_state=3).reset_index(drop=True)
+        for formula, terms in [("y ~ x*z + (1 | g)", ("x", "z", "x:z")), ("y ~ z*x + (1 | g)", ("z", "x", "x:z")),
+                               ("y ~ z + x + z:x + (1 | g)", ("z", "x", "x:z")), ("y ~ x:z + z + x + (1 | g)", ("z", "x", "x:z")),
+                               ("y ~ 1 + x + z + x:z + (1 | g)", ("x", "z", "x:z"))]:
+            for data in (df, shuffled):
+                m = build("gaussian", data, G_PRIORS, formula=formula)
+                assert m.spec.terms == terms and m.spec.interactions == (("x", "z"),) and m.spec.rhs.endswith("x:z + (1 | g)")
+                assert set(m.spec.columns) == set(base.spec.columns)
+                X_raw, Xc, xbar, gidx = hand(data, list(terms[:2]), {"z": "b"}, [("x", "z")], True)
+                assert np.array_equal(m.design.X_raw, X_raw) and np.allclose(m.design.X_model, Xc)
+                assert m.bambi_model.formula.main.endswith("x:z + (1 | g)") if hasattr(m.bambi_model, "formula") else True
+        with pytest.raises(ab.FormulaError, match="main effect 'z' is missing"):
+            build("gaussian", df, G_PRIORS, formula="y ~ x + x:z + (1 | g)")
+        with pytest.raises(ab.FormulaError, match="main effect 'x' is missing"):
+            build("gaussian", df, G_PRIORS, formula="y ~ z + x:z + (1 | g)")
+        with pytest.raises(ab.FormulaError, match="main effect 'x' is missing"):
+            build("gaussian", df, G_PRIORS, formula="y ~ x:z + (1 | g)")
+        with pytest.raises(ab.FormulaError, match="duplicated predictor after expanding 'x\\*z'"):
+            build("gaussian", df, G_PRIORS, formula="y ~ x + z + x*z + (1 | g)")
+        with pytest.raises(ab.FormulaError, match="appears more than once after expansion"):
+            build("gaussian", df, G_PRIORS, formula="y ~ x + z + x:z + z:x + (1 | g)")
+        df_w = df.assign(w=np.linspace(-1, 2, len(df)), v=np.where(df.index % 2 == 0, "p", "q"))
+        for formula, cat in [("y ~ x + w + z + x:z + w:z + (1 | g)", {"z": "a"}),                  # shared categorical side
+                             ("y ~ x + z + v + x:z + x:v + (1 | g)", {"z": "a", "v": "p"}),          # shared numeric side
+                             ("y ~ x + z + w + v + x:z + w:v + (1 | g)", {"z": "a", "v": "p"}),      # disjoint
+                             ("y ~ x*z + w*v + (1 | g)", {"z": "a", "v": "p"})]:                     # shorthand twice
+            with pytest.raises(ab.FormulaError, match="2 interactions after expansion .* at most one"):
+                ab.gaussian(formula, df_w, G_PRIORS, categorical=cat)
+        with pytest.raises(ab.FormulaError, match="two numeric terms"):
+            ab.gaussian("y ~ x + z + x:z + (1 | g)", df.assign(z=df.x ** 2), G_PRIORS)
+        df2 = df.assign(w=np.where(df.index % 2 == 0, "p", "q"))
+        with pytest.raises(ab.FormulaError, match="two categorical terms"):
+            ab.gaussian("y ~ z + w + z:w + (1 | g)", df2, G_PRIORS, categorical={"z": "a", "w": "p"})
+        with pytest.raises(ab.FormulaError, match="grouping factor 'g' cannot enter"):
+            build("gaussian", df, G_PRIORS, formula="y ~ x + z + x:g + (1 | g)")
+        with pytest.raises(ab.FormulaError, match="cannot interact with itself"):
+            build("gaussian", df, G_PRIORS, formula="y ~ x + z + x:x + (1 | g)")
+        with pytest.raises(ab.FormulaError, match="only a two-way interaction"):
+            build("gaussian", df, G_PRIORS, formula="y ~ x + z + x:z:g + (1 | g)")
+        with pytest.raises(ab.FormulaError, match="mixing '\\*' and ':'"):
+            build("gaussian", df, G_PRIORS, formula="y ~ x + z + x*z:g + (1 | g)")
+        with pytest.raises(ab.FormulaError, match="not supported in M0"):                 # earlier refusals unchanged
+>           build("gaussian", df, G_PRIORS, formula="y ~ x + z + x:z + (1 | g) - 1")
+
+tests/test_interaction.py:134: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_interaction.py:49: in build
+    return getattr(ab, family)(formula or FORMULAS[family], df, priors, categorical={"z": reference}, center_predictors=center)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+autobayes/model.py:524: in gaussian
+    return Model(formula, data, priors, family="gaussian", center_predictors=center_predictors, categorical=categorical)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+autobayes/model.py:89: in __init__
+    priors.validate(spec0, family)                  # structure now; per-level coverage once levels are known
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = Priors(intercept=Prior(name='Normal', params={'mu': 0.0, 'sigma': 5.0}), b=Prior(name='Normal', params={'mu': 0.0, 'sigma': 2.0}), sd=Prior(name='HalfNormal', params={'sigma': 1.0}), sigma=Prior(name='HalfNormal', params={'sigma': 1.0}))
+spec = ModelSpec(formula='y ~ x + z + x:z + (1 | g) - 1', response='y', predictors=('x',), group='g', intercept=False, levels...categoricals=(Categorical(name='z', reference='b', levels=(), unused=(), full_rank=True),), interactions=(('x', 'z'),))
+family = 'gaussian'
+
+    def validate(self, spec, family: str = "gaussian") -> None:
+        has_intercept = getattr(spec, "intercept", True)
+        if has_intercept and self.intercept is None:
+            raise PriorError("the formula has a population intercept; an intercept prior is required")
+        if not has_intercept and self.intercept is not None:
+>           raise PriorError("the formula has no population intercept; omit the intercept prior (or pass None)")
+E           autobayes.priors.PriorError: the formula has no population intercept; omit the intercept prior (or pass None)
+
+autobayes/priors.py:186: PriorError
+=============================== warnings summary ===============================
+tests/test_interaction.py::test_describe_and_fit_record
+  /Users/andrewdou/iqss-research/projects/AutoBayes-worktrees/m3c2-intercept-controls/autobayes/diagnostics.py:37: RuntimeWarning: All-NaN slice encountered
+    "max_rhat": float(max(np.nanmax(np.asarray(v)) for v in rhat.data_vars.values())),
+
+tests/test_intercept_controls.py::test_fixed_draw_predictions_and_records[False-gaussian]
+tests/test_intercept_controls.py::test_fixed_draw_predictions_and_records[True-gaussian]
+tests/test_intercept_controls.py::test_fixed_draw_predictions_and_records[True-bernoulli]
+tests/test_intercept_controls.py::test_fixed_draw_predictions_and_records[True-binomial]
+tests/test_population_only.py::test_describe_and_fit_record_without_sampling
+  /Users/andrewdou/iqss-research/projects/AutoBayes-worktrees/m3c2-intercept-controls/.venv/lib/python3.11/site-packages/arviz/stats/diagnostics.py:596: RuntimeWarning: invalid value encountered in scalar divide
+    (between_chain_variance / within_chain_variance + num_samples - 1) / (num_samples)
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+FAILED tests/test_binomial.py::test_invalid_inputs - autobayes.priors.PriorEr...
+FAILED tests/test_categorical.py::test_describe_and_fit_record - AssertionErr...
+FAILED tests/test_interaction.py::test_canonical_expansion_equivalence_and_refusals
+3 failed, 474 passed, 7 deselected, 6 warnings in 466.82s (0:07:46)

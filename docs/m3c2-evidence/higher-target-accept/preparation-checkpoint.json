@@ -1,0 +1,31 @@
+{
+  "status": "prepared; not launched",
+  "at": "2026-09-20T01:54:24.152903+00:00",
+  "syntax_checks": "pass",
+  "input_hashes_verified": 68,
+  "fits": [
+    {
+      "backend": "pymc",
+      "device": "cpu",
+      "chains": 4,
+      "tune": 1000,
+      "draws": 1000,
+      "target_accept": 0.99,
+      "seed": 37,
+      "cores": 4,
+      "progressbar": false
+    },
+    {
+      "backend": "numpyro",
+      "device": "cpu",
+      "chains": 4,
+      "tune": 1000,
+      "draws": 1000,
+      "target_accept": 0.99,
+      "seed": 41,
+      "chain_method": "parallel",
+      "progressbar": false
+    }
+  ],
+  "freeze_sha256": "da9214548acf597a2866c91f42c083b18fad2e018e3a791057ba465efa028410"
+}

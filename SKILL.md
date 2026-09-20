@@ -11,7 +11,7 @@ description: >
   varying-intercept / random-intercept model, a logistic regression with a group
   intercept, a brms or lme4 formula in Python, PyMC or NumPyro sampling on a GPU, help
   reading divergences / R-hat / ESS, or to set up a Bayesian modelling project that must
-  survive many sessions. Two verified families; the skill says what is verified and
+  survive many sessions. Three supported families; the skill says what is verified and
   routes everything else to the reference pack.
 ---
 
@@ -58,12 +58,24 @@ for the outcome families:
   (`docs/m2-decision.md`, repair record). GPU execution **pending**. Evidence
   `docs/m2-evidence/`, checks in `docs/m2-decision.md`.
 
-**What is not verified.** Every other formula and family (other links, intercept removal
-with `0 +` or `- 1`, varying slopes, nested or crossed groups, several group terms,
+**What is not verified.** Every other formula and family (other links,
+varying slopes, nested or crossed groups, several group terms,
 beta-binomial). The library refuses them with an error naming the construct. Population-only
 models (M3c-1) are verified deterministically (density, gradients, closed form, predictions)
-but have not yet been sampled as evidence; the proposed smoke is in `docs/m3c1-decision.md`. Do not loosen the parser to get past that
+and one Gaussian CPU example has sampling evidence accepted in `docs/m3c1-decision.md`; this is not calibration or all-family sampling evidence. Do not loosen the parser to get past that
 error; go to "Outside the verified family" below.
+
+**Population intercept control (M3c-2 candidate).** `0 + terms` and `terms - 1`
+remove it. Omit `Priors.intercept` and `value_point(intercept=...)`; supplied values
+are refused. The first categorical main effect becomes full-level coded, including
+its declared reference; later categorical main effects and the existing interaction
+retain non-reference differences. Inspect `model.spec.columns` and cover the actual
+coefficient set with explicit priors. Reordering factors can change independent
+prior meaning. No-intercept models use the raw design even when centering is
+requested, with requested/effective flags recorded separately. At least one
+population predictor is required; conflicting inclusion/removal tokens are refused.
+See `docs/m3c2-decision.md` and `examples/m3c2_no_intercept.py`. Deterministic checks
+are the current evidence; no new no-intercept sampling/GPU validation is claimed.
 
 ## Session start, every time
 

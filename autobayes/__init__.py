@@ -55,4 +55,4 @@ __all__ = [
     "PriorError", "Priors", "StudentT", "bernoulli", "binomial", "compare_records", "environment", "fit", "fit_record",
     "format_comparison", "format_environment", "gaussian", "panel", "parse_formula", "predict",
 ]
-__version__ = "0.5.0"
+__version__ = "0.6.0"

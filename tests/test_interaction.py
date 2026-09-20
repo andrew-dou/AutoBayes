@@ -130,7 +130,7 @@ def test_canonical_expansion_equivalence_and_refusals():
         build("gaussian", df, G_PRIORS, formula="y ~ x + z + x:z:g + (1 | g)")
     with pytest.raises(ab.FormulaError, match="mixing '\\*' and ':'"):
         build("gaussian", df, G_PRIORS, formula="y ~ x + z + x*z:g + (1 | g)")
-    with pytest.raises(ab.FormulaError, match="not supported in M0"):                 # earlier refusals unchanged
+    with pytest.raises(ab.PriorError, match="no population intercept"):              # removal now supported; old intercept prior refused
         build("gaussian", df, G_PRIORS, formula="y ~ x + z + x:z + (1 | g) - 1")
 
 

@@ -1,0 +1,31 @@
+{
+  "python": "3.11.0 (v3.11.0:deaf509e8f, Oct 24 2022, 14:43:23) [Clang 13.0.0 (clang-1300.0.29.30)]",
+  "platform": "macOS-26.6.1-arm64-arm-64bit",
+  "versions": {
+    "pymc": "5.28.5",
+    "pytensor": "2.38.3",
+    "bambi": "0.17.2",
+    "formulae": "0.6.2",
+    "arviz": "0.23.4",
+    "numpy": "2.4.6",
+    "pandas": "3.0.5",
+    "scipy": "1.17.1",
+    "xarray": "2026.7.0",
+    "matplotlib": "3.10.9",
+    "jax": "0.10.2",
+    "jaxlib": "0.10.2",
+    "numpyro": "0.21.0",
+    "pytest": "9.1.1"
+  },
+  "forbidden_imports": [
+    "autobayes",
+    "bambi",
+    "numpyro",
+    "pymc"
+  ],
+  "verification": {
+    "head": "6a58eb3c9b8ab510aa8bd5d3d04936e64990dace",
+    "status_porcelain": "",
+    "input_hashes_verified": 39
+  }
+}

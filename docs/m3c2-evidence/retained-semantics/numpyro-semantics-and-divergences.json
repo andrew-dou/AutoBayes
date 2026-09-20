@@ -1,0 +1,354 @@
+{
+  "input_netcdf": "/private/tmp/autobayes-intercept-cpu-validation/attempt-1/numpyro.nc",
+  "input_sha256": "db33a43459b91da6bb7154a29a1acdfd357b0b644d8b3230dcb966b558a220a7",
+  "semantic_gates": {
+    "original_formula": true,
+    "no_intercept_graph_names": true,
+    "no_intercept_posterior": true,
+    "no_intercept_prior": true,
+    "record_intercept_absent": true,
+    "requested_effective_centering": true,
+    "raw_design_and_means": true,
+    "coefficient_order": true,
+    "coordinate_order": true,
+    "exact_record_priors": true,
+    "record_five_parameters": true,
+    "full_level_factor_record": true,
+    "complete_retained_arrays": true,
+    "mean_predictions": true
+  },
+  "semantics_passed": true,
+  "predictions": {
+    "fitted": {
+      "shape": [
+        4,
+        1000,
+        6
+      ],
+      "all_finite": true,
+      "max_abs_error": 0.0,
+      "atol": 1e-10,
+      "rtol": 1e-10,
+      "passed": true
+    },
+    "new": {
+      "shape": [
+        4,
+        1000,
+        4
+      ],
+      "all_finite": true,
+      "max_abs_error": 8.881784197001252e-16,
+      "atol": 1e-10,
+      "rtol": 1e-10,
+      "passed": true
+    }
+  },
+  "divergences": 6,
+  "divergences_by_chain": [
+    0,
+    1,
+    4,
+    1
+  ],
+  "conditional_draw_summaries": {
+    "dose": {
+      "divergent_transition": {
+        "n": 6,
+        "mean": 0.410307493340905,
+        "quantiles": {
+          "0.0": 0.15563858139498551,
+          "0.01": 0.1578474021683265,
+          "0.05": 0.1666826852616904,
+          "0.25": 0.2436899221772688,
+          "0.5": 0.4516897259168383,
+          "0.75": 0.5583431622219208,
+          "0.95": 0.6180409649366108,
+          "0.99": 0.6312689649039144,
+          "1.0": 0.6345759648957403
+        }
+      },
+      "nondivergent_transition": {
+        "n": 3994,
+        "mean": 0.2710187804635968,
+        "quantiles": {
+          "0.0": -1.357161146173527,
+          "0.01": -0.6774856488572609,
+          "0.05": -0.3278627908416783,
+          "0.25": 0.04399643077760699,
+          "0.5": 0.27152389123324494,
+          "0.75": 0.49329691435802103,
+          "0.95": 0.8646252243722651,
+          "0.99": 1.2202441520260365,
+          "1.0": 1.7326529709953822
+        }
+      }
+    },
+    "arm[control]": {
+      "divergent_transition": {
+        "n": 6,
+        "mean": 0.35909582058096595,
+        "quantiles": {
+          "0.0": 0.11052589471541441,
+          "0.01": 0.11426878377626032,
+          "0.05": 0.129240340019644,
+          "0.25": 0.20359473414797927,
+          "0.5": 0.3870109669755467,
+          "0.75": 0.5338176378210129,
+          "0.95": 0.5435698098105701,
+          "0.99": 0.5445682901042441,
+          "1.0": 0.5448179101776627
+        }
+      },
+      "nondivergent_transition": {
+        "n": 3994,
+        "mean": 0.41075648885516597,
+        "quantiles": {
+          "0.0": -1.986246096257276,
+          "0.01": -0.940110536543017,
+          "0.05": -0.4468098671288232,
+          "0.25": 0.08517260330756392,
+          "0.5": 0.41422331273343993,
+          "0.75": 0.7128048650833316,
+          "0.95": 1.2840316015367632,
+          "0.99": 1.8078888135241271,
+          "1.0": 2.820997873527721
+        }
+      }
+    },
+    "arm[treated]": {
+      "divergent_transition": {
+        "n": 6,
+        "mean": 1.81975823349741,
+        "quantiles": {
+          "0.0": 1.6030129708259326,
+          "0.01": 1.6065085477935575,
+          "0.05": 1.6204908556640567,
+          "0.25": 1.6829933906155938,
+          "0.5": 1.8059460962309286,
+          "0.75": 1.9624549241738702,
+          "0.95": 2.031185206278562,
+          "0.99": 2.043845480294115,
+          "1.0": 2.0470105487980033
+        }
+      },
+      "nondivergent_transition": {
+        "n": 3994,
+        "mean": 1.650731197675412,
+        "quantiles": {
+          "0.0": -1.9187276547491081,
+          "0.01": -0.013038921405718091,
+          "0.05": 0.63645545982001,
+          "0.25": 1.3362919991654851,
+          "0.5": 1.697945771505575,
+          "0.75": 2.0066828607039717,
+          "0.95": 2.5355383739615203,
+          "0.99": 2.958777623153498,
+          "1.0": 4.217413138729592
+        }
+      }
+    },
+    "dose:arm[treated]": {
+      "divergent_transition": {
+        "n": 6,
+        "mean": -0.33775485350783563,
+        "quantiles": {
+          "0.0": -0.6327512100294084,
+          "0.01": -0.6303042632130326,
+          "0.05": -0.6205164759475292,
+          "0.25": -0.5678558432616664,
+          "0.5": -0.31172005557777926,
+          "0.75": -0.09890362731059674,
+          "0.95": -0.09120065294881328,
+          "0.99": -0.08955096484380187,
+          "1.0": -0.08913854281754902
+        }
+      },
+      "nondivergent_transition": {
+        "n": 3994,
+        "mean": -0.07730113225388353,
+        "quantiles": {
+          "0.0": -2.2945492709696915,
+          "0.01": -1.260717627845742,
+          "0.05": -0.8821192212165189,
+          "0.25": -0.4021131631020022,
+          "0.5": -0.10444921898361231,
+          "0.75": 0.22878246817519482,
+          "0.95": 0.8023291479841299,
+          "0.99": 1.2976349268038259,
+          "1.0": 2.2289919668972153
+        }
+      }
+    },
+    "sigma": {
+      "divergent_transition": {
+        "n": 6,
+        "mean": 0.4144754644269771,
+        "quantiles": {
+          "0.0": 0.22181218540899464,
+          "0.01": 0.22654497312637517,
+          "0.05": 0.24547612399589736,
+          "0.25": 0.32795163870359323,
+          "0.5": 0.40297371835347423,
+          "0.75": 0.525985968443778,
+          "0.95": 0.5802357230815323,
+          "0.99": 0.5873742116710324,
+          "1.0": 0.5891588338184075
+        }
+      },
+      "nondivergent_transition": {
+        "n": 3994,
+        "mean": 0.6565622428219844,
+        "quantiles": {
+          "0.0": 0.18852780530948918,
+          "0.01": 0.2374387379685704,
+          "0.05": 0.2991083604306361,
+          "0.25": 0.43421388088284824,
+          "0.5": 0.578159673446307,
+          "0.75": 0.8086721021593863,
+          "0.95": 1.251015876206412,
+          "0.99": 1.6660859519747566,
+          "1.0": 2.5957514101766224
+        }
+      }
+    }
+  },
+  "sigma_location": {
+    "0.01": {
+      "all_draw_sigma_quantile": 0.2374387379685704,
+      "divergent_draws_at_or_below": 1,
+      "nondivergent_draws_at_or_below": 41
+    },
+    "0.05": {
+      "all_draw_sigma_quantile": 0.29899730847198797,
+      "divergent_draws_at_or_below": 1,
+      "nondivergent_draws_at_or_below": 199
+    },
+    "0.1": {
+      "all_draw_sigma_quantile": 0.3392024424513841,
+      "divergent_draws_at_or_below": 2,
+      "nondivergent_draws_at_or_below": 398
+    },
+    "0.25": {
+      "all_draw_sigma_quantile": 0.43413245303912484,
+      "divergent_draws_at_or_below": 3,
+      "nondivergent_draws_at_or_below": 997
+    },
+    "0.5": {
+      "all_draw_sigma_quantile": 0.5779661695938755,
+      "divergent_draws_at_or_below": 5,
+      "nondivergent_draws_at_or_below": 1995
+    }
+  },
+  "divergent_transition_rows": [
+    {
+      "chain": 1,
+      "draw": 34,
+      "parameters": {
+        "dose": 0.5280647537100164,
+        "arm[control]": 0.5448179101776627,
+        "arm[treated]": 1.6030129708259326,
+        "dose:arm[treated]": -0.5838122737018919,
+        "sigma": 0.5891588338184075
+      },
+      "sigma_empirical_cdf_all_draws": 0.51325,
+      "sampler_statistics": {
+        "energy": 18.935700676853198,
+        "tree_depth": 3.0,
+        "n_steps": 7.0,
+        "acceptance_rate": 0.13891387948566272
+      }
+    },
+    {
+      "chain": 2,
+      "draw": 211,
+      "parameters": {
+        "dose": 0.3753146981236602,
+        "arm[control]": 0.11052589471541441,
+        "arm[treated]": 1.9837091787202374,
+        "dose:arm[treated]": -0.09738698334260608,
+        "sigma": 0.4435447011623921
+      },
+      "sigma_empirical_cdf_all_draws": 0.272,
+      "sampler_statistics": {
+        "energy": 13.031139639564895,
+        "tree_depth": 3.0,
+        "n_steps": 7.0,
+        "acceptance_rate": 0.22685038102960178
+      }
+    },
+    {
+      "chain": 2,
+      "draw": 292,
+      "parameters": {
+        "dose": 0.15563858139498551,
+        "arm[control]": 0.5157940251561746,
+        "arm[treated]": 1.8986921605347689,
+        "dose:arm[treated]": -0.1034535592145687,
+        "sigma": 0.3164679397566055
+      },
+      "sigma_empirical_cdf_all_draws": 0.06975,
+      "sampler_statistics": {
+        "energy": 10.095002750265714,
+        "tree_depth": 3.0,
+        "n_steps": 7.0,
+        "acceptance_rate": 0.35757919875206756
+      }
+    },
+    {
+      "chain": 2,
+      "draw": 587,
+      "parameters": {
+        "dose": 0.5684359650592223,
+        "arm[control]": 0.2582279087949189,
+        "arm[treated]": 2.0470105487980033,
+        "dose:arm[treated]": -0.6327512100294084,
+        "sigma": 0.3624027355445564
+      },
+      "sigma_empirical_cdf_all_draws": 0.13825,
+      "sampler_statistics": {
+        "energy": 12.619546486024538,
+        "tree_depth": 4.0,
+        "n_steps": 14.0,
+        "acceptance_rate": 0.2859791096459087
+      }
+    },
+    {
+      "chain": 2,
+      "draw": 721,
+      "parameters": {
+        "dose": 0.19981499686180498,
+        "arm[control]": 0.5398255087092924,
+        "arm[treated]": 1.672924510178429,
+        "dose:arm[treated]": -0.08913854281754902,
+        "sigma": 0.22181218540899464
+      },
+      "sigma_empirical_cdf_all_draws": 0.00525,
+      "sampler_statistics": {
+        "energy": 11.540466625843502,
+        "tree_depth": 3.0,
+        "n_steps": 6.0,
+        "acceptance_rate": 0.11050942362681855
+      }
+    },
+    {
+      "chain": 3,
+      "draw": 786,
+      "parameters": {
+        "dose": 0.6345759648957403,
+        "arm[control]": 0.1853836759323327,
+        "arm[treated]": 1.7132000319270884,
+        "dose:arm[treated]": -0.5199865519409897,
+        "sigma": 0.5534663908709065
+      },
+      "sigma_empirical_cdf_all_draws": 0.46325,
+      "sampler_statistics": {
+        "energy": 14.776520440077515,
+        "tree_depth": 4.0,
+        "n_steps": 12.0,
+        "acceptance_rate": 0.2320312982185431
+      }
+    }
+  ],
+  "interpretation_limit": "Conditional descriptions of retained endpoints marked by divergent transitions; not the entire divergent trajectories. Association cannot identify a cause or make the failed acceptance pass."
+}

@@ -2,8 +2,8 @@
 
 Supported::
 
-    response ~ [1 +] predictor [+ predictor ...] [+ x:z ...] [+ (1 | group)]               (Gaussian, Bernoulli)
-    successes | trials(n) ~ [1 +] predictor [+ predictor ...] [+ x:z ...] [+ (1 | group)]  (binomial, brms syntax)
+    response ~ [1 + | 0 +] predictor [+ predictor ...] [+ x:z ...] [+ (1 | group)]               (Gaussian, Bernoulli)
+    successes | trials(n) ~ [1 + | 0 +] predictor [+ predictor ...] [+ x:z ...] [+ (1 | group)]  (binomial, brms syntax)
 
 The varying-intercept term is optional (milestone M3c-1): a formula without it is a population-only
 model, as in brms ``brmsformula`` where group-level terms are optional; ``y ~ 1`` is intercept-only.
@@ -22,7 +22,7 @@ from __future__ import annotations
 import re
 import math
 from collections.abc import Mapping
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 
 import numpy as np
 import pandas as pd
@@ -42,12 +42,13 @@ class FormulaError(ValueError):
 
 @dataclass(frozen=True)
 class Categorical:
-    """One treatment-coded categorical predictor (docs/m3a1-decision.md).
+    """A categorical main effect: treatment or full-level coding (docs/m3c2-decision.md).
 
     ``levels`` are the distinct string labels present in the fitted rows in ``sorted`` order
     (empty until the data are seen); ``reference`` is the declared reference label, which
     must be one of them; ``coefficients`` are the levels without the reference, in order,
-    one dummy column and one coefficient each; ``unused`` lists a pandas Categorical's
+    one dummy column and one coefficient each, unless ``full_rank`` includes every level
+    in reference-first order; ``unused`` lists a pandas Categorical's
     declared categories that do not occur in the fitted rows.
     """
 
@@ -55,15 +56,21 @@ class Categorical:
     reference: str
     levels: tuple[str, ...] = ()
     unused: tuple[str, ...] = ()
+    full_rank: bool = False
 
     @property
     def coefficients(self) -> tuple[str, ...]:
+        return self.categories if self.full_rank else self.contrasts
+
+    @property
+    def contrasts(self) -> tuple[str, ...]:
+        """Levels with a difference coefficient relative to the reference."""
         return tuple(l for l in self.levels if l != self.reference)
 
     @property
     def categories(self) -> tuple[str, ...]:
-        """Reference first, then the coefficient levels: the ordered Categorical handed to formulae."""
-        return (self.reference, *self.coefficients)
+        """Reference first, then the other levels: the ordered Categorical handed to formulae."""
+        return (self.reference, *self.contrasts)
 
     @property
     def columns(self) -> tuple[str, ...]:
@@ -120,7 +127,7 @@ class ModelSpec:
         raise KeyError(term)
 
     def is_vector_term(self, term: str) -> bool:
-        """A categorical or interaction term: one coefficient per non-reference level."""
+        """A categorical or interaction term: coefficient levels given by levels_of."""
         return term in self.categorical_names or term in self.interaction_names
 
     def levels_of(self, term: str) -> tuple[str, ...]:
@@ -129,7 +136,7 @@ class ModelSpec:
         if term in self.categorical_names:
             return self.categorical(term).coefficients
         if term in self.interaction_names:
-            return self.categorical(self.interaction_of(term)[1]).coefficients
+            return self.categorical(self.interaction_of(term)[1]).contrasts
         return ()
 
     def term_columns(self, term: str) -> tuple[str, ...]:
@@ -362,16 +369,22 @@ def parse_formula(formula: str, data: pd.DataFrame | None = None, family: str = 
                 "counts without a trials column are not a binomial model."
             )
         response, rhs = m.group(1), m.group(2)
-    if "-" in rhs:
-        raise FormulaError(
-            f"{formula!r}: '-' is not supported in M0 (this includes '- 1' to drop the "
-            "intercept, which is required)."
-        )
+    # Only top-level subtraction of the literal 1 is supported. Do not rewrite
+    # group terms, transformations, negative numbers, or predictor subtraction.
+    minus_parts = _split_top_level(rhs, "-")
+    if len(minus_parts) > 1:
+        pieces = [minus_parts[0]] if minus_parts[0] else []
+        for part in minus_parts[1:]:
+            if not re.match(r"^1(?=\s*(?:\+|$))", part):
+                raise FormulaError(f"{formula!r}: '-' supports only subtracting the population intercept '- 1'")
+            pieces.append(re.sub(r"^1", "0", part, count=1))
+        rhs = " + ".join(pieces)
 
     predictors: list[str] = []
     groups: list[str] = []
     raw_interactions: list[tuple[str, str, str]] = []      # (left, right, piece as written)
     saw_intercept_token = False
+    remove_intercept = False
 
     def _main(name: str, piece: str) -> None:
         if not re.fullmatch(_IDENT, name):
@@ -392,10 +405,8 @@ def parse_formula(formula: str, data: pd.DataFrame | None = None, family: str = 
             saw_intercept_token = True
             continue
         if piece == "0":
-            raise FormulaError(
-                f"{formula!r}: '0 +' (no intercept) is not supported in M0; the model "
-                "requires a population-level intercept."
-            )
+            remove_intercept = True
+            continue
         gm = _GROUP_RE.match(piece)
         if gm:
             inner, factor = gm.group(1).strip(), gm.group(2).strip()
@@ -431,6 +442,9 @@ def parse_formula(formula: str, data: pd.DataFrame | None = None, family: str = 
             continue
         _main(piece, piece)
 
+    if saw_intercept_token and remove_intercept:
+        raise FormulaError(f"{formula!r}: conflicting intercept inclusion/removal; use '0 + terms' or 'terms - 1'")
+
     for left, right, piece in raw_interactions:              # both main effects are required in this slice
         for side in (left, right):
             if side not in predictors and re.fullmatch(_IDENT, side) and side not in groups:
@@ -440,6 +454,8 @@ def parse_formula(formula: str, data: pd.DataFrame | None = None, family: str = 
                     "model (the level intercepts or the reference slope are forced to zero and formulae changes the "
                     "interaction's coding) and is not part of the verified subset (docs/m3a2-decision.md)."
                 )
+    if remove_intercept and not predictors:
+        raise FormulaError(f"{formula!r}: no intercept requires at least one population-level predictor")
     if len(groups) > 1:
         raise FormulaError(
             f"{formula!r}: more than one grouping factor ({groups}) is not supported in "
@@ -457,6 +473,8 @@ def parse_formula(formula: str, data: pd.DataFrame | None = None, family: str = 
         raise FormulaError(f"{trials!r}: the trials column cannot also be a predictor or the grouping factor")
 
     categoricals = _normalise_categorical(categorical, predictors, response, group, trials, formula)
+    if remove_intercept and categoricals:
+        categoricals = (replace(categoricals[0], full_rank=True), *categoricals[1:])
     cat_names = {c.name for c in categoricals}
     interactions: list[tuple[str, str]] = []
     for left, right, piece in raw_interactions:
@@ -489,10 +507,12 @@ def parse_formula(formula: str, data: pd.DataFrame | None = None, family: str = 
         )
     parts = [*predictors, *(f"{x}:{z}" for x, z in interactions)] + ([f"(1 | {group})"] if group is not None else [])
     canonical_rhs = " + ".join(parts) if parts else "1"           # intercept-only population model: 'y ~ 1'
+    if remove_intercept:
+        canonical_rhs = "0 + " + canonical_rhs
     spec = ModelSpec(
         formula=formula.strip(), response=response,
         predictors=tuple(p for p in predictors if p not in cat_names),
-        group=group, intercept=True, trials=trials, rhs=canonical_rhs,
+        group=group, intercept=not remove_intercept, trials=trials, rhs=canonical_rhs,
         terms=(*predictors, *(f"{x}:{z}" for x, z in interactions)), categoricals=categoricals,
         interactions=tuple(interactions),
     )
@@ -625,7 +645,7 @@ def validate_data(spec: ModelSpec, data: pd.DataFrame, family: str = "gaussian")
                 f"reference level {cat.reference!r} of {cat.name!r} does not occur in the fitted rows; "
                 f"observed levels: {list(levels)}"
             )
-        categoricals.append(Categorical(name=cat.name, reference=cat.reference, levels=levels, unused=unused))
+        categoricals.append(Categorical(name=cat.name, reference=cat.reference, levels=levels, unused=unused, full_rank=cat.full_rank))
     reject_complex(f"response {spec.response!r}", data[spec.response])
     if family == "bernoulli":
         _validate_binary_response(spec.response, data[spec.response])
@@ -657,6 +677,6 @@ def validate_data(spec: ModelSpec, data: pd.DataFrame, family: str = "gaussian")
             raise FormulaError(f"predictor {c!r} is constant")
     return ModelSpec(
         formula=spec.formula, response=spec.response, predictors=spec.predictors,
-        group=spec.group, intercept=True, levels=levels, trials=spec.trials, rhs=spec.rhs,
+        group=spec.group, intercept=spec.intercept, levels=levels, trials=spec.trials, rhs=spec.rhs,
         terms=spec.terms, categoricals=tuple(categoricals), interactions=spec.interactions,
     )

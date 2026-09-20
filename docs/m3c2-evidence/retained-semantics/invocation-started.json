@@ -1,0 +1,28 @@
+{
+  "started": "2026-09-19T20:28:12.083056+00:00",
+  "command": [
+    "/Users/andrewdou/iqss-research/projects/AutoBayes-worktrees/m3c2-intercept-controls/.venv/bin/python",
+    "-B",
+    "-u",
+    "/private/tmp/autobayes-intercept-retained-semantics/review.py"
+  ],
+  "cwd": "/private/tmp/autobayes-intercept-retained-semantics",
+  "env_overrides": {
+    "PYTHONDONTWRITEBYTECODE": "1",
+    "PYTHONPATH": "/Users/andrewdou/iqss-research/projects/AutoBayes-worktrees/m3c2-intercept-controls",
+    "PYTENSOR_FLAGS": "compiledir=/private/tmp/autobayes-intercept-retained-semantics/pytensor-cache",
+    "MPLCONFIGDIR": "/private/tmp/autobayes-intercept-retained-semantics/matplotlib-cache",
+    "JAX_PLATFORMS": "cpu",
+    "AUTOBAYES_HOST_DEVICES": "4",
+    "OMP_NUM_THREADS": "1",
+    "OPENBLAS_NUM_THREADS": "1",
+    "MKL_NUM_THREADS": "1"
+  },
+  "deadline_seconds": 120,
+  "timeout": false,
+  "new_sampling_forbidden": true,
+  "scripts": {
+    "review.py": "8956de818c6991e062122a1a78c9ee8fa0c25964905110744fab5c764777b627",
+    "supervisor.py": "c57fb24618292c644572e4a62fe4b2a9d4e021749b7f14902b741bf1f4a2d5d0"
+  }
+}

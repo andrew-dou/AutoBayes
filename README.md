@@ -89,7 +89,7 @@ Mid-project, the skills are symptom-triggered. When a gradient comes back `nan` 
 likelihood will not differentiate, `autobayes-custom-op` loads on its own and — before
 showing you the pattern — tries to talk you out of needing it.
 
-## Library (milestones M0, M1, M2, M3a-1, M3a-2 and M3c-1)
+## Library (milestones M0, M1, M2, M3a-1, M3a-2, M3c-1 and M3c-2)
 
 ### Install and test (the pinned, tested stack)
 
@@ -133,14 +133,44 @@ versions.
 | Binomial (logit), `k \| trials(n) ~ [1 +] x… + (1 \| g)`, integer counts up to 1e6 per row | CPU-validated | CPU-validated | **pending** (same code path, not run on a GPU) | M2 |
 | Declared categorical predictors `z` (treatment coding, `categorical={"z": reference}`), all three families | CPU-validated (`docs/m3a1-decision.md`) | CPU-validated | **pending** | M3a-1, merged (PR #6) |
 | One numeric-by-categorical interaction `x:z` (`x*z`) with both main effects, all three families | CPU-validated (`docs/m3a2-decision.md`) | CPU-validated | **pending** | M3a-2, merged (PR #7) |
-| Population-only models, no group-level term: `y ~ 1`, `y ~ x`, `y ~ x + z + x:z`, `k \| trials(n) ~ x`, all three families | deterministic density/gradient/design/prediction checks for all three families; Gaussian example CPU sampling accepted after explicit finite-statistic policy correction ([review](docs/m3c1-decision.md#independent-acceptance-review-2026-09-19)) | same deterministic coverage; Gaussian example CPU sampling and seven-mean agreement accepted in the same review | **pending** | M3c-1, PR #9; implementation and bounded evidence reviewed, final checks/merge pending |
+| Population-only models, no group-level term: `y ~ 1`, `y ~ x`, `y ~ x + z + x:z`, `k \| trials(n) ~ x`, all three families | deterministic density/gradient/design/prediction checks for all three families; Gaussian example CPU sampling accepted after explicit finite-statistic policy correction ([review](docs/m3c1-decision.md#independent-acceptance-review-2026-09-19)) | same deterministic coverage; Gaussian example CPU sampling and seven-mean agreement accepted in the same review | **pending** | M3c-1, PR #9; merged; one Gaussian development example, not calibration |
 | One independent varying slope `(1 + x \|\| g)` | under independent review, not merged | same | same | M3b-1, PR #8 open |
-| Intercept removal (`0 +`, `- 1`), several or correlated group terms, nested/crossed factors, other families and links | refused with an error naming the construct | same | same | later slices, `docs/coordination/NEXT_MILESTONES_PROPOSAL.md` |
+| No population intercept: `0 + x`, `x - 1`, categorical and one interaction, optional group | three-family deterministic checks; one Gaussian CPU example accepted at `target_accept=0.99` | same deterministic coverage and Gaussian CPU acceptance | **pending** | M3c-2, PR #10; [review and preserved initial failures](docs/m3c2-decision.md#independent-acceptance-review-2026-09-20-utc) |
+| Several or correlated group terms, nested/crossed factors, other families and links | refused with an error naming the construct | same | same | later slices, `docs/coordination/NEXT_MILESTONES_PROPOSAL.md` |
 
 Device rules on every path: `device="gpu"` without a visible GPU raises `DeviceError`
 (no silent CPU fallback); the fit report states the actual device, dtype (float64) and
 chain method; if JAX is not installed, `backend="numpyro"` raises `DeviceError` naming
 the `[jax]` extra.
+
+### Removing the population intercept
+
+Write `y ~ 0 + x` or `y ~ x - 1` and omit the intercept prior:
+
+```python
+priors = ab.Priors(b=ab.Normal(0, 2), sigma=ab.HalfNormal(1))
+model = ab.gaussian("y ~ 0 + x + arm + x:arm", df, priors,
+                    categorical={"arm": "control"})
+print(model.describe())
+```
+
+The first categorical main effect has one coefficient per level (reference first),
+including `arm[control]`. Later categorical main effects use treatment coding. The
+interaction still estimates non-reference slope differences. Per-level priors must
+cover those actual coefficient labels; reordering factors can change independent
+prior meaning. The raw design is used for either `center_predictors` request,
+because centering without a free intercept changes the model. Fit records show
+requested and effective centering separately. There is no hidden intercept prior,
+posterior variable, or back-transformation. Supplying an intercept prior/value is
+an error; `value_point(b=..., sigma=...)` omits it.
+
+At least one population predictor is required. Conflicting `1` and intercept-removal
+tokens, general subtraction, and group-only/zero-only models remain refused. See
+[the decision and test map](docs/m3c2-decision.md) and the
+[build-only example](examples/m3c2_no_intercept.py). Its Gaussian model passed a bounded
+two-backend CPU check at `target_accept=0.99`; the initial `0.9` run had divergences.
+The library default is unchanged. Inspect diagnostics for each fitted model; this one
+example does not establish calibration, rare-tail accuracy or GPU coverage.
 
 ### Using it
 

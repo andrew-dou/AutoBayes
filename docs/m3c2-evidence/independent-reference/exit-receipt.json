@@ -1,0 +1,29 @@
+{
+  "started": "2026-09-20T01:45:37.527524+00:00",
+  "command": [
+    "/Users/andrewdou/iqss-research/projects/AutoBayes-worktrees/m3c2-intercept-controls/.venv/bin/python",
+    "-B",
+    "-u",
+    "/private/tmp/autobayes-intercept-reference-1/reference.py"
+  ],
+  "cwd": "/private/tmp/autobayes-intercept-reference-1",
+  "env_overrides": {
+    "PYTHONDONTWRITEBYTECODE": "1",
+    "PYTHONPATH": "/private/tmp/autobayes-intercept-reference-1",
+    "MPLCONFIGDIR": "/private/tmp/autobayes-intercept-reference-1/matplotlib-cache",
+    "JAX_PLATFORMS": "cpu",
+    "OMP_NUM_THREADS": "1",
+    "OPENBLAS_NUM_THREADS": "1",
+    "MKL_NUM_THREADS": "1"
+  },
+  "deadline_seconds": 120,
+  "timeout": false,
+  "term_sent": false,
+  "kill_sent": false,
+  "freeze_sha256": "935c59a9f9bacce98fe799cbce9f2518c40913b9c4dc969a80e77c8e3c0a3b8d",
+  "pid": 93707,
+  "child_exit_code": 0,
+  "exit_code": 0,
+  "wall_seconds": 24.809044833,
+  "finished": "2026-09-20T01:46:02.337062+00:00"
+}

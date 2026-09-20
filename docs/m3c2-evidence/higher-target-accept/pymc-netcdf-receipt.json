@@ -1,0 +1,21 @@
+{
+  "path": "/private/tmp/autobayes-intercept-higher-accept-1/pymc.nc",
+  "sha256": "35e4589927a113cd53413ce53b1d8072e4c479eaed1dc8b0a6a69b2ad0a9db66",
+  "bytes": 475562,
+  "fit_wall_seconds": 21.173541500000283,
+  "fit_and_serialization_seconds": 21.511607583001023,
+  "metadata": {
+    "backend": "pymc",
+    "device_requested": "cpu",
+    "device_actual": "cpu",
+    "platform": "cpu",
+    "dtype": "float64",
+    "chain_method": null,
+    "chains": 4,
+    "draws": 1000,
+    "tune": 1000,
+    "target_accept": 0.99,
+    "seed": 37,
+    "notes": []
+  }
+}

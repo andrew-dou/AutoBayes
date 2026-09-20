@@ -1,0 +1,48 @@
+{
+  "versions": {
+    "pymc": "5.28.5",
+    "pytensor": "2.38.3",
+    "bambi": "0.17.2",
+    "formulae": "0.6.2",
+    "arviz": "0.23.4",
+    "numpy": "2.4.6",
+    "pandas": "3.0.5",
+    "scipy": "1.17.1",
+    "xarray": "2026.7.0",
+    "matplotlib": "3.10.9",
+    "jax": "0.10.2",
+    "jaxlib": "0.10.2",
+    "numpyro": "0.21.0",
+    "pytest": "9.1.1"
+  },
+  "autobayes_module": "/Users/andrewdou/iqss-research/projects/AutoBayes-worktrees/m3c2-intercept-controls/autobayes/__init__.py",
+  "environment": {
+    "python": "3.11.0",
+    "platform": "macOS-26.6.1-arm64-arm-64bit",
+    "versions": {
+      "pymc": "5.28.5",
+      "pytensor": "2.38.3",
+      "bambi": "0.17.2",
+      "formulae": "0.6.2",
+      "arviz": "0.23.4",
+      "numpyro": "0.21.0",
+      "jax": "0.10.2",
+      "jaxlib": "0.10.2",
+      "numpy": "2.4.6"
+    },
+    "jax_devices": [
+      "cpu:cpu(id=0)",
+      "cpu:cpu(id=1)",
+      "cpu:cpu(id=2)",
+      "cpu:cpu(id=3)"
+    ],
+    "jax_x64": true
+  },
+  "pymc_nuts_signature": "(self, vars=None, max_treedepth=10, early_max_treedepth=8, **kwargs)",
+  "numpyro_nuts_signature": "(self, model=None, potential_fn=None, kinetic_fn=None, step_size=1.0, inverse_mass_matrix=None, adapt_step_size=True, adapt_mass_matrix=True, dense_mass=False, target_accept_prob=0.8, trajectory_length=None, max_tree_depth=10, init_strategy=<function init_to_uniform at 0x12444ec00>, find_heuristic_step_size=False, forward_mode_differentiation=False, regularize_mass_matrix=True)",
+  "verification": {
+    "head": "6a58eb3c9b8ab510aa8bd5d3d04936e64990dace",
+    "status_porcelain": "",
+    "input_hashes_verified": 19
+  }
+}

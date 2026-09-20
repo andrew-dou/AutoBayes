@@ -1,0 +1,8 @@
+{
+  "status": "prepared; not launched",
+  "at": "2026-09-20T01:45:21.659418+00:00",
+  "scripts_syntax": "pass",
+  "input_hashes": 39,
+  "expected_evaluations": 3840,
+  "freeze_sha256": "935c59a9f9bacce98fe799cbce9f2518c40913b9c4dc969a80e77c8e3c0a3b8d"
+}

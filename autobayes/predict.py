@@ -120,7 +120,8 @@ def _predict_by_hand(model, idata, df: pd.DataFrame | None, kind: str, seed, new
     post = idata.posterior
     n = model.names
     rng = np.random.default_rng(seed)
-    a = post[n["intercept"]].to_numpy()                         # (chain, draw) raw-scale intercept
+    a = (post[n["intercept"]].to_numpy() if model.spec.intercept else
+         np.zeros((post.sizes["chain"], post.sizes["draw"])))                         # (chain, draw) raw-scale intercept
     b = _coefficient_draws(post, model)                         # (chain, draw, P) or None
     X = raw_design(model, df)                                   # raw scale: a is raw-scale intercept
     mu = np.repeat(a[..., None], len(df), axis=-1)

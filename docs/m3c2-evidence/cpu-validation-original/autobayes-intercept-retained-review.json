@@ -1,0 +1,237 @@
+{
+  "review_type": "Independent retained-draw analysis; no new fits. Original attempt failed and remains unchanged.",
+  "backends": {
+    "pymc": {
+      "sha256": "041046187d8edc38ccbfc85a04e09951dc83d0397c89c67956d262a94082a3ee",
+      "parameters": {
+        "dose": {
+          "shape": [
+            4,
+            1000
+          ],
+          "finite": true,
+          "mean": 0.26472615147845274,
+          "rhat": 1.0009227743068945,
+          "ess_bulk": 1663.751664373301,
+          "ess_tail": 1631.6337330430688,
+          "mcse_mean": 0.009263266374128875
+        },
+        "arm[control]": {
+          "shape": [
+            4,
+            1000
+          ],
+          "finite": true,
+          "mean": 0.41384834748867716,
+          "rhat": 1.0008091058808213,
+          "ess_bulk": 1839.5524502757814,
+          "ess_tail": 1864.2395535472479,
+          "mcse_mean": 0.01232193510403536
+        },
+        "arm[treated]": {
+          "shape": [
+            4,
+            1000
+          ],
+          "finite": true,
+          "mean": 1.6522014492517254,
+          "rhat": 1.0034377271280344,
+          "ess_bulk": 1891.0466924247662,
+          "ess_tail": 1986.7669143023284,
+          "mcse_mean": 0.01286522489637785
+        },
+        "dose:arm[treated]": {
+          "shape": [
+            4,
+            1000
+          ],
+          "finite": true,
+          "mean": -0.07249679861768152,
+          "rhat": 1.0015518456085355,
+          "ess_bulk": 1527.4260510030408,
+          "ess_tail": 1878.3775145254504,
+          "mcse_mean": 0.01279312029733401
+        },
+        "sigma": {
+          "shape": [
+            4,
+            1000
+          ],
+          "finite": true,
+          "mean": 0.636765495002948,
+          "rhat": 1.0022215912241703,
+          "ess_bulk": 1005.5498829987073,
+          "ess_tail": 1845.5964026537858,
+          "mcse_mean": 0.008775425975120104
+        }
+      },
+      "divergences": 3,
+      "max_tree_depth": 6,
+      "depth_saturation": 0,
+      "bfmi": [
+        0.7333449743371916,
+        0.7605015177673923,
+        0.7106838414677937,
+        0.7566775722555615
+      ],
+      "finite_sampler_statistics": {
+        "energy": true,
+        "largest_eigval": false,
+        "reached_max_treedepth": true,
+        "tree_depth": true,
+        "smallest_eigval": false,
+        "step_size_bar": true,
+        "step_size": true,
+        "process_time_diff": true,
+        "index_in_trajectory": true,
+        "perf_counter_diff": true,
+        "max_energy_error": true,
+        "lp": true,
+        "n_steps": true,
+        "energy_error": true,
+        "diverging": true,
+        "divergences": true,
+        "perf_counter_start": true,
+        "acceptance_rate": true
+      },
+      "declared_unused_exclusions": [
+        "largest_eigval",
+        "smallest_eigval"
+      ],
+      "no_intercept": true,
+      "gates": {
+        "complete_finite": true,
+        "zero_divergences": false,
+        "rhat_le_1_01": true,
+        "bulk_ess_ge_400": true,
+        "tail_ess_ge_400": true,
+        "bfmi_ge_0_3": true,
+        "no_depth_saturation": true,
+        "active_stats_finite": true
+      }
+    },
+    "numpyro": {
+      "sha256": "db33a43459b91da6bb7154a29a1acdfd357b0b644d8b3230dcb966b558a220a7",
+      "parameters": {
+        "dose": {
+          "shape": [
+            4,
+            1000
+          ],
+          "finite": true,
+          "mean": 0.2712277135329128,
+          "rhat": 1.0022338988712818,
+          "ess_bulk": 1452.2145348026338,
+          "ess_tail": 1674.513890219697,
+          "mcse_mean": 0.009800131207352942
+        },
+        "arm[control]": {
+          "shape": [
+            4,
+            1000
+          ],
+          "finite": true,
+          "mean": 0.4106789978527546,
+          "rhat": 1.001013392281249,
+          "ess_bulk": 1605.5083945376732,
+          "ess_tail": 1834.7313734631005,
+          "mcse_mean": 0.01333052093456447
+        },
+        "arm[treated]": {
+          "shape": [
+            4,
+            1000
+          ],
+          "finite": true,
+          "mean": 1.6509847382291447,
+          "rhat": 1.0023994702252286,
+          "ess_bulk": 1684.3213033353102,
+          "ess_tail": 1589.6349985929896,
+          "mcse_mean": 0.014500338996387356
+        },
+        "dose:arm[treated]": {
+          "shape": [
+            4,
+            1000
+          ],
+          "finite": true,
+          "mean": -0.07769181283576447,
+          "rhat": 1.0023013000217746,
+          "ess_bulk": 1555.18287216873,
+          "ess_tail": 1556.9916735501095,
+          "mcse_mean": 0.013344848278862583
+        },
+        "sigma": {
+          "shape": [
+            4,
+            1000
+          ],
+          "finite": true,
+          "mean": 0.6561991126543918,
+          "rhat": 1.0045394047410467,
+          "ess_bulk": 935.6172550311173,
+          "ess_tail": 1309.310648637091,
+          "mcse_mean": 0.009848086835891636
+        }
+      },
+      "divergences": 6,
+      "max_tree_depth": 6,
+      "depth_saturation": 0,
+      "bfmi": [
+        0.7710148811344433,
+        0.7072065981632777,
+        0.7393140533183777,
+        0.6885170369688883
+      ],
+      "finite_sampler_statistics": {
+        "acceptance_rate": true,
+        "step_size": true,
+        "diverging": true,
+        "energy": true,
+        "n_steps": true,
+        "tree_depth": true,
+        "lp": true
+      },
+      "declared_unused_exclusions": [],
+      "no_intercept": true,
+      "gates": {
+        "complete_finite": true,
+        "zero_divergences": false,
+        "rhat_le_1_01": true,
+        "bulk_ess_ge_400": true,
+        "tail_ess_ge_400": true,
+        "bfmi_ge_0_3": true,
+        "no_depth_saturation": true,
+        "active_stats_finite": true
+      }
+    }
+  },
+  "comparisons": {
+    "dose": {
+      "abs_difference": 0.006501562054460064,
+      "four_combined_mcse": 0.05394080838836582,
+      "passes": true
+    },
+    "arm[control]": {
+      "abs_difference": 0.0031693496359225803,
+      "four_combined_mcse": 0.07261216130593227,
+      "passes": true
+    },
+    "arm[treated]": {
+      "abs_difference": 0.0012167110225806965,
+      "four_combined_mcse": 0.07753954785986644,
+      "passes": true
+    },
+    "dose:arm[treated]": {
+      "abs_difference": 0.005195014218082952,
+      "four_combined_mcse": 0.07394580745685814,
+      "passes": true
+    },
+    "sigma": {
+      "abs_difference": 0.019433617651443802,
+      "four_combined_mcse": 0.052762549653643506,
+      "passes": true
+    }
+  },
+  "conclusion": "Failed zero-divergence gate in both backends; diagnostic failures are not proof of a library defect. Do not merge or claim validation passed. Retained-draw comparison is descriptive with divergent samples. Planned API semantic checks were not reached by the original runner."
+}

@@ -68,7 +68,7 @@ def _summary_rows(model, idata) -> dict:
     import arviz as az
 
     n = model.names
-    names = [n["intercept"], *model.spec.terms] + ([n["sd"]] if "sd" in n else []) + ([n["sigma"]] if "sigma" in n else [])
+    names = ([n["intercept"]] if model.spec.intercept else []) + list(model.spec.terms) + ([n["sd"]] if "sd" in n else []) + ([n["sigma"]] if "sigma" in n else [])
     s = az.summary(idata, var_names=names, hdi_prob=0.94, round_to="none")
     rows = {}
     for name, r in s.iterrows():
@@ -85,15 +85,17 @@ def fit_record(model, fit, *, panel: dict | None = None, max_treedepth: int = 10
     s, d, pr = model.spec, model.design, model.priors
     coef = pr.coefficient_priors(s)
     return {
-        "autobayes_version": _version("autobayes") or "0.5.0",
+        "autobayes_version": _version("autobayes") or "0.6.0",
         "model": {
             "formula": s.formula,
             "family": model.family,
             "link": model.link,
             "n": int(d.n), "J": int(d.J), "group": s.group,                 # group None and J 0: population-only (M3c-1)
+            "intercept": s.intercept,
             "center_predictors": bool(d.centered),
+            "center_predictors_requested": model.center_predictors,
             "noncentered": True if s.group is not None else None,
-            "priors": {"intercept": str(pr.intercept), **{f"b:{k}": str(v) for k, v in coef.items()},
+            "priors": {**({"intercept": str(pr.intercept)} if s.intercept else {}), **{f"b:{k}": str(v) for k, v in coef.items()},
                        **({"sd": str(pr.sd)} if pr.sd is not None else {}),
                        **({"sigma": str(pr.sigma)} if pr.sigma is not None else {})},
             "terms": list(s.terms),
@@ -101,9 +103,9 @@ def fit_record(model, fit, *, panel: dict | None = None, max_treedepth: int = 10
             "interactions": [list(pair) for pair in s.interactions],
             "canonical_formula": s.canonical_formula,
             "categorical": {c.name: {"reference": c.reference, "levels": list(c.levels),
-                                     "coefficients": list(c.coefficients), "unused_levels": list(c.unused)}
+                                     "coefficients": list(c.coefficients), "unused_levels": list(c.unused), "coding": "full_level" if c.full_rank else "treatment"}
                             for c in s.categoricals},
-            "intercept_prior_applies_to": ("centred intercept (at the numeric predictor means"
+            "intercept_prior_applies_to": None if not s.intercept else ("centred intercept (at the numeric predictor means"
                                            + (" and the sample proportions of the categorical levels)" if s.categoricals else ")")
                                            if d.centered else "raw intercept")
                                           + (", logit scale" if model.family != "gaussian" else ""),
