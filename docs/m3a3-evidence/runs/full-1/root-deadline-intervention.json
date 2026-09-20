@@ -1,0 +1,12 @@
+{
+  "recorded_at": "2026-09-20T17:22:22.705583+00:00",
+  "kind": "root_wall_deadline_intervention",
+  "pid": 8331,
+  "elapsed_utc_seconds": 1605.664287,
+  "cap_seconds": 900,
+  "process_before": "8331  8331 /Library/Frameworks/Python.framework/Versions/3.11/Resources/Python.app/Contents/MacOS/Python -B -m pytest tests -q -m not slow -p no:cacheprovider --junitxml=/private/tmp/autobayes-m3a3-implementation/runs/full-1/junit.xml",
+  "termination_sent": true,
+  "cause": "Supervisor timeout used monotonic time; why its elapsed time differed from UTC is not independently established.",
+  "outcome": "Full suite incomplete; do not retry or claim pass.",
+  "process_after": ""
+}

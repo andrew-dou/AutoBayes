@@ -42,3 +42,14 @@ No new feature MCMC, slow suite, SBC/calibration, prior-predictive campaign, GPU
 ## Execution status
 
 Pending implementation and validation. PR11 merged at the base above after independent code/draw review and final hosted checks (530 tests, 7 deselected). Its one crossed-Gaussian CPU unit passed the prescribed diagnostics, five mean gates and retained-draw semantics; this establishes neither multiple-interaction sampling nor calibration/GPU coverage. Subsequent results must be recorded as observed.
+
+
+## Implementation checkpoint (2026-09-20 UTC)
+
+The parser now accepts several distinct pairs while preserving the original strict grammar and existing graph/prior/prediction paths. `describe()` composes all numeric partners for factor contrasts and all categorical partners for numeric slopes, including no-intercept full-level contrasts and qualified baseline statements. Version 0.8.0 changes only AutoBayes's own manifest/lock entry; third-party lock entries and sampler defaults are unchanged. The offline environment was installed before the version edit, so recorded editable dist-info remains 0.7.0 while source/manifest/lock are 0.8.0; no evidence reinstallation occurred.
+
+The new module adds 33 deterministic cases; focused-1 passed 32 cases and focused-2 passed the build-only example plus five legacy cases. Total focused monotonic time was 164.89762258299743 seconds (165.111948 UTC seconds), within the aggregate 900-second budget and each 300-second limit. Original-input matrices, densities, Jacobians, gradients, explicit reference/prior-transport maps, descriptions, labels, records and synthetic predictions passed across the selected three-family compositions. The small example only builds a model.
+
+The ONE inherited fast suite is **incomplete**. Root terminated its group after 1605.664287 UTC seconds exceeded the 900-second cap. The original supervisor measured 584.2125582499721 monotonic seconds and reported return code -15 with `timed_out=false`; both that unchanged receipt and the separate root intervention are retained. Partial dots are not a completion result or failure count. The cause of the clock discrepancy is unknown. No full-suite retry or later numerical command occurred. Future supervisors must enforce both UTC and monotonic deadlines. Required hosted checks remain necessary for a completed suite result.
+
+See [new evidence](m3a3-evidence/README.md), including the preserved timing-policy failure and exact source hashes. No new-feature MCMC, calibration, slow suite, GPU or benchmark was run. Independent review, hosted checks and any later separately scoped CPU acceptance remain distinct from these passed deterministic checks.

@@ -115,8 +115,8 @@ def test_canonical_expansion_equivalence_and_refusals():
                          ("y ~ x + z + v + x:z + x:v + (1 | g)", {"z": "a", "v": "p"}),          # shared numeric side
                          ("y ~ x + z + w + v + x:z + w:v + (1 | g)", {"z": "a", "v": "p"}),      # disjoint
                          ("y ~ x*z + w*v + (1 | g)", {"z": "a", "v": "p"})]:                     # shorthand twice
-        with pytest.raises(ab.FormulaError, match="2 interactions after expansion .* at most one"):
-            ab.gaussian(formula, df_w, G_PRIORS, categorical=cat)
+        model = ab.gaussian(formula, df_w, G_PRIORS, categorical=cat)
+        assert len(model.spec.interactions) == 2  # M3a-3 extends the old scope guard.
     with pytest.raises(ab.FormulaError, match="two numeric terms"):
         ab.gaussian("y ~ x + z + x:z + (1 | g)", df.assign(z=df.x ** 2), G_PRIORS)
     df2 = df.assign(w=np.where(df.index % 2 == 0, "p", "q"))

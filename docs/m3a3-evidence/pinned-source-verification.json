@@ -1,0 +1,14 @@
+{
+  "matched": [
+    "formulae/terms/terms.py",
+    "formulae/contrasts.py",
+    "bambi/backend/model_components.py",
+    "bambi/backend/terms.py",
+    "bambi/backend/pymc.py",
+    "bambi/model_components.py",
+    "bambi/terms/common.py",
+    "bambi-0.17.2.dist-info/METADATA",
+    "formulae-0.6.2.dist-info/METADATA"
+  ],
+  "count": 9
+}

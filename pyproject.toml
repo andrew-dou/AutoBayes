@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "autobayes"
-version = "0.7.0"
+version = "0.8.0"
 description = "brms-like Bayesian hierarchical models on PyMC with a JAX/NumPyro device path (M0 Gaussian, M1 Bernoulli, M2 binomial counts, M3a-1 categorical predictors, M3a-2 numeric-by-categorical interaction, M3c-1 population-only models)"
 readme = "README.md"
 requires-python = ">=3.11,<3.12"
