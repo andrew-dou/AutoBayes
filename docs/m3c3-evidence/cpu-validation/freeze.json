@@ -1,0 +1,156 @@
+{
+  "unit": "autobayes-multiple-intercepts-cpu-validation-1",
+  "frozen_utc": "2026-09-20T14:20:46.180450+00:00",
+  "head": "40613ed44db44a7ab84af46b38cad0421f49eb25",
+  "dirty_state": "",
+  "inputs": [
+    {
+      "path": "/Users/andrewdou/iqss-research/memory/dispatches/2026-09-20-autobayes-multiple-intercepts-cpu-validation.txt",
+      "sha256": "a782617fa60d8c85a3acbe0c9ff8498eacd43d51e41891aa818875016ea1f10d"
+    },
+    {
+      "path": "/Users/andrewdou/iqss-research/plans/2026-09-20-autobayes-multiple-intercepts-cpu-validation.md",
+      "sha256": "d3f24425812d2ea4d4baafdd53bb0f0ab5e2c2ca433c3778a42efc9a54951169"
+    },
+    {
+      "path": "/Users/andrewdou/iqss-research/projects/AutoBayes-worktrees/m3c3-multiple-intercepts/autobayes/__init__.py",
+      "sha256": "66cc97e5c75ca5805124c88a2e06c8a9883b23d2495eb2fdbc3ba234002a4c75"
+    },
+    {
+      "path": "/Users/andrewdou/iqss-research/projects/AutoBayes-worktrees/m3c3-multiple-intercepts/autobayes/diagnostics.py",
+      "sha256": "79bd2634824c19180afff1882896098d72d82a631ebfdb00aba90081ee7bd9b9"
+    },
+    {
+      "path": "/Users/andrewdou/iqss-research/projects/AutoBayes-worktrees/m3c3-multiple-intercepts/autobayes/formula.py",
+      "sha256": "e6353c45ad3d84838c8dcf6661c6578fe1cf43db0582ce7a2093c891bf78c465"
+    },
+    {
+      "path": "/Users/andrewdou/iqss-research/projects/AutoBayes-worktrees/m3c3-multiple-intercepts/autobayes/inference.py",
+      "sha256": "8d21b5adaba9349bf5f90028a0bb3e9b59c59781bde0172ef9d48dbe6a000d4b"
+    },
+    {
+      "path": "/Users/andrewdou/iqss-research/projects/AutoBayes-worktrees/m3c3-multiple-intercepts/autobayes/likelihoods.py",
+      "sha256": "70156b9f74d6e0c2e330cfe20806bddffd3d1ed7dabf183c683a68351e8a2988"
+    },
+    {
+      "path": "/Users/andrewdou/iqss-research/projects/AutoBayes-worktrees/m3c3-multiple-intercepts/autobayes/model.py",
+      "sha256": "e0b7cdf0cee88761ef6cb58c9135566784686b753757cd80f27b3d9d17c4b21c"
+    },
+    {
+      "path": "/Users/andrewdou/iqss-research/projects/AutoBayes-worktrees/m3c3-multiple-intercepts/autobayes/predict.py",
+      "sha256": "dbc341520bf64cf688b862bc8c1c15b466792f2594ff900d43b92c01b35e76cb"
+    },
+    {
+      "path": "/Users/andrewdou/iqss-research/projects/AutoBayes-worktrees/m3c3-multiple-intercepts/autobayes/priors.py",
+      "sha256": "e15e333a5d6b64d4e82718989ce80f2100c392c0f97feda7644026e80c07cfca"
+    },
+    {
+      "path": "/Users/andrewdou/iqss-research/projects/AutoBayes-worktrees/m3c3-multiple-intercepts/autobayes/session.py",
+      "sha256": "4ee738c01abe9df1d47c59ed8370b55bd4eb67777c5ff0fa26378e3aa9ca3efb"
+    },
+    {
+      "path": "/Users/andrewdou/iqss-research/projects/AutoBayes-worktrees/m3c3-multiple-intercepts/uv.lock",
+      "sha256": "4208ec42ff6fa25b69bdfb976c3b5aa9a0c16bf6c17f81d479c5f3fe56592c04"
+    },
+    {
+      "path": "/Users/andrewdou/iqss-research/projects/AutoBayes-worktrees/m3c3-multiple-intercepts/pyproject.toml",
+      "sha256": "26eaf5a5cdedaca3f82f5b1b4cabae4b4c1f78fc245521796e7e2692f647ae65"
+    },
+    {
+      "path": "/Users/andrewdou/iqss-research/projects/AutoBayes-worktrees/m3c3-multiple-intercepts/.venv/lib/python3.11/site-packages/pymc/step_methods/hmc/nuts.py",
+      "sha256": "40281225a811b3c70e2868240bb5989e3a4ed58b2ea68afc54fa42c2e63b15ac"
+    },
+    {
+      "path": "/Users/andrewdou/iqss-research/projects/AutoBayes-worktrees/m3c3-multiple-intercepts/.venv/lib/python3.11/site-packages/numpyro/infer/hmc.py",
+      "sha256": "49200c359acb25f50d9c99ab6fe0f2b1508832ebd85bb138eca9326cdba83b8f"
+    },
+    {
+      "path": "/private/tmp/autobayes-multiple-intercepts-cpu-validation-1/source-snapshots/00-2026-09-20-autobayes-multiple-intercepts-cpu-validation.txt",
+      "sha256": "a782617fa60d8c85a3acbe0c9ff8498eacd43d51e41891aa818875016ea1f10d"
+    },
+    {
+      "path": "/private/tmp/autobayes-multiple-intercepts-cpu-validation-1/source-snapshots/01-2026-09-20-autobayes-multiple-intercepts-cpu-validation.md",
+      "sha256": "d3f24425812d2ea4d4baafdd53bb0f0ab5e2c2ca433c3778a42efc9a54951169"
+    },
+    {
+      "path": "/private/tmp/autobayes-multiple-intercepts-cpu-validation-1/source-snapshots/02-__init__.py",
+      "sha256": "66cc97e5c75ca5805124c88a2e06c8a9883b23d2495eb2fdbc3ba234002a4c75"
+    },
+    {
+      "path": "/private/tmp/autobayes-multiple-intercepts-cpu-validation-1/source-snapshots/03-diagnostics.py",
+      "sha256": "79bd2634824c19180afff1882896098d72d82a631ebfdb00aba90081ee7bd9b9"
+    },
+    {
+      "path": "/private/tmp/autobayes-multiple-intercepts-cpu-validation-1/source-snapshots/04-formula.py",
+      "sha256": "e6353c45ad3d84838c8dcf6661c6578fe1cf43db0582ce7a2093c891bf78c465"
+    },
+    {
+      "path": "/private/tmp/autobayes-multiple-intercepts-cpu-validation-1/source-snapshots/05-inference.py",
+      "sha256": "8d21b5adaba9349bf5f90028a0bb3e9b59c59781bde0172ef9d48dbe6a000d4b"
+    },
+    {
+      "path": "/private/tmp/autobayes-multiple-intercepts-cpu-validation-1/source-snapshots/06-likelihoods.py",
+      "sha256": "70156b9f74d6e0c2e330cfe20806bddffd3d1ed7dabf183c683a68351e8a2988"
+    },
+    {
+      "path": "/private/tmp/autobayes-multiple-intercepts-cpu-validation-1/source-snapshots/07-model.py",
+      "sha256": "e0b7cdf0cee88761ef6cb58c9135566784686b753757cd80f27b3d9d17c4b21c"
+    },
+    {
+      "path": "/private/tmp/autobayes-multiple-intercepts-cpu-validation-1/source-snapshots/08-predict.py",
+      "sha256": "dbc341520bf64cf688b862bc8c1c15b466792f2594ff900d43b92c01b35e76cb"
+    },
+    {
+      "path": "/private/tmp/autobayes-multiple-intercepts-cpu-validation-1/source-snapshots/09-priors.py",
+      "sha256": "e15e333a5d6b64d4e82718989ce80f2100c392c0f97feda7644026e80c07cfca"
+    },
+    {
+      "path": "/private/tmp/autobayes-multiple-intercepts-cpu-validation-1/source-snapshots/10-session.py",
+      "sha256": "4ee738c01abe9df1d47c59ed8370b55bd4eb67777c5ff0fa26378e3aa9ca3efb"
+    },
+    {
+      "path": "/private/tmp/autobayes-multiple-intercepts-cpu-validation-1/source-snapshots/11-uv.lock",
+      "sha256": "4208ec42ff6fa25b69bdfb976c3b5aa9a0c16bf6c17f81d479c5f3fe56592c04"
+    },
+    {
+      "path": "/private/tmp/autobayes-multiple-intercepts-cpu-validation-1/source-snapshots/12-pyproject.toml",
+      "sha256": "26eaf5a5cdedaca3f82f5b1b4cabae4b4c1f78fc245521796e7e2692f647ae65"
+    },
+    {
+      "path": "/private/tmp/autobayes-multiple-intercepts-cpu-validation-1/source-snapshots/13-nuts.py",
+      "sha256": "40281225a811b3c70e2868240bb5989e3a4ed58b2ea68afc54fa42c2e63b15ac"
+    },
+    {
+      "path": "/private/tmp/autobayes-multiple-intercepts-cpu-validation-1/source-snapshots/14-hmc.py",
+      "sha256": "49200c359acb25f50d9c99ab6fe0f2b1508832ebd85bb138eca9326cdba83b8f"
+    },
+    {
+      "path": "/private/tmp/autobayes-multiple-intercepts-cpu-validation-1/data.json",
+      "sha256": "7e4ce583822f8159dc8dbb6bf9c3325fd242abf7aeb9e7bbecb6e0ce1b6121a9"
+    },
+    {
+      "path": "/private/tmp/autobayes-multiple-intercepts-cpu-validation-1/data.csv",
+      "sha256": "297856c30f410c749aff68d1698ecf5e2737c7d6ecf0cdf8247cd90b7091ab57"
+    },
+    {
+      "path": "/private/tmp/autobayes-multiple-intercepts-cpu-validation-1/generation.json",
+      "sha256": "8449b0add6eadd0cb5db33a80f1e21a1952b9cf3f566ed027e79db18d635bd10"
+    },
+    {
+      "path": "/private/tmp/autobayes-multiple-intercepts-cpu-validation-1/config.json",
+      "sha256": "f8c5f0504c852be823856dfef0dadb9371c6e1dc4139cd63726279a0c40c6e31"
+    },
+    {
+      "path": "/private/tmp/autobayes-multiple-intercepts-cpu-validation-1/run.py",
+      "sha256": "17aa37d55beb97b11b8e419baa43b2cb3ed6c98c42e50608dd6b20ee886893cb"
+    },
+    {
+      "path": "/private/tmp/autobayes-multiple-intercepts-cpu-validation-1/supervisor.py",
+      "sha256": "09ec2f755a0ed608b821614e5f5faa9db13d7beac2cc2a60d2d9c4aa671037e1"
+    },
+    {
+      "path": "/private/tmp/autobayes-multiple-intercepts-cpu-validation-1/prepare.py",
+      "sha256": "12ba0853315595b54746db4028b05142870456187f51d2b9e6a79d00bfb2ddcd"
+    }
+  ]
+}

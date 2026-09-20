@@ -1,3 +1,15 @@
+# M3c-3 independently accepted; final documentation CI pending (2026-09-20 UTC)
+
+Implementation 40613ed passed independent source review, 530 hosted tests and a bounded two-backend crossed-Gaussian CPU unit. Root reopened saved draws: zero divergences, max R-hat 1.00624, minbulkESS 1073.24, mintailESS 1330.02; five scalar mean gates and 528,000 prediction checks pass. No calibration/GPU/speed or broader sampling claim. Details: ../m3c3-evidence/cpu-validation/README.md and ../m3c3-decision.md. Final documentation commit/CI precedes PR #11 merge; no fit or full suite should be repeated. Entries below preserve historical states.
+
+# M3c-3 implementation complete; independent review pending (2026-09-20 UTC)
+
+Branch `m3c3/multiple-intercepts` starts at merged main `9755f1d82ac9ba5aa0fcda86b0d32c0806422cff` (PR #10). Decision `0f7ce72` preceded implementation. Multiple distinct additive varying intercepts now have explicit factor priors/value points, separately checked design blocks, stable names/coordinates, mixed new-group prediction policies and complete fit records. Zero/one-group constructors/access are retained; ambiguous singular fields raise for multiple groups. AutoBayes 0.7.0; no third-party dependency or sampler-default change.
+
+ONE inherited fast suite: **524 passed, 7 deselected, 7 warnings**, exit 0/no timeout, **501.33 wall seconds**. Existing CPU sampling fixtures ran. Focused runs preserve 62 passed/1 failed and 194 passed/2 failed; repaired cases then passed 10 checks. A dataclass copy/serialization correction passed 16 focused checks; independent review then found public metadata mutation invalidated hashes. The final immutable mapping repair passed 19 focused mutation/copy/design/legacy checks. Total focused 359.06/900 seconds. Original candidate/failure evidence is retained. The full suite was not rerun after the metadata-container corrections. Raw evidence, commands and receipts: `docs/m3c3-evidence/`; external pre-full source snapshot and checkpoint: `/private/tmp/autobayes-m3c3-implementation/`.
+
+No new feature-specific MCMC, prior predictive campaign, calibration, GPU or benchmark execution. All local test processes ended; no CI waiter started. A focused PR is being prepared for independent review; separately frozen multigroup CPU acceptance remains future work. Root owns merge/cleanup. PR8, original planning checkout and historical evidence remain untouched. Entries below are historical snapshots and do not override this checkpoint.
+
 # M3c-2 independently accepted; final PR checks pending (2026-09-20 UTC)
 
 The intercept-control implementation at6a58eb3 passed478hosted tests and independent code review. Both backends passed the separate target_accept0.99 Gaussian CPU diagnostic with zero divergences and the recorded convergence, semantic and independent-reference mean checks. Original target_accept0.9 failures remain preserved. No default, scientific-calibration, rare-tail or GPU claim is changed. See ../m3c2-decision.md and ../m3c2-evidence/independent-acceptance.json.

@@ -68,7 +68,7 @@ def _summary_rows(model, idata) -> dict:
     import arviz as az
 
     n = model.names
-    names = ([n["intercept"]] if model.spec.intercept else []) + list(model.spec.terms) + ([n["sd"]] if "sd" in n else []) + ([n["sigma"]] if "sigma" in n else [])
+    names = ([n["intercept"]] if model.spec.intercept else []) + list(model.spec.terms) + [roles["sd"] for roles in model.group_names.values()] + ([n["sigma"]] if "sigma" in n else [])
     s = az.summary(idata, var_names=names, hdi_prob=0.94, round_to="none")
     rows = {}
     for name, r in s.iterrows():
@@ -79,24 +79,32 @@ def _summary_rows(model, idata) -> dict:
 
 def fit_record(model, fit, *, panel: dict | None = None, max_treedepth: int = 10) -> dict:
     """A JSON-serialisable record of one fit: specification, execution, diagnostics, posterior."""
+    from autobayes import __version__
     from autobayes.diagnostics import panel as _panel
 
     p = panel if panel is not None else _panel(fit.idata, max_treedepth=max_treedepth)
     s, d, pr = model.spec, model.design, model.priors
     coef = pr.coefficient_priors(s)
+    group_priors = pr.group_priors(s)
     return {
-        "autobayes_version": _version("autobayes") or "0.6.0",
+        "autobayes_version": __version__,
         "model": {
             "formula": s.formula,
             "family": model.family,
             "link": model.link,
-            "n": int(d.n), "J": int(d.J), "group": s.group,                 # group None and J 0: population-only (M3c-1)
+            "n": int(d.n),
+            **({"J": int(d.J), "group": s.group} if len(s.groups) <= 1 else {}),
+            "groups": [{"factor": g, "levels": list(block.levels), "J": block.J,
+                        "term": f"1|{g}", "names": model.group_names[g],
+                        "coordinate": model.group_names[g]["coordinate"],
+                        "sd_prior": str(group_priors[g]), "noncentered": True}
+                       for g, block in d.group_designs.items()],
             "intercept": s.intercept,
             "center_predictors": bool(d.centered),
             "center_predictors_requested": model.center_predictors,
-            "noncentered": True if s.group is not None else None,
+            "noncentered": True if s.has_group else None,
             "priors": {**({"intercept": str(pr.intercept)} if s.intercept else {}), **{f"b:{k}": str(v) for k, v in coef.items()},
-                       **({"sd": str(pr.sd)} if pr.sd is not None else {}),
+                       **{("sd" if len(s.groups) == 1 else f"sd:{g}"): str(prior) for g, prior in group_priors.items()},
                        **({"sigma": str(pr.sigma)} if pr.sigma is not None else {})},
             "terms": list(s.terms),
             "design_columns": list(s.columns),
@@ -133,6 +141,8 @@ def compare_records(a: dict, b: dict, *, k: float = 4.0) -> dict:
     same = all(a["model"].get(k) == b["model"].get(k) for k in ("formula", "priors", "family"))
     if not same:
         raise ValueError("records fit different models; agreement is only defined for the same family, formula and priors")
+    if set(a["posterior"]) != set(b["posterior"]):
+        raise ValueError("records must contain identical posterior parameter sets")
     rows, agree = {}, True
     for name in a["posterior"]:
         if name not in b["posterior"]:

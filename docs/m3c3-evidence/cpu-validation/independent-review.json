@@ -1,0 +1,101 @@
+{
+  "recorded_at": "2026-09-20T15:05:07.622048+00:00",
+  "head": "40613ed44db44a7ab84af46b38cad0421f49eb25",
+  "frozen_inputs_verified": 37,
+  "new_fits": 0,
+  "reconstructed_model_builds": 1,
+  "oracle_reaggregation_max_precision_error": 1.1368683772161603e-13,
+  "oracle_fresh_graph_evaluation": false,
+  "original_data_seed_and_rows_match": true,
+  "draw_hashes": {
+    "pymc": "e46fb305624d0ed1283da14d2b1d0df50858b2f72ab54ff2a3e2353c192d9665",
+    "numpyro": "454311f7a379669d8716820b7681c366e8cbe95e0089b9ac084816e44de14171"
+  },
+  "diagnostics": {
+    "pymc": {
+      "divergences": 0,
+      "max_rhat": 1.006239810848344,
+      "min_bulk_ess": 1073.2375866791574,
+      "min_tail_ess": 1478.3784131537539,
+      "bfmi": [
+        0.8420578587940616,
+        0.7591163260505265,
+        0.774361220664839,
+        0.7365781225481478
+      ],
+      "min_bfmi": 0.7365781225481478,
+      "max_depth": 7
+    },
+    "numpyro": {
+      "divergences": 0,
+      "max_rhat": 1.00408845476963,
+      "min_bulk_ess": 1247.245829657018,
+      "min_tail_ess": 1330.0240803800898,
+      "bfmi": [
+        0.7135725698329876,
+        0.7612903015015701,
+        0.8051697912178593,
+        0.8090233015617527
+      ],
+      "min_bfmi": 0.7135725698329876,
+      "max_depth": 7
+    }
+  },
+  "mean_comparison": {
+    "Intercept": {
+      "difference": 0.006255810927434324,
+      "four_combined_mcse": 0.04313311234135112,
+      "passed": true
+    },
+    "x": {
+      "difference": 0.002535071030722702,
+      "four_combined_mcse": 0.012009853045262456,
+      "passed": true
+    },
+    "1|county_sigma": {
+      "difference": 0.009218077828000326,
+      "four_combined_mcse": 0.03605061101787999,
+      "passed": true
+    },
+    "1|year_sigma": {
+      "difference": 0.003331752584701253,
+      "four_combined_mcse": 0.016211089759305804,
+      "passed": true
+    },
+    "sigma": {
+      "difference": 0.0018255825394480896,
+      "four_combined_mcse": 0.008293639608927527,
+      "passed": true
+    }
+  },
+  "prediction_checks": {
+    "pymc": [
+      {
+        "rows": 60,
+        "values": 240000,
+        "max_abs_error": 4.440892098500626e-16
+      },
+      {
+        "rows": 6,
+        "values": 24000,
+        "max_abs_error": 4.440892098500626e-16
+      }
+    ],
+    "numpyro": [
+      {
+        "rows": 60,
+        "values": 240000,
+        "max_abs_error": 4.440892098500626e-16
+      },
+      {
+        "rows": 6,
+        "values": 24000,
+        "max_abs_error": 4.440892098500626e-16
+      }
+    ]
+  },
+  "total_prediction_values": 528000,
+  "saved_records_verified": true,
+  "passed": true,
+  "limitation": "One Gaussian CPU case; retained-draw recomputation and saved-oracle review, no calibration/GPU claim."
+}

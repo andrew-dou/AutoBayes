@@ -1,0 +1,101 @@
+{
+  "unit": "autobayes-multiple-intercepts-cpu-validation-1",
+  "completed_utc": "2026-09-20T14:24:58.162916+00:00",
+  "head": "40613ed44db44a7ab84af46b38cad0421f49eb25",
+  "clean_worktree": true,
+  "fit_attempts": 2,
+  "fits_saved": 2,
+  "passed_frozen_gates": true,
+  "exit_code": 0,
+  "timeout": false,
+  "wall_seconds": 86.42034725000849,
+  "owned_group_still_live": false,
+  "worker_ci_waiter": false,
+  "frozen_inputs_verified": 37,
+  "data_json_sha256": "7e4ce583822f8159dc8dbb6bf9c3325fd242abf7aeb9e7bbecb6e0ce1b6121a9",
+  "data_csv_sha256": "297856c30f410c749aff68d1698ecf5e2737c7d6ecf0cdf8247cd90b7091ab57",
+  "config_sha256": "f8c5f0504c852be823856dfef0dadb9371c6e1dc4139cd63726279a0c40c6e31",
+  "freeze_sha256": "79c6bee9fa74758dd1b6b79d8cff43e5e1eb1d49f9379bdb4df7ddbfc44bef10",
+  "outputs": {
+    "pymc": {
+      "path": "/private/tmp/autobayes-multiple-intercepts-cpu-validation-1/pymc.nc",
+      "sha256": "e46fb305624d0ed1283da14d2b1d0df50858b2f72ab54ff2a3e2353c192d9665",
+      "bytes": 823220,
+      "fit_wall_seconds": 19.687293750001118,
+      "fit_and_serialization_seconds": 20.08878587500658,
+      "metadata": {
+        "backend": "pymc",
+        "device_requested": "cpu",
+        "device_actual": "cpu",
+        "platform": "cpu",
+        "dtype": "float64",
+        "chain_method": null,
+        "chains": 4,
+        "draws": 1000,
+        "tune": 1000,
+        "target_accept": 0.99,
+        "seed": 109,
+        "notes": []
+      }
+    },
+    "numpyro": {
+      "path": "/private/tmp/autobayes-multiple-intercepts-cpu-validation-1/numpyro.nc",
+      "sha256": "454311f7a379669d8716820b7681c366e8cbe95e0089b9ac084816e44de14171",
+      "bytes": 680171,
+      "fit_wall_seconds": 4.7683077919937205,
+      "fit_and_serialization_seconds": 4.839904583001044,
+      "metadata": {
+        "backend": "numpyro",
+        "device_requested": "cpu",
+        "device_actual": "cpu:cpu(id=0)",
+        "platform": "cpu",
+        "dtype": "float64",
+        "chain_method": "parallel",
+        "chains": 4,
+        "draws": 1000,
+        "tune": 1000,
+        "target_accept": 0.99,
+        "seed": 113,
+        "notes": []
+      }
+    }
+  },
+  "diagnostic_extremes": {
+    "pymc": {
+      "divergences": 0.0,
+      "max_rhat": 1.006239810848344,
+      "min_ess_bulk": 1073.2375866791574,
+      "min_ess_tail": 1478.3784131537539,
+      "min_bfmi": 0.7365781225481478,
+      "bfmi": [
+        0.8420578587940616,
+        0.7591163260505265,
+        0.774361220664839,
+        0.7365781225481478
+      ],
+      "max_depth": 7.0,
+      "excluded_unused_all_nan": [
+        "smallest_eigval",
+        "largest_eigval"
+      ]
+    },
+    "numpyro": {
+      "divergences": 0.0,
+      "max_rhat": 1.00408845476963,
+      "min_ess_bulk": 1247.245829657018,
+      "min_ess_tail": 1330.0240803800898,
+      "min_bfmi": 0.7135725698329876,
+      "bfmi": [
+        0.7135725698329876,
+        0.7612903015015701,
+        0.8051697912178593,
+        0.8090233015617527
+      ],
+      "max_depth": 7.0,
+      "excluded_unused_all_nan": []
+    }
+  },
+  "failures": [],
+  "limitations": "One crossed Gaussian CPU backend/API check; no statistical calibration, all-family sampling, novel-group accuracy or GPU claim.",
+  "independent_acceptance": "Pending root review of retained draws."
+}

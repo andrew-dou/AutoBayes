@@ -2,8 +2,8 @@
 
 Three model families on one right-hand side ``x + z [+ (1 | group)]`` with numeric predictors,
 treatment-coded categorical predictors declared with ``categorical={column: reference}``
-(M3a-1), one numeric-by-categorical interaction ``x:z`` with both main effects (M3a-2) and at most
-one varying intercept, which is optional since M3c-1 (a formula without it is a population-only
+(M3a-1), one numeric-by-categorical interaction ``x:z`` with both main effects (M3a-2) and
+independent varying intercepts across distinct factors (M3c-3), optional since M3c-1 (a formula without it is a population-only
 model, as in brms): Gaussian with identity link (milestone M0), Bernoulli with
 logit link for a strictly 0/1 response (M1), and binomial counts ``successes | trials(n)`` with
 logit link (M2). Everything else is refused with an error that names the unsupported
@@ -55,4 +55,4 @@ __all__ = [
     "PriorError", "Priors", "StudentT", "bernoulli", "binomial", "compare_records", "environment", "fit", "fit_record",
     "format_comparison", "format_environment", "gaussian", "panel", "parse_formula", "predict",
 ]
-__version__ = "0.6.0"
+__version__ = "0.7.0"

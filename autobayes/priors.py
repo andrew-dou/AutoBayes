@@ -79,12 +79,13 @@ class Priors:
     (the same for every non-reference level) or a mapping ``{level: prior}`` covering exactly
     the actual coefficient levels (all levels for the first categorical main effect
     without an intercept; non-reference levels otherwise). Omit intercept exactly
-    when the formula removes it. No automatic priors are filled in silently.
+    when the formula removes it. SD priors require an exact-key factor mapping for multiple
+    groups; a single group also accepts a scalar Prior. No automatic priors are filled in silently.
     """
 
     intercept: Prior | None = None
     b: Prior | Mapping[str, Prior | Mapping[str, Prior]] | None = None
-    sd: Prior | None = None            # required with a '(1 | group)' term, refused without one (M3c-1)
+    sd: Prior | Mapping[str, Prior] | None = None            # required with a '(1 | group)' term, refused without one (M3c-1)
     sigma: Prior | None = None
 
     # -- coefficient priors -----------------------------------------------------------------
@@ -178,22 +179,32 @@ class Priors:
         """Numeric-only compatibility form of ``coefficient_priors``."""
         return self.coefficient_priors(tuple(predictors))
 
+    def group_priors(self, spec) -> dict[str, Prior]:
+        """Explicit SD priors in formula order; no multi-factor scalar broadcast."""
+        groups = getattr(spec, "groups", ())
+        if not groups:
+            if self.sd is not None:
+                raise PriorError("the formula has no group-level term '(1 | group)'; do not pass sd")
+            return {}
+        if self.sd is None:
+            if len(groups) == 1:
+                raise PriorError(f"the varying intercept '(1 | {groups[0]})' needs a prior on the SD of its varying intercept: pass sd=...")
+            raise PriorError(f"each varying intercept needs a prior on the SD: pass sd for {list(groups)}")
+        if isinstance(self.sd, Mapping):
+            if set(self.sd) != set(groups):
+                raise PriorError(f"sd must cover exactly the grouping factors {list(groups)}; got {list(self.sd)}")
+            return {g: self.sd[g] for g in groups}
+        if len(groups) != 1:
+            raise PriorError("multiple grouping factors require an exact-key sd mapping; scalar sd is not broadcast")
+        return {groups[0]: self.sd}
+
     def validate(self, spec, family: str = "gaussian") -> None:
         has_intercept = getattr(spec, "intercept", True)
         if has_intercept and self.intercept is None:
             raise PriorError("the formula has a population intercept; an intercept prior is required")
         if not has_intercept and self.intercept is not None:
             raise PriorError("the formula has no population intercept; omit the intercept prior (or pass None)")
-        group = getattr(spec, "group", None)
-        if group is not None and self.sd is None:
-            raise PriorError(
-                f"the varying intercept '(1 | {group})' needs a prior on the SD of its varying intercept: pass sd=..."
-            )
-        if group is None and self.sd is not None:
-            raise PriorError(
-                "the formula has no group-level term '(1 | group)'; do not pass sd (a group SD prior applies only to a "
-                "varying intercept, and nothing is created or ignored silently)"
-            )
+        group_priors = self.group_priors(spec)
         if family == "gaussian" and self.sigma is None:
             raise PriorError("the Gaussian family needs a prior on the residual SD: pass sigma=...")
         if family != "gaussian" and self.sigma is not None:
@@ -208,7 +219,7 @@ class Priors:
                 raise PriorError(
                     f"prior for {label!r} must be a location prior ({sorted(_LOCATION)}), got {prior}"
                 )
-        scales = ([("sd", self.sd)] if self.sd is not None else []) + ([("sigma", self.sigma)] if self.sigma is not None else [])
+        scales = [(f"sd:{g}", prior) for g, prior in group_priors.items()] + ([("sigma", self.sigma)] if self.sigma is not None else [])
         for label, prior in scales:
             if not isinstance(prior, Prior):
                 raise PriorError(f"prior for {label!r} must be a Prior, got {type(prior).__name__}")
@@ -240,6 +251,6 @@ class Priors:
             name = priors[0].name
             params = {k: np.array([float(pr.params[k]) for pr in priors]) for k in priors[0].params}
             out[term] = bmb.Prior(name, **params)
-        if spec.group is not None:
-            out[f"1|{spec.group}"] = bmb.Prior("Normal", mu=0.0, sigma=self.sd.to_bambi())
+        for group, prior in self.group_priors(spec).items():
+            out[f"1|{group}"] = bmb.Prior("Normal", mu=0.0, sigma=prior.to_bambi())
         return out

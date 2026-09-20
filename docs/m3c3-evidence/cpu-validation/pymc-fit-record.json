@@ -1,0 +1,186 @@
+{
+  "autobayes_version": "0.7.0",
+  "model": {
+    "formula": "y ~ x + (1 | county) + (1 | year)",
+    "family": "gaussian",
+    "link": "identity",
+    "n": 60,
+    "groups": [
+      {
+        "factor": "county",
+        "levels": [
+          "C0",
+          "C1",
+          "C2",
+          "C3",
+          "C4",
+          "C5"
+        ],
+        "J": 6,
+        "term": "1|county",
+        "names": {
+          "sd": "1|county_sigma",
+          "offset": "1|county_offset",
+          "group_effect": "1|county",
+          "coordinate": "county__factor_dim"
+        },
+        "coordinate": "county__factor_dim",
+        "sd_prior": "HalfNormal(sigma=0.8)",
+        "noncentered": true
+      },
+      {
+        "factor": "year",
+        "levels": [
+          "Y0",
+          "Y1",
+          "Y2",
+          "Y3",
+          "Y4"
+        ],
+        "J": 5,
+        "term": "1|year",
+        "names": {
+          "sd": "1|year_sigma",
+          "offset": "1|year_offset",
+          "group_effect": "1|year",
+          "coordinate": "year__factor_dim"
+        },
+        "coordinate": "year__factor_dim",
+        "sd_prior": "Exponential(lam=2)",
+        "noncentered": true
+      }
+    ],
+    "intercept": true,
+    "center_predictors": true,
+    "center_predictors_requested": true,
+    "noncentered": true,
+    "priors": {
+      "intercept": "Normal(mu=0, sigma=1.5)",
+      "b:x": "Normal(mu=0, sigma=1)",
+      "sd:county": "HalfNormal(sigma=0.8)",
+      "sd:year": "Exponential(lam=2)",
+      "sigma": "HalfNormal(sigma=1)"
+    },
+    "terms": [
+      "x"
+    ],
+    "design_columns": [
+      "x"
+    ],
+    "interactions": [],
+    "canonical_formula": "y ~ x + (1 | county) + (1 | year)",
+    "categorical": {},
+    "intercept_prior_applies_to": "centred intercept (at the numeric predictor means)",
+    "warnings": []
+  },
+  "execution": {
+    "backend": "pymc",
+    "device_requested": "cpu",
+    "device_actual": "cpu",
+    "platform": "cpu",
+    "dtype": "float64",
+    "chain_method": null,
+    "chains": 4,
+    "draws": 1000,
+    "tune": 1000,
+    "target_accept": 0.99,
+    "seed": 109,
+    "wall_seconds": 19.687,
+    "notes": []
+  },
+  "environment": {
+    "python": "3.11.0",
+    "platform": "macOS-26.6.1-arm64-arm-64bit",
+    "versions": {
+      "pymc": "5.28.5",
+      "pytensor": "2.38.3",
+      "bambi": "0.17.2",
+      "formulae": "0.6.2",
+      "arviz": "0.23.4",
+      "numpyro": "0.21.0",
+      "jax": "0.10.2",
+      "jaxlib": "0.10.2",
+      "numpy": "2.4.6"
+    },
+    "jax_devices": [
+      "cpu:cpu(id=0)",
+      "cpu:cpu(id=1)",
+      "cpu:cpu(id=2)",
+      "cpu:cpu(id=3)"
+    ],
+    "jax_x64": true
+  },
+  "diagnostics": {
+    "values": {
+      "divergences": 0.0,
+      "divergence_fraction": 0.0,
+      "max_rhat": 1.006239810848344,
+      "min_ess_bulk": 1073.2375866791574,
+      "min_ess_tail": 1478.3784131537539,
+      "min_bfmi": 0.7365781225481478,
+      "treedepth_saturation": 0.0,
+      "n_draws": 4000.0
+    },
+    "status": {
+      "divergence_fraction": "pass",
+      "max_rhat": "pass",
+      "min_ess_bulk": "pass",
+      "min_ess_tail": "pass",
+      "min_bfmi": "pass",
+      "treedepth_saturation": "pass"
+    },
+    "overall": "pass"
+  },
+  "posterior": {
+    "Intercept": {
+      "mean": 0.32534065172599347,
+      "sd": 0.2643011106636768,
+      "hdi_3%": -0.1692283091324689,
+      "hdi_97%": 0.8257729173101018,
+      "mcse_mean": 0.008095946317506934,
+      "ess_bulk": 1073.2375866791574,
+      "ess_tail": 1748.8200036099975,
+      "r_hat": 1.006239810848344
+    },
+    "x": {
+      "mean": 0.5991266882405701,
+      "sd": 0.1310092563651733,
+      "hdi_3%": 0.35992850655893527,
+      "hdi_97%": 0.8599965189982975,
+      "mcse_mean": 0.0021237617279553636,
+      "ess_bulk": 3797.6862486019295,
+      "ess_tail": 2754.9595796614694,
+      "r_hat": 1.0003074456529082
+    },
+    "1|county_sigma": {
+      "mean": 0.539710457937866,
+      "sd": 0.23132935992355677,
+      "hdi_3%": 0.16846302636587093,
+      "hdi_97%": 0.9808663708393581,
+      "mcse_mean": 0.00629066045947569,
+      "ess_bulk": 1255.134367340699,
+      "ess_tail": 1497.336751378408,
+      "r_hat": 1.0007639062217086
+    },
+    "1|year_sigma": {
+      "mean": 0.14251056915378618,
+      "sd": 0.1295662379438892,
+      "hdi_3%": 0.0002929764978354005,
+      "hdi_97%": 0.37110315312501757,
+      "mcse_mean": 0.002853020723958079,
+      "ess_bulk": 1594.4993337687986,
+      "ess_tail": 1478.3784131537539,
+      "r_hat": 1.00277546618137
+    },
+    "sigma": {
+      "mean": 0.7472097967382404,
+      "sd": 0.07405962402735734,
+      "hdi_3%": 0.6113578429522403,
+      "hdi_97%": 0.8849202054805454,
+      "mcse_mean": 0.0013647948581960979,
+      "ess_bulk": 3123.0293878350644,
+      "ess_tail": 2468.8824350195064,
+      "r_hat": 1.0003649812217703
+    }
+  }
+}

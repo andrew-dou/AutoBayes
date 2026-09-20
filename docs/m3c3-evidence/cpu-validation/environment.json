@@ -1,0 +1,61 @@
+{
+  "versions": {
+    "pymc": "5.28.5",
+    "pytensor": "2.38.3",
+    "bambi": "0.17.2",
+    "formulae": "0.6.2",
+    "arviz": "0.23.4",
+    "numpyro": "0.21.0",
+    "jax": "0.10.2",
+    "jaxlib": "0.10.2",
+    "numpy": "2.4.6",
+    "pandas": "3.0.5",
+    "scipy": "1.17.1",
+    "xarray": "2026.7.0"
+  },
+  "autobayes_source_version": "0.7.0",
+  "environment": {
+    "python": "3.11.0",
+    "platform": "macOS-26.6.1-arm64-arm-64bit",
+    "versions": {
+      "pymc": "5.28.5",
+      "pytensor": "2.38.3",
+      "bambi": "0.17.2",
+      "formulae": "0.6.2",
+      "arviz": "0.23.4",
+      "numpyro": "0.21.0",
+      "jax": "0.10.2",
+      "jaxlib": "0.10.2",
+      "numpy": "2.4.6"
+    },
+    "jax_devices": [
+      "cpu:cpu(id=0)",
+      "cpu:cpu(id=1)",
+      "cpu:cpu(id=2)",
+      "cpu:cpu(id=3)"
+    ],
+    "jax_x64": true
+  },
+  "source_verification": {
+    "head": "40613ed44db44a7ab84af46b38cad0421f49eb25",
+    "status": "",
+    "hashes_verified": 37
+  },
+  "pymc_nuts_signature": "(self, vars=None, max_treedepth=10, early_max_treedepth=8, **kwargs)",
+  "numpyro_nuts_signature": "(self, model=None, potential_fn=None, kinetic_fn=None, step_size=1.0, inverse_mass_matrix=None, adapt_step_size=True, adapt_mass_matrix=True, dense_mass=False, target_accept_prob=0.8, trajectory_length=None, max_tree_depth=10, init_strategy=<function init_to_uniform at 0x10eee6980>, find_heuristic_step_size=False, forward_mode_differentiation=False, regularize_mass_matrix=True)",
+  "depth_source": {
+    "pymc": {
+      "path": "/Users/andrewdou/iqss-research/projects/AutoBayes-worktrees/m3c3-multiple-intercepts/.venv/lib/python3.11/site-packages/pymc/step_methods/hmc/nuts.py",
+      "line": 132,
+      "parameter": "max_treedepth",
+      "default": 10
+    },
+    "numpyro": {
+      "path": "/Users/andrewdou/iqss-research/projects/AutoBayes-worktrees/m3c3-multiple-intercepts/.venv/lib/python3.11/site-packages/numpyro/infer/hmc.py",
+      "line": 925,
+      "parameter": "max_tree_depth",
+      "default": 10
+    },
+    "method": "Pinned constructor defaults and runtime signature assertions; no conflicting kwargs forwarded."
+  }
+}
