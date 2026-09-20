@@ -1,0 +1,1229 @@
+diff --git a/README.md b/README.md
+index cfff8e9..0646d49 100644
+--- a/README.md
++++ b/README.md
+@@ -18,8 +18,8 @@ Three parts:
+   with PyMC's NUTS or through JAX/NumPyro with an explicit device choice, and returns
+   posterior and predictive draws. Three families on one formula subset
+   `y ~ x + z + x:z [+ (1 | group)]` with numeric and declared categorical predictors (M3a-1)
+-  and one numeric-by-categorical interaction (M3a-2); the varying intercept is optional
+-  since M3c-1, and a formula without it is a population-only model:
++  and one numeric-by-categorical interaction (M3a-2); varying intercepts are optional
++  and may have multiple independent grouping factors (M3c-3), and a formula without it is a population-only model:
+   Gaussian (M0), Bernoulli with a logit link for a 0/1
+   outcome (M1), and binomial counts `successes | trials(n)` with a logit link (M2);
+   anything else is refused with an error naming the construct. See
+@@ -89,7 +89,7 @@ Mid-project, the skills are symptom-triggered. When a gradient comes back `nan`
+ likelihood will not differentiate, `autobayes-custom-op` loads on its own and — before
+ showing you the pattern — tries to talk you out of needing it.
+ 
+-## Library (milestones M0, M1, M2, M3a-1, M3a-2, M3c-1 and M3c-2)
++## Library (milestones M0, M1, M2, M3a-1, M3a-2, M3c-1, M3c-2 and M3c-3)
+ 
+ ### Install and test (the pinned, tested stack)
+ 
+@@ -136,13 +136,47 @@ versions.
+ | Population-only models, no group-level term: `y ~ 1`, `y ~ x`, `y ~ x + z + x:z`, `k \| trials(n) ~ x`, all three families | deterministic density/gradient/design/prediction checks for all three families; Gaussian example CPU sampling accepted after explicit finite-statistic policy correction ([review](docs/m3c1-decision.md#independent-acceptance-review-2026-09-19)) | same deterministic coverage; Gaussian example CPU sampling and seven-mean agreement accepted in the same review | **pending** | M3c-1, PR #9; merged; one Gaussian development example, not calibration |
+ | One independent varying slope `(1 + x \|\| g)` | under independent review, not merged | same | same | M3b-1, PR #8 open |
+ | No population intercept: `0 + x`, `x - 1`, categorical and one interaction, optional group | three-family deterministic checks; one Gaussian CPU example accepted at `target_accept=0.99` | same deterministic coverage and Gaussian CPU acceptance | **pending** | M3c-2, PR #10; [review and preserved initial failures](docs/m3c2-decision.md#independent-acceptance-review-2026-09-20-utc) |
+-| Several or correlated group terms, nested/crossed factors, other families and links | refused with an error naming the construct | same | same | later slices, `docs/coordination/NEXT_MILESTONES_PROPOSAL.md` |
++| Multiple independent intercepts `(1 \| county) + (1 \| year)`, all three families | deterministic validation in progress; feature sampling pending | same | **pending** | M3c-3 candidate; [decision](docs/m3c3-decision.md) |
++| Correlated effects, grouping `/` or `:`, slopes, other families and links | refused with an error naming the construct | same | same | later slices, `docs/coordination/NEXT_MILESTONES_PROPOSAL.md` |
+ 
+ Device rules on every path: `device="gpu"` without a visible GPU raises `DeviceError`
+ (no silent CPU fallback); the fit report states the actual device, dtype (float64) and
+ chain method; if JAX is not installed, `backend="numpyro"` raises `DeviceError` naming
+ the `[jax]` extra.
+ 
++### Multiple independent varying intercepts
++
++```python
++priors = ab.Priors(intercept=ab.Normal(0, 2), b=ab.Normal(0, 1),
++                   sd={"county": ab.HalfNormal(1), "year": ab.Exponential(2)},
++                   sigma=ab.HalfNormal(1))
++model = ab.gaussian("y ~ x + (1 | county) + (1 | year)", df, priors)
++```
++
++Every factor needs its own SD prior. A scalar `sd` remains valid for a single factor;
++multiple factors require a mapping covering exactly their names. Group effects have
++independent Normal priors with separate scales; posterior effects need not be independent.
++Use `model.spec.groups`, `levels_by_group`, `model.design.group_designs`, and
++`model.group_names`. Factors follow formula order; levels use sorted fitted string labels.
++`design.Z` concatenates one-hot blocks, located by `design.group_slices`.
++Singular `group`, `levels`, `group_term`, `J` and `group_index` access is ambiguous with
++multiple groups and raises. Existing zero/one-group access remains valid.
++
++`value_point(sd={"county": .5, "year": .2}, z={"county": [...], "year": [...]}, ...)`
++requires exact keys and one offset per fitted level. Predictions accept a policy string
++for every factor or `new_groups={"county": "population", "year": "error"}`.
++Unseen effects are shared per factor/label, independent across factors. RNG traversal is
++factor formula order then sorted unseen labels; changing factor order can change unseen
++draws with the same seed. Per-factor prediction attributes are JSON strings that can be
++saved to netCDF. Fit records list every factor and SD; multiple groups omit ambiguous
++legacy `group`/`J` entries. Common centering and intercept back-transformation are unchanged.
++
++Distinct additive factors can describe crossed or observationally nested memberships;
++the library never expands nesting syntax or combines labels with their parent. Slopes,
++duplicate factors, correlation IDs, `||`, grouping `/` or `:` and multimembership remain
++refused. See the build-only [example](examples/m3c3_multiple_intercepts.py) and
++[decision](docs/m3c3-decision.md). Feature-specific sampling and GPU validation are pending.
++
+ ### Removing the population intercept
+ 
+ Write `y ~ 0 + x` or `y ~ x - 1` and omit the intercept prior:
+diff --git a/SKILL.md b/SKILL.md
+index 3affbb2..f025425 100644
+--- a/SKILL.md
++++ b/SKILL.md
+@@ -24,7 +24,7 @@ model family, then the routing for everything else.
+ **What is verified.** One formula subset with numeric predictors, treatment-coded
+ categorical predictors declared with `categorical={column: reference}`, one
+ numeric-by-categorical interaction `x:z` with both main effects present (`x*z` is the
+-shorthand for `x + z + x:z`), and at most one varying intercept, which is optional
++shorthand for `x + z + x:z`), and optional independent varying intercepts for distinct factors (M3c-3)
+ (milestone M3c-1: a formula without it is a population-only model, as in brms),
+ 
+     y ~ [1 +] x1 [+ x2 ...] [+ z ...] [+ x:z ...] [+ (1 | group)]
+@@ -59,13 +59,13 @@ for the outcome families:
+   `docs/m2-evidence/`, checks in `docs/m2-decision.md`.
+ 
+ **What is not verified.** Every other formula and family (other links,
+-varying slopes, nested or crossed groups, several group terms,
++varying slopes, correlation IDs, grouping `/` or `:` syntax, multimembership,
+ beta-binomial). The library refuses them with an error naming the construct. Population-only
+ models (M3c-1) are verified deterministically (density, gradients, closed form, predictions)
+ and one Gaussian CPU example has sampling evidence accepted in `docs/m3c1-decision.md`; this is not calibration or all-family sampling evidence. Do not loosen the parser to get past that
+ error; go to "Outside the verified family" below.
+ 
+-**Population intercept control (M3c-2 candidate).** `0 + terms` and `terms - 1`
++**Population intercept control (M3c-2).** `0 + terms` and `terms - 1`
+ remove it. Omit `Priors.intercept` and `value_point(intercept=...)`; supplied values
+ are refused. The first categorical main effect becomes full-level coded, including
+ its declared reference; later categorical main effects and the existing interaction
+@@ -74,8 +74,22 @@ coefficient set with explicit priors. Reordering factors can change independent
+ prior meaning. No-intercept models use the raw design even when centering is
+ requested, with requested/effective flags recorded separately. At least one
+ population predictor is required; conflicting inclusion/removal tokens are refused.
+-See `docs/m3c2-decision.md` and `examples/m3c2_no_intercept.py`. Deterministic checks
+-are the current evidence; no new no-intercept sampling/GPU validation is claimed.
++See `docs/m3c2-decision.md` and `examples/m3c2_no_intercept.py`. Three-family deterministic checks and one Gaussian CPU example at target_accept .99 were independently accepted; earlier .9 divergence failures remain preserved. This is not calibration or GPU evidence.
++
++**Multiple independent intercepts (M3c-3 candidate).** Use explicit additive terms
++`(1 | county) + (1 | year)` and exact-key `sd={"county": HalfNormal(1), "year": Exponential(2)}`.
++Scalar SD remains a one-factor shorthand. Inspect `spec.groups`, `spec.levels_by_group`,
++`design.group_designs`, `design.group_slices` and `model.group_names`; ambiguous singular
++fields raise with multiple factors. Effects have independent priors, not necessarily
++independent posteriors. Common centering and no-intercept coding do not change.
++`value_point` uses factor-keyed SD/offset mappings. `new_groups` accepts either the existing
++policy string for all factors or an exact-key policy mapping. Repeated unseen labels share
++one effect within their factor, including across rows with different other memberships.
++Equal labels in separate factors are different identities; factor order determines RNG
++traversal. Fit records retain all factor scales and coordinates. Never silently expand
++nesting or reinterpret reused within-parent labels. Deterministic acceptance is in progress;
++feature-specific MCMC, calibration and GPU validation remain future work. Follow
++`docs/m3c3-decision.md` and `examples/m3c3_multiple_intercepts.py`.
+ 
+ ## Session start, every time
+ 
+diff --git a/autobayes/__init__.py b/autobayes/__init__.py
+index d956220..6077795 100644
+--- a/autobayes/__init__.py
++++ b/autobayes/__init__.py
+@@ -2,8 +2,8 @@
+ 
+ Three model families on one right-hand side ``x + z [+ (1 | group)]`` with numeric predictors,
+ treatment-coded categorical predictors declared with ``categorical={column: reference}``
+-(M3a-1), one numeric-by-categorical interaction ``x:z`` with both main effects (M3a-2) and at most
+-one varying intercept, which is optional since M3c-1 (a formula without it is a population-only
++(M3a-1), one numeric-by-categorical interaction ``x:z`` with both main effects (M3a-2) and
++independent varying intercepts across distinct factors (M3c-3), optional since M3c-1 (a formula without it is a population-only
+ model, as in brms): Gaussian with identity link (milestone M0), Bernoulli with
+ logit link for a strictly 0/1 response (M1), and binomial counts ``successes | trials(n)`` with
+ logit link (M2). Everything else is refused with an error that names the unsupported
+@@ -55,4 +55,4 @@ __all__ = [
+     "PriorError", "Priors", "StudentT", "bernoulli", "binomial", "compare_records", "environment", "fit", "fit_record",
+     "format_comparison", "format_environment", "gaussian", "panel", "parse_formula", "predict",
+ ]
+-__version__ = "0.6.0"
++__version__ = "0.7.0"
+diff --git a/autobayes/formula.py b/autobayes/formula.py
+index ab80efc..3dc3527 100644
+--- a/autobayes/formula.py
++++ b/autobayes/formula.py
+@@ -2,18 +2,18 @@
+ 
+ Supported::
+ 
+-    response ~ [1 + | 0 +] predictor [+ predictor ...] [+ x:z ...] [+ (1 | group)]               (Gaussian, Bernoulli)
+-    successes | trials(n) ~ [1 + | 0 +] predictor [+ predictor ...] [+ x:z ...] [+ (1 | group)]  (binomial, brms syntax)
++    response ~ [1 + | 0 +] predictor [+ predictor ...] [+ x:z ...] [+ (1 | factor) ...]               (Gaussian, Bernoulli)
++    successes | trials(n) ~ [1 + | 0 +] predictor [+ predictor ...] [+ x:z ...] [+ (1 | factor) ...]  (binomial, brms syntax)
+ 
+-The varying-intercept term is optional (milestone M3c-1): a formula without it is a population-only
++Varying-intercept terms are optional and additive across distinct factors (M3c-3): a formula without it is a population-only
+ model, as in brms ``brmsformula`` where group-level terms are optional; ``y ~ 1`` is intercept-only.
+ 
+ with ``x:z`` (or the shorthand ``x*z`` = ``x + z + x:z``) one interaction between a numeric term
+ and a declared categorical term whose main effects are both present (milestone M3a-2).
+ 
+ Predictors are numeric columns, or categorical columns declared with ``categorical={column:
+-reference_level}`` (treatment coding, milestone M3a-1); the grouping variable may be any
+-column and is coded as a factor with levels in sorted order. Bambi (via formulae) accepts a
++reference_level}`` (treatment coding, milestone M3a-1); each grouping variable is a column
++and is coded independently with sorted fitted string levels. Bambi (via formulae) accepts a
+ much larger language; this module exists so that a formula outside the verified subset is
+ refused with an error naming the construct, rather than silently built.
+ """
+@@ -22,7 +22,7 @@ from __future__ import annotations
+ import re
+ import math
+ from collections.abc import Mapping
+-from dataclasses import dataclass, field, replace
++from dataclasses import dataclass, replace
+ 
+ import numpy as np
+ import pandas as pd
+@@ -78,27 +78,61 @@ class Categorical:
+         return tuple(f"{self.name}[{l}]" for l in self.coefficients)
+ 
+ 
+-@dataclass(frozen=True)
++@dataclass(frozen=True, init=False)
+ class ModelSpec:
+     formula: str
+     response: str
+-    predictors: tuple[str, ...]        # numeric predictor terms, in formula order
+-    group: str | None                  # None: a population-only model without a group-level term (M3c-1)
+-    intercept: bool = True
+-    levels: tuple[str, ...] = field(default_factory=tuple)
+-    trials: str | None = None          # binomial only: the trials column of ``successes | trials(n)``
+-    rhs: str = ""                      # the CANONICAL right-hand side handed to Bambi (docs/m3a2-decision.md)
+-    terms: tuple[str, ...] = ()        # every term in canonical order: main effects, then interactions ``x:z``
+-    categoricals: tuple[Categorical, ...] = ()   # the declared categorical terms, in formula order
+-    interactions: tuple[tuple[str, str], ...] = ()   # (numeric term, categorical term) per interaction, canonical order
+-
+-    def __post_init__(self):
+-        if not self.terms:                      # numeric-only construction (M0-M2 call sites)
+-            object.__setattr__(self, "terms", tuple(self.predictors))
++    predictors: tuple[str, ...]
++    groups: tuple[str, ...]
++    intercept: bool
++    levels_by_group: Mapping[str, tuple[str, ...]]
++    trials: str | None
++    rhs: str
++    terms: tuple[str, ...]
++    categoricals: tuple[Categorical, ...]
++    interactions: tuple[tuple[str, str], ...]
++
++    def __init__(self, formula, response, predictors, group=None, intercept=True,
++                 levels=(), trials=None, rhs="", terms=(), categoricals=(), interactions=(),
++                 *, groups=None, levels_by_group=None):
++        """Keep the original positional constructor; canonical fields use ordered factors."""
++        if groups is not None and group is not None:
++            raise ValueError("supply group or groups, not both")
++        groups = tuple(groups) if groups is not None else (() if group is None else (group,))
++        if len(set(groups)) != len(groups):
++            raise ValueError("duplicate grouping factors")
++        if levels_by_group is not None and levels:
++            raise ValueError("supply levels or levels_by_group, not both")
++        if levels and len(groups) != 1:
++            raise ValueError("singular levels require one grouping factor")
++        level_map = ({g: tuple(levels) for g in groups} if levels_by_group is None
++                     else {g: tuple(v) for g, v in levels_by_group.items()})
++        if set(level_map) != set(groups):
++            raise ValueError("levels_by_group must cover exactly the grouping factors")
++        from types import MappingProxyType
++        values = dict(formula=formula, response=response, predictors=tuple(predictors),
++                      groups=groups, intercept=intercept,
++                      levels_by_group=MappingProxyType({g: level_map[g] for g in groups}),
++                      trials=trials, rhs=rhs, terms=tuple(terms) or tuple(predictors),
++                      categoricals=tuple(categoricals), interactions=tuple(interactions))
++        for key, value in values.items():
++            object.__setattr__(self, key, value)
+ 
+     @property
+     def has_group(self) -> bool:
+-        return self.group is not None
++        return bool(self.groups)
++
++    @property
++    def group(self) -> str | None:
++        if len(self.groups) > 1:
++            raise ValueError("group is ambiguous with multiple grouping factors; use groups")
++        return self.groups[0] if self.groups else None
++
++    @property
++    def levels(self) -> tuple[str, ...]:
++        if len(self.groups) > 1:
++            raise ValueError("levels is ambiguous with multiple grouping factors; use levels_by_group")
++        return self.levels_by_group[self.groups[0]] if self.groups else ()
+ 
+     @property
+     def group_term(self) -> str:
+@@ -202,13 +236,19 @@ def _reject_group_term(inner: str, factor: str, piece: str) -> None:
+     if "||" in piece:
+         raise FormulaError(
+             f"{piece!r}: the '||' (uncorrelated varying effects) syntax is not supported "
+-            "in M0; only a single varying intercept '(1 | group)' is."
++            "in M0; only varying intercepts '(1 | group)' is."
+         )
+     if "/" in factor or ":" in factor:
+         raise FormulaError(
+-            f"{piece!r}: nested or crossed grouping factors ('g/h', 'g:h') are not "
+-            "supported in M0; only a single grouping factor '(1 | group)' is."
++            f"{piece!r}: nested/grouping interaction syntax ('g/h', 'g:h') is not "
++            "supported; use distinct additive '(1 | group)' terms."
+         )
++    if "|" in factor:
++        raise FormulaError(f"{piece!r}: correlation IDs are not supported")
++    if factor.startswith("mm("):
++        raise FormulaError(f"{piece!r}: multimembership grouping is not supported")
++    if "(" in factor:
++        raise FormulaError(f"{piece!r}: transformed grouping factors are not supported; use a column name")
+     if not re.fullmatch(_IDENT, factor):
+         raise FormulaError(f"{piece!r}: grouping factor must be a single column name")
+     if inner != "1":
+@@ -218,7 +258,7 @@ def _reject_group_term(inner: str, factor: str, piece: str) -> None:
+         )
+ 
+ 
+-def _normalise_categorical(categorical, terms: list[str], response: str, group: str, trials: str | None,
++def _normalise_categorical(categorical, terms: list[str], response: str, groups: list[str], trials: str | None,
+                            formula: str) -> tuple[Categorical, ...]:
+     if categorical is None:
+         return ()
+@@ -234,9 +274,9 @@ def _normalise_categorical(categorical, terms: list[str], response: str, group:
+             raise FormulaError(f"{name!r} is the response; only predictor terms can be declared categorical")
+         if trials is not None and name == trials:
+             raise FormulaError(f"{name!r} is the trials column; only predictor terms can be declared categorical")
+-        if name == group:
++        if name in groups:
+             raise FormulaError(
+-                f"{name!r} is the grouping factor of '(1 | {group})', which is already a factor with a "
++                f"{name!r} is the grouping factor of '(1 | {name})', which is already a factor with a "
+                 "varying intercept; only fixed-effect predictor terms are declared categorical"
+             )
+         if name not in terms:
+@@ -360,8 +400,8 @@ def parse_formula(formula: str, data: pd.DataFrame | None = None, family: str =
+         if not m:
+             raise FormulaError(
+                 f"{formula!r}: expected 'response ~ terms'. Supported: "
+-                "'y ~ [1 +] x1 [+ x2 ...] [+ (1 | group)]' and, for ab.binomial, "
+-                "'successes | trials(n) ~ [1 +] x1 [+ x2 ...] [+ (1 | group)]'."
++                "'y ~ [1 +] x1 [+ x2 ...] [+ (1 | factor) ...]' and, for ab.binomial, "
++                "'successes | trials(n) ~ [1 +] x1 [+ x2 ...] [+ (1 | factor) ...]'."
+             )
+         if family == "binomial":
+             raise FormulaError(
+@@ -456,23 +496,20 @@ def parse_formula(formula: str, data: pd.DataFrame | None = None, family: str =
+                 )
+     if remove_intercept and not predictors:
+         raise FormulaError(f"{formula!r}: no intercept requires at least one population-level predictor")
+-    if len(groups) > 1:
+-        raise FormulaError(
+-            f"{formula!r}: more than one grouping factor ({groups}) is not supported in "
+-            "M0; use a single '(1 | group)' term."
+-        )
++    if len(set(groups)) != len(groups):
++        raise FormulaError(f"{formula!r}: duplicate grouping factor; use each '(1 | factor)' once")
+     if len(predictors) == 0 and not saw_intercept_token:
+         raise FormulaError(
+             f"{formula!r}: no population-level predictor; write 'y ~ 1 + (1 | group)' "
+             "for an intercept-only model."
+         )
+-    group = groups[0] if groups else None            # None: population-only model (M3c-1)
+-    if group is not None and (group in predictors or group == response):
+-        raise FormulaError(f"{group!r}: the grouping factor cannot also be a predictor or the response")
+-    if trials is not None and (trials in predictors or trials == group):
++    for group in groups:
++        if group in predictors or group == response:
++            raise FormulaError(f"{group!r}: the grouping factor cannot also be a predictor or the response")
++    if trials is not None and (trials in predictors or trials in groups):
+         raise FormulaError(f"{trials!r}: the trials column cannot also be a predictor or the grouping factor")
+ 
+-    categoricals = _normalise_categorical(categorical, predictors, response, group, trials, formula)
++    categoricals = _normalise_categorical(categorical, predictors, response, groups, trials, formula)
+     if remove_intercept and categoricals:
+         categoricals = (replace(categoricals[0], full_rank=True), *categoricals[1:])
+     cat_names = {c.name for c in categoricals}
+@@ -481,8 +518,8 @@ def parse_formula(formula: str, data: pd.DataFrame | None = None, family: str =
+         for side in (left, right):
+             if not re.fullmatch(_IDENT, side):
+                 raise FormulaError(f"{piece!r}: {side!r} is not a column name")
+-            if side == group:
+-                raise FormulaError(f"{piece!r}: the grouping factor {group!r} cannot enter a fixed interaction")
++            if side in groups:
++                raise FormulaError(f"{piece!r}: the grouping factor {side!r} cannot enter a fixed interaction")
+             if side == response or (trials is not None and side == trials):
+                 raise FormulaError(f"{piece!r}: the response or trials column cannot enter an interaction")
+         cats = [s for s in (left, right) if s in cat_names]
+@@ -505,14 +542,14 @@ def parse_formula(formula: str, data: pd.DataFrame | None = None, family: str =
+             "numeric-by-categorical interaction per model, whether or not they share a side "
+             "(docs/m3a2-decision.md, repair record). Fit one interaction, or wait for a slice that verifies several."
+         )
+-    parts = [*predictors, *(f"{x}:{z}" for x, z in interactions)] + ([f"(1 | {group})"] if group is not None else [])
++    parts = [*predictors, *(f"{x}:{z}" for x, z in interactions)] + [f"(1 | {group})" for group in groups]
+     canonical_rhs = " + ".join(parts) if parts else "1"           # intercept-only population model: 'y ~ 1'
+     if remove_intercept:
+         canonical_rhs = "0 + " + canonical_rhs
+     spec = ModelSpec(
+         formula=formula.strip(), response=response,
+         predictors=tuple(p for p in predictors if p not in cat_names),
+-        group=group, intercept=not remove_intercept, trials=trials, rhs=canonical_rhs,
++        groups=tuple(groups), intercept=not remove_intercept, trials=trials, rhs=canonical_rhs,
+         terms=(*predictors, *(f"{x}:{z}" for x, z in interactions)), categoricals=categoricals,
+         interactions=tuple(interactions),
+     )
+@@ -621,7 +658,7 @@ def validate_data(spec: ModelSpec, data: pd.DataFrame, family: str = "gaussian")
+     """Check columns exist, are numeric where required, and have no missing values."""
+     if (spec.trials is not None) != (family == "binomial"):
+         raise FormulaError("a trials column is present exactly for the binomial family")
+-    needed = ([spec.response, *spec.predictors, *spec.categorical_names] + ([spec.group] if spec.group is not None else [])
++    needed = ([spec.response, *spec.predictors, *spec.categorical_names] + list(spec.groups)
+               + ([spec.trials] if spec.trials else []))
+     missing = [c for c in needed if c not in data.columns]
+     if missing:
+@@ -664,19 +701,17 @@ def validate_data(spec: ModelSpec, data: pd.DataFrame, family: str = "gaussian")
+         )
+     if len(data) < 2:
+         raise FormulaError("need at least two observations")
+-    levels: tuple[str, ...] = ()
+-    if spec.group is not None:
+-        levels = tuple(str(v) for v in sorted(data[spec.group].astype(str).unique()))
++    levels_by_group = {}
++    for group in spec.groups:
++        levels = tuple(sorted(data[group].astype(str).unique()))
+         if len(levels) < 2:
+-            raise FormulaError(
+-                f"grouping factor {spec.group!r} has a single level; a varying intercept "
+-                "needs at least two."
+-            )
++            raise FormulaError(f"grouping factor {group!r} has a single level; a varying intercept needs at least two.")
++        levels_by_group[group] = levels
+     for c in spec.predictors:
+         if np.isclose(np.std(data[c].to_numpy(dtype=float)), 0.0):
+             raise FormulaError(f"predictor {c!r} is constant")
+     return ModelSpec(
+         formula=spec.formula, response=spec.response, predictors=spec.predictors,
+-        group=spec.group, intercept=spec.intercept, levels=levels, trials=spec.trials, rhs=spec.rhs,
++        groups=spec.groups, intercept=spec.intercept, levels_by_group=levels_by_group, trials=spec.trials, rhs=spec.rhs,
+         terms=spec.terms, categoricals=tuple(categoricals), interactions=spec.interactions,
+     )
+diff --git a/autobayes/model.py b/autobayes/model.py
+index e1d4a6f..6df91f5 100644
+--- a/autobayes/model.py
++++ b/autobayes/model.py
+@@ -3,7 +3,7 @@
+ Three families. ``"gaussian"`` (M0): identity link, residual SD ``sigma``. ``"bernoulli"``
+ (M1): logit link, ``p = expit(eta)``, no residual scale. ``"binomial"`` (M2): logit link on
+ ``successes | trials(n)``, counts. All share the right-hand side ``[1 +] x1 [+ x2 ...]
+-[+ (1 | group)]`` with numeric terms and, since M3a-1, treatment-coded categorical terms declared
++[+ (1 | factor) ...]`` with numeric terms and, since M3a-1, treatment-coded categorical terms declared
+ with ``categorical={column: reference}``; centring; non-centred group effects when a group term is
+ present, and a population-only model without one (M3c-1).
+ """
+@@ -20,6 +20,19 @@ from autobayes.formula import Categorical, FormulaError, ModelSpec, binomial_cou
+ from autobayes.priors import Priors
+ 
+ 
++@dataclass(frozen=True)
++class GroupDesign:
++    """One factor's sorted levels, original-row coding and concatenated Z slice."""
++    levels: tuple[str, ...]
++    Z: np.ndarray
++    group_index: np.ndarray
++    column_slice: slice
++
++    @property
++    def J(self) -> int:
++        return len(self.levels)
++
++
+ @dataclass(frozen=True)
+ class Design:
+     """What the model was actually fit to. All arrays are dense NumPy."""
+@@ -29,9 +42,8 @@ class Design:
+     X_model: np.ndarray           # (n, P) what multiplies the coefficients: centred if center_predictors
+     x_means: np.ndarray           # (P,) column means of X_raw (zeros if not centred); a dummy's mean is its level's proportion
+     predictors: tuple[str, ...]   # numeric predictor terms
+-    Z: np.ndarray                 # (n, J) one-hot group indicators; (n, 0) for a population-only model
+-    group_index: np.ndarray       # (n,) integer index into levels; empty for a population-only model
+-    levels: tuple[str, ...]       # sorted level labels; column j of Z is levels[j]; () without a group term
++    Z: np.ndarray                 # concatenated one-hot blocks in formula order; (n, 0) without groups
++    group_designs: Mapping[str, GroupDesign]
+     centered: bool
+     trials: np.ndarray | None = None   # binomial only: (n,) trials per fitted row; y holds the successes
+     columns: tuple[str, ...] = ()      # design-column labels in order (``x``, ``z[b]``, ...); == predictors when numeric only
+@@ -45,10 +57,29 @@ class Design:
+     def n(self) -> int:
+         return len(self.y)
+ 
++    def _single_group(self):
++        if len(self.group_designs) > 1:
++            raise ValueError("singular group design access is ambiguous with multiple grouping factors; use group_designs")
++        return next(iter(self.group_designs.values()), None)
++
++    @property
++    def levels(self) -> tuple[str, ...]:
++        block = self._single_group()
++        return block.levels if block is not None else ()
++
++    @property
++    def group_index(self) -> np.ndarray:
++        block = self._single_group()
++        return block.group_index if block is not None else np.zeros(0, dtype=int)
++
+     @property
+     def J(self) -> int:
+         return len(self.levels)
+ 
++    @property
++    def group_slices(self) -> dict[str, slice]:
++        return {g: block.column_slice for g, block in self.group_designs.items()}
++
+ 
+ _FAMILIES = {
+     # family: (Bambi parent parameter = the deterministic in the graph, link name)
+@@ -59,7 +90,7 @@ _FAMILIES = {
+ 
+ 
+ class Model:
+-    """``y ~ x [+ (1 | group)]`` with explicit priors; Gaussian, Bernoulli or binomial likelihood.
++    """``y ~ x [+ (1 | factor) ...]`` with explicit priors; Gaussian, Bernoulli or binomial likelihood.
+ 
+     Attributes
+     ----------
+@@ -87,7 +118,7 @@ class Model:
+         spec0 = parse_formula(formula, None, family, categorical)
+         self.effective_center_predictors = self.center_predictors and spec0.intercept
+         priors.validate(spec0, family)                  # structure now; per-level coverage once levels are known
+-        cols = ([spec0.response, *spec0.predictors, *spec0.categorical_names] + ([spec0.group] if spec0.group is not None else [])
++        cols = ([spec0.response, *spec0.predictors, *spec0.categorical_names] + list(spec0.groups)
+                 + ([spec0.trials] if spec0.trials else []))
+         missing = [c for c in cols if c not in data.columns]
+         if missing:
+@@ -130,8 +161,8 @@ class Model:
+                     "(refit with a wider and a narrower intercept prior and report the movement)."
+                 )
+         self.spec: ModelSpec = parse_formula(formula, df, family, categorical)   # levels over the fitted rows
+-        if self.spec.group is not None:
+-            df[self.spec.group] = df[self.spec.group].astype(str)
++        for group in self.spec.groups:
++            df[group] = df[group].astype(str)
+         if family == "bernoulli":
+             df[self.spec.response] = df[self.spec.response].astype(int)
+         self.original_labels: dict[str, np.ndarray] = {}     # labels of the SUPPLIED column, fitted rows, before any recoding
+@@ -159,6 +190,7 @@ class Model:
+             bambi_family = binomial_logit_family()
+         else:
+             bambi_family = family
++        self._check_generated_names()
+         self.bambi_model = bmb.Model(
+             self.spec.bambi_formula, self.data, family=bambi_family,
+             priors=priors.to_bambi(self.spec, family),
+@@ -177,6 +209,26 @@ class Model:
+                 if not any(c.shape == self.design.trials.shape and np.array_equal(c, self.design.trials) for c in consts):
+                     raise RuntimeError("the trials attached to the likelihood do not equal the trials column")
+ 
++    def _check_generated_names(self):
++        """Refuse names that would alias a coefficient, effect, likelihood or coordinate."""
++        variable_names = (["Intercept"] if self.spec.intercept else []) + list(self.spec.terms)
++        variable_names += [self.names["y"], self.names["linpred"]]
++        if self.family == "gaussian":
++            variable_names += ["sigma"]
++        for roles in self.group_names.values():
++            variable_names.extend(roles[k] for k in ("sd", "offset", "group_effect"))
++        # Bambi's default result cleaning drops every posterior variable ending in _offset.
++        retained = list(self.spec.terms) + [roles["group_effect"] for roles in self.group_names.values()]
++        if any(name.endswith("_offset") for name in retained):
++            raise FormulaError("generated name collision: coefficient/effect suffix '_offset' is reserved by Bambi; rename the column")
++        coords = [f"{g}__factor_dim" for g in self.spec.groups]
++        coords += [f"{t}_dim" for t in self.spec.terms if self.spec.is_vector_term(t)]
++        coords += ["__obs__"]
++        names = variable_names + coords
++        duplicates = sorted({n for n in names if names.count(n) > 1})
++        if duplicates:
++            raise FormulaError(f"generated variable/coordinate name collision: {duplicates}; rename the conflicting column")
++
+     # -- design ------------------------------------------------------------------------
+     def _extract_design(self) -> Design:
+         comp = self.bambi_model.components[_FAMILIES[self.family][0]]
+@@ -228,22 +280,38 @@ class Model:
+         if col != Xfull.shape[1]:
+             raise RuntimeError(f"Bambi's common design has {Xfull.shape[1]} columns, expected {col}")
+         X_raw = Xfull[:, int(self.spec.intercept):]
+-        if self.spec.group is None:                       # population-only model: no group design at all
++        group_designs = {}
++        if not self.spec.has_group:
+             if group is not None:
+                 raise RuntimeError("Bambi built a group design for a formula without a group-level term")
+-            levels: tuple[str, ...] = ()
+             Z = np.zeros((len(X_raw), 0))
+-            group_index = np.zeros(0, dtype=int)
+         else:
+-            term = group.terms[self.spec.group_term]
+-            levels = tuple(str(v) for v in term.groups)
+-            if levels != self.spec.levels:
+-                raise RuntimeError(f"Bambi level order {levels} differs from sorted order {self.spec.levels}")
++            expected_terms = [f"1|{g}" for g in self.spec.groups]
++            if group is None or list(group.terms) != expected_terms:
++                raise RuntimeError("Bambi group terms differ from formula order")
+             Z = group.design_matrix
+             Z = np.asarray(Z.toarray() if hasattr(Z, "toarray") else Z, dtype=float)
+-            if Z.shape != (len(X_raw), len(levels)) or not np.array_equal(Z.sum(1), np.ones(len(X_raw))):
+-                raise RuntimeError("group design matrix is not one-hot")
+-            group_index = Z.argmax(1)
++            start = 0
++            for g in self.spec.groups:
++                name = f"1|{g}"
++                levels = self.spec.levels_by_group[g]
++                if tuple(str(v) for v in group.terms[name].groups) != levels:
++                    raise RuntimeError(f"Bambi level order for {g!r} differs from sorted fitted labels")
++                block_slice = slice(start, start + len(levels))
++                if group.slices[name] != block_slice:
++                    raise RuntimeError(f"Bambi group slice for {g!r} differs from formula order")
++                labels = self.data[g].to_numpy()
++                expected = np.column_stack([labels == level for level in levels]).astype(float)
++                block = Z[:, block_slice]
++                if not np.array_equal(block, expected) or not np.array_equal(block.sum(1), np.ones(len(X_raw))):
++                    raise RuntimeError(f"group design for {g!r} does not encode original rows one-hot")
++                coord = self.group_names[g]["coordinate"]
++                if tuple(str(v) for v in self.pymc_model.coords[coord]) != levels:
++                    raise RuntimeError(f"PyMC coordinate {coord!r} differs from fitted labels")
++                group_designs[g] = GroupDesign(levels, block, block.argmax(1), block_slice)
++                start += len(levels)
++            if Z.shape != (len(X_raw), start):
++                raise RuntimeError("unexpected concatenated group design shape")
+         if self.effective_center_predictors:
+             x_means = X_raw.mean(0)
+             X_model = X_raw - x_means
+@@ -253,8 +321,8 @@ class Model:
+         y = np.asarray(self.data[self.spec.response], dtype=float)
+         trials = np.asarray(self.data[self.spec.trials], dtype=np.int64) if self.spec.trials else None
+         return Design(y=y, X_raw=X_raw, X_model=X_model, x_means=x_means,
+-                      predictors=self.spec.predictors, Z=Z, group_index=group_index,
+-                      levels=levels, centered=self.effective_center_predictors, trials=trials,
++                      predictors=self.spec.predictors, Z=Z, group_designs=group_designs,
++                      centered=self.effective_center_predictors, trials=trials,
+                       columns=self.spec.columns, categoricals=self.spec.categoricals)
+ 
+     # -- naming ------------------------------------------------------------------------
+@@ -268,7 +336,7 @@ class Model:
+         Bambi builds for the likelihood's parent parameter (``mu`` for Gaussian, ``logit_p``
+         for Bernoulli); ``"mean"`` is the name ``predict`` gives the expected response (``mu``
+         or ``p``). ``"sigma"`` exists only for the Gaussian family."""
+-        g = self.spec.group
++        g = self.spec.groups[0] if len(self.spec.groups) == 1 else None
+         out = {
+             **({"intercept": "Intercept"} if self.spec.intercept else {}),
+             **({"sd": f"1|{g}_sigma", "offset": f"1|{g}_offset", "group_effect": f"1|{g}"} if g is not None else {}),
+@@ -282,6 +350,13 @@ class Model:
+             out["mu"] = "mu"
+         return out
+ 
++    @property
++    def group_names(self) -> dict[str, dict[str, str]]:
++        """PyMC roles and coordinate for each factor, in formula order."""
++        return {g: {"sd": f"1|{g}_sigma", "offset": f"1|{g}_offset",
++                    "group_effect": f"1|{g}", "coordinate": f"{g}__factor_dim"}
++                for g in self.spec.groups}
++
+     @property
+     def coefficients(self) -> tuple[tuple[str, str, int | None], ...]:
+         """``(design column, PyMC variable, index into that variable or None)`` in design order:
+@@ -289,27 +364,40 @@ class Model:
+         (the variable ``z`` has dims ``z_dim`` with the coefficient levels as coordinates)."""
+         return self.spec.column_terms
+ 
+-    def value_point(self, *, intercept: float | None = None, b, sd: float | None = None, z=None, sigma: float | None = None) -> dict[str, np.ndarray]:
++    def value_point(self, *, intercept: float | None = None, b, sd: float | Mapping[str, float] | None = None, z=None, sigma: float | None = None) -> dict[str, np.ndarray]:
+         """A point in PyMC's sampled (value) space, from natural-scale quantities.
+ 
+         ``intercept`` is the *model* intercept (at the predictor means when centred),
+         ``b`` the coefficients in design-column order (``model.coefficients``: numeric slopes
+-        and dummy coefficients), ``sd`` the group SD and ``z`` the J standard normal offsets
+-        (both required with a group term and both refused without one), ``sigma`` the residual
++        and dummy coefficients), ``sd`` and ``z`` exact-key factor mappings of positive
++        scales and standard Normal offset vectors. One factor also accepts scalar/vector
++        arguments; neither applies without groups. ``sigma`` is the residual
+         SD (Gaussian only). Scales are stored on the log scale because that is what PyMC samples.
+         """
+         b = np.atleast_1d(np.asarray(b, dtype=float))
+         if b.shape != (len(self.spec.columns),):
+             raise ValueError(f"b must have {len(self.spec.columns)} entries, one per design column {list(self.spec.columns)}")
+-        if self.spec.group is None:
++        def keyed(value, label):
++            if isinstance(value, Mapping):
++                if set(value) != set(self.spec.groups):
++                    raise ValueError(f"{label} must cover exactly the grouping factors {list(self.spec.groups)}")
++                return {g: value[g] for g in self.spec.groups}
++            if len(self.spec.groups) != 1:
++                raise ValueError(f"{label} requires an exact-key mapping for multiple grouping factors")
++            return {self.spec.groups[0]: value}
++
++        sd_by_group, z_by_group = {}, {}
++        if not self.spec.has_group:
+             if sd is not None or z is not None:
+                 raise ValueError("this model has no group-level term; sd and z do not apply to a population-only model")
+         else:
+             if sd is None or z is None:
+-                raise ValueError(f"sd and z are required: the model has a varying intercept '(1 | {self.spec.group})' with {self.design.J} levels")
+-            z = np.asarray(z, dtype=float)
+-            if z.shape != (self.design.J,):
+-                raise ValueError(f"z must have {self.design.J} entries")
++                raise ValueError("sd and z are required for every varying intercept")
++            sd_by_group, z_by_group = keyed(sd, "sd"), keyed(z, "z")
++            for g, block in self.design.group_designs.items():
++                z_by_group[g] = np.asarray(z_by_group[g], dtype=float)
++                if z_by_group[g].shape != (block.J,) or not np.isfinite(z_by_group[g]).all():
++                    raise ValueError(f"z for {g!r} must have {block.J} finite entries")
+         if (sigma is None) != (self.family != "gaussian"):
+             raise ValueError("sigma is required for the Gaussian family and must be omitted for Bernoulli and binomial")
+         n = self.names
+@@ -318,11 +406,17 @@ class Model:
+         if not self.spec.intercept and intercept is not None:
+             raise ValueError("no population intercept exists; omit intercept (or pass None)")
+         point = {n["intercept"]: np.asarray(float(intercept))} if self.spec.intercept else {}
+-        if self.spec.group is not None:
+-            point[f"{n['sd']}_log__"] = np.asarray(np.log(float(sd)))
+-            point[n["offset"]] = z
++        def log_scale(value, label):
++            arr = np.asarray(value, dtype=float)
++            if arr.shape != () or not np.isfinite(arr) or arr <= 0:
++                raise ValueError(f"{label} must be a finite positive scalar")
++            return np.asarray(np.log(arr))
++
++        for g, roles in self.group_names.items():
++            point[f"{roles['sd']}_log__"] = log_scale(sd_by_group[g], f"sd:{g}")
++            point[roles["offset"]] = z_by_group[g]
+         if sigma is not None:
+-            point[f"{n['sigma']}_log__"] = np.asarray(np.log(float(sigma)))
++            point[f"{n['sigma']}_log__"] = log_scale(sigma, "sigma")
+         for i, (col, term, j) in enumerate(self.coefficients):
+             if j is None:
+                 point[term] = np.asarray(b[i])
+@@ -337,6 +431,8 @@ class Model:
+     # -- description -------------------------------------------------------------------
+     def describe(self) -> str:
+         s, d, pr = self.spec, self.design, self.priors
++        def effect(g):
++            return "u" if len(s.groups) == 1 else f"u_{g}"
+         coef = pr.coefficient_priors(s)
+         parts = []
+         for term in s.terms:
+@@ -358,7 +454,8 @@ class Model:
+         lp = "mu" if gaussian else "eta"
+         a = f"a{'_c' if d.centered else ''}" if s.intercept else "0"
+         tag = {"gaussian": "M0", "bernoulli": "M1", "binomial": "M2"}[self.family]
+-        grouping = f"J = {d.J} levels of {s.group}" if s.group is not None else "no group-level term (population-level model)"
++        grouping = ("; ".join(f"J = {block.J} levels of {g}" for g, block in d.group_designs.items())
++                    if s.has_group else "no group-level term (population-level model)")
+         data_line = f"  data      : n = {d.n} observations, {grouping}"
+         if binomial:
+             data_line = (f"  data      : {d.n} fitted rows, {int(d.trials.sum())} trials in total, "
+@@ -367,14 +464,14 @@ class Model:
+                             if self.dropped_rows else ""))
+         lines = [
+             f"AutoBayes {tag} model" + (" with categorical predictor(s)" if s.categoricals else "")
+-            + (" and interaction(s)" if s.interactions else "") + (" (population-level only)" if s.group is None else ""),
++            + (" and interaction(s)" if s.interactions else "") + (" (population-level only)" if not s.has_group else ""),
+             f"  formula   : {s.formula}",
+         ]
+         if s.canonical_formula != s.formula:
+             lines += [f"  expanded  : {s.canonical_formula}   (canonical form handed to Bambi)"]
+         lines += [f"  family    : {self.family}, {self.link} link", data_line]
+-        if s.group is not None:
+-            lines += [f"  levels    : {', '.join(f'{j}={l}' for j, l in enumerate(d.levels))}"]
++        for g, block in d.group_designs.items():
++            lines += [f"  {'levels    ' if len(s.groups) == 1 else 'levels ' + g}: {', '.join(f'{j}={l}' for j, l in enumerate(block.levels))}"]
+         for cat in s.categoricals:
+             labels = self.data[cat.name].astype(str).to_numpy()
+             props = ", ".join(f"{l} {np.mean(labels == l):.3f}" for l in cat.levels)
+@@ -387,7 +484,7 @@ class Model:
+         lines += [
+             "",
+             "Linear predictor",
+-            f"  {lp}_i = {a}" + (f" + {xs}" if xs else "") + (f" + u[{s.group}_i]" if s.group is not None else ""),
++            f"  {lp}_i = {a}" + (f" + {xs}" if xs else "") + "".join(f" + {effect(g)}[{g}_i]" for g in s.groups),
+         ]
+         scale = "response" if gaussian else "log-odds"
+         for cat in s.categoricals:
+@@ -398,12 +495,12 @@ class Model:
+             if partners:
+                 xn = partners[0]
+                 lines += [f"  b_{cat.name}[l] is the difference between level l and the reference {cat.reference!r} on the "
+-                          f"{scale} scale at {xn} = 0{' (same group)' if s.group is not None else ''}; at another value of {xn} the difference is "
++                          f"{scale} scale at {xn} = 0{' (same group)' if s.has_group else ''}; at another value of {xn} the difference is "
+                           f"b_{cat.name}[l] + {xn} * b_{xn}:{cat.name}[l], because the levels have different slopes. "
+                           f"The reference has no coefficient."]
+             else:
+                 lines += [f"  b_{cat.name}[l] is the difference between level l and the reference {cat.reference!r} "
+-                          f"on the {scale} scale at the same predictors{' and group' if s.group is not None else ''}; the reference has no coefficient."]
++                          f"on the {scale} scale at the same predictors{' and group' if s.has_group else ''}; the reference has no coefficient."]
+         for xn, zn in s.interactions:
+             ref = s.categorical(zn).reference
+             if s.intercept:
+@@ -438,7 +535,7 @@ class Model:
+                          [f"  times the mean of x within that level: {q}" for q in qs] + \
+                          ["  That point of the expanded design is not a realisable covariate row (a row has x*1[z=l] equal to x or 0)."]
+             lines += [
+-                f"  a_c is the {what} {where}{' (group effect zero)' if s.group is not None else ''}; the",
++                f"  a_c is the {what} {where}{' (group effect zero)' if s.has_group else ''}; the",
+                 "  prior on the intercept applies to a_c. The posterior reports the raw-scale",
+                 "  intercept a = a_c - sum_p mean(x_p) * b_p" + (" - sum_l p_z[l] * b_z[l]" if s.categoricals else "")
+                 + (" - sum_l q_x:z[l] * b_x:z[l]" if s.interactions else "") + ", computed after sampling"
+@@ -454,18 +551,20 @@ class Model:
+                 lines += ["  Only the first categorical main effect is full-level coded. Reordering factors changes independent prior meaning."]
+         else:
+             lines += ["  Predictors are not centred (center_predictors=False); a is the raw-scale intercept"
+-                      + ((" (x = 0, reference level" + (", group effect zero)." if s.group is not None else ").")) if s.categoricals else ".")]
+-        if s.group is not None:
+-            lines += ["", "Group effects (non-centred)",
+-                      f"  u[j] = sd_{s.group} * z[j],  z[j] ~ Normal(0, 1),  j = 0..{d.J - 1}"]
++                      + ((" (x = 0, reference level" + (", group effect zero)." if s.has_group else ").")) if s.categoricals else ".")]
++        if s.has_group:
++            lines += ["", "Group effects (non-centred)"]
++            for g, block in d.group_designs.items():
++                lines += [f"  u_{g}[j] = sd_{g} * z_{g}[j], z_{g}[j] ~ Normal(0, 1), j = 0..{block.J - 1}"]
++            lines += ["  Independent priors across factors; group effects are not mean-centered."]
+         else:
+             lines += ["", "Group effects", "  none: a population-only model (no '(1 | group)' term)"]
+         lines += ["", "Priors" + ("" if gaussian else " (location coefficients on the logit scale)")]
+         if s.intercept:
+             lines += [f"  {a} ~ {pr.intercept}"]
+         lines += [f"  b_{col} ~ {coef[col]}" for col in s.columns]
+-        if s.group is not None:
+-            lines += [f"  sd_{s.group} ~ {pr.sd}"]
++        for g, prior in pr.group_priors(s).items():
++            lines += [f"  sd_{g} ~ {prior}"]
+         if gaussian:
+             lines += [f"  sigma ~ {pr.sigma}", "", "Likelihood", "  y_i ~ Normal(mu_i, sigma)"]
+         elif binomial:
+@@ -490,16 +589,16 @@ class Model:
+         lines += ["", "PyMC variables sampled (value space)"]
+         n = self.names
+         roles = {n["intercept"]: "a_c" if d.centered else "a"} if s.intercept else {}
+-        if s.group is not None:
+-            roles[f"{n['sd']}_log__"] = f"log(sd_{s.group})"
+-            roles[n["offset"]] = "z"
++        for g, names in self.group_names.items():
++            roles[f"{names['sd']}_log__"] = f"log(sd_{g})"
++            roles[names["offset"]] = "z" if len(s.groups) == 1 else f"z_{g}"
+         if gaussian:
+             roles[f"{n['sigma']}_log__"] = "log(sigma)"
+         for term in (*s.categorical_names, *s.interaction_names):
+             roles[term] = f"b_{term}[{', '.join(s.levels_of(term))}] (vector; dims {term}_dim, posterior rows {', '.join(s.term_columns(term))})"
+         for v in self.pymc_model.value_vars:
+             lines.append(f"  {v.name:<24} {roles.get(v.name, f'b_{v.name}')}")
+-        lines.append("Deterministic: " + (f"{n['group_effect']} = u, " if s.group is not None else "") + f"{n['linpred']} = linear predictor"
++        lines.append("Deterministic: " + "".join(f"{names['group_effect']} = {effect(g)}, " for g, names in self.group_names.items()) + f"{n['linpred']} = linear predictor"
+                      + ("" if gaussian else "; p = expit(logit_p)" + (", expected = n p and count draws" if binomial else "")
+                         + " are computed by predict()"))
+         return "\n".join(lines)
+diff --git a/autobayes/predict.py b/autobayes/predict.py
+index 9f5f58b..c196475 100644
+--- a/autobayes/predict.py
++++ b/autobayes/predict.py
+@@ -30,6 +30,9 @@ than the default ``"error"`` is refused rather than ignored):
+ """
+ from __future__ import annotations
+ 
++import json
++from collections.abc import Mapping
++
+ import numpy as np
+ import pandas as pd
+ import xarray as xr
+@@ -71,7 +74,7 @@ def _coefficient_draws(post, model):
+ 
+ def _check_newdata(model, newdata: pd.DataFrame, *, need_trials: bool = False) -> pd.DataFrame:
+     s = model.spec
+-    cols = [*s.predictors, *s.categorical_names] + ([s.group] if s.group is not None else [])
++    cols = [*s.predictors, *s.categorical_names] + list(s.groups)
+     if need_trials:
+         if s.trials not in newdata.columns:
+             raise FormulaError(
+@@ -102,12 +105,12 @@ def _check_newdata(model, newdata: pd.DataFrame, *, need_trials: bool = False) -
+         df[cat.name] = pd.Categorical(labels, categories=list(cat.categories), ordered=True)
+     if need_trials:
+         df[s.trials] = check_counts(f"newdata trials {s.trials!r}", df[s.trials])
+-    if s.group is not None:
+-        df[s.group] = df[s.group].astype(str)
++    for group in s.groups:
++        df[group] = df[group].astype(str)
+     return df.reset_index(drop=True)
+ 
+ 
+-def _predict_by_hand(model, idata, df: pd.DataFrame | None, kind: str, seed, new_groups: str) -> xr.Dataset:
++def _predict_by_hand(model, idata, df: pd.DataFrame | None, kind: str, seed, policies: dict[str, str]) -> xr.Dataset:
+     """Linear predictor by hand from the posterior, with one effect per distinct unseen label.
+ 
+     ``df=None`` means the fitted rows (in-sample). ``"population"``: a fresh ``Normal(0, sd)``
+@@ -127,24 +130,21 @@ def _predict_by_hand(model, idata, df: pd.DataFrame | None, kind: str, seed, new
+     mu = np.repeat(a[..., None], len(df), axis=-1)
+     if b is not None:
+         mu = mu + np.einsum("cdp,np->cdn", b, X)
+-    new_levels: list = []
+-    if model.spec.group is not None:
+-        sd = post[n["sd"]].to_numpy()
+-        u = post[n["group_effect"]].to_numpy()                  # (chain, draw, J)
+-        levels = list(model.design.levels)
+-        new_levels = sorted(set(df[model.spec.group]) - set(levels))
++    new_levels = {}
++    for g, names in model.group_names.items():
++        sd = post[names["sd"]].to_numpy()
++        u = post[names["group_effect"]].to_numpy()
++        levels = list(model.design.group_designs[g].levels)
++        new_levels[g] = sorted(set(df[g]) - set(levels))
+         new_effects = {}
+-        for lvl in new_levels:                                  # one effect per label per draw
+-            if new_groups == "population":
++        for lvl in new_levels[g]:
++            if policies[g] == "population":
+                 new_effects[lvl] = rng.normal(0.0, 1.0, size=sd.shape) * sd
+-            else:                                               # resample_observed
++            else:
+                 chosen = rng.integers(0, len(levels), size=sd.shape)
+                 new_effects[lvl] = np.take_along_axis(u, chosen[..., None], axis=-1)[..., 0]
+-        for i, lvl in enumerate(df[model.spec.group]):
+-            if lvl in new_effects:
+-                mu[..., i] += new_effects[lvl]
+-            else:
+-                mu[..., i] += u[..., levels.index(lvl)]
++        for i, lvl in enumerate(df[g]):
++            mu[..., i] += new_effects[lvl] if lvl in new_effects else u[..., levels.index(lvl)]
+     if model.family == "gaussian":
+         out = {"mu": (("chain", "draw", "__obs__"), mu)}
+         if kind == "response":
+@@ -164,72 +164,84 @@ def _predict_by_hand(model, idata, df: pd.DataFrame | None, kind: str, seed, new
+             if kind == "response":
+                 out["y"] = (("chain", "draw", "__obs__"), rng.binomial(trials, prob).astype(np.int64))
+     ds = xr.Dataset(out, coords={"chain": post["chain"], "draw": post["draw"], "__obs__": np.arange(len(df))})
+-    ds.attrs["new_groups"] = new_groups
+-    ds.attrs["new_levels"] = new_levels
++    _prediction_attrs(model, ds, policies, new_levels, in_sample=False, manual=True)
+     return ds
+ 
+ 
++def _group_policies(model, new_groups):
++    groups = model.spec.groups
++    if not groups and new_groups != "error":
++        raise ValueError("this model has no group-level term; new_groups does not apply, so leave it at its default")
++    if isinstance(new_groups, Mapping):
++        if set(new_groups) != set(groups):
++            raise ValueError(f"new_groups must cover exactly the grouping factors {list(groups)}")
++        policies = {g: new_groups[g] for g in groups}
++    else:
++        policies = {g: new_groups for g in groups}
++    values = policies.values() if groups else [new_groups]
++    if any(not isinstance(value, str) or value not in _NEW_GROUPS for value in values):
++        raise ValueError(f"new_groups must be one of {sorted(_NEW_GROUPS)} or an exact-key factor mapping")
++    return policies
++
++
++def _prediction_attrs(model, ds, policies, new_levels, *, in_sample, manual):
++    groups = model.spec.groups
++    if not groups:
++        ds.attrs.update(new_groups="not_applicable", new_levels=[])
++    elif len(groups) == 1:
++        g = groups[0]
++        ds.attrs["new_groups"] = "in_sample" if in_sample else policies[g]
++        if manual:
++            ds.attrs["new_levels"] = new_levels[g]
++    else:
++        ds.attrs["new_groups"] = "in_sample" if in_sample else "per_factor"
++        ds.attrs["new_groups_by_factor_json"] = json.dumps(policies)
++        ds.attrs["new_levels_by_factor_json"] = json.dumps(new_levels)
++
++
+ def predict(model, fit_result, *, newdata: pd.DataFrame | None = None, kind: str = "response",
+-            new_groups: str = "error", seed: int | None = None) -> xr.Dataset:
+-    """Return an ``xarray.Dataset`` with the mean (``mu`` or ``p``, plus ``expected`` for binomial)
+-    and, for ``kind="response"``, ``y``; ``kind="probability"`` (binomial) gives ``p`` only."""
++            new_groups: str | Mapping[str, str] = "error", seed: int | None = None) -> xr.Dataset:
++    """Expected response or new response draws, with explicit policies for unseen factors.
++
++    A string applies to every factor; a mapping covers every factor exactly. RNG traversal
++    follows factor formula order, then sorted unseen labels. Equal labels in different
++    factors are independent identities. Common intercept draws are already on the raw scale.
++    """
+     if model.family == "binomial":
+         if kind not in {"probability", "mean", "response"}:
+             raise ValueError("kind must be 'probability', 'mean' or 'response' for a binomial model")
+     elif kind not in {"mean", "response"}:
+         raise ValueError("kind must be 'mean' or 'response'" + (" ('probability' is for binomial models; here 'mean' is p)" if model.family == "bernoulli" else ""))
+-    if new_groups not in _NEW_GROUPS:
+-        raise ValueError(f"new_groups must be one of {sorted(_NEW_GROUPS)}")
+-    if model.spec.group is None and new_groups != "error":
+-        raise ValueError(
+-            "this model has no group-level term; new_groups does not apply (every row is a population-level "
+-            "prediction), so leave it at its default rather than have it ignored"
+-        )
++    policies = _group_policies(model, new_groups)
+     idata = getattr(fit_result, "idata", fit_result)
+-    if model.family == "binomial":
+-        df = None if newdata is None else _check_newdata(model, newdata, need_trials=(kind != "probability"))
+-        if df is not None and model.spec.group is not None:
+-            unseen = sorted(set(df[model.spec.group]) - set(model.design.levels))
+-            if unseen and new_groups == "error":
+-                raise FormulaError(
+-                    f"newdata has levels of {model.spec.group!r} not seen in training: {unseen}. "
+-                    "Pass new_groups='population' to draw their effects from Normal(0, sd), or "
+-                    "new_groups='resample_observed' for brms's default 'uncertainty' behaviour."
+-                )
+-        ds = _predict_by_hand(model, idata, df, kind, seed, new_groups)
+-        if model.spec.group is None:
+-            ds.attrs["new_groups"] = "not_applicable"
+-        elif df is None:
+-            ds.attrs["new_groups"] = "in_sample"
+-        return ds
+-    df = None if newdata is None else _check_newdata(model, newdata)
+-
+-    if df is not None and model.spec.group is not None:
+-        unseen = sorted(set(df[model.spec.group]) - set(model.design.levels))
+-        if unseen and new_groups == "error":
++    df = (None if newdata is None else _check_newdata(
++        model, newdata, need_trials=(model.family == "binomial" and kind != "probability")))
++    new_levels = {g: ([] if df is None else sorted(set(df[g]) - set(model.design.group_designs[g].levels)))
++                  for g in model.spec.groups}
++    for g, unseen in new_levels.items():
++        if unseen and policies[g] == "error":
+             raise FormulaError(
+-                f"newdata has levels of {model.spec.group!r} not seen in training: {unseen}. "
++                f"newdata has levels of {g!r} not seen in training: {unseen}. "
+                 "Pass new_groups='population' to draw their effects from Normal(0, sd), or "
+-                "new_groups='resample_observed' for brms's default 'uncertainty' behaviour."
+-            )
+-        if unseen:                                              # "population" or "resample_observed"
+-            return _predict_by_hand(model, idata, df, kind, seed, new_groups)
+-
+-    bambi_kind = "response" if kind == "response" else "response_params"
+-    out = model.bambi_model.predict(idata, kind=bambi_kind, data=df, inplace=False, random_seed=seed)
+-    mean_name = model.names["mean"]
+-    mu = out.posterior[model.names["linpred"]]
+-    if model.family == "bernoulli":
+-        mu = expit(mu)                                          # logit_p -> p = P(y = 1)
+-    data = {mean_name: mu.rename({mu.dims[-1]: "__obs__"}) if mu.dims[-1] != "__obs__" else mu}
+-    if kind == "response":
+-        y = out.posterior_predictive[model.names["y"]]
++                "new_groups='resample_observed' for brms's default 'uncertainty' behaviour; "
++                "an exact-key mapping can set the policy separately for each factor.")
++    manual = model.family == "binomial" or any(new_levels.values())
++    if manual:
++        ds = _predict_by_hand(model, idata, df, kind, seed, policies)
++    else:
++        bambi_kind = "response" if kind == "response" else "response_params"
++        out = model.bambi_model.predict(idata, kind=bambi_kind, data=df, inplace=False, random_seed=seed)
++        mean_name = model.names["mean"]
++        mu = out.posterior[model.names["linpred"]]
+         if model.family == "bernoulli":
+-            y = y.astype(np.int64)
+-        data["y"] = y.rename({y.dims[-1]: "__obs__"}) if y.dims[-1] != "__obs__" else y
+-    ds = xr.Dataset({k: v.drop_vars([c for c in v.coords if c not in ("chain", "draw")]) for k, v in data.items()})
+-    ds = ds.assign_coords(__obs__=np.arange(ds.sizes["__obs__"]))
+-    ds.attrs["new_groups"] = "not_applicable" if model.spec.group is None else (new_groups if df is not None else "in_sample")
+-    if model.spec.group is None:
+-        ds.attrs["new_levels"] = []
++            mu = expit(mu)
++        data = {mean_name: mu.rename({mu.dims[-1]: "__obs__"}) if mu.dims[-1] != "__obs__" else mu}
++        if kind == "response":
++            y = out.posterior_predictive[model.names["y"]]
++            if model.family == "bernoulli":
++                y = y.astype(np.int64)
++            data["y"] = y.rename({y.dims[-1]: "__obs__"}) if y.dims[-1] != "__obs__" else y
++        ds = xr.Dataset({k: v.drop_vars([c for c in v.coords if c not in ("chain", "draw")]) for k, v in data.items()})
++        ds = ds.assign_coords(__obs__=np.arange(ds.sizes["__obs__"]))
++    _prediction_attrs(model, ds, policies, new_levels, in_sample=df is None, manual=manual)
+     return ds
+diff --git a/autobayes/priors.py b/autobayes/priors.py
+index 995ffbc..0d9047f 100644
+--- a/autobayes/priors.py
++++ b/autobayes/priors.py
+@@ -79,12 +79,13 @@ class Priors:
+     (the same for every non-reference level) or a mapping ``{level: prior}`` covering exactly
+     the actual coefficient levels (all levels for the first categorical main effect
+     without an intercept; non-reference levels otherwise). Omit intercept exactly
+-    when the formula removes it. No automatic priors are filled in silently.
++    when the formula removes it. SD priors require an exact-key factor mapping for multiple
++    groups; a single group also accepts a scalar Prior. No automatic priors are filled in silently.
+     """
+ 
+     intercept: Prior | None = None
+     b: Prior | Mapping[str, Prior | Mapping[str, Prior]] | None = None
+-    sd: Prior | None = None            # required with a '(1 | group)' term, refused without one (M3c-1)
++    sd: Prior | Mapping[str, Prior] | None = None            # required with a '(1 | group)' term, refused without one (M3c-1)
+     sigma: Prior | None = None
+ 
+     # -- coefficient priors -----------------------------------------------------------------
+@@ -178,22 +179,32 @@ class Priors:
+         """Numeric-only compatibility form of ``coefficient_priors``."""
+         return self.coefficient_priors(tuple(predictors))
+ 
++    def group_priors(self, spec) -> dict[str, Prior]:
++        """Explicit SD priors in formula order; no multi-factor scalar broadcast."""
++        groups = getattr(spec, "groups", ())
++        if not groups:
++            if self.sd is not None:
++                raise PriorError("the formula has no group-level term '(1 | group)'; do not pass sd")
++            return {}
++        if self.sd is None:
++            if len(groups) == 1:
++                raise PriorError(f"the varying intercept '(1 | {groups[0]})' needs a prior on the SD of its varying intercept: pass sd=...")
++            raise PriorError(f"each varying intercept needs a prior on the SD: pass sd for {list(groups)}")
++        if isinstance(self.sd, Mapping):
++            if set(self.sd) != set(groups):
++                raise PriorError(f"sd must cover exactly the grouping factors {list(groups)}; got {list(self.sd)}")
++            return {g: self.sd[g] for g in groups}
++        if len(groups) != 1:
++            raise PriorError("multiple grouping factors require an exact-key sd mapping; scalar sd is not broadcast")
++        return {groups[0]: self.sd}
++
+     def validate(self, spec, family: str = "gaussian") -> None:
+         has_intercept = getattr(spec, "intercept", True)
+         if has_intercept and self.intercept is None:
+             raise PriorError("the formula has a population intercept; an intercept prior is required")
+         if not has_intercept and self.intercept is not None:
+             raise PriorError("the formula has no population intercept; omit the intercept prior (or pass None)")
+-        group = getattr(spec, "group", None)
+-        if group is not None and self.sd is None:
+-            raise PriorError(
+-                f"the varying intercept '(1 | {group})' needs a prior on the SD of its varying intercept: pass sd=..."
+-            )
+-        if group is None and self.sd is not None:
+-            raise PriorError(
+-                "the formula has no group-level term '(1 | group)'; do not pass sd (a group SD prior applies only to a "
+-                "varying intercept, and nothing is created or ignored silently)"
+-            )
++        group_priors = self.group_priors(spec)
+         if family == "gaussian" and self.sigma is None:
+             raise PriorError("the Gaussian family needs a prior on the residual SD: pass sigma=...")
+         if family != "gaussian" and self.sigma is not None:
+@@ -208,7 +219,7 @@ class Priors:
+                 raise PriorError(
+                     f"prior for {label!r} must be a location prior ({sorted(_LOCATION)}), got {prior}"
+                 )
+-        scales = ([("sd", self.sd)] if self.sd is not None else []) + ([("sigma", self.sigma)] if self.sigma is not None else [])
++        scales = [(f"sd:{g}", prior) for g, prior in group_priors.items()] + ([("sigma", self.sigma)] if self.sigma is not None else [])
+         for label, prior in scales:
+             if not isinstance(prior, Prior):
+                 raise PriorError(f"prior for {label!r} must be a Prior, got {type(prior).__name__}")
+@@ -240,6 +251,6 @@ class Priors:
+             name = priors[0].name
+             params = {k: np.array([float(pr.params[k]) for pr in priors]) for k in priors[0].params}
+             out[term] = bmb.Prior(name, **params)
+-        if spec.group is not None:
+-            out[f"1|{spec.group}"] = bmb.Prior("Normal", mu=0.0, sigma=self.sd.to_bambi())
++        for group, prior in self.group_priors(spec).items():
++            out[f"1|{group}"] = bmb.Prior("Normal", mu=0.0, sigma=prior.to_bambi())
+         return out
+diff --git a/autobayes/session.py b/autobayes/session.py
+index f6cb24c..744e246 100644
+--- a/autobayes/session.py
++++ b/autobayes/session.py
+@@ -68,7 +68,7 @@ def _summary_rows(model, idata) -> dict:
+     import arviz as az
+ 
+     n = model.names
+-    names = ([n["intercept"]] if model.spec.intercept else []) + list(model.spec.terms) + ([n["sd"]] if "sd" in n else []) + ([n["sigma"]] if "sigma" in n else [])
++    names = ([n["intercept"]] if model.spec.intercept else []) + list(model.spec.terms) + [roles["sd"] for roles in model.group_names.values()] + ([n["sigma"]] if "sigma" in n else [])
+     s = az.summary(idata, var_names=names, hdi_prob=0.94, round_to="none")
+     rows = {}
+     for name, r in s.iterrows():
+@@ -79,24 +79,32 @@ def _summary_rows(model, idata) -> dict:
+ 
+ def fit_record(model, fit, *, panel: dict | None = None, max_treedepth: int = 10) -> dict:
+     """A JSON-serialisable record of one fit: specification, execution, diagnostics, posterior."""
++    from autobayes import __version__
+     from autobayes.diagnostics import panel as _panel
+ 
+     p = panel if panel is not None else _panel(fit.idata, max_treedepth=max_treedepth)
+     s, d, pr = model.spec, model.design, model.priors
+     coef = pr.coefficient_priors(s)
++    group_priors = pr.group_priors(s)
+     return {
+-        "autobayes_version": _version("autobayes") or "0.6.0",
++        "autobayes_version": __version__,
+         "model": {
+             "formula": s.formula,
+             "family": model.family,
+             "link": model.link,
+-            "n": int(d.n), "J": int(d.J), "group": s.group,                 # group None and J 0: population-only (M3c-1)
++            "n": int(d.n),
++            **({"J": int(d.J), "group": s.group} if len(s.groups) <= 1 else {}),
++            "groups": [{"factor": g, "levels": list(block.levels), "J": block.J,
++                        "term": f"1|{g}", "names": model.group_names[g],
++                        "coordinate": model.group_names[g]["coordinate"],
++                        "sd_prior": str(group_priors[g]), "noncentered": True}
++                       for g, block in d.group_designs.items()],
+             "intercept": s.intercept,
+             "center_predictors": bool(d.centered),
+             "center_predictors_requested": model.center_predictors,
+-            "noncentered": True if s.group is not None else None,
++            "noncentered": True if s.has_group else None,
+             "priors": {**({"intercept": str(pr.intercept)} if s.intercept else {}), **{f"b:{k}": str(v) for k, v in coef.items()},
+-                       **({"sd": str(pr.sd)} if pr.sd is not None else {}),
++                       **{("sd" if len(s.groups) == 1 else f"sd:{g}"): str(prior) for g, prior in group_priors.items()},
+                        **({"sigma": str(pr.sigma)} if pr.sigma is not None else {})},
+             "terms": list(s.terms),
+             "design_columns": list(s.columns),
+@@ -133,6 +141,8 @@ def compare_records(a: dict, b: dict, *, k: float = 4.0) -> dict:
+     same = all(a["model"].get(k) == b["model"].get(k) for k in ("formula", "priors", "family"))
+     if not same:
+         raise ValueError("records fit different models; agreement is only defined for the same family, formula and priors")
++    if set(a["posterior"]) != set(b["posterior"]):
++        raise ValueError("records must contain identical posterior parameter sets")
+     rows, agree = {}, True
+     for name in a["posterior"]:
+         if name not in b["posterior"]:
+diff --git a/pyproject.toml b/pyproject.toml
+index c057355..736eb39 100644
+--- a/pyproject.toml
++++ b/pyproject.toml
+@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
+ 
+ [project]
+ name = "autobayes"
+-version = "0.6.0"
++version = "0.7.0"
+ description = "brms-like Bayesian hierarchical models on PyMC with a JAX/NumPyro device path (M0 Gaussian, M1 Bernoulli, M2 binomial counts, M3a-1 categorical predictors, M3a-2 numeric-by-categorical interaction, M3c-1 population-only models)"
+ readme = "README.md"
+ requires-python = ">=3.11,<3.12"
+diff --git a/tests/test_formula.py b/tests/test_formula.py
+index 79ea080..8998784 100644
+--- a/tests/test_formula.py
++++ b/tests/test_formula.py
+@@ -11,7 +11,7 @@ from tests.conftest import PRIORS, simulate
+     ("y ~ x + (x | g)", "varying slopes"),
+     ("y ~ x + (1 | g/h)", "nested"),
+     ("y ~ x + (1 | g:h)", "nested"),
+-    ("y ~ x + (1 | g) + (1 | h)", "more than one grouping"),
++    ("y ~ x + (1 | g) + (1 | g)", "duplicate grouping"),
+     ("y ~ x + (1 || g)", "'||'"),
+     ("y ~ x * w + (1 | g)", "two numeric terms"),          # M3a-2: only numeric-by-declared-categorical interactions
+     ("y ~ x:w + (1 | g)", "main effect 'x' is missing"),
+diff --git a/tests/test_population_only.py b/tests/test_population_only.py
+index 01de47c..9e681cc 100644
+--- a/tests/test_population_only.py
++++ b/tests/test_population_only.py
+@@ -138,7 +138,7 @@ def test_grammar_accepts_population_only_forms_and_keeps_refusals():
+     assert ab.parse_formula("y ~ 1 + (1 | g)").rhs == "(1 | g)"
+     with pytest.raises(ValueError, match="no group-level term"):
+         ab.parse_formula("y ~ x").group_term
+-    for formula, needle in [("y ~ x + (1 | g) + (1 | h)", "more than one grouping"),
++    for formula, needle in [("y ~ x + (1 | g) + (1 | g)", "duplicate grouping"),
+                             ("y ~ x + (1 + x | g)", "varying slopes"), ("y ~ (1 | g)", "no population-level predictor"), ("y ~ x + (1 || g)", "'\\|\\|'"),
+                             ("y ~ log(x)", "function calls"), ("y ~ x + x", "duplicated"), ("y ~ y", "response cannot also be"),
+                             ("y ~ x:z", "main effect 'x' is missing"), ("y ~ x + (1 | g/h)", "nested"), ("y x", "expected 'response ~ terms'")]:
+diff --git a/uv.lock b/uv.lock
+index 958b9b3..96a7031 100644
+--- a/uv.lock
++++ b/uv.lock
+@@ -79,7 +79,7 @@ xarray = [
+ 
+ [[package]]
+ name = "autobayes"
+-version = "0.6.0"
++version = "0.7.0"
+ source = { editable = "." }
+ dependencies = [
+     { name = "arviz" },

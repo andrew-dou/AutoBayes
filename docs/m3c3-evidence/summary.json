@@ -1,0 +1,67 @@
+{
+  "unit": "m3c3-multiple-intercepts",
+  "updated_utc": "2026-09-20T14:08:21.635344+00:00",
+  "base": "9755f1d82ac9ba5aa0fcda86b0d32c0806422cff",
+  "decision_commit": "0f7ce72",
+  "results": {
+    "focused-1": {
+      "returncode": 1,
+      "timed_out": false,
+      "wall_seconds": 166.81170137500158,
+      "pid": 99656,
+      "utc": "2026-09-20T13:41:17.461919+00:00"
+    },
+    "focused-2": {
+      "returncode": 1,
+      "timed_out": false,
+      "wall_seconds": 149.8061586660042,
+      "pid": 283,
+      "utc": "2026-09-20T13:44:44.867519+00:00"
+    },
+    "focused-3": {
+      "returncode": 0,
+      "timed_out": false,
+      "wall_seconds": 11.58808954199776,
+      "pid": 1074,
+      "utc": "2026-09-20T13:46:11.332232+00:00"
+    },
+    "focused-4": {
+      "returncode": 0,
+      "timed_out": false,
+      "wall_seconds": 15.479711791995214,
+      "pid": 2260,
+      "utc": "2026-09-20T13:57:35.096144+00:00"
+    },
+    "full-1": {
+      "returncode": 0,
+      "timed_out": false,
+      "wall_seconds": 501.3324870840006,
+      "pid": 1155,
+      "utc": "2026-09-20T13:56:10.088054+00:00"
+    },
+    "focused-5": {
+      "returncode": 0,
+      "timed_out": false,
+      "wall_seconds": 15.375156708003487,
+      "pid": 2828,
+      "utc": "2026-09-20T14:07:06.634463+00:00"
+    }
+  },
+  "focused_wall_seconds": 359.06081808300223,
+  "focused_budget_seconds": 900,
+  "full_suite_count": 1,
+  "full_suite_tests": {
+    "passed": 524,
+    "deselected": 7,
+    "warnings": 7
+  },
+  "final_focused_tests": 19,
+  "third_party_lock_entries_unchanged": true,
+  "new_feature_sampler_fits": 0,
+  "existing_cpu_fixture_sampling_ran": true,
+  "gpu_runs": 0,
+  "post_full_change": "ModelSpec copy/serialization correction initially used a mutable copied dictionary; independent review reproduced hash/key instability. Final owned immutable tuple-backed mapping passed 19 focused copy/mutation/design/legacy checks. No full rerun.",
+  "limits": "Feature-specific multigroup sampling, calibration, GPU and independent acceptance remain pending",
+  "external_source_snapshot": "/private/tmp/autobayes-m3c3-implementation/full-source-snapshot",
+  "external_post_full_candidate": "/private/tmp/autobayes-m3c3-implementation/post-full-candidate"
+}

@@ -24,10 +24,10 @@ model family, then the routing for everything else.
 **What is verified.** One formula subset with numeric predictors, treatment-coded
 categorical predictors declared with `categorical={column: reference}`, one
 numeric-by-categorical interaction `x:z` with both main effects present (`x*z` is the
-shorthand for `x + z + x:z`), and at most one varying intercept, which is optional
+shorthand for `x + z + x:z`), and optional independent varying intercepts for distinct factors (M3c-3)
 (milestone M3c-1: a formula without it is a population-only model, as in brms),
 
-    y ~ [1 +] x1 [+ x2 ...] [+ z ...] [+ x:z ...] [+ (1 | group)]
+    y ~ [1 +] x1 [+ x2 ...] [+ z ...] [+ x:z ...] [+ (1 | factor) ...]
 
 for the outcome families:
 
@@ -59,13 +59,13 @@ for the outcome families:
   `docs/m2-evidence/`, checks in `docs/m2-decision.md`.
 
 **What is not verified.** Every other formula and family (other links,
-varying slopes, nested or crossed groups, several group terms,
+varying slopes, correlation IDs, grouping `/` or `:` syntax, multimembership,
 beta-binomial). The library refuses them with an error naming the construct. Population-only
 models (M3c-1) are verified deterministically (density, gradients, closed form, predictions)
 and one Gaussian CPU example has sampling evidence accepted in `docs/m3c1-decision.md`; this is not calibration or all-family sampling evidence. Do not loosen the parser to get past that
 error; go to "Outside the verified family" below.
 
-**Population intercept control (M3c-2 candidate).** `0 + terms` and `terms - 1`
+**Population intercept control (M3c-2).** `0 + terms` and `terms - 1`
 remove it. Omit `Priors.intercept` and `value_point(intercept=...)`; supplied values
 are refused. The first categorical main effect becomes full-level coded, including
 its declared reference; later categorical main effects and the existing interaction
@@ -74,8 +74,22 @@ coefficient set with explicit priors. Reordering factors can change independent
 prior meaning. No-intercept models use the raw design even when centering is
 requested, with requested/effective flags recorded separately. At least one
 population predictor is required; conflicting inclusion/removal tokens are refused.
-See `docs/m3c2-decision.md` and `examples/m3c2_no_intercept.py`. Deterministic checks
-are the current evidence; no new no-intercept sampling/GPU validation is claimed.
+See `docs/m3c2-decision.md` and `examples/m3c2_no_intercept.py`. Three-family deterministic checks and one Gaussian CPU example at target_accept .99 were independently accepted; earlier .9 divergence failures remain preserved. This is not calibration or GPU evidence.
+
+**Multiple independent intercepts (M3c-3 candidate).** Use explicit additive terms
+`(1 | county) + (1 | year)` and exact-key `sd={"county": HalfNormal(1), "year": Exponential(2)}`.
+Scalar SD remains a one-factor shorthand. Inspect `spec.groups`, `spec.levels_by_group`,
+`design.group_designs`, `design.group_slices` and `model.group_names`; ambiguous singular
+fields raise with multiple factors. Effects have independent priors, not necessarily
+independent posteriors. Common centering and no-intercept coding do not change.
+`value_point` uses factor-keyed SD/offset mappings. `new_groups` accepts either the existing
+policy string for all factors or an exact-key policy mapping. Repeated unseen labels share
+one effect within their factor, including across rows with different other memberships.
+Equal labels in separate factors are different identities; factor order determines RNG
+traversal. Fit records retain all factor scales and coordinates. Never silently expand
+nesting or reinterpret reused within-parent labels. Three-family deterministic feature checks passed;
+feature-specific MCMC, calibration and GPU validation remain future work. Follow
+`docs/m3c3-decision.md` and `examples/m3c3_multiple_intercepts.py`.
 
 ## Session start, every time
 

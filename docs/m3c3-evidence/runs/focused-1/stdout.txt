@@ -1,0 +1,14 @@
+.............................................................F.          [100%]
+=================================== FAILURES ===================================
+_______________________ test_model_builds_and_describes ________________________
+
+    def test_model_builds_and_describes():
+        m = ab.gaussian("y ~ x + (1 | g)", simulate(), PRIORS)
+        text = m.describe()
+>       assert "mu_i = a_c + (x_x - mean(x_x)) * b_x + u[g_i]" in text
+E       AssertionError: assert 'mu_i = a_c + (x_x - mean(x_x)) * b_x + u[g_i]' in 'AutoBayes M0 model\n  formula   : y ~ x + (1 | g)\n  family    : gaussian, identity link\n  data      : n = 60 observ...n  1|g_sigma_log__          log(sd_g)\n  1|g_offset               z_g\nDeterministic: 1|g = u_g, mu = linear predictor'
+
+tests/test_formula.py:72: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_formula.py::test_model_builds_and_describes - AssertionErro...
+1 failed, 62 passed in 93.53s (0:01:33)

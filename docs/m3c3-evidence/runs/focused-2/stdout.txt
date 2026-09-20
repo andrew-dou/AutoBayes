@@ -1,0 +1,56 @@
+...............................................................F.F...... [ 36%]
+........................................................................ [ 73%]
+....................................................                     [100%]
+=================================== FAILURES ===================================
+________ test_grammar_accepts_population_only_forms_and_keeps_refusals _________
+
+    def test_grammar_accepts_population_only_forms_and_keeps_refusals():
+        for formula, terms, rhs in [("y ~ 1", (), "1"), ("y ~ x", ("x",), "x"), ("y ~ 1 + x", ("x",), "x"), ("y ~ x + w", ("x", "w"), "x + w"), ("y~x", ("x",), "x")]:
+            s = ab.parse_formula(formula)
+            assert s.group is None and not s.has_group and s.levels == () and s.terms == terms and s.predictors == terms and s.rhs == rhs
+            assert s.canonical_formula == f"y ~ {rhs}" and s.bambi_formula == f"y ~ {rhs}"
+        s = ab.parse_formula("y ~ x + z + x:z", categorical={"z": "b"})
+        assert s.terms == ("x", "z", "x:z") and s.rhs == "x + z + x:z" and s.interactions == (("x", "z"),) and s.group is None
+        assert ab.parse_formula("y ~ x*z", categorical={"z": "b"}).rhs == "x + z + x:z"
+        s = ab.parse_formula("k | trials(n) ~ x", family="binomial")
+        assert s.group is None and s.trials == "n" and s.bambi_formula == "p(k, n) ~ x"
+        g = ab.parse_formula("y ~ x + (1 | g)")
+        assert g.group == "g" and g.has_group and g.group_term == "1|g" and g.rhs == "x + (1 | g)"       # grouped forms unchanged
+        assert ab.parse_formula("y ~ 1 + (1 | g)").rhs == "(1 | g)"
+        with pytest.raises(ValueError, match="no group-level term"):
+            ab.parse_formula("y ~ x").group_term
+        for formula, needle in [("y ~ x + (1 | g) + (1 | h)", "more than one grouping"),
+                                ("y ~ x + (1 + x | g)", "varying slopes"), ("y ~ (1 | g)", "no population-level predictor"), ("y ~ x + (1 || g)", "'\\|\\|'"),
+                                ("y ~ log(x)", "function calls"), ("y ~ x + x", "duplicated"), ("y ~ y", "response cannot also be"),
+                                ("y ~ x:z", "main effect 'x' is missing"), ("y ~ x + (1 | g/h)", "nested"), ("y x", "expected 'response ~ terms'")]:
+>           with pytest.raises(ab.FormulaError, match=needle):
+E           Failed: DID NOT RAISE FormulaError
+
+tests/test_population_only.py:145: Failed
+_______________________ test_prior_refusals_and_coverage _______________________
+
+    def test_prior_refusals_and_coverage():
+        df = simulate_pop()
+        with pytest.raises(ab.PriorError, match="no group-level term"):
+            ab.gaussian("y ~ x", df, GROUPED_PRIORS)                                           # sd given, no group term
+>       with pytest.raises(ab.PriorError, match="needs a prior on the SD of its varying intercept"):
+E       AssertionError: Regex pattern did not match.
+E         Expected regex: 'needs a prior on the SD of its varying intercept'
+E         Actual message: "each varying intercept needs a prior on the SD: pass sd for ['g']"
+
+tests/test_population_only.py:178: AssertionError
+=============================== warnings summary ===============================
+tests/test_population_only.py::test_describe_and_fit_record_without_sampling
+tests/test_intercept_controls.py::test_fixed_draw_predictions_and_records[False-gaussian]
+tests/test_intercept_controls.py::test_fixed_draw_predictions_and_records[True-gaussian]
+tests/test_intercept_controls.py::test_fixed_draw_predictions_and_records[True-bernoulli]
+tests/test_intercept_controls.py::test_fixed_draw_predictions_and_records[True-binomial]
+tests/test_intercept_controls.py::test_default_intercept_categorical_record_retains_semantics
+  /Users/andrewdou/iqss-research/projects/AutoBayes-worktrees/m3c3-multiple-intercepts/.venv/lib/python3.11/site-packages/arviz/stats/diagnostics.py:596: RuntimeWarning: invalid value encountered in scalar divide
+    (between_chain_variance / within_chain_variance + num_samples - 1) / (num_samples)
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+FAILED tests/test_population_only.py::test_grammar_accepts_population_only_forms_and_keeps_refusals
+FAILED tests/test_population_only.py::test_prior_refusals_and_coverage - Asse...
+2 failed, 194 passed, 6 warnings in 140.71s (0:02:20)

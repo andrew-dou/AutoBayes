@@ -2,18 +2,18 @@
 
 Supported::
 
-    response ~ [1 + | 0 +] predictor [+ predictor ...] [+ x:z ...] [+ (1 | group)]               (Gaussian, Bernoulli)
-    successes | trials(n) ~ [1 + | 0 +] predictor [+ predictor ...] [+ x:z ...] [+ (1 | group)]  (binomial, brms syntax)
+    response ~ [1 + | 0 +] predictor [+ predictor ...] [+ x:z ...] [+ (1 | factor) ...]               (Gaussian, Bernoulli)
+    successes | trials(n) ~ [1 + | 0 +] predictor [+ predictor ...] [+ x:z ...] [+ (1 | factor) ...]  (binomial, brms syntax)
 
-The varying-intercept term is optional (milestone M3c-1): a formula without it is a population-only
+Varying-intercept terms are optional and additive across distinct factors (M3c-3): a formula without them is a population-only
 model, as in brms ``brmsformula`` where group-level terms are optional; ``y ~ 1`` is intercept-only.
 
 with ``x:z`` (or the shorthand ``x*z`` = ``x + z + x:z``) one interaction between a numeric term
 and a declared categorical term whose main effects are both present (milestone M3a-2).
 
 Predictors are numeric columns, or categorical columns declared with ``categorical={column:
-reference_level}`` (treatment coding, milestone M3a-1); the grouping variable may be any
-column and is coded as a factor with levels in sorted order. Bambi (via formulae) accepts a
+reference_level}`` (treatment coding, milestone M3a-1); each grouping variable is a column
+and is coded independently with sorted fitted string levels. Bambi (via formulae) accepts a
 much larger language; this module exists so that a formula outside the verified subset is
 refused with an error naming the construct, rather than silently built.
 """
@@ -22,7 +22,7 @@ from __future__ import annotations
 import re
 import math
 from collections.abc import Mapping
-from dataclasses import dataclass, field, replace
+from dataclasses import dataclass, replace
 
 import numpy as np
 import pandas as pd
@@ -78,27 +78,99 @@ class Categorical:
         return tuple(f"{self.name}[{l}]" for l in self.coefficients)
 
 
-@dataclass(frozen=True)
+class _GroupLevels(Mapping):
+    """Owned immutable level tuples, with ordinary copy/pickle reconstruction."""
+
+    __slots__ = ("_items",)
+
+    def __init__(self, items):
+        object.__setattr__(self, "_items", tuple((g, tuple(v)) for g, v in items))
+
+    def __setattr__(self, name, value):
+        raise TypeError("group levels are immutable")
+
+    def __delattr__(self, name):
+        raise TypeError("group levels are immutable")
+
+    def __getitem__(self, key):
+        for group, levels in self._items:
+            if group == key:
+                return levels
+        raise KeyError(key)
+
+    def __iter__(self):
+        return (group for group, _ in self._items)
+
+    def __len__(self):
+        return len(self._items)
+
+    def __reduce__(self):
+        return type(self), (self._items,)
+
+    def __repr__(self):
+        return repr(dict(self))
+
+
+@dataclass(frozen=True, init=False)
 class ModelSpec:
     formula: str
     response: str
-    predictors: tuple[str, ...]        # numeric predictor terms, in formula order
-    group: str | None                  # None: a population-only model without a group-level term (M3c-1)
-    intercept: bool = True
-    levels: tuple[str, ...] = field(default_factory=tuple)
-    trials: str | None = None          # binomial only: the trials column of ``successes | trials(n)``
-    rhs: str = ""                      # the CANONICAL right-hand side handed to Bambi (docs/m3a2-decision.md)
-    terms: tuple[str, ...] = ()        # every term in canonical order: main effects, then interactions ``x:z``
-    categoricals: tuple[Categorical, ...] = ()   # the declared categorical terms, in formula order
-    interactions: tuple[tuple[str, str], ...] = ()   # (numeric term, categorical term) per interaction, canonical order
+    predictors: tuple[str, ...]
+    groups: tuple[str, ...]
+    intercept: bool
+    levels_by_group: Mapping[str, tuple[str, ...]]
+    trials: str | None
+    rhs: str
+    terms: tuple[str, ...]
+    categoricals: tuple[Categorical, ...]
+    interactions: tuple[tuple[str, str], ...]
 
-    def __post_init__(self):
-        if not self.terms:                      # numeric-only construction (M0-M2 call sites)
-            object.__setattr__(self, "terms", tuple(self.predictors))
+    def __init__(self, formula, response, predictors, group=None, intercept=True,
+                 levels=(), trials=None, rhs="", terms=(), categoricals=(), interactions=(),
+                 *, groups=None, levels_by_group=None):
+        """Keep the original positional constructor; canonical fields use ordered factors."""
+        if groups is not None and group is not None:
+            raise ValueError("supply group or groups, not both")
+        groups = tuple(groups) if groups is not None else (() if group is None else (group,))
+        if len(set(groups)) != len(groups):
+            raise ValueError("duplicate grouping factors")
+        if levels_by_group is not None and levels:
+            raise ValueError("supply levels or levels_by_group, not both")
+        if levels and len(groups) != 1:
+            raise ValueError("singular levels require one grouping factor")
+        level_map = ({g: tuple(levels) for g in groups} if levels_by_group is None
+                     else {g: tuple(v) for g, v in levels_by_group.items()})
+        if set(level_map) != set(groups):
+            raise ValueError("levels_by_group must cover exactly the grouping factors")
+        values = dict(formula=formula, response=response, predictors=tuple(predictors),
+                      groups=groups, intercept=intercept,
+                      levels_by_group=_GroupLevels((g, level_map[g]) for g in groups),
+                      trials=trials, rhs=rhs, terms=tuple(terms) or tuple(predictors),
+                      categoricals=tuple(categoricals), interactions=tuple(interactions))
+        for key, value in values.items():
+            object.__setattr__(self, key, value)
+
+    def __hash__(self):
+        # Preserve hashability of the old frozen specification; factor metadata is ordered.
+        return hash((self.formula, self.response, self.predictors, self.groups, self.intercept,
+                     tuple(self.levels_by_group[g] for g in self.groups), self.trials, self.rhs,
+                     self.terms, self.categoricals, self.interactions))
 
     @property
     def has_group(self) -> bool:
-        return self.group is not None
+        return bool(self.groups)
+
+    @property
+    def group(self) -> str | None:
+        if len(self.groups) > 1:
+            raise ValueError("group is ambiguous with multiple grouping factors; use groups")
+        return self.groups[0] if self.groups else None
+
+    @property
+    def levels(self) -> tuple[str, ...]:
+        if len(self.groups) > 1:
+            raise ValueError("levels is ambiguous with multiple grouping factors; use levels_by_group")
+        return self.levels_by_group[self.groups[0]] if self.groups else ()
 
     @property
     def group_term(self) -> str:
@@ -202,13 +274,19 @@ def _reject_group_term(inner: str, factor: str, piece: str) -> None:
     if "||" in piece:
         raise FormulaError(
             f"{piece!r}: the '||' (uncorrelated varying effects) syntax is not supported "
-            "in M0; only a single varying intercept '(1 | group)' is."
+            "in this subset; use varying intercepts '(1 | group)'."
         )
     if "/" in factor or ":" in factor:
         raise FormulaError(
-            f"{piece!r}: nested or crossed grouping factors ('g/h', 'g:h') are not "
-            "supported in M0; only a single grouping factor '(1 | group)' is."
+            f"{piece!r}: nested/grouping interaction syntax ('g/h', 'g:h') is not "
+            "supported; use distinct additive '(1 | group)' terms."
         )
+    if "|" in factor:
+        raise FormulaError(f"{piece!r}: correlation IDs are not supported")
+    if factor.startswith("mm("):
+        raise FormulaError(f"{piece!r}: multimembership grouping is not supported")
+    if "(" in factor:
+        raise FormulaError(f"{piece!r}: transformed grouping factors are not supported; use a column name")
     if not re.fullmatch(_IDENT, factor):
         raise FormulaError(f"{piece!r}: grouping factor must be a single column name")
     if inner != "1":
@@ -218,7 +296,7 @@ def _reject_group_term(inner: str, factor: str, piece: str) -> None:
         )
 
 
-def _normalise_categorical(categorical, terms: list[str], response: str, group: str, trials: str | None,
+def _normalise_categorical(categorical, terms: list[str], response: str, groups: list[str], trials: str | None,
                            formula: str) -> tuple[Categorical, ...]:
     if categorical is None:
         return ()
@@ -234,9 +312,9 @@ def _normalise_categorical(categorical, terms: list[str], response: str, group: 
             raise FormulaError(f"{name!r} is the response; only predictor terms can be declared categorical")
         if trials is not None and name == trials:
             raise FormulaError(f"{name!r} is the trials column; only predictor terms can be declared categorical")
-        if name == group:
+        if name in groups:
             raise FormulaError(
-                f"{name!r} is the grouping factor of '(1 | {group})', which is already a factor with a "
+                f"{name!r} is the grouping factor of '(1 | {name})', which is already a factor with a "
                 "varying intercept; only fixed-effect predictor terms are declared categorical"
             )
         if name not in terms:
@@ -360,8 +438,8 @@ def parse_formula(formula: str, data: pd.DataFrame | None = None, family: str = 
         if not m:
             raise FormulaError(
                 f"{formula!r}: expected 'response ~ terms'. Supported: "
-                "'y ~ [1 +] x1 [+ x2 ...] [+ (1 | group)]' and, for ab.binomial, "
-                "'successes | trials(n) ~ [1 +] x1 [+ x2 ...] [+ (1 | group)]'."
+                "'y ~ [1 +] x1 [+ x2 ...] [+ (1 | factor) ...]' and, for ab.binomial, "
+                "'successes | trials(n) ~ [1 +] x1 [+ x2 ...] [+ (1 | factor) ...]'."
             )
         if family == "binomial":
             raise FormulaError(
@@ -456,23 +534,20 @@ def parse_formula(formula: str, data: pd.DataFrame | None = None, family: str = 
                 )
     if remove_intercept and not predictors:
         raise FormulaError(f"{formula!r}: no intercept requires at least one population-level predictor")
-    if len(groups) > 1:
-        raise FormulaError(
-            f"{formula!r}: more than one grouping factor ({groups}) is not supported in "
-            "M0; use a single '(1 | group)' term."
-        )
+    if len(set(groups)) != len(groups):
+        raise FormulaError(f"{formula!r}: duplicate grouping factor; use each '(1 | factor)' once")
     if len(predictors) == 0 and not saw_intercept_token:
         raise FormulaError(
             f"{formula!r}: no population-level predictor; write 'y ~ 1 + (1 | group)' "
             "for an intercept-only model."
         )
-    group = groups[0] if groups else None            # None: population-only model (M3c-1)
-    if group is not None and (group in predictors or group == response):
-        raise FormulaError(f"{group!r}: the grouping factor cannot also be a predictor or the response")
-    if trials is not None and (trials in predictors or trials == group):
+    for group in groups:
+        if group in predictors or group == response:
+            raise FormulaError(f"{group!r}: the grouping factor cannot also be a predictor or the response")
+    if trials is not None and (trials in predictors or trials in groups):
         raise FormulaError(f"{trials!r}: the trials column cannot also be a predictor or the grouping factor")
 
-    categoricals = _normalise_categorical(categorical, predictors, response, group, trials, formula)
+    categoricals = _normalise_categorical(categorical, predictors, response, groups, trials, formula)
     if remove_intercept and categoricals:
         categoricals = (replace(categoricals[0], full_rank=True), *categoricals[1:])
     cat_names = {c.name for c in categoricals}
@@ -481,8 +556,8 @@ def parse_formula(formula: str, data: pd.DataFrame | None = None, family: str = 
         for side in (left, right):
             if not re.fullmatch(_IDENT, side):
                 raise FormulaError(f"{piece!r}: {side!r} is not a column name")
-            if side == group:
-                raise FormulaError(f"{piece!r}: the grouping factor {group!r} cannot enter a fixed interaction")
+            if side in groups:
+                raise FormulaError(f"{piece!r}: the grouping factor {side!r} cannot enter a fixed interaction")
             if side == response or (trials is not None and side == trials):
                 raise FormulaError(f"{piece!r}: the response or trials column cannot enter an interaction")
         cats = [s for s in (left, right) if s in cat_names]
@@ -505,14 +580,14 @@ def parse_formula(formula: str, data: pd.DataFrame | None = None, family: str = 
             "numeric-by-categorical interaction per model, whether or not they share a side "
             "(docs/m3a2-decision.md, repair record). Fit one interaction, or wait for a slice that verifies several."
         )
-    parts = [*predictors, *(f"{x}:{z}" for x, z in interactions)] + ([f"(1 | {group})"] if group is not None else [])
+    parts = [*predictors, *(f"{x}:{z}" for x, z in interactions)] + [f"(1 | {group})" for group in groups]
     canonical_rhs = " + ".join(parts) if parts else "1"           # intercept-only population model: 'y ~ 1'
     if remove_intercept:
         canonical_rhs = "0 + " + canonical_rhs
     spec = ModelSpec(
         formula=formula.strip(), response=response,
         predictors=tuple(p for p in predictors if p not in cat_names),
-        group=group, intercept=not remove_intercept, trials=trials, rhs=canonical_rhs,
+        groups=tuple(groups), intercept=not remove_intercept, trials=trials, rhs=canonical_rhs,
         terms=(*predictors, *(f"{x}:{z}" for x, z in interactions)), categoricals=categoricals,
         interactions=tuple(interactions),
     )
@@ -621,7 +696,7 @@ def validate_data(spec: ModelSpec, data: pd.DataFrame, family: str = "gaussian")
     """Check columns exist, are numeric where required, and have no missing values."""
     if (spec.trials is not None) != (family == "binomial"):
         raise FormulaError("a trials column is present exactly for the binomial family")
-    needed = ([spec.response, *spec.predictors, *spec.categorical_names] + ([spec.group] if spec.group is not None else [])
+    needed = ([spec.response, *spec.predictors, *spec.categorical_names] + list(spec.groups)
               + ([spec.trials] if spec.trials else []))
     missing = [c for c in needed if c not in data.columns]
     if missing:
@@ -664,19 +739,17 @@ def validate_data(spec: ModelSpec, data: pd.DataFrame, family: str = "gaussian")
         )
     if len(data) < 2:
         raise FormulaError("need at least two observations")
-    levels: tuple[str, ...] = ()
-    if spec.group is not None:
-        levels = tuple(str(v) for v in sorted(data[spec.group].astype(str).unique()))
+    levels_by_group = {}
+    for group in spec.groups:
+        levels = tuple(sorted(data[group].astype(str).unique()))
         if len(levels) < 2:
-            raise FormulaError(
-                f"grouping factor {spec.group!r} has a single level; a varying intercept "
-                "needs at least two."
-            )
+            raise FormulaError(f"grouping factor {group!r} has a single level; a varying intercept needs at least two.")
+        levels_by_group[group] = levels
     for c in spec.predictors:
         if np.isclose(np.std(data[c].to_numpy(dtype=float)), 0.0):
             raise FormulaError(f"predictor {c!r} is constant")
     return ModelSpec(
         formula=spec.formula, response=spec.response, predictors=spec.predictors,
-        group=spec.group, intercept=spec.intercept, levels=levels, trials=spec.trials, rhs=spec.rhs,
+        groups=spec.groups, intercept=spec.intercept, levels_by_group=levels_by_group, trials=spec.trials, rhs=spec.rhs,
         terms=spec.terms, categoricals=tuple(categoricals), interactions=spec.interactions,
     )

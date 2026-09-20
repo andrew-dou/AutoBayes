@@ -30,6 +30,9 @@ than the default ``"error"`` is refused rather than ignored):
 """
 from __future__ import annotations
 
+import json
+from collections.abc import Mapping
+
 import numpy as np
 import pandas as pd
 import xarray as xr
@@ -71,7 +74,7 @@ def _coefficient_draws(post, model):
 
 def _check_newdata(model, newdata: pd.DataFrame, *, need_trials: bool = False) -> pd.DataFrame:
     s = model.spec
-    cols = [*s.predictors, *s.categorical_names] + ([s.group] if s.group is not None else [])
+    cols = [*s.predictors, *s.categorical_names] + list(s.groups)
     if need_trials:
         if s.trials not in newdata.columns:
             raise FormulaError(
@@ -102,12 +105,12 @@ def _check_newdata(model, newdata: pd.DataFrame, *, need_trials: bool = False) -
         df[cat.name] = pd.Categorical(labels, categories=list(cat.categories), ordered=True)
     if need_trials:
         df[s.trials] = check_counts(f"newdata trials {s.trials!r}", df[s.trials])
-    if s.group is not None:
-        df[s.group] = df[s.group].astype(str)
+    for group in s.groups:
+        df[group] = df[group].astype(str)
     return df.reset_index(drop=True)
 
 
-def _predict_by_hand(model, idata, df: pd.DataFrame | None, kind: str, seed, new_groups: str) -> xr.Dataset:
+def _predict_by_hand(model, idata, df: pd.DataFrame | None, kind: str, seed, policies: dict[str, str]) -> xr.Dataset:
     """Linear predictor by hand from the posterior, with one effect per distinct unseen label.
 
     ``df=None`` means the fitted rows (in-sample). ``"population"``: a fresh ``Normal(0, sd)``
@@ -127,24 +130,21 @@ def _predict_by_hand(model, idata, df: pd.DataFrame | None, kind: str, seed, new
     mu = np.repeat(a[..., None], len(df), axis=-1)
     if b is not None:
         mu = mu + np.einsum("cdp,np->cdn", b, X)
-    new_levels: list = []
-    if model.spec.group is not None:
-        sd = post[n["sd"]].to_numpy()
-        u = post[n["group_effect"]].to_numpy()                  # (chain, draw, J)
-        levels = list(model.design.levels)
-        new_levels = sorted(set(df[model.spec.group]) - set(levels))
+    new_levels = {}
+    for g, names in model.group_names.items():
+        sd = post[names["sd"]].to_numpy()
+        u = post[names["group_effect"]].to_numpy()
+        levels = list(model.design.group_designs[g].levels)
+        new_levels[g] = sorted(set(df[g]) - set(levels))
         new_effects = {}
-        for lvl in new_levels:                                  # one effect per label per draw
-            if new_groups == "population":
+        for lvl in new_levels[g]:
+            if policies[g] == "population":
                 new_effects[lvl] = rng.normal(0.0, 1.0, size=sd.shape) * sd
-            else:                                               # resample_observed
+            else:
                 chosen = rng.integers(0, len(levels), size=sd.shape)
                 new_effects[lvl] = np.take_along_axis(u, chosen[..., None], axis=-1)[..., 0]
-        for i, lvl in enumerate(df[model.spec.group]):
-            if lvl in new_effects:
-                mu[..., i] += new_effects[lvl]
-            else:
-                mu[..., i] += u[..., levels.index(lvl)]
+        for i, lvl in enumerate(df[g]):
+            mu[..., i] += new_effects[lvl] if lvl in new_effects else u[..., levels.index(lvl)]
     if model.family == "gaussian":
         out = {"mu": (("chain", "draw", "__obs__"), mu)}
         if kind == "response":
@@ -164,72 +164,84 @@ def _predict_by_hand(model, idata, df: pd.DataFrame | None, kind: str, seed, new
             if kind == "response":
                 out["y"] = (("chain", "draw", "__obs__"), rng.binomial(trials, prob).astype(np.int64))
     ds = xr.Dataset(out, coords={"chain": post["chain"], "draw": post["draw"], "__obs__": np.arange(len(df))})
-    ds.attrs["new_groups"] = new_groups
-    ds.attrs["new_levels"] = new_levels
+    _prediction_attrs(model, ds, policies, new_levels, in_sample=False, manual=True)
     return ds
 
 
+def _group_policies(model, new_groups):
+    groups = model.spec.groups
+    if not groups and new_groups != "error":
+        raise ValueError("this model has no group-level term; new_groups does not apply, so leave it at its default")
+    if isinstance(new_groups, Mapping):
+        if set(new_groups) != set(groups):
+            raise ValueError(f"new_groups must cover exactly the grouping factors {list(groups)}")
+        policies = {g: new_groups[g] for g in groups}
+    else:
+        policies = {g: new_groups for g in groups}
+    values = policies.values() if groups else [new_groups]
+    if any(not isinstance(value, str) or value not in _NEW_GROUPS for value in values):
+        raise ValueError(f"new_groups must be one of {sorted(_NEW_GROUPS)} or an exact-key factor mapping")
+    return policies
+
+
+def _prediction_attrs(model, ds, policies, new_levels, *, in_sample, manual):
+    groups = model.spec.groups
+    if not groups:
+        ds.attrs.update(new_groups="not_applicable", new_levels=[])
+    elif len(groups) == 1:
+        g = groups[0]
+        ds.attrs["new_groups"] = "in_sample" if in_sample else policies[g]
+        if manual:
+            ds.attrs["new_levels"] = new_levels[g]
+    else:
+        ds.attrs["new_groups"] = "in_sample" if in_sample else "per_factor"
+        ds.attrs["new_groups_by_factor_json"] = json.dumps(policies)
+        ds.attrs["new_levels_by_factor_json"] = json.dumps(new_levels)
+
+
 def predict(model, fit_result, *, newdata: pd.DataFrame | None = None, kind: str = "response",
-            new_groups: str = "error", seed: int | None = None) -> xr.Dataset:
-    """Return an ``xarray.Dataset`` with the mean (``mu`` or ``p``, plus ``expected`` for binomial)
-    and, for ``kind="response"``, ``y``; ``kind="probability"`` (binomial) gives ``p`` only."""
+            new_groups: str | Mapping[str, str] = "error", seed: int | None = None) -> xr.Dataset:
+    """Expected response or new response draws, with explicit policies for unseen factors.
+
+    A string applies to every factor; a mapping covers every factor exactly. RNG traversal
+    follows factor formula order, then sorted unseen labels. Equal labels in different
+    factors are independent identities. Common intercept draws are already on the raw scale.
+    """
     if model.family == "binomial":
         if kind not in {"probability", "mean", "response"}:
             raise ValueError("kind must be 'probability', 'mean' or 'response' for a binomial model")
     elif kind not in {"mean", "response"}:
         raise ValueError("kind must be 'mean' or 'response'" + (" ('probability' is for binomial models; here 'mean' is p)" if model.family == "bernoulli" else ""))
-    if new_groups not in _NEW_GROUPS:
-        raise ValueError(f"new_groups must be one of {sorted(_NEW_GROUPS)}")
-    if model.spec.group is None and new_groups != "error":
-        raise ValueError(
-            "this model has no group-level term; new_groups does not apply (every row is a population-level "
-            "prediction), so leave it at its default rather than have it ignored"
-        )
+    policies = _group_policies(model, new_groups)
     idata = getattr(fit_result, "idata", fit_result)
-    if model.family == "binomial":
-        df = None if newdata is None else _check_newdata(model, newdata, need_trials=(kind != "probability"))
-        if df is not None and model.spec.group is not None:
-            unseen = sorted(set(df[model.spec.group]) - set(model.design.levels))
-            if unseen and new_groups == "error":
-                raise FormulaError(
-                    f"newdata has levels of {model.spec.group!r} not seen in training: {unseen}. "
-                    "Pass new_groups='population' to draw their effects from Normal(0, sd), or "
-                    "new_groups='resample_observed' for brms's default 'uncertainty' behaviour."
-                )
-        ds = _predict_by_hand(model, idata, df, kind, seed, new_groups)
-        if model.spec.group is None:
-            ds.attrs["new_groups"] = "not_applicable"
-        elif df is None:
-            ds.attrs["new_groups"] = "in_sample"
-        return ds
-    df = None if newdata is None else _check_newdata(model, newdata)
-
-    if df is not None and model.spec.group is not None:
-        unseen = sorted(set(df[model.spec.group]) - set(model.design.levels))
-        if unseen and new_groups == "error":
+    df = (None if newdata is None else _check_newdata(
+        model, newdata, need_trials=(model.family == "binomial" and kind != "probability")))
+    new_levels = {g: ([] if df is None else sorted(set(df[g]) - set(model.design.group_designs[g].levels)))
+                  for g in model.spec.groups}
+    for g, unseen in new_levels.items():
+        if unseen and policies[g] == "error":
             raise FormulaError(
-                f"newdata has levels of {model.spec.group!r} not seen in training: {unseen}. "
+                f"newdata has levels of {g!r} not seen in training: {unseen}. "
                 "Pass new_groups='population' to draw their effects from Normal(0, sd), or "
-                "new_groups='resample_observed' for brms's default 'uncertainty' behaviour."
-            )
-        if unseen:                                              # "population" or "resample_observed"
-            return _predict_by_hand(model, idata, df, kind, seed, new_groups)
-
-    bambi_kind = "response" if kind == "response" else "response_params"
-    out = model.bambi_model.predict(idata, kind=bambi_kind, data=df, inplace=False, random_seed=seed)
-    mean_name = model.names["mean"]
-    mu = out.posterior[model.names["linpred"]]
-    if model.family == "bernoulli":
-        mu = expit(mu)                                          # logit_p -> p = P(y = 1)
-    data = {mean_name: mu.rename({mu.dims[-1]: "__obs__"}) if mu.dims[-1] != "__obs__" else mu}
-    if kind == "response":
-        y = out.posterior_predictive[model.names["y"]]
+                "new_groups='resample_observed' for brms's default 'uncertainty' behaviour; "
+                "an exact-key mapping can set the policy separately for each factor.")
+    manual = model.family == "binomial" or any(new_levels.values())
+    if manual:
+        ds = _predict_by_hand(model, idata, df, kind, seed, policies)
+    else:
+        bambi_kind = "response" if kind == "response" else "response_params"
+        out = model.bambi_model.predict(idata, kind=bambi_kind, data=df, inplace=False, random_seed=seed)
+        mean_name = model.names["mean"]
+        mu = out.posterior[model.names["linpred"]]
         if model.family == "bernoulli":
-            y = y.astype(np.int64)
-        data["y"] = y.rename({y.dims[-1]: "__obs__"}) if y.dims[-1] != "__obs__" else y
-    ds = xr.Dataset({k: v.drop_vars([c for c in v.coords if c not in ("chain", "draw")]) for k, v in data.items()})
-    ds = ds.assign_coords(__obs__=np.arange(ds.sizes["__obs__"]))
-    ds.attrs["new_groups"] = "not_applicable" if model.spec.group is None else (new_groups if df is not None else "in_sample")
-    if model.spec.group is None:
-        ds.attrs["new_levels"] = []
+            mu = expit(mu)
+        data = {mean_name: mu.rename({mu.dims[-1]: "__obs__"}) if mu.dims[-1] != "__obs__" else mu}
+        if kind == "response":
+            y = out.posterior_predictive[model.names["y"]]
+            if model.family == "bernoulli":
+                y = y.astype(np.int64)
+            data["y"] = y.rename({y.dims[-1]: "__obs__"}) if y.dims[-1] != "__obs__" else y
+        ds = xr.Dataset({k: v.drop_vars([c for c in v.coords if c not in ("chain", "draw")]) for k, v in data.items()})
+        ds = ds.assign_coords(__obs__=np.arange(ds.sizes["__obs__"]))
+    _prediction_attrs(model, ds, policies, new_levels, in_sample=df is None, manual=manual)
     return ds

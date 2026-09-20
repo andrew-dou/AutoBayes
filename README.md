@@ -18,8 +18,8 @@ Three parts:
   with PyMC's NUTS or through JAX/NumPyro with an explicit device choice, and returns
   posterior and predictive draws. Three families on one formula subset
   `y ~ x + z + x:z [+ (1 | group)]` with numeric and declared categorical predictors (M3a-1)
-  and one numeric-by-categorical interaction (M3a-2); the varying intercept is optional
-  since M3c-1, and a formula without it is a population-only model:
+  and one numeric-by-categorical interaction (M3a-2); varying intercepts are optional
+  and may have multiple independent grouping factors (M3c-3), and a formula without it is a population-only model:
   Gaussian (M0), Bernoulli with a logit link for a 0/1
   outcome (M1), and binomial counts `successes | trials(n)` with a logit link (M2);
   anything else is refused with an error naming the construct. See
@@ -89,7 +89,7 @@ Mid-project, the skills are symptom-triggered. When a gradient comes back `nan` 
 likelihood will not differentiate, `autobayes-custom-op` loads on its own and — before
 showing you the pattern — tries to talk you out of needing it.
 
-## Library (milestones M0, M1, M2, M3a-1, M3a-2, M3c-1 and M3c-2)
+## Library (milestones M0, M1, M2, M3a-1, M3a-2, M3c-1, M3c-2 and M3c-3)
 
 ### Install and test (the pinned, tested stack)
 
@@ -136,12 +136,46 @@ versions.
 | Population-only models, no group-level term: `y ~ 1`, `y ~ x`, `y ~ x + z + x:z`, `k \| trials(n) ~ x`, all three families | deterministic density/gradient/design/prediction checks for all three families; Gaussian example CPU sampling accepted after explicit finite-statistic policy correction ([review](docs/m3c1-decision.md#independent-acceptance-review-2026-09-19)) | same deterministic coverage; Gaussian example CPU sampling and seven-mean agreement accepted in the same review | **pending** | M3c-1, PR #9; merged; one Gaussian development example, not calibration |
 | One independent varying slope `(1 + x \|\| g)` | under independent review, not merged | same | same | M3b-1, PR #8 open |
 | No population intercept: `0 + x`, `x - 1`, categorical and one interaction, optional group | three-family deterministic checks; one Gaussian CPU example accepted at `target_accept=0.99` | same deterministic coverage and Gaussian CPU acceptance | **pending** | M3c-2, PR #10; [review and preserved initial failures](docs/m3c2-decision.md#independent-acceptance-review-2026-09-20-utc) |
-| Several or correlated group terms, nested/crossed factors, other families and links | refused with an error naming the construct | same | same | later slices, `docs/coordination/NEXT_MILESTONES_PROPOSAL.md` |
+| Multiple independent intercepts `(1 \| county) + (1 \| year)`, all three families | deterministic density/gradient/design/prediction checks passed; feature sampling pending | same | **pending** | M3c-3 candidate; [decision](docs/m3c3-decision.md) |
+| Correlated effects, grouping `/` or `:`, slopes, other families and links | refused with an error naming the construct | same | same | later slices, `docs/coordination/NEXT_MILESTONES_PROPOSAL.md` |
 
 Device rules on every path: `device="gpu"` without a visible GPU raises `DeviceError`
 (no silent CPU fallback); the fit report states the actual device, dtype (float64) and
 chain method; if JAX is not installed, `backend="numpyro"` raises `DeviceError` naming
 the `[jax]` extra.
+
+### Multiple independent varying intercepts
+
+```python
+priors = ab.Priors(intercept=ab.Normal(0, 2), b=ab.Normal(0, 1),
+                   sd={"county": ab.HalfNormal(1), "year": ab.Exponential(2)},
+                   sigma=ab.HalfNormal(1))
+model = ab.gaussian("y ~ x + (1 | county) + (1 | year)", df, priors)
+```
+
+Every factor needs its own SD prior. A scalar `sd` remains valid for a single factor;
+multiple factors require a mapping covering exactly their names. Group effects have
+independent Normal priors with separate scales; posterior effects need not be independent.
+Use `model.spec.groups`, `levels_by_group`, `model.design.group_designs`, and
+`model.group_names`. Factors follow formula order; levels use sorted fitted string labels.
+`design.Z` concatenates one-hot blocks, located by `design.group_slices`.
+Singular `group`, `levels`, `group_term`, `J` and `group_index` access is ambiguous with
+multiple groups and raises. Existing zero/one-group access remains valid.
+
+`value_point(sd={"county": .5, "year": .2}, z={"county": [...], "year": [...]}, ...)`
+requires exact keys and one offset per fitted level. Predictions accept a policy string
+for every factor or `new_groups={"county": "population", "year": "error"}`.
+Unseen effects are shared per factor/label, independent across factors. RNG traversal is
+factor formula order then sorted unseen labels; changing factor order can change unseen
+draws with the same seed. Per-factor prediction attributes are JSON strings that can be
+saved to netCDF. Fit records list every factor and SD; multiple groups omit ambiguous
+legacy `group`/`J` entries. Common centering and intercept back-transformation are unchanged.
+
+Distinct additive factors can describe crossed or observationally nested memberships;
+the library never expands nesting syntax or combines labels with their parent. Slopes,
+duplicate factors, correlation IDs, `||`, grouping `/` or `:` and multimembership remain
+refused. See the build-only [example](examples/m3c3_multiple_intercepts.py) and
+[decision](docs/m3c3-decision.md). Feature-specific sampling and GPU validation are pending.
 
 ### Removing the population intercept
 
