@@ -1,0 +1,38 @@
+{
+ "git_head": "562c1eccf64e-dirty",
+ "started_utc": "2026-09-20T17:01:51.405657+00:00",
+ "python_executable": "/Users/andrewdou/iqss-research/projects/AutoBayes-worktrees/m3a3-multiple-interactions/.venv/bin/python",
+ "argv": [
+  "/Users/andrewdou/iqss-research/projects/AutoBayes-worktrees/m3a3-multiple-interactions/.venv/lib/python3.11/site-packages/pytest/__main__.py",
+  "tests",
+  "-q",
+  "-m",
+  "not slow",
+  "-p",
+  "no:cacheprovider",
+  "--junitxml=/private/tmp/autobayes-m3a3-implementation/runs/full-1/junit.xml"
+ ],
+ "pid": 8331,
+ "environment": {
+  "python": "3.11.0",
+  "platform": "macOS-26.6.1-arm64-arm-64bit",
+  "versions": {
+   "pymc": "5.28.5",
+   "pytensor": "2.38.3",
+   "bambi": "0.17.2",
+   "formulae": "0.6.2",
+   "arviz": "0.23.4",
+   "numpyro": "0.21.0",
+   "jax": "0.10.2",
+   "jaxlib": "0.10.2",
+   "numpy": "2.4.6"
+  },
+  "jax_devices": [
+   "cpu:cpu(id=0)",
+   "cpu:cpu(id=1)",
+   "cpu:cpu(id=2)",
+   "cpu:cpu(id=3)"
+  ],
+  "jax_x64": true
+ }
+}

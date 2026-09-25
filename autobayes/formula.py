@@ -8,8 +8,8 @@ Supported::
 Varying-intercept terms are optional and additive across distinct factors (M3c-3): a formula without them is a population-only
 model, as in brms ``brmsformula`` where group-level terms are optional; ``y ~ 1`` is intercept-only.
 
-with ``x:z`` (or the shorthand ``x*z`` = ``x + z + x:z``) one interaction between a numeric term
-and a declared categorical term whose main effects are both present (milestone M3a-2).
+with ``x:z`` (or the shorthand ``x*z`` = ``x + z + x:z``) distinct interactions between numeric terms
+and declared categorical terms whose main effects are both present (milestone M3a-3).
 
 Predictors are numeric columns, or categorical columns declared with ``categorical={column:
 reference_level}`` (treatment coding, milestone M3a-1); each grouping variable is a column
@@ -573,13 +573,6 @@ def parse_formula(formula: str, data: pd.DataFrame | None = None, family: str = 
         if (x, z) in interactions:
             raise FormulaError(f"{piece!r}: the interaction '{x}:{z}' appears more than once after expansion")
         interactions.append((x, z))
-    if len(interactions) > 1:
-        names = [f"{x}:{z}" for x, z in interactions]
-        raise FormulaError(
-            f"{formula!r}: {len(interactions)} interactions after expansion ({names}); this slice supports at most one "
-            "numeric-by-categorical interaction per model, whether or not they share a side "
-            "(docs/m3a2-decision.md, repair record). Fit one interaction, or wait for a slice that verifies several."
-        )
     parts = [*predictors, *(f"{x}:{z}" for x, z in interactions)] + [f"(1 | {group})" for group in groups]
     canonical_rhs = " + ".join(parts) if parts else "1"           # intercept-only population model: 'y ~ 1'
     if remove_intercept:

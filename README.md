@@ -18,7 +18,7 @@ Three parts:
   with PyMC's NUTS or through JAX/NumPyro with an explicit device choice, and returns
   posterior and predictive draws. Three families on one formula subset
   `y ~ x + z + x:z [+ (1 | group)]` with numeric and declared categorical predictors (M3a-1)
-  and one numeric-by-categorical interaction (M3a-2); varying intercepts are optional
+  and distinct numeric-by-categorical interactions with their main effects (M3a-3); varying intercepts are optional
   and may have multiple independent grouping factors (M3c-3), and a formula without it is a population-only model:
   Gaussian (M0), Bernoulli with a logit link for a 0/1
   outcome (M1), and binomial counts `successes | trials(n)` with a logit link (M2);
@@ -89,7 +89,7 @@ Mid-project, the skills are symptom-triggered. When a gradient comes back `nan` 
 likelihood will not differentiate, `autobayes-custom-op` loads on its own and — before
 showing you the pattern — tries to talk you out of needing it.
 
-## Library (milestones M0, M1, M2, M3a-1, M3a-2, M3c-1, M3c-2 and M3c-3)
+## Library (milestones M0, M1, M2, M3a-1, M3a-2, M3a-3, M3c-1, M3c-2 and M3c-3)
 
 ### Install and test (the pinned, tested stack)
 
@@ -133,16 +133,45 @@ versions.
 | Binomial (logit), `k \| trials(n) ~ [1 +] x… + (1 \| g)`, integer counts up to 1e6 per row | CPU-validated | CPU-validated | **pending** (same code path, not run on a GPU) | M2 |
 | Declared categorical predictors `z` (treatment coding, `categorical={"z": reference}`), all three families | CPU-validated (`docs/m3a1-decision.md`) | CPU-validated | **pending** | M3a-1, merged (PR #6) |
 | One numeric-by-categorical interaction `x:z` (`x*z`) with both main effects, all three families | CPU-validated (`docs/m3a2-decision.md`) | CPU-validated | **pending** | M3a-2, merged (PR #7) |
+| Multiple numeric-by-categorical interactions, shared or disjoint sides; existing families, intercept controls and multiple groups | deterministic design/density/gradient/prediction checks passed; local full suite interrupted | same deterministic coverage | **pending** | M3a-3; [decision](docs/m3a3-decision.md); feature-specific sampling pending |
 | Population-only models, no group-level term: `y ~ 1`, `y ~ x`, `y ~ x + z + x:z`, `k \| trials(n) ~ x`, all three families | deterministic density/gradient/design/prediction checks for all three families; Gaussian example CPU sampling accepted after explicit finite-statistic policy correction ([review](docs/m3c1-decision.md#independent-acceptance-review-2026-09-19)) | same deterministic coverage; Gaussian example CPU sampling and seven-mean agreement accepted in the same review | **pending** | M3c-1, PR #9; merged; one Gaussian development example, not calibration |
 | One independent varying slope `(1 + x \|\| g)` | under independent review, not merged | same | same | M3b-1, PR #8 open |
 | No population intercept: `0 + x`, `x - 1`, categorical and one interaction, optional group | three-family deterministic checks; one Gaussian CPU example accepted at `target_accept=0.99` | same deterministic coverage and Gaussian CPU acceptance | **pending** | M3c-2, PR #10; [review and preserved initial failures](docs/m3c2-decision.md#independent-acceptance-review-2026-09-20-utc) |
-| Multiple independent intercepts `(1 \| county) + (1 \| year)`, all three families | three-family deterministic checks; one crossed Gaussian CPU example independently accepted | same deterministic coverage and Gaussian CPU acceptance | **pending** | M3c-3, PR #11; [decision](docs/m3c3-decision.md) |
+| Multiple independent intercepts `(1 \| county) + (1 \| year)`, all three families | three-family deterministic checks; one crossed Gaussian CPU example independently accepted | same deterministic coverage and Gaussian CPU acceptance | **pending** | M3c-3, merged (PR #11); [decision](docs/m3c3-decision.md) |
 | Correlated effects, grouping `/` or `:`, slopes, other families and links | refused with an error naming the construct | same | same | later slices, `docs/coordination/NEXT_MILESTONES_PROPOSAL.md` |
 
 Device rules on every path: `device="gpu"` without a visible GPU raises `DeviceError`
 (no silent CPU fallback); the fit report states the actual device, dtype (float64) and
 chain method; if JAX is not installed, `backend="numpyro"` raises `DeviceError` naming
 the `[jax]` extra.
+
+### Multiple numeric-by-categorical interactions
+
+Use explicit main effects and distinct pairs, for example
+`y ~ x + w + z + v + x:z + w:z + x:v`, with `z` and `v` declared in
+`categorical=`. Canonical terms keep first-appearance order, main effects before
+interaction pairs, always numeric first. `Priors.b` still accepts one explicit prior
+or exact per-term mappings, with optional per-level priors for each vector term.
+Variables, coordinates and columns are `x:z`, `x:z_dim` and `x:z[level]`.
+
+The contrast for level `l` of `z` is `b_z[l] + x*b_x:z[l] + w*b_w:z[l]`;
+the slope in `x` is `b_x + b_x:z[z_i] + b_x:v[v_i]`, with reference contributions zero.
+Other predictors and group effects are held fixed. With centering enabled and a
+population intercept, each expanded product column is centered at its own fitted-row mean.
+Without one, common centering is disabled, the first categorical main is full-level,
+and all interaction terms still encode non-reference slope differences. The full-level
+factor contrast uses `b_z[l] - b_z[reference]` as its baseline difference.
+
+Both main effects are required. Strict duplicate rules remain: `x*z + w*z` repeats
+`z`; write `x + w + z + x:z + w:z`. Numeric-by-numeric, categorical-by-categorical,
+higher-order interactions and transforms remain unsupported. Changing a reference
+can change independent-prior meaning; the library does not transport priors.
+Unseen categorical levels are always refused, independently of any new-group policy.
+See the build-only [example](examples/m3a3_multiple_interactions.py) and
+[decision/test matrix](docs/m3a3-decision.md) and [execution evidence](docs/m3a3-evidence/README.md).
+The focused checks passed; the one local fast suite was interrupted after a wall-deadline
+supervision failure and was not rerun. Hosted checks remain required. New-feature CPU sampling, calibration
+and GPU validation remain separate future work.
 
 ### Multiple independent varying intercepts
 

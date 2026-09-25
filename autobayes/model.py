@@ -487,27 +487,44 @@ class Model:
             f"  {lp}_i = {a}" + (f" + {xs}" if xs else "") + "".join(f" + {effect(g)}[{g}_i]" for g in s.groups),
         ]
         scale = "response" if gaussian else "log-odds"
+        same_group = " (same group)" if len(s.groups) == 1 else (" (same group effects)" if s.groups else "")
         for cat in s.categoricals:
             partners = [xn for xn, zn in s.interactions if zn == cat.name]
+            changes = "".join(f" + {xn} * b_{xn}:{cat.name}[l]" for xn in partners)
             if cat.full_rank:
                 lines += [f"  b_{cat.name}[l] is the level-specific {scale} baseline at numeric predictors zero, other categorical references, and group effect zero; the reference also has a coefficient."]
+                if partners:
+                    lines += [f"  The difference between level l and reference {cat.reference!r} on the {scale} scale{same_group}, holding other predictors fixed, is "
+                              f"b_{cat.name}[l] - b_{cat.name}[{cat.reference}]" + changes + "."]
                 continue
             if partners:
-                xn = partners[0]
+                zero = " and ".join(f"{xn} = 0" for xn in partners)
+                where = f"at another value of {partners[0]}" if len(partners) == 1 else "at other values of those numeric predictors"
                 lines += [f"  b_{cat.name}[l] is the difference between level l and the reference {cat.reference!r} on the "
-                          f"{scale} scale at {xn} = 0{' (same group)' if s.has_group else ''}; at another value of {xn} the difference is "
-                          f"b_{cat.name}[l] + {xn} * b_{xn}:{cat.name}[l], because the levels have different slopes. "
-                          f"The reference has no coefficient."]
+                          f"{scale} scale at {zero}{same_group}; {where} the difference is "
+                          f"b_{cat.name}[l]" + changes + ", holding other predictors fixed, because the levels have different slopes. "
+                          "The reference has no coefficient."]
             else:
                 lines += [f"  b_{cat.name}[l] is the difference between level l and the reference {cat.reference!r} "
                           f"on the {scale} scale at the same predictors{' and group' if s.has_group else ''}; the reference has no coefficient."]
-        for xn, zn in s.interactions:
-            ref = s.categorical(zn).reference
-            if s.intercept:
-                lines += [f"  {xn}:{zn}: the reference level {ref!r} has the raw intercept a and slope b_{xn}; level l has intercept "
-                          f"difference b_{zn}[l] and slope difference b_{xn}:{zn}[l], so its slope in {xn} is b_{xn} + b_{xn}:{zn}[l]."]
+        for xn in s.predictors:
+            partners = [zn for x, zn in s.interactions if x == xn]
+            if not partners:
+                continue
+            if len(partners) == 1:
+                zn = partners[0]
+                ref = s.categorical(zn).reference
+                if s.intercept:
+                    lines += [f"  {xn}:{zn}: the reference level {ref!r} has the raw intercept a and slope b_{xn}; level l has intercept "
+                              f"difference b_{zn}[l] and slope difference b_{xn}:{zn}[l], so its slope in {xn} is b_{xn} + b_{xn}:{zn}[l]. "
+                              "These baseline statements set other numeric predictors to zero, other categorical predictors to their references, and group effects to zero."]
+                else:
+                    lines += [f"  {xn}:{zn}: the reference level {ref!r} has slope b_{xn}; non-reference level l has slope difference b_{xn}:{zn}[l], so its slope in {xn} is b_{xn} + b_{xn}:{zn}[l]."]
             else:
-                lines += [f"  {xn}:{zn}: the reference level {ref!r} has slope b_{xn}; non-reference level l has slope difference b_{xn}:{zn}[l], so its slope in {xn} is b_{xn} + b_{xn}:{zn}[l]."]
+                slope = f"b_{xn}" + "".join(f" + b_{xn}:{zn}[{zn}_i]" for zn in partners)
+                lines += [f"  The slope in {xn} on the {scale} scale is {slope}, with each categorical reference contribution zero; other predictors and group effects are held fixed."]
+                for zn in partners:
+                    lines += [f"  b_{xn}:{zn}[l] is the change in that slope from reference {s.categorical(zn).reference!r} to level l of {zn}, holding the other categorical levels fixed."]
         if binomial:
             lines += [f"  P(success) = p_i = expit(eta_i); {s.response}_i ~ Binomial({s.trials}_i, p_i); eta is on the log-odds scale."]
         elif not gaussian:
@@ -538,7 +555,7 @@ class Model:
                 f"  a_c is the {what} {where}{' (group effect zero)' if s.has_group else ''}; the",
                 "  prior on the intercept applies to a_c. The posterior reports the raw-scale",
                 "  intercept a = a_c - sum_p mean(x_p) * b_p" + (" - sum_l p_z[l] * b_z[l]" if s.categoricals else "")
-                + (" - sum_l q_x:z[l] * b_x:z[l]" if s.interactions else "") + ", computed after sampling"
+                + (" - sum_(x,z),l q_x:z[l] * b_x:z[l]" if len(s.interactions) > 1 else (" - sum_l q_x:z[l] * b_x:z[l]" if s.interactions else "")) + ", computed after sampling"
                 + (": the linear predictor at x = 0 and at the reference level." if s.categoricals else "."),
             ]
             if s.categoricals and not gaussian:

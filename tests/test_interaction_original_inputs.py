@@ -1,6 +1,6 @@
 """M3a-2 repair record: checks from the ORIGINAL supplied inputs and explicit mathematics (adapted from the
 coordinator's independent file, artifacts/2026-09-10-autobayes-m3a2-independent/test_iqss_m3a2_independent.py),
-the one-interaction scope guard across families, and the conditional categorical contrast."""
+multiple-interaction compatibility across families, and the conditional categorical contrast."""
 import numpy as np
 import pandas as pd
 import pytest
@@ -103,15 +103,15 @@ def test_original_label_design_density_gradients_and_predictions(family, center,
 
 
 @pytest.mark.parametrize("family", ["gaussian", "bernoulli", "binomial"])
-def test_only_one_interaction_is_accepted(family):
+def test_multiple_interactions_are_accepted(family):
     data, _ = inputs(False); data["z"] = ["a", "b", "c"] * 4; data["w"] = np.linspace(-1, 2, len(data)); data["v"] = ["p", "q"] * 6
     priors = ab.Priors(intercept=ab.Normal(0, 2), b=ab.Normal(0, 1), sd=ab.HalfNormal(1), sigma=ab.HalfNormal(1) if family == "gaussian" else None)
     for rhs, cat in [("x + w + z + x:z + w:z", {"z": "a"}),                       # shared categorical side
                      ("x + z + v + x:z + x:v", {"z": "a", "v": "p"}),               # shared numeric side
                      ("x + w + z + v + x:z + w:v", {"z": "a", "v": "p"}),           # disjoint sides
                      ("x*z + w*v", {"z": "a", "v": "p"})]:                          # shorthand twice
-        with pytest.raises(ab.FormulaError, match="at most one"):
-            getattr(ab, family)(LHS[family] + f" ~ {rhs} + (1 | g)", data, priors, categorical=cat)
+        model = getattr(ab, family)(LHS[family] + f" ~ {rhs} + (1 | g)", data, priors, categorical=cat)
+        assert len(model.spec.interactions) == 2  # The original refused cases are now explicit M3a-3 coverage.
     m = getattr(ab, family)(LHS[family] + " ~ x + w + z + x:z + (1 | g)", data, priors, categorical={"z": "a"})   # one interaction plus another numeric term
     assert m.spec.terms == ("x", "w", "z", "x:z") and m.spec.interactions == (("x", "z"),)
 

@@ -1,0 +1,17 @@
+{
+  "command": [
+    "/Users/andrewdou/.local/bin/uv",
+    "sync",
+    "--offline",
+    "--frozen",
+    "--extra",
+    "jax",
+    "--extra",
+    "dev"
+  ],
+  "cwd": "/Users/andrewdou/iqss-research/projects/AutoBayes-worktrees/m3a3-multiple-interactions",
+  "started_utc": "2026-09-20T16:39:36.324596+00:00",
+  "exit_code": 0,
+  "wall_seconds": 1.3207537500129547,
+  "finished_utc": "2026-09-20T16:39:37.645571+00:00"
+}

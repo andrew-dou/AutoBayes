@@ -73,7 +73,7 @@ error; go to "Outside the verified family" below.
 **Population intercept control (M3c-2).** `0 + terms` and `terms - 1`
 remove it. Omit `Priors.intercept` and `value_point(intercept=...)`; supplied values
 are refused. The first categorical main effect becomes full-level coded, including
-its declared reference; later categorical main effects and the existing interaction
+its declared reference; later categorical main effects and all interactions
 retain non-reference differences. Inspect `model.spec.columns` and cover the actual
 coefficient set with explicit priors. Reordering factors can change independent
 prior meaning. No-intercept models use the raw design even when centering is
@@ -81,7 +81,7 @@ requested, with requested/effective flags recorded separately. At least one
 population predictor is required; conflicting inclusion/removal tokens are refused.
 See `docs/m3c2-decision.md` and `examples/m3c2_no_intercept.py`. Three-family deterministic checks and one Gaussian CPU example at target_accept .99 were independently accepted; earlier .9 divergence failures remain preserved. This is not calibration or GPU evidence.
 
-**Multiple independent intercepts (M3c-3 candidate).** Use explicit additive terms
+**Multiple independent intercepts (M3c-3, merged PR #11).** Use explicit additive terms
 `(1 | county) + (1 | year)` and exact-key `sd={"county": HalfNormal(1), "year": Exponential(2)}`.
 Scalar SD remains a one-factor shorthand. Inspect `spec.groups`, `spec.levels_by_group`,
 `design.group_designs`, `design.group_slices` and `model.group_names`; ambiguous singular
@@ -92,8 +92,9 @@ policy string for all factors or an exact-key policy mapping. Repeated unseen la
 one effect within their factor, including across rows with different other memberships.
 Equal labels in separate factors are different identities; factor order determines RNG
 traversal. Fit records retain all factor scales and coordinates. Never silently expand
-nesting or reinterpret reused within-parent labels. Three-family deterministic feature checks passed;
-feature-specific MCMC, calibration and GPU validation remain future work. Follow
+nesting or reinterpret reused within-parent labels. Three-family deterministic feature checks and
+one crossed-Gaussian CPU backend/API unit passed independent review; broader sampling,
+calibration and GPU validation remain future work. Follow
 `docs/m3c3-decision.md` and `examples/m3c3_multiple_intercepts.py`.
 
 ## Session start, every time
@@ -268,8 +269,20 @@ level has an intercept difference `arm[l]` and a slope difference `dose:arm[l]`,
 slope is `dose + dose:arm[l]`. Once the interaction is present, `arm[l]` is the contrast
 with the reference **at dose = 0** only; at dose `d` the contrast is `arm[l] + d *
 dose:arm[l]` (on the log-odds scale for Bernoulli and binomial), and `describe()` says
-so. This slice admits **one** interaction per model (`x:z + w:z` or `x:z + x:w` are
-refused). The posterior variable is `dose:arm` with the levels as
+so. Multiple distinct pairs are now admitted (M3a-3): use explicit mains once, such as
+`x + w + z + v + x:z + w:z + x:v`. A factor contrast sums all its numeric partners;
+a numeric slope sums all its categorical partners, with reference contributions zero.
+The statements above describe the single-pair example with other numeric predictors
+zero, other categorical predictors at their references and group effects zero.
+Overlapping shorthand still repeats mains (`x*z + w*z` is refused); use explicit colons.
+Each pair retains its own exact term/per-level priors, labels and coordinates.
+With no population intercept, only the first categorical main is full-level; every
+interaction remains a non-reference difference and effective common centering is off.
+Independent priors are not automatically transported when references change.
+Use `docs/m3a3-decision.md` and `examples/m3a3_multiple_interactions.py`. Focused deterministic
+checks passed; the local full suite was interrupted after a wall-deadline supervision failure,
+with no retry, so hosted checks remain required. Feature-specific sampling/calibration/GPU
+evidence remains pending. The posterior variable is `dose:arm` with the levels as
 coordinates (`az.summary(fit.idata, var_names=["dose:arm"])`). Check
 `model.spec.columns` and `model.design.X_raw[:5]`: the product columns are
 `dose * 1[arm = l]`, built and verified against an independent one-hot construction.
