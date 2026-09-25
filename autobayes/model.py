@@ -10,6 +10,7 @@ present, and a population-only model without one (M3c-1).
 from __future__ import annotations
 
 from dataclasses import dataclass
+from types import MappingProxyType
 
 import numpy as np
 import pandas as pd
@@ -81,12 +82,23 @@ class Design:
         return {g: block.column_slice for g, block in self.group_designs.items()}
 
 
-_FAMILIES = {
-    # family: (Bambi parent parameter = the deterministic in the graph, link name)
-    "gaussian": ("mu", "identity"),
-    "bernoulli": ("logit_p", "logit"),
-    "binomial": ("logit_p", "logit"),
-}
+@dataclass(frozen=True)
+class _FamilyMetadata:
+    """Existing family names, not a public distribution extension interface.
+
+    parameter_output is the legacy prediction-parameter name. For binomial it
+    is p, not the expected count; mean predictions also return expected=n*p.
+    """
+    parent: str
+    link: str
+    parameter_output: str
+
+
+_FAMILIES = MappingProxyType({
+    "gaussian": _FamilyMetadata("mu", "identity", "mu"),
+    "bernoulli": _FamilyMetadata("logit_p", "logit", "p"),
+    "binomial": _FamilyMetadata("logit_p", "logit", "p"),
+})
 
 
 class Model:
@@ -231,7 +243,7 @@ class Model:
 
     # -- design ------------------------------------------------------------------------
     def _extract_design(self) -> Design:
-        comp = self.bambi_model.components[_FAMILIES[self.family][0]]
+        comp = self.bambi_model.components[_FAMILIES[self.family].parent]
         common = comp.design.common
         group = comp.design.group
         names = list(common.terms)
@@ -328,7 +340,7 @@ class Model:
     # -- naming ------------------------------------------------------------------------
     @property
     def link(self) -> str:
-        return _FAMILIES[self.family][1]
+        return _FAMILIES[self.family].link
 
     @property
     def names(self) -> dict[str, str]:
@@ -340,8 +352,8 @@ class Model:
         out = {
             **({"intercept": "Intercept"} if self.spec.intercept else {}),
             **({"sd": f"1|{g}_sigma", "offset": f"1|{g}_offset", "group_effect": f"1|{g}"} if g is not None else {}),
-            "linpred": _FAMILIES[self.family][0],
-            "mean": "mu" if self.family == "gaussian" else "p",
+            "linpred": _FAMILIES[self.family].parent,
+            "mean": _FAMILIES[self.family].parameter_output,
             "y": self.spec.response if self.spec.trials is None else f"p({self.spec.response}, {self.spec.trials})",
             **{f"b:{p}": p for p in self.spec.terms},
         }

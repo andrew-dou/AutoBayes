@@ -1,0 +1,9 @@
+{
+  "base": "ba4cc02d5fd199454b265fa5ecbdc48b02702b1a",
+  "tests": "3 fixed-draw family cases and23 existing deterministic formula/prior checks pass;2 sampling cases deliberately excluded; no new fits",
+  "environment": "Retained pinned PR12 environment invoked by absolute python path, PYTHONPATH set to this isolated worktree; no package installation or dependency changes",
+  "sources": {
+    "autobayes/model.py": "1be801586dc13f92dccd48f71e7fdf0ccb30ea07e021cb303b5b6ed5c2fdeaa3",
+    "tests/test_family_contract.py": "b1e28a3033a0a56ed78aa4573a4a85655ebd36952006b78fc029dd72d3d76750"
+  }
+}
