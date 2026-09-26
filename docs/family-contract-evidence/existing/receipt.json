@@ -1,0 +1,21 @@
+{
+  "command": [
+    "/Users/andrewdou/iqss-research/artifacts/2026-09-25-autobayes-pr12-closeout/retained-venv/bin/python",
+    "-B",
+    "-m",
+    "pytest",
+    "tests/test_formula.py",
+    "tests/test_priors_families.py",
+    "-k",
+    "not alternative_prior_families",
+    "-q",
+    "-p",
+    "no:cacheprovider"
+  ],
+  "cwd": "/Users/andrewdou/iqss-research/projects/AutoBayes-worktrees/family-contract",
+  "exit_code": 0,
+  "timed_out": false,
+  "utc_seconds": 9.195783853530884,
+  "monotonic_seconds": 9.19607691699639,
+  "cap_seconds": 180
+}
