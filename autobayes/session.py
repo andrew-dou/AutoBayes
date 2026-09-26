@@ -91,6 +91,7 @@ def fit_record(model, fit, *, panel: dict | None = None, max_treedepth: int = 10
         "model": {
             "formula": s.formula,
             "family": model.family,
+            "target_identity": model.target_identity,
             **({"family_parameters": {"nu": model.nu}} if model.family == "student" else {}),
             "link": model.link,
             "n": int(d.n),
@@ -137,8 +138,11 @@ def fit_record(model, fit, *, panel: dict | None = None, max_treedepth: int = 10
     }
 
 
-def compare_records(a: dict, b: dict, *, k: float = 4.0) -> dict:
+def compare_records(a: dict, b: dict, *, k: float = 4.0, allow_legacy: bool = False) -> dict:
     """Population-parameter means within ``k`` combined MCSE. Returns per-parameter rows and ``agree``."""
+    from autobayes.identity import comparison_identity
+
+    identity_status = comparison_identity(a, b, allow_legacy=allow_legacy)
     same = all(a["model"].get(k) == b["model"].get(k) for k in ("formula", "priors", "family"))
     same = same and a["model"].get("family_parameters", {}) == b["model"].get("family_parameters", {})
     if not same:
@@ -155,12 +159,14 @@ def compare_records(a: dict, b: dict, *, k: float = 4.0) -> dict:
         ok = bool(diff <= tol)
         agree &= ok
         rows[name] = {"mean_a": ra["mean"], "mean_b": rb["mean"], "diff": diff, "tol": tol, "agree": ok}
-    return {"k": k, "rows": rows, "agree": bool(agree),
+    return {"k": k, "rows": rows, "agree": bool(agree), "identity_status": identity_status,
             "a": a["execution"]["device_actual"], "b": b["execution"]["device_actual"]}
 
 
 def format_comparison(c: dict) -> str:
     out = [f"Agreement of population-parameter means ({c['k']:g} combined MCSE): {c['a']} vs {c['b']}"]
+    if c.get("identity_status") != "matched":
+        out.append("WARNING: target identity is unverified; agreement does not establish a common target.")
     for name, r in c["rows"].items():
         out.append(f"  {name:<16} {r['mean_a']:.4f} vs {r['mean_b']:.4f}  |diff| {r['diff']:.4f}  tol {r['tol']:.4f}  {'ok' if r['agree'] else 'DISAGREE'}")
     out.append(f"  agree: {c['agree']}  (a statement about the target, not about speed)")

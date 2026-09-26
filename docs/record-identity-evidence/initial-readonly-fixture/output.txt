@@ -1,0 +1,16 @@
+.........F................................................               [100%]
+=================================== FAILURES ===================================
+_____________ test_identity_frozen_after_build_and_defensive_copy ______________
+
+    def test_identity_frozen_after_build_and_defensive_copy():
+        df=frame();m=build(df);before=m.target_identity
+        df.loc[0,'y']=123
+        m.data.loc[0,'y']=456
+>       m.design.y[0]=789
+        ^^^^^^^^^^^^^
+E       ValueError: assignment destination is read-only
+
+tests/test_record_identity.py:68: ValueError
+=========================== short test summary info ============================
+FAILED tests/test_record_identity.py::test_identity_frozen_after_build_and_defensive_copy
+1 failed, 57 passed in 17.28s

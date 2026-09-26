@@ -397,3 +397,5 @@ constrains what gets run, and keeps what was learned somewhere an agent will fin
 
 MIT. The `wiki/` pattern is adapted from
 [Karpathy's LLM Wiki gist](https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f).
+
+Fit comparisons now require a [frozen target identity](docs/record-identity.md). Historical records remain readable; metadata-only comparison requires explicit `allow_legacy=True` and is labeled unverified.

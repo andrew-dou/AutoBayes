@@ -1,0 +1,33 @@
+{
+  "command": [
+    "/Users/andrewdou/iqss-research/artifacts/2026-09-25-autobayes-pr12-closeout/retained-venv/bin/python",
+    "-m",
+    "pytest",
+    "tests/test_record_identity.py",
+    "tests/test_student.py",
+    "tests/test_poisson.py",
+    "tests/test_family_contract.py",
+    "-q",
+    "-p",
+    "no:cacheprovider"
+  ],
+  "exit_code": 1,
+  "timeout": false,
+  "elapsed": 31.95031499999459,
+  "started_utc": "2026-09-26T23:52:30.612994+00:00",
+  "cap": 300,
+  "source_hashes": {
+    "autobayes/formula.py": "98cad17a254842cd648c611c9817b764119394a00281998e8adaa4b461a5b844",
+    "autobayes/diagnostics.py": "79bd2634824c19180afff1882896098d72d82a631ebfdb00aba90081ee7bd9b9",
+    "autobayes/predict.py": "8e5c2e7c30cefb66242c02188a7746804ef60cc7614054c70d86ee81560e410c",
+    "autobayes/session.py": "5c9e91dbb8858927a779b5b26ddf385ed1087625820d84d8864c88e0ac8b4324",
+    "autobayes/__init__.py": "eb0126be17fcee6024b0a4e477cd369c19c7c7e6c07414b8cbc7566e756c7838",
+    "autobayes/model.py": "db0c1ae6f489f1ea3e0855491365e42e1de2c146eb5afd4343dec7fab8f35a60",
+    "autobayes/inference.py": "8d21b5adaba9349bf5f90028a0bb3e9b59c59781bde0172ef9d48dbe6a000d4b",
+    "autobayes/priors.py": "7eefd9b920e26e08547121eff68b133fcf519e65c96002d9fe98a2cc3b87c4f5",
+    "autobayes/identity.py": "1c057a5db594cdd983d33abd7cac1ab6303755e219a8dd231d1d2cc5c7dad43a",
+    "autobayes/likelihoods.py": "70156b9f74d6e0c2e330cfe20806bddffd3d1ed7dabf183c683a68351e8a2988",
+    "tests/test_student.py": "9df015d9b0755ecd918d14c7a2d9d66e26c4c1d25a66e22bb3a25b1fde82ffd9",
+    "tests/test_record_identity.py": "abfd63ef6e7264c87bc36e54d69495d27b03e8998462defec177cd3e4fc88350"
+  }
+}
