@@ -1,0 +1,3 @@
+# Fixed-nu Student-t responses
+
+Implement student(formula, data, priors, *, nu, ...) with finite scalar nu>1, identity location and explicit sigma scale prior. nu is fixed model identity, never a sampled parameter. This deliberately excludes learned nu and auxiliary distributional formulas. Preserve the three existing families. Require correct manual new-group predictions and record comparisons that distinguish nu. Deterministic density/gradient/JAX and fixed-draw checks precede exact-head CI; no new fits or GPU claims. Pinned Bambi0.17.2 supports numeric nu through family t. See coordinator plans/2026-09-26-autobayes-student-response.md for sources and constraints.

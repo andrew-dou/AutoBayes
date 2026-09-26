@@ -91,6 +91,7 @@ def fit_record(model, fit, *, panel: dict | None = None, max_treedepth: int = 10
         "model": {
             "formula": s.formula,
             "family": model.family,
+            **({"family_parameters": {"nu": model.nu}} if model.family == "student" else {}),
             "link": model.link,
             "n": int(d.n),
             **({"J": int(d.J), "group": s.group} if len(s.groups) <= 1 else {}),
@@ -116,7 +117,7 @@ def fit_record(model, fit, *, panel: dict | None = None, max_treedepth: int = 10
             "intercept_prior_applies_to": None if not s.intercept else ("centred intercept (at the numeric predictor means"
                                            + (" and the sample proportions of the categorical levels)" if s.categoricals else ")")
                                            if d.centered else "raw intercept")
-                                          + (", logit scale" if model.family != "gaussian" else ""),
+                                          + (", logit scale" if model.family in ("bernoulli", "binomial") else ""),
             **({"trials": s.trials, "trials_total": int(d.trials.sum()),
                 "zero_trial_rows_dropped": len(model.dropped_rows),
                 "zero_trial_row_positions": list(model.dropped_rows)} if model.family == "binomial" else {}),
@@ -139,8 +140,9 @@ def fit_record(model, fit, *, panel: dict | None = None, max_treedepth: int = 10
 def compare_records(a: dict, b: dict, *, k: float = 4.0) -> dict:
     """Population-parameter means within ``k`` combined MCSE. Returns per-parameter rows and ``agree``."""
     same = all(a["model"].get(k) == b["model"].get(k) for k in ("formula", "priors", "family"))
+    same = same and a["model"].get("family_parameters", {}) == b["model"].get("family_parameters", {})
     if not same:
-        raise ValueError("records fit different models; agreement is only defined for the same family, formula and priors")
+        raise ValueError("records fit different models; agreement is only defined for the same family, family parameters, formula and priors")
     if set(a["posterior"]) != set(b["posterior"]):
         raise ValueError("records must contain identical posterior parameter sets")
     rows, agree = {}, True

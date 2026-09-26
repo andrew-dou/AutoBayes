@@ -1,0 +1,3 @@
+# Validation evidence
+
+Initial22 deterministic tests passed. Expanded run stopped by its UTC-or-monotonic300second cap and remains incomplete. Retry had46pass/1failure/2deselected: Gaussian error wording compatibility, restored in code. Corrected47passed/2deselected; excluded cases perform MCMC. Final additional ordinary response-prediction/record check1passed after extending that test, with production code unchanged. No MCMC or GPU run. Test scripts, stdout, receipts and source hashes retained. Absolute environment paths identify the local retained pinned environment, not a portable dependency installer. Hosted exact-head CI is still required before merge.
