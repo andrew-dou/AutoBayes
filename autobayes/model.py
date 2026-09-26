@@ -1,6 +1,6 @@
 """The model: a thin, inspectable layer over a Bambi-built PyMC model.
 
-Four families, including fixed-nu Student-t responses. ``"gaussian"`` (M0): identity link, residual SD ``sigma``. ``"bernoulli"``
+Five families, including Poisson counts and fixed-nu Student-t responses. ``"gaussian"`` (M0): identity link, residual SD ``sigma``. ``"bernoulli"``
 (M1): logit link, ``p = expit(eta)``, no residual scale. ``"binomial"`` (M2): logit link on
 ``successes | trials(n)``, counts. All share the right-hand side ``[1 +] x1 [+ x2 ...]
 [+ (1 | factor) ...]`` with numeric terms and, since M3a-1, treatment-coded categorical terms declared
@@ -95,6 +95,7 @@ class _FamilyMetadata:
 
 
 _FAMILIES = MappingProxyType({
+    "poisson": _FamilyMetadata("mu", "log", "mu"),
     "student": _FamilyMetadata("mu", "identity", "mu"),
     "gaussian": _FamilyMetadata("mu", "identity", "mu"),
     "bernoulli": _FamilyMetadata("logit_p", "logit", "p"),
@@ -103,11 +104,11 @@ _FAMILIES = MappingProxyType({
 
 
 class Model:
-    """``y ~ x [+ (1 | factor) ...]`` with explicit priors; Gaussian, Student-t, Bernoulli or binomial likelihood.
+    """``y ~ x [+ (1 | factor) ...]`` with explicit priors; Gaussian, Student-t, Poisson, Bernoulli or binomial likelihood.
 
     Attributes
     ----------
-    family : str               "gaussian", "student", "bernoulli" or "binomial"
+    family : str               "gaussian", "student", "poisson", "bernoulli" or "binomial"
     spec : ModelSpec
     priors : Priors
     bambi_model : bambi.Model  (already built)
@@ -182,8 +183,10 @@ class Model:
         self.spec: ModelSpec = parse_formula(formula, df, family, categorical)   # levels over the fitted rows
         for group in self.spec.groups:
             df[group] = df[group].astype(str)
-        if family == "bernoulli":
-            df[self.spec.response] = df[self.spec.response].astype(int)
+        if family in ("bernoulli", "poisson"):
+            df[self.spec.response] = df[self.spec.response].astype(np.int64)
+        if family == "poisson" and (df[self.spec.response] == 0).all():
+            self.warnings.append("all observed counts are zero; check sensitivity to the explicit log-mean priors")
         self.original_labels: dict[str, np.ndarray] = {}     # labels of the SUPPLIED column, fitted rows, before any recoding
         for cat in self.spec.categoricals:
             # An ORDERED Categorical with the reference first: formulae keeps this order (it sorts
@@ -221,7 +224,7 @@ class Model:
         self.bambi_model.build()
         self.pymc_model = self.bambi_model.backend.model
         self.design = self._extract_design()
-        if family in ("bernoulli", "binomial"):
+        if family in ("bernoulli", "binomial", "poisson"):
             rv = self.pymc_model[self.names["y"]]
             obs = np.asarray(self.pymc_model.rvs_to_values[rv].eval())
             if not np.array_equal(obs, self.design.y.astype(int)):
@@ -423,7 +426,8 @@ class Model:
                 if z_by_group[g].shape != (block.J,) or not np.isfinite(z_by_group[g]).all():
                     raise ValueError(f"z for {g!r} must have {block.J} finite entries")
         if (sigma is None) != (self.family not in ("gaussian", "student")):
-            raise ValueError("sigma is required for the Student-t family" if self.family == "student"
+            raise ValueError("sigma must be omitted for Poisson" if self.family == "poisson"
+                             else "sigma is required for the Student-t family" if self.family == "student"
                              else "sigma is required for the Gaussian family and must be omitted for Bernoulli and binomial")
         n = self.names
         if self.spec.intercept and intercept is None:
@@ -477,9 +481,10 @@ class Model:
         gaussian = self.family == "gaussian"
         continuous = self.family in ("gaussian", "student")
         binomial = self.family == "binomial"
+        poisson = self.family == "poisson"
         lp = "mu" if continuous else "eta"
         a = f"a{'_c' if d.centered else ''}" if s.intercept else "0"
-        tag = {"gaussian": "M0", "bernoulli": "M1", "binomial": "M2", "student": "Student-t"}[self.family]
+        tag = {"gaussian": "M0", "bernoulli": "M1", "binomial": "M2", "student": "Student-t", "poisson": "Poisson"}[self.family]
         grouping = ("; ".join(f"J = {block.J} levels of {g}" for g, block in d.group_designs.items())
                     if s.has_group else "no group-level term (population-level model)")
         data_line = f"  data      : n = {d.n} observations, {grouping}"
@@ -512,7 +517,7 @@ class Model:
             "Linear predictor",
             f"  {lp}_i = {a}" + (f" + {xs}" if xs else "") + "".join(f" + {effect(g)}[{g}_i]" for g in s.groups),
         ]
-        scale = "response" if continuous else "log-odds"
+        scale = "response" if continuous else "log mean" if poisson else "log-odds"
         same_group = " (same group)" if len(s.groups) == 1 else (" (same group effects)" if s.groups else "")
         for cat in s.categoricals:
             partners = [xn for xn, zn in s.interactions if zn == cat.name]
@@ -553,10 +558,12 @@ class Model:
                     lines += [f"  b_{xn}:{zn}[l] is the change in that slope from reference {s.categorical(zn).reference!r} to level l of {zn}, holding the other categorical levels fixed."]
         if binomial:
             lines += [f"  P(success) = p_i = expit(eta_i); {s.response}_i ~ Binomial({s.trials}_i, p_i); eta is on the log-odds scale."]
+        elif poisson:
+            lines += ["  E[y_i] = mu_i = exp(eta_i); eta is log expected count."]
         elif not continuous:
             lines += ["  P(y_i = 1) = p_i = expit(eta_i) = 1 / (1 + exp(-eta_i)); eta is on the log-odds scale."]
         if d.centered:
-            what = ("expected response" if continuous else
+            what = ("expected response" if continuous else "log expected count" if poisson else
                     "per-trial success log-odds" if binomial else "log-odds of y = 1")
             where = "at the predictor means" if not s.categoricals else \
                 "at the numeric predictor means and at the sample proportions of the categorical levels"
@@ -584,7 +591,7 @@ class Model:
                 + (" - sum_(x,z),l q_x:z[l] * b_x:z[l]" if len(s.interactions) > 1 else (" - sum_l q_x:z[l] * b_x:z[l]" if s.interactions else "")) + ", computed after sampling"
                 + (": the linear predictor at x = 0 and at the reference level." if s.categoricals else "."),
             ]
-            if s.categoricals and not continuous:
+            if s.categoricals and not continuous and not poisson:
                 lines += ["  expit(a_c) is the probability at that proportion-weighted predictor; it is NOT the",
                           "  average probability across the levels (the link is nonlinear)."]
         elif not s.intercept:
@@ -602,7 +609,7 @@ class Model:
             lines += ["  Independent priors across factors; group effects are not mean-centered."]
         else:
             lines += ["", "Group effects", "  none: a population-only model (no '(1 | group)' term)"]
-        lines += ["", "Priors" + ("" if continuous else " (location coefficients on the logit scale)")]
+        lines += ["", "Priors" + ("" if continuous else " (location coefficients on the log scale)" if poisson else " (location coefficients on the logit scale)")]
         if s.intercept:
             lines += [f"  {a} ~ {pr.intercept}"]
         lines += [f"  b_{col} ~ {coef[col]}" for col in s.columns]
@@ -613,6 +620,10 @@ class Model:
                       "  y_i ~ StudentT(nu, mu_i, sigma); E[y_i] = mu_i",
                       "  sigma is scale, not residual SD; variance = sigma^2 * nu/(nu-2) for nu>2",
                       "  variance is infinite for 1<nu<=2. Learned nu is not supported."]
+        elif poisson:
+            lines += ["", "Likelihood", "  y_i ~ Poisson(mu_i); mu_i = exp(eta_i)",
+                      "  Input counts are integers from 0 through 1e6; zero-count rows are retained.",
+                      "  No exposure/offset, overdispersion or zero-inflation is modeled."]
         elif gaussian:
             lines += [f"  sigma ~ {pr.sigma}", "", "Likelihood", "  y_i ~ Normal(mu_i, sigma)"]
         elif binomial:
@@ -646,8 +657,8 @@ class Model:
             roles[term] = f"b_{term}[{', '.join(s.levels_of(term))}] (vector; dims {term}_dim, posterior rows {', '.join(s.term_columns(term))})"
         for v in self.pymc_model.value_vars:
             lines.append(f"  {v.name:<24} {roles.get(v.name, f'b_{v.name}')}")
-        lines.append("Deterministic: " + "".join(f"{names['group_effect']} = {effect(g)}, " for g, names in self.group_names.items()) + f"{n['linpred']} = linear predictor"
-                     + ("" if continuous else "; p = expit(logit_p)" + (", expected = n p and count draws" if binomial else "")
+        lines.append("Deterministic: " + "".join(f"{names['group_effect']} = {effect(g)}, " for g, names in self.group_names.items()) + (f"{n['linpred']} = exp(linear predictor)" if poisson else f"{n['linpred']} = linear predictor")
+                     + ("; mu = exp(eta), expected count" if poisson else "" if continuous else "; p = expit(logit_p)" + (", expected = n p and count draws" if binomial else "")
                         + " are computed by predict()"))
         return "\n".join(lines)
 
@@ -691,4 +702,15 @@ def student(formula: str, data: pd.DataFrame, priors: Priors, *, nu: float,
     Learned degrees of freedom and distributional auxiliary formulas are not supported.
     """
     return Model(formula, data, priors, family="student", nu=nu,
+                 center_predictors=center_predictors, categorical=categorical)
+
+
+def poisson(formula: str, data: pd.DataFrame, priors: Priors, *,
+            center_predictors: bool = True, categorical: Mapping[str, object] | None = None) -> Model:
+    """Poisson count response with log link and explicit coefficient/group priors.
+
+    Retains zero rows. Input counts must be integers in [0, 1e6]. No sigma, nu,
+    offset/exposure or overdispersion parameter is supported in this slice.
+    """
+    return Model(formula, data, priors, family="poisson",
                  center_predictors=center_predictors, categorical=categorical)

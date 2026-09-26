@@ -117,7 +117,7 @@ def fit_record(model, fit, *, panel: dict | None = None, max_treedepth: int = 10
             "intercept_prior_applies_to": None if not s.intercept else ("centred intercept (at the numeric predictor means"
                                            + (" and the sample proportions of the categorical levels)" if s.categoricals else ")")
                                            if d.centered else "raw intercept")
-                                          + (", logit scale" if model.family in ("bernoulli", "binomial") else ""),
+                                          + (", log scale" if model.family == "poisson" else ", logit scale" if model.family in ("bernoulli", "binomial") else ""),
             **({"trials": s.trials, "trials_total": int(d.trials.sum()),
                 "zero_trial_rows_dropped": len(model.dropped_rows),
                 "zero_trial_row_positions": list(model.dropped_rows)} if model.family == "binomial" else {}),

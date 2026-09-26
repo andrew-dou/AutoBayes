@@ -43,7 +43,7 @@ from autobayes.priors import (
     Priors,
     StudentT,
 )
-from autobayes.model import Model, bernoulli, binomial, gaussian, student
+from autobayes.model import Model, bernoulli, binomial, gaussian, student, poisson
 from autobayes.inference import DeviceError, FitResult, fit
 from autobayes.predict import predict
 from autobayes.diagnostics import panel
@@ -53,6 +53,6 @@ __all__ = [
     "Categorical", "DeviceError", "Exponential", "FitResult", "FormulaError", "HalfCauchy",
     "HalfNormal", "HalfStudentT", "Model", "ModelSpec", "Normal", "Prior",
     "PriorError", "Priors", "StudentT", "bernoulli", "binomial", "compare_records", "environment", "fit", "fit_record",
-    "student", "format_comparison", "format_environment", "gaussian", "panel", "parse_formula", "predict",
+    "student", "poisson", "format_comparison", "format_environment", "gaussian", "panel", "parse_formula", "predict",
 ]
 __version__ = "0.8.0"

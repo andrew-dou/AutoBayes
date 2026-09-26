@@ -150,6 +150,17 @@ def _predict_by_hand(model, idata, df: pd.DataFrame | None, kind: str, seed, pol
         if kind == "response":
             sigma = post[n["sigma"]].to_numpy()
             out["y"] = (("chain", "draw", "__obs__"), rng.normal(mu, sigma[..., None]))
+    elif model.family == "poisson":
+        with np.errstate(over="ignore", invalid="ignore"):
+            expected = np.exp(mu)
+        if not np.isfinite(expected).all():
+            raise ValueError("Poisson expected count overflow/nonfinite prediction; inspect the log-mean draws")
+        out = {"mu": (("chain", "draw", "__obs__"), expected)}
+        if kind == "response":
+            limit = np.iinfo(np.int64).max - 10 * np.sqrt(float(np.iinfo(np.int64).max))
+            if np.any(expected >= limit):
+                raise ValueError("Poisson response prediction exceeds the integer random-generator limit")
+            out["y"] = (("chain", "draw", "__obs__"), rng.poisson(expected))
     elif model.family == "student":
         out = {"mu": (("chain", "draw", "__obs__"), mu)}
         if kind == "response":
@@ -230,7 +241,7 @@ def predict(model, fit_result, *, newdata: pd.DataFrame | None = None, kind: str
                 "Pass new_groups='population' to draw their effects from Normal(0, sd), or "
                 "new_groups='resample_observed' for brms's default 'uncertainty' behaviour; "
                 "an exact-key mapping can set the policy separately for each factor.")
-    manual = model.family == "binomial" or any(new_levels.values())
+    manual = model.family in ("binomial", "poisson") or any(new_levels.values())
     if manual:
         ds = _predict_by_hand(model, idata, df, kind, seed, policies)
     else:

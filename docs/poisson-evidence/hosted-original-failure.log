@@ -1,0 +1,81 @@
+fast	Fast suite	﻿2026-09-26T19:09:03.2636552Z ##[group]Run uv run --no-sync pytest tests -q -m "not slow" -p no:cacheprovider --junitxml=evidence-runs/junit-fast.xml
+fast	Fast suite	2026-09-26T19:09:03.2637309Z [36;1muv run --no-sync pytest tests -q -m "not slow" -p no:cacheprovider --junitxml=evidence-runs/junit-fast.xml[0m
+fast	Fast suite	2026-09-26T19:09:03.2674615Z shell: /usr/bin/bash -e {0}
+fast	Fast suite	2026-09-26T19:09:03.2674895Z env:
+fast	Fast suite	2026-09-26T19:09:03.2675242Z   PYTENSOR_FLAGS: base_compiledir=/home/runner/work/AutoBayes/AutoBayes/.pytensor-ci
+fast	Fast suite	2026-09-26T19:09:03.2675840Z   AUTOBAYES_EVIDENCE_DIR: /home/runner/work/AutoBayes/AutoBayes/evidence-runs/ci-fast-36265012343-1
+fast	Fast suite	2026-09-26T19:09:03.2676321Z   PYTHONDONTWRITEBYTECODE: 1
+fast	Fast suite	2026-09-26T19:09:03.2676613Z   UV_CACHE_DIR: /home/runner/work/_temp/setup-uv-cache
+fast	Fast suite	2026-09-26T19:09:03.2676910Z ##[endgroup]
+fast	Fast suite	2026-09-26T19:13:18.5945936Z .........F.............................................................. [ 11%]
+fast	Fast suite	2026-09-26T19:14:15.8140029Z ........................................................................ [ 23%]
+fast	Fast suite	2026-09-26T19:15:11.8993232Z ........................................................................ [ 35%]
+fast	Fast suite	2026-09-26T19:17:29.3941421Z ........................................................................ [ 47%]
+fast	Fast suite	2026-09-26T19:18:11.5667921Z ........................................................................ [ 59%]
+fast	Fast suite	2026-09-26T19:18:56.8123255Z ........................................................................ [ 71%]
+fast	Fast suite	2026-09-26T19:20:09.4573213Z ........................................................................ [ 83%]
+fast	Fast suite	2026-09-26T19:21:01.0190896Z ........................................................................ [ 95%]
+fast	Fast suite	2026-09-26T19:21:19.7047991Z .............................                                            [100%]
+fast	Fast suite	2026-09-26T19:21:19.7060274Z =================================== FAILURES ===================================
+fast	Fast suite	2026-09-26T19:21:19.7061419Z _____________________________ test_invalid_inputs ______________________________
+fast	Fast suite	2026-09-26T19:21:19.7062256Z 
+fast	Fast suite	2026-09-26T19:21:19.7062613Z bdata =             x      g  y
+fast	Fast suite	2026-09-26T19:21:19.7063213Z 0   -0.436435  lvl05  1
+fast	Fast suite	2026-09-26T19:21:19.7063734Z 1   -1.169802  lvl03  0
+fast	Fast suite	2026-09-26T19:21:19.7064247Z 2    1.739368  lvl03  1
+fast	Fast suite	2026-09-26T19:21:19.7064810Z 3   -0.495911  lvl01  ...116 -1.473888  lvl04  0
+fast	Fast suite	2026-09-26T19:21:19.7065453Z 117  1.028854  lvl01  0
+fast	Fast suite	2026-09-26T19:21:19.7065950Z 118 -1.934960  lvl04  0
+fast	Fast suite	2026-09-26T19:21:19.7066462Z 119 -0.239937  lvl00  1
+fast	Fast suite	2026-09-26T19:21:19.7066773Z 
+fast	Fast suite	2026-09-26T19:21:19.7066984Z [120 rows x 3 columns]
+fast	Fast suite	2026-09-26T19:21:19.7067275Z 
+fast	Fast suite	2026-09-26T19:21:19.7067499Z     def test_invalid_inputs(bdata):
+fast	Fast suite	2026-09-26T19:21:19.7068150Z         with pytest.raises(ab.FormulaError, match="outside \\{0, 1\\}"):
+fast	Fast suite	2026-09-26T19:21:19.7069105Z             ab.bernoulli("y ~ x + (1 | g)", bdata.assign(y=bdata.y * 2), PRIORS)
+fast	Fast suite	2026-09-26T19:21:19.7070049Z         with pytest.raises(ab.FormulaError, match="outside \\{0, 1\\}"):
+fast	Fast suite	2026-09-26T19:21:19.7070994Z             ab.bernoulli("y ~ x + (1 | g)", bdata.assign(y=bdata.y + 0.5), PRIORS)
+fast	Fast suite	2026-09-26T19:21:19.7072428Z         with pytest.raises(ab.FormulaError, match="boolean"):
+fast	Fast suite	2026-09-26T19:21:19.7073364Z             ab.bernoulli("y ~ x + (1 | g)", bdata.assign(y=bdata.y.astype(bool)), PRIORS)
+fast	Fast suite	2026-09-26T19:21:19.7074344Z         with pytest.raises(ab.FormulaError, match="numeric 0/1"):
+fast	Fast suite	2026-09-26T19:21:19.7075341Z             ab.bernoulli("y ~ x + (1 | g)", bdata.assign(y=bdata.y.map({0: "no", 1: "yes"})), PRIORS)
+fast	Fast suite	2026-09-26T19:21:19.7076394Z         with pytest.raises(ab.FormulaError, match="constant"):
+fast	Fast suite	2026-09-26T19:21:19.7077238Z             ab.bernoulli("y ~ x + (1 | g)", bdata.assign(y=1), PRIORS)
+fast	Fast suite	2026-09-26T19:21:19.7078116Z         with pytest.raises(ab.FormulaError, match="missing values"):
+fast	Fast suite	2026-09-26T19:21:19.7079113Z             ab.bernoulli("y ~ x + (1 | g)", bdata.assign(y=bdata.y.where(bdata.index > 0)), PRIORS)
+fast	Fast suite	2026-09-26T19:21:19.7080122Z         with pytest.raises(ab.PriorError, match="no residual SD"):
+fast	Fast suite	2026-09-26T19:21:19.7081142Z             ab.bernoulli("y ~ x + (1 | g)", bdata, ab.Priors(intercept=ab.Normal(0, 1.5), b=ab.Normal(0, 1),
+fast	Fast suite	2026-09-26T19:21:19.7082655Z                                                               sd=ab.HalfNormal(1), sigma=ab.HalfNormal(1)))
+fast	Fast suite	2026-09-26T19:21:19.7083915Z         with pytest.raises(ab.PriorError, match="needs a prior on the SD of its varying intercept"):   # sd missing (M3c-1: refused at build)
+fast	Fast suite	2026-09-26T19:21:19.7085269Z             ab.bernoulli("y ~ x + (1 | g)", bdata, ab.Priors(intercept=ab.Normal(0, 1.5), b=ab.Normal(0, 1)))
+fast	Fast suite	2026-09-26T19:21:19.7086275Z         with pytest.raises(ab.PriorError, match="positive-support"):
+fast	Fast suite	2026-09-26T19:21:19.7087373Z             ab.bernoulli("y ~ x + (1 | g)", bdata, ab.Priors(intercept=ab.Normal(0, 1.5), b=ab.Normal(0, 1), sd=ab.Normal(0, 1)))
+fast	Fast suite	2026-09-26T19:21:19.7088552Z         with pytest.raises(ab.PriorError, match="needs a prior on the residual SD"):
+fast	Fast suite	2026-09-26T19:21:19.7089405Z             ab.gaussian("y ~ x + (1 | g)", bdata, PRIORS)
+fast	Fast suite	2026-09-26T19:21:19.7090154Z >       with pytest.raises(ValueError, match="family must be"):
+fast	Fast suite	2026-09-26T19:21:19.7090879Z E       Failed: DID NOT RAISE ValueError
+fast	Fast suite	2026-09-26T19:21:19.7091311Z 
+fast	Fast suite	2026-09-26T19:21:19.7091599Z tests/test_bernoulli.py:243: Failed
+fast	Fast suite	2026-09-26T19:21:19.7092389Z =============================== warnings summary ===============================
+fast	Fast suite	2026-09-26T19:21:19.7093204Z tests/test_interaction.py::test_describe_and_fit_record
+fast	Fast suite	2026-09-26T19:21:19.7094293Z   /home/runner/work/AutoBayes/AutoBayes/autobayes/diagnostics.py:37: RuntimeWarning: All-NaN slice encountered
+fast	Fast suite	2026-09-26T19:21:19.7095511Z     "max_rhat": float(max(np.nanmax(np.asarray(v)) for v in rhat.data_vars.values())),
+fast	Fast suite	2026-09-26T19:21:19.7096165Z 
+fast	Fast suite	2026-09-26T19:21:19.7096484Z tests/test_intercept_controls.py: 5 warnings
+fast	Fast suite	2026-09-26T19:21:19.7097141Z tests/test_multiple_interactions.py: 4 warnings
+fast	Fast suite	2026-09-26T19:21:19.7097788Z tests/test_population_only.py: 1 warning
+fast	Fast suite	2026-09-26T19:21:19.7099107Z   /home/runner/work/AutoBayes/AutoBayes/.venv/lib/python3.11/site-packages/arviz/stats/diagnostics.py:596: RuntimeWarning: invalid value encountered in scalar divide
+fast	Fast suite	2026-09-26T19:21:19.7100687Z     (between_chain_variance / within_chain_variance + num_samples - 1) / (num_samples)
+fast	Fast suite	2026-09-26T19:21:19.7101352Z 
+fast	Fast suite	2026-09-26T19:21:19.7102131Z tests/test_multiple_interactions.py::test_synthetic_predictions_and_complete_records[False-False-gaussian]
+fast	Fast suite	2026-09-26T19:21:19.7103501Z tests/test_multiple_interactions.py::test_synthetic_predictions_and_complete_records[True-True-gaussian]
+fast	Fast suite	2026-09-26T19:21:19.7104856Z tests/test_multiple_interactions.py::test_synthetic_predictions_and_complete_records[True-True-bernoulli]
+fast	Fast suite	2026-09-26T19:21:19.7106191Z tests/test_multiple_interactions.py::test_synthetic_predictions_and_complete_records[True-True-binomial]
+fast	Fast suite	2026-09-26T19:21:19.7107882Z   /home/runner/work/AutoBayes/AutoBayes/.venv/lib/python3.11/site-packages/arviz/stats/diagnostics.py:991: RuntimeWarning: invalid value encountered in scalar divide
+fast	Fast suite	2026-09-26T19:21:19.7109217Z     varsd = varvar / evar / 4
+fast	Fast suite	2026-09-26T19:21:19.7109838Z 
+fast	Fast suite	2026-09-26T19:21:19.7110303Z -- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+fast	Fast suite	2026-09-26T19:21:19.7111188Z =========================== short test summary info ============================
+fast	Fast suite	2026-09-26T19:21:19.7112230Z FAILED tests/test_bernoulli.py::test_invalid_inputs - Failed: DID NOT RAISE ValueError
+fast	Fast suite	2026-09-26T19:21:19.7113211Z 1 failed, 604 passed, 7 deselected, 15 warnings in 728.07s (0:12:08)
+fast	Fast suite	2026-09-26T19:21:22.4555288Z ##[error]Process completed with exit code 1.
