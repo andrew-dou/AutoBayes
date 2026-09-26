@@ -1,0 +1,16 @@
+{
+  "command": [
+    "/Users/andrewdou/iqss-research/artifacts/2026-09-25-autobayes-pr12-closeout/retained-venv/bin/python",
+    "-m",
+    "pytest",
+    "tests/test_student.py",
+    "tests/test_family_contract.py",
+    "-q",
+    "-p",
+    "no:cacheprovider"
+  ],
+  "exit_code": 0,
+  "timeout": false,
+  "elapsed": 56.80168970799423,
+  "cap": 300
+}

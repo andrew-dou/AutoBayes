@@ -150,6 +150,11 @@ def _predict_by_hand(model, idata, df: pd.DataFrame | None, kind: str, seed, pol
         if kind == "response":
             sigma = post[n["sigma"]].to_numpy()
             out["y"] = (("chain", "draw", "__obs__"), rng.normal(mu, sigma[..., None]))
+    elif model.family == "student":
+        out = {"mu": (("chain", "draw", "__obs__"), mu)}
+        if kind == "response":
+            sigma = post[n["sigma"]].to_numpy()
+            out["y"] = (("chain", "draw", "__obs__"), mu + sigma[..., None] * rng.standard_t(model.nu, size=mu.shape))
     elif model.family == "bernoulli":
         prob = expit(mu)                                         # mu held the linear predictor eta
         out = {"p": (("chain", "draw", "__obs__"), prob)}

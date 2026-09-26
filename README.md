@@ -16,12 +16,15 @@ Three parts:
 - **`autobayes/`** — the library: a brms-like Python interface that builds an
   inspectable PyMC model through Bambi, requires explicit priors, samples on the CPU
   with PyMC's NUTS or through JAX/NumPyro with an explicit device choice, and returns
-  posterior and predictive draws. Three families on one formula subset
+  posterior and predictive draws. Four families on one formula subset
   `y ~ x + z + x:z [+ (1 | group)]` with numeric and declared categorical predictors (M3a-1)
   and distinct numeric-by-categorical interactions with their main effects (M3a-3); varying intercepts are optional
   and may have multiple independent grouping factors (M3c-3), and a formula without it is a population-only model:
   Gaussian (M0), Bernoulli with a logit link for a 0/1
-  outcome (M1), and binomial counts `successes | trials(n)` with a logit link (M2);
+  outcome (M1), binomial counts `successes | trials(n)` with a logit link (M2),
+  and [Student-t responses](docs/student-responses.md) with explicit fixed finite `nu > 1`
+  and a scale prior. Student-t has deterministic CPU/JAX checks; new recovery fits and
+  GPU execution are not yet validated;
   anything else is refused with an error naming the construct. See
   [Library](#library-milestones-m0-m1-and-m2) below.
 

@@ -721,7 +721,7 @@ def validate_data(spec: ModelSpec, data: pd.DataFrame, family: str = "gaussian")
         binomial_counts(spec, data)
     elif not _is_numeric(data[spec.response]):
         raise FormulaError(
-            f"column {spec.response!r} has dtype {data[spec.response].dtype}; the Gaussian "
+            f"column {spec.response!r} has dtype {data[spec.response].dtype}; the {'Student-t' if family == 'student' else 'Gaussian'} "
             "family needs a numeric response."
         )
     na = data[needed].isna().any()

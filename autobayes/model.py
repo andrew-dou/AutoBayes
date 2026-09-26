@@ -1,6 +1,6 @@
 """The model: a thin, inspectable layer over a Bambi-built PyMC model.
 
-Three families. ``"gaussian"`` (M0): identity link, residual SD ``sigma``. ``"bernoulli"``
+Four families, including fixed-nu Student-t responses. ``"gaussian"`` (M0): identity link, residual SD ``sigma``. ``"bernoulli"``
 (M1): logit link, ``p = expit(eta)``, no residual scale. ``"binomial"`` (M2): logit link on
 ``successes | trials(n)``, counts. All share the right-hand side ``[1 +] x1 [+ x2 ...]
 [+ (1 | factor) ...]`` with numeric terms and, since M3a-1, treatment-coded categorical terms declared
@@ -95,6 +95,7 @@ class _FamilyMetadata:
 
 
 _FAMILIES = MappingProxyType({
+    "student": _FamilyMetadata("mu", "identity", "mu"),
     "gaussian": _FamilyMetadata("mu", "identity", "mu"),
     "bernoulli": _FamilyMetadata("logit_p", "logit", "p"),
     "binomial": _FamilyMetadata("logit_p", "logit", "p"),
@@ -102,11 +103,11 @@ _FAMILIES = MappingProxyType({
 
 
 class Model:
-    """``y ~ x [+ (1 | factor) ...]`` with explicit priors; Gaussian, Bernoulli or binomial likelihood.
+    """``y ~ x [+ (1 | factor) ...]`` with explicit priors; Gaussian, Student-t, Bernoulli or binomial likelihood.
 
     Attributes
     ----------
-    family : str               "gaussian" or "bernoulli"
+    family : str               "gaussian", "student", "bernoulli" or "binomial"
     spec : ModelSpec
     priors : Priors
     bambi_model : bambi.Model  (already built)
@@ -116,11 +117,17 @@ class Model:
 
     def __init__(self, formula: str, data: pd.DataFrame, priors: Priors, *,
                  family: str = "gaussian", center_predictors: bool = True,
-                 categorical: Mapping[str, object] | None = None):
+                 categorical: Mapping[str, object] | None = None, nu: float | None = None):
         import bambi as bmb
 
         if family not in _FAMILIES:
             raise ValueError(f"family must be one of {sorted(_FAMILIES)}, got {family!r}")
+        if family == "student":
+            if isinstance(nu, (bool, np.bool_)) or not isinstance(nu, (int, float, np.integer, np.floating)) or not np.isfinite(nu) or nu <= 1:
+                raise ValueError("student requires a fixed finite scalar nu > 1")
+            self.nu = float(nu)
+        elif nu is not None:
+            raise ValueError("nu applies only to the student family")
         self.family = family
         self.priors = priors
         self.center_predictors = bool(center_predictors)
@@ -201,11 +208,14 @@ class Model:
 
             bambi_family = binomial_logit_family()
         else:
-            bambi_family = family
+            bambi_family = "t" if family == "student" else family
         self._check_generated_names()
+        bambi_priors = priors.to_bambi(self.spec, family)
+        if family == "student":
+            bambi_priors["nu"] = self.nu
         self.bambi_model = bmb.Model(
             self.spec.bambi_formula, self.data, family=bambi_family,
-            priors=priors.to_bambi(self.spec, family),
+            priors=bambi_priors,
             noncentered=True, center_predictors=self.effective_center_predictors,
         )
         self.bambi_model.build()
@@ -225,8 +235,10 @@ class Model:
         """Refuse names that would alias a coefficient, effect, likelihood or coordinate."""
         variable_names = (["Intercept"] if self.spec.intercept else []) + list(self.spec.terms)
         variable_names += [self.names["y"], self.names["linpred"]]
-        if self.family == "gaussian":
+        if self.family in ("gaussian", "student"):
             variable_names += ["sigma"]
+        if self.family == "student":
+            variable_names += ["nu"]  # Bambi uses this auxiliary-prior key even when fixed.
         for roles in self.group_names.values():
             variable_names.extend(roles[k] for k in ("sd", "offset", "group_effect"))
         # Bambi's default result cleaning drops every posterior variable ending in _offset.
@@ -347,7 +359,7 @@ class Model:
         """PyMC variable names for each role in the model. ``"linpred"`` is the deterministic
         Bambi builds for the likelihood's parent parameter (``mu`` for Gaussian, ``logit_p``
         for Bernoulli); ``"mean"`` is the name ``predict`` gives the expected response (``mu``
-        or ``p``). ``"sigma"`` exists only for the Gaussian family."""
+        or ``p``). ``"sigma"`` exists for Gaussian and Student-t families."""
         g = self.spec.groups[0] if len(self.spec.groups) == 1 else None
         out = {
             **({"intercept": "Intercept"} if self.spec.intercept else {}),
@@ -357,7 +369,7 @@ class Model:
             "y": self.spec.response if self.spec.trials is None else f"p({self.spec.response}, {self.spec.trials})",
             **{f"b:{p}": p for p in self.spec.terms},
         }
-        if self.family == "gaussian":
+        if self.family in ("gaussian", "student"):
             out["sigma"] = "sigma"
             out["mu"] = "mu"
         return out
@@ -410,8 +422,9 @@ class Model:
                 z_by_group[g] = np.asarray(z_by_group[g], dtype=float)
                 if z_by_group[g].shape != (block.J,) or not np.isfinite(z_by_group[g]).all():
                     raise ValueError(f"z for {g!r} must have {block.J} finite entries")
-        if (sigma is None) != (self.family != "gaussian"):
-            raise ValueError("sigma is required for the Gaussian family and must be omitted for Bernoulli and binomial")
+        if (sigma is None) != (self.family not in ("gaussian", "student")):
+            raise ValueError("sigma is required for the Student-t family" if self.family == "student"
+                             else "sigma is required for the Gaussian family and must be omitted for Bernoulli and binomial")
         n = self.names
         if self.spec.intercept and intercept is None:
             raise ValueError("intercept is required for a model with a population intercept")
@@ -462,10 +475,11 @@ class Model:
                 parts.append(f"(x_{term} - mean(x_{term})) * b_{term}" if d.centered else f"x_{term} * b_{term}")
         xs = " + ".join(parts)
         gaussian = self.family == "gaussian"
+        continuous = self.family in ("gaussian", "student")
         binomial = self.family == "binomial"
-        lp = "mu" if gaussian else "eta"
+        lp = "mu" if continuous else "eta"
         a = f"a{'_c' if d.centered else ''}" if s.intercept else "0"
-        tag = {"gaussian": "M0", "bernoulli": "M1", "binomial": "M2"}[self.family]
+        tag = {"gaussian": "M0", "bernoulli": "M1", "binomial": "M2", "student": "Student-t"}[self.family]
         grouping = ("; ".join(f"J = {block.J} levels of {g}" for g, block in d.group_designs.items())
                     if s.has_group else "no group-level term (population-level model)")
         data_line = f"  data      : n = {d.n} observations, {grouping}"
@@ -498,7 +512,7 @@ class Model:
             "Linear predictor",
             f"  {lp}_i = {a}" + (f" + {xs}" if xs else "") + "".join(f" + {effect(g)}[{g}_i]" for g in s.groups),
         ]
-        scale = "response" if gaussian else "log-odds"
+        scale = "response" if continuous else "log-odds"
         same_group = " (same group)" if len(s.groups) == 1 else (" (same group effects)" if s.groups else "")
         for cat in s.categoricals:
             partners = [xn for xn, zn in s.interactions if zn == cat.name]
@@ -539,10 +553,10 @@ class Model:
                     lines += [f"  b_{xn}:{zn}[l] is the change in that slope from reference {s.categorical(zn).reference!r} to level l of {zn}, holding the other categorical levels fixed."]
         if binomial:
             lines += [f"  P(success) = p_i = expit(eta_i); {s.response}_i ~ Binomial({s.trials}_i, p_i); eta is on the log-odds scale."]
-        elif not gaussian:
+        elif not continuous:
             lines += ["  P(y_i = 1) = p_i = expit(eta_i) = 1 / (1 + exp(-eta_i)); eta is on the log-odds scale."]
         if d.centered:
-            what = ("expected response" if gaussian else
+            what = ("expected response" if continuous else
                     "per-trial success log-odds" if binomial else "log-odds of y = 1")
             where = "at the predictor means" if not s.categoricals else \
                 "at the numeric predictor means and at the sample proportions of the categorical levels"
@@ -570,7 +584,7 @@ class Model:
                 + (" - sum_(x,z),l q_x:z[l] * b_x:z[l]" if len(s.interactions) > 1 else (" - sum_l q_x:z[l] * b_x:z[l]" if s.interactions else "")) + ", computed after sampling"
                 + (": the linear predictor at x = 0 and at the reference level." if s.categoricals else "."),
             ]
-            if s.categoricals and not gaussian:
+            if s.categoricals and not continuous:
                 lines += ["  expit(a_c) is the probability at that proportion-weighted predictor; it is NOT the",
                           "  average probability across the levels (the link is nonlinear)."]
         elif not s.intercept:
@@ -588,13 +602,18 @@ class Model:
             lines += ["  Independent priors across factors; group effects are not mean-centered."]
         else:
             lines += ["", "Group effects", "  none: a population-only model (no '(1 | group)' term)"]
-        lines += ["", "Priors" + ("" if gaussian else " (location coefficients on the logit scale)")]
+        lines += ["", "Priors" + ("" if continuous else " (location coefficients on the logit scale)")]
         if s.intercept:
             lines += [f"  {a} ~ {pr.intercept}"]
         lines += [f"  b_{col} ~ {coef[col]}" for col in s.columns]
         for g, prior in pr.group_priors(s).items():
             lines += [f"  sd_{g} ~ {prior}"]
-        if gaussian:
+        if self.family == "student":
+            lines += [f"  sigma ~ {pr.sigma}", f"  nu = {self.nu:g} (fixed, not sampled)", "", "Likelihood",
+                      "  y_i ~ StudentT(nu, mu_i, sigma); E[y_i] = mu_i",
+                      "  sigma is scale, not residual SD; variance = sigma^2 * nu/(nu-2) for nu>2",
+                      "  variance is infinite for 1<nu<=2. Learned nu is not supported."]
+        elif gaussian:
             lines += [f"  sigma ~ {pr.sigma}", "", "Likelihood", "  y_i ~ Normal(mu_i, sigma)"]
         elif binomial:
             lines += [
@@ -621,14 +640,14 @@ class Model:
         for g, names in self.group_names.items():
             roles[f"{names['sd']}_log__"] = f"log(sd_{g})"
             roles[names["offset"]] = "z" if len(s.groups) == 1 else f"z_{g}"
-        if gaussian:
+        if continuous:
             roles[f"{n['sigma']}_log__"] = "log(sigma)"
         for term in (*s.categorical_names, *s.interaction_names):
             roles[term] = f"b_{term}[{', '.join(s.levels_of(term))}] (vector; dims {term}_dim, posterior rows {', '.join(s.term_columns(term))})"
         for v in self.pymc_model.value_vars:
             lines.append(f"  {v.name:<24} {roles.get(v.name, f'b_{v.name}')}")
         lines.append("Deterministic: " + "".join(f"{names['group_effect']} = {effect(g)}, " for g, names in self.group_names.items()) + f"{n['linpred']} = linear predictor"
-                     + ("" if gaussian else "; p = expit(logit_p)" + (", expected = n p and count draws" if binomial else "")
+                     + ("" if continuous else "; p = expit(logit_p)" + (", expected = n p and count draws" if binomial else "")
                         + " are computed by predict()"))
         return "\n".join(lines)
 
@@ -662,3 +681,14 @@ def binomial(formula: str, data: pd.DataFrame, priors: Priors, *, center_predict
              categorical: Mapping[str, object] | None = None) -> Model:
     """Build the binomial model ``successes | trials(n) ~ x [+ (1 | group)]``, with or without a varying intercept."""
     return Model(formula, data, priors, family="binomial", center_predictors=center_predictors, categorical=categorical)
+
+
+def student(formula: str, data: pd.DataFrame, priors: Priors, *, nu: float,
+            center_predictors: bool = True, categorical: Mapping[str, object] | None = None) -> Model:
+    """Student-t response with fixed finite nu>1 and an explicit sigma scale prior.
+
+    The expected response is mu. Sigma is not the residual standard deviation.
+    Learned degrees of freedom and distributional auxiliary formulas are not supported.
+    """
+    return Model(formula, data, priors, family="student", nu=nu,
+                 center_predictors=center_predictors, categorical=categorical)

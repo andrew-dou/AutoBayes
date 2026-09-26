@@ -1,7 +1,7 @@
 """Explicit priors, by parameter class, in brms terms.
 
 brms classes: ``Intercept``, ``b`` (slopes and dummy coefficients), ``sd`` (group SD, exactly when the formula
-has a ``(1 | group)`` term) and, for the Gaussian family only, ``sigma`` (residual SD). Every class the model has
+has a ``(1 | group)`` term) and, for Gaussian/Student-t, ``sigma`` (residual SD/scale respectively). Every class the model has
 must be given, and a class the model does not have is refused (M3c-1: ``sd`` without a group term); there are no
 silent defaults here (Bambi would supply some, and that is exactly what this layer refuses
 to let happen). For the Bernoulli family the intercept and slope priors are on the logit
@@ -205,9 +205,10 @@ class Priors:
         if not has_intercept and self.intercept is not None:
             raise PriorError("the formula has no population intercept; omit the intercept prior (or pass None)")
         group_priors = self.group_priors(spec)
-        if family == "gaussian" and self.sigma is None:
-            raise PriorError("the Gaussian family needs a prior on the residual SD: pass sigma=...")
-        if family != "gaussian" and self.sigma is not None:
+        if family in ("gaussian", "student") and self.sigma is None:
+            raise PriorError("the Student-t family needs a prior on the scale: pass sigma=..." if family == "student"
+                             else "the Gaussian family needs a prior on the residual SD: pass sigma=...")
+        if family not in ("gaussian", "student") and self.sigma is not None:
             raise PriorError(
                 f"the {family} family has no residual SD; do not pass sigma. Its intercept and "
                 "slope priors are on the logit scale."
