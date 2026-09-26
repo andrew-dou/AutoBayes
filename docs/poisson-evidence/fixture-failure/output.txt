@@ -1,0 +1,496 @@
+FFFFFFFF.FFFF....................................................        [100%]
+=================================== FAILURES ===================================
+_________________________ test_invalid_counts[values0] _________________________
+
+values = [-1, 1]
+
+    @pytest.mark.parametrize('values', [[-1,1],[.5,1],[True,False],[np.inf,1],[np.nan,1],[1+1j,1],['1','2'],[1000001,1]])
+    def test_invalid_counts(values):
+        with pytest.raises(ab.FormulaError):
+>           ab.poisson('y ~ 1',pd.DataFrame({'y':values}),ab.Priors(intercept=ab.Normal(0,2)))
+
+tests/test_poisson.py:24: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+autobayes/model.py:715: in poisson
+    return Model(formula, data, priors, family="poisson",
+autobayes/model.py:140: in __init__
+    priors.validate(spec0, family)                  # structure now; per-level coverage once levels are known
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+autobayes/priors.py:216: in validate
+    for label, prior in ([("intercept", self.intercept)] if has_intercept else []) + list(self.coefficient_priors(spec).items()):
+                                                                                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = Priors(intercept=Prior(name='Normal', params={'mu': 0.0, 'sigma': 2.0}), b=None, sd=None, sigma=None)
+spec = ModelSpec(formula='y ~ 1', response='y', predictors=(), groups=(), intercept=True, levels_by_group={}, trials=None, rhs='1', terms=(), categoricals=(), interactions=())
+
+    def coefficient_priors(self, spec) -> dict[str, Prior]:
+        """One prior per design column, keyed by column label, in design order. ``spec`` is a
+        ``ModelSpec`` (or a tuple of numeric predictor names); categorical levels must be
+        known (data seen) for per-level mappings to be checked."""
+        from autobayes.formula import ModelSpec
+    
+        if not isinstance(spec, ModelSpec):
+            spec = ModelSpec(formula="", response="", predictors=tuple(spec), group=None)
+        cat_names = spec.categorical_names
+        if isinstance(self.b, Prior):
+            return {col: self.b for col in spec.columns}
+        if not isinstance(self.b, Mapping):
+>           raise PriorError(f"b must be a Prior or a mapping from term to prior, got {type(self.b).__name__}")
+E           autobayes.priors.PriorError: b must be a Prior or a mapping from term to prior, got NoneType
+
+autobayes/priors.py:104: PriorError
+_________________________ test_invalid_counts[values1] _________________________
+
+values = [0.5, 1]
+
+    @pytest.mark.parametrize('values', [[-1,1],[.5,1],[True,False],[np.inf,1],[np.nan,1],[1+1j,1],['1','2'],[1000001,1]])
+    def test_invalid_counts(values):
+        with pytest.raises(ab.FormulaError):
+>           ab.poisson('y ~ 1',pd.DataFrame({'y':values}),ab.Priors(intercept=ab.Normal(0,2)))
+
+tests/test_poisson.py:24: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+autobayes/model.py:715: in poisson
+    return Model(formula, data, priors, family="poisson",
+autobayes/model.py:140: in __init__
+    priors.validate(spec0, family)                  # structure now; per-level coverage once levels are known
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+autobayes/priors.py:216: in validate
+    for label, prior in ([("intercept", self.intercept)] if has_intercept else []) + list(self.coefficient_priors(spec).items()):
+                                                                                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = Priors(intercept=Prior(name='Normal', params={'mu': 0.0, 'sigma': 2.0}), b=None, sd=None, sigma=None)
+spec = ModelSpec(formula='y ~ 1', response='y', predictors=(), groups=(), intercept=True, levels_by_group={}, trials=None, rhs='1', terms=(), categoricals=(), interactions=())
+
+    def coefficient_priors(self, spec) -> dict[str, Prior]:
+        """One prior per design column, keyed by column label, in design order. ``spec`` is a
+        ``ModelSpec`` (or a tuple of numeric predictor names); categorical levels must be
+        known (data seen) for per-level mappings to be checked."""
+        from autobayes.formula import ModelSpec
+    
+        if not isinstance(spec, ModelSpec):
+            spec = ModelSpec(formula="", response="", predictors=tuple(spec), group=None)
+        cat_names = spec.categorical_names
+        if isinstance(self.b, Prior):
+            return {col: self.b for col in spec.columns}
+        if not isinstance(self.b, Mapping):
+>           raise PriorError(f"b must be a Prior or a mapping from term to prior, got {type(self.b).__name__}")
+E           autobayes.priors.PriorError: b must be a Prior or a mapping from term to prior, got NoneType
+
+autobayes/priors.py:104: PriorError
+_________________________ test_invalid_counts[values2] _________________________
+
+values = [True, False]
+
+    @pytest.mark.parametrize('values', [[-1,1],[.5,1],[True,False],[np.inf,1],[np.nan,1],[1+1j,1],['1','2'],[1000001,1]])
+    def test_invalid_counts(values):
+        with pytest.raises(ab.FormulaError):
+>           ab.poisson('y ~ 1',pd.DataFrame({'y':values}),ab.Priors(intercept=ab.Normal(0,2)))
+
+tests/test_poisson.py:24: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+autobayes/model.py:715: in poisson
+    return Model(formula, data, priors, family="poisson",
+autobayes/model.py:140: in __init__
+    priors.validate(spec0, family)                  # structure now; per-level coverage once levels are known
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+autobayes/priors.py:216: in validate
+    for label, prior in ([("intercept", self.intercept)] if has_intercept else []) + list(self.coefficient_priors(spec).items()):
+                                                                                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = Priors(intercept=Prior(name='Normal', params={'mu': 0.0, 'sigma': 2.0}), b=None, sd=None, sigma=None)
+spec = ModelSpec(formula='y ~ 1', response='y', predictors=(), groups=(), intercept=True, levels_by_group={}, trials=None, rhs='1', terms=(), categoricals=(), interactions=())
+
+    def coefficient_priors(self, spec) -> dict[str, Prior]:
+        """One prior per design column, keyed by column label, in design order. ``spec`` is a
+        ``ModelSpec`` (or a tuple of numeric predictor names); categorical levels must be
+        known (data seen) for per-level mappings to be checked."""
+        from autobayes.formula import ModelSpec
+    
+        if not isinstance(spec, ModelSpec):
+            spec = ModelSpec(formula="", response="", predictors=tuple(spec), group=None)
+        cat_names = spec.categorical_names
+        if isinstance(self.b, Prior):
+            return {col: self.b for col in spec.columns}
+        if not isinstance(self.b, Mapping):
+>           raise PriorError(f"b must be a Prior or a mapping from term to prior, got {type(self.b).__name__}")
+E           autobayes.priors.PriorError: b must be a Prior or a mapping from term to prior, got NoneType
+
+autobayes/priors.py:104: PriorError
+_________________________ test_invalid_counts[values3] _________________________
+
+values = [inf, 1]
+
+    @pytest.mark.parametrize('values', [[-1,1],[.5,1],[True,False],[np.inf,1],[np.nan,1],[1+1j,1],['1','2'],[1000001,1]])
+    def test_invalid_counts(values):
+        with pytest.raises(ab.FormulaError):
+>           ab.poisson('y ~ 1',pd.DataFrame({'y':values}),ab.Priors(intercept=ab.Normal(0,2)))
+
+tests/test_poisson.py:24: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+autobayes/model.py:715: in poisson
+    return Model(formula, data, priors, family="poisson",
+autobayes/model.py:140: in __init__
+    priors.validate(spec0, family)                  # structure now; per-level coverage once levels are known
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+autobayes/priors.py:216: in validate
+    for label, prior in ([("intercept", self.intercept)] if has_intercept else []) + list(self.coefficient_priors(spec).items()):
+                                                                                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = Priors(intercept=Prior(name='Normal', params={'mu': 0.0, 'sigma': 2.0}), b=None, sd=None, sigma=None)
+spec = ModelSpec(formula='y ~ 1', response='y', predictors=(), groups=(), intercept=True, levels_by_group={}, trials=None, rhs='1', terms=(), categoricals=(), interactions=())
+
+    def coefficient_priors(self, spec) -> dict[str, Prior]:
+        """One prior per design column, keyed by column label, in design order. ``spec`` is a
+        ``ModelSpec`` (or a tuple of numeric predictor names); categorical levels must be
+        known (data seen) for per-level mappings to be checked."""
+        from autobayes.formula import ModelSpec
+    
+        if not isinstance(spec, ModelSpec):
+            spec = ModelSpec(formula="", response="", predictors=tuple(spec), group=None)
+        cat_names = spec.categorical_names
+        if isinstance(self.b, Prior):
+            return {col: self.b for col in spec.columns}
+        if not isinstance(self.b, Mapping):
+>           raise PriorError(f"b must be a Prior or a mapping from term to prior, got {type(self.b).__name__}")
+E           autobayes.priors.PriorError: b must be a Prior or a mapping from term to prior, got NoneType
+
+autobayes/priors.py:104: PriorError
+_________________________ test_invalid_counts[values4] _________________________
+
+values = [nan, 1]
+
+    @pytest.mark.parametrize('values', [[-1,1],[.5,1],[True,False],[np.inf,1],[np.nan,1],[1+1j,1],['1','2'],[1000001,1]])
+    def test_invalid_counts(values):
+        with pytest.raises(ab.FormulaError):
+>           ab.poisson('y ~ 1',pd.DataFrame({'y':values}),ab.Priors(intercept=ab.Normal(0,2)))
+
+tests/test_poisson.py:24: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+autobayes/model.py:715: in poisson
+    return Model(formula, data, priors, family="poisson",
+autobayes/model.py:140: in __init__
+    priors.validate(spec0, family)                  # structure now; per-level coverage once levels are known
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+autobayes/priors.py:216: in validate
+    for label, prior in ([("intercept", self.intercept)] if has_intercept else []) + list(self.coefficient_priors(spec).items()):
+                                                                                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = Priors(intercept=Prior(name='Normal', params={'mu': 0.0, 'sigma': 2.0}), b=None, sd=None, sigma=None)
+spec = ModelSpec(formula='y ~ 1', response='y', predictors=(), groups=(), intercept=True, levels_by_group={}, trials=None, rhs='1', terms=(), categoricals=(), interactions=())
+
+    def coefficient_priors(self, spec) -> dict[str, Prior]:
+        """One prior per design column, keyed by column label, in design order. ``spec`` is a
+        ``ModelSpec`` (or a tuple of numeric predictor names); categorical levels must be
+        known (data seen) for per-level mappings to be checked."""
+        from autobayes.formula import ModelSpec
+    
+        if not isinstance(spec, ModelSpec):
+            spec = ModelSpec(formula="", response="", predictors=tuple(spec), group=None)
+        cat_names = spec.categorical_names
+        if isinstance(self.b, Prior):
+            return {col: self.b for col in spec.columns}
+        if not isinstance(self.b, Mapping):
+>           raise PriorError(f"b must be a Prior or a mapping from term to prior, got {type(self.b).__name__}")
+E           autobayes.priors.PriorError: b must be a Prior or a mapping from term to prior, got NoneType
+
+autobayes/priors.py:104: PriorError
+_________________________ test_invalid_counts[values5] _________________________
+
+values = [(1+1j), 1]
+
+    @pytest.mark.parametrize('values', [[-1,1],[.5,1],[True,False],[np.inf,1],[np.nan,1],[1+1j,1],['1','2'],[1000001,1]])
+    def test_invalid_counts(values):
+        with pytest.raises(ab.FormulaError):
+>           ab.poisson('y ~ 1',pd.DataFrame({'y':values}),ab.Priors(intercept=ab.Normal(0,2)))
+
+tests/test_poisson.py:24: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+autobayes/model.py:715: in poisson
+    return Model(formula, data, priors, family="poisson",
+autobayes/model.py:140: in __init__
+    priors.validate(spec0, family)                  # structure now; per-level coverage once levels are known
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+autobayes/priors.py:216: in validate
+    for label, prior in ([("intercept", self.intercept)] if has_intercept else []) + list(self.coefficient_priors(spec).items()):
+                                                                                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = Priors(intercept=Prior(name='Normal', params={'mu': 0.0, 'sigma': 2.0}), b=None, sd=None, sigma=None)
+spec = ModelSpec(formula='y ~ 1', response='y', predictors=(), groups=(), intercept=True, levels_by_group={}, trials=None, rhs='1', terms=(), categoricals=(), interactions=())
+
+    def coefficient_priors(self, spec) -> dict[str, Prior]:
+        """One prior per design column, keyed by column label, in design order. ``spec`` is a
+        ``ModelSpec`` (or a tuple of numeric predictor names); categorical levels must be
+        known (data seen) for per-level mappings to be checked."""
+        from autobayes.formula import ModelSpec
+    
+        if not isinstance(spec, ModelSpec):
+            spec = ModelSpec(formula="", response="", predictors=tuple(spec), group=None)
+        cat_names = spec.categorical_names
+        if isinstance(self.b, Prior):
+            return {col: self.b for col in spec.columns}
+        if not isinstance(self.b, Mapping):
+>           raise PriorError(f"b must be a Prior or a mapping from term to prior, got {type(self.b).__name__}")
+E           autobayes.priors.PriorError: b must be a Prior or a mapping from term to prior, got NoneType
+
+autobayes/priors.py:104: PriorError
+_________________________ test_invalid_counts[values6] _________________________
+
+values = ['1', '2']
+
+    @pytest.mark.parametrize('values', [[-1,1],[.5,1],[True,False],[np.inf,1],[np.nan,1],[1+1j,1],['1','2'],[1000001,1]])
+    def test_invalid_counts(values):
+        with pytest.raises(ab.FormulaError):
+>           ab.poisson('y ~ 1',pd.DataFrame({'y':values}),ab.Priors(intercept=ab.Normal(0,2)))
+
+tests/test_poisson.py:24: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+autobayes/model.py:715: in poisson
+    return Model(formula, data, priors, family="poisson",
+autobayes/model.py:140: in __init__
+    priors.validate(spec0, family)                  # structure now; per-level coverage once levels are known
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+autobayes/priors.py:216: in validate
+    for label, prior in ([("intercept", self.intercept)] if has_intercept else []) + list(self.coefficient_priors(spec).items()):
+                                                                                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = Priors(intercept=Prior(name='Normal', params={'mu': 0.0, 'sigma': 2.0}), b=None, sd=None, sigma=None)
+spec = ModelSpec(formula='y ~ 1', response='y', predictors=(), groups=(), intercept=True, levels_by_group={}, trials=None, rhs='1', terms=(), categoricals=(), interactions=())
+
+    def coefficient_priors(self, spec) -> dict[str, Prior]:
+        """One prior per design column, keyed by column label, in design order. ``spec`` is a
+        ``ModelSpec`` (or a tuple of numeric predictor names); categorical levels must be
+        known (data seen) for per-level mappings to be checked."""
+        from autobayes.formula import ModelSpec
+    
+        if not isinstance(spec, ModelSpec):
+            spec = ModelSpec(formula="", response="", predictors=tuple(spec), group=None)
+        cat_names = spec.categorical_names
+        if isinstance(self.b, Prior):
+            return {col: self.b for col in spec.columns}
+        if not isinstance(self.b, Mapping):
+>           raise PriorError(f"b must be a Prior or a mapping from term to prior, got {type(self.b).__name__}")
+E           autobayes.priors.PriorError: b must be a Prior or a mapping from term to prior, got NoneType
+
+autobayes/priors.py:104: PriorError
+_________________________ test_invalid_counts[values7] _________________________
+
+values = [1000001, 1]
+
+    @pytest.mark.parametrize('values', [[-1,1],[.5,1],[True,False],[np.inf,1],[np.nan,1],[1+1j,1],['1','2'],[1000001,1]])
+    def test_invalid_counts(values):
+        with pytest.raises(ab.FormulaError):
+>           ab.poisson('y ~ 1',pd.DataFrame({'y':values}),ab.Priors(intercept=ab.Normal(0,2)))
+
+tests/test_poisson.py:24: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+autobayes/model.py:715: in poisson
+    return Model(formula, data, priors, family="poisson",
+autobayes/model.py:140: in __init__
+    priors.validate(spec0, family)                  # structure now; per-level coverage once levels are known
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+autobayes/priors.py:216: in validate
+    for label, prior in ([("intercept", self.intercept)] if has_intercept else []) + list(self.coefficient_priors(spec).items()):
+                                                                                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = Priors(intercept=Prior(name='Normal', params={'mu': 0.0, 'sigma': 2.0}), b=None, sd=None, sigma=None)
+spec = ModelSpec(formula='y ~ 1', response='y', predictors=(), groups=(), intercept=True, levels_by_group={}, trials=None, rhs='1', terms=(), categoricals=(), interactions=())
+
+    def coefficient_priors(self, spec) -> dict[str, Prior]:
+        """One prior per design column, keyed by column label, in design order. ``spec`` is a
+        ``ModelSpec`` (or a tuple of numeric predictor names); categorical levels must be
+        known (data seen) for per-level mappings to be checked."""
+        from autobayes.formula import ModelSpec
+    
+        if not isinstance(spec, ModelSpec):
+            spec = ModelSpec(formula="", response="", predictors=tuple(spec), group=None)
+        cat_names = spec.categorical_names
+        if isinstance(self.b, Prior):
+            return {col: self.b for col in spec.columns}
+        if not isinstance(self.b, Mapping):
+>           raise PriorError(f"b must be a Prior or a mapping from term to prior, got {type(self.b).__name__}")
+E           autobayes.priors.PriorError: b must be a Prior or a mapping from term to prior, got NoneType
+
+autobayes/priors.py:104: PriorError
+______________ test_count_boundaries_density_gradient_jax[-30.0] _______________
+
+eta = -30.0
+
+    @pytest.mark.parametrize('eta',[-30.,0.,np.log(1e6),30.])
+    def test_count_boundaries_density_gradient_jax(eta):
+>       y=np.array([0,1,1000000]);m=ab.poisson('y ~ 1',pd.DataFrame({'y':y}),ab.Priors(intercept=ab.Normal(0,2)))
+                                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_poisson.py:42: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+autobayes/model.py:715: in poisson
+    return Model(formula, data, priors, family="poisson",
+autobayes/model.py:140: in __init__
+    priors.validate(spec0, family)                  # structure now; per-level coverage once levels are known
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+autobayes/priors.py:216: in validate
+    for label, prior in ([("intercept", self.intercept)] if has_intercept else []) + list(self.coefficient_priors(spec).items()):
+                                                                                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = Priors(intercept=Prior(name='Normal', params={'mu': 0.0, 'sigma': 2.0}), b=None, sd=None, sigma=None)
+spec = ModelSpec(formula='y ~ 1', response='y', predictors=(), groups=(), intercept=True, levels_by_group={}, trials=None, rhs='1', terms=(), categoricals=(), interactions=())
+
+    def coefficient_priors(self, spec) -> dict[str, Prior]:
+        """One prior per design column, keyed by column label, in design order. ``spec`` is a
+        ``ModelSpec`` (or a tuple of numeric predictor names); categorical levels must be
+        known (data seen) for per-level mappings to be checked."""
+        from autobayes.formula import ModelSpec
+    
+        if not isinstance(spec, ModelSpec):
+            spec = ModelSpec(formula="", response="", predictors=tuple(spec), group=None)
+        cat_names = spec.categorical_names
+        if isinstance(self.b, Prior):
+            return {col: self.b for col in spec.columns}
+        if not isinstance(self.b, Mapping):
+>           raise PriorError(f"b must be a Prior or a mapping from term to prior, got {type(self.b).__name__}")
+E           autobayes.priors.PriorError: b must be a Prior or a mapping from term to prior, got NoneType
+
+autobayes/priors.py:104: PriorError
+_______________ test_count_boundaries_density_gradient_jax[0.0] ________________
+
+eta = 0.0
+
+    @pytest.mark.parametrize('eta',[-30.,0.,np.log(1e6),30.])
+    def test_count_boundaries_density_gradient_jax(eta):
+>       y=np.array([0,1,1000000]);m=ab.poisson('y ~ 1',pd.DataFrame({'y':y}),ab.Priors(intercept=ab.Normal(0,2)))
+                                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_poisson.py:42: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+autobayes/model.py:715: in poisson
+    return Model(formula, data, priors, family="poisson",
+autobayes/model.py:140: in __init__
+    priors.validate(spec0, family)                  # structure now; per-level coverage once levels are known
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+autobayes/priors.py:216: in validate
+    for label, prior in ([("intercept", self.intercept)] if has_intercept else []) + list(self.coefficient_priors(spec).items()):
+                                                                                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = Priors(intercept=Prior(name='Normal', params={'mu': 0.0, 'sigma': 2.0}), b=None, sd=None, sigma=None)
+spec = ModelSpec(formula='y ~ 1', response='y', predictors=(), groups=(), intercept=True, levels_by_group={}, trials=None, rhs='1', terms=(), categoricals=(), interactions=())
+
+    def coefficient_priors(self, spec) -> dict[str, Prior]:
+        """One prior per design column, keyed by column label, in design order. ``spec`` is a
+        ``ModelSpec`` (or a tuple of numeric predictor names); categorical levels must be
+        known (data seen) for per-level mappings to be checked."""
+        from autobayes.formula import ModelSpec
+    
+        if not isinstance(spec, ModelSpec):
+            spec = ModelSpec(formula="", response="", predictors=tuple(spec), group=None)
+        cat_names = spec.categorical_names
+        if isinstance(self.b, Prior):
+            return {col: self.b for col in spec.columns}
+        if not isinstance(self.b, Mapping):
+>           raise PriorError(f"b must be a Prior or a mapping from term to prior, got {type(self.b).__name__}")
+E           autobayes.priors.PriorError: b must be a Prior or a mapping from term to prior, got NoneType
+
+autobayes/priors.py:104: PriorError
+________ test_count_boundaries_density_gradient_jax[13.815510557964274] ________
+
+eta = np.float64(13.815510557964274)
+
+    @pytest.mark.parametrize('eta',[-30.,0.,np.log(1e6),30.])
+    def test_count_boundaries_density_gradient_jax(eta):
+>       y=np.array([0,1,1000000]);m=ab.poisson('y ~ 1',pd.DataFrame({'y':y}),ab.Priors(intercept=ab.Normal(0,2)))
+                                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_poisson.py:42: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+autobayes/model.py:715: in poisson
+    return Model(formula, data, priors, family="poisson",
+autobayes/model.py:140: in __init__
+    priors.validate(spec0, family)                  # structure now; per-level coverage once levels are known
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+autobayes/priors.py:216: in validate
+    for label, prior in ([("intercept", self.intercept)] if has_intercept else []) + list(self.coefficient_priors(spec).items()):
+                                                                                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = Priors(intercept=Prior(name='Normal', params={'mu': 0.0, 'sigma': 2.0}), b=None, sd=None, sigma=None)
+spec = ModelSpec(formula='y ~ 1', response='y', predictors=(), groups=(), intercept=True, levels_by_group={}, trials=None, rhs='1', terms=(), categoricals=(), interactions=())
+
+    def coefficient_priors(self, spec) -> dict[str, Prior]:
+        """One prior per design column, keyed by column label, in design order. ``spec`` is a
+        ``ModelSpec`` (or a tuple of numeric predictor names); categorical levels must be
+        known (data seen) for per-level mappings to be checked."""
+        from autobayes.formula import ModelSpec
+    
+        if not isinstance(spec, ModelSpec):
+            spec = ModelSpec(formula="", response="", predictors=tuple(spec), group=None)
+        cat_names = spec.categorical_names
+        if isinstance(self.b, Prior):
+            return {col: self.b for col in spec.columns}
+        if not isinstance(self.b, Mapping):
+>           raise PriorError(f"b must be a Prior or a mapping from term to prior, got {type(self.b).__name__}")
+E           autobayes.priors.PriorError: b must be a Prior or a mapping from term to prior, got NoneType
+
+autobayes/priors.py:104: PriorError
+_______________ test_count_boundaries_density_gradient_jax[30.0] _______________
+
+eta = 30.0
+
+    @pytest.mark.parametrize('eta',[-30.,0.,np.log(1e6),30.])
+    def test_count_boundaries_density_gradient_jax(eta):
+>       y=np.array([0,1,1000000]);m=ab.poisson('y ~ 1',pd.DataFrame({'y':y}),ab.Priors(intercept=ab.Normal(0,2)))
+                                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_poisson.py:42: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+autobayes/model.py:715: in poisson
+    return Model(formula, data, priors, family="poisson",
+autobayes/model.py:140: in __init__
+    priors.validate(spec0, family)                  # structure now; per-level coverage once levels are known
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+autobayes/priors.py:216: in validate
+    for label, prior in ([("intercept", self.intercept)] if has_intercept else []) + list(self.coefficient_priors(spec).items()):
+                                                                                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = Priors(intercept=Prior(name='Normal', params={'mu': 0.0, 'sigma': 2.0}), b=None, sd=None, sigma=None)
+spec = ModelSpec(formula='y ~ 1', response='y', predictors=(), groups=(), intercept=True, levels_by_group={}, trials=None, rhs='1', terms=(), categoricals=(), interactions=())
+
+    def coefficient_priors(self, spec) -> dict[str, Prior]:
+        """One prior per design column, keyed by column label, in design order. ``spec`` is a
+        ``ModelSpec`` (or a tuple of numeric predictor names); categorical levels must be
+        known (data seen) for per-level mappings to be checked."""
+        from autobayes.formula import ModelSpec
+    
+        if not isinstance(spec, ModelSpec):
+            spec = ModelSpec(formula="", response="", predictors=tuple(spec), group=None)
+        cat_names = spec.categorical_names
+        if isinstance(self.b, Prior):
+            return {col: self.b for col in spec.columns}
+        if not isinstance(self.b, Mapping):
+>           raise PriorError(f"b must be a Prior or a mapping from term to prior, got {type(self.b).__name__}")
+E           autobayes.priors.PriorError: b must be a Prior or a mapping from term to prior, got NoneType
+
+autobayes/priors.py:104: PriorError
+=========================== short test summary info ============================
+FAILED tests/test_poisson.py::test_invalid_counts[values0] - autobayes.priors...
+FAILED tests/test_poisson.py::test_invalid_counts[values1] - autobayes.priors...
+FAILED tests/test_poisson.py::test_invalid_counts[values2] - autobayes.priors...
+FAILED tests/test_poisson.py::test_invalid_counts[values3] - autobayes.priors...
+FAILED tests/test_poisson.py::test_invalid_counts[values4] - autobayes.priors...
+FAILED tests/test_poisson.py::test_invalid_counts[values5] - autobayes.priors...
+FAILED tests/test_poisson.py::test_invalid_counts[values6] - autobayes.priors...
+FAILED tests/test_poisson.py::test_invalid_counts[values7] - autobayes.priors...
+FAILED tests/test_poisson.py::test_count_boundaries_density_gradient_jax[-30.0]
+FAILED tests/test_poisson.py::test_count_boundaries_density_gradient_jax[0.0]
+FAILED tests/test_poisson.py::test_count_boundaries_density_gradient_jax[13.815510557964274]
+FAILED tests/test_poisson.py::test_count_boundaries_density_gradient_jax[30.0]
+12 failed, 53 passed, 2 deselected in 16.48s

@@ -626,7 +626,7 @@ def _validate_binary_response(name: str, s: pd.Series) -> None:
         )
 
 
-def check_counts(label: str, s: pd.Series, *, cap: int = COUNT_CAP) -> np.ndarray:
+def check_counts(label: str, s: pd.Series, *, cap: int = COUNT_CAP, domain: str = "binomial") -> np.ndarray:
     """A count column: real numeric, finite, integral, in ``[0, cap]``. Checked before any cast;
     returns the values as ``int64``."""
     reject_complex(label, s)
@@ -645,6 +645,8 @@ def check_counts(label: str, s: pd.Series, *, cap: int = COUNT_CAP) -> np.ndarra
     if np.any(vf < 0):
         raise FormulaError(f"{label} has a negative value ({vf[vf < 0][0]!r}); counts must be non-negative")
     if np.any(vf > cap):
+        if domain == "poisson":
+            raise FormulaError(f"{label} exceeds the Poisson input-count limit {cap}; see docs/poisson-decision.md")
         raise FormulaError(
             f"{label} has a value above the tested limit {cap} ({vf[vf > cap][0]:.0f}); larger counts per row "
             "are outside the validated domain (the float64 density and gradient checks in docs/m2-decision.md) "
@@ -719,6 +721,8 @@ def validate_data(spec: ModelSpec, data: pd.DataFrame, family: str = "gaussian")
         _validate_binary_response(spec.response, data[spec.response])
     elif family == "binomial":
         binomial_counts(spec, data)
+    elif family == "poisson":
+        check_counts(f"response {spec.response!r}", data[spec.response], domain="poisson")
     elif not _is_numeric(data[spec.response]):
         raise FormulaError(
             f"column {spec.response!r} has dtype {data[spec.response].dtype}; the {'Student-t' if family == 'student' else 'Gaussian'} "

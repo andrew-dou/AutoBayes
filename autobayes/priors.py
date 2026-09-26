@@ -211,7 +211,7 @@ class Priors:
         if family not in ("gaussian", "student") and self.sigma is not None:
             raise PriorError(
                 f"the {family} family has no residual SD; do not pass sigma. Its intercept and "
-                "slope priors are on the logit scale."
+                + ("slope priors are on the log scale." if family == "poisson" else "slope priors are on the logit scale.")
             )
         for label, prior in ([("intercept", self.intercept)] if has_intercept else []) + list(self.coefficient_priors(spec).items()):
             if not isinstance(prior, Prior):

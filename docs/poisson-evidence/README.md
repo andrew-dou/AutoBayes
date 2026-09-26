@@ -1,0 +1,3 @@
+# Poisson deterministic validation
+
+Final65passed/2deselected in16.38seconds; excluded two inherited tests that run MCMC. Includes new Poisson and existing Student-t/family/formula/prior regressions. Original first run53passed/12failed: intercept-only fixtures omitted the required explicit empty b={} mapping. Next attempt stopped at test collection due to an unmatched parenthesis in that fixture edit. Both errors and all outputs are retained; no production change was needed for them. Final code/test hashes are in passing/receipt.json. Each run has a300second UTC-or-monotonic cap and uses the retained pinned environment. No new fit or GPU run. Exact-head hosted CI remains required before merge.
