@@ -241,7 +241,7 @@ def test_invalid_inputs(bdata):
     with pytest.raises(ab.PriorError, match="needs a prior on the residual SD"):
         ab.gaussian("y ~ x + (1 | g)", bdata, PRIORS)
     with pytest.raises(ValueError, match="family must be"):
-        ab.Model("y ~ x + (1 | g)", bdata, PRIORS, family="poisson")
+        ab.Model("y ~ x + (1 | g)", bdata, PRIORS, family="not_a_family")
     for bad, needle in [("y ~ x + (1 + x | g)", "varying slopes"), ("y ~ x + (1 | g/h)", "nested")]:
         with pytest.raises(ab.FormulaError, match=needle):
             ab.bernoulli(bad, bdata, PRIORS)
