@@ -1,15 +1,14 @@
-"""AutoBayes: brms-like Bayesian hierarchical models on PyMC, with a JAX/NumPyro path.
+"""Bayesian hierarchical models built through Bambi/PyMC, with JAX/NumPyro sampling.
 
-Three model families on one right-hand side ``x + z [+ (1 | group)]`` with numeric predictors,
-treatment-coded categorical predictors declared with ``categorical={column: reference}``
-(M3a-1), numeric-by-categorical interactions ``x:z`` with both main effects (M3a-3) and
-independent varying intercepts across distinct factors (M3c-3), optional since M3c-1 (a formula without it is a population-only
-model, as in brms): Gaussian with identity link (milestone M0), Bernoulli with
-logit link for a strictly 0/1 response (M1), and binomial counts ``successes | trials(n)`` with
-logit link (M2). Everything else is refused with an error that names the unsupported
-construct. See ``docs/m0-decision.md``, ``docs/m1-decision.md``, ``docs/m2-decision.md`` and
-``docs/m3a1-decision.md``, ``docs/m3a2-decision.md`` and ``docs/m3c1-decision.md`` for what Bambi supplies and
-what this layer adds.
+Five response families: Gaussian and fixed-nu Student-t with identity links,
+Bernoulli and grouped binomial with logit links, and Poisson with a log link.
+Supported formulas combine numeric and declared categorical predictors,
+numeric-by-categorical interactions, intercept controls, and optional multiple
+independent varying-intercept factors. Explicit priors are required.
+
+See docs/current-capabilities.md for supported composition, test entry points,
+and the distinction between deterministic checks, CPU examples and GPU evidence.
+Unsupported formulas and family options are rejected explicitly.
 """
 import os as _os
 

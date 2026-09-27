@@ -109,7 +109,7 @@ git clone https://github.com/andrew-dou/AutoBayes && cd AutoBayes
 uv sync --locked --extra jax --extra dev                 # creates .venv from uv.lock; nothing is resolved anew
 uv run --no-sync python -c "import autobayes as ab; print(ab.format_environment(ab.environment()))"
 uv run --no-sync pytest tests -q -m "not slow"           # fast checks, a few minutes
-uv run --no-sync pytest tests -q -m slow                 # three CPU sampling checks, about a minute
+uv run --no-sync pytest tests -q -m slow                 # stochastic validation; inspect the current bounded run plan first
 uv run --no-sync python examples/m0_varying_intercept.py --backend numpyro --device cpu --record fits/m0.json
 ```
 
@@ -122,6 +122,9 @@ written, so reruns and retries cannot touch the committed `docs/m*-evidence/` hi
 
 ### Supported paths
 
+See the [current capability and test map](docs/current-capabilities.md) for the
+September 27 merged baseline, family extensions, provenance checks and remaining gaps.
+
 "CPU-validated" means the checks in `docs/m0-decision.md` / `docs/m1-decision.md` passed on
 the pinned stack: the fast suite in hosted CI (`.github/workflows/ci.yml`, every push and
 pull request) and the three sampling checks locally in the locked environment (2026-09-10;
@@ -133,16 +136,18 @@ versions.
 | Family, formula | PyMC NUTS, CPU | JAX/NumPyro, CPU | JAX/NumPyro, GPU | Status |
 | --- | --- | --- | --- | --- |
 | Gaussian, `y ~ [1 +] x… + (1 \| g)` | CPU-validated | CPU-validated | GPU-validated once, H100 (`docs/m0-gpu-validation.md`) | M0, merged |
-| Bernoulli (logit), `y ~ [1 +] x… + (1 \| g)`, y strictly 0/1 | CPU-validated | CPU-validated | **pending** (same code path, not run on a GPU) | M1, PR #3 |
+| Bernoulli (logit), `y ~ [1 +] x… + (1 \| g)`, y strictly 0/1 | CPU-validated | CPU-validated | **pending** (same code path, not run on a GPU) | M1, merged (PR #3) |
 | Binomial (logit), `k \| trials(n) ~ [1 +] x… + (1 \| g)`, integer counts up to 1e6 per row | CPU-validated | CPU-validated | **pending** (same code path, not run on a GPU) | M2 |
 | Declared categorical predictors `z` (treatment coding, `categorical={"z": reference}`), all three families | CPU-validated (`docs/m3a1-decision.md`) | CPU-validated | **pending** | M3a-1, merged (PR #6) |
 | One numeric-by-categorical interaction `x:z` (`x*z`) with both main effects, all three families | CPU-validated (`docs/m3a2-decision.md`) | CPU-validated | **pending** | M3a-2, merged (PR #7) |
-| Multiple numeric-by-categorical interactions, shared or disjoint sides; existing families, intercept controls and multiple groups | deterministic design/density/gradient/prediction checks passed; local full suite interrupted | same deterministic coverage | **pending** | M3a-3; [decision](docs/m3a3-decision.md); feature-specific sampling pending |
+| Multiple numeric-by-categorical interactions, shared or disjoint sides; existing families, intercept controls and multiple groups | deterministic checks; one Gaussian CPU example independently accepted | same deterministic coverage and Gaussian CPU example | **pending** | M3a-3, merged (PR #12); [evidence summary](docs/current-capabilities.md#validation-boundaries) |
 | Population-only models, no group-level term: `y ~ 1`, `y ~ x`, `y ~ x + z + x:z`, `k \| trials(n) ~ x`, all three families | deterministic density/gradient/design/prediction checks for all three families; Gaussian example CPU sampling accepted after explicit finite-statistic policy correction ([review](docs/m3c1-decision.md#independent-acceptance-review-2026-09-19)) | same deterministic coverage; Gaussian example CPU sampling and seven-mean agreement accepted in the same review | **pending** | M3c-1, PR #9; merged; one Gaussian development example, not calibration |
 | One independent varying slope `(1 + x \|\| g)` | under independent review, not merged | same | same | M3b-1, PR #8 open |
 | No population intercept: `0 + x`, `x - 1`, categorical and one interaction, optional group | three-family deterministic checks; one Gaussian CPU example accepted at `target_accept=0.99` | same deterministic coverage and Gaussian CPU acceptance | **pending** | M3c-2, PR #10; [review and preserved initial failures](docs/m3c2-decision.md#independent-acceptance-review-2026-09-20-utc) |
 | Multiple independent intercepts `(1 \| county) + (1 \| year)`, all three families | three-family deterministic checks; one crossed Gaussian CPU example independently accepted | same deterministic coverage and Gaussian CPU acceptance | **pending** | M3c-3, merged (PR #11); [decision](docs/m3c3-decision.md) |
-| Correlated effects, grouping `/` or `:`, slopes, other families and links | refused with an error naming the construct | same | same | later slices, `docs/coordination/NEXT_MILESTONES_PROPOSAL.md` |
+| Fixed-nu Student-t, identity link | deterministic graph/density/gradient/prediction checks | deterministic CPU JAX checks; recovery sampling pending | **pending** | merged (PR #14); [semantics](docs/student-responses.md) |
+| Poisson, log link | deterministic graph/density/gradient/prediction checks | deterministic CPU JAX checks; recovery sampling pending | **pending** | merged (PR #15); [semantics](docs/poisson-responses.md) |
+| Correlated effects, grouping `/` or `:`, varying slopes, additional families and links | refused with an error naming the construct | same | same | later slices, `docs/coordination/NEXT_MILESTONES_PROPOSAL.md` |
 
 Device rules on every path: `device="gpu"` without a visible GPU raises `DeviceError`
 (no silent CPU fallback); the fit report states the actual device, dtype (float64) and
