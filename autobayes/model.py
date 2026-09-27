@@ -671,6 +671,11 @@ class Model:
         return "\n".join(lines)
 
     # -- convenience -------------------------------------------------------------------
+    def prior_predictive(self, *, draws=500, seed=None):
+        """Forward prior draws on modeled rows, in native graph parameterization."""
+        from autobayes.prior_predictive import prior_predictive
+        return prior_predictive(self, draws=draws, seed=seed)
+
     def fit(self, **kwargs):
         from autobayes.inference import fit
 

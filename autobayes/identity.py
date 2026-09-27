@@ -84,6 +84,8 @@ def check_fit_binding(model, result, *, allow_unverified=False):
         identities.append(identity)
     idata = getattr(result, 'idata', result)
     attrs = getattr(idata, 'attrs', {})
+    if attrs.get('autobayes_generation_kind') == 'prior_predictive':
+        raise ValueError('prior predictive draws are not a posterior fit')
     if FIT_IDENTITY_ATTR in attrs:
         try:
             serialized = attrs[FIT_IDENTITY_ATTR]

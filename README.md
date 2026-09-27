@@ -406,3 +406,7 @@ MIT. The `wiki/` pattern is adapted from
 Fit comparisons now require a [frozen target identity](docs/record-identity.md). Historical records remain readable; metadata-only comparison requires explicit `allow_legacy=True` and is labeled unverified.
 
 New results carry [fit provenance](docs/fit-binding.md) through saved draws. Record creation rejects mismatched or unbound fits unless the documented unverified legacy mode is explicitly selected.
+
+### Prior-predictive checks
+
+Use `model.prior_predictive(draws=100, seed=42)` for graph-native CPU forward draws before fitting. See [semantics and validation](docs/prior-predictive.md).
