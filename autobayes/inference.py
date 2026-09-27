@@ -14,6 +14,7 @@ supports GPU" into "a GPU was used".
 """
 from __future__ import annotations
 
+import json
 import time
 import warnings
 from dataclasses import dataclass, field
@@ -43,6 +44,20 @@ class FitResult:
     wall_seconds: float
     notes: list[str] = field(default_factory=list)
     seed: int | None = None
+    _target_identity_json: str | None = field(default=None, repr=False)
+
+    @property
+    def target_identity(self):
+        """A defensive copy of the target captured before sampling, if available."""
+        if self._target_identity_json is None:
+            return None
+        try:
+            identity = json.loads(self._target_identity_json)
+            if identity is None:
+                raise ValueError("null identity")
+            return identity
+        except (TypeError, ValueError) as exc:
+            raise ValueError("invalid fit-result target identity") from exc
 
     def report(self) -> str:
         lines = [
@@ -114,6 +129,8 @@ def fit(model, *, backend: str = "pymc", device: str = "cpu", chains: int = 4,
         raise ValueError(f"backend must be 'pymc' or 'numpyro', got {backend!r}")
     if device not in {"cpu", "gpu"}:
         raise DeviceError(f"unknown device {device!r}; use 'cpu' or 'gpu'")
+    from autobayes.identity import FIT_IDENTITY_ATTR
+    target_json = json.dumps(model.target_identity, sort_keys=True)
     notes: list[str] = []
     common = dict(draws=draws, tune=tune, chains=chains, random_seed=seed,
                   target_accept=target_accept, progressbar=progressbar, **sample_kwargs)
@@ -131,11 +148,12 @@ def fit(model, *, backend: str = "pymc", device: str = "cpu", chains: int = 4,
         wall = time.perf_counter() - t0
         import pytensor
 
+        idata.attrs[FIT_IDENTITY_ATTR] = target_json
         return FitResult(idata=idata, backend="pymc", device_requested="cpu",
                          device_actual="cpu", platform="cpu",
                          dtype=str(pytensor.config.floatX), chain_method=None,
                          chains=chains, draws=draws, tune=tune, target_accept=target_accept,
-                         wall_seconds=wall, notes=notes, seed=seed)
+                         wall_seconds=wall, notes=notes, seed=seed, _target_identity_json=target_json)
 
     jax_device, default_method = resolve_jax_device(device, chains, notes)
     method = chain_method or default_method
@@ -159,8 +177,9 @@ def fit(model, *, backend: str = "pymc", device: str = "cpu", chains: int = 4,
         notes.append("arrays landed on a GPU although device='cpu' was requested; check jax.default_device")
     if dtype != "float64":
         notes.append(f"JAX default dtype is {dtype}, not float64; see reference/pymc-to-jax.md")
+    idata.attrs[FIT_IDENTITY_ATTR] = target_json
     return FitResult(idata=idata, backend="numpyro", device_requested=device,
                      device_actual=f"{actual.platform}:{getattr(actual, 'device_kind', '?')}(id={actual.id})",
                      platform=actual.platform, dtype=dtype, chain_method=method,
                      chains=chains, draws=draws, tune=tune, target_accept=target_accept,
-                     wall_seconds=wall, notes=notes, seed=seed)
+                     wall_seconds=wall, notes=notes, seed=seed, _target_identity_json=target_json)

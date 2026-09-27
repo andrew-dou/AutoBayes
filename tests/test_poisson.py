@@ -105,7 +105,7 @@ def test_ordinary_predictions_limits_and_records(monkeypatch):
     import autobayes.session as session
     monkeypatch.setattr(session,'_summary_rows',lambda *args:{})
     monkeypatch.setattr(session,'environment',lambda:{})
-    fit=SimpleNamespace(idata=post,backend='synthetic',device_requested='cpu',device_actual='cpu',platform='cpu',dtype='float64',chain_method='none',chains=2,draws=4,tune=0,target_accept=.9,seed=9,wall_seconds=0,notes=['fixed synthetic draws; not a fit'])
+    fit=SimpleNamespace(target_identity=m.target_identity,idata=post,backend='synthetic',device_requested='cpu',device_actual='cpu',platform='cpu',dtype='float64',chain_method='none',chains=2,draws=4,tune=0,target_accept=.9,seed=9,wall_seconds=0,notes=['fixed synthetic draws; not a fit'])
     rec=ab.fit_record(m,fit,panel={'values':{},'status':{},'overall':'not evaluated'})
     assert rec['model']['family']=='poisson' and rec['model']['link']=='log'
     assert 'log scale' in rec['model']['intercept_prior_applies_to']

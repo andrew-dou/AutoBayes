@@ -77,10 +77,13 @@ def _summary_rows(model, idata) -> dict:
     return rows
 
 
-def fit_record(model, fit, *, panel: dict | None = None, max_treedepth: int = 10) -> dict:
+def fit_record(model, fit, *, panel: dict | None = None, max_treedepth: int = 10, allow_unverified: bool = False) -> dict:
     """A JSON-serialisable record of one fit: specification, execution, diagnostics, posterior."""
     from autobayes import __version__
     from autobayes.diagnostics import panel as _panel
+
+    from autobayes.identity import check_fit_binding
+    binding = check_fit_binding(model, fit, allow_unverified=allow_unverified)
 
     p = panel if panel is not None else _panel(fit.idata, max_treedepth=max_treedepth)
     s, d, pr = model.spec, model.design, model.priors
@@ -91,7 +94,9 @@ def fit_record(model, fit, *, panel: dict | None = None, max_treedepth: int = 10
         "model": {
             "formula": s.formula,
             "family": model.family,
-            "target_identity": model.target_identity,
+            **({"target_identity": model.target_identity} if binding == "matched" else
+               {"requested_target_identity": model.target_identity}),
+            "fit_binding_status": binding,
             **({"family_parameters": {"nu": model.nu}} if model.family == "student" else {}),
             "link": model.link,
             "n": int(d.n),

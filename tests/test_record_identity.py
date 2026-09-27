@@ -72,7 +72,7 @@ def test_execution_not_target_and_record_export(monkeypatch):
     import autobayes.session as session
     monkeypatch.setattr(session,'environment',lambda:{})
     monkeypatch.setattr(session,'_summary_rows',lambda *args:{'x':{'mean':.1,'mcse_mean':.05}})
-    m=build();fit=SimpleNamespace(idata=None,backend='synthetic',device_requested='cpu',device_actual='cpu',platform='cpu',dtype='float64',chain_method='none',chains=0,draws=0,tune=0,target_accept=.9,seed=1,wall_seconds=0,notes=['synthetic record; not a fit'])
+    m=build();fit=SimpleNamespace(target_identity=m.target_identity,idata=None,backend='synthetic',device_requested='cpu',device_actual='cpu',platform='cpu',dtype='float64',chain_method='none',chains=0,draws=0,tune=0,target_accept=.9,seed=1,wall_seconds=0,notes=['synthetic record; not a fit'])
     panel={'values':{},'status':{},'overall':'not evaluated'}
     a=ab.fit_record(m,fit,panel=panel)
     fit.backend='synthetic_other';fit.seed=9
