@@ -145,7 +145,11 @@ def _predict_by_hand(model, idata, df: pd.DataFrame | None, kind: str, seed, pol
                 new_effects[lvl] = np.take_along_axis(u, chosen[..., None], axis=-1)[..., 0]
         for i, lvl in enumerate(df[g]):
             mu[..., i] += new_effects[lvl] if lvl in new_effects else u[..., levels.index(lvl)]
-    if model.family == "gaussian":
+    if kind == "linear":
+        if not np.isfinite(mu).all():
+            raise ValueError("linear predictor contains nonfinite draws")
+        out = {"eta": (("chain", "draw", "__obs__"), mu)}
+    elif model.family == "gaussian":
         out = {"mu": (("chain", "draw", "__obs__"), mu)}
         if kind == "response":
             sigma = post[n["sigma"]].to_numpy()
@@ -224,16 +228,16 @@ def predict(model, fit_result, *, newdata: pd.DataFrame | None = None, kind: str
     factors are independent identities. Common intercept draws are already on the raw scale.
     """
     if model.family == "binomial":
-        if kind not in {"probability", "mean", "response"}:
-            raise ValueError("kind must be 'probability', 'mean' or 'response' for a binomial model")
-    elif kind not in {"mean", "response"}:
-        raise ValueError("kind must be 'mean' or 'response'" + (" ('probability' is for binomial models; here 'mean' is p)" if model.family == "bernoulli" else ""))
+        if kind not in {"probability", "mean", "response", "linear"}:
+            raise ValueError("kind must be 'probability', 'mean', 'response' or 'linear' for a binomial model")
+    elif kind not in {"mean", "response", "linear"}:
+        raise ValueError("kind must be 'mean', 'response' or 'linear'" + (" ('probability' is for binomial models; here 'mean' is p)" if model.family == "bernoulli" else ""))
     policies = _group_policies(model, new_groups)
     from autobayes.identity import check_fit_binding
     binding = check_fit_binding(model, fit_result, allow_unverified=True)
     idata = getattr(fit_result, "idata", fit_result)
     df = (None if newdata is None else _check_newdata(
-        model, newdata, need_trials=(model.family == "binomial" and kind != "probability")))
+        model, newdata, need_trials=(model.family == "binomial" and kind in ("mean", "response"))))
     new_levels = {g: ([] if df is None else sorted(set(df[g]) - set(model.design.group_designs[g].levels)))
                   for g in model.spec.groups}
     for g, unseen in new_levels.items():
@@ -243,7 +247,7 @@ def predict(model, fit_result, *, newdata: pd.DataFrame | None = None, kind: str
                 "Pass new_groups='population' to draw their effects from Normal(0, sd), or "
                 "new_groups='resample_observed' for brms's default 'uncertainty' behaviour; "
                 "an exact-key mapping can set the policy separately for each factor.")
-    manual = model.family in ("binomial", "poisson") or any(new_levels.values())
+    manual = kind == "linear" or model.family in ("binomial", "poisson") or any(new_levels.values())
     if manual:
         ds = _predict_by_hand(model, idata, df, kind, seed, policies)
     else:
@@ -263,4 +267,6 @@ def predict(model, fit_result, *, newdata: pd.DataFrame | None = None, kind: str
         ds = ds.assign_coords(__obs__=np.arange(ds.sizes["__obs__"]))
     _prediction_attrs(model, ds, policies, new_levels, in_sample=df is None, manual=manual)
     ds.attrs["fit_binding_status"] = binding
+    if kind == "linear":
+        ds.attrs.update(prediction_scale="linear", link=model.link)
     return ds

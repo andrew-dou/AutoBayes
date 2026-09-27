@@ -1,0 +1,1 @@
+Initial10passed/2failed: integer fixture could not hold infinity; mismatched-model fixture used prohibited constant predictor. Originals retained. Only fixture inputs repaired, production unchanged. Final12passed. No fits or forward simulation. Exact scripts, outputs and hashes retained.

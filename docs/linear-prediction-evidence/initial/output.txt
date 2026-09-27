@@ -1,0 +1,103 @@
+........F..F                                                             [100%]
+=================================== FAILURES ===================================
+__________________________ test_extreme_and_nonfinite __________________________
+
+    def test_extreme_and_nonfinite():
+        m=ab.poisson('y ~ x',data(),priors());post=draws(a=1000)
+        assert np.isfinite(m.predict(post,kind='linear').eta).all()
+        with pytest.raises(ValueError,match='overflow'):m.predict(post,kind='mean')
+>       post.posterior.Intercept.values[:]=np.inf
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       OverflowError: cannot convert float infinity to integer
+
+tests/test_linear_prediction.py:43: OverflowError
+________________________ test_binding_and_prior_refused ________________________
+
+    def test_binding_and_prior_refused():
+>       m=ab.poisson('y ~ x',data(),priors());other=ab.poisson('y ~ x',data().assign(x=0),priors());p=draws()
+                                                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_linear_prediction.py:57: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+autobayes/model.py:728: in poisson
+    return Model(formula, data, priors, family="poisson",
+autobayes/model.py:183: in __init__
+    self.spec: ModelSpec = parse_formula(formula, df, family, categorical)   # levels over the fitted rows
+                           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+autobayes/formula.py:588: in parse_formula
+    spec = validate_data(spec, data, family)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+spec = ModelSpec(formula='y ~ x', response='y', predictors=('x',), groups=(), intercept=True, levels_by_group={}, trials=None, rhs='x', terms=('x',), categoricals=(), interactions=())
+data =    y  x
+0  0  0
+1  1  0
+2  2  0
+3  4  0, family = 'poisson'
+
+    def validate_data(spec: ModelSpec, data: pd.DataFrame, family: str = "gaussian") -> ModelSpec:
+        """Check columns exist, are numeric where required, and have no missing values."""
+        if (spec.trials is not None) != (family == "binomial"):
+            raise FormulaError("a trials column is present exactly for the binomial family")
+        needed = ([spec.response, *spec.predictors, *spec.categorical_names] + list(spec.groups)
+                  + ([spec.trials] if spec.trials else []))
+        missing = [c for c in needed if c not in data.columns]
+        if missing:
+            raise FormulaError(f"columns not in data: {missing}")
+        for c in spec.predictors:
+            reject_complex(f"column {c!r}", data[c])
+            if not _is_numeric(data[c]):
+                raise FormulaError(
+                    f"column {c!r} has dtype {data[c].dtype}; a predictor is numeric unless it is declared "
+                    f"categorical with its reference level, for example categorical={{{c!r}: <level>}} "
+                    "(treatment coding; docs/m3a1-decision.md)."
+                )
+        categoricals = []
+        for cat in spec.categoricals:
+            labels, unused = categorical_labels(f"categorical predictor {cat.name!r}", data[cat.name])
+            levels = tuple(sorted(set(labels.tolist())))
+            if len(levels) < 2:
+                raise FormulaError(f"predictor {cat.name!r} is constant (single level {levels[0]!r} in the fitted rows)")
+            if cat.reference not in levels:
+                raise FormulaError(
+                    f"reference level {cat.reference!r} of {cat.name!r} does not occur in the fitted rows; "
+                    f"observed levels: {list(levels)}"
+                )
+            categoricals.append(Categorical(name=cat.name, reference=cat.reference, levels=levels, unused=unused, full_rank=cat.full_rank))
+        reject_complex(f"response {spec.response!r}", data[spec.response])
+        if family == "bernoulli":
+            _validate_binary_response(spec.response, data[spec.response])
+        elif family == "binomial":
+            binomial_counts(spec, data)
+        elif family == "poisson":
+            check_counts(f"response {spec.response!r}", data[spec.response], domain="poisson")
+        elif not _is_numeric(data[spec.response]):
+            raise FormulaError(
+                f"column {spec.response!r} has dtype {data[spec.response].dtype}; the {'Student-t' if family == 'student' else 'Gaussian'} "
+                "family needs a numeric response."
+            )
+        na = data[needed].isna().any()
+        if na.any():
+            raise FormulaError(
+                f"missing values in columns {list(na[na].index)}; M0 does not handle missing "
+                "data. Drop or impute them explicitly before fitting."
+            )
+        if len(data) < 2:
+            raise FormulaError("need at least two observations")
+        levels_by_group = {}
+        for group in spec.groups:
+            levels = tuple(sorted(data[group].astype(str).unique()))
+            if len(levels) < 2:
+                raise FormulaError(f"grouping factor {group!r} has a single level; a varying intercept needs at least two.")
+            levels_by_group[group] = levels
+        for c in spec.predictors:
+            if np.isclose(np.std(data[c].to_numpy(dtype=float)), 0.0):
+>               raise FormulaError(f"predictor {c!r} is constant")
+E               autobayes.formula.FormulaError: predictor 'x' is constant
+
+autobayes/formula.py:747: FormulaError
+=========================== short test summary info ============================
+FAILED tests/test_linear_prediction.py::test_extreme_and_nonfinite - Overflow...
+FAILED tests/test_linear_prediction.py::test_binding_and_prior_refused - auto...
+2 failed, 10 passed in 3.46s
