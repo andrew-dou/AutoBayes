@@ -234,6 +234,14 @@ class Model:
                 if not any(c.shape == self.design.trials.shape and np.array_equal(c, self.design.trials) for c in consts):
                     raise RuntimeError("the trials attached to the likelihood do not equal the trials column")
 
+        from autobayes.identity import freeze_target
+        self._target_identity = MappingProxyType(freeze_target(self))
+
+    @property
+    def target_identity(self) -> dict[str, str]:
+        """Frozen built-target specification digest; returns a defensive copy."""
+        return dict(self._target_identity)
+
     def _check_generated_names(self):
         """Refuse names that would alias a coefficient, effect, likelihood or coordinate."""
         variable_names = (["Intercept"] if self.spec.intercept else []) + list(self.spec.terms)
