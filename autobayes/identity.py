@@ -70,3 +70,35 @@ def comparison_identity(a, b, *, allow_legacy=False):
     if identities[0] != identities[1]:
         raise ValueError('records fit different models or data: target identities differ')
     return 'matched'
+
+
+FIT_IDENTITY_ATTR = 'autobayes_target_identity_json'
+
+
+def check_fit_binding(model, result, *, allow_unverified=False):
+    """Check available result and serialized-draw identities against the model."""
+    expected = {'model': {'target_identity': model.target_identity}}
+    identities = []
+    identity = getattr(result, 'target_identity', None)
+    if identity is not None:
+        identities.append(identity)
+    idata = getattr(result, 'idata', result)
+    attrs = getattr(idata, 'attrs', {})
+    if FIT_IDENTITY_ATTR in attrs:
+        try:
+            serialized = attrs[FIT_IDENTITY_ATTR]
+            if not isinstance(serialized, str):
+                raise ValueError('expected JSON text')
+            identity = json.loads(serialized)
+            if identity is None:
+                raise ValueError('null identity')
+        except (TypeError, ValueError) as exc:
+            raise ValueError('invalid serialized fit target identity') from exc
+        identities.append(identity)
+    if not identities:
+        if not allow_unverified:
+            raise ValueError('fit target binding is missing; use allow_unverified=True only for an explicitly unverified legacy record')
+        return 'unverified'
+    for identity in identities:
+        comparison_identity(expected, {'model': {'target_identity': identity}})
+    return 'matched'

@@ -1,0 +1,3 @@
+# Captured fit provenance
+
+Capture target identity before either sampler dispatch. Retain an immutable JSON snapshot on FitResult and persist the same JSON in InferenceData root attributes. Before records or predictions, reject malformed/conflicting/mismatched bindings. Unbound raw draws remain accepted for low-level predictions with an unverified attribute. Unbound record creation requires allow_unverified=True and omits the verified target_identity field, so default comparisons refuse it. Synthetic tests explicitly identify their constructed provenance; no sampler execution. This is accidental-pairing protection, not authentication or support for arbitrary graph edits.

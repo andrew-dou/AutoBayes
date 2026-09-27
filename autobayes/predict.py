@@ -229,6 +229,8 @@ def predict(model, fit_result, *, newdata: pd.DataFrame | None = None, kind: str
     elif kind not in {"mean", "response"}:
         raise ValueError("kind must be 'mean' or 'response'" + (" ('probability' is for binomial models; here 'mean' is p)" if model.family == "bernoulli" else ""))
     policies = _group_policies(model, new_groups)
+    from autobayes.identity import check_fit_binding
+    binding = check_fit_binding(model, fit_result, allow_unverified=True)
     idata = getattr(fit_result, "idata", fit_result)
     df = (None if newdata is None else _check_newdata(
         model, newdata, need_trials=(model.family == "binomial" and kind != "probability")))
@@ -260,4 +262,5 @@ def predict(model, fit_result, *, newdata: pd.DataFrame | None = None, kind: str
         ds = xr.Dataset({k: v.drop_vars([c for c in v.coords if c not in ("chain", "draw")]) for k, v in data.items()})
         ds = ds.assign_coords(__obs__=np.arange(ds.sizes["__obs__"]))
     _prediction_attrs(model, ds, policies, new_levels, in_sample=df is None, manual=manual)
+    ds.attrs["fit_binding_status"] = binding
     return ds

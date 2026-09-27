@@ -1,0 +1,36 @@
+{
+  "command": [
+    "/Users/andrewdou/iqss-research/artifacts/2026-09-25-autobayes-pr12-closeout/retained-venv/bin/python",
+    "-m",
+    "pytest",
+    "tests/test_multiple_groups.py::test_prediction_arithmetic_records_and_mixed_policies",
+    "tests/test_multiple_interactions.py::test_synthetic_predictions_and_complete_records",
+    "tests/test_population_only.py::test_describe_and_fit_record_without_sampling",
+    "-q",
+    "-p",
+    "no:cacheprovider"
+  ],
+  "exit_code": 0,
+  "timeout": false,
+  "elapsed": 19.401945500001602,
+  "started_utc": "2026-09-27T04:58:07.305818+00:00",
+  "cap": 300,
+  "source_hashes": {
+    "autobayes/formula.py": "98cad17a254842cd648c611c9817b764119394a00281998e8adaa4b461a5b844",
+    "autobayes/diagnostics.py": "79bd2634824c19180afff1882896098d72d82a631ebfdb00aba90081ee7bd9b9",
+    "autobayes/predict.py": "f7e640429d44a0d22294885bf6822fc9a7950d2c873418d60982f9fa1e54bbdd",
+    "autobayes/session.py": "e9ca72db83ead04e4d1f91b7133a530d9e3637c39678385a285712cfb6da0028",
+    "autobayes/__init__.py": "eb0126be17fcee6024b0a4e477cd369c19c7c7e6c07414b8cbc7566e756c7838",
+    "autobayes/model.py": "db0c1ae6f489f1ea3e0855491365e42e1de2c146eb5afd4343dec7fab8f35a60",
+    "autobayes/inference.py": "92505087e8eac208332afb81e07db709f1f81b44c93ec085a1d2745a8d851c0c",
+    "autobayes/priors.py": "7eefd9b920e26e08547121eff68b133fcf519e65c96002d9fe98a2cc3b87c4f5",
+    "autobayes/identity.py": "56e493e35b8086358b19e5835b83b2cc6c53f6bc960f0c32d64e6d23a327b978",
+    "autobayes/likelihoods.py": "70156b9f74d6e0c2e330cfe20806bddffd3d1ed7dabf183c683a68351e8a2988",
+    "tests/test_student.py": "611f62b2800cefdf3a79cbaa4f6fcd803996c2cc35d023720d807e4c02f67f51",
+    "tests/test_record_identity.py": "a056864f274be995063675b99ebefe45a51a090046f46d391c9b540ef9e958bf",
+    "tests/test_fit_binding.py": "d7bc22230a499bdd666714f4981589477e04fe045a91d9c0a19fa70a230a26e0",
+    "tests/test_multiple_groups.py": "e97d597bd98a5f5f80794be5fb62dcc3249b477dceb7b24b76a111c22f76a4de",
+    "tests/test_multiple_interactions.py": "f42a59955233c2f5e204016a38dcff3c17ee370766fc0d354386f2ea2eeaeabf",
+    "tests/test_population_only.py": "d35de8c2bd30dcb499213362ed4d2b76863e3569b9ba471476d2b527db9d409c"
+  }
+}

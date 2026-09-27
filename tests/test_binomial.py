@@ -378,7 +378,19 @@ def test_n_equals_one_matches_bernoulli_on_the_shared_domain():
         assert np.all(np.abs(ga - gb) <= np.maximum(1e-8, 1e-12 * np.abs(gb)))
     fit = bin_m.fit(backend="pymc", chains=2, draws=60, tune=60, seed=2, cores=1)
     p_bin = bin_m.predict(fit, kind="probability")["p"].to_numpy()
-    p_ber = ber_m.predict(fit, kind="mean")["p"].to_numpy()
+    # Distinct family specifications must not silently share a bound fit.
+    with pytest.raises(ValueError, match="target identities differ"):
+        ber_m.predict(fit, kind="mean")
+    # This oracle deliberately evaluates the same numerical draws under both
+    # formulas. Use the explicit unbound raw-draw route, retaining the original.
+    from autobayes.identity import FIT_IDENTITY_ATTR
+    raw = fit.idata.copy()
+    raw.attrs = dict(raw.attrs)
+    raw.attrs.pop(FIT_IDENTITY_ATTR)
+    prediction = ber_m.predict(raw, kind="mean")
+    assert prediction.attrs["fit_binding_status"] == "unverified"
+    assert FIT_IDENTITY_ATTR in fit.idata.attrs
+    p_ber = prediction["p"].to_numpy()
     assert np.allclose(p_bin, p_ber, atol=1e-10)
     # outside the shared domain the policies differ by design
     const = df.assign(k=0)

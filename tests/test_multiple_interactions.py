@@ -329,7 +329,7 @@ def test_synthetic_predictions_and_complete_records(family,grouped,intercept,tmp
         bad=c['original'].iloc[:2].copy();bad[cat]='unfitted'
         with pytest.raises(ab.FormulaError,match='not in the fitted rows'):
             m.predict(idata,newdata=bad,kind='mean',new_groups='population' if grouped else 'error')
-    fit=ab.FitResult(idata,'pymc','cpu','cpu','cpu','float64',None,2,20,0,.9,0,seed=0)
+    fit=ab.FitResult(idata,'pymc','cpu','cpu','cpu','float64',None,2,20,0,.9,0,seed=0,_target_identity_json=json.dumps(m.target_identity))
     record=ab.fit_record(m,fit,panel=PANEL_STUB);json.dumps(record)
     assert record['model']['interactions']==[list(p) for p in c['pairs']]
     assert record['model']['design_columns']==c['labels']

@@ -98,7 +98,7 @@ def test_ordinary_predictions_and_record_identity(monkeypatch):
     import autobayes.session as session
     monkeypatch.setattr(session,'_summary_rows',lambda *args:{})
     monkeypatch.setattr(session,'environment',lambda:{})
-    fit=SimpleNamespace(idata=post,backend='synthetic',device_requested='cpu',device_actual='cpu',platform='cpu',dtype='float64',chain_method='none',chains=2,draws=4,tune=0,target_accept=.9,seed=8,wall_seconds=0,notes=['fixed synthetic draws; not a fit'])
+    fit=SimpleNamespace(target_identity=m.target_identity,idata=post,backend='synthetic',device_requested='cpu',device_actual='cpu',platform='cpu',dtype='float64',chain_method='none',chains=2,draws=4,tune=0,target_accept=.9,seed=8,wall_seconds=0,notes=['fixed synthetic draws; not a fit'])
     a=ab.fit_record(m,fit,panel={'values':{},'status':{},'overall':'not evaluated'})
     assert a['model']['family_parameters']=={'nu':4.}
     assert 'logit' not in a['model']['intercept_prior_applies_to']

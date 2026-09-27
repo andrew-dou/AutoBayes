@@ -245,7 +245,7 @@ def test_prediction_arithmetic_records_and_mixed_policies(family, intercept, tmp
     for bad in ({'g':'population'}, {'g':'population','h':'wrong'}, {'g':'population','h':'error','j':'error'}):
         with pytest.raises(ValueError):
             m.predict(idata, newdata=new, kind='mean', new_groups=bad)
-    fit = ab.FitResult(idata, 'pymc', 'cpu', 'cpu', 'cpu', 'float64', None, 2, 400, 0, .9, 0, seed=0)
+    fit = ab.FitResult(idata, 'pymc', 'cpu', 'cpu', 'cpu', 'float64', None, 2, 400, 0, .9, 0, seed=0, _target_identity_json=json.dumps(m.target_identity))
     rec = ab.fit_record(m, fit, panel=PANEL_STUB)
     json.dumps(rec)
     assert 'group' not in rec['model'] and 'J' not in rec['model']

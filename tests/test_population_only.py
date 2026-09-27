@@ -109,7 +109,7 @@ def synthetic_posterior(model, draws=200, seed=3):
 
 def synthetic_fit(model, draws=40):
     return ab.FitResult(idata=synthetic_posterior(model, draws=draws), backend="pymc", device_requested="cpu", device_actual="cpu", platform="cpu",
-                        dtype="float64", chain_method=None, chains=2, draws=draws, tune=0, target_accept=0.9, wall_seconds=0.0, notes=[], seed=0)
+                        dtype="float64", chain_method=None, chains=2, draws=draws, tune=0, target_accept=0.9, wall_seconds=0.0, notes=[], seed=0, _target_identity_json=json.dumps(model.target_identity))
 
 
 def hand_linpred(model, post, df):
