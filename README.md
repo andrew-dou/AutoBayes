@@ -410,3 +410,5 @@ New results carry [fit provenance](docs/fit-binding.md) through saved draws. Rec
 ### Prior-predictive checks
 
 Use `model.prior_predictive(draws=100, seed=42)` for graph-native CPU forward draws before fitting. See [semantics and validation](docs/prior-predictive.md).
+
+Use `model.predict(fit, kind="linear")` for draws before inverse-link transformation; see [linear prediction](docs/linear-prediction.md).
