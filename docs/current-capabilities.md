@@ -38,7 +38,7 @@ recovery fits or GPU validation. Do not extrapolate one GPU run to all features.
 
 ## Next foundations and exclusions
 
-Prior-predictive convenience, broader model comparison, distributional parameter
+Broader model comparison, distributional parameter
 formulas, learned Student-t degrees of freedom, offsets/exposure, censoring and
 truncation remain separate work. Independent varying slopes remain in open PR8
 with an unresolved scientific acceptance gate; correlated slopes are not merged.
@@ -49,3 +49,5 @@ The next useful feature design is a prior-predictive interface with explicit
 prior/response semantics, preserved row and group labels, and reproducible seeds.
 Its API, numerical-domain checks and bounded tests must be decided before code;
 this documentation update does not launch sampling or a prior-predictive campaign.
+
+Prior-predictive modeled-row CPU draws are now available; see [prior predictive](prior-predictive.md). The snapshot and historical counts above refer to PR17, not this addition.
