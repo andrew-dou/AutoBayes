@@ -1,0 +1,565 @@
+fast	Fast suite	﻿2026-09-27T05:00:38.9571591Z ##[group]Run uv run --no-sync pytest tests -q -m "not slow" -p no:cacheprovider --junitxml=evidence-runs/junit-fast.xml
+fast	Fast suite	2026-09-27T05:00:38.9572458Z [36;1muv run --no-sync pytest tests -q -m "not slow" -p no:cacheprovider --junitxml=evidence-runs/junit-fast.xml[0m
+fast	Fast suite	2026-09-27T05:00:38.9636961Z shell: /usr/bin/bash -e {0}
+fast	Fast suite	2026-09-27T05:00:38.9637249Z env:
+fast	Fast suite	2026-09-27T05:00:38.9637611Z   PYTENSOR_FLAGS: base_compiledir=/home/runner/work/AutoBayes/AutoBayes/.pytensor-ci
+fast	Fast suite	2026-09-27T05:00:38.9638255Z   AUTOBAYES_EVIDENCE_DIR: /home/runner/work/AutoBayes/AutoBayes/evidence-runs/ci-fast-36295924596-1
+fast	Fast suite	2026-09-27T05:00:38.9638759Z   PYTHONDONTWRITEBYTECODE: 1
+fast	Fast suite	2026-09-27T05:00:38.9639066Z   UV_CACHE_DIR: /home/runner/work/_temp/setup-uv-cache
+fast	Fast suite	2026-09-27T05:00:38.9639375Z ##[endgroup]
+fast	Fast suite	2026-09-27T05:05:27.9276491Z .........................................................F.............. [ 11%]
+fast	Fast suite	2026-09-27T05:06:31.2081942Z ........................................................................ [ 22%]
+fast	Fast suite	2026-09-27T05:07:32.4885494Z ........................................................................ [ 34%]
+fast	Fast suite	2026-09-27T05:09:57.1132231Z ........................................................................ [ 45%]
+fast	Fast suite	2026-09-27T05:10:23.1843210Z ........................................................................ [ 57%]
+fast	Fast suite	2026-09-27T05:11:23.9205321Z ...............FFFFFF................................................... [ 68%]
+fast	Fast suite	2026-09-27T05:12:53.5647242Z ........................................................................ [ 79%]
+fast	Fast suite	2026-09-27T05:13:43.3366502Z ........................................................................ [ 91%]
+fast	Fast suite	2026-09-27T05:14:10.3745750Z .......................................................                  [100%]
+fast	Fast suite	2026-09-27T05:14:10.3746771Z =================================== FAILURES ===================================
+fast	Fast suite	2026-09-27T05:14:10.3747639Z ___________ test_n_equals_one_matches_bernoulli_on_the_shared_domain ___________
+fast	Fast suite	2026-09-27T05:14:10.3748297Z 
+fast	Fast suite	2026-09-27T05:14:10.3748767Z     def test_n_equals_one_matches_bernoulli_on_the_shared_domain():
+fast	Fast suite	2026-09-27T05:14:10.3749606Z         rng = np.random.default_rng(4)
+fast	Fast suite	2026-09-27T05:14:10.3750209Z         rows, J = 80, 5
+fast	Fast suite	2026-09-27T05:14:10.3750855Z         g = np.array([i % J for i in range(rows)]); rng.shuffle(g)
+fast	Fast suite	2026-09-27T05:14:10.3751595Z         x = rng.normal(size=rows)
+fast	Fast suite	2026-09-27T05:14:10.3764988Z         k = rng.binomial(1, expit(-0.3 + 0.8 * x + rng.normal(0, 0.7, J)[g]))
+fast	Fast suite	2026-09-27T05:14:10.3766187Z         df = pd.DataFrame({"k": k, "n": np.ones(rows, dtype=int), "x": x, "g": [f"lvl{j:02d}" for j in g]})
+fast	Fast suite	2026-09-27T05:14:10.3767069Z         assert set(np.unique(k)) == {0, 1}
+fast	Fast suite	2026-09-27T05:14:10.3767674Z         bin_m = ab.binomial(FORMULA, df, PRIORS)
+fast	Fast suite	2026-09-27T05:14:10.3768353Z         ber_m = ab.bernoulli("k ~ x + (1 | g)", df, PRIORS)
+fast	Fast suite	2026-09-27T05:14:10.3769084Z         names_bin = [v.name for v in bin_m.pymc_model.value_vars]
+fast	Fast suite	2026-09-27T05:14:10.3769977Z         assert names_bin == [v.name for v in ber_m.pymc_model.value_vars]
+fast	Fast suite	2026-09-27T05:14:10.3771358Z         lp_bin, lp_ber = bin_m.pymc_model.compile_logp(), ber_m.pymc_model.compile_logp()
+fast	Fast suite	2026-09-27T05:14:10.3772541Z         dl_bin, dl_ber = bin_m.pymc_model.compile_dlogp(), ber_m.pymc_model.compile_dlogp()
+fast	Fast suite	2026-09-27T05:14:10.3773420Z         for nat in _random_points(bin_m):
+fast	Fast suite	2026-09-27T05:14:10.3773991Z             pt_ = bin_m.value_point(**nat)
+fast	Fast suite	2026-09-27T05:14:10.3774973Z             a, b = float(lp_bin(pt_)), float(lp_ber(pt_))
+fast	Fast suite	2026-09-27T05:14:10.3775800Z             assert abs(a - b) <= tol(b)                                           # log C(1, k) = 0
+fast	Fast suite	2026-09-27T05:14:10.3776703Z             ga, gb = np.asarray(dl_bin(pt_)), np.asarray(dl_ber(pt_))
+fast	Fast suite	2026-09-27T05:14:10.3777622Z             assert np.all(np.abs(ga - gb) <= np.maximum(1e-8, 1e-12 * np.abs(gb)))
+fast	Fast suite	2026-09-27T05:14:10.3778640Z         fit = bin_m.fit(backend="pymc", chains=2, draws=60, tune=60, seed=2, cores=1)
+fast	Fast suite	2026-09-27T05:14:10.3779646Z         p_bin = bin_m.predict(fit, kind="probability")["p"].to_numpy()
+fast	Fast suite	2026-09-27T05:14:10.3780813Z >       p_ber = ber_m.predict(fit, kind="mean")["p"].to_numpy()
+fast	Fast suite	2026-09-27T05:14:10.3781476Z                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+fast	Fast suite	2026-09-27T05:14:10.3781896Z 
+fast	Fast suite	2026-09-27T05:14:10.3782159Z tests/test_binomial.py:381: 
+fast	Fast suite	2026-09-27T05:14:10.3782762Z _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+fast	Fast suite	2026-09-27T05:14:10.3783495Z autobayes/model.py:682: in predict
+fast	Fast suite	2026-09-27T05:14:10.3784400Z     return predict(self, fit_result, **kwargs)
+fast	Fast suite	2026-09-27T05:14:10.3785078Z            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+fast	Fast suite	2026-09-27T05:14:10.3785713Z autobayes/predict.py:233: in predict
+fast	Fast suite	2026-09-27T05:14:10.3786497Z     binding = check_fit_binding(model, fit_result, allow_unverified=True)
+fast	Fast suite	2026-09-27T05:14:10.3787360Z               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+fast	Fast suite	2026-09-27T05:14:10.3788095Z autobayes/identity.py:103: in check_fit_binding
+fast	Fast suite	2026-09-27T05:14:10.3788984Z     comparison_identity(expected, {'model': {'target_identity': identity}})
+fast	Fast suite	2026-09-27T05:14:10.3789872Z _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+fast	Fast suite	2026-09-27T05:14:10.3790398Z 
+fast	Fast suite	2026-09-27T05:14:10.3791277Z a = {'model': {'target_identity': {'schema': 'autobayes-target-v1', 'sha256': '83450eb6d58d89a113effa53abdd333289d4a014804f2a4ae1a03abac21f5c7d'}}}
+fast	Fast suite	2026-09-27T05:14:10.3792978Z b = {'model': {'target_identity': {'schema': 'autobayes-target-v1', 'sha256': '54bed465cf5ed1b6451bbe2491ad470245cac50fd6c91e706f9293fd64776544'}}}
+fast	Fast suite	2026-09-27T05:14:10.3794321Z allow_legacy = False
+fast	Fast suite	2026-09-27T05:14:10.3794663Z 
+fast	Fast suite	2026-09-27T05:14:10.3794972Z     def comparison_identity(a, b, *, allow_legacy=False):
+fast	Fast suite	2026-09-27T05:14:10.3795724Z         identities = [record['model'].get('target_identity') for record in (a,b)]
+fast	Fast suite	2026-09-27T05:14:10.3796403Z         for identity in identities:
+fast	Fast suite	2026-09-27T05:14:10.3796894Z             if identity is None:
+fast	Fast suite	2026-09-27T05:14:10.3797351Z                 continue
+fast	Fast suite	2026-09-27T05:14:10.3797952Z             if (not isinstance(identity, dict) or set(identity) != {'schema','sha256'}
+fast	Fast suite	2026-09-27T05:14:10.3798845Z                     or identity['schema'] != SCHEMA or not isinstance(identity['sha256'], str)
+fast	Fast suite	2026-09-27T05:14:10.3799557Z                     or len(identity['sha256']) != 64
+fast	Fast suite	2026-09-27T05:14:10.3800187Z                     or any(c not in '0123456789abcdef' for c in identity['sha256'])):
+fast	Fast suite	2026-09-27T05:14:10.3801176Z                 raise ValueError('invalid or unsupported target identity; do not infer identity from summary metadata')
+fast	Fast suite	2026-09-27T05:14:10.3802061Z         if any(i is None for i in identities):
+fast	Fast suite	2026-09-27T05:14:10.3802570Z             if not allow_legacy:
+fast	Fast suite	2026-09-27T05:14:10.3803617Z                 raise ValueError('target identity is missing; re-record from the original built model, or explicitly use allow_legacy=True for an unverified comparison')
+fast	Fast suite	2026-09-27T05:14:10.3804953Z             return 'unverified_legacy'
+fast	Fast suite	2026-09-27T05:14:10.3805457Z         if identities[0] != identities[1]:
+fast	Fast suite	2026-09-27T05:14:10.3806438Z >           raise ValueError('records fit different models or data: target identities differ')
+fast	Fast suite	2026-09-27T05:14:10.3807373Z E           ValueError: records fit different models or data: target identities differ
+fast	Fast suite	2026-09-27T05:14:10.3807956Z 
+fast	Fast suite	2026-09-27T05:14:10.3808198Z autobayes/identity.py:71: ValueError
+fast	Fast suite	2026-09-27T05:14:10.3808823Z ------------------------------ Captured log call -------------------------------
+fast	Fast suite	2026-09-27T05:14:10.3810063Z WARNING  pymc.sampling.mcmc:mcmc.py:810 Only 60 samples per chain. Reliable r-hat and ESS diagnostics require longer chains for accurate estimate.
+fast	Fast suite	2026-09-27T05:14:10.3811282Z ___________ test_fixed_draw_predictions_and_records[False-gaussian] ____________
+fast	Fast suite	2026-09-27T05:14:10.3811848Z 
+fast	Fast suite	2026-09-27T05:14:10.3812090Z family = 'gaussian', group = False
+fast	Fast suite	2026-09-27T05:14:10.3812438Z 
+fast	Fast suite	2026-09-27T05:14:10.3812689Z     @pytest.mark.parametrize("family", LHS)
+fast	Fast suite	2026-09-27T05:14:10.3813262Z     @pytest.mark.parametrize("group", [False,True])
+fast	Fast suite	2026-09-27T05:14:10.3813927Z     def test_fixed_draw_predictions_and_records(family, group):
+fast	Fast suite	2026-09-27T05:14:10.3815284Z         m,df=make(family,group=group);id=fixed_draws(group,family=="gaussian");p=id.posterior
+fast	Fast suite	2026-09-27T05:14:10.3816247Z         b=np.concatenate([p.x.values[...,None],p.z.values,p["x:z"].values],axis=-1)
+fast	Fast suite	2026-09-27T05:14:10.3817173Z         for data in [None,pd.DataFrame({"x":[0.,-2.,4.,0.],"z":["b","a","c","b"],"g":["A","B","C","A"],"n":[4,0,2,4]})]:
+fast	Fast suite	2026-09-27T05:14:10.3817946Z             d=df if data is None else data
+fast	Fast suite	2026-09-27T05:14:10.3818633Z             expected=np.einsum("cdp,np->cdn",b,independent_design(d,"interaction")[0])
+fast	Fast suite	2026-09-27T05:14:10.3819481Z             if group:expected+=p["1|g"].values[:,:,["ABC".index(g) for g in d.g]]
+fast	Fast suite	2026-09-27T05:14:10.3820252Z             expected=expected if family=="gaussian" else expit(expected)
+fast	Fast suite	2026-09-27T05:14:10.3820926Z             out=m.predict(id,newdata=data,kind="mean")
+fast	Fast suite	2026-09-27T05:14:10.3821672Z             assert np.allclose(out["mu" if family=="gaussian" else "p"],expected,atol=1e-12)
+fast	Fast suite	2026-09-27T05:14:10.3822595Z             if family=="binomial":assert np.allclose(out.expected,expected*d.n.to_numpy())
+fast	Fast suite	2026-09-27T05:14:10.3823292Z         if group:
+fast	Fast suite	2026-09-27T05:14:10.3823844Z             new=pd.DataFrame({"x":[1.,1.,1.],"z":["b"]*3,"g":["NEW","NEW","NEXT"],"n":[2]*3})
+fast	Fast suite	2026-09-27T05:14:10.3824795Z             for policy in ["population","resample_observed"]:
+fast	Fast suite	2026-09-27T05:14:10.3825530Z                 out=m.predict(id,newdata=new,new_groups=policy,kind="mean",seed=20)
+fast	Fast suite	2026-09-27T05:14:10.3826253Z                 a=out["mu" if family=="gaussian" else "p"].values
+fast	Fast suite	2026-09-27T05:14:10.3826857Z                 assert np.array_equal(a[...,0],a[...,1])
+fast	Fast suite	2026-09-27T05:14:10.3827596Z                 # One sampled group effect per label, reconstructed independently from the seed.
+fast	Fast suite	2026-09-27T05:14:10.3828386Z                 rng=np.random.default_rng(20);effects={}
+fast	Fast suite	2026-09-27T05:14:10.3828932Z                 for label in ["NEW","NEXT"]:
+fast	Fast suite	2026-09-27T05:14:10.3829584Z                     if policy=="population":effects[label]=rng.normal(size=(2,80))*.6
+fast	Fast suite	2026-09-27T05:14:10.3830238Z                     else:
+fast	Fast suite	2026-09-27T05:14:10.3831074Z                         indexes=rng.integers(0,3,size=(2,80));effects[label]=np.take_along_axis(p["1|g"].values,indexes[...,None],axis=-1)[...,0]
+fast	Fast suite	2026-09-27T05:14:10.3832034Z                 eta=p.x.values+p.z.values[...,0]
+fast	Fast suite	2026-09-27T05:14:10.3832677Z                 expected=np.stack([eta+effects[l] for l in new.g],axis=-1)
+fast	Fast suite	2026-09-27T05:14:10.3833487Z                 assert np.allclose(a,expected if family=="gaussian" else expit(expected))
+fast	Fast suite	2026-09-27T05:14:10.3834859Z         fit=SimpleNamespace(idata=id,backend="pymc",device_requested="cpu",device_actual="cpu",platform="cpu",dtype="float64",chain_method=None,
+fast	Fast suite	2026-09-27T05:14:10.3836243Z                             chains=2,draws=80,tune=0,target_accept=.9,seed=16,wall_seconds=0.,notes=["synthetic draws; no sampling"])
+fast	Fast suite	2026-09-27T05:14:10.3837221Z >       record=ab.fit_record(m,fit,panel=PANEL_STUB);json.dumps(record)
+fast	Fast suite	2026-09-27T05:14:10.3838074Z                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+fast	Fast suite	2026-09-27T05:14:10.3838458Z 
+fast	Fast suite	2026-09-27T05:14:10.3838715Z tests/test_intercept_controls.py:231: 
+fast	Fast suite	2026-09-27T05:14:10.3839294Z _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+fast	Fast suite	2026-09-27T05:14:10.3839903Z autobayes/session.py:86: in fit_record
+fast	Fast suite	2026-09-27T05:14:10.3840547Z     binding = check_fit_binding(model, fit, allow_unverified=allow_unverified)
+fast	Fast suite	2026-09-27T05:14:10.3841259Z               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+fast	Fast suite	2026-09-27T05:14:10.3841868Z _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+fast	Fast suite	2026-09-27T05:14:10.3842326Z 
+fast	Fast suite	2026-09-27T05:14:10.3842630Z model = <autobayes.model.Model object at 0x7f8afbe76310>
+fast	Fast suite	2026-09-27T05:14:10.3843276Z result = namespace(idata=Inference data with groups:
+fast	Fast suite	2026-09-27T05:14:10.3844728Z 	> posterior, backend='pymc', device_requested='cpu', device_actual='cpu',...None, chains=2, draws=80, tune=0, target_accept=0.9, seed=16, wall_seconds=0.0, notes=['synthetic draws; no sampling'])
+fast	Fast suite	2026-09-27T05:14:10.3846541Z allow_unverified = False
+fast	Fast suite	2026-09-27T05:14:10.3846924Z 
+fast	Fast suite	2026-09-27T05:14:10.3847322Z     def check_fit_binding(model, result, *, allow_unverified=False):
+fast	Fast suite	2026-09-27T05:14:10.3848180Z         """Check available result and serialized-draw identities against the model."""
+fast	Fast suite	2026-09-27T05:14:10.3849051Z         expected = {'model': {'target_identity': model.target_identity}}
+fast	Fast suite	2026-09-27T05:14:10.3849720Z         identities = []
+fast	Fast suite	2026-09-27T05:14:10.3850251Z         identity = getattr(result, 'target_identity', None)
+fast	Fast suite	2026-09-27T05:14:10.3850853Z         if identity is not None:
+fast	Fast suite	2026-09-27T05:14:10.3851373Z             identities.append(identity)
+fast	Fast suite	2026-09-27T05:14:10.3851942Z         idata = getattr(result, 'idata', result)
+fast	Fast suite	2026-09-27T05:14:10.3852509Z         attrs = getattr(idata, 'attrs', {})
+fast	Fast suite	2026-09-27T05:14:10.3853073Z         if FIT_IDENTITY_ATTR in attrs:
+fast	Fast suite	2026-09-27T05:14:10.3853600Z             try:
+fast	Fast suite	2026-09-27T05:14:10.3854279Z                 serialized = attrs[FIT_IDENTITY_ATTR]
+fast	Fast suite	2026-09-27T05:14:10.3854931Z                 if not isinstance(serialized, str):
+fast	Fast suite	2026-09-27T05:14:10.3855586Z                     raise ValueError('expected JSON text')
+fast	Fast suite	2026-09-27T05:14:10.3856217Z                 identity = json.loads(serialized)
+fast	Fast suite	2026-09-27T05:14:10.3856826Z                 if identity is None:
+fast	Fast suite	2026-09-27T05:14:10.3857384Z                     raise ValueError('null identity')
+fast	Fast suite	2026-09-27T05:14:10.3857984Z             except (TypeError, ValueError) as exc:
+fast	Fast suite	2026-09-27T05:14:10.3858710Z                 raise ValueError('invalid serialized fit target identity') from exc
+fast	Fast suite	2026-09-27T05:14:10.3859441Z             identities.append(identity)
+fast	Fast suite	2026-09-27T05:14:10.3859980Z         if not identities:
+fast	Fast suite	2026-09-27T05:14:10.3860469Z             if not allow_unverified:
+fast	Fast suite	2026-09-27T05:14:10.3861448Z >               raise ValueError('fit target binding is missing; use allow_unverified=True only for an explicitly unverified legacy record')
+fast	Fast suite	2026-09-27T05:14:10.3862900Z E               ValueError: fit target binding is missing; use allow_unverified=True only for an explicitly unverified legacy record
+fast	Fast suite	2026-09-27T05:14:10.3863891Z 
+fast	Fast suite	2026-09-27T05:14:10.3864371Z autobayes/identity.py:100: ValueError
+fast	Fast suite	2026-09-27T05:14:10.3865120Z ___________ test_fixed_draw_predictions_and_records[False-bernoulli] ___________
+fast	Fast suite	2026-09-27T05:14:10.3865725Z 
+fast	Fast suite	2026-09-27T05:14:10.3866013Z family = 'bernoulli', group = False
+fast	Fast suite	2026-09-27T05:14:10.3866409Z 
+fast	Fast suite	2026-09-27T05:14:10.3866711Z     @pytest.mark.parametrize("family", LHS)
+fast	Fast suite	2026-09-27T05:14:10.3867337Z     @pytest.mark.parametrize("group", [False,True])
+fast	Fast suite	2026-09-27T05:14:10.3868047Z     def test_fixed_draw_predictions_and_records(family, group):
+fast	Fast suite	2026-09-27T05:14:10.3868907Z         m,df=make(family,group=group);id=fixed_draws(group,family=="gaussian");p=id.posterior
+fast	Fast suite	2026-09-27T05:14:10.3869838Z         b=np.concatenate([p.x.values[...,None],p.z.values,p["x:z"].values],axis=-1)
+fast	Fast suite	2026-09-27T05:14:10.3871034Z         for data in [None,pd.DataFrame({"x":[0.,-2.,4.,0.],"z":["b","a","c","b"],"g":["A","B","C","A"],"n":[4,0,2,4]})]:
+fast	Fast suite	2026-09-27T05:14:10.3871858Z             d=df if data is None else data
+fast	Fast suite	2026-09-27T05:14:10.3872584Z             expected=np.einsum("cdp,np->cdn",b,independent_design(d,"interaction")[0])
+fast	Fast suite	2026-09-27T05:14:10.3873472Z             if group:expected+=p["1|g"].values[:,:,["ABC".index(g) for g in d.g]]
+fast	Fast suite	2026-09-27T05:14:10.3874478Z             expected=expected if family=="gaussian" else expit(expected)
+fast	Fast suite	2026-09-27T05:14:10.3875206Z             out=m.predict(id,newdata=data,kind="mean")
+fast	Fast suite	2026-09-27T05:14:10.3876159Z             assert np.allclose(out["mu" if family=="gaussian" else "p"],expected,atol=1e-12)
+fast	Fast suite	2026-09-27T05:14:10.3880234Z             if family=="binomial":assert np.allclose(out.expected,expected*d.n.to_numpy())
+fast	Fast suite	2026-09-27T05:14:10.3881051Z         if group:
+fast	Fast suite	2026-09-27T05:14:10.3881685Z             new=pd.DataFrame({"x":[1.,1.,1.],"z":["b"]*3,"g":["NEW","NEW","NEXT"],"n":[2]*3})
+fast	Fast suite	2026-09-27T05:14:10.3882736Z             for policy in ["population","resample_observed"]:
+fast	Fast suite	2026-09-27T05:14:10.3883525Z                 out=m.predict(id,newdata=new,new_groups=policy,kind="mean",seed=20)
+fast	Fast suite	2026-09-27T05:14:10.3884562Z                 a=out["mu" if family=="gaussian" else "p"].values
+fast	Fast suite	2026-09-27T05:14:10.3885244Z                 assert np.array_equal(a[...,0],a[...,1])
+fast	Fast suite	2026-09-27T05:14:10.3886063Z                 # One sampled group effect per label, reconstructed independently from the seed.
+fast	Fast suite	2026-09-27T05:14:10.3886866Z                 rng=np.random.default_rng(20);effects={}
+fast	Fast suite	2026-09-27T05:14:10.3887471Z                 for label in ["NEW","NEXT"]:
+fast	Fast suite	2026-09-27T05:14:10.3888167Z                     if policy=="population":effects[label]=rng.normal(size=(2,80))*.6
+fast	Fast suite	2026-09-27T05:14:10.3888866Z                     else:
+fast	Fast suite	2026-09-27T05:14:10.3889752Z                         indexes=rng.integers(0,3,size=(2,80));effects[label]=np.take_along_axis(p["1|g"].values,indexes[...,None],axis=-1)[...,0]
+fast	Fast suite	2026-09-27T05:14:10.3890769Z                 eta=p.x.values+p.z.values[...,0]
+fast	Fast suite	2026-09-27T05:14:10.3891457Z                 expected=np.stack([eta+effects[l] for l in new.g],axis=-1)
+fast	Fast suite	2026-09-27T05:14:10.3892305Z                 assert np.allclose(a,expected if family=="gaussian" else expit(expected))
+fast	Fast suite	2026-09-27T05:14:10.3893593Z         fit=SimpleNamespace(idata=id,backend="pymc",device_requested="cpu",device_actual="cpu",platform="cpu",dtype="float64",chain_method=None,
+fast	Fast suite	2026-09-27T05:14:10.3895190Z                             chains=2,draws=80,tune=0,target_accept=.9,seed=16,wall_seconds=0.,notes=["synthetic draws; no sampling"])
+fast	Fast suite	2026-09-27T05:14:10.3896231Z >       record=ab.fit_record(m,fit,panel=PANEL_STUB);json.dumps(record)
+fast	Fast suite	2026-09-27T05:14:10.3896926Z                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+fast	Fast suite	2026-09-27T05:14:10.3897361Z 
+fast	Fast suite	2026-09-27T05:14:10.3897661Z tests/test_intercept_controls.py:231: 
+fast	Fast suite	2026-09-27T05:14:10.3898305Z _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+fast	Fast suite	2026-09-27T05:14:10.3898979Z autobayes/session.py:86: in fit_record
+fast	Fast suite	2026-09-27T05:14:10.3899680Z     binding = check_fit_binding(model, fit, allow_unverified=allow_unverified)
+fast	Fast suite	2026-09-27T05:14:10.3900436Z               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+fast	Fast suite	2026-09-27T05:14:10.3901157Z _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+fast	Fast suite	2026-09-27T05:14:10.3901654Z 
+fast	Fast suite	2026-09-27T05:14:10.3902005Z model = <autobayes.model.Model object at 0x7f8afbc3cf10>
+fast	Fast suite	2026-09-27T05:14:10.3902686Z result = namespace(idata=Inference data with groups:
+fast	Fast suite	2026-09-27T05:14:10.3904186Z 	> posterior, backend='pymc', device_requested='cpu', device_actual='cpu',...None, chains=2, draws=80, tune=0, target_accept=0.9, seed=16, wall_seconds=0.0, notes=['synthetic draws; no sampling'])
+fast	Fast suite	2026-09-27T05:14:10.3905464Z allow_unverified = False
+fast	Fast suite	2026-09-27T05:14:10.3905828Z 
+fast	Fast suite	2026-09-27T05:14:10.3906217Z     def check_fit_binding(model, result, *, allow_unverified=False):
+fast	Fast suite	2026-09-27T05:14:10.3907293Z         """Check available result and serialized-draw identities against the model."""
+fast	Fast suite	2026-09-27T05:14:10.3908239Z         expected = {'model': {'target_identity': model.target_identity}}
+fast	Fast suite	2026-09-27T05:14:10.3908909Z         identities = []
+fast	Fast suite	2026-09-27T05:14:10.3909440Z         identity = getattr(result, 'target_identity', None)
+fast	Fast suite	2026-09-27T05:14:10.3910058Z         if identity is not None:
+fast	Fast suite	2026-09-27T05:14:10.3910595Z             identities.append(identity)
+fast	Fast suite	2026-09-27T05:14:10.3911170Z         idata = getattr(result, 'idata', result)
+fast	Fast suite	2026-09-27T05:14:10.3911754Z         attrs = getattr(idata, 'attrs', {})
+fast	Fast suite	2026-09-27T05:14:10.3912316Z         if FIT_IDENTITY_ATTR in attrs:
+fast	Fast suite	2026-09-27T05:14:10.3912832Z             try:
+fast	Fast suite	2026-09-27T05:14:10.3913307Z                 serialized = attrs[FIT_IDENTITY_ATTR]
+fast	Fast suite	2026-09-27T05:14:10.3913916Z                 if not isinstance(serialized, str):
+fast	Fast suite	2026-09-27T05:14:10.3914738Z                     raise ValueError('expected JSON text')
+fast	Fast suite	2026-09-27T05:14:10.3915459Z                 identity = json.loads(serialized)
+fast	Fast suite	2026-09-27T05:14:10.3916408Z                 if identity is None:
+fast	Fast suite	2026-09-27T05:14:10.3919164Z                     raise ValueError('null identity')
+fast	Fast suite	2026-09-27T05:14:10.3919829Z             except (TypeError, ValueError) as exc:
+fast	Fast suite	2026-09-27T05:14:10.3920575Z                 raise ValueError('invalid serialized fit target identity') from exc
+fast	Fast suite	2026-09-27T05:14:10.3921322Z             identities.append(identity)
+fast	Fast suite	2026-09-27T05:14:10.3921857Z         if not identities:
+fast	Fast suite	2026-09-27T05:14:10.3922339Z             if not allow_unverified:
+fast	Fast suite	2026-09-27T05:14:10.3923312Z >               raise ValueError('fit target binding is missing; use allow_unverified=True only for an explicitly unverified legacy record')
+fast	Fast suite	2026-09-27T05:14:10.3925102Z E               ValueError: fit target binding is missing; use allow_unverified=True only for an explicitly unverified legacy record
+fast	Fast suite	2026-09-27T05:14:10.3925960Z 
+fast	Fast suite	2026-09-27T05:14:10.3926256Z autobayes/identity.py:100: ValueError
+fast	Fast suite	2026-09-27T05:14:10.3926994Z ___________ test_fixed_draw_predictions_and_records[False-binomial] ____________
+fast	Fast suite	2026-09-27T05:14:10.3927592Z 
+fast	Fast suite	2026-09-27T05:14:10.3927882Z family = 'binomial', group = False
+fast	Fast suite	2026-09-27T05:14:10.3928279Z 
+fast	Fast suite	2026-09-27T05:14:10.3928582Z     @pytest.mark.parametrize("family", LHS)
+fast	Fast suite	2026-09-27T05:14:10.3929237Z     @pytest.mark.parametrize("group", [False,True])
+fast	Fast suite	2026-09-27T05:14:10.3929934Z     def test_fixed_draw_predictions_and_records(family, group):
+fast	Fast suite	2026-09-27T05:14:10.3930817Z         m,df=make(family,group=group);id=fixed_draws(group,family=="gaussian");p=id.posterior
+fast	Fast suite	2026-09-27T05:14:10.3931779Z         b=np.concatenate([p.x.values[...,None],p.z.values,p["x:z"].values],axis=-1)
+fast	Fast suite	2026-09-27T05:14:10.3932748Z         for data in [None,pd.DataFrame({"x":[0.,-2.,4.,0.],"z":["b","a","c","b"],"g":["A","B","C","A"],"n":[4,0,2,4]})]:
+fast	Fast suite	2026-09-27T05:14:10.3933564Z             d=df if data is None else data
+fast	Fast suite	2026-09-27T05:14:10.3934477Z             expected=np.einsum("cdp,np->cdn",b,independent_design(d,"interaction")[0])
+fast	Fast suite	2026-09-27T05:14:10.3935418Z             if group:expected+=p["1|g"].values[:,:,["ABC".index(g) for g in d.g]]
+fast	Fast suite	2026-09-27T05:14:10.3936249Z             expected=expected if family=="gaussian" else expit(expected)
+fast	Fast suite	2026-09-27T05:14:10.3936978Z             out=m.predict(id,newdata=data,kind="mean")
+fast	Fast suite	2026-09-27T05:14:10.3937777Z             assert np.allclose(out["mu" if family=="gaussian" else "p"],expected,atol=1e-12)
+fast	Fast suite	2026-09-27T05:14:10.3938746Z             if family=="binomial":assert np.allclose(out.expected,expected*d.n.to_numpy())
+fast	Fast suite	2026-09-27T05:14:10.3939480Z         if group:
+fast	Fast suite	2026-09-27T05:14:10.3940088Z             new=pd.DataFrame({"x":[1.,1.,1.],"z":["b"]*3,"g":["NEW","NEW","NEXT"],"n":[2]*3})
+fast	Fast suite	2026-09-27T05:14:10.3940881Z             for policy in ["population","resample_observed"]:
+fast	Fast suite	2026-09-27T05:14:10.3941640Z                 out=m.predict(id,newdata=new,new_groups=policy,kind="mean",seed=20)
+fast	Fast suite	2026-09-27T05:14:10.3942414Z                 a=out["mu" if family=="gaussian" else "p"].values
+fast	Fast suite	2026-09-27T05:14:10.3943631Z                 assert np.array_equal(a[...,0],a[...,1])
+fast	Fast suite	2026-09-27T05:14:10.3944714Z                 # One sampled group effect per label, reconstructed independently from the seed.
+fast	Fast suite	2026-09-27T05:14:10.3945566Z                 rng=np.random.default_rng(20);effects={}
+fast	Fast suite	2026-09-27T05:14:10.3946187Z                 for label in ["NEW","NEXT"]:
+fast	Fast suite	2026-09-27T05:14:10.3946873Z                     if policy=="population":effects[label]=rng.normal(size=(2,80))*.6
+fast	Fast suite	2026-09-27T05:14:10.3947567Z                     else:
+fast	Fast suite	2026-09-27T05:14:10.3948464Z                         indexes=rng.integers(0,3,size=(2,80));effects[label]=np.take_along_axis(p["1|g"].values,indexes[...,None],axis=-1)[...,0]
+fast	Fast suite	2026-09-27T05:14:10.3949466Z                 eta=p.x.values+p.z.values[...,0]
+fast	Fast suite	2026-09-27T05:14:10.3950136Z                 expected=np.stack([eta+effects[l] for l in new.g],axis=-1)
+fast	Fast suite	2026-09-27T05:14:10.3951003Z                 assert np.allclose(a,expected if family=="gaussian" else expit(expected))
+fast	Fast suite	2026-09-27T05:14:10.3952509Z         fit=SimpleNamespace(idata=id,backend="pymc",device_requested="cpu",device_actual="cpu",platform="cpu",dtype="float64",chain_method=None,
+fast	Fast suite	2026-09-27T05:14:10.3953953Z                             chains=2,draws=80,tune=0,target_accept=.9,seed=16,wall_seconds=0.,notes=["synthetic draws; no sampling"])
+fast	Fast suite	2026-09-27T05:14:10.3955260Z >       record=ab.fit_record(m,fit,panel=PANEL_STUB);json.dumps(record)
+fast	Fast suite	2026-09-27T05:14:10.3955974Z                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+fast	Fast suite	2026-09-27T05:14:10.3956409Z 
+fast	Fast suite	2026-09-27T05:14:10.3956705Z tests/test_intercept_controls.py:231: 
+fast	Fast suite	2026-09-27T05:14:10.3957341Z _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+fast	Fast suite	2026-09-27T05:14:10.3958003Z autobayes/session.py:86: in fit_record
+fast	Fast suite	2026-09-27T05:14:10.3958721Z     binding = check_fit_binding(model, fit, allow_unverified=allow_unverified)
+fast	Fast suite	2026-09-27T05:14:10.3959480Z               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+fast	Fast suite	2026-09-27T05:14:10.3960243Z _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+fast	Fast suite	2026-09-27T05:14:10.3960756Z 
+fast	Fast suite	2026-09-27T05:14:10.3961121Z model = <autobayes.model.Model object at 0x7f8b14a754d0>
+fast	Fast suite	2026-09-27T05:14:10.3961821Z result = namespace(idata=Inference data with groups:
+fast	Fast suite	2026-09-27T05:14:10.3963153Z 	> posterior, backend='pymc', device_requested='cpu', device_actual='cpu',...None, chains=2, draws=80, tune=0, target_accept=0.9, seed=16, wall_seconds=0.0, notes=['synthetic draws; no sampling'])
+fast	Fast suite	2026-09-27T05:14:10.3964613Z allow_unverified = False
+fast	Fast suite	2026-09-27T05:14:10.3964978Z 
+fast	Fast suite	2026-09-27T05:14:10.3965372Z     def check_fit_binding(model, result, *, allow_unverified=False):
+fast	Fast suite	2026-09-27T05:14:10.3966256Z         """Check available result and serialized-draw identities against the model."""
+fast	Fast suite	2026-09-27T05:14:10.3967163Z         expected = {'model': {'target_identity': model.target_identity}}
+fast	Fast suite	2026-09-27T05:14:10.3967828Z         identities = []
+fast	Fast suite	2026-09-27T05:14:10.3968400Z         identity = getattr(result, 'target_identity', None)
+fast	Fast suite	2026-09-27T05:14:10.3969018Z         if identity is not None:
+fast	Fast suite	2026-09-27T05:14:10.3969551Z             identities.append(identity)
+fast	Fast suite	2026-09-27T05:14:10.3970123Z         idata = getattr(result, 'idata', result)
+fast	Fast suite	2026-09-27T05:14:10.3970717Z         attrs = getattr(idata, 'attrs', {})
+fast	Fast suite	2026-09-27T05:14:10.3971275Z         if FIT_IDENTITY_ATTR in attrs:
+fast	Fast suite	2026-09-27T05:14:10.3971777Z             try:
+fast	Fast suite	2026-09-27T05:14:10.3972264Z                 serialized = attrs[FIT_IDENTITY_ATTR]
+fast	Fast suite	2026-09-27T05:14:10.3972870Z                 if not isinstance(serialized, str):
+fast	Fast suite	2026-09-27T05:14:10.3973505Z                     raise ValueError('expected JSON text')
+fast	Fast suite	2026-09-27T05:14:10.3974284Z                 identity = json.loads(serialized)
+fast	Fast suite	2026-09-27T05:14:10.3974881Z                 if identity is None:
+fast	Fast suite	2026-09-27T05:14:10.3975431Z                     raise ValueError('null identity')
+fast	Fast suite	2026-09-27T05:14:10.3976027Z             except (TypeError, ValueError) as exc:
+fast	Fast suite	2026-09-27T05:14:10.3977012Z                 raise ValueError('invalid serialized fit target identity') from exc
+fast	Fast suite	2026-09-27T05:14:10.3977802Z             identities.append(identity)
+fast	Fast suite	2026-09-27T05:14:10.3978356Z         if not identities:
+fast	Fast suite	2026-09-27T05:14:10.3978864Z             if not allow_unverified:
+fast	Fast suite	2026-09-27T05:14:10.3979856Z >               raise ValueError('fit target binding is missing; use allow_unverified=True only for an explicitly unverified legacy record')
+fast	Fast suite	2026-09-27T05:14:10.3981277Z E               ValueError: fit target binding is missing; use allow_unverified=True only for an explicitly unverified legacy record
+fast	Fast suite	2026-09-27T05:14:10.3982110Z 
+fast	Fast suite	2026-09-27T05:14:10.3982404Z autobayes/identity.py:100: ValueError
+fast	Fast suite	2026-09-27T05:14:10.3983114Z ____________ test_fixed_draw_predictions_and_records[True-gaussian] ____________
+fast	Fast suite	2026-09-27T05:14:10.3983698Z 
+fast	Fast suite	2026-09-27T05:14:10.3983978Z family = 'gaussian', group = True
+fast	Fast suite	2026-09-27T05:14:10.3984569Z 
+fast	Fast suite	2026-09-27T05:14:10.3984880Z     @pytest.mark.parametrize("family", LHS)
+fast	Fast suite	2026-09-27T05:14:10.3985782Z     @pytest.mark.parametrize("group", [False,True])
+fast	Fast suite	2026-09-27T05:14:10.3986495Z     def test_fixed_draw_predictions_and_records(family, group):
+fast	Fast suite	2026-09-27T05:14:10.3987349Z         m,df=make(family,group=group);id=fixed_draws(group,family=="gaussian");p=id.posterior
+fast	Fast suite	2026-09-27T05:14:10.3988302Z         b=np.concatenate([p.x.values[...,None],p.z.values,p["x:z"].values],axis=-1)
+fast	Fast suite	2026-09-27T05:14:10.3989274Z         for data in [None,pd.DataFrame({"x":[0.,-2.,4.,0.],"z":["b","a","c","b"],"g":["A","B","C","A"],"n":[4,0,2,4]})]:
+fast	Fast suite	2026-09-27T05:14:10.3990094Z             d=df if data is None else data
+fast	Fast suite	2026-09-27T05:14:10.3990815Z             expected=np.einsum("cdp,np->cdn",b,independent_design(d,"interaction")[0])
+fast	Fast suite	2026-09-27T05:14:10.3991682Z             if group:expected+=p["1|g"].values[:,:,["ABC".index(g) for g in d.g]]
+fast	Fast suite	2026-09-27T05:14:10.3992476Z             expected=expected if family=="gaussian" else expit(expected)
+fast	Fast suite	2026-09-27T05:14:10.3993189Z             out=m.predict(id,newdata=data,kind="mean")
+fast	Fast suite	2026-09-27T05:14:10.3993967Z             assert np.allclose(out["mu" if family=="gaussian" else "p"],expected,atol=1e-12)
+fast	Fast suite	2026-09-27T05:14:10.3995109Z             if family=="binomial":assert np.allclose(out.expected,expected*d.n.to_numpy())
+fast	Fast suite	2026-09-27T05:14:10.3995876Z         if group:
+fast	Fast suite	2026-09-27T05:14:10.3996470Z             new=pd.DataFrame({"x":[1.,1.,1.],"z":["b"]*3,"g":["NEW","NEW","NEXT"],"n":[2]*3})
+fast	Fast suite	2026-09-27T05:14:10.3997254Z             for policy in ["population","resample_observed"]:
+fast	Fast suite	2026-09-27T05:14:10.3998002Z                 out=m.predict(id,newdata=new,new_groups=policy,kind="mean",seed=20)
+fast	Fast suite	2026-09-27T05:14:10.3998762Z                 a=out["mu" if family=="gaussian" else "p"].values
+fast	Fast suite	2026-09-27T05:14:10.3999407Z                 assert np.array_equal(a[...,0],a[...,1])
+fast	Fast suite	2026-09-27T05:14:10.4000190Z                 # One sampled group effect per label, reconstructed independently from the seed.
+fast	Fast suite	2026-09-27T05:14:10.4001004Z                 rng=np.random.default_rng(20);effects={}
+fast	Fast suite	2026-09-27T05:14:10.4001609Z                 for label in ["NEW","NEXT"]:
+fast	Fast suite	2026-09-27T05:14:10.4002289Z                     if policy=="population":effects[label]=rng.normal(size=(2,80))*.6
+fast	Fast suite	2026-09-27T05:14:10.4002972Z                     else:
+fast	Fast suite	2026-09-27T05:14:10.4003848Z                         indexes=rng.integers(0,3,size=(2,80));effects[label]=np.take_along_axis(p["1|g"].values,indexes[...,None],axis=-1)[...,0]
+fast	Fast suite	2026-09-27T05:14:10.4005029Z                 eta=p.x.values+p.z.values[...,0]
+fast	Fast suite	2026-09-27T05:14:10.4005711Z                 expected=np.stack([eta+effects[l] for l in new.g],axis=-1)
+fast	Fast suite	2026-09-27T05:14:10.4006565Z                 assert np.allclose(a,expected if family=="gaussian" else expit(expected))
+fast	Fast suite	2026-09-27T05:14:10.4007791Z         fit=SimpleNamespace(idata=id,backend="pymc",device_requested="cpu",device_actual="cpu",platform="cpu",dtype="float64",chain_method=None,
+fast	Fast suite	2026-09-27T05:14:10.4009223Z                             chains=2,draws=80,tune=0,target_accept=.9,seed=16,wall_seconds=0.,notes=["synthetic draws; no sampling"])
+fast	Fast suite	2026-09-27T05:14:10.4010453Z >       record=ab.fit_record(m,fit,panel=PANEL_STUB);json.dumps(record)
+fast	Fast suite	2026-09-27T05:14:10.4011143Z                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+fast	Fast suite	2026-09-27T05:14:10.4011566Z 
+fast	Fast suite	2026-09-27T05:14:10.4011855Z tests/test_intercept_controls.py:231: 
+fast	Fast suite	2026-09-27T05:14:10.4012476Z _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+fast	Fast suite	2026-09-27T05:14:10.4013126Z autobayes/session.py:86: in fit_record
+fast	Fast suite	2026-09-27T05:14:10.4013817Z     binding = check_fit_binding(model, fit, allow_unverified=allow_unverified)
+fast	Fast suite	2026-09-27T05:14:10.4014781Z               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+fast	Fast suite	2026-09-27T05:14:10.4015543Z _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+fast	Fast suite	2026-09-27T05:14:10.4016036Z 
+fast	Fast suite	2026-09-27T05:14:10.4016397Z model = <autobayes.model.Model object at 0x7f8afba10890>
+fast	Fast suite	2026-09-27T05:14:10.4017083Z result = namespace(idata=Inference data with groups:
+fast	Fast suite	2026-09-27T05:14:10.4018590Z 	> posterior, backend='pymc', device_requested='cpu', device_actual='cpu',...None, chains=2, draws=80, tune=0, target_accept=0.9, seed=16, wall_seconds=0.0, notes=['synthetic draws; no sampling'])
+fast	Fast suite	2026-09-27T05:14:10.4019858Z allow_unverified = False
+fast	Fast suite	2026-09-27T05:14:10.4020224Z 
+fast	Fast suite	2026-09-27T05:14:10.4020638Z     def check_fit_binding(model, result, *, allow_unverified=False):
+fast	Fast suite	2026-09-27T05:14:10.4021523Z         """Check available result and serialized-draw identities against the model."""
+fast	Fast suite	2026-09-27T05:14:10.4022377Z         expected = {'model': {'target_identity': model.target_identity}}
+fast	Fast suite	2026-09-27T05:14:10.4023038Z         identities = []
+fast	Fast suite	2026-09-27T05:14:10.4023576Z         identity = getattr(result, 'target_identity', None)
+fast	Fast suite	2026-09-27T05:14:10.4024391Z         if identity is not None:
+fast	Fast suite	2026-09-27T05:14:10.4024913Z             identities.append(identity)
+fast	Fast suite	2026-09-27T05:14:10.4025475Z         idata = getattr(result, 'idata', result)
+fast	Fast suite	2026-09-27T05:14:10.4026049Z         attrs = getattr(idata, 'attrs', {})
+fast	Fast suite	2026-09-27T05:14:10.4026605Z         if FIT_IDENTITY_ATTR in attrs:
+fast	Fast suite	2026-09-27T05:14:10.4027105Z             try:
+fast	Fast suite	2026-09-27T05:14:10.4027573Z                 serialized = attrs[FIT_IDENTITY_ATTR]
+fast	Fast suite	2026-09-27T05:14:10.4028165Z                 if not isinstance(serialized, str):
+fast	Fast suite	2026-09-27T05:14:10.4028767Z                     raise ValueError('expected JSON text')
+fast	Fast suite	2026-09-27T05:14:10.4029378Z                 identity = json.loads(serialized)
+fast	Fast suite	2026-09-27T05:14:10.4029940Z                 if identity is None:
+fast	Fast suite	2026-09-27T05:14:10.4030486Z                     raise ValueError('null identity')
+fast	Fast suite	2026-09-27T05:14:10.4031066Z             except (TypeError, ValueError) as exc:
+fast	Fast suite	2026-09-27T05:14:10.4031786Z                 raise ValueError('invalid serialized fit target identity') from exc
+fast	Fast suite	2026-09-27T05:14:10.4032501Z             identities.append(identity)
+fast	Fast suite	2026-09-27T05:14:10.4033030Z         if not identities:
+fast	Fast suite	2026-09-27T05:14:10.4033513Z             if not allow_unverified:
+fast	Fast suite	2026-09-27T05:14:10.4034647Z >               raise ValueError('fit target binding is missing; use allow_unverified=True only for an explicitly unverified legacy record')
+fast	Fast suite	2026-09-27T05:14:10.4036072Z E               ValueError: fit target binding is missing; use allow_unverified=True only for an explicitly unverified legacy record
+fast	Fast suite	2026-09-27T05:14:10.4036898Z 
+fast	Fast suite	2026-09-27T05:14:10.4037195Z autobayes/identity.py:100: ValueError
+fast	Fast suite	2026-09-27T05:14:10.4037894Z ___________ test_fixed_draw_predictions_and_records[True-bernoulli] ____________
+fast	Fast suite	2026-09-27T05:14:10.4038492Z 
+fast	Fast suite	2026-09-27T05:14:10.4038774Z family = 'bernoulli', group = True
+fast	Fast suite	2026-09-27T05:14:10.4039170Z 
+fast	Fast suite	2026-09-27T05:14:10.4039474Z     @pytest.mark.parametrize("family", LHS)
+fast	Fast suite	2026-09-27T05:14:10.4040092Z     @pytest.mark.parametrize("group", [False,True])
+fast	Fast suite	2026-09-27T05:14:10.4040783Z     def test_fixed_draw_predictions_and_records(family, group):
+fast	Fast suite	2026-09-27T05:14:10.4041631Z         m,df=make(family,group=group);id=fixed_draws(group,family=="gaussian");p=id.posterior
+fast	Fast suite	2026-09-27T05:14:10.4042760Z         b=np.concatenate([p.x.values[...,None],p.z.values,p["x:z"].values],axis=-1)
+fast	Fast suite	2026-09-27T05:14:10.4043738Z         for data in [None,pd.DataFrame({"x":[0.,-2.,4.,0.],"z":["b","a","c","b"],"g":["A","B","C","A"],"n":[4,0,2,4]})]:
+fast	Fast suite	2026-09-27T05:14:10.4044750Z             d=df if data is None else data
+fast	Fast suite	2026-09-27T05:14:10.4045469Z             expected=np.einsum("cdp,np->cdn",b,independent_design(d,"interaction")[0])
+fast	Fast suite	2026-09-27T05:14:10.4046324Z             if group:expected+=p["1|g"].values[:,:,["ABC".index(g) for g in d.g]]
+fast	Fast suite	2026-09-27T05:14:10.4047114Z             expected=expected if family=="gaussian" else expit(expected)
+fast	Fast suite	2026-09-27T05:14:10.4047826Z             out=m.predict(id,newdata=data,kind="mean")
+fast	Fast suite	2026-09-27T05:14:10.4048587Z             assert np.allclose(out["mu" if family=="gaussian" else "p"],expected,atol=1e-12)
+fast	Fast suite	2026-09-27T05:14:10.4049519Z             if family=="binomial":assert np.allclose(out.expected,expected*d.n.to_numpy())
+fast	Fast suite	2026-09-27T05:14:10.4050270Z         if group:
+fast	Fast suite	2026-09-27T05:14:10.4051089Z             new=pd.DataFrame({"x":[1.,1.,1.],"z":["b"]*3,"g":["NEW","NEW","NEXT"],"n":[2]*3})
+fast	Fast suite	2026-09-27T05:14:10.4051876Z             for policy in ["population","resample_observed"]:
+fast	Fast suite	2026-09-27T05:14:10.4052634Z                 out=m.predict(id,newdata=new,new_groups=policy,kind="mean",seed=20)
+fast	Fast suite	2026-09-27T05:14:10.4053387Z                 a=out["mu" if family=="gaussian" else "p"].values
+fast	Fast suite	2026-09-27T05:14:10.4054199Z                 assert np.array_equal(a[...,0],a[...,1])
+fast	Fast suite	2026-09-27T05:14:10.4055000Z                 # One sampled group effect per label, reconstructed independently from the seed.
+fast	Fast suite	2026-09-27T05:14:10.4055799Z                 rng=np.random.default_rng(20);effects={}
+fast	Fast suite	2026-09-27T05:14:10.4056381Z                 for label in ["NEW","NEXT"]:
+fast	Fast suite	2026-09-27T05:14:10.4057114Z                     if policy=="population":effects[label]=rng.normal(size=(2,80))*.6
+fast	Fast suite	2026-09-27T05:14:10.4057786Z                     else:
+fast	Fast suite	2026-09-27T05:14:10.4058654Z                         indexes=rng.integers(0,3,size=(2,80));effects[label]=np.take_along_axis(p["1|g"].values,indexes[...,None],axis=-1)[...,0]
+fast	Fast suite	2026-09-27T05:14:10.4059638Z                 eta=p.x.values+p.z.values[...,0]
+fast	Fast suite	2026-09-27T05:14:10.4060312Z                 expected=np.stack([eta+effects[l] for l in new.g],axis=-1)
+fast	Fast suite	2026-09-27T05:14:10.4061152Z                 assert np.allclose(a,expected if family=="gaussian" else expit(expected))
+fast	Fast suite	2026-09-27T05:14:10.4062379Z         fit=SimpleNamespace(idata=id,backend="pymc",device_requested="cpu",device_actual="cpu",platform="cpu",dtype="float64",chain_method=None,
+fast	Fast suite	2026-09-27T05:14:10.4063761Z                             chains=2,draws=80,tune=0,target_accept=.9,seed=16,wall_seconds=0.,notes=["synthetic draws; no sampling"])
+fast	Fast suite	2026-09-27T05:14:10.4064968Z >       record=ab.fit_record(m,fit,panel=PANEL_STUB);json.dumps(record)
+fast	Fast suite	2026-09-27T05:14:10.4065655Z                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+fast	Fast suite	2026-09-27T05:14:10.4066087Z 
+fast	Fast suite	2026-09-27T05:14:10.4066387Z tests/test_intercept_controls.py:231: 
+fast	Fast suite	2026-09-27T05:14:10.4067005Z _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+fast	Fast suite	2026-09-27T05:14:10.4067632Z autobayes/session.py:86: in fit_record
+fast	Fast suite	2026-09-27T05:14:10.4068327Z     binding = check_fit_binding(model, fit, allow_unverified=allow_unverified)
+fast	Fast suite	2026-09-27T05:14:10.4069077Z               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+fast	Fast suite	2026-09-27T05:14:10.4069727Z _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+fast	Fast suite	2026-09-27T05:14:10.4070217Z 
+fast	Fast suite	2026-09-27T05:14:10.4070567Z model = <autobayes.model.Model object at 0x7f8afbbb2890>
+fast	Fast suite	2026-09-27T05:14:10.4071235Z result = namespace(idata=Inference data with groups:
+fast	Fast suite	2026-09-27T05:14:10.4072519Z 	> posterior, backend='pymc', device_requested='cpu', device_actual='cpu',...None, chains=2, draws=80, tune=0, target_accept=0.9, seed=16, wall_seconds=0.0, notes=['synthetic draws; no sampling'])
+fast	Fast suite	2026-09-27T05:14:10.4073775Z allow_unverified = False
+fast	Fast suite	2026-09-27T05:14:10.4074510Z 
+fast	Fast suite	2026-09-27T05:14:10.4074925Z     def check_fit_binding(model, result, *, allow_unverified=False):
+fast	Fast suite	2026-09-27T05:14:10.4075772Z         """Check available result and serialized-draw identities against the model."""
+fast	Fast suite	2026-09-27T05:14:10.4076620Z         expected = {'model': {'target_identity': model.target_identity}}
+fast	Fast suite	2026-09-27T05:14:10.4077703Z         identities = []
+fast	Fast suite	2026-09-27T05:14:10.4078466Z         identity = getattr(result, 'target_identity', None)
+fast	Fast suite	2026-09-27T05:14:10.4079372Z         if identity is not None:
+fast	Fast suite	2026-09-27T05:14:10.4080045Z             identities.append(identity)
+fast	Fast suite	2026-09-27T05:14:10.4080717Z         idata = getattr(result, 'idata', result)
+fast	Fast suite	2026-09-27T05:14:10.4081575Z         attrs = getattr(idata, 'attrs', {})
+fast	Fast suite	2026-09-27T05:14:10.4082262Z         if FIT_IDENTITY_ATTR in attrs:
+fast	Fast suite	2026-09-27T05:14:10.4083008Z             try:
+fast	Fast suite	2026-09-27T05:14:10.4144824Z                 serialized = attrs[FIT_IDENTITY_ATTR]
+fast	Fast suite	2026-09-27T05:14:10.4145460Z                 if not isinstance(serialized, str):
+fast	Fast suite	2026-09-27T05:14:10.4146444Z                     raise ValueError('expected JSON text')
+fast	Fast suite	2026-09-27T05:14:10.4147092Z                 identity = json.loads(serialized)
+fast	Fast suite	2026-09-27T05:14:10.4147668Z                 if identity is None:
+fast	Fast suite	2026-09-27T05:14:10.4148225Z                     raise ValueError('null identity')
+fast	Fast suite	2026-09-27T05:14:10.4148829Z             except (TypeError, ValueError) as exc:
+fast	Fast suite	2026-09-27T05:14:10.4149570Z                 raise ValueError('invalid serialized fit target identity') from exc
+fast	Fast suite	2026-09-27T05:14:10.4150326Z             identities.append(identity)
+fast	Fast suite	2026-09-27T05:14:10.4150857Z         if not identities:
+fast	Fast suite	2026-09-27T05:14:10.4151358Z             if not allow_unverified:
+fast	Fast suite	2026-09-27T05:14:10.4152350Z >               raise ValueError('fit target binding is missing; use allow_unverified=True only for an explicitly unverified legacy record')
+fast	Fast suite	2026-09-27T05:14:10.4153763Z E               ValueError: fit target binding is missing; use allow_unverified=True only for an explicitly unverified legacy record
+fast	Fast suite	2026-09-27T05:14:10.4154884Z 
+fast	Fast suite	2026-09-27T05:14:10.4155232Z autobayes/identity.py:100: ValueError
+fast	Fast suite	2026-09-27T05:14:10.4156034Z ____________ test_fixed_draw_predictions_and_records[True-binomial] ____________
+fast	Fast suite	2026-09-27T05:14:10.4156688Z 
+fast	Fast suite	2026-09-27T05:14:10.4156992Z family = 'binomial', group = True
+fast	Fast suite	2026-09-27T05:14:10.4157384Z 
+fast	Fast suite	2026-09-27T05:14:10.4157698Z     @pytest.mark.parametrize("family", LHS)
+fast	Fast suite	2026-09-27T05:14:10.4158331Z     @pytest.mark.parametrize("group", [False,True])
+fast	Fast suite	2026-09-27T05:14:10.4159030Z     def test_fixed_draw_predictions_and_records(family, group):
+fast	Fast suite	2026-09-27T05:14:10.4159886Z         m,df=make(family,group=group);id=fixed_draws(group,family=="gaussian");p=id.posterior
+fast	Fast suite	2026-09-27T05:14:10.4160827Z         b=np.concatenate([p.x.values[...,None],p.z.values,p["x:z"].values],axis=-1)
+fast	Fast suite	2026-09-27T05:14:10.4161798Z         for data in [None,pd.DataFrame({"x":[0.,-2.,4.,0.],"z":["b","a","c","b"],"g":["A","B","C","A"],"n":[4,0,2,4]})]:
+fast	Fast suite	2026-09-27T05:14:10.4162610Z             d=df if data is None else data
+fast	Fast suite	2026-09-27T05:14:10.4163344Z             expected=np.einsum("cdp,np->cdn",b,independent_design(d,"interaction")[0])
+fast	Fast suite	2026-09-27T05:14:10.4164550Z             if group:expected+=p["1|g"].values[:,:,["ABC".index(g) for g in d.g]]
+fast	Fast suite	2026-09-27T05:14:10.4165403Z             expected=expected if family=="gaussian" else expit(expected)
+fast	Fast suite	2026-09-27T05:14:10.4166115Z             out=m.predict(id,newdata=data,kind="mean")
+fast	Fast suite	2026-09-27T05:14:10.4166888Z             assert np.allclose(out["mu" if family=="gaussian" else "p"],expected,atol=1e-12)
+fast	Fast suite	2026-09-27T05:14:10.4167838Z             if family=="binomial":assert np.allclose(out.expected,expected*d.n.to_numpy())
+fast	Fast suite	2026-09-27T05:14:10.4168578Z         if group:
+fast	Fast suite	2026-09-27T05:14:10.4169267Z             new=pd.DataFrame({"x":[1.,1.,1.],"z":["b"]*3,"g":["NEW","NEW","NEXT"],"n":[2]*3})
+fast	Fast suite	2026-09-27T05:14:10.4170054Z             for policy in ["population","resample_observed"]:
+fast	Fast suite	2026-09-27T05:14:10.4170808Z                 out=m.predict(id,newdata=new,new_groups=policy,kind="mean",seed=20)
+fast	Fast suite	2026-09-27T05:14:10.4171823Z                 a=out["mu" if family=="gaussian" else "p"].values
+fast	Fast suite	2026-09-27T05:14:10.4172479Z                 assert np.array_equal(a[...,0],a[...,1])
+fast	Fast suite	2026-09-27T05:14:10.4173276Z                 # One sampled group effect per label, reconstructed independently from the seed.
+fast	Fast suite	2026-09-27T05:14:10.4174299Z                 rng=np.random.default_rng(20);effects={}
+fast	Fast suite	2026-09-27T05:14:10.4174914Z                 for label in ["NEW","NEXT"]:
+fast	Fast suite	2026-09-27T05:14:10.4175594Z                     if policy=="population":effects[label]=rng.normal(size=(2,80))*.6
+fast	Fast suite	2026-09-27T05:14:10.4176277Z                     else:
+fast	Fast suite	2026-09-27T05:14:10.4177152Z                         indexes=rng.integers(0,3,size=(2,80));effects[label]=np.take_along_axis(p["1|g"].values,indexes[...,None],axis=-1)[...,0]
+fast	Fast suite	2026-09-27T05:14:10.4178154Z                 eta=p.x.values+p.z.values[...,0]
+fast	Fast suite	2026-09-27T05:14:10.4178825Z                 expected=np.stack([eta+effects[l] for l in new.g],axis=-1)
+fast	Fast suite	2026-09-27T05:14:10.4179677Z                 assert np.allclose(a,expected if family=="gaussian" else expit(expected))
+fast	Fast suite	2026-09-27T05:14:10.4181091Z         fit=SimpleNamespace(idata=id,backend="pymc",device_requested="cpu",device_actual="cpu",platform="cpu",dtype="float64",chain_method=None,
+fast	Fast suite	2026-09-27T05:14:10.4182472Z                             chains=2,draws=80,tune=0,target_accept=.9,seed=16,wall_seconds=0.,notes=["synthetic draws; no sampling"])
+fast	Fast suite	2026-09-27T05:14:10.4183499Z >       record=ab.fit_record(m,fit,panel=PANEL_STUB);json.dumps(record)
+fast	Fast suite	2026-09-27T05:14:10.4184381Z                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+fast	Fast suite	2026-09-27T05:14:10.4184805Z 
+fast	Fast suite	2026-09-27T05:14:10.4185108Z tests/test_intercept_controls.py:231: 
+fast	Fast suite	2026-09-27T05:14:10.4185715Z _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+fast	Fast suite	2026-09-27T05:14:10.4186371Z autobayes/session.py:86: in fit_record
+fast	Fast suite	2026-09-27T05:14:10.4187079Z     binding = check_fit_binding(model, fit, allow_unverified=allow_unverified)
+fast	Fast suite	2026-09-27T05:14:10.4187854Z               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+fast	Fast suite	2026-09-27T05:14:10.4188519Z _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+fast	Fast suite	2026-09-27T05:14:10.4189024Z 
+fast	Fast suite	2026-09-27T05:14:10.4189380Z model = <autobayes.model.Model object at 0x7f8b008f8b90>
+fast	Fast suite	2026-09-27T05:14:10.4190052Z result = namespace(idata=Inference data with groups:
+fast	Fast suite	2026-09-27T05:14:10.4191383Z 	> posterior, backend='pymc', device_requested='cpu', device_actual='cpu',...None, chains=2, draws=80, tune=0, target_accept=0.9, seed=16, wall_seconds=0.0, notes=['synthetic draws; no sampling'])
+fast	Fast suite	2026-09-27T05:14:10.4192673Z allow_unverified = False
+fast	Fast suite	2026-09-27T05:14:10.4193041Z 
+fast	Fast suite	2026-09-27T05:14:10.4193423Z     def check_fit_binding(model, result, *, allow_unverified=False):
+fast	Fast suite	2026-09-27T05:14:10.4194446Z         """Check available result and serialized-draw identities against the model."""
+fast	Fast suite	2026-09-27T05:14:10.4195329Z         expected = {'model': {'target_identity': model.target_identity}}
+fast	Fast suite	2026-09-27T05:14:10.4196000Z         identities = []
+fast	Fast suite	2026-09-27T05:14:10.4196525Z         identity = getattr(result, 'target_identity', None)
+fast	Fast suite	2026-09-27T05:14:10.4197138Z         if identity is not None:
+fast	Fast suite	2026-09-27T05:14:10.4197664Z             identities.append(identity)
+fast	Fast suite	2026-09-27T05:14:10.4198230Z         idata = getattr(result, 'idata', result)
+fast	Fast suite	2026-09-27T05:14:10.4198801Z         attrs = getattr(idata, 'attrs', {})
+fast	Fast suite	2026-09-27T05:14:10.4199354Z         if FIT_IDENTITY_ATTR in attrs:
+fast	Fast suite	2026-09-27T05:14:10.4199871Z             try:
+fast	Fast suite	2026-09-27T05:14:10.4200351Z                 serialized = attrs[FIT_IDENTITY_ATTR]
+fast	Fast suite	2026-09-27T05:14:10.4200953Z                 if not isinstance(serialized, str):
+fast	Fast suite	2026-09-27T05:14:10.4201557Z                     raise ValueError('expected JSON text')
+fast	Fast suite	2026-09-27T05:14:10.4202149Z                 identity = json.loads(serialized)
+fast	Fast suite	2026-09-27T05:14:10.4202710Z                 if identity is None:
+fast	Fast suite	2026-09-27T05:14:10.4203252Z                     raise ValueError('null identity')
+fast	Fast suite	2026-09-27T05:14:10.4204234Z             except (TypeError, ValueError) as exc:
+fast	Fast suite	2026-09-27T05:14:10.4204966Z                 raise ValueError('invalid serialized fit target identity') from exc
+fast	Fast suite	2026-09-27T05:14:10.4205698Z             identities.append(identity)
+fast	Fast suite	2026-09-27T05:14:10.4206233Z         if not identities:
+fast	Fast suite	2026-09-27T05:14:10.4206702Z             if not allow_unverified:
+fast	Fast suite	2026-09-27T05:14:10.4207644Z >               raise ValueError('fit target binding is missing; use allow_unverified=True only for an explicitly unverified legacy record')
+fast	Fast suite	2026-09-27T05:14:10.4209038Z E               ValueError: fit target binding is missing; use allow_unverified=True only for an explicitly unverified legacy record
+fast	Fast suite	2026-09-27T05:14:10.4209868Z 
+fast	Fast suite	2026-09-27T05:14:10.4210155Z autobayes/identity.py:100: ValueError
+fast	Fast suite	2026-09-27T05:14:10.4210767Z =============================== warnings summary ===============================
+fast	Fast suite	2026-09-27T05:14:10.4211494Z tests/test_interaction.py::test_describe_and_fit_record
+fast	Fast suite	2026-09-27T05:14:10.4212490Z   /home/runner/work/AutoBayes/AutoBayes/autobayes/diagnostics.py:37: RuntimeWarning: All-NaN slice encountered
+fast	Fast suite	2026-09-27T05:14:10.4213797Z     "max_rhat": float(max(np.nanmax(np.asarray(v)) for v in rhat.data_vars.values())),
+fast	Fast suite	2026-09-27T05:14:10.4214604Z 
+fast	Fast suite	2026-09-27T05:14:10.4215218Z tests/test_intercept_controls.py::test_default_intercept_categorical_record_retains_semantics
+fast	Fast suite	2026-09-27T05:14:10.4216386Z tests/test_multiple_interactions.py::test_synthetic_predictions_and_complete_records[False-False-gaussian]
+fast	Fast suite	2026-09-27T05:14:10.4217662Z tests/test_multiple_interactions.py::test_synthetic_predictions_and_complete_records[True-True-gaussian]
+fast	Fast suite	2026-09-27T05:14:10.4218858Z tests/test_multiple_interactions.py::test_synthetic_predictions_and_complete_records[True-True-bernoulli]
+fast	Fast suite	2026-09-27T05:14:10.4220046Z tests/test_multiple_interactions.py::test_synthetic_predictions_and_complete_records[True-True-binomial]
+fast	Fast suite	2026-09-27T05:14:11.6245980Z tests/test_population_only.py::test_describe_and_fit_record_without_sampling
+fast	Fast suite	2026-09-27T05:14:11.6247925Z   /home/runner/work/AutoBayes/AutoBayes/.venv/lib/python3.11/site-packages/arviz/stats/diagnostics.py:596: RuntimeWarning: invalid value encountered in scalar divide
+fast	Fast suite	2026-09-27T05:14:11.6249763Z     (between_chain_variance / within_chain_variance + num_samples - 1) / (num_samples)
+fast	Fast suite	2026-09-27T05:14:11.6250858Z 
+fast	Fast suite	2026-09-27T05:14:11.6251673Z tests/test_multiple_interactions.py::test_synthetic_predictions_and_complete_records[False-False-gaussian]
+fast	Fast suite	2026-09-27T05:14:11.6253349Z tests/test_multiple_interactions.py::test_synthetic_predictions_and_complete_records[True-True-gaussian]
+fast	Fast suite	2026-09-27T05:14:11.6255418Z tests/test_multiple_interactions.py::test_synthetic_predictions_and_complete_records[True-True-bernoulli]
+fast	Fast suite	2026-09-27T05:14:11.6257323Z tests/test_multiple_interactions.py::test_synthetic_predictions_and_complete_records[True-True-binomial]
+fast	Fast suite	2026-09-27T05:14:11.6259632Z   /home/runner/work/AutoBayes/AutoBayes/.venv/lib/python3.11/site-packages/arviz/stats/diagnostics.py:991: RuntimeWarning: invalid value encountered in scalar divide
+fast	Fast suite	2026-09-27T05:14:11.6261155Z     varsd = varvar / evar / 4
+fast	Fast suite	2026-09-27T05:14:11.6261641Z 
+fast	Fast suite	2026-09-27T05:14:11.6262209Z -- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+fast	Fast suite	2026-09-27T05:14:11.6263198Z =========================== short test summary info ============================
+fast	Fast suite	2026-09-27T05:14:11.6265077Z FAILED tests/test_binomial.py::test_n_equals_one_matches_bernoulli_on_the_shared_domain - ValueError: records fit different models or data: target identities differ
+fast	Fast suite	2026-09-27T05:14:11.6267563Z FAILED tests/test_intercept_controls.py::test_fixed_draw_predictions_and_records[False-gaussian] - ValueError: fit target binding is missing; use allow_unverified=True only for an explicitly unverified legacy record
+fast	Fast suite	2026-09-27T05:14:11.6270493Z FAILED tests/test_intercept_controls.py::test_fixed_draw_predictions_and_records[False-bernoulli] - ValueError: fit target binding is missing; use allow_unverified=True only for an explicitly unverified legacy record
+fast	Fast suite	2026-09-27T05:14:11.6274280Z FAILED tests/test_intercept_controls.py::test_fixed_draw_predictions_and_records[False-binomial] - ValueError: fit target binding is missing; use allow_unverified=True only for an explicitly unverified legacy record
+fast	Fast suite	2026-09-27T05:14:11.6282895Z FAILED tests/test_intercept_controls.py::test_fixed_draw_predictions_and_records[True-gaussian] - ValueError: fit target binding is missing; use allow_unverified=True only for an explicitly unverified legacy record
+fast	Fast suite	2026-09-27T05:14:11.6286131Z FAILED tests/test_intercept_controls.py::test_fixed_draw_predictions_and_records[True-bernoulli] - ValueError: fit target binding is missing; use allow_unverified=True only for an explicitly unverified legacy record
+fast	Fast suite	2026-09-27T05:14:11.6289059Z FAILED tests/test_intercept_controls.py::test_fixed_draw_predictions_and_records[True-binomial] - ValueError: fit target binding is missing; use allow_unverified=True only for an explicitly unverified legacy record
+fast	Fast suite	2026-09-27T05:14:11.6291040Z 7 failed, 624 passed, 7 deselected, 11 warnings in 803.40s (0:13:23)
+fast	Fast suite	2026-09-27T05:14:14.5380986Z ##[error]Process completed with exit code 1.

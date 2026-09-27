@@ -226,7 +226,7 @@ def test_fixed_draw_predictions_and_records(family, group):
             eta=p.x.values+p.z.values[...,0]
             expected=np.stack([eta+effects[l] for l in new.g],axis=-1)
             assert np.allclose(a,expected if family=="gaussian" else expit(expected))
-    fit=SimpleNamespace(idata=id,backend="pymc",device_requested="cpu",device_actual="cpu",platform="cpu",dtype="float64",chain_method=None,
+    fit=SimpleNamespace(target_identity=m.target_identity,idata=id,backend="pymc",device_requested="cpu",device_actual="cpu",platform="cpu",dtype="float64",chain_method=None,
                         chains=2,draws=80,tune=0,target_accept=.9,seed=16,wall_seconds=0.,notes=["synthetic draws; no sampling"])
     record=ab.fit_record(m,fit,panel=PANEL_STUB);json.dumps(record)
     assert record["model"]["intercept"] is False and record["model"]["intercept_prior_applies_to"] is None
