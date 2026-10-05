@@ -207,7 +207,7 @@ def _group_policies(model, new_groups):
 
 def _prediction_attrs(model, ds, policies, new_levels, *, in_sample, manual, include_group_effects=True):
     groups = model.spec.groups
-    ds.attrs["include_group_effects"] = bool(include_group_effects)
+    ds.attrs["include_group_effects"] = int(bool(include_group_effects))   # an integer flag: netCDF attributes cannot be boolean
     if not groups or not include_group_effects:
         ds.attrs.update(new_groups="not_applicable", new_levels=[])
     elif len(groups) == 1:

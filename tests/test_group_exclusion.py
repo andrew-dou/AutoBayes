@@ -1,4 +1,5 @@
 from types import SimpleNamespace
+import xarray as xr
 import numpy as np
 import pytest
 from scipy.special import expit
@@ -8,7 +9,7 @@ from tests.test_multiple_groups import make,posterior,common
 
 @pytest.mark.parametrize('family',['gaussian','bernoulli','binomial','student','poisson'])
 @pytest.mark.parametrize('intercept',[True,False])
-def test_fixed_only(family,intercept):
+def test_fixed_only(family,intercept,tmp_path):
     base,df=make('gaussian',intercept)
     if family in ('gaussian','bernoulli','binomial'):m,df=make(family,intercept)
     else:
@@ -25,6 +26,9 @@ def test_fixed_only(family,intercept):
         linear=m.predict(fit,kind='linear',newdata=frame,include_group_effects=False)
         np.testing.assert_allclose(linear.eta,eta)
         assert linear.attrs['new_groups']=='not_applicable' and not linear.attrs['include_group_effects']
+        assert linear.attrs['include_group_effects']==0 and isinstance(linear.attrs['include_group_effects'],int)
+        linear.to_netcdf(tmp_path/'excluded.nc')          # a boolean attribute made h5netcdf refuse this (PR 21 hosted checks)
+        assert xr.load_dataset(tmp_path/'excluded.nc').attrs['include_group_effects']==0
         out=m.predict(fit,kind='mean',newdata=frame,include_group_effects=False)
         expected=expit(eta) if family in ('bernoulli','binomial') else np.exp(eta) if family=='poisson' else eta
         np.testing.assert_allclose(out['p' if family in ('bernoulli','binomial') else 'mu'],expected)

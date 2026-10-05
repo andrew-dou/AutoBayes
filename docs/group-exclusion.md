@@ -17,7 +17,8 @@ fit-target binding remain in force. The existing formula restriction against
 using a grouping factor as a fixed predictor is unchanged (the initial design
 considered that case before this restriction was verified).
 
-The output records include_group_effects=False and new_groups="not_applicable".
+The output records `include_group_effects=0` (an integer flag, 1 when group effects are included, so that the
+dataset stays netCDF-serialisable) and `new_groups="not_applicable"`.
 Group arrays are not accessed and no group-effect random draws are consumed.
 There is no subset selection of groups yet. Tests use synthetic posterior draws;
 35 focused checks pass across five families and existing linear/binding behavior.
