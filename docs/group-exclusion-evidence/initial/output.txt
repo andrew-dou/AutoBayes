@@ -1,0 +1,165 @@
+............F......................                                      [100%]
+=================================== FAILURES ===================================
+___________________ test_shared_fixed_group_column_required ____________________
+
+    def test_shared_fixed_group_column_required():
+>       _,df=make();m=ab.gaussian('y ~ x + z + (1 | z)',df,ab.Priors(ab.Normal(0,1),ab.Normal(0,1),sd=ab.HalfNormal(1),sigma=ab.HalfNormal(1)),categorical={'z':'b'})
+                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_group_exclusion.py:56: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+autobayes/model.py:695: in gaussian
+    return Model(formula, data, priors, family="gaussian", center_predictors=center_predictors, categorical=categorical)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+autobayes/model.py:138: in __init__
+    spec0 = parse_formula(formula, None, family, categorical)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+formula = 'y ~ x + z + (1 | z)', data = None, family = 'gaussian'
+categorical = {'z': 'b'}
+
+    def parse_formula(formula: str, data: pd.DataFrame | None = None, family: str = "gaussian",
+                      categorical: Mapping[str, object] | None = None) -> ModelSpec:
+        """Parse and validate a formula in the supported subset, optionally against a data frame.
+    
+        ``categorical`` maps a predictor column to its reference level (treatment coding); every
+        other predictor term must be numeric.
+        """
+        trials = None
+        if _BAMBI_PROPORTION_RE.match(formula):
+            raise FormulaError(
+                f"{formula!r}: Bambi's 'p(successes, trials)' left-hand side is not accepted; write the brms "
+                "form 'successes | trials(n) ~ ...' (ab.binomial)."
+            )
+        mt = _TRIALS_FORMULA_RE.match(formula)
+        if mt:
+            if family != "binomial":
+                raise FormulaError(
+                    f"{formula!r}: 'successes | trials(n)' is the binomial family's left-hand side; use "
+                    "ab.binomial, or drop '| trials(...)' for a Gaussian or Bernoulli response."
+                )
+            response, trials, rhs = mt.group(1), mt.group(2), mt.group(3)
+            if trials == response:
+                raise FormulaError(f"{trials!r}: the trials column cannot also be the response")
+        else:
+            if "~" in formula and "|" in formula.split("~", 1)[0]:
+                raise FormulaError(
+                    f"{formula!r}: a '|' on the left-hand side must be exactly 'successes | trials(n)'."
+                )
+            m = _FORMULA_RE.match(formula)
+            if not m:
+                raise FormulaError(
+                    f"{formula!r}: expected 'response ~ terms'. Supported: "
+                    "'y ~ [1 +] x1 [+ x2 ...] [+ (1 | factor) ...]' and, for ab.binomial, "
+                    "'successes | trials(n) ~ [1 +] x1 [+ x2 ...] [+ (1 | factor) ...]'."
+                )
+            if family == "binomial":
+                raise FormulaError(
+                    f"{formula!r}: the binomial family needs 'successes | trials(n) ~ ...' (brms syntax); "
+                    "counts without a trials column are not a binomial model."
+                )
+            response, rhs = m.group(1), m.group(2)
+        # Only top-level subtraction of the literal 1 is supported. Do not rewrite
+        # group terms, transformations, negative numbers, or predictor subtraction.
+        minus_parts = _split_top_level(rhs, "-")
+        if len(minus_parts) > 1:
+            pieces = [minus_parts[0]] if minus_parts[0] else []
+            for part in minus_parts[1:]:
+                if not re.match(r"^1(?=\s*(?:\+|$))", part):
+                    raise FormulaError(f"{formula!r}: '-' supports only subtracting the population intercept '- 1'")
+                pieces.append(re.sub(r"^1", "0", part, count=1))
+            rhs = " + ".join(pieces)
+    
+        predictors: list[str] = []
+        groups: list[str] = []
+        raw_interactions: list[tuple[str, str, str]] = []      # (left, right, piece as written)
+        saw_intercept_token = False
+        remove_intercept = False
+    
+        def _main(name: str, piece: str) -> None:
+            if not re.fullmatch(_IDENT, name):
+                raise FormulaError(f"{piece!r}: {name!r} is not a column name")
+            if name == response:
+                raise FormulaError(f"{name!r}: the response cannot also be a predictor")
+            if name in predictors:
+                raise FormulaError(
+                    f"{name!r}: duplicated predictor" + (f" after expanding {piece!r} (a*b means a + b + a:b; write "
+                                                         f"'a + b + a:b' or 'a*b', not both)" if piece != name else "")
+                )
+            predictors.append(name)
+    
+        for piece in _split_top_level(rhs):
+            if piece == "":
+                raise FormulaError(f"{formula!r}: empty term")
+            if piece == "1":
+                saw_intercept_token = True
+                continue
+            if piece == "0":
+                remove_intercept = True
+                continue
+            gm = _GROUP_RE.match(piece)
+            if gm:
+                inner, factor = gm.group(1).strip(), gm.group(2).strip()
+                _reject_group_term(inner, factor, piece)
+                groups.append(factor)
+                continue
+            if piece.startswith("("):
+                raise FormulaError(f"{piece!r}: parenthesised term is not a '(1 | group)' term")
+            if "|" in piece:
+                raise FormulaError(f"{piece!r}: a '|' term must be written '(1 | group)'")
+            if "(" in piece or ")" in piece:
+                raise FormulaError(
+                    f"{piece!r}: function calls and transformations inside the formula are "
+                    "not supported in M0; transform the column in the data frame instead."
+                )
+            if "*" in piece or ":" in piece:
+                sep = "*" if "*" in piece else ":"
+                if "*" in piece and ":" in piece:
+                    raise FormulaError(f"{piece!r}: mixing '*' and ':' in one term is not supported; write 'x*z' or 'x + z + x:z'")
+                factors = [f.strip() for f in piece.split(sep)]
+                if len(factors) != 2 or any(f == "" for f in factors):
+                    raise FormulaError(
+                        f"{piece!r}: only a two-way interaction between one numeric and one categorical term is "
+                        "supported in this slice (docs/m3a2-decision.md); higher-order interactions are not."
+                    )
+                left, right = factors
+                if left == right:
+                    raise FormulaError(f"{piece!r}: a term cannot interact with itself")
+                if sep == "*":                                          # a*b is shorthand for a + b + a:b
+                    _main(left, piece)
+                    _main(right, piece)
+                raw_interactions.append((left, right, piece))
+                continue
+            _main(piece, piece)
+    
+        if saw_intercept_token and remove_intercept:
+            raise FormulaError(f"{formula!r}: conflicting intercept inclusion/removal; use '0 + terms' or 'terms - 1'")
+    
+        for left, right, piece in raw_interactions:              # both main effects are required in this slice
+            for side in (left, right):
+                if side not in predictors and re.fullmatch(_IDENT, side) and side not in groups:
+                    raise FormulaError(
+                        f"{piece!r}: the main effect {side!r} is missing. This slice requires both main effects of an "
+                        f"interaction ('{left} + {right} + {left}:{right}' or '{left}*{right}'): omitting one is a different "
+                        "model (the level intercepts or the reference slope are forced to zero and formulae changes the "
+                        "interaction's coding) and is not part of the verified subset (docs/m3a2-decision.md)."
+                    )
+        if remove_intercept and not predictors:
+            raise FormulaError(f"{formula!r}: no intercept requires at least one population-level predictor")
+        if len(set(groups)) != len(groups):
+            raise FormulaError(f"{formula!r}: duplicate grouping factor; use each '(1 | factor)' once")
+        if len(predictors) == 0 and not saw_intercept_token:
+            raise FormulaError(
+                f"{formula!r}: no population-level predictor; write 'y ~ 1 + (1 | group)' "
+                "for an intercept-only model."
+            )
+        for group in groups:
+            if group in predictors or group == response:
+>               raise FormulaError(f"{group!r}: the grouping factor cannot also be a predictor or the response")
+E               autobayes.formula.FormulaError: 'z': the grouping factor cannot also be a predictor or the response
+
+autobayes/formula.py:546: FormulaError
+=========================== short test summary info ============================
+FAILED tests/test_group_exclusion.py::test_shared_fixed_group_column_required
+1 failed, 34 passed in 3.43s

@@ -72,9 +72,10 @@ def _coefficient_draws(post, model):
     return np.concatenate(parts, axis=-1) if parts else None
 
 
-def _check_newdata(model, newdata: pd.DataFrame, *, need_trials: bool = False) -> pd.DataFrame:
+def _check_newdata(model, newdata: pd.DataFrame, *, need_trials: bool = False, include_group_effects: bool = True) -> pd.DataFrame:
     s = model.spec
-    cols = [*s.predictors, *s.categorical_names] + list(s.groups)
+    cols = [*s.predictors, *s.categorical_names] + (list(s.groups) if include_group_effects else [])
+    cols = list(dict.fromkeys(cols))
     if need_trials:
         if s.trials not in newdata.columns:
             raise FormulaError(
@@ -105,12 +106,12 @@ def _check_newdata(model, newdata: pd.DataFrame, *, need_trials: bool = False) -
         df[cat.name] = pd.Categorical(labels, categories=list(cat.categories), ordered=True)
     if need_trials:
         df[s.trials] = check_counts(f"newdata trials {s.trials!r}", df[s.trials])
-    for group in s.groups:
+    for group in (s.groups if include_group_effects else ()):
         df[group] = df[group].astype(str)
     return df.reset_index(drop=True)
 
 
-def _predict_by_hand(model, idata, df: pd.DataFrame | None, kind: str, seed, policies: dict[str, str]) -> xr.Dataset:
+def _predict_by_hand(model, idata, df: pd.DataFrame | None, kind: str, seed, policies: dict[str, str], *, include_group_effects=True) -> xr.Dataset:
     """Linear predictor by hand from the posterior, with one effect per distinct unseen label.
 
     ``df=None`` means the fitted rows (in-sample). ``"population"``: a fresh ``Normal(0, sd)``
@@ -131,7 +132,7 @@ def _predict_by_hand(model, idata, df: pd.DataFrame | None, kind: str, seed, pol
     if b is not None:
         mu = mu + np.einsum("cdp,np->cdn", b, X)
     new_levels = {}
-    for g, names in model.group_names.items():
+    for g, names in (model.group_names.items() if include_group_effects else ()):
         sd = post[names["sd"]].to_numpy()
         u = post[names["group_effect"]].to_numpy()
         levels = list(model.design.group_designs[g].levels)
@@ -184,7 +185,7 @@ def _predict_by_hand(model, idata, df: pd.DataFrame | None, kind: str, seed, pol
             if kind == "response":
                 out["y"] = (("chain", "draw", "__obs__"), rng.binomial(trials, prob).astype(np.int64))
     ds = xr.Dataset(out, coords={"chain": post["chain"], "draw": post["draw"], "__obs__": np.arange(len(df))})
-    _prediction_attrs(model, ds, policies, new_levels, in_sample=False, manual=True)
+    _prediction_attrs(model, ds, policies, new_levels, in_sample=False, manual=True, include_group_effects=include_group_effects)
     return ds
 
 
@@ -204,9 +205,10 @@ def _group_policies(model, new_groups):
     return policies
 
 
-def _prediction_attrs(model, ds, policies, new_levels, *, in_sample, manual):
+def _prediction_attrs(model, ds, policies, new_levels, *, in_sample, manual, include_group_effects=True):
     groups = model.spec.groups
-    if not groups:
+    ds.attrs["include_group_effects"] = int(bool(include_group_effects))   # an integer flag: netCDF attributes cannot be boolean
+    if not groups or not include_group_effects:
         ds.attrs.update(new_groups="not_applicable", new_levels=[])
     elif len(groups) == 1:
         g = groups[0]
@@ -220,7 +222,7 @@ def _prediction_attrs(model, ds, policies, new_levels, *, in_sample, manual):
 
 
 def predict(model, fit_result, *, newdata: pd.DataFrame | None = None, kind: str = "response",
-            new_groups: str | Mapping[str, str] = "error", seed: int | None = None) -> xr.Dataset:
+            new_groups: str | Mapping[str, str] = "error", seed: int | None = None, include_group_effects: bool = True) -> xr.Dataset:
     """Expected response or new response draws, with explicit policies for unseen factors.
 
     A string applies to every factor; a mapping covers every factor exactly. RNG traversal
@@ -232,14 +234,18 @@ def predict(model, fit_result, *, newdata: pd.DataFrame | None = None, kind: str
             raise ValueError("kind must be 'probability', 'mean', 'response' or 'linear' for a binomial model")
     elif kind not in {"mean", "response", "linear"}:
         raise ValueError("kind must be 'mean', 'response' or 'linear'" + (" ('probability' is for binomial models; here 'mean' is p)" if model.family == "bernoulli" else ""))
+    if not isinstance(include_group_effects, (bool, np.bool_)):
+        raise ValueError("include_group_effects must be boolean")
+    if not include_group_effects and new_groups != "error":
+        raise ValueError("new_groups must stay at its default when group effects are excluded")
     policies = _group_policies(model, new_groups)
     from autobayes.identity import check_fit_binding
     binding = check_fit_binding(model, fit_result, allow_unverified=True)
     idata = getattr(fit_result, "idata", fit_result)
     df = (None if newdata is None else _check_newdata(
-        model, newdata, need_trials=(model.family == "binomial" and kind in ("mean", "response"))))
+        model, newdata, need_trials=(model.family == "binomial" and kind in ("mean", "response")), include_group_effects=include_group_effects))
     new_levels = {g: ([] if df is None else sorted(set(df[g]) - set(model.design.group_designs[g].levels)))
-                  for g in model.spec.groups}
+                  for g in (model.spec.groups if include_group_effects else ())}
     for g, unseen in new_levels.items():
         if unseen and policies[g] == "error":
             raise FormulaError(
@@ -247,9 +253,9 @@ def predict(model, fit_result, *, newdata: pd.DataFrame | None = None, kind: str
                 "Pass new_groups='population' to draw their effects from Normal(0, sd), or "
                 "new_groups='resample_observed' for brms's default 'uncertainty' behaviour; "
                 "an exact-key mapping can set the policy separately for each factor.")
-    manual = kind == "linear" or model.family in ("binomial", "poisson") or any(new_levels.values())
+    manual = not include_group_effects or kind == "linear" or model.family in ("binomial", "poisson") or any(new_levels.values())
     if manual:
-        ds = _predict_by_hand(model, idata, df, kind, seed, policies)
+        ds = _predict_by_hand(model, idata, df, kind, seed, policies, include_group_effects=include_group_effects)
     else:
         bambi_kind = "response" if kind == "response" else "response_params"
         out = model.bambi_model.predict(idata, kind=bambi_kind, data=df, inplace=False, random_seed=seed)
@@ -265,7 +271,7 @@ def predict(model, fit_result, *, newdata: pd.DataFrame | None = None, kind: str
             data["y"] = y.rename({y.dims[-1]: "__obs__"}) if y.dims[-1] != "__obs__" else y
         ds = xr.Dataset({k: v.drop_vars([c for c in v.coords if c not in ("chain", "draw")]) for k, v in data.items()})
         ds = ds.assign_coords(__obs__=np.arange(ds.sizes["__obs__"]))
-    _prediction_attrs(model, ds, policies, new_levels, in_sample=df is None, manual=manual)
+    _prediction_attrs(model, ds, policies, new_levels, in_sample=df is None, manual=manual, include_group_effects=include_group_effects)
     ds.attrs["fit_binding_status"] = binding
     if kind == "linear":
         ds.attrs.update(prediction_scale="linear", link=model.link)

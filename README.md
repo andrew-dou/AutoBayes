@@ -412,3 +412,5 @@ New results carry [fit provenance](docs/fit-binding.md) through saved draws. Rec
 Use `model.prior_predictive(draws=100, seed=42)` for graph-native CPU forward draws before fitting. See [semantics and validation](docs/prior-predictive.md).
 
 Use `model.predict(fit, kind="linear")` for draws before inverse-link transformation; see [linear prediction](docs/linear-prediction.md).
+
+Set `include_group_effects=False` in predictions to set all group contributions to zero; see [semantics](docs/group-exclusion.md). This does not marginalize over groups.
