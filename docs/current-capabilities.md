@@ -16,6 +16,9 @@ Test filenames are relative to `tests/`; implementation filenames to `autobayes/
 Family-specific behaviour (parent, link, response validation, scale and fixed parameters, prediction rules,
 wording) is dispatched through the registry in `autobayes/families/`, one module per family; see
 [families](families.md). `tests/test_family_registry.py` forbids family-name branches elsewhere.
+A parsed formula is an explicit term model (`PopTerm`, `GroupTerm`) with one design block per group-level
+coefficient; the flat views (`predictors`, `terms`, `columns`, `groups`, `group_designs`) are derived from it;
+see [term model](term-model.md).
 Student-t scale is not generally its standard deviation. Binomial expected count
 is n*p, distinct from probability p. Poisson has no exposure/offset interface yet.
 See the family-specific pages for numerical support and refusal boundaries.

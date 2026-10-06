@@ -30,7 +30,7 @@ try:
 except ImportError:
     pass
 
-from autobayes.formula import Categorical, FormulaError, ModelSpec, parse_formula
+from autobayes.formula import Categorical, FormulaError, GroupTerm, ModelSpec, PopTerm, parse_formula
 from autobayes.priors import (
     Exponential,
     HalfCauchy,
@@ -50,8 +50,8 @@ from autobayes.diagnostics import panel
 from autobayes.session import compare_records, environment, fit_record, format_comparison, format_environment
 
 __all__ = [
-    "Categorical", "DeviceError", "Exponential", "FitResult", "FormulaError", "HalfCauchy",
-    "HalfNormal", "HalfStudentT", "Model", "ModelSpec", "Normal", "Prior",
+    "Categorical", "DeviceError", "Exponential", "FitResult", "FormulaError", "GroupTerm", "HalfCauchy",
+    "HalfNormal", "HalfStudentT", "Model", "ModelSpec", "Normal", "PopTerm", "Prior",
     "PriorError", "Priors", "StudentT", "bernoulli", "binomial", "compare_records", "environment", "fit", "fit_record",
     "student", "poisson", "format_comparison", "format_environment", "gaussian", "panel", "parse_formula", "predict", "prior_predictive",
 ]
