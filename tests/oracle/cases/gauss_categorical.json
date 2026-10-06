@@ -1,0 +1,110 @@
+{
+ "id": "gauss_categorical",
+ "tier": "baseline",
+ "note": "per-level coefficient priors; half-Student-t and half-Cauchy scales",
+ "seed": 104,
+ "n_points": 8,
+ "data": {
+  "generator": "baseline",
+  "seed": 14,
+  "n": 36,
+  "newdata": {
+   "seed": 114,
+   "n": 5
+  }
+ },
+ "brms": {
+  "formula": "y ~ x + z + (1 | g)",
+  "family": {
+   "family": "gaussian"
+  },
+  "factors": {
+   "z": [
+    "p",
+    "q",
+    "r"
+   ],
+   "g": [
+    "a",
+    "b",
+    "c",
+    "d",
+    "e",
+    "f"
+   ]
+  },
+  "priors": [
+   {
+    "prior": "normal(0, 5)",
+    "class": "Intercept"
+   },
+   {
+    "prior": "normal(0, 2)",
+    "class": "b"
+   },
+   {
+    "prior": "normal(0.5, 1)",
+    "class": "b",
+    "coef": "zq"
+   },
+   {
+    "prior": "normal(-0.5, 1.5)",
+    "class": "b",
+    "coef": "zr"
+   },
+   {
+    "prior": "student_t(3, 0, 1)",
+    "class": "sd",
+    "group": "g"
+   },
+   {
+    "prior": "cauchy(0, 1)",
+    "class": "sigma"
+   }
+  ]
+ },
+ "autobayes": {
+  "constructor": "gaussian",
+  "formula": "y ~ x + z + (1 | g)",
+  "kwargs": {
+   "categorical": {
+    "z": "p"
+   }
+  },
+  "priors": {
+   "intercept": [
+    "Normal",
+    0,
+    5
+   ],
+   "b": {
+    "x": [
+     "Normal",
+     0,
+     2
+    ],
+    "z": {
+     "q": [
+      "Normal",
+      0.5,
+      1
+     ],
+     "r": [
+      "Normal",
+      -0.5,
+      1.5
+     ]
+    }
+   },
+   "sd": [
+    "HalfStudentT",
+    3,
+    1
+   ],
+   "sigma": [
+    "HalfCauchy",
+    1
+   ]
+  }
+ }
+}

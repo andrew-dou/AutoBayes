@@ -1,0 +1,60 @@
+{
+ "id": "gauss_poponly",
+ "tier": "baseline",
+ "note": "",
+ "seed": 103,
+ "n_points": 8,
+ "data": {
+  "generator": "baseline",
+  "seed": 13,
+  "n": 36,
+  "newdata": {
+   "seed": 113,
+   "n": 5
+  }
+ },
+ "brms": {
+  "formula": "y ~ x + w",
+  "family": {
+   "family": "gaussian"
+  },
+  "factors": {},
+  "priors": [
+   {
+    "prior": "student_t(3, 0, 2.5)",
+    "class": "Intercept"
+   },
+   {
+    "prior": "student_t(4, 0, 1)",
+    "class": "b"
+   },
+   {
+    "prior": "exponential(1)",
+    "class": "sigma"
+   }
+  ]
+ },
+ "autobayes": {
+  "constructor": "gaussian",
+  "formula": "y ~ x + w",
+  "kwargs": {},
+  "priors": {
+   "intercept": [
+    "StudentT",
+    3,
+    0,
+    2.5
+   ],
+   "b": [
+    "StudentT",
+    4,
+    0,
+    1
+   ],
+   "sigma": [
+    "Exponential",
+    1
+   ]
+  }
+ }
+}

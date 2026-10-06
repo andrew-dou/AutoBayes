@@ -1,0 +1,94 @@
+{
+ "id": "bernoulli_interaction_two_groups",
+ "tier": "baseline",
+ "note": "",
+ "seed": 112,
+ "n_points": 8,
+ "data": {
+  "generator": "baseline",
+  "seed": 22,
+  "n": 36,
+  "newdata": {
+   "seed": 122,
+   "n": 5
+  }
+ },
+ "brms": {
+  "formula": "yb ~ x * z + (1 | g) + (1 | h)",
+  "family": {
+   "family": "bernoulli"
+  },
+  "factors": {
+   "z": [
+    "p",
+    "q",
+    "r"
+   ],
+   "g": [
+    "a",
+    "b",
+    "c",
+    "d",
+    "e",
+    "f"
+   ],
+   "h": [
+    "h1",
+    "h2",
+    "h3",
+    "h4"
+   ]
+  },
+  "priors": [
+   {
+    "prior": "normal(0, 2.5)",
+    "class": "Intercept"
+   },
+   {
+    "prior": "normal(0, 1.5)",
+    "class": "b"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "sd",
+    "group": "g"
+   },
+   {
+    "prior": "normal(0, 0.5)",
+    "class": "sd",
+    "group": "h"
+   }
+  ]
+ },
+ "autobayes": {
+  "constructor": "bernoulli",
+  "formula": "yb ~ x * z + (1 | g) + (1 | h)",
+  "kwargs": {
+   "categorical": {
+    "z": "p"
+   }
+  },
+  "priors": {
+   "intercept": [
+    "Normal",
+    0,
+    2.5
+   ],
+   "b": [
+    "Normal",
+    0,
+    1.5
+   ],
+   "sd": {
+    "g": [
+     "HalfNormal",
+     1
+    ],
+    "h": [
+     "HalfNormal",
+     0.5
+    ]
+   }
+  }
+ }
+}

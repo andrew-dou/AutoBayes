@@ -1,0 +1,53 @@
+{
+ "factors": {
+  "g": [
+   "a",
+   "b",
+   "c",
+   "d",
+   "e",
+   "f"
+  ],
+  "z": [
+   "p",
+   "q",
+   "r"
+  ]
+ },
+ "family": {
+  "family": "gaussian"
+ },
+ "formula": "y ~ x + z + (1 | g)",
+ "id": "gauss_categorical",
+ "n_points": 8,
+ "priors": [
+  {
+   "class": "Intercept",
+   "prior": "normal(0, 5)"
+  },
+  {
+   "class": "b",
+   "prior": "normal(0, 2)"
+  },
+  {
+   "class": "b",
+   "coef": "zq",
+   "prior": "normal(0.5, 1)"
+  },
+  {
+   "class": "b",
+   "coef": "zr",
+   "prior": "normal(-0.5, 1.5)"
+  },
+  {
+   "class": "sd",
+   "group": "g",
+   "prior": "student_t(3, 0, 1)"
+  },
+  {
+   "class": "sigma",
+   "prior": "cauchy(0, 1)"
+  }
+ ],
+ "seed": 104
+}
