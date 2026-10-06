@@ -1,8 +1,8 @@
 """Bayesian hierarchical models built through Bambi/PyMC, with JAX/NumPyro sampling.
 
-Five response families: Gaussian and fixed-nu Student-t with identity links,
-Bernoulli and grouped binomial with logit links, and Poisson with a log link.
-Supported formulas combine numeric and declared categorical predictors,
+Response families: Gaussian and fixed-nu Student-t with identity links,
+Bernoulli and grouped binomial with logit links, Poisson and negative binomial
+counts with a log link. Supported formulas combine numeric and declared categorical predictors,
 numeric-by-categorical interactions, intercept controls, and optional multiple
 independent varying-intercept factors. Explicit priors are required.
 
@@ -33,6 +33,7 @@ except ImportError:
 from autobayes.formula import Categorical, FormulaError, GroupTerm, ModelSpec, PopTerm, parse_formula
 from autobayes.priors import (
     Exponential,
+    Gamma,
     HalfCauchy,
     HalfNormal,
     HalfStudentT,
@@ -42,7 +43,7 @@ from autobayes.priors import (
     Priors,
     StudentT,
 )
-from autobayes.model import Model, bernoulli, binomial, gaussian, student, poisson
+from autobayes.model import Model, bernoulli, binomial, gaussian, negbinomial, student, poisson
 from autobayes.inference import DeviceError, FitResult, fit
 from autobayes.predict import predict
 from autobayes.prior_predictive import prior_predictive
@@ -50,9 +51,10 @@ from autobayes.diagnostics import panel
 from autobayes.session import compare_records, environment, fit_record, format_comparison, format_environment
 
 __all__ = [
-    "Categorical", "DeviceError", "Exponential", "FitResult", "FormulaError", "GroupTerm", "HalfCauchy",
+    "Categorical", "DeviceError", "Exponential", "FitResult", "FormulaError", "Gamma", "GroupTerm", "HalfCauchy",
     "HalfNormal", "HalfStudentT", "Model", "ModelSpec", "Normal", "PopTerm", "Prior",
     "PriorError", "Priors", "StudentT", "bernoulli", "binomial", "compare_records", "environment", "fit", "fit_record",
-    "student", "poisson", "format_comparison", "format_environment", "gaussian", "panel", "parse_formula", "predict", "prior_predictive",
+    "negbinomial", "student", "poisson", "format_comparison", "format_environment", "gaussian", "panel", "parse_formula",
+    "predict", "prior_predictive",
 ]
 __version__ = "0.8.0"

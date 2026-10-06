@@ -1,6 +1,6 @@
 """The family registry (brms-parity loop, P3): no family-name branch survives outside autobayes/families/, the
-registry holds exactly the five families with their parent, link and mean names, and every constructor builds
-the model that ``get_family`` describes."""
+registry holds exactly the registered families with their parent, link and mean names, and every constructor
+builds the model that ``get_family`` describes."""
 import ast
 from pathlib import Path
 
@@ -72,25 +72,29 @@ EXPECTED = {                               # family -> (Bambi parent, link, pred
     "gaussian": ("mu", "identity", "mu"),
     "student": ("mu", "identity", "mu"),
     "poisson": ("mu", "log", "mu"),
+    "negbinomial": ("mu", "log", "mu"),
     "bernoulli": ("logit_p", "logit", "p"),
     "binomial": ("logit_p", "logit", "p"),
 }
 
 
-def test_registry_lists_exactly_the_five_families():
-    assert set(FAMILIES) == set(EXPECTED)
+def test_registry_lists_exactly_the_six_families():
+    assert set(FAMILIES) == set(EXPECTED) and len(FAMILIES) == 6
     for name, (parent, link, mean) in EXPECTED.items():
         spec = get_family(name)
         assert isinstance(spec, FamilySpec) and spec is FAMILIES[name]
         assert (spec.name, spec.parent, spec.link, spec.mean_name) == (name, parent, link, mean)
     assert {name for name, spec in FAMILIES.items() if spec.scale_parameter == "sigma"} == {"gaussian", "student"}
+    assert {name for name, spec in FAMILIES.items() if spec.scale_parameter == "shape"} == {"negbinomial"}
+    assert {spec.bambi_scale_parameter for spec in FAMILIES.values() if spec.scale_parameter == "shape"} == {"alpha"}
+    assert all((spec.scale_parameter is None) == (spec.bambi_scale_parameter is None) for spec in FAMILIES.values())
     assert {name for name, spec in FAMILIES.items() if spec.fixed_parameters} == {"student"}
     assert {name for name, spec in FAMILIES.items() if spec.has_trials} == {"binomial"}
     assert {name for name, spec in FAMILIES.items() if "probability" in spec.prediction_kinds} == {"binomial"}
-    with pytest.raises(ValueError, match=r"family must be one of \['bernoulli', 'binomial', 'gaussian', 'poisson', 'student'\], got 'gamma'"):
-        get_family("gamma")
+    with pytest.raises(ValueError, match=r"family must be one of \['bernoulli', 'binomial', 'gaussian', 'negbinomial', 'poisson', 'student'\], got 'beta'"):
+        get_family("beta")
     with pytest.raises(TypeError):
-        FAMILIES["gamma"] = None
+        FAMILIES["beta"] = None
 
 
 # -- (c) the constructors ---------------------------------------------------------------------------------------
@@ -105,6 +109,7 @@ EXAMPLES = {                               # family -> (formula, extra prior cla
     "gaussian": ("y ~ x", {"sigma": ab.HalfNormal(1)}, {}),
     "student": ("y ~ x", {"sigma": ab.HalfNormal(1)}, {"nu": 4}),
     "poisson": ("cnt ~ x", {}, {}),
+    "negbinomial": ("cnt ~ x", {"shape": ab.Gamma(2, 0.5)}, {}),
     "bernoulli": ("yb ~ x", {}, {}),
     "binomial": ("k | trials(n) ~ x", {}, {}),
 }
@@ -120,6 +125,10 @@ def test_constructors_agree_with_the_registry(family):
     assert model.link == spec.link
     assert model.names["linpred"] == spec.parent and model.names["mean"] == spec.mean_name
     assert ("sigma" in model.names) == (spec.scale_parameter == "sigma")
+    assert ("shape" in model.names) == (spec.scale_parameter == "shape")
+    if spec.scale_parameter is not None:                   # the auxiliary parameter is exposed under its brms name, valued by Bambi's
+        assert model.names[spec.scale_parameter] == spec.bambi_scale_parameter
+        assert f"{spec.bambi_scale_parameter}_log__" in {v.name for v in model.pymc_model.value_vars}
     assert all(getattr(model, name) == kwargs[name] for name in spec.fixed_parameters)
     same = ab.Model(formula, frame(), priors, family=family, **kwargs)
     assert same.target_identity == model.target_identity and same.describe() == model.describe()

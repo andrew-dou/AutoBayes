@@ -5,10 +5,6 @@
  "note": "brms negbinomial: log link on mu, shape parameter with a gamma prior",
  "seed": 148,
  "n_points": 8,
- "gate": {
-  "expect": "fail",
-  "reason": "A08_negbinomial not implemented; remove this field when it lands"
- },
  "data": {
   "generator": "tier_a",
   "seed": 48,

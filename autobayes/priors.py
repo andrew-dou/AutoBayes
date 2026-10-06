@@ -1,16 +1,17 @@
 """Explicit priors, by parameter class, in brms terms.
 
 brms classes: ``Intercept``, ``b`` (slopes and dummy coefficients), ``sd`` (one group SD per group-level
-coefficient: the varying intercept of ``(1 | g)``, the intercept and each slope of ``(1 + x || g)``) and, for
-Gaussian/Student-t, ``sigma`` (residual SD/scale respectively). Every class the model has
-must be given, and a class the model does not have is refused (M3c-1: ``sd`` without a group term); there are no
-silent defaults here (Bambi would supply some, and that is exactly what this layer refuses
-to let happen). For the Bernoulli family the intercept and slope priors are on the logit
-scale and ``sigma`` must be omitted.
+coefficient: the varying intercept of ``(1 | g)``, the intercept and each slope of ``(1 + x || g)``) and the
+family's auxiliary parameter: ``sigma`` for Gaussian/Student-t (residual SD/scale respectively), ``shape`` for
+the negative binomial and Gamma families. Every class the model has must be given, and a class the model does
+not have is refused (M3c-1: ``sd`` without a group term; ``shape`` for a Gaussian model); there are no silent
+defaults here (Bambi would supply some, and that is exactly what this layer refuses to let happen). For the
+Bernoulli family the intercept and slope priors are on the logit scale and ``sigma`` must be omitted.
 
 The parameterisation follows PyMC/Bambi: ``Normal(mu, sigma)`` is mean and standard
 deviation, ``StudentT(nu, mu, sigma)`` has a scale ``sigma``, ``Exponential(lam)`` is a
-rate, ``HalfCauchy(beta)`` a scale. This is also brms's convention.
+rate, ``HalfCauchy(beta)`` a scale, ``Gamma(alpha, beta)`` is shape and rate. This is also brms's (Stan's)
+convention.
 """
 from __future__ import annotations
 
@@ -18,7 +19,8 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 
 _LOCATION = {"Normal", "StudentT"}
-_SCALE = {"HalfNormal", "HalfStudentT", "Exponential", "HalfCauchy"}
+_SCALE = {"HalfNormal", "HalfStudentT", "Exponential", "HalfCauchy", "Gamma"}
+AUXILIARY = {"sigma": "residual SD", "shape": "shape parameter"}   # the Priors fields a family's scale_parameter can name
 
 
 class PriorError(ValueError):
@@ -70,9 +72,14 @@ def HalfCauchy(beta: float) -> Prior:
     return Prior("HalfCauchy", {"beta": _positive("beta", beta)})
 
 
+def Gamma(alpha: float, beta: float) -> Prior:
+    """Shape ``alpha`` and rate ``beta`` (mean ``alpha / beta``), as Stan's ``gamma(alpha, beta)`` and PyMC's ``Gamma``."""
+    return Prior("Gamma", {"alpha": _positive("alpha", alpha), "beta": _positive("beta", beta)})
+
+
 @dataclass(frozen=True)
 class Priors:
-    """Priors for the four parameter classes.
+    """Priors for the parameter classes.
 
     ``b`` is either one prior applied to every coefficient (numeric slopes and the dummy
     coefficients of categorical predictors) or a mapping from formula term to prior, which
@@ -84,13 +91,15 @@ class Priors:
     intercept-only factor also accepts a bare Prior): an intercept-only factor takes one Prior (or the
     one-entry mapping ``{"Intercept": prior}``), a factor with varying slopes a mapping over exactly its
     coefficients, ``{"g": {"Intercept": HalfNormal(1), "x": HalfNormal(0.5)}}`` (brms ``class = sd, group =
-    g, coef = x``). No automatic priors are filled in silently and nothing is broadcast.
+    g, coef = x``). No automatic priors are filled in silently and nothing is broadcast. ``sigma`` and ``shape``
+    are the auxiliary parameters: exactly the one the family has (``FamilySpec.scale_parameter``) must be given.
     """
 
     intercept: Prior | None = None
     b: Prior | Mapping[str, Prior | Mapping[str, Prior]] | None = None
     sd: Prior | Mapping[str, Prior | Mapping[str, Prior]] | None = None   # required with a group term, refused without one (M3c-1)
-    sigma: Prior | None = None
+    sigma: Prior | None = None       # Gaussian and Student-t
+    shape: Prior | None = None       # negative binomial and Gamma (brms class ``shape``)
 
     # -- coefficient priors -----------------------------------------------------------------
     def coefficient_priors(self, spec) -> dict[str, Prior]:
@@ -260,13 +269,17 @@ class Priors:
         if not has_intercept and self.intercept is not None:
             raise PriorError("the formula has no population intercept; omit the intercept prior (or pass None)")
         sd_priors = self.sd_priors(spec)
-        if fam.scale_parameter is not None and self.sigma is None:
-            raise PriorError(fam.sigma_missing_error)
-        if fam.scale_parameter is None and self.sigma is not None:
-            raise PriorError(
-                f"the {fam.name} family has no residual SD; do not pass sigma. Its intercept and "
-                f"slope priors are on the {fam.link_scale} scale."
-            )
+        scale = fam.scale_parameter                                   # "sigma", "shape" or None
+        auxiliary = {name: getattr(self, name) for name in AUXILIARY}
+        if scale is not None and auxiliary[scale] is None:
+            raise PriorError(fam.scale_missing_error)
+        for name, prior in auxiliary.items():
+            if prior is not None and name != scale:
+                raise PriorError(
+                    f"the {fam.name} family has no {AUXILIARY[name]}; do not pass {name}."
+                    + (f" Its auxiliary parameter is {scale}: pass {scale}=..." if scale is not None else "")
+                    + (f" Its intercept and slope priors are on the {fam.link_scale} scale." if fam.link_scale is not None else "")
+                )
         for label, prior in ([("intercept", self.intercept)] if has_intercept else []) + list(self.coefficient_priors(spec).items()):
             if not isinstance(prior, Prior):
                 raise PriorError(f"prior for {label!r} must be a Prior, got {type(prior).__name__}")
@@ -276,7 +289,7 @@ class Priors:
                 )
         from autobayes.formula import sd_tag
 
-        scales = [(f"sd:{sd_tag(g, c)}", prior) for (g, c), prior in sd_priors.items()] + ([("sigma", self.sigma)] if self.sigma is not None else [])
+        scales = [(f"sd:{sd_tag(g, c)}", prior) for (g, c), prior in sd_priors.items()] + ([(scale, auxiliary[scale])] if scale is not None else [])
         for label, prior in scales:
             if not isinstance(prior, Prior):
                 raise PriorError(f"prior for {label!r} must be a Prior, got {type(prior).__name__}")
@@ -292,15 +305,17 @@ class Priors:
         (Bambi would accept a stray ``1|g`` entry silently)."""
         import bambi as bmb
         import numpy as np
+        from autobayes.families import get_family
         from autobayes.formula import ModelSpec, bambi_group_name
 
         self.validate(spec, family)
+        fam = get_family(family)
         if not isinstance(spec, ModelSpec):
             spec = ModelSpec(formula="", response="", predictors=tuple(spec), group=None)
         per_column = self.coefficient_priors(spec)
         out = {"Intercept": self.intercept.to_bambi()} if spec.intercept else {}
-        if self.sigma is not None:
-            out["sigma"] = self.sigma.to_bambi()
+        if fam.scale_parameter is not None:                 # under Bambi's name: "sigma", or "alpha" for brms's "shape"
+            out[fam.bambi_scale_parameter] = getattr(self, fam.scale_parameter).to_bambi()
         for term in spec.pop_terms:
             if not term.is_vector:
                 out[term.name] = per_column[term.name].to_bambi()

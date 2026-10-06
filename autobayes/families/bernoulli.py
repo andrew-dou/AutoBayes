@@ -25,7 +25,7 @@ def _draw_response(model, post, mean, df, rng):
 BERNOULLI = FamilySpec(
     name="bernoulli", tag="M1", parent="logit_p", link="logit", link_scale="logit", mean_name="p",
     response_kind="binary", response_dtype=np.int64,
-    scale_parameter=None, fixed_parameters=NO_FIXED_PARAMETERS,
+    scale_parameter=None, bambi_scale_parameter=None, fixed_parameters=NO_FIXED_PARAMETERS,
     bambi_family=_bambi_family,
     validate_response=_validate_response,
     response_warnings=lambda spec, df: [],
@@ -34,8 +34,8 @@ BERNOULLI = FamilySpec(
     draw_response=_draw_response,
     manual_prediction=False, prediction_kinds=STANDARD_PREDICTION_KINDS,
     kind_error="kind must be 'mean', 'response' or 'linear' ('probability' is for binomial models; here 'mean' is p)",
-    sigma_rule="sigma is required for the Gaussian family and must be omitted for Bernoulli and binomial",
-    sigma_missing_error=None,
+    scale_rule="sigma and shape must be omitted for Bernoulli (no auxiliary parameter)",
+    scale_missing_error=None,
     linpred_symbol="eta", scale_phrase="log-odds", intercept_meaning="log-odds of y = 1",
     mean_lines=lambda model: ["  P(y_i = 1) = p_i = expit(eta_i) = 1 / (1 + exp(-eta_i)); eta is on the log-odds scale."],
     likelihood_lines=lambda model: [

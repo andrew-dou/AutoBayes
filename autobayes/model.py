@@ -1,6 +1,7 @@
 """The model: a thin, inspectable layer over a Bambi-built PyMC model.
 
-Five families, including Poisson counts and fixed-nu Student-t responses. ``"gaussian"`` (M0): identity link, residual SD ``sigma``. ``"bernoulli"``
+The families of ``autobayes.families``, including Poisson and negative binomial counts and fixed-nu Student-t
+responses. ``"gaussian"`` (M0): identity link, residual SD ``sigma``. ``"bernoulli"``
 (M1): logit link, ``p = expit(eta)``, no residual scale. ``"binomial"`` (M2): logit link on
 ``successes | trials(n)``, counts. All share the right-hand side ``[1 +] x1 [+ x2 ...]
 [+ (1 | factor) | (1 + x || factor) ...]`` with numeric terms and, since M3a-1, treatment-coded categorical
@@ -106,7 +107,7 @@ class Model:
 
     Attributes
     ----------
-    family : str               "gaussian", "student", "poisson", "bernoulli" or "binomial"
+    family : str               a registered family name: "gaussian", "student", "poisson", "negbinomial", "bernoulli", "binomial"
     family_spec : FamilySpec   the registered specification of that family (autobayes/families/)
     spec : ModelSpec
     priors : Priors
@@ -222,7 +223,7 @@ class Model:
         variable_names = (["Intercept"] if self.spec.intercept else []) + list(self.spec.terms)
         variable_names += [self.names["y"], self.names["linpred"]]
         if self.family_spec.scale_parameter is not None:
-            variable_names += [self.family_spec.scale_parameter]
+            variable_names += [self.family_spec.bambi_scale_parameter]   # the PyMC variable: "sigma", or "alpha" for "shape"
         variable_names += list(self.family_spec.fixed_parameters)   # Bambi uses "nu" as an auxiliary-prior key even when fixed.
         for roles in self.group_coefficient_names.values():
             variable_names.extend(roles[k] for k in ("sd", "offset", "group_effect"))
@@ -368,7 +369,8 @@ class Model:
         """PyMC variable names for each role in the model. ``"linpred"`` is the deterministic
         Bambi builds for the likelihood's parent parameter (``mu`` for Gaussian, ``logit_p``
         for Bernoulli); ``"mean"`` is the name ``predict`` gives the expected response (``mu``
-        or ``p``). ``"sigma"`` exists for Gaussian and Student-t families. ``"b:<term>"`` is the
+        or ``p``). ``"sigma"`` exists for the Gaussian and Student-t families and ``"shape"`` for the
+        negative binomial and Gamma families (its value is Bambi's variable name, ``alpha``). ``"b:<term>"`` is the
         coefficient variable of each population-level term (scalar for a numeric term, a vector
         over the coefficient levels otherwise); with exactly one group-level term its ``sd``,
         ``offset`` and ``group_effect`` roles are included here as well, and ``sd:x``, ``offset:x``,
@@ -384,7 +386,7 @@ class Model:
             **{f"b:{t.name}": t.name for t in self.spec.pop_terms},
         }
         if fam.scale_parameter is not None:
-            out[fam.scale_parameter] = fam.scale_parameter
+            out[fam.scale_parameter] = fam.bambi_scale_parameter
         if fam.continuous:
             out["mu"] = "mu"                                  # the continuous families also expose their location by name
         return out
@@ -425,7 +427,8 @@ class Model:
         per column of each ``PopTerm``."""
         return self.spec.column_terms
 
-    def value_point(self, *, intercept: float | None = None, b, sd=None, z=None, sigma: float | None = None) -> dict[str, np.ndarray]:
+    def value_point(self, *, intercept: float | None = None, b, sd=None, z=None, sigma: float | None = None,
+                    shape: float | None = None) -> dict[str, np.ndarray]:
         """A point in PyMC's sampled (value) space, from natural-scale quantities.
 
         ``intercept`` is the *model* intercept (at the predictor means when centred),
@@ -436,7 +439,8 @@ class Model:
         varying slopes takes a mapping over exactly its coefficients, ``sd={"g": {"Intercept": 0.8,
         "x": 0.3}}``, ``z={"g": {"Intercept": array(J), "x": array(J)}}``. One factor also accepts the
         entry without the factor key; neither applies without groups. ``sigma`` is the residual
-        SD (Gaussian only). Scales are stored on the log scale because that is what PyMC samples.
+        SD (Gaussian and Student-t), ``shape`` the negative binomial / Gamma shape; exactly the family's own
+        is given. Scales are stored on the log scale because that is what PyMC samples.
         """
         b = np.atleast_1d(np.asarray(b, dtype=float))
         if b.shape != (len(self.spec.columns),):
@@ -486,8 +490,10 @@ class Model:
                         what = repr(g) if coef == "Intercept" else f"the slope {coef!r} of {g!r}"
                         raise ValueError(f"z for {what} must have {block.J} finite entries")
                     sd_by_coef[(g, coef)], z_by_coef[(g, coef)] = sds[coef], arr
-        if (sigma is None) != (self.family_spec.scale_parameter is None):
-            raise ValueError(self.family_spec.sigma_rule)
+        scale = self.family_spec.scale_parameter                 # "sigma", "shape" or None
+        auxiliary = {"sigma": sigma, "shape": shape}
+        if {k for k, v in auxiliary.items() if v is not None} != ({scale} if scale is not None else set()):
+            raise ValueError(self.family_spec.scale_rule)
         n = self.names
         if self.spec.intercept and intercept is None:
             raise ValueError("intercept is required for a model with a population intercept")
@@ -503,8 +509,8 @@ class Model:
         for (g, coef), roles in self.group_coefficient_names.items():
             point[f"{roles['sd']}_log__"] = log_scale(sd_by_coef[(g, coef)], f"sd:{sd_tag(g, coef)}")
             point[roles["offset"]] = z_by_coef[(g, coef)]
-        if sigma is not None:
-            point[f"{n['sigma']}_log__"] = log_scale(sigma, "sigma")
+        if scale is not None:
+            point[f"{n[scale]}_log__"] = log_scale(auxiliary[scale], scale)
         i = 0
         for term in self.spec.pop_terms:                      # b in design-column order: one entry per term column
             k = len(term.columns)
@@ -752,4 +758,16 @@ def poisson(formula: str, data: pd.DataFrame, priors: Priors, *,
     offset/exposure or overdispersion parameter is supported in this slice.
     """
     return Model(formula, data, priors, family="poisson",
+                 center_predictors=center_predictors, categorical=categorical)
+
+
+def negbinomial(formula: str, data: pd.DataFrame, priors: Priors, *,
+                center_predictors: bool = True, categorical: Mapping[str, object] | None = None) -> Model:
+    """Negative binomial count response (brms ``negbinomial``): log link, ``Var[y] = mu + mu^2 / shape``.
+
+    Counts as for Poisson (integers in [0, 1e6], zero rows retained). The overdispersion parameter ``shape``
+    takes its own positive-support prior, ``Priors(shape=ab.Gamma(0.01, 0.01))``; no sigma, nu, offset/exposure
+    or zero-inflation.
+    """
+    return Model(formula, data, priors, family="negbinomial",
                  center_predictors=center_predictors, categorical=categorical)
