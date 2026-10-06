@@ -105,11 +105,30 @@
    "depends_on": [
     "P3_families_registry"
    ],
-   "status": "implementing",
+   "status": "gates_green",
    "summary": "PopTerm and GroupTerm(factor, coefs, correlated) with per-(factor, coefficient) design blocks",
    "pr": null,
    "attempts": 1,
-   "gates": {},
+   "gates": {
+    "sha": "9841af4a0d31",
+    "dirty_tree": false,
+    "base": "origin/main",
+    "when": "2026-10-06T03:53Z",
+    "results": {
+     "immutability": {
+      "status": "pass",
+      "seconds": 0.0
+     },
+     "oracle": {
+      "status": "pass",
+      "seconds": 32.5
+     },
+     "suite": {
+      "status": "pass",
+      "seconds": 326.6
+     }
+    }
+   },
    "divergences": [],
    "next_action": "agent working in AutoBayes-worktrees/parity-p4 (stacked on P3 at 5d29c70); rebase onto main, gate, PR"
   },

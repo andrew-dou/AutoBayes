@@ -5,7 +5,9 @@ Five families, including Poisson counts and fixed-nu Student-t responses. ``"gau
 ``successes | trials(n)``, counts. All share the right-hand side ``[1 +] x1 [+ x2 ...]
 [+ (1 | factor) ...]`` with numeric terms and, since M3a-1, treatment-coded categorical terms declared
 with ``categorical={column: reference}``; centring; non-centred group effects when a group term is
-present, and a population-only model without one (M3c-1).
+present, and a population-only model without one (M3c-1). The formula is a term model (``PopTerm``,
+``GroupTerm`` in ``autobayes.formula``; docs/term-model.md) and ``Design`` holds one ``GroupBlock`` per
+group-level coefficient.
 """
 from __future__ import annotations
 
@@ -18,13 +20,25 @@ import pandas as pd
 from collections.abc import Mapping
 
 from autobayes.families import FAMILIES, FamilySpec, get_family
-from autobayes.formula import Categorical, FormulaError, ModelSpec, binomial_counts, categorical_labels, parse_formula
+from autobayes.formula import Categorical, FormulaError, ModelSpec, binomial_counts, categorical_labels, parse_formula, pop_term_design
 from autobayes.priors import Priors
 
 
+def _bambi_group_name(factor: str, coef: str) -> str:
+    """Bambi's name of one group-level coefficient: ``1|g`` for the varying intercept of ``g`` (``x|g`` for a slope)."""
+    return f"{'1' if coef == 'Intercept' else coef}|{factor}"
+
+
 @dataclass(frozen=True)
-class GroupDesign:
-    """One factor's sorted levels, original-row coding and concatenated Z slice."""
+class GroupBlock:
+    """The design block of one group-level coefficient ``c`` of grouping factor ``m`` (docs/term-model.md).
+
+    ``levels`` are the factor's sorted fitted labels (brms's level order; ``N_m`` of them). ``Z`` is the
+    ``(n, N_m)`` block: row ``i`` holds the coefficient's covariate value (one for the intercept, so the block
+    is the one-hot indicator) in the column of row ``i``'s level, which is brms's ``Z_m_c[i]`` spread over
+    its ``J_m[i]``. ``group_index`` is that level's 0-based index per row (brms ``J_m - 1``) and
+    ``column_slice`` where the block sits in the concatenated ``Design.Z``.
+    """
     levels: tuple[str, ...]
     Z: np.ndarray
     group_index: np.ndarray
@@ -32,6 +46,7 @@ class GroupDesign:
 
     @property
     def J(self) -> int:
+        """The number of levels (brms ``N_m``; this library has always called it ``J``)."""
         return len(self.levels)
 
 
@@ -44,8 +59,8 @@ class Design:
     X_model: np.ndarray           # (n, P) what multiplies the coefficients: centred if center_predictors
     x_means: np.ndarray           # (P,) column means of X_raw (zeros if not centred); a dummy's mean is its level's proportion
     predictors: tuple[str, ...]   # numeric predictor terms
-    Z: np.ndarray                 # concatenated one-hot blocks in formula order; (n, 0) without groups
-    group_designs: Mapping[str, GroupDesign]
+    Z: np.ndarray                 # the group blocks side by side in formula order; (n, 0) without groups
+    group_blocks: Mapping[tuple[str, str], GroupBlock]   # (factor, coefficient) -> block, in formula order
     centered: bool
     trials: np.ndarray | None = None   # binomial only: (n,) trials per fitted row; y holds the successes
     columns: tuple[str, ...] = ()      # design-column labels in order (``x``, ``z[b]``, ...); == predictors when numeric only
@@ -58,6 +73,11 @@ class Design:
     @property
     def n(self) -> int:
         return len(self.y)
+
+    @property
+    def group_designs(self) -> dict[str, GroupBlock]:
+        """The varying-intercept block of each factor: the ``(factor, "Intercept")`` entries of ``group_blocks``."""
+        return {factor: block for (factor, coef), block in self.group_blocks.items() if coef == "Intercept"}
 
     def _single_group(self):
         if len(self.group_designs) > 1:
@@ -212,8 +232,8 @@ class Model:
         retained = list(self.spec.terms) + [roles["group_effect"] for roles in self.group_names.values()]
         if any(name.endswith("_offset") for name in retained):
             raise FormulaError("generated name collision: coefficient/effect suffix '_offset' is reserved by Bambi; rename the column")
-        coords = [f"{g}__factor_dim" for g in self.spec.groups]
-        coords += [f"{t}_dim" for t in self.spec.terms if self.spec.is_vector_term(t)]
+        coords = [roles["coordinate"] for roles in self.group_names.values()]
+        coords += [f"{t.name}_dim" for t in self.spec.pop_terms if t.is_vector]
         coords += ["__obs__"]
         names = variable_names + coords
         duplicates = sorted({n for n in names if names.count(n) > 1})
@@ -231,76 +251,80 @@ class Model:
         Xfull = np.asarray(common.design_matrix, dtype=float)
         if self.spec.intercept and not np.allclose(Xfull[:, 0], 1.0):
             raise RuntimeError("Bambi's first common column is not an intercept column")
-        # Verify Bambi's columns one by one against the data: numeric columns as given, a
-        # categorical term as one dummy per non-reference level in the recorded order.
+        # Verify Bambi's columns term by term against each term's own design block on the data
+        # (``pop_term_design``): a numeric column as given, a categorical or interaction term as one
+        # column per coefficient level in the recorded order.
         col = int(self.spec.intercept)
-        for term in self.spec.terms:
-            if term in self.spec.predictors:
-                if not np.array_equal(Xfull[:, col], self.data[term].to_numpy(dtype=float)):
-                    raise RuntimeError(f"Bambi's column for {term!r} does not equal the data column")
+        for term in self.spec.pop_terms:
+            expected = pop_term_design(term, self.data)
+            if term.kind == "numeric":
+                if not np.array_equal(Xfull[:, col], expected[:, 0]):
+                    raise RuntimeError(f"Bambi's column for {term.name!r} does not equal the data column")
                 col += 1
                 continue
-            is_inter = term in self.spec.interaction_names
-            xname, zname = self.spec.interaction_of(term) if is_inter else (None, term)
+            is_inter = term.kind == "interaction"
+            zname = term.operands[-1]
             cat = self.spec.categorical(zname)
-            bterm = common.terms[term]
+            bterm = common.terms[term.name]
             expected_kind = "interaction" if is_inter else "categoric"
-            cols = self.spec.term_columns(term)
-            coefficient_levels = self.spec.levels_of(term)
-            if getattr(bterm, "kind", None) != expected_kind or list(bterm.levels) != list(coefficient_levels) \
-                    or list(bterm.labels) != list(cols):
+            if getattr(bterm, "kind", None) != expected_kind or list(bterm.levels) != list(term.levels) \
+                    or list(bterm.labels) != list(term.columns):
                 raise RuntimeError(
-                    f"Bambi coded {term!r} as {getattr(bterm, 'kind', None)} with levels {getattr(bterm, 'levels', None)} "
+                    f"Bambi coded {term.name!r} as {getattr(bterm, 'kind', None)} with levels {getattr(bterm, 'levels', None)} "
                     f"and labels {getattr(bterm, 'labels', None)}; expected {expected_kind} coding with reference "
-                    f"{cat.reference!r}, levels {list(coefficient_levels)} and labels {list(cols)}"
+                    f"{cat.reference!r}, levels {list(term.levels)} and labels {list(term.columns)}"
                 )
             labels = self.original_labels[zname]                       # the supplied values' labels, not the recoded column
             if not np.array_equal(labels, self.data[zname].astype(str).to_numpy()):
                 raise RuntimeError(f"the recoded column {zname!r} does not reproduce the supplied labels")
-            xval = self.data[xname].to_numpy(dtype=float) if is_inter else np.ones(len(labels))
-            for j, lvl in enumerate(coefficient_levels):
-                if not np.array_equal(Xfull[:, col + j], xval * (labels == lvl)):
+            for j, lvl in enumerate(term.levels):
+                if not np.array_equal(Xfull[:, col + j], expected[:, j]):
                     what = f"x * indicator of level {lvl!r}" if is_inter else f"the indicator of level {lvl!r}"
-                    raise RuntimeError(f"Bambi's column {cols[j]!r} is not {what}")
-            if not is_inter and not np.array_equal(Xfull[:, col:col + len(coefficient_levels)].sum(1) + (0 if cat.full_rank else (labels == cat.reference)), np.ones(len(labels))):
-                raise RuntimeError(f"the dummies of {term!r} and the reference indicator do not partition the rows")
-            coords = [str(c) for c in self.pymc_model.coords.get(f"{term}_dim", ())]
-            if coords != list(coefficient_levels):
-                raise RuntimeError(f"PyMC coordinates {term}_dim = {coords} differ from the coefficient levels {list(coefficient_levels)}")
-            col += len(coefficient_levels)
+                    raise RuntimeError(f"Bambi's column {term.columns[j]!r} is not {what}")
+            if not is_inter and not np.array_equal(Xfull[:, col:col + len(term.levels)].sum(1) + (0 if cat.full_rank else (labels == cat.reference)), np.ones(len(labels))):
+                raise RuntimeError(f"the dummies of {term.name!r} and the reference indicator do not partition the rows")
+            coords = [str(c) for c in self.pymc_model.coords.get(f"{term.name}_dim", ())]
+            if coords != list(term.levels):
+                raise RuntimeError(f"PyMC coordinates {term.name}_dim = {coords} differ from the coefficient levels {list(term.levels)}")
+            col += len(term.levels)
         if col != Xfull.shape[1]:
             raise RuntimeError(f"Bambi's common design has {Xfull.shape[1]} columns, expected {col}")
         X_raw = Xfull[:, int(self.spec.intercept):]
-        group_designs = {}
+        # One block per (factor, coefficient), in formula order; Bambi's concatenated group design is their
+        # side-by-side concatenation. Only the varying intercept exists in this subset, whose block is the
+        # one-hot indicator of the level (a slope's block would be the indicator times its covariate).
+        group_blocks: dict[tuple[str, str], GroupBlock] = {}
         if not self.spec.has_group:
             if group is not None:
                 raise RuntimeError("Bambi built a group design for a formula without a group-level term")
             Z = np.zeros((len(X_raw), 0))
         else:
-            expected_terms = [f"1|{g}" for g in self.spec.groups]
+            expected_terms = [_bambi_group_name(t.factor, coef) for t in self.spec.group_terms for coef in t.coefs]
             if group is None or list(group.terms) != expected_terms:
                 raise RuntimeError("Bambi group terms differ from formula order")
             Z = group.design_matrix
             Z = np.asarray(Z.toarray() if hasattr(Z, "toarray") else Z, dtype=float)
             start = 0
-            for g in self.spec.groups:
-                name = f"1|{g}"
+            for t in self.spec.group_terms:
+                g = t.factor
                 levels = self.spec.levels_by_group[g]
-                if tuple(str(v) for v in group.terms[name].groups) != levels:
-                    raise RuntimeError(f"Bambi level order for {g!r} differs from sorted fitted labels")
-                block_slice = slice(start, start + len(levels))
-                if group.slices[name] != block_slice:
-                    raise RuntimeError(f"Bambi group slice for {g!r} differs from formula order")
                 labels = self.data[g].to_numpy()
-                expected = np.column_stack([labels == level for level in levels]).astype(float)
-                block = Z[:, block_slice]
-                if not np.array_equal(block, expected) or not np.array_equal(block.sum(1), np.ones(len(X_raw))):
-                    raise RuntimeError(f"group design for {g!r} does not encode original rows one-hot")
+                indicator = np.column_stack([labels == level for level in levels]).astype(float)
+                for coef in t.coefs:
+                    name = _bambi_group_name(g, coef)
+                    if tuple(str(v) for v in group.terms[name].groups) != levels:
+                        raise RuntimeError(f"Bambi level order for {g!r} differs from sorted fitted labels")
+                    block_slice = slice(start, start + len(levels))
+                    if group.slices[name] != block_slice:
+                        raise RuntimeError(f"Bambi group slice for {g!r} differs from formula order")
+                    block = Z[:, block_slice]
+                    if not np.array_equal(block, indicator) or not np.array_equal(block.sum(1), np.ones(len(X_raw))):
+                        raise RuntimeError(f"group design for {g!r} does not encode original rows one-hot")
+                    group_blocks[(g, coef)] = GroupBlock(levels, block, indicator.argmax(1), block_slice)
+                    start += len(levels)
                 coord = self.group_names[g]["coordinate"]
                 if tuple(str(v) for v in self.pymc_model.coords[coord]) != levels:
                     raise RuntimeError(f"PyMC coordinate {coord!r} differs from fitted labels")
-                group_designs[g] = GroupDesign(levels, block, block.argmax(1), block_slice)
-                start += len(levels)
             if Z.shape != (len(X_raw), start):
                 raise RuntimeError("unexpected concatenated group design shape")
         if self.effective_center_predictors:
@@ -312,7 +336,7 @@ class Model:
         y = np.asarray(self.data[self.spec.response], dtype=float)
         trials = np.asarray(self.data[self.spec.trials], dtype=np.int64) if self.spec.trials else None
         return Design(y=y, X_raw=X_raw, X_model=X_model, x_means=x_means,
-                      predictors=self.spec.predictors, Z=Z, group_designs=group_designs,
+                      predictors=self.spec.predictors, Z=Z, group_blocks=group_blocks,
                       centered=self.effective_center_predictors, trials=trials,
                       columns=self.spec.columns, categoricals=self.spec.categoricals)
 
@@ -326,16 +350,19 @@ class Model:
         """PyMC variable names for each role in the model. ``"linpred"`` is the deterministic
         Bambi builds for the likelihood's parent parameter (``mu`` for Gaussian, ``logit_p``
         for Bernoulli); ``"mean"`` is the name ``predict`` gives the expected response (``mu``
-        or ``p``). ``"sigma"`` exists for Gaussian and Student-t families."""
-        g = self.spec.groups[0] if len(self.spec.groups) == 1 else None
+        or ``p``). ``"sigma"`` exists for Gaussian and Student-t families. ``"b:<term>"`` is the
+        coefficient variable of each population-level term (scalar for a numeric term, a vector
+        over the coefficient levels otherwise); with exactly one group-level term its ``sd``,
+        ``offset`` and ``group_effect`` roles are included here as well (see ``group_names``)."""
+        single = self.spec.group_terms[0] if len(self.spec.group_terms) == 1 else None
         fam = self.family_spec
         out = {
             **({"intercept": "Intercept"} if self.spec.intercept else {}),
-            **({"sd": f"1|{g}_sigma", "offset": f"1|{g}_offset", "group_effect": f"1|{g}"} if g is not None else {}),
+            **({k: v for k, v in self._group_roles(single.factor).items() if k != "coordinate"} if single is not None else {}),
             "linpred": fam.parent,
             "mean": fam.mean_name,
             "y": self.spec.response if self.spec.trials is None else f"p({self.spec.response}, {self.spec.trials})",
-            **{f"b:{p}": p for p in self.spec.terms},
+            **{f"b:{t.name}": t.name for t in self.spec.pop_terms},
         }
         if fam.scale_parameter is not None:
             out[fam.scale_parameter] = fam.scale_parameter
@@ -343,18 +370,25 @@ class Model:
             out["mu"] = "mu"                                  # the continuous families also expose their location by name
         return out
 
+    @staticmethod
+    def _group_roles(factor: str) -> dict[str, str]:
+        """PyMC names of the varying intercept of ``factor``: ``sd`` is its scale (brms ``sd_m``), ``offset``
+        the standardised effects (brms ``z_m``), ``group_effect`` the effects per level (brms ``r_m_1``),
+        ``coordinate`` the level dimension of both."""
+        name = _bambi_group_name(factor, "Intercept")
+        return {"sd": f"{name}_sigma", "offset": f"{name}_offset", "group_effect": name, "coordinate": f"{factor}__factor_dim"}
+
     @property
     def group_names(self) -> dict[str, dict[str, str]]:
-        """PyMC roles and coordinate for each factor, in formula order."""
-        return {g: {"sd": f"1|{g}_sigma", "offset": f"1|{g}_offset",
-                    "group_effect": f"1|{g}", "coordinate": f"{g}__factor_dim"}
-                for g in self.spec.groups}
+        """PyMC roles and coordinate of each group-level term's varying intercept, by factor in formula order."""
+        return {t.factor: self._group_roles(t.factor) for t in self.spec.group_terms}
 
     @property
     def coefficients(self) -> tuple[tuple[str, str, int | None], ...]:
         """``(design column, PyMC variable, index into that variable or None)`` in design order:
         ``("x", "x", None)`` for a numeric slope, ``("z[b]", "z", 0)`` for a dummy coefficient
-        (the variable ``z`` has dims ``z_dim`` with the coefficient levels as coordinates)."""
+        (the variable ``z`` has dims ``z_dim`` with the coefficient levels as coordinates); one entry
+        per column of each ``PopTerm``."""
         return self.spec.column_terms
 
     def value_point(self, *, intercept: float | None = None, b, sd: float | Mapping[str, float] | None = None, z=None, sigma: float | None = None) -> dict[str, np.ndarray]:
@@ -387,7 +421,8 @@ class Model:
             if sd is None or z is None:
                 raise ValueError("sd and z are required for every varying intercept")
             sd_by_group, z_by_group = keyed(sd, "sd"), keyed(z, "z")
-            for g, block in self.design.group_designs.items():
+            for t in self.spec.group_terms:
+                g, block = t.factor, self.design.group_blocks[(t.factor, "Intercept")]
                 z_by_group[g] = np.asarray(z_by_group[g], dtype=float)
                 if z_by_group[g].shape != (block.J,) or not np.isfinite(z_by_group[g]).all():
                     raise ValueError(f"z for {g!r} must have {block.J} finite entries")
@@ -410,12 +445,11 @@ class Model:
             point[roles["offset"]] = z_by_group[g]
         if sigma is not None:
             point[f"{n['sigma']}_log__"] = log_scale(sigma, "sigma")
-        for i, (col, term, j) in enumerate(self.coefficients):
-            if j is None:
-                point[term] = np.asarray(b[i])
-            else:
-                point.setdefault(term, np.zeros(len(self.spec.levels_of(term))))
-                point[term][j] = b[i]
+        i = 0
+        for term in self.spec.pop_terms:                      # b in design-column order: one entry per term column
+            k = len(term.columns)
+            point[term.name] = np.array(b[i:i + k]) if term.levels else np.asarray(b[i])
+            i += k
         expected = {v.name for v in self.pymc_model.value_vars}
         if set(point) != expected:
             raise RuntimeError(f"value names {sorted(point)} do not match PyMC's {sorted(expected)}")
@@ -428,15 +462,15 @@ class Model:
             return "u" if len(s.groups) == 1 else f"u_{g}"
         coef = pr.coefficient_priors(s)
         parts = []
-        for term in s.terms:
-            if term in s.categorical_names:
-                cat = s.categorical(term)
-                for lvl in cat.coefficients:
+        for t in s.pop_terms:
+            term = t.name
+            if t.kind == "categorical":
+                for lvl in t.levels:
                     ind = f"1[{term}_i = {lvl}]"
                     parts.append(f"({ind} - p_{term}[{lvl}]) * b_{term}[{lvl}]" if d.centered else f"{ind} * b_{term}[{lvl}]")
-            elif term in s.interaction_names:
-                xn, zn = s.interaction_of(term)
-                for lvl in s.levels_of(term):
+            elif t.kind == "interaction":
+                xn, zn = t.operands
+                for lvl in t.levels:
                     prod = f"x_{xn} * 1[{zn}_i = {lvl}]"
                     parts.append(f"({prod} - q_{term}[{lvl}]) * b_{term}[{lvl}]" if d.centered else f"{prod} * b_{term}[{lvl}]")
             else:
@@ -579,8 +613,9 @@ class Model:
             roles[names["offset"]] = "z" if len(s.groups) == 1 else f"z_{g}"
         if fam.scale_parameter is not None:
             roles[f"{n[fam.scale_parameter]}_log__"] = f"log({fam.scale_parameter})"
-        for term in (*s.categorical_names, *s.interaction_names):
-            roles[term] = f"b_{term}[{', '.join(s.levels_of(term))}] (vector; dims {term}_dim, posterior rows {', '.join(s.term_columns(term))})"
+        for t in s.pop_terms:
+            if t.is_vector:
+                roles[t.name] = f"b_{t.name}[{', '.join(t.levels)}] (vector; dims {t.name}_dim, posterior rows {', '.join(t.columns)})"
         for v in self.pymc_model.value_vars:
             lines.append(f"  {v.name:<24} {roles.get(v.name, f'b_{v.name}')}")
         lines.append("Deterministic: " + "".join(f"{names['group_effect']} = {effect(g)}, " for g, names in self.group_names.items()) + fam.deterministic_note)

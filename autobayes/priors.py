@@ -120,9 +120,9 @@ class Priors:
                 f"missing {missing}, unexpected {extra}{hint}"
             )
         out: dict[str, Prior] = {}
-        for term in spec.terms:
-            entry = given[term]
-            if not spec.is_vector_term(term):
+        for t in spec.pop_terms:
+            term, entry = t.name, given[t.name]
+            if not t.is_vector:
                 if not isinstance(entry, Prior):
                     raise PriorError(
                         f"predictor {term!r} takes one prior, got {type(entry).__name__}; a mapping {{level: prior}} "
@@ -130,9 +130,9 @@ class Priors:
                     )
                 out[term] = entry
                 continue
-            cat = spec.categorical(term if term in cat_names else spec.interaction_of(term)[1])
+            cat = spec.categorical(t.operands[-1])            # the categorical side of a categorical or interaction term
             if isinstance(entry, Prior):
-                for col in spec.term_columns(term):
+                for col in t.columns:
                     out[col] = entry
                 continue
             if not isinstance(entry, Mapping):
@@ -155,7 +155,7 @@ class Priors:
                     if not isinstance(v, Prior):
                         raise PriorError(f"prior for {term!r} level {lab!r} must be a Prior, got {type(v).__name__}")
                 continue
-            wanted = list(spec.levels_of(term))
+            wanted = list(t.levels)
             missing_l = [l for l in wanted if l not in keyed]
             extra_l = [l for l in keyed if l not in wanted]
             if missing_l or extra_l:
@@ -246,14 +246,14 @@ class Priors:
         out = {"Intercept": self.intercept.to_bambi()} if spec.intercept else {}
         if self.sigma is not None:
             out["sigma"] = self.sigma.to_bambi()
-        for term in spec.terms:
-            if not spec.is_vector_term(term):
-                out[term] = per_column[term].to_bambi()
+        for term in spec.pop_terms:
+            if not term.is_vector:
+                out[term.name] = per_column[term.name].to_bambi()
                 continue
-            priors = [per_column[col] for col in spec.term_columns(term)]
+            priors = [per_column[col] for col in term.columns]
             name = priors[0].name
             params = {k: np.array([float(pr.params[k]) for pr in priors]) for k in priors[0].params}
-            out[term] = bmb.Prior(name, **params)
+            out[term.name] = bmb.Prior(name, **params)
         for group, prior in self.group_priors(spec).items():
             out[f"1|{group}"] = bmb.Prior("Normal", mu=0.0, sigma=prior.to_bambi())
         return out

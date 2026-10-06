@@ -1,4 +1,8 @@
-"""The formula grammar and its validation.
+"""The formula grammar, its validation, and the term model a parsed formula is made of.
+
+A parsed formula is a ``ModelSpec`` holding population-level terms (``PopTerm``: ``x``, ``z``, ``x:z``) and
+group-level terms (``GroupTerm``: ``(1 | g)``); every flat view of the formula (``predictors``, ``terms``,
+``columns``, ``groups``, ...) is derived from those two tuples. See docs/term-model.md.
 
 Supported::
 
@@ -78,6 +82,111 @@ class Categorical:
         return tuple(f"{self.name}[{l}]" for l in self.coefficients)
 
 
+POP_TERM_KINDS = ("numeric", "categorical", "interaction")
+
+
+@dataclass(frozen=True)
+class PopTerm:
+    """One population-level term as written in the formula: ``x`` (``"numeric"``), ``z`` (``"categorical"``,
+    declared with its reference level) or ``x:z`` (``"interaction"``: one numeric by one categorical term).
+
+    ``columns`` are the design-column labels the term expands to, Bambi/formulae's own, in design order:
+    ``x``; ``z[l]`` per coefficient level ``l``; ``x:z[l]``. ``levels`` are the coefficient levels of a
+    vector term (a categorical term's coefficient levels, an interaction's non-reference levels), empty for
+    a scalar term. A categorical term's levels are known once the data are seen; until then it has no
+    levels and its single column is its own name, a placeholder, as ``ModelSpec.columns`` always listed it.
+    The coefficients of the term are brms's ``b`` entries for its columns.
+    """
+
+    name: str
+    kind: str
+    columns: tuple[str, ...]
+    levels: tuple[str, ...] = ()
+
+    def __post_init__(self):
+        if self.kind not in POP_TERM_KINDS:
+            raise ValueError(f"PopTerm kind must be one of {list(POP_TERM_KINDS)}, got {self.kind!r}")
+        object.__setattr__(self, "columns", tuple(self.columns))
+        object.__setattr__(self, "levels", tuple(self.levels))
+
+    @property
+    def operands(self) -> tuple[str, ...]:
+        """The data columns the term is built from: ``(x,)``, ``(z,)`` or ``(x, z)`` (numeric first)."""
+        return tuple(self.name.split(":"))
+
+    @property
+    def is_vector(self) -> bool:
+        """A term with one coefficient per level (categorical or interaction), as opposed to one slope."""
+        return self.kind != "numeric"
+
+
+@dataclass(frozen=True)
+class GroupTerm:
+    """One group-level term ``(coefs | factor)``, brms's group ``m``: ``factor`` is the grouping column,
+    ``coefs`` the population-level coefficients that vary by its level (brms ``M_m`` of them; ``("Intercept",)``
+    for ``(1 | g)``, the only form in this subset), ``correlated`` whether they share a correlation matrix
+    (``|``, brms's default) or are independent (``||``); moot for a single coefficient. The level labels
+    are not part of the term: they are known once the data are seen (``ModelSpec.levels_by_group``,
+    ``GroupBlock.levels``). Its parameters are brms's ``sd_m`` (one per coefficient), ``z_m`` (the
+    standardised effects by coefficient and level) and ``r_m_c`` (the effects of coefficient ``c``).
+    """
+
+    factor: str
+    coefs: tuple[str, ...] = ("Intercept",)
+    correlated: bool = True
+
+    def __post_init__(self):
+        object.__setattr__(self, "coefs", tuple(self.coefs))
+
+
+def _find_categorical(categoricals, name: str) -> Categorical:
+    for c in categoricals:
+        if c.name == name:
+            return c
+    raise KeyError(name)
+
+
+def pop_term(name: str, kind: str, categoricals=()) -> PopTerm:
+    """The population-level term ``name`` of the given kind, with its coefficient levels and design columns
+    read from the declared categorical terms (a categorical term's coefficient levels; the non-reference
+    levels of an interaction's categorical side; none for a numeric term)."""
+    if kind == "numeric":
+        levels: tuple[str, ...] = ()
+    elif kind == "categorical":
+        levels = _find_categorical(categoricals, name).coefficients
+    elif kind == "interaction":
+        levels = _find_categorical(categoricals, name.split(":", 1)[1]).contrasts
+    else:
+        raise ValueError(f"PopTerm kind must be one of {list(POP_TERM_KINDS)}, got {kind!r}")
+    columns = tuple(f"{name}[{l}]" for l in levels) if levels else (name,)
+    return PopTerm(name, kind, columns, levels)
+
+
+def pop_term_design(term: PopTerm, df: pd.DataFrame) -> np.ndarray:
+    """The raw design block of one population-level term on ``df``: ``(n, len(term.columns))``, one column per
+    entry of ``term.columns``. A numeric term is its column as given; a categorical term one 0/1 indicator
+    per coefficient level (reference rows all zero); an interaction ``x:z`` the numeric column times each
+    indicator. Categorical columns are read as string labels (a fitted frame holds them recoded)."""
+    if term.kind == "numeric":
+        return df[term.name].to_numpy(dtype=float)[:, None]
+    *numeric, z = term.operands
+    labels = df[z].astype(str).to_numpy()
+    x = df[numeric[0]].to_numpy(dtype=float) if numeric else np.ones(len(labels))
+    if not term.levels:
+        return np.zeros((len(df), 0))
+    return np.column_stack([x * (labels == lvl) for lvl in term.levels])
+
+
+def _flat_pop_terms(predictors, terms, categoricals, interactions) -> tuple[PopTerm, ...]:
+    """The term model of the flat description (``predictors``, ``terms``, ``categoricals``, ``interactions``)
+    that the original ``ModelSpec`` constructor takes."""
+    names = tuple(terms) or tuple(predictors)
+    cat_names = {c.name for c in categoricals}
+    inter_names = {f"{x}:{z}" for x, z in interactions}
+    return tuple(pop_term(t, "categorical" if t in cat_names else "interaction" if t in inter_names else "numeric",
+                          categoricals) for t in names)
+
+
 class _GroupLevels(Mapping):
     """Owned immutable level tuples, with ordinary copy/pickle reconstruction."""
 
@@ -113,52 +222,97 @@ class _GroupLevels(Mapping):
 
 @dataclass(frozen=True, init=False)
 class ModelSpec:
+    """A parsed formula. ``pop_terms`` and ``group_terms`` are the source of truth; ``predictors``, ``terms``,
+    ``columns``, ``categorical_names``, ``interactions``, ``groups`` and the per-term lookups are views of them.
+    ``categoricals`` carries what a categorical term needs beyond its name (reference, levels, coding) and
+    ``levels_by_group`` the fitted levels of each grouping factor, both filled in once the data are seen."""
+
     formula: str
     response: str
-    predictors: tuple[str, ...]
-    groups: tuple[str, ...]
     intercept: bool
     levels_by_group: Mapping[str, tuple[str, ...]]
     trials: str | None
     rhs: str
-    terms: tuple[str, ...]
     categoricals: tuple[Categorical, ...]
-    interactions: tuple[tuple[str, str], ...]
+    pop_terms: tuple[PopTerm, ...]
+    group_terms: tuple[GroupTerm, ...]
 
-    def __init__(self, formula, response, predictors, group=None, intercept=True,
+    def __init__(self, formula, response, predictors=(), group=None, intercept=True,
                  levels=(), trials=None, rhs="", terms=(), categoricals=(), interactions=(),
-                 *, groups=None, levels_by_group=None):
-        """Keep the original positional constructor; canonical fields use ordered factors."""
-        if groups is not None and group is not None:
-            raise ValueError("supply group or groups, not both")
-        groups = tuple(groups) if groups is not None else (() if group is None else (group,))
-        if len(set(groups)) != len(groups):
+                 *, groups=None, levels_by_group=None, pop_terms=None, group_terms=None):
+        """Keep the original positional constructor: without ``pop_terms`` / ``group_terms`` the term model is
+        built from the flat ``predictors``, ``terms``, ``categoricals``, ``interactions`` and ``group(s)``.
+        Terms given as mappings (``dataclasses.asdict`` output) are rebuilt."""
+        categoricals = tuple(c if isinstance(c, Categorical) else Categorical(**c) for c in categoricals)
+        if group_terms is not None:
+            if groups is not None or group is not None:
+                raise ValueError("supply group_terms or group/groups, not both")
+            group_terms = tuple(t if isinstance(t, GroupTerm) else GroupTerm(**t) for t in group_terms)
+        else:
+            if groups is not None and group is not None:
+                raise ValueError("supply group or groups, not both")
+            groups = tuple(groups) if groups is not None else (() if group is None else (group,))
+            group_terms = tuple(GroupTerm(g) for g in groups)
+        factors = tuple(t.factor for t in group_terms)
+        if len(set(factors)) != len(factors):
             raise ValueError("duplicate grouping factors")
+        if pop_terms is not None:
+            if predictors or terms or interactions:
+                raise ValueError("supply pop_terms or predictors/terms/interactions, not both")
+            pop_terms = tuple(t if isinstance(t, PopTerm) else PopTerm(**t) for t in pop_terms)
+        else:
+            pop_terms = _flat_pop_terms(predictors, terms, categoricals, interactions)
         if levels_by_group is not None and levels:
             raise ValueError("supply levels or levels_by_group, not both")
-        if levels and len(groups) != 1:
+        if levels and len(factors) != 1:
             raise ValueError("singular levels require one grouping factor")
-        level_map = ({g: tuple(levels) for g in groups} if levels_by_group is None
+        level_map = ({g: tuple(levels) for g in factors} if levels_by_group is None
                      else {g: tuple(v) for g, v in levels_by_group.items()})
-        if set(level_map) != set(groups):
+        if set(level_map) != set(factors):
             raise ValueError("levels_by_group must cover exactly the grouping factors")
-        values = dict(formula=formula, response=response, predictors=tuple(predictors),
-                      groups=groups, intercept=intercept,
-                      levels_by_group=_GroupLevels((g, level_map[g]) for g in groups),
-                      trials=trials, rhs=rhs, terms=tuple(terms) or tuple(predictors),
-                      categoricals=tuple(categoricals), interactions=tuple(interactions))
+        values = dict(formula=formula, response=response, intercept=intercept,
+                      levels_by_group=_GroupLevels((g, level_map[g]) for g in factors),
+                      trials=trials, rhs=rhs, categoricals=categoricals,
+                      pop_terms=pop_terms, group_terms=group_terms)
         for key, value in values.items():
             object.__setattr__(self, key, value)
 
     def __hash__(self):
-        # Preserve hashability of the old frozen specification; factor metadata is ordered.
-        return hash((self.formula, self.response, self.predictors, self.groups, self.intercept,
+        # Preserve hashability of the frozen specification; factor metadata is ordered.
+        return hash((self.formula, self.response, self.intercept,
                      tuple(self.levels_by_group[g] for g in self.groups), self.trials, self.rhs,
-                     self.terms, self.categoricals, self.interactions))
+                     self.categoricals, self.pop_terms, self.group_terms))
+
+    # -- views of the term model -------------------------------------------------------------
+    @property
+    def terms(self) -> tuple[str, ...]:
+        """Population-level term names in design order (main effects, then interactions)."""
+        return tuple(t.name for t in self.pop_terms)
+
+    @property
+    def predictors(self) -> tuple[str, ...]:
+        """The numeric terms."""
+        return tuple(t.name for t in self.pop_terms if t.kind == "numeric")
+
+    @property
+    def interactions(self) -> tuple[tuple[str, str], ...]:
+        """``(numeric, categorical)`` per interaction term, in term order."""
+        return tuple(t.operands for t in self.pop_terms if t.kind == "interaction")
+
+    @property
+    def groups(self) -> tuple[str, ...]:
+        """Grouping factors in formula order."""
+        return tuple(t.factor for t in self.group_terms)
+
+    def pop_term(self, name: str) -> PopTerm:
+        for t in self.pop_terms:
+            if t.name == name:
+                return t
+        raise KeyError(name)
 
     @property
     def has_group(self) -> bool:
-        return bool(self.groups)
+        return bool(self.group_terms)
 
     @property
     def group(self) -> str | None:
@@ -174,64 +328,57 @@ class ModelSpec:
 
     @property
     def group_term(self) -> str:
+        """Bambi's name of the single varying intercept, ``1|g``."""
         if self.group is None:
             raise ValueError("this model has no group-level term")
         return f"1|{self.group}"
 
     @property
     def categorical_names(self) -> tuple[str, ...]:
-        return tuple(c.name for c in self.categoricals)
+        return tuple(t.name for t in self.pop_terms if t.kind == "categorical")
 
     def categorical(self, name: str) -> Categorical:
-        for c in self.categoricals:
-            if c.name == name:
-                return c
-        raise KeyError(name)
+        return _find_categorical(self.categoricals, name)
 
     @property
     def interaction_names(self) -> tuple[str, ...]:
-        return tuple(f"{x}:{z}" for x, z in self.interactions)
+        return tuple(t.name for t in self.pop_terms if t.kind == "interaction")
 
     def interaction_of(self, term: str) -> tuple[str, str]:
-        for x, z in self.interactions:
-            if f"{x}:{z}" == term:
-                return x, z
-        raise KeyError(term)
+        """``(numeric, categorical)`` of an interaction term; ``KeyError`` for any other name."""
+        t = self.pop_term(term)
+        if t.kind != "interaction":
+            raise KeyError(term)
+        return t.operands
 
     def is_vector_term(self, term: str) -> bool:
         """A categorical or interaction term: coefficient levels given by levels_of."""
-        return term in self.categorical_names or term in self.interaction_names
+        return any(t.name == term and t.is_vector for t in self.pop_terms)
 
     def levels_of(self, term: str) -> tuple[str, ...]:
-        """Coefficient levels of a vector-valued term: a categorical term's non-reference levels,
-        or those of an interaction's categorical side. ``()`` for a numeric term."""
-        if term in self.categorical_names:
-            return self.categorical(term).coefficients
-        if term in self.interaction_names:
-            return self.categorical(self.interaction_of(term)[1]).contrasts
-        return ()
+        """Coefficient levels of a vector-valued term: a categorical term's coefficient levels,
+        or the non-reference levels of an interaction's categorical side. ``()`` for a numeric term."""
+        return next((t.levels for t in self.pop_terms if t.name == term), ())
 
     def term_columns(self, term: str) -> tuple[str, ...]:
         """Design-column labels of one term, Bambi/formulae's own: ``x``; ``z[l]``; ``x:z[l]``."""
-        levels = self.levels_of(term)
-        return tuple(f"{term}[{l}]" for l in levels) if levels else (term,)
+        return next((t.columns for t in self.pop_terms if t.name == term), (term,))
 
     @property
     def columns(self) -> tuple[str, ...]:
-        """Design-column labels in design order: canonical term order, a categorical term
-        expanded into ``z[level]`` dummies (reference omitted), an interaction into ``x:z[level]``."""
-        return tuple(col for term in self.terms for col in self.term_columns(term))
+        """Design-column labels in design order: the terms' columns, one after another (a categorical
+        term expanded into ``z[level]`` dummies, reference omitted; an interaction into ``x:z[level]``)."""
+        return tuple(col for t in self.pop_terms for col in t.columns)
 
     @property
     def column_terms(self) -> tuple[tuple[str, str, int | None], ...]:
         """``(column label, term, index within the term or None for a numeric term)`` per column."""
         out: list[tuple[str, str, int | None]] = []
-        for term in self.terms:
-            cols = self.term_columns(term)
-            if self.levels_of(term):
-                out.extend((col, term, j) for j, col in enumerate(cols))
+        for t in self.pop_terms:
+            if t.levels:
+                out.extend((col, t.name, j) for j, col in enumerate(t.columns))
             else:
-                out.append((term, term, None))
+                out.append((t.name, t.name, None))
         return tuple(out)
 
     @property
@@ -461,8 +608,9 @@ def parse_formula(formula: str, data: pd.DataFrame | None = None, family: str = 
             pieces.append(re.sub(r"^1", "0", part, count=1))
         rhs = " + ".join(pieces)
 
-    predictors: list[str] = []
-    groups: list[str] = []
+    predictors: list[str] = []                             # main effects as written, numeric and categorical
+    group_terms: list[GroupTerm] = []
+    groups: list[str] = []                                 # the factors of group_terms, for the checks below
     raw_interactions: list[tuple[str, str, str]] = []      # (left, right, piece as written)
     saw_intercept_token = False
     remove_intercept = False
@@ -491,7 +639,8 @@ def parse_formula(formula: str, data: pd.DataFrame | None = None, family: str = 
         gm = _GROUP_RE.match(piece)
         if gm:
             inner, factor = gm.group(1).strip(), gm.group(2).strip()
-            _reject_group_term(inner, factor, piece)
+            _reject_group_term(inner, factor, piece)            # only '(1 | factor)' passes: one coefficient, '|'
+            group_terms.append(GroupTerm(factor, ("Intercept",), correlated=True))
             groups.append(factor)
             continue
         if piece.startswith("("):
@@ -580,12 +729,11 @@ def parse_formula(formula: str, data: pd.DataFrame | None = None, family: str = 
     canonical_rhs = " + ".join(parts) if parts else "1"           # intercept-only population model: 'y ~ 1'
     if remove_intercept:
         canonical_rhs = "0 + " + canonical_rhs
+    pop_terms = (*(pop_term(p, "categorical" if p in cat_names else "numeric", categoricals) for p in predictors),
+                 *(pop_term(f"{x}:{z}", "interaction", categoricals) for x, z in interactions))
     spec = ModelSpec(
-        formula=formula.strip(), response=response,
-        predictors=tuple(p for p in predictors if p not in cat_names),
-        groups=tuple(groups), intercept=not remove_intercept, trials=trials, rhs=canonical_rhs,
-        terms=(*predictors, *(f"{x}:{z}" for x, z in interactions)), categoricals=categoricals,
-        interactions=tuple(interactions),
+        formula=formula.strip(), response=response, intercept=not remove_intercept, trials=trials,
+        rhs=canonical_rhs, categoricals=categoricals, pop_terms=pop_terms, group_terms=tuple(group_terms),
     )
     if data is not None:
         spec = validate_data(spec, data, family)
@@ -750,7 +898,8 @@ def validate_data(spec: ModelSpec, data: pd.DataFrame, family: str = "gaussian")
         if np.isclose(np.std(data[c].to_numpy(dtype=float)), 0.0):
             raise FormulaError(f"predictor {c!r} is constant")
     return ModelSpec(
-        formula=spec.formula, response=spec.response, predictors=spec.predictors,
-        groups=spec.groups, intercept=spec.intercept, levels_by_group=levels_by_group, trials=spec.trials, rhs=spec.rhs,
-        terms=spec.terms, categoricals=tuple(categoricals), interactions=spec.interactions,
+        formula=spec.formula, response=spec.response, intercept=spec.intercept, levels_by_group=levels_by_group,
+        trials=spec.trials, rhs=spec.rhs, categoricals=tuple(categoricals),
+        pop_terms=tuple(pop_term(t.name, t.kind, categoricals) for t in spec.pop_terms),   # levels now known
+        group_terms=spec.group_terms,
     )

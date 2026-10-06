@@ -38,36 +38,26 @@ import pandas as pd
 import xarray as xr
 
 from autobayes.families import get_family
-from autobayes.formula import FormulaError, categorical_labels, check_counts, reject_complex
+from autobayes.formula import FormulaError, categorical_labels, check_counts, pop_term_design, reject_complex
 
 _NEW_GROUPS = {"error", "resample_observed", "population"}
 
 
 def raw_design(model, df: pd.DataFrame) -> np.ndarray:
-    """The (n, P) raw design of ``df`` in ``model.coefficients`` order: numeric columns as given,
-    one 0/1 indicator per coefficient level of a categorical term (reference rows all zero)."""
-    cols = []
-    for term in model.spec.terms:
-        if term in model.spec.categorical_names:
-            cat = model.spec.categorical(term)
-            labels = df[term].astype(str).to_numpy()
-            cols.extend((labels == lvl).astype(float) for lvl in cat.coefficients)
-        elif term in model.spec.interaction_names:
-            xn, zn = model.spec.interaction_of(term)
-            labels = df[zn].astype(str).to_numpy()
-            xv = df[xn].to_numpy(dtype=float)
-            cols.extend(xv * (labels == lvl) for lvl in model.spec.levels_of(term))
-        else:
-            cols.append(df[term].to_numpy(dtype=float))
-    return np.column_stack(cols) if cols else np.zeros((len(df), 0))
+    """The (n, P) raw design of ``df`` in ``model.coefficients`` order: each population-level term's own
+    block (``pop_term_design``) side by side: numeric columns as given, one 0/1 indicator per coefficient
+    level of a categorical term (reference rows all zero), the numeric column times each indicator for an
+    interaction."""
+    blocks = [pop_term_design(term, df) for term in model.spec.pop_terms]
+    return np.concatenate(blocks, axis=1) if blocks else np.zeros((len(df), 0))
 
 
 def _coefficient_draws(post, model):
     """(chain, draw, P) posterior draws of the coefficients in design-column order."""
     parts = []
-    for term in model.spec.terms:
-        arr = post[term].to_numpy()
-        parts.append(arr if model.spec.levels_of(term) else arr[..., None])
+    for term in model.spec.pop_terms:
+        arr = post[term.name].to_numpy()
+        parts.append(arr if term.levels else arr[..., None])
     return np.concatenate(parts, axis=-1) if parts else None
 
 
