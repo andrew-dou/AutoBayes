@@ -326,10 +326,10 @@
    "pr": null,
    "attempts": 1,
    "gates": {
-    "sha": "b943f347ca98",
+    "sha": "7d303ff75c4f",
     "dirty_tree": false,
     "base": "origin/main",
-    "when": "2026-10-06T14:36Z",
+    "when": "2026-10-06T15:05Z",
     "results": {
      "immutability": {
       "status": "pass",
@@ -337,9 +337,14 @@
      },
      "oracle": {
       "status": "pass",
-      "seconds": 52.3
+      "seconds": 168.1
+     },
+     "suite": {
+      "status": "pass",
+      "seconds": 611.0
      }
-    }
+    },
+    "note": "same branch and run as A09_gamma (both features on parity/a08-a09-negbinomial-gamma)"
    },
    "divergences": [],
    "next_action": "families lane agent, worktree parity-fam1 (with A09)",
@@ -362,10 +367,10 @@
    "pr": null,
    "attempts": 1,
    "gates": {
-    "sha": "87240db65de7",
+    "sha": "7d303ff75c4f",
     "dirty_tree": false,
     "base": "origin/main",
-    "when": "2026-10-06T14:50Z",
+    "when": "2026-10-06T15:05Z",
     "results": {
      "immutability": {
       "status": "pass",
@@ -373,7 +378,11 @@
      },
      "oracle": {
       "status": "pass",
-      "seconds": 55.3
+      "seconds": 168.1
+     },
+     "suite": {
+      "status": "pass",
+      "seconds": 611.0
      }
     }
    },
