@@ -1,0 +1,60 @@
+{
+ "id": "poisson_poponly_categorical",
+ "tier": "baseline",
+ "note": "",
+ "seed": 110,
+ "n_points": 8,
+ "data": {
+  "generator": "baseline",
+  "seed": 20,
+  "n": 36,
+  "newdata": {
+   "seed": 120,
+   "n": 5
+  }
+ },
+ "brms": {
+  "formula": "cnt ~ x + z",
+  "family": {
+   "family": "poisson"
+  },
+  "factors": {
+   "z": [
+    "p",
+    "q",
+    "r"
+   ]
+  },
+  "priors": [
+   {
+    "prior": "normal(0, 2)",
+    "class": "Intercept"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "b"
+   }
+  ]
+ },
+ "autobayes": {
+  "constructor": "poisson",
+  "formula": "cnt ~ x + z",
+  "kwargs": {
+   "categorical": {
+    "z": "p"
+   }
+  },
+  "priors": {
+   "intercept": [
+    "Normal",
+    0,
+    2
+   ],
+   "b": [
+    "Normal",
+    0,
+    1
+   ]
+  }
+ }
+}

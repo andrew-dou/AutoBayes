@@ -1,0 +1,102 @@
+{
+ "id": "gauss_interaction_two_groups",
+ "tier": "baseline",
+ "note": "",
+ "seed": 105,
+ "n_points": 8,
+ "data": {
+  "generator": "baseline",
+  "seed": 15,
+  "n": 36,
+  "newdata": {
+   "seed": 115,
+   "n": 5
+  }
+ },
+ "brms": {
+  "formula": "y ~ x * z + (1 | g) + (1 | h)",
+  "family": {
+   "family": "gaussian"
+  },
+  "factors": {
+   "z": [
+    "p",
+    "q",
+    "r"
+   ],
+   "g": [
+    "a",
+    "b",
+    "c",
+    "d",
+    "e",
+    "f"
+   ],
+   "h": [
+    "h1",
+    "h2",
+    "h3",
+    "h4"
+   ]
+  },
+  "priors": [
+   {
+    "prior": "normal(0, 5)",
+    "class": "Intercept"
+   },
+   {
+    "prior": "normal(0, 2)",
+    "class": "b"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "sd",
+    "group": "g"
+   },
+   {
+    "prior": "normal(0, 0.5)",
+    "class": "sd",
+    "group": "h"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "sigma"
+   }
+  ]
+ },
+ "autobayes": {
+  "constructor": "gaussian",
+  "formula": "y ~ x * z + (1 | g) + (1 | h)",
+  "kwargs": {
+   "categorical": {
+    "z": "p"
+   }
+  },
+  "priors": {
+   "intercept": [
+    "Normal",
+    0,
+    5
+   ],
+   "b": [
+    "Normal",
+    0,
+    2
+   ],
+   "sd": {
+    "g": [
+     "HalfNormal",
+     1
+    ],
+    "h": [
+     "HalfNormal",
+     0.5
+    ]
+   },
+   "sigma": [
+    "HalfNormal",
+    1
+   ]
+  }
+ }
+}

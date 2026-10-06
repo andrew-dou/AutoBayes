@@ -1,0 +1,68 @@
+{
+ "id": "binomial_varint",
+ "tier": "baseline",
+ "note": "calibrated against tests/reference_binomial.py",
+ "seed": 113,
+ "n_points": 8,
+ "data": {
+  "generator": "baseline",
+  "seed": 23,
+  "n": 36,
+  "newdata": {
+   "seed": 123,
+   "n": 5
+  }
+ },
+ "brms": {
+  "formula": "k | trials(size) ~ x + (1 | g)",
+  "family": {
+   "family": "binomial"
+  },
+  "factors": {
+   "g": [
+    "a",
+    "b",
+    "c",
+    "d",
+    "e",
+    "f"
+   ]
+  },
+  "priors": [
+   {
+    "prior": "normal(0, 2.5)",
+    "class": "Intercept"
+   },
+   {
+    "prior": "normal(0, 1.5)",
+    "class": "b"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "sd",
+    "group": "g"
+   }
+  ]
+ },
+ "autobayes": {
+  "constructor": "binomial",
+  "formula": "k | trials(size) ~ x + (1 | g)",
+  "kwargs": {},
+  "priors": {
+   "intercept": [
+    "Normal",
+    0,
+    2.5
+   ],
+   "b": [
+    "Normal",
+    0,
+    1.5
+   ],
+   "sd": [
+    "HalfNormal",
+    1
+   ]
+  }
+ }
+}

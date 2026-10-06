@@ -1,0 +1,68 @@
+{
+ "id": "bernoulli_varint",
+ "tier": "baseline",
+ "note": "",
+ "seed": 111,
+ "n_points": 8,
+ "data": {
+  "generator": "baseline",
+  "seed": 21,
+  "n": 36,
+  "newdata": {
+   "seed": 121,
+   "n": 5
+  }
+ },
+ "brms": {
+  "formula": "yb ~ x + (1 | g)",
+  "family": {
+   "family": "bernoulli"
+  },
+  "factors": {
+   "g": [
+    "a",
+    "b",
+    "c",
+    "d",
+    "e",
+    "f"
+   ]
+  },
+  "priors": [
+   {
+    "prior": "normal(0, 2.5)",
+    "class": "Intercept"
+   },
+   {
+    "prior": "normal(0, 1.5)",
+    "class": "b"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "sd",
+    "group": "g"
+   }
+  ]
+ },
+ "autobayes": {
+  "constructor": "bernoulli",
+  "formula": "yb ~ x + (1 | g)",
+  "kwargs": {},
+  "priors": {
+   "intercept": [
+    "Normal",
+    0,
+    2.5
+   ],
+   "b": [
+    "Normal",
+    0,
+    1.5
+   ],
+   "sd": [
+    "HalfNormal",
+    1
+   ]
+  }
+ }
+}

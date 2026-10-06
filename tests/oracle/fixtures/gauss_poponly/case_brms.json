@@ -1,0 +1,24 @@
+{
+ "factors": {},
+ "family": {
+  "family": "gaussian"
+ },
+ "formula": "y ~ x + w",
+ "id": "gauss_poponly",
+ "n_points": 8,
+ "priors": [
+  {
+   "class": "Intercept",
+   "prior": "student_t(3, 0, 2.5)"
+  },
+  {
+   "class": "b",
+   "prior": "student_t(4, 0, 1)"
+  },
+  {
+   "class": "sigma",
+   "prior": "exponential(1)"
+  }
+ ],
+ "seed": 103
+}

@@ -1,0 +1,59 @@
+{
+ "id": "gauss_no_intercept",
+ "tier": "baseline",
+ "note": "no population intercept: the first categorical term is full-level coded on both sides",
+ "seed": 106,
+ "n_points": 8,
+ "data": {
+  "generator": "baseline",
+  "seed": 16,
+  "n": 36,
+  "newdata": {
+   "seed": 116,
+   "n": 5
+  }
+ },
+ "brms": {
+  "formula": "y ~ 0 + x + z",
+  "family": {
+   "family": "gaussian"
+  },
+  "factors": {
+   "z": [
+    "p",
+    "q",
+    "r"
+   ]
+  },
+  "priors": [
+   {
+    "prior": "normal(0, 2)",
+    "class": "b"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "sigma"
+   }
+  ]
+ },
+ "autobayes": {
+  "constructor": "gaussian",
+  "formula": "y ~ 0 + x + z",
+  "kwargs": {
+   "categorical": {
+    "z": "p"
+   }
+  },
+  "priors": {
+   "b": [
+    "Normal",
+    0,
+    2
+   ],
+   "sigma": [
+    "HalfNormal",
+    1
+   ]
+  }
+ }
+}
