@@ -152,11 +152,30 @@
    "depends_on": [
     "P4_term_model"
    ],
-   "status": "implementing",
+   "status": "gates_green",
    "summary": "(1 + x || g): independent varying slopes, re-landed from PR #8's code and tests; PR #8 then closes as superseded",
    "pr": null,
    "attempts": 1,
-   "gates": {},
+   "gates": {
+    "sha": "a735b7a00adc",
+    "dirty_tree": false,
+    "base": "origin/main",
+    "when": "2026-10-06T04:58Z",
+    "results": {
+     "immutability": {
+      "status": "pass",
+      "seconds": 0.0
+     },
+     "oracle": {
+      "status": "pass",
+      "seconds": 46.3
+     },
+     "suite": {
+      "status": "pass",
+      "seconds": 571.3
+     }
+    }
+   },
    "divergences": [],
    "next_action": "agent implementing in AutoBayes-worktrees/parity-a01 (stacked on P4); the four cases carry gate.expect=fail until it lands",
    "fixtures": {
