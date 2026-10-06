@@ -196,13 +196,13 @@
    "depends_on": [
     "A01_independent_slopes"
    ],
-   "status": "fixtures_frozen",
+   "status": "implementing",
    "summary": "(1 + x | g) with an LKJ prior on the correlation; Bambi's LKJ path is disabled, so a custom Cholesky transform (may park)",
    "pr": null,
-   "attempts": 0,
+   "attempts": 1,
    "gates": {},
    "divergences": [],
-   "next_action": "unblocked by A01; needs a transform-aware adapter for L_m (cholesky_factor_corr) and a custom Cholesky construction (Bambi's LKJ path is disabled); may park",
+   "next_action": "formula lane agent, worktree parity-a02 (stacked on the interactions/transforms branch); may park",
    "fixtures": {
     "pr": 28,
     "cases": [
@@ -441,9 +441,9 @@
    "depends_on": [
     "P3_families_registry"
    ],
-   "status": "gates_green",
+   "status": "merged",
    "summary": "lognormal responses",
-   "pr": null,
+   "pr": 32,
    "attempts": 1,
    "gates": {
     "sha": "f71faeb91ea8",
@@ -467,7 +467,7 @@
     "note": "same branch and run as A11_beta (both features on parity/a10-a11-lognormal-beta)"
    },
    "divergences": [],
-   "next_action": "families lane agent, worktree parity-fam2 (stacked on #30's branch)",
+   "next_action": "",
    "fixtures": {
     "pr": 28,
     "cases": [
@@ -482,9 +482,9 @@
    "depends_on": [
     "P3_families_registry"
    ],
-   "status": "gates_green",
+   "status": "merged",
    "summary": "Beta responses (logit link) with precision phi",
-   "pr": null,
+   "pr": 32,
    "attempts": 1,
    "gates": {
     "sha": "f71faeb91ea8",
@@ -507,7 +507,7 @@
     }
    },
    "divergences": [],
-   "next_action": "families lane agent, worktree parity-fam2 (stacked on #30's branch)",
+   "next_action": "",
    "fixtures": {
     "pr": 28,
     "cases": [
@@ -522,13 +522,13 @@
    "depends_on": [
     "P3_families_registry"
    ],
-   "status": "fixtures_frozen",
+   "status": "implementing",
    "summary": "non-default links: probit, cloglog, cauchit, log for gaussian, identity/sqrt for poisson",
    "pr": null,
-   "attempts": 0,
+   "attempts": 1,
    "gates": {},
    "divergences": [],
-   "next_action": "implement when its dependencies merge; remove gate.expect from the cases",
+   "next_action": "families lane agent, worktree parity-fam3 (stacked on #32's branch)",
    "fixtures": {
     "pr": 28,
     "cases": [
@@ -544,13 +544,13 @@
    "depends_on": [
     "P3_families_registry"
    ],
-   "status": "fixtures_frozen",
+   "status": "implementing",
    "summary": "Student-t with a prior on nu (brms default gamma(2, 0.1))",
    "pr": null,
-   "attempts": 0,
+   "attempts": 1,
    "gates": {},
    "divergences": [],
-   "next_action": "implement when its dependencies merge; remove gate.expect from the cases",
+   "next_action": "families lane agent, worktree parity-fam3 (stacked on #32's branch)",
    "fixtures": {
     "pr": 28,
     "cases": [
