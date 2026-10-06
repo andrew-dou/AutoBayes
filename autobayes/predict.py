@@ -92,12 +92,16 @@ def _check_newdata(model, newdata: pd.DataFrame, *, need_trials: bool = False, i
     df = newdata[cols].copy()
     if df.isna().any().any():
         raise FormulaError("newdata contains missing values")
-    for c in s.predictors:
+    for c in s.pop_columns:                                      # numeric predictors and the raw columns of transforms
+        if c in s.categorical_names:
+            continue
         reject_complex(f"newdata column {c!r}", df[c])
         if not pd.api.types.is_numeric_dtype(df[c]):
             raise FormulaError(f"newdata column {c!r} must be numeric")
     if s.offset is not None:
         s.offset.values(df, where="newdata column")               # numeric, finite and (for log) positive, or refused
+    for t in s.transform_terms:                                   # the evaluated columns Bambi's path reads, recomputed from the raw ones
+        df[t.name] = t.transform.values(df, where="newdata column")
     for cat in s.categoricals:
         labels, _ = categorical_labels(f"newdata column {cat.name!r}", df[cat.name])
         unseen = sorted(set(labels.tolist()) - set(cat.levels))

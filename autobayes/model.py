@@ -181,6 +181,8 @@ class Model:
                     )
         for t in self.spec.group_terms:                      # labels as text; a derived factor g:h gets its own column g_h
             df[t.column] = group_labels(t.factor, df)
+        for t in self.spec.transform_terms:                  # the evaluated column Bambi is handed, under the term's own name (A05)
+            df[t.name] = t.transform.values(df)
         if fam.response_dtype is not None:
             df[self.spec.response] = df[self.spec.response].astype(fam.response_dtype)
         self.warnings.extend(fam.response_warnings(self.spec, df))   # separation, all-zero counts
@@ -600,6 +602,9 @@ class Model:
                 for lvl, lz, lh in cells(t):
                     prod = f"1[{zn}_i = {lz}] * 1[{hn}_i = {lh}]"
                     parts.append(f"({prod} - p_{term}[{lvl}]) * b_{term}[{lvl}]" if d.centered else f"{prod} * b_{term}[{lvl}]")
+            elif t.kind == "transform":
+                value = t.transform.expression(f"{t.transform.column}_i")
+                parts.append(f"({value} - mean({term})) * b_{term}" if d.centered else f"{value} * b_{term}")
             else:
                 parts.append(f"(x_{term} - mean(x_{term})) * b_{term}" if d.centered else f"x_{term} * b_{term}")
         xs = " + ".join(parts)
@@ -615,6 +620,7 @@ class Model:
                          + (f" (positions {list(self.dropped_rows)[:10]}{'...' if len(self.dropped_rows) > 10 else ''})"
                             if self.dropped_rows else ""))
         features = ((["categorical predictor(s)"] if s.categoricals else []) + (["interaction(s)"] if s.interactions else [])
+                    + (["in-formula transform(s)"] if s.transform_terms else [])
                     + (["independent varying slope(s)"] if s.has_slopes else []) + (["offset"] if s.offset is not None else [])
                     + (["derived grouping factor(s)"] if any(t.derived for t in s.group_terms) else []))
         lines = [
@@ -628,6 +634,11 @@ class Model:
         if s.offset is not None:
             lines += [f"  offset    : {s.offset.expression}, added to the linear predictor as written (no coefficient, no prior, "
                       f"never centred; brms offset()); range {d.offset.min():.4f} to {d.offset.max():.4f} over the fitted rows"]
+        for t in s.transform_terms:
+            tr, col = t.transform, d.X_raw[:, s.columns.index(t.name)]
+            lines += [f"  {t.name:<10}: in-formula transform of {tr.column!r}, {tr.expression(f'{tr.column}_i')}, range {col.min():.4f} to "
+                      f"{col.max():.4f} over the fitted rows; recomputed from {tr.column!r} on new rows; centred like any column; "
+                      f"brms names its coefficient {tr.brms_name}"]
         for g, block in d.group_designs.items():
             lines += [f"  {'levels    ' if len(s.groups) == 1 else 'levels ' + g}: {', '.join(f'{j}={l}' for j, l in enumerate(block.levels))}"]
         for t in s.group_terms:
@@ -696,6 +707,9 @@ class Model:
                 lines += [f"  The slope in {xn} on the {scale} scale is {slope}, with each categorical reference contribution zero; other predictors and group effects are held fixed."]
                 for zn in partners:
                     lines += [f"  b_{xn}:{zn}[l] is the change in that slope from reference {s.categorical(zn).reference!r} to level l of {zn}, holding the other categorical levels fixed."]
+        for t in s.transform_terms:
+            lines += [f"  {t.name}: b_{t.name} is the slope in {t.name}, not in {t.transform.column}; a unit change of {t.name} changes {lp} by "
+                      f"b_{t.name}, other predictors and group effects fixed."]
         for t in num_num:
             xn, wn = t.operands
             lines += [f"  {t.name}: the slope in {xn} on the {scale} scale is b_{xn} + {wn} * b_{t.name} and the slope in {wn} is b_{wn} + {xn} * b_{t.name}; "

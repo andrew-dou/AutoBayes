@@ -15,7 +15,7 @@ from tests.conftest import PRIORS, simulate
     ("y ~ x + (0 + x || g)", "without the varying intercept"),   # A01: '(1 || g)' is now accepted as '(1 | g)'
     ("y ~ x * w * z + (1 | g)", "only a two-way interaction"),   # A04: 'x * w' and 'z * h' are now accepted; three-way is not
     ("y ~ x:w + (1 | g)", "main effect 'x' is missing"),
-    ("y ~ log(x) + (1 | g)", "function calls"),
+    ("y ~ sin(x) + (1 | g)", "function calls"),            # A05: log(x), exp(x), sqrt(x), I(x^k), I(x * k), I(x + k) are now accepted
     ("y ~ (1 | g)", "no population-level predictor"),
     ("y x + (1 | g)", "expected 'response ~ terms'"),
     ("y ~ x + x + (1 | g)", "duplicated"),

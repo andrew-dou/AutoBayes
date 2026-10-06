@@ -80,7 +80,7 @@ REFUSALS = [
     ("y ~ x + y:x", {}, "the response or trials column cannot enter an interaction"),
     ("k | trials(n) ~ x + x:n", {"family": "binomial"}, "the response or trials column cannot enter an interaction"),
     ("y ~ x + w + offset(w):x", {}, "offset() cannot enter an interaction; an offset is a known column added to the linear predictor with no coefficient"),
-    ("y ~ x + z + log(x):z", {"categorical": {"z": "p"}}, "function calls and transformations inside the formula are not supported in an interaction"),
+    ("y ~ x + z + log(x):z", {"categorical": {"z": "p"}}, "an interaction with a transformed term ('log(x)') is not supported in this slice"),
     ("y ~ x + w + x*w:z", {}, "mixing '*' and ':' in one term is not supported"),
     ("y ~ x + w + x:w + (1 + x:w || g)", {}, "an interaction cannot be a varying slope"),
     ("y ~ x + w + x:w + (1 | x:w)", {}, "'x': the grouping factor cannot also be a predictor or the response"),

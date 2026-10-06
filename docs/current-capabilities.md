@@ -62,6 +62,9 @@ Prior-predictive modeled-row CPU draws are now available; see [prior predictive]
 General two-way interactions (A04, `x:w` and `z:h` next to `x:z`) landed through the brms-parity loop, verified
 against the frozen fixtures `gauss_interaction_numeric_numeric` and `gauss_interaction_categorical_categorical`;
 see [interactions](interactions.md). Three-way interactions and interactions with transformed terms stay refused.
+In-formula transforms (A05, `log(x)`, `exp(x)`, `sqrt(x)`, `I(x^k)`, `I(x * k)`, `I(x + k)`, `I(x - k)`) followed,
+verified against the frozen fixture `gauss_transforms`; see [transforms](transforms.md). Other calls (`scale()`,
+`poly()`, `log(x + 1)`) are refused with the supported list.
 
 Negative binomial counts (A08, `ab.negbinomial`, brms's `negbinomial` with its `shape` parameter under an explicit
 `Priors(shape=...)`) landed through the brms-parity loop, verified against the frozen fixture `negbinomial_varint`;

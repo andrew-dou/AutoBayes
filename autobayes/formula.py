@@ -19,6 +19,12 @@ indicator), numeric by numeric (``x:w``, the elementwise product, one coefficien
 (``z:h``, one indicator product per cell of non-reference levels, R's treatment coding of the interaction). Both
 main effects are required; three-way interactions are refused.
 
+A predictor may be an in-formula transform of one numeric column (A05, docs/transforms.md): ``log(col)``,
+``exp(col)``, ``sqrt(col)``, ``I(col^k)`` with integer ``k``, ``I(col * k)``, ``I(col + k)``, ``I(col - k)`` with a
+numeric constant ``k``. It is a term of kind ``"transform"`` named as written, with one design column (the
+evaluated function of the raw column, recomputed on new rows) and one coefficient; anything else inside a call is
+refused with the supported list.
+
 A grouping factor is a column, or two columns combined (A03, docs/grouping-syntax.md): ``(1 | g:h)`` groups by the
 observed ``(g, h)`` combinations, labelled ``g_h`` as brms labels them, and ``(1 | g/h)`` is brms's nesting
 shorthand for ``(1 | g) + (1 | g:h)``.
@@ -51,6 +57,15 @@ _BAMBI_PROPORTION_RE = re.compile(r"^\s*(p|prop|proportion)\s*\(", re.S)
 _GROUP_RE = re.compile(rf"^\(\s*([^|\s][^|]*?)\s*(\|\|?)\s*(.+?)\s*\)$", re.S)   # (inner | factor) or (inner || factor)
 _OFFSET_RE = re.compile(r"^offset\s*\((.*)\)$", re.S)                             # offset(<inner>)
 _OFFSET_LOG_RE = re.compile(rf"^log\s*\(\s*({_IDENT})\s*\)$", re.S)              # log(col) inside offset()
+_NUMBER = r"[+-]?(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?"                           # a numeric literal: 2, 2.5, .5, 1e-1, -1
+_TRANSFORM_FN_RE = re.compile(rf"^(log|exp|sqrt)\s*\(\s*({_IDENT})\s*\)$", re.S)                       # log(col)
+_TRANSFORM_POW_RE = re.compile(rf"^I\s*\(\s*({_IDENT})\s*\^\s*([+-]?\d+)\s*\)$", re.S)               # I(col^k), integer k
+_TRANSFORM_OP_RE = re.compile(rf"^I\s*\(\s*({_IDENT})\s*([*+-])\s*({_NUMBER})\s*\)$", re.S)          # I(col * k), I(col + k), I(col - k)
+_TRANSFORM_OP_FIRST_RE = re.compile(rf"^I\s*\(\s*({_NUMBER})\s*([*+])\s*({_IDENT})\s*\)$", re.S)     # I(k * col), I(k + col)
+SUPPORTED_TRANSFORMS = ("only log(col), exp(col), sqrt(col), I(col^k) with integer k, and I(col * k), I(col + k), I(col - k) with a "
+                        "numeric constant k are supported as in-formula transforms of one numeric column (A05, docs/transforms.md); "
+                        "other function calls and transformations inside the formula are not supported: compute the column in the "
+                        "data frame and name it instead.")
 
 COUNT_CAP = 10**6   # the validated domain for binomial counts per row (docs/m2-decision.md, repair record)
 
@@ -97,14 +112,95 @@ class Categorical:
         return tuple(f"{self.name}[{l}]" for l in self.coefficients)
 
 
-POP_TERM_KINDS = ("numeric", "categorical", "interaction")
+POP_TERM_KINDS = ("numeric", "categorical", "interaction", "transform")
+
+
+@dataclass(frozen=True)
+class Transform:
+    """An in-formula transform of one numeric column (A05, docs/transforms.md): ``fn`` is ``"log"``, ``"exp"``,
+    ``"sqrt"`` (``log(col)``), or the operator of an ``I()`` expression, ``"^"`` with an integer ``constant``
+    (``I(col^2)``), ``"*"``, ``"+"`` or ``"-"`` with a numeric ``constant`` (``I(col * 2)``, ``I(col + 1)``,
+    ``I(col - 1)``; ``constant_first`` for ``I(2 * col)`` and ``I(1 + col)``). The constant is kept as written, so
+    the term is spelled as the user spelled it, up to whitespace."""
+
+    fn: str
+    column: str
+    constant: str | None = None
+    constant_first: bool = False
+
+    @property
+    def term(self) -> str:
+        """The term as the canonical formula writes it: ``log(xpos)``, ``I(x^2)``, ``I(x * 2)``, ``I(2 * x)``."""
+        return self.expression(self.column) if self.fn in ("log", "exp", "sqrt") else f"I({self.expression(self.column)})"
+
+    def expression(self, value: str) -> str:
+        """The transform written for a value: ``log(xpos_i)``, ``xpos_i^2``, ``2 * x_i``, ``x_i + 1``."""
+        if self.fn in ("log", "exp", "sqrt"):
+            return f"{self.fn}({value})"
+        if self.fn == "^":
+            return f"{value}^{self.constant}"
+        return f"{self.constant} {self.fn} {value}" if self.constant_first else f"{value} {self.fn} {self.constant}"
+
+    @property
+    def brms_name(self) -> str:
+        """brms's label for the coefficient: its ``rename()`` of the term, which drops spaces and parentheses and
+        writes ``^`` as ``E``, ``*`` as ``MU``, ``+`` as ``P`` and ``-`` as ``M`` (``logxpos``, ``IxE2``, ``IxMU2``, ``IxP1``)."""
+        out = self.term
+        for old, new in ((" ", ""), ("(", ""), (")", ""), ("^", "E"), ("*", "MU"), ("+", "P"), ("-", "M")):
+            out = out.replace(old, new)
+        return out
+
+    def values(self, df: pd.DataFrame, *, where: str = "column") -> np.ndarray:
+        """The design column on ``df``: the transform of the raw column as a float array. Refuses a missing,
+        non-numeric or missing-valued column, non-positive values under ``log`` and ``sqrt``, and a non-finite
+        result; ``where`` names the frame in messages."""
+        if self.column not in df.columns:
+            raise FormulaError(f"{where} {self.column!r} of the term {self.term!r} is not in the data")
+        s = df[self.column]
+        reject_complex(f"{where} {self.column!r}", s)
+        if not _is_numeric(s):
+            raise FormulaError(f"{where} {self.column!r} has dtype {s.dtype}; the term {self.term!r} needs a numeric column")
+        v = s.to_numpy(dtype=float)
+        if not np.all(np.isfinite(v)):
+            raise FormulaError(f"{where} {self.column!r} of the term {self.term!r} has missing or non-finite values")
+        if self.fn in ("log", "sqrt") and np.any(v <= 0):
+            i = int(np.flatnonzero(v <= 0)[0])
+            raise FormulaError(f"{where} {self.column!r} must be positive for the term {self.term!r}; row {i} has {float(v[i])!r}")
+        with np.errstate(over="ignore", divide="ignore", invalid="ignore"):
+            if self.fn in ("log", "exp", "sqrt"):
+                out = {"log": np.log, "exp": np.exp, "sqrt": np.sqrt}[self.fn](v)
+            elif self.fn == "^":
+                out = v ** float(int(self.constant))
+            else:
+                k = float(self.constant)
+                out = v * k if self.fn == "*" else v + k if self.fn == "+" else v - k
+        if not np.all(np.isfinite(out)):
+            i = int(np.flatnonzero(~np.isfinite(out))[0])
+            raise FormulaError(f"the term {self.term!r} is not finite at row {i} ({self.column} = {float(v[i])!r})")
+        return out
+
+
+def parse_transform(text: str) -> Transform | None:
+    """The ``Transform`` a piece of formula spells, or None when it is not one of the supported forms."""
+    text = text.strip()
+    if m := _TRANSFORM_FN_RE.match(text):
+        return Transform(m.group(1), m.group(2))
+    if m := _TRANSFORM_POW_RE.match(text):
+        return Transform("^", m.group(1), m.group(2))
+    if m := _TRANSFORM_OP_RE.match(text):
+        return Transform(m.group(2), m.group(1), m.group(3))
+    if m := _TRANSFORM_OP_FIRST_RE.match(text):
+        return Transform(m.group(2), m.group(3), m.group(1), constant_first=True)
+    return None
 
 
 @dataclass(frozen=True)
 class PopTerm:
     """One population-level term as written in the formula: ``x`` (``"numeric"``), ``z`` (``"categorical"``,
-    declared with its reference level) or a two-way ``"interaction"``: ``x:z`` (numeric by categorical), ``x:w``
-    (numeric by numeric) or ``z:h`` (categorical by categorical; A04, docs/interactions.md).
+    declared with its reference level), a two-way ``"interaction"``: ``x:z`` (numeric by categorical), ``x:w``
+    (numeric by numeric) or ``z:h`` (categorical by categorical; A04, docs/interactions.md), or an in-formula
+    ``"transform"`` of one numeric column, ``log(xpos)``, ``I(x^2)`` (A05, docs/transforms.md), whose single column
+    is the evaluated transform and whose ``transform`` says how to evaluate it.
 
     ``columns`` are the design-column labels the term expands to, Bambi/formulae's own, in design order:
     ``x``; ``z[l]`` per coefficient level ``l``; ``x:z[l]``; ``x:w``; ``z[l]:h[m]`` per cell, the first operand's
@@ -129,8 +225,10 @@ class PopTerm:
             raise ValueError(f"PopTerm kind must be one of {list(POP_TERM_KINDS)}, got {self.kind!r}")
         object.__setattr__(self, "columns", tuple(self.columns))
         object.__setattr__(self, "levels", tuple(self.levels))
+        if self.kind == "transform" and parse_transform(self.name) is None:
+            raise ValueError(f"PopTerm: {self.name!r} is not a supported in-formula transform")
         if self.categorical is None:
-            default = {"numeric": (), "categorical": (self.name,), "interaction": (self.operands[-1],)}
+            default = {"numeric": (), "categorical": (self.name,), "interaction": (self.operands[-1],), "transform": ()}
             object.__setattr__(self, "categorical", default[self.kind])
         else:
             object.__setattr__(self, "categorical", tuple(self.categorical))
@@ -140,8 +238,25 @@ class PopTerm:
     @property
     def operands(self) -> tuple[str, ...]:
         """The data columns the term is built from: ``(x,)``, ``(z,)``, ``(x, z)`` (numeric first), ``(x, w)`` or
-        ``(z, h)`` (main-effect order)."""
+        ``(z, h)`` (main-effect order), ``(xpos,)`` for the transform ``log(xpos)``."""
+        if self.kind == "transform":
+            return (self.transform.column,)
         return tuple(self.name.split(":"))
+
+    @property
+    def transform(self) -> Transform:
+        """How a ``"transform"`` term is evaluated (``parse_transform`` of its name); ``ValueError`` for other kinds."""
+        tr = parse_transform(self.name) if self.kind == "transform" else None
+        if tr is None:
+            raise ValueError(f"{self.name!r} is not a transform term")
+        return tr
+
+    @property
+    def bambi_name(self) -> str:
+        """The term as handed to Bambi: a transform's evaluated column is named as written and quoted in backticks
+        (the fitted frame carries it under that name), so Bambi's term and PyMC's variable carry the term's own
+        name; every other term is itself."""
+        return f"`{self.name}`" if self.kind == "transform" else self.name
 
     @property
     def is_vector(self) -> bool:
@@ -305,7 +420,7 @@ def pop_term(name: str, kind: str, categoricals=()) -> PopTerm:
     non-reference levels of its one categorical operand (``x:z[l]``), the cells of its two categorical operands
     (``z[l]:h[m]``, levels ``"l, m"``), or no levels at all when both operands are numeric (``x:w``); none for a
     numeric term."""
-    if kind == "numeric":
+    if kind in ("numeric", "transform"):
         return PopTerm(name, kind, (name,), (), ())
     if kind == "categorical":
         levels = _find_categorical(categoricals, name).coefficients
@@ -342,6 +457,8 @@ def pop_term_design(term: PopTerm, df: pd.DataFrame, categoricals=()) -> np.ndar
     n = len(df)
     if term.kind == "numeric":
         return df[term.name].to_numpy(dtype=float)[:, None]
+    if term.kind == "transform":                                 # evaluated from the raw column, never read from a column of its name
+        return term.transform.values(df)[:, None]
     if term.kind == "interaction" and not term.categorical:
         a, b = (df[c].to_numpy(dtype=float) for c in term.operands)
         return (a * b)[:, None]
@@ -495,8 +612,14 @@ class ModelSpec:
     @property
     def pop_columns(self) -> tuple[str, ...]:
         """The data columns the population-level terms read, in formula order without repeats: the numeric and
-        categorical main effects (an interaction reads its main effects' columns)."""
+        categorical main effects and the raw columns inside transforms (an interaction reads its main effects'
+        columns)."""
         return tuple(dict.fromkeys(c for t in self.pop_terms for c in t.operands))
+
+    @property
+    def transform_terms(self) -> tuple[PopTerm, ...]:
+        """The in-formula transform terms (A05), in formula order."""
+        return tuple(t for t in self.pop_terms if t.kind == "transform")
 
     @property
     def groups(self) -> tuple[str, ...]:
@@ -608,14 +731,14 @@ class ModelSpec:
 
     @property
     def bambi_formula(self) -> str:
-        """What is handed to Bambi: the canonical right-hand side; brms's ``k | trials(n)`` becomes
-        Bambi's ``p(k, n)``, ``(1 + x || g)`` becomes ``(1 + x | g)``, which Bambi (formulae has no
-        ``||``) builds as the independent terms ``1|g`` and ``x|g``, and a derived factor ``g:h`` appears under
-        its column name, ``(1 | g_h)``; ``Model._extract_design`` verifies all of that."""
-        rhs = self.rhs
-        for t in self.group_terms:
-            rhs = rhs.replace(t.canonical, t.bambi_canonical)
-        rhs = rhs.replace("||", "|")
+        """What is handed to Bambi: the canonical right-hand side rebuilt term by term; brms's ``k | trials(n)``
+        becomes Bambi's ``p(k, n)``, ``(1 + x || g)`` becomes ``(1 + x | g)``, which Bambi (formulae has no
+        ``||``) builds as the independent terms ``1|g`` and ``x|g``, a derived factor ``g:h`` appears under its
+        column name, ``(1 | g_h)``, and a transform term under its own name in backticks, the evaluated column
+        the fitted frame carries; ``Model._extract_design`` verifies all of that."""
+        parts = ([] if self.intercept else ["0"]) + [t.bambi_name for t in self.pop_terms]
+        parts += ([self.offset.term] if self.offset is not None else []) + [t.bambi_canonical for t in self.group_terms]
+        rhs = " + ".join(parts) if parts else "1"
         if self.trials is None:
             return f"{self.response} ~ {rhs}"
         return f"p({self.response}, {self.trials}) ~ {rhs}"
@@ -894,7 +1017,8 @@ def parse_formula(formula: str, data: pd.DataFrame | None = None, family: str = 
             pieces.append(re.sub(r"^1", "0", part, count=1))
         rhs = " + ".join(pieces)
 
-    predictors: list[str] = []                             # main effects as written, numeric and categorical
+    predictors: list[str] = []                             # main effects as written: numeric, categorical and transform terms
+    transforms: dict[str, Transform] = {}                  # the transform terms among them, by canonical name
     group_terms: list[GroupTerm] = []
     group_pieces: list[str] = []                           # each group term as written, for the messages below
     groups: list[str] = []                                 # the factors of group_terms, for the checks below
@@ -903,16 +1027,17 @@ def parse_formula(formula: str, data: pd.DataFrame | None = None, family: str = 
     saw_intercept_token = False
     remove_intercept = False
 
-    def _main(name: str, piece: str) -> None:
-        if not re.fullmatch(_IDENT, name):
+    def _main(name: str, piece: str, *, transform: Transform | None = None) -> None:
+        if transform is None and not re.fullmatch(_IDENT, name):
             raise FormulaError(f"{piece!r}: {name!r} is not a column name")
         if name == response:
             raise FormulaError(f"{name!r}: the response cannot also be a predictor")
         if name in predictors:
-            raise FormulaError(
-                f"{name!r}: duplicated predictor" + (f" after expanding {piece!r} (a*b means a + b + a:b; write "
-                                                     f"'a + b + a:b' or 'a*b', not both)" if piece != name else "")
-            )
+            if transform is not None:
+                hint = f" ({piece!r} spells {name!r} again)" if piece != name else ""
+            else:
+                hint = f" after expanding {piece!r} (a*b means a + b + a:b; write 'a + b + a:b' or 'a*b', not both)" if piece != name else ""
+            raise FormulaError(f"{name!r}: duplicated predictor{hint}")
         predictors.append(name)
 
     for piece in _split_top_level(rhs):
@@ -981,9 +1106,11 @@ def parse_formula(formula: str, data: pd.DataFrame | None = None, family: str = 
                         "predictor with no coefficient"
                     )
                 if "(" in side or ")" in side:
+                    if parse_transform(side) is None:
+                        raise FormulaError(f"{side!r}: {SUPPORTED_TRANSFORMS}")
                     raise FormulaError(
-                        f"{piece!r}: function calls and transformations inside the formula are not supported in an "
-                        "interaction; transform the column in the data frame and interact the column instead."
+                        f"{piece!r}: an interaction with a transformed term ({side!r}) is not supported in this slice; "
+                        "compute the column in the data frame and interact the column instead."
                     )
             if left == right:
                 raise FormulaError(f"{piece!r}: a term cannot interact with itself")
@@ -992,11 +1119,17 @@ def parse_formula(formula: str, data: pd.DataFrame | None = None, family: str = 
                 _main(right, piece)
             raw_interactions.append((left, right, piece))
             continue
-        if "(" in piece or ")" in piece:
-            raise FormulaError(
-                f"{piece!r}: function calls and transformations inside the formula are "
-                "not supported in M0; transform the column in the data frame instead."
-            )
+        if "(" in piece or ")" in piece:                       # an in-formula transform, log(col), I(col^2), ... (A05)
+            tr = parse_transform(piece)
+            if tr is None:
+                raise FormulaError(f"{piece!r}: {SUPPORTED_TRANSFORMS}")
+            if tr.column == response:
+                raise FormulaError(f"{piece!r}: the response {response!r} cannot be transformed into a predictor")
+            if trials is not None and tr.column == trials:
+                raise FormulaError(f"{piece!r}: the trials column {trials!r} cannot be transformed into a predictor")
+            _main(tr.term, piece, transform=tr)                   # under its canonical spelling, so 'log( x )' duplicates 'log(x)'
+            transforms[tr.term] = tr
+            continue
         _main(piece, piece)
 
     if saw_intercept_token and remove_intercept:
@@ -1049,14 +1182,15 @@ def parse_formula(formula: str, data: pd.DataFrame | None = None, family: str = 
             f"{formula!r}: no population-level predictor; write 'y ~ 1 + (1 | group)' "
             "for an intercept-only model."
         )
+    transform_columns = [tr.column for tr in transforms.values()]   # the raw columns the transform terms read
     for col in operands_all:
-        if col in predictors or col == response:
+        if col in predictors or col in transform_columns or col == response:
             raise FormulaError(f"{col!r}: the grouping factor cannot also be a predictor or the response")
     if trials is not None and (trials in predictors or trials in operands_all):
         raise FormulaError(f"{trials!r}: the trials column cannot also be a predictor or the grouping factor")
     offset = offsets[0][0] if offsets else None
     # A derived factor's column (g_h) is added to the fitted frame: it must not shadow a column the formula uses.
-    in_use = {response, *predictors, *operands_all, *([trials] if trials is not None else []),
+    in_use = {response, *predictors, *transform_columns, *operands_all, *([trials] if trials is not None else []),
               *([offset.column] if offset is not None else [])}
     derived_columns: dict[str, GroupTerm] = {}
     for term in group_terms:
@@ -1079,6 +1213,10 @@ def parse_formula(formula: str, data: pd.DataFrame | None = None, family: str = 
             "numeric column added to the linear predictor"
         )
 
+    if isinstance(categorical, Mapping):                     # a transform applies to a numeric column, never to a declared categorical one
+        for name, tr in transforms.items():
+            if tr.column in categorical:
+                raise FormulaError(f"{name!r}: {tr.column!r} is declared categorical; an in-formula transform applies to a numeric column")
     categoricals = _normalise_categorical(categorical, predictors, response, operands_all, trials, formula)
     if offset is not None and any(c.name == offset.column for c in categoricals):
         raise FormulaError(
@@ -1117,7 +1255,7 @@ def parse_formula(formula: str, data: pd.DataFrame | None = None, family: str = 
     canonical_rhs = " + ".join(parts) if parts else "1"           # intercept-only population model: 'y ~ 1'
     if remove_intercept:
         canonical_rhs = "0 + " + canonical_rhs
-    pop_terms = (*(pop_term(p, "categorical" if p in cat_names else "numeric", categoricals) for p in predictors),
+    pop_terms = (*(pop_term(p, "categorical" if p in cat_names else "transform" if p in transforms else "numeric", categoricals) for p in predictors),
                  *(pop_term(name, "interaction", categoricals) for name in interactions))
     spec = ModelSpec(
         formula=formula.strip(), response=response, intercept=not remove_intercept, trials=trials,
@@ -1290,6 +1428,8 @@ def validate_data(spec: ModelSpec, data: pd.DataFrame, family: str = "gaussian")
             )
     if spec.offset is not None:
         spec.offset.values(data)                                 # numeric, finite and (for log) positive, or refused
+    for t in spec.transform_terms:
+        t.transform.values(data)                                 # numeric, finite, in the function's domain and finite after it, or refused
     categoricals = []
     for cat in spec.categoricals:
         labels, unused = categorical_labels(f"categorical predictor {cat.name!r}", data[cat.name])
@@ -1324,6 +1464,9 @@ def validate_data(spec: ModelSpec, data: pd.DataFrame, family: str = "gaussian")
     for t in spec.pop_terms:                                      # a numeric-by-numeric product column is a predictor too
         if t.kind == "interaction" and not t.categorical and np.isclose(np.std(pop_term_design(t, data)), 0.0):
             raise FormulaError(f"interaction {t.name!r} is constant ({' * '.join(t.operands)} takes a single value in the fitted rows)")
+    for t in spec.transform_terms:                                # and so is a transformed column
+        if np.isclose(np.std(pop_term_design(t, data)), 0.0):
+            raise FormulaError(f"term {t.name!r} is constant in the fitted rows")
     return ModelSpec(
         formula=spec.formula, response=spec.response, intercept=spec.intercept, levels_by_group=levels_by_group,
         trials=spec.trials, rhs=spec.rhs, categoricals=tuple(categoricals),

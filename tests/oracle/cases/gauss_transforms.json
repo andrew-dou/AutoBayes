@@ -5,10 +5,6 @@
  "note": "in-formula transforms; brms coefficient names are logxpos and IxE2",
  "seed": 146,
  "n_points": 8,
- "gate": {
-  "expect": "fail",
-  "reason": "A05_formula_transforms not implemented; remove this field when it lands"
- },
  "data": {
   "generator": "tier_a",
   "seed": 46,
