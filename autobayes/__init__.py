@@ -2,7 +2,7 @@
 
 Response families: Gaussian and fixed-nu Student-t with identity links,
 Bernoulli and grouped binomial with logit links, Poisson and negative binomial
-counts with a log link. Supported formulas combine numeric and declared categorical predictors,
+counts and Gamma responses with a log link. Supported formulas combine numeric and declared categorical predictors,
 numeric-by-categorical interactions, intercept controls, and optional multiple
 independent varying-intercept factors. Explicit priors are required.
 
@@ -43,7 +43,7 @@ from autobayes.priors import (
     Priors,
     StudentT,
 )
-from autobayes.model import Model, bernoulli, binomial, gaussian, negbinomial, student, poisson
+from autobayes.model import Model, bernoulli, binomial, gamma, gaussian, negbinomial, student, poisson
 from autobayes.inference import DeviceError, FitResult, fit
 from autobayes.predict import predict
 from autobayes.prior_predictive import prior_predictive
@@ -54,7 +54,7 @@ __all__ = [
     "Categorical", "DeviceError", "Exponential", "FitResult", "FormulaError", "Gamma", "GroupTerm", "HalfCauchy",
     "HalfNormal", "HalfStudentT", "Model", "ModelSpec", "Normal", "PopTerm", "Prior",
     "PriorError", "Priors", "StudentT", "bernoulli", "binomial", "compare_records", "environment", "fit", "fit_record",
-    "negbinomial", "student", "poisson", "format_comparison", "format_environment", "gaussian", "panel", "parse_formula",
-    "predict", "prior_predictive",
+    "gamma", "negbinomial", "student", "poisson", "format_comparison", "format_environment", "gaussian", "panel",
+    "parse_formula", "predict", "prior_predictive",
 ]
 __version__ = "0.8.0"

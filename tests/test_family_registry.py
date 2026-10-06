@@ -73,25 +73,27 @@ EXPECTED = {                               # family -> (Bambi parent, link, pred
     "student": ("mu", "identity", "mu"),
     "poisson": ("mu", "log", "mu"),
     "negbinomial": ("mu", "log", "mu"),
+    "gamma": ("mu", "log", "mu"),
     "bernoulli": ("logit_p", "logit", "p"),
     "binomial": ("logit_p", "logit", "p"),
 }
 
 
-def test_registry_lists_exactly_the_six_families():
-    assert set(FAMILIES) == set(EXPECTED) and len(FAMILIES) == 6
+def test_registry_lists_exactly_the_seven_families():
+    assert set(FAMILIES) == set(EXPECTED) and len(FAMILIES) == 7
     for name, (parent, link, mean) in EXPECTED.items():
         spec = get_family(name)
         assert isinstance(spec, FamilySpec) and spec is FAMILIES[name]
         assert (spec.name, spec.parent, spec.link, spec.mean_name) == (name, parent, link, mean)
     assert {name for name, spec in FAMILIES.items() if spec.scale_parameter == "sigma"} == {"gaussian", "student"}
-    assert {name for name, spec in FAMILIES.items() if spec.scale_parameter == "shape"} == {"negbinomial"}
+    assert {name for name, spec in FAMILIES.items() if spec.scale_parameter == "shape"} == {"negbinomial", "gamma"}
+    assert {name for name, spec in FAMILIES.items() if spec.continuous} == {"gaussian", "student", "gamma"}
     assert {spec.bambi_scale_parameter for spec in FAMILIES.values() if spec.scale_parameter == "shape"} == {"alpha"}
     assert all((spec.scale_parameter is None) == (spec.bambi_scale_parameter is None) for spec in FAMILIES.values())
     assert {name for name, spec in FAMILIES.items() if spec.fixed_parameters} == {"student"}
     assert {name for name, spec in FAMILIES.items() if spec.has_trials} == {"binomial"}
     assert {name for name, spec in FAMILIES.items() if "probability" in spec.prediction_kinds} == {"binomial"}
-    with pytest.raises(ValueError, match=r"family must be one of \['bernoulli', 'binomial', 'gaussian', 'negbinomial', 'poisson', 'student'\], got 'beta'"):
+    with pytest.raises(ValueError, match=r"family must be one of \['bernoulli', 'binomial', 'gamma', 'gaussian', 'negbinomial', 'poisson', 'student'\], got 'beta'"):
         get_family("beta")
     with pytest.raises(TypeError):
         FAMILIES["beta"] = None
@@ -102,7 +104,8 @@ def frame() -> pd.DataFrame:
     rng = np.random.default_rng(3)
     n = 12
     return pd.DataFrame({"x": rng.normal(size=n), "y": rng.normal(size=n), "yb": [0, 1] * (n // 2),
-                         "cnt": rng.poisson(2.0, n), "k": rng.integers(0, 6, n), "n": np.full(n, 5)})
+                         "cnt": rng.poisson(2.0, n), "k": rng.integers(0, 6, n), "n": np.full(n, 5),
+                         "ypos": rng.gamma(2.0, 1.0, n)})
 
 
 EXAMPLES = {                               # family -> (formula, extra prior classes, constructor keywords)
@@ -110,6 +113,7 @@ EXAMPLES = {                               # family -> (formula, extra prior cla
     "student": ("y ~ x", {"sigma": ab.HalfNormal(1)}, {"nu": 4}),
     "poisson": ("cnt ~ x", {}, {}),
     "negbinomial": ("cnt ~ x", {"shape": ab.Gamma(2, 0.5)}, {}),
+    "gamma": ("ypos ~ x", {"shape": ab.Gamma(2, 0.5)}, {}),
     "bernoulli": ("yb ~ x", {}, {}),
     "binomial": ("k | trials(n) ~ x", {}, {}),
 }

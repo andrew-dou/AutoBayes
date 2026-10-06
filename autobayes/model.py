@@ -1,7 +1,7 @@
 """The model: a thin, inspectable layer over a Bambi-built PyMC model.
 
-The families of ``autobayes.families``, including Poisson and negative binomial counts and fixed-nu Student-t
-responses. ``"gaussian"`` (M0): identity link, residual SD ``sigma``. ``"bernoulli"``
+The families of ``autobayes.families``, including Poisson and negative binomial counts, Gamma and fixed-nu
+Student-t responses. ``"gaussian"`` (M0): identity link, residual SD ``sigma``. ``"bernoulli"``
 (M1): logit link, ``p = expit(eta)``, no residual scale. ``"binomial"`` (M2): logit link on
 ``successes | trials(n)``, counts. All share the right-hand side ``[1 +] x1 [+ x2 ...]
 [+ (1 | factor) | (1 + x || factor) ...]`` with numeric terms and, since M3a-1, treatment-coded categorical
@@ -107,7 +107,7 @@ class Model:
 
     Attributes
     ----------
-    family : str               a registered family name: "gaussian", "student", "poisson", "negbinomial", "bernoulli", "binomial"
+    family : str               a registered family name: "gaussian", "student", "poisson", "negbinomial", "gamma", "bernoulli", "binomial"
     family_spec : FamilySpec   the registered specification of that family (autobayes/families/)
     spec : ModelSpec
     priors : Priors
@@ -770,4 +770,16 @@ def negbinomial(formula: str, data: pd.DataFrame, priors: Priors, *,
     or zero-inflation.
     """
     return Model(formula, data, priors, family="negbinomial",
+                 center_predictors=center_predictors, categorical=categorical)
+
+
+def gamma(formula: str, data: pd.DataFrame, priors: Priors, *,
+          center_predictors: bool = True, categorical: Mapping[str, object] | None = None) -> Model:
+    """Gamma response with a log link (brms ``Gamma(link = "log")``): ``E[y] = mu = exp(eta)``, ``Var[y] = mu^2 / shape``.
+
+    Responses are strictly positive finite reals. The shape parameter takes its own positive-support prior,
+    ``Priors(shape=ab.Gamma(0.01, 0.01))``; no sigma, nu, offset or other link (brms's default Gamma link is
+    inverse; docs/brms-parity/divergences.md, D9).
+    """
+    return Model(formula, data, priors, family="gamma",
                  center_predictors=center_predictors, categorical=categorical)

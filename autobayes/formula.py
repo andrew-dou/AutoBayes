@@ -870,6 +870,21 @@ def validate_numeric_response(name: str, s: pd.Series, family_label: str) -> Non
         )
 
 
+def validate_positive_response(name: str, s: pd.Series, family_label: str) -> None:
+    """A positive continuous family's response (Gamma): a real numeric column of finite values strictly greater
+    than zero. Missing values are left to the shared missing-data check that follows."""
+    validate_numeric_response(name, s, family_label)
+    v = s.to_numpy(dtype=float)
+    v = v[~np.isnan(v)]
+    if np.any(np.isinf(v)):
+        raise FormulaError(f"response {name!r} has a non-finite value; the {family_label} family needs finite positive responses.")
+    if np.any(v <= 0):
+        raise FormulaError(
+            f"response {name!r} has a non-positive value ({v[v <= 0][0]!r}); the {family_label} family needs strictly "
+            "positive responses (a zero is refused, not fitted)."
+        )
+
+
 def validate_binary_response(name: str, s: pd.Series) -> None:
     reject_complex(f"response {name!r}", s)
     if pd.api.types.is_bool_dtype(s):
