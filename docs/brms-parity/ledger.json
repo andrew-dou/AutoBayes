@@ -222,10 +222,10 @@
    "pr": null,
    "attempts": 1,
    "gates": {
-    "sha": "12b1221e3991",
-    "dirty_tree": true,
-    "base": "origin/main",
-    "when": "2026-10-06T14:53Z",
+    "sha": "cffe5f1fb535",
+    "dirty_tree": false,
+    "base": "parity/a08-a09-negbinomial-gamma",
+    "when": "2026-10-06T15:16Z",
     "results": {
      "immutability": {
       "status": "pass",
@@ -233,7 +233,11 @@
      },
      "oracle": {
       "status": "pass",
-      "seconds": 52.1
+      "seconds": 76.3
+     },
+     "suite": {
+      "status": "pass",
+      "seconds": 399.6
      }
     }
    },
@@ -302,10 +306,10 @@
    "pr": null,
    "attempts": 1,
    "gates": {
-    "sha": "7948686a02cd",
-    "dirty_tree": true,
-    "base": "origin/main",
-    "when": "2026-10-06T14:32Z",
+    "sha": "cffe5f1fb535",
+    "dirty_tree": false,
+    "base": "parity/a08-a09-negbinomial-gamma",
+    "when": "2026-10-06T15:16Z",
     "results": {
      "immutability": {
       "status": "pass",
@@ -313,9 +317,14 @@
      },
      "oracle": {
       "status": "pass",
-      "seconds": 51.2
+      "seconds": 76.3
+     },
+     "suite": {
+      "status": "pass",
+      "seconds": 399.6
      }
-    }
+    },
+    "note": "same branch and run as A03_grouping_syntax (both features on parity/a06-a03-offset-grouping)"
    },
    "divergences": [],
    "next_action": "formula lane agent, worktree parity-form1 (with A03)",
