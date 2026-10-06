@@ -7,7 +7,11 @@ partition of the rows they induce (`match_groups`), and its unconstrained coordi
 
 Conventions this relies on, each checked where it is used: brms's `b` is the design without the intercept
 column exactly when brms carries the separate (centred) `Intercept` parameter; `z_m` is an (M_m, N_m) array
-of coefficient-by-level standardised effects; `r_m_c` the corresponding effects on the natural scale.
+of coefficient-by-level standardised effects; `r_m_c` the corresponding effects on the natural scale. A
+group-level coefficient `c` of brms group `m` (the varying intercept, or a varying slope of `(1 + x || g)`) is
+matched to the AutoBayes block `(factor, coef)` by the partition of the rows `J_m` induces and by the content
+of `Z_m_c`, which is the coefficient's covariate column (ones for the intercept, `x` for a slope); correlated
+effects (`NC_m > 0`) have no adapter yet.
 """
 from __future__ import annotations
 
@@ -118,15 +122,23 @@ class GroupMap:
     brms_id: dict[str, int]              # AutoBayes factor -> brms group id m (of sd_m, z_m, J_m)
     cn: dict[str, int]                   # 1-based coefficient number of the varying intercept in that group
     level_of: dict[str, np.ndarray]      # level_of[g][j] = AutoBayes level index of brms level j (0-based)
+    coef_cn: dict[tuple[str, str], int]  # (factor, coefficient) -> 1-based coefficient number c of sd_m[c], z_m[c], r_m_c
 
 
 def match_groups(fixture: Fixture, model: ab.Model) -> GroupMap:
-    ids, cns, levels_of, used = {}, {}, {}, set()
-    for g, block in model.design.group_designs.items():
+    """Match every AutoBayes group block ``(factor, coef)`` to one brms group coefficient ``(id, cn)``: the one
+    whose ``J_id`` induces the block's partition of the rows and whose ``Z_id_cn`` equals the block's covariate
+    column (ones for the varying intercept, the slope's column otherwise); then check the coefficient's brms
+    label, the level order, that every brms coefficient was used, and that no group is correlated."""
+    ids, cns, levels_of, coef_cn, used = {}, {}, {}, {}, set()
+    n = model.design.n
+    for (g, coef), block in model.design.group_blocks.items():
         gidx = block.group_index
+        covariate = block.Z[np.arange(n), gidx]          # the coefficient's covariate per row (brms Z_m_c)
         found = []
         for grp in fixture.groups:
-            if grp["coef"] != "Intercept" or grp["id"] in used:
+            key = (int(grp["id"]), int(grp["cn"]))
+            if key in used:
                 continue
             J = fixture.standata[f"J_{grp['id']}"].astype(int) - 1
             if J.shape != gidx.shape or int(J.max()) + 1 != block.J:
@@ -138,27 +150,50 @@ def match_groups(fixture: Fixture, model: ab.Model) -> GroupMap:
                     break
                 m[j] = vals[0]
             else:
-                if len(np.unique(m)) == block.J:
+                if len(np.unique(m)) != block.J:
+                    continue
+                Z = fixture.standata[f"Z_{grp['id']}_{grp['cn']}"]
+                if Z.shape == (n,) and np.max(np.abs(Z - covariate)) <= DESIGN_ABS:
                     found.append((grp, m))
         if len(found) != 1:
-            raise OracleMismatch(f"grouping factor {g!r}: {len(found)} brms group terms induce its partition of the rows")
+            raise OracleMismatch(
+                f"group-level coefficient {coef!r} of {g!r}: {len(found)} brms group terms induce its partition of "
+                f"the rows and carry its covariate column within {DESIGN_ABS}")
         grp, m = found[0]
+        if grp["coef"] != coef:
+            raise OracleMismatch(f"{g!r}: the brms coefficient matched by content is labelled {grp['coef']!r}, AutoBayes has {coef!r}")
         if [block.levels[i] for i in m] != list(grp["levels"]):
             raise OracleMismatch(f"{g!r}: brms levels {grp['levels']} vs AutoBayes {[block.levels[i] for i in m]}")
-        Z = fixture.standata[f"Z_{grp['id']}_{grp['cn']}"]
-        if Z.shape != (block.Z.shape[0],) or np.max(np.abs(Z - 1.0)) > DESIGN_ABS:
-            raise OracleMismatch(f"{g!r}: brms Z_{grp['id']}_{grp['cn']} is not the varying intercept's column of ones")
-        used.add(grp["id"])
-        ids[g], cns[g], levels_of[g] = int(grp["id"]), int(grp["cn"]), m
-    unmatched = [(grp["group"], grp["coef"]) for grp in fixture.groups if grp["id"] not in used]
+        if g in ids and ids[g] != int(grp["id"]):
+            raise OracleMismatch(f"{g!r}: its coefficients match different brms groups ({ids[g]} and {grp['id']})")
+        used.add((int(grp["id"]), int(grp["cn"])))
+        ids[g], levels_of[g], coef_cn[(g, coef)] = int(grp["id"]), m, int(grp["cn"])
+        if coef == "Intercept":
+            cns[g] = int(grp["cn"])
+    unmatched = [(grp["group"], grp["coef"]) for grp in fixture.groups if (int(grp["id"]), int(grp["cn"])) not in used]
     if unmatched:
         raise OracleMismatch(f"brms group-level terms without an AutoBayes counterpart: {unmatched}")
-    return GroupMap(ids, cns, levels_of)
+    for t in model.spec.group_terms:
+        m = ids[t.factor]
+        M = int(fixture.standata[f"M_{m}"])
+        if M != len(t.coefs):
+            raise OracleMismatch(f"{t.factor!r}: brms group {m} has M_{m} = {M} coefficients, AutoBayes {len(t.coefs)}")
+        # brms's standata carries NC_m = M_m (M_m - 1) / 2 whether or not the effects are correlated; what says
+        # they are is the term's `cor` flag and a declared Cholesky factor L_m, neither of which this adapter maps.
+        correlated = any(bool(grp["cor"]) for grp in fixture.groups if int(grp["id"]) == m)
+        if M > 1 and (correlated or f"L_{m}" in fixture.declarations or t.correlated):
+            raise OracleMismatch(
+                f"{t.factor!r}: brms group {m} has {M} coefficients with cor = {correlated}"
+                f"{' and a correlation matrix L_' + str(m) if f'L_{m}' in fixture.declarations else ''}; AutoBayes's term is "
+                f"{'correlated' if t.correlated else 'independent'} and the adapter maps independent effects only")
+    return GroupMap(ids, cns, levels_of, coef_cn)
 
 
 # -- points -------------------------------------------------------------------------------------------------
 def natural_point(model: ab.Model, point: Point, cmap: ColumnMap, gmap: GroupMap) -> dict:
-    """AutoBayes's natural-scale arguments (intercept, b, sd, z, sigma) at a brms point."""
+    """AutoBayes's natural-scale arguments (intercept, b, sd, z, sigma) at a brms point. An intercept-only
+    factor's ``sd`` and ``z`` are the scalar and the vector; a factor with varying slopes takes the
+    coefficient-keyed mappings ``{"Intercept": ..., "x": ...}`` (``Model.value_point``)."""
     pars = point.pars
     bb = coefficients(pars)
     b = np.array([bb[cmap.b_index(k)] for k in cmap.x_column], dtype=float)
@@ -166,13 +201,20 @@ def natural_point(model: ab.Model, point: Point, cmap: ColumnMap, gmap: GroupMap
     if model.spec.intercept:
         intercept = float(pars["Intercept"]) if cmap.centred_intercept else float(bb[cmap.b_index(cmap.intercept_column)])
     sd, z = {}, {}
-    for g in model.spec.groups:
-        m, cn = gmap.brms_id[g], gmap.cn[g]
-        sd[g] = float(np.atleast_1d(pars[f"sd_{m}"])[cn - 1])
-        zb = np.atleast_2d(pars[f"z_{m}"])                     # (M_m, N_m), brms level order
-        za = np.empty(zb.shape[1])
-        za[gmap.level_of[g]] = zb[cn - 1]
-        z[g] = za
+    for t in model.spec.group_terms:
+        g = t.factor
+        m = gmap.brms_id[g]
+        sd_m, zb = np.atleast_1d(pars[f"sd_{m}"]), np.atleast_2d(pars[f"z_{m}"])    # z_m is (M_m, N_m), brms level order
+        per_sd, per_z = {}, {}
+        for coef in t.coefs:
+            cn = gmap.coef_cn[(g, coef)]
+            za = np.empty(zb.shape[1])
+            za[gmap.level_of[g]] = zb[cn - 1]
+            per_sd[coef], per_z[coef] = float(sd_m[cn - 1]), za
+        if t.slopes:
+            sd[g], z[g] = per_sd, per_z
+        else:
+            sd[g], z[g] = per_sd["Intercept"], per_z["Intercept"]
     sigma = float(pars["sigma"]) if "sigma" in pars else None
     return dict(intercept=intercept, b=b, sd=sd or None, z=z or None, sigma=sigma)
 
@@ -196,6 +238,8 @@ def coordinate_map(fixture: Fixture, model: ab.Model, cmap: ColumnMap, gmap: Gro
     index within that variable), with the transform checked on both sides."""
     names = model.names
     by_id = {m: g for g, m in gmap.brms_id.items()}
+    by_cn = {(g, cn): coef for (g, coef), cn in gmap.coef_cn.items()}     # (factor, brms coefficient number) -> coefficient
+    roles = model.group_coefficient_names
     pars = fixture.points[0].pars
     out = []
     for e in fixture.upars:
@@ -213,16 +257,16 @@ def coordinate_map(fixture: Fixture, model: ab.Model, cmap: ColumnMap, gmap: Gro
             target, expect = (f"{names['sigma']}_log__", 0), "log"
         elif par.startswith("sd_") and int(par[3:]) in by_id:
             g = by_id[int(par[3:])]
-            if elem != gmap.cn[g] - 1:
-                raise OracleMismatch(f"{par}[{elem + 1}] is not the SD of the varying intercept of {g!r}")
-            target, expect = (f"{model.group_names[g]['sd']}_log__", 0), "log"
+            if (g, elem + 1) not in by_cn:
+                raise OracleMismatch(f"{par}[{elem + 1}] is not the SD of a group-level coefficient of {g!r}")
+            target, expect = (f"{roles[(g, by_cn[(g, elem + 1)])]['sd']}_log__", 0), "log"
         elif par.startswith("z_") and int(par[2:]) in by_id:
             g = by_id[int(par[2:])]
             M = pars[par].shape[0]
             c, j = elem % M, elem // M                          # column-major flat index of (M, N)
-            if c != gmap.cn[g] - 1:
-                raise OracleMismatch(f"{par} coefficient {c + 1} is not the varying intercept of {g!r}")
-            target, expect = (model.group_names[g]["offset"], int(gmap.level_of[g][j])), "identity"
+            if (g, c + 1) not in by_cn:
+                raise OracleMismatch(f"{par} coefficient {c + 1} is not a group-level coefficient of {g!r}")
+            target, expect = (roles[(g, by_cn[(g, c + 1)])]["offset"], int(gmap.level_of[g][j])), "identity"
         else:
             raise OracleMismatch(f"no adapter for brms parameter {par!r} ({fixture.declarations.get(par, 'undeclared')})")
         if transform != expect:
@@ -234,7 +278,8 @@ def coordinate_map(fixture: Fixture, model: ab.Model, cmap: ColumnMap, gmap: Gro
 # -- draws --------------------------------------------------------------------------------------------------
 def draws(fixture: Fixture, model: ab.Model, cmap: ColumnMap, gmap: GroupMap) -> az.InferenceData:
     """The fixture's points as one chain of posterior draws under AutoBayes's names: the raw-scale intercept
-    (brms ``b_Intercept``), coefficients by term, group SDs and effects by level, sigma."""
+    (brms ``b_Intercept``), coefficients by term, group SDs and effects by level for every group-level
+    coefficient (``1|g`` from ``r_m_1``, ``x|g`` from the slope's ``r_m_c``), sigma."""
     pts = fixture.points
     names = model.names
     data, coords = {}, {"chain": [0], "draw": np.arange(len(pts))}
@@ -253,15 +298,15 @@ def draws(fixture: Fixture, model: ab.Model, cmap: ColumnMap, gmap: GroupMap) ->
         else:
             (c, _), = positions
             data[term] = (("chain", "draw"), np.array([coefficients(p.pars)[cmap.b_index(cmap.x_column[c])] for p in pts])[None, :])
-    for g, roles in model.group_names.items():
-        m, cn = gmap.brms_id[g], gmap.cn[g]
+    for (g, coef), roles in model.group_coefficient_names.items():
+        m, cn = gmap.brms_id[g], gmap.coef_cn[(g, coef)]
         sd = np.array([np.atleast_1d(p.pars[f"sd_{m}"])[cn - 1] for p in pts])
         r = np.empty((len(pts), len(gmap.level_of[g])))
         for d, p in enumerate(pts):
             r[d, gmap.level_of[g]] = np.atleast_1d(p.pars[f"r_{m}_{cn}"])
         data[roles["sd"]] = (("chain", "draw"), sd[None, :])
         data[roles["group_effect"]] = (("chain", "draw", roles["coordinate"]), r[None])
-        coords[roles["coordinate"]] = list(model.design.group_designs[g].levels)
+        coords[roles["coordinate"]] = list(model.design.group_blocks[(g, coef)].levels)
     if "sigma" in names and "sigma" in pts[0].pars:
         data[names["sigma"]] = (("chain", "draw"), np.array([float(p.pars["sigma"]) for p in pts])[None, :])
     return az.InferenceData(posterior=xr.Dataset(data, coords=coords))

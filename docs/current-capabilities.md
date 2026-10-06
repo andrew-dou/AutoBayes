@@ -7,7 +7,7 @@ This is a capability map, not a percentage of brms implemented.
 | --- | --- | --- |
 | Families | Gaussian, Bernoulli-logit, grouped binomial-logit, fixed finite nu>1 Student-t, Poisson-log | test_logp.py, test_bernoulli.py, test_binomial.py, test_student.py, test_poisson.py |
 | Formula composition | Numeric and declared categorical predictors; multiple numeric-by-categorical interactions with required main effects; optional intercept | test_intercept_controls.py, test_multiple_interactions.py |
-| Hierarchy | Population-only models or multiple independent varying-intercept factors | test_population_only.py, test_multiple_groups.py |
+| Hierarchy | Population-only models or multiple independent varying-intercept factors; independent varying slopes `(1 + x || g)` on numeric population-level terms (brms's correlated `(1 + x \| g)` is refused) | test_population_only.py, test_multiple_groups.py, test_varying_slope.py; [varying slopes](varying-slopes.md) |
 | Execution | Inspectable PyMC graph; PyMC NUTS or JAX/NumPyro sampling with explicit device selection | inference.py, test_device.py and test_sampling.py; availability does not establish GPU validation |
 | Prediction | Expected response and replicated observations; explicit unseen-group policies | test_predict.py, test_multiple_groups.py, family tests |
 | Provenance | Frozen target identity; fit binding captured before sampling; mismatch refusal; explicit unverified legacy route | test_record_identity.py, test_fit_binding.py; [fit binding](fit-binding.md) |
@@ -46,8 +46,8 @@ recovery fits or GPU validation. Do not extrapolate one GPU run to all features.
 
 Broader model comparison, distributional parameter
 formulas, learned Student-t degrees of freedom, offsets/exposure, censoring and
-truncation remain separate work. Independent varying slopes remain in open PR8
-with an unresolved scientific acceptance gate; correlated slopes are not merged.
+truncation remain separate work. Independent varying slopes landed through the brms-parity loop (A01,
+verified against frozen brms fixtures; PR8 is superseded); correlated slopes (A02) are not implemented.
 Standalone generated source-code export is not implemented. The library builds
 an inspectable PyMC graph and executes through the selected sampler backend.
 

@@ -5,10 +5,6 @@
  "note": "brms: one group id with M_1 = 2 coefficients (Intercept, x), NC_1 = 0; Z_1_2 is the x column",
  "seed": 131,
  "n_points": 8,
- "gate": {
-  "expect": "fail",
-  "reason": "A01 independent varying slopes not implemented; remove this field when they land"
- },
  "data": {
   "generator": "baseline",
   "seed": 31,

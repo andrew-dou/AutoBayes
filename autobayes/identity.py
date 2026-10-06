@@ -34,6 +34,10 @@ def freeze_target(model):
     s, d, pr = model.spec, model.design, model.priors
     def prior(p):
         return None if p is None else {'name': p.name, 'parameters': dict(p.params)}
+    sd_priors = pr.sd_priors(s)
+    # Varying slopes (A01) enter as their own entry, present only when the formula has one, so that every model
+    # without slopes keeps the identity it had under this schema version.
+    slopes = [(g, c, block) for (g, c), block in d.group_blocks.items() if c != 'Intercept']
     payload = {
         'schema': SCHEMA, 'family': model.family,
         'family_parameters': {name: getattr(model, name) for name in get_family(model.family).fixed_parameters},
@@ -46,6 +50,8 @@ def freeze_target(model):
                         for c in s.categoricals],
         'groups': [{'factor': g, 'levels': block.levels, 'index': block.group_index,
                     'Z': block.Z, 'noncentered': True} for g, block in d.group_designs.items()],
+        **({'group_slopes': [{'factor': g, 'coef': c, 'Z': block.Z, 'correlated': s.group_term_of(g).correlated,
+                              'prior': prior(sd_priors[(g, c)])} for g, c, block in slopes]} if slopes else {}),
         'priors': {'intercept': prior(pr.intercept), 'sigma': prior(pr.sigma),
                    'coefficients': {k: prior(v) for k,v in pr.coefficient_priors(s).items()},
                    'groups': {k: prior(v) for k,v in pr.group_priors(s).items()}},

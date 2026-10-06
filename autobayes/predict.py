@@ -20,13 +20,16 @@ than the default ``"error"`` is refused rather than ignored):
 - ``"resample_observed"``: brms's default ``sample_new_levels="uncertainty"``: for each
   posterior draw and each distinct unseen label, reuse the fitted effect of a uniformly
   chosen observed level (chosen independently per label and per draw; rows sharing a
-  label share the choice). This understates between-level variance because it resamples
+  label share the choice). With varying slopes, the whole effect vector of the chosen
+  level is reused: its intercept and slope effects come from the same level, as brms does.
+  This understates between-level variance because it resamples
   shrunk draws from a finite set of levels. Computed here rather than through Bambi's
   ``sample_new_groups=True``, which gives every unseen label the same effect in a draw.
 - ``"population"``: brms's ``sample_new_levels="gaussian"``: for each posterior draw,
   draw a fresh effect from ``Normal(0, sd_group)`` (on the linear-predictor scale, i.e. the
-  logit scale for Bernoulli). This is the population distribution the model actually fit
-  and is implemented here because Bambi does not offer it.
+  logit scale for Bernoulli), independently for each coefficient of the factor (intercept
+  and every varying slope, each from its own ``Normal(0, sd)``). This is the population
+  distribution the model actually fit and is implemented here because Bambi does not offer it.
 """
 from __future__ import annotations
 
@@ -103,10 +106,12 @@ def _check_newdata(model, newdata: pd.DataFrame, *, need_trials: bool = False, i
 def _predict_by_hand(model, idata, df: pd.DataFrame | None, kind: str, seed, policies: dict[str, str], *, include_group_effects=True) -> xr.Dataset:
     """Linear predictor by hand from the posterior, with one effect per distinct unseen label.
 
-    ``df=None`` means the fitted rows (in-sample). ``"population"``: a fresh ``Normal(0, sd)``
-    draw per unseen label and posterior draw. ``"resample_observed"``: the effect of a
-    uniformly chosen observed level per label and posterior draw. In both cases every row
-    with the same label shares that label's effect.
+    ``df=None`` means the fitted rows (in-sample). Each group-level coefficient adds its effect at the
+    row's level times its covariate (one for the varying intercept, the raw slope column for a varying
+    slope). ``"population"``: a fresh ``Normal(0, sd)`` draw per unseen label, posterior draw and
+    coefficient. ``"resample_observed"``: the effects of one uniformly chosen observed level per label
+    and posterior draw, all coefficients from that same level. In both cases every row with the same
+    label shares that label's effects.
     """
     if df is None:
         df = model.data
@@ -121,20 +126,26 @@ def _predict_by_hand(model, idata, df: pd.DataFrame | None, kind: str, seed, pol
     if b is not None:
         mu = mu + np.einsum("cdp,np->cdn", b, X)
     new_levels = {}
-    for g, names in (model.group_names.items() if include_group_effects else ()):
-        sd = post[names["sd"]].to_numpy()
-        u = post[names["group_effect"]].to_numpy()
+    for term in (model.spec.group_terms if include_group_effects else ()):
+        g = term.factor
         levels = list(model.design.group_designs[g].levels)
         new_levels[g] = sorted(set(df[g]) - set(levels))
+        # (sd draws, effect draws, covariate column) per coefficient: ones for the intercept, the raw column for a slope
+        coefs = []
+        for coef in term.coefs:
+            names = model.group_coefficient_names[(g, coef)]
+            covariate = np.ones(len(df)) if coef == "Intercept" else df[coef].to_numpy(dtype=float)
+            coefs.append((post[names["sd"]].to_numpy(), post[names["group_effect"]].to_numpy(), covariate))
         new_effects = {}
         for lvl in new_levels[g]:
-            if policies[g] == "population":
-                new_effects[lvl] = rng.normal(0.0, 1.0, size=sd.shape) * sd
-            else:
-                chosen = rng.integers(0, len(levels), size=sd.shape)
-                new_effects[lvl] = np.take_along_axis(u, chosen[..., None], axis=-1)[..., 0]
+            if policies[g] == "population":              # each coefficient from its own Normal(0, sd)
+                new_effects[lvl] = [rng.normal(0.0, 1.0, size=sd.shape) * sd for sd, _, _ in coefs]
+            else:                                        # one observed level per draw; its whole effect vector is reused
+                chosen = rng.integers(0, len(levels), size=coefs[0][0].shape)
+                new_effects[lvl] = [np.take_along_axis(u, chosen[..., None], axis=-1)[..., 0] for _, u, _ in coefs]
         for i, lvl in enumerate(df[g]):
-            mu[..., i] += new_effects[lvl] if lvl in new_effects else u[..., levels.index(lvl)]
+            for k, (_, u, covariate) in enumerate(coefs):
+                mu[..., i] += (new_effects[lvl][k] if lvl in new_effects else u[..., levels.index(lvl)]) * covariate[i]
     dims = ("chain", "draw", "__obs__")
     if kind == "linear":
         if not np.isfinite(mu).all():

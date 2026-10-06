@@ -5,10 +5,6 @@
  "note": "a categorical population term next to an independent varying slope",
  "seed": 132,
  "n_points": 8,
- "gate": {
-  "expect": "fail",
-  "reason": "A01 independent varying slopes not implemented; remove this field when they land"
- },
  "data": {
   "generator": "baseline",
   "seed": 32,

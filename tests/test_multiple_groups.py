@@ -304,7 +304,7 @@ def test_prior_value_refusals_and_collisions():
         ab.gaussian('y~x+g__factor+(1|g)+(1|h)',df,pr,categorical={'g__factor':'b'})
 
 
-@pytest.mark.parametrize('rhs', ['x+(1|g)+(1|g)','x+(1|g/h)','x+(1|g:h)','x+(1||g)',
+@pytest.mark.parametrize('rhs', ['x+(1|g)+(1|g)','x+(1|g/h)','x+(1|g:h)','x+(0+x||g)',
     'x+(1|id|g)','x+(1|log(g))','x+(1|mm(g,h))','x+(1+x|g)','x+(0|g)',
     '(1|g)+(1|h)','0+(1|g)+(1|h)','x+(1|g)+(1|x)','x+(1|g)+(1|y)'])
 def test_scoped_formula_refusals(rhs):
