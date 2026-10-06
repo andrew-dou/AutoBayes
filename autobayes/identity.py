@@ -5,6 +5,8 @@ import json
 from numbers import Real
 import numpy as np
 
+from autobayes.families import get_family
+
 SCHEMA = 'autobayes-target-v1'
 
 
@@ -34,7 +36,7 @@ def freeze_target(model):
         return None if p is None else {'name': p.name, 'parameters': dict(p.params)}
     payload = {
         'schema': SCHEMA, 'family': model.family,
-        'family_parameters': {'nu': model.nu} if model.family == 'student' else {},
+        'family_parameters': {name: getattr(model, name) for name in get_family(model.family).fixed_parameters},
         'formula': s.canonical_formula, 'link': model.link,
         'intercept': s.intercept, 'centered': d.centered,
         'columns': d.columns, 'y': d.y, 'trials': d.trials,

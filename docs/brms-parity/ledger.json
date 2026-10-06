@@ -71,11 +71,30 @@
    "depends_on": [
     "P2_oracle_harness"
    ],
-   "status": "implementing",
+   "status": "gates_green",
    "summary": "autobayes/families/ FamilySpec registry replaces every family == check; an AST lint bans new ones",
    "pr": null,
    "attempts": 1,
-   "gates": {},
+   "gates": {
+    "sha": "5d29c7072bbf",
+    "dirty_tree": false,
+    "base": "origin/main",
+    "when": "2026-10-06T03:18Z",
+    "results": {
+     "immutability": {
+      "status": "pass",
+      "seconds": 0.0
+     },
+     "oracle": {
+      "status": "pass",
+      "seconds": 35.0
+     },
+     "suite": {
+      "status": "pass",
+      "seconds": 334.2
+     }
+    }
+   },
    "divergences": [],
    "next_action": "agent working in AutoBayes-worktrees/parity-p3 off parity/p2-oracle-harness; PR after P2 merges"
   },

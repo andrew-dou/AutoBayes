@@ -199,19 +199,21 @@ class Priors:
         return {groups[0]: self.sd}
 
     def validate(self, spec, family: str = "gaussian") -> None:
+        from autobayes.families import get_family
+
+        fam = get_family(family)
         has_intercept = getattr(spec, "intercept", True)
         if has_intercept and self.intercept is None:
             raise PriorError("the formula has a population intercept; an intercept prior is required")
         if not has_intercept and self.intercept is not None:
             raise PriorError("the formula has no population intercept; omit the intercept prior (or pass None)")
         group_priors = self.group_priors(spec)
-        if family in ("gaussian", "student") and self.sigma is None:
-            raise PriorError("the Student-t family needs a prior on the scale: pass sigma=..." if family == "student"
-                             else "the Gaussian family needs a prior on the residual SD: pass sigma=...")
-        if family not in ("gaussian", "student") and self.sigma is not None:
+        if fam.scale_parameter is not None and self.sigma is None:
+            raise PriorError(fam.sigma_missing_error)
+        if fam.scale_parameter is None and self.sigma is not None:
             raise PriorError(
-                f"the {family} family has no residual SD; do not pass sigma. Its intercept and "
-                + ("slope priors are on the log scale." if family == "poisson" else "slope priors are on the logit scale.")
+                f"the {fam.name} family has no residual SD; do not pass sigma. Its intercept and "
+                f"slope priors are on the {fam.link_scale} scale."
             )
         for label, prior in ([("intercept", self.intercept)] if has_intercept else []) + list(self.coefficient_priors(spec).items()):
             if not isinstance(prior, Prior):

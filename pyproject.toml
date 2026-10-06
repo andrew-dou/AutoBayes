@@ -30,7 +30,7 @@ jax = ["jax==0.10.2", "jaxlib==0.10.2", "numpyro==0.21.0"]
 dev = ["pytest==9.1.1"]
 
 [tool.setuptools]
-packages = ["autobayes"]
+packages = ["autobayes", "autobayes.families"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
