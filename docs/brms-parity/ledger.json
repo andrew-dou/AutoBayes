@@ -357,11 +357,26 @@
    "depends_on": [
     "P3_families_registry"
    ],
-   "status": "implementing",
+   "status": "gates_green",
    "summary": "Gamma responses (log link) with shape",
    "pr": null,
    "attempts": 1,
-   "gates": {},
+   "gates": {
+    "sha": "87240db65de7",
+    "dirty_tree": false,
+    "base": "origin/main",
+    "when": "2026-10-06T14:50Z",
+    "results": {
+     "immutability": {
+      "status": "pass",
+      "seconds": 0.0
+     },
+     "oracle": {
+      "status": "pass",
+      "seconds": 55.3
+     }
+    }
+   },
    "divergences": [],
    "next_action": "families lane agent, worktree parity-fam1 (after A08)",
    "fixtures": {
