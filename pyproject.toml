@@ -34,5 +34,7 @@ packages = ["autobayes"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-markers = ["slow: sampling runs that take more than a few seconds"]
+markers = ["slow: sampling runs that take more than a few seconds",
+           "sampling: runs a sampler; applied automatically by tests/conftest.py to any test or fixture whose source calls .fit(",
+           "nosampling: opt out of the automatic sampling mark (the .fit( text does not sample)"]
 filterwarnings = ["ignore::UserWarning", "ignore::FutureWarning", "ignore::DeprecationWarning"]
