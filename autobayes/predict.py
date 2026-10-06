@@ -66,7 +66,8 @@ def _coefficient_draws(post, model):
 
 def _check_newdata(model, newdata: pd.DataFrame, *, need_trials: bool = False, include_group_effects: bool = True) -> pd.DataFrame:
     s = model.spec
-    cols = [*s.predictors, *s.categorical_names] + (list(s.groups) if include_group_effects else [])
+    cols = ([*s.predictors, *s.categorical_names] + ([s.offset.column] if s.offset is not None else [])
+            + (list(s.groups) if include_group_effects else []))
     cols = list(dict.fromkeys(cols))
     if need_trials:
         if s.trials not in newdata.columns:
@@ -77,7 +78,9 @@ def _check_newdata(model, newdata: pd.DataFrame, *, need_trials: bool = False, i
         cols.append(s.trials)
     missing = [c for c in cols if c not in newdata.columns]
     if missing:
-        raise FormulaError(f"newdata lacks columns {missing}")
+        hint = (f" (the offset term {s.offset.term!r} needs {s.offset.column!r} on every row to predict)"
+                if s.offset is not None and s.offset.column in missing else "")
+        raise FormulaError(f"newdata lacks columns {missing}{hint}")
     df = newdata[cols].copy()
     if df.isna().any().any():
         raise FormulaError("newdata contains missing values")
@@ -85,6 +88,8 @@ def _check_newdata(model, newdata: pd.DataFrame, *, need_trials: bool = False, i
         reject_complex(f"newdata column {c!r}", df[c])
         if not pd.api.types.is_numeric_dtype(df[c]):
             raise FormulaError(f"newdata column {c!r} must be numeric")
+    if s.offset is not None:
+        s.offset.values(df, where="newdata column")               # numeric, finite and (for log) positive, or refused
     for cat in s.categoricals:
         labels, _ = categorical_labels(f"newdata column {cat.name!r}", df[cat.name])
         unseen = sorted(set(labels.tolist()) - set(cat.levels))
@@ -106,7 +111,8 @@ def _check_newdata(model, newdata: pd.DataFrame, *, need_trials: bool = False, i
 def _predict_by_hand(model, idata, df: pd.DataFrame | None, kind: str, seed, policies: dict[str, str], *, include_group_effects=True) -> xr.Dataset:
     """Linear predictor by hand from the posterior, with one effect per distinct unseen label.
 
-    ``df=None`` means the fitted rows (in-sample). Each group-level coefficient adds its effect at the
+    ``df=None`` means the fitted rows (in-sample). The offset term, when the formula has one, is added as
+    written (brms keeps it under ``re_formula = NA`` too). Each group-level coefficient adds its effect at the
     row's level times its covariate (one for the varying intercept, the raw slope column for a varying
     slope). ``"population"``: a fresh ``Normal(0, sd)`` draw per unseen label, posterior draw and
     coefficient. ``"resample_observed"``: the effects of one uniformly chosen observed level per label
@@ -125,6 +131,8 @@ def _predict_by_hand(model, idata, df: pd.DataFrame | None, kind: str, seed, pol
     mu = np.repeat(a[..., None], len(df), axis=-1)
     if b is not None:
         mu = mu + np.einsum("cdp,np->cdn", b, X)
+    if model.spec.offset is not None:                           # the offset enters as written, with or without group effects
+        mu = mu + model.spec.offset.values(df)
     new_levels = {}
     for term in (model.spec.group_terms if include_group_effects else ()):
         g = term.factor

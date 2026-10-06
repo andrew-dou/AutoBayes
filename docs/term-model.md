@@ -40,6 +40,14 @@ sorted strings). The parameters of coefficient `c` are brms's `sd_m[c]` (`1|g_si
 `Model.group_names[factor]` keeps the varying intercept's roles with each slope's as `sd:x`, `offset:x`,
 `group_effect:x` (docs/varying-slopes.md).
 
+## The offset term: `ModelSpec.offset`
+
+brms's `offset(col)` / `offset(log(col))` (A06) is not a population-level term: it has no coefficient, no
+prior and no design column, so it is a separate field, `Offset(column, log)`, with `term`
+(`offset(log(exposure))`), `expression` and `values(frame)`; `Design.offset` holds its vector on the fitted rows
+(brms `offsets`) and `predict()` adds it on every row (docs/offset.md). `columns`, `coefficients` and the prior
+dictionary never see it.
+
 ## Design blocks: `Design.group_blocks[(factor, coef)]`
 
 `Model.design` holds one `GroupBlock(levels, Z, group_index, column_slice)` per (factor, coefficient), in

@@ -282,11 +282,26 @@
    "depends_on": [
     "P4_term_model"
    ],
-   "status": "implementing",
+   "status": "gates_green",
    "summary": "offset(log(exposure))",
    "pr": null,
    "attempts": 1,
-   "gates": {},
+   "gates": {
+    "sha": "7948686a02cd",
+    "dirty_tree": true,
+    "base": "origin/main",
+    "when": "2026-10-06T14:32Z",
+    "results": {
+     "immutability": {
+      "status": "pass",
+      "seconds": 0.0
+     },
+     "oracle": {
+      "status": "pass",
+      "seconds": 51.2
+     }
+    }
+   },
    "divergences": [],
    "next_action": "formula lane agent, worktree parity-form1 (with A03)",
    "fixtures": {
