@@ -71,9 +71,9 @@
    "depends_on": [
     "P2_oracle_harness"
    ],
-   "status": "gates_green",
+   "status": "merged",
    "summary": "autobayes/families/ FamilySpec registry replaces every family == check; an AST lint bans new ones",
-   "pr": null,
+   "pr": 25,
    "attempts": 1,
    "gates": {
     "sha": "5d29c7072bbf",
@@ -96,7 +96,7 @@
     }
    },
    "divergences": [],
-   "next_action": "agent working in AutoBayes-worktrees/parity-p3 off parity/p2-oracle-harness; PR after P2 merges"
+   "next_action": ""
   },
   {
    "id": "P4_term_model",
@@ -105,13 +105,13 @@
    "depends_on": [
     "P3_families_registry"
    ],
-   "status": "queued",
+   "status": "implementing",
    "summary": "PopTerm and GroupTerm(factor, coefs, correlated) with per-(factor, coefficient) design blocks",
    "pr": null,
-   "attempts": 0,
+   "attempts": 1,
    "gates": {},
    "divergences": [],
-   "next_action": ""
+   "next_action": "agent working in AutoBayes-worktrees/parity-p4 (stacked on P3 at 5d29c70); rebase onto main, gate, PR"
   },
   {
    "id": "P5_loop_state",
