@@ -23,7 +23,7 @@ from collections.abc import Mapping
 
 from autobayes.families import FAMILIES, FamilySpec, get_family
 from autobayes.formula import (Categorical, FormulaError, ModelSpec, bambi_group_name, binomial_counts, categorical_labels,
-                               parse_formula, pop_term_design, sd_tag)
+                               factor_column, group_labels, parse_formula, pop_term_design, sd_tag)
 from autobayes.priors import Priors
 
 _bambi_group_name = bambi_group_name          # ``1|g`` for the varying intercept of ``g``, ``x|g`` for the slope of ``x``
@@ -139,7 +139,8 @@ class Model:
         spec0 = parse_formula(formula, None, family, categorical)
         self.effective_center_predictors = self.center_predictors and spec0.intercept
         priors.validate(spec0, family)                  # structure now; per-level coverage once levels are known
-        cols = ([spec0.response, *spec0.predictors, *spec0.categorical_names] + list(spec0.groups)
+        operands = [c for t in spec0.group_terms for c in t.operands]   # the columns the grouping factors are read from
+        cols = ([spec0.response, *spec0.predictors, *spec0.categorical_names] + operands
                 + ([spec0.trials] if spec0.trials else []) + ([spec0.offset.column] if spec0.offset is not None else []))
         cols = list(dict.fromkeys(cols))                        # the offset column may also be a predictor
         missing = [c for c in cols if c not in data.columns]
@@ -170,8 +171,8 @@ class Model:
                         )
                 df = df.drop(index=zero).reset_index(drop=True)
         self.spec: ModelSpec = parse_formula(formula, df, family, categorical)   # levels over the fitted rows
-        for group in self.spec.groups:
-            df[group] = df[group].astype(str)
+        for t in self.spec.group_terms:                      # labels as text; a derived factor g:h gets its own column g_h
+            df[t.column] = group_labels(t.factor, df)
         if fam.response_dtype is not None:
             df[self.spec.response] = df[self.spec.response].astype(fam.response_dtype)
         self.warnings.extend(fam.response_warnings(self.spec, df))   # separation, all-zero counts
@@ -331,7 +332,7 @@ class Model:
             for t in self.spec.group_terms:
                 g = t.factor
                 levels = self.spec.levels_by_group[g]
-                labels = self.data[g].to_numpy()
+                labels = self.data[t.column].to_numpy()
                 indicator = np.column_stack([labels == level for level in levels]).astype(float)
                 for coef in t.coefs:
                     name = _bambi_group_name(g, coef)
@@ -417,9 +418,9 @@ class Model:
         """PyMC names of one group-level coefficient of ``factor`` (its varying intercept by default): ``sd`` is
         the coefficient's scale (brms ``sd_m[c]``), ``offset`` its standardised effects (brms ``z_m[c]``),
         ``group_effect`` its effects per level (brms ``r_m_c``), ``coordinate`` the level dimension, shared by
-        every coefficient of the factor."""
+        every coefficient of the factor. Bambi names all of them after the factor's column (``g_h`` for ``g:h``)."""
         name = _bambi_group_name(factor, coef)
-        return {"sd": f"{name}_sigma", "offset": f"{name}_offset", "group_effect": name, "coordinate": f"{factor}__factor_dim"}
+        return {"sd": f"{name}_sigma", "offset": f"{name}_offset", "group_effect": name, "coordinate": f"{factor_column(factor)}__factor_dim"}
 
     @property
     def group_names(self) -> dict[str, dict[str, str]]:
@@ -577,7 +578,8 @@ class Model:
                          + (f" (positions {list(self.dropped_rows)[:10]}{'...' if len(self.dropped_rows) > 10 else ''})"
                             if self.dropped_rows else ""))
         features = ((["categorical predictor(s)"] if s.categoricals else []) + (["interaction(s)"] if s.interactions else [])
-                    + (["independent varying slope(s)"] if s.has_slopes else []) + (["offset"] if s.offset is not None else []))
+                    + (["independent varying slope(s)"] if s.has_slopes else []) + (["offset"] if s.offset is not None else [])
+                    + (["derived grouping factor(s)"] if any(t.derived for t in s.group_terms) else []))
         lines = [
             f"AutoBayes {fam.tag} model" + (" with " + " and ".join(features) if features else "")
             + (" (population-level only)" if not s.has_group else ""),
@@ -591,6 +593,13 @@ class Model:
                       f"never centred; brms offset()); range {d.offset.min():.4f} to {d.offset.max():.4f} over the fitted rows"]
         for g, block in d.group_designs.items():
             lines += [f"  {'levels    ' if len(s.groups) == 1 else 'levels ' + g}: {', '.join(f'{j}={l}' for j, l in enumerate(block.levels))}"]
+        for t in s.group_terms:
+            if t.derived:
+                ga, gb = t.operands
+                name = _bambi_group_name(t.factor, "Intercept")
+                lines += [f"  {t.factor:<10}: derived grouping factor, one level per observed ({ga}, {gb}) combination, labelled {ga}_{gb} as brms "
+                          f"does (paste({ga}, {gb}, sep = \"_\")); unobserved combinations have no level; handed to Bambi as the column "
+                          f"{t.column!r}, so its PyMC variables are {name}, {name}_sigma, {name}_offset"]
         for cat in s.categoricals:
             labels = self.data[cat.name].astype(str).to_numpy()
             props = ", ".join(f"{l} {np.mean(labels == l):.3f}" for l in cat.levels)

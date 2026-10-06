@@ -5,10 +5,6 @@
  "note": "the interaction factor g:h as a grouping factor next to g",
  "seed": 142,
  "n_points": 8,
- "gate": {
-  "expect": "fail",
-  "reason": "A03_grouping_syntax not implemented; remove this field when it lands"
- },
  "data": {
   "generator": "tier_a",
   "seed": 42,

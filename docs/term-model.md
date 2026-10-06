@@ -34,7 +34,12 @@ and `correlated` whether they share a correlation matrix (`|`, brms's default, n
 yet) or are independent (`||`; moot for one coefficient, so `(1 || g)` is `(1 | g)`). `term.slopes` are
 the coefficients other than the intercept and `term.canonical` the term as the canonical formula writes it.
 Level labels are not part of the term; they are read from the data (`ModelSpec.levels_by_group[factor]`,
-sorted strings). The parameters of coefficient `c` are brms's `sd_m[c]` (`1|g_sigma`, `x|g_sigma`), `z_m[c]`
+sorted strings). The factor is a column, or the derived factor `g:h` (A03, docs/grouping-syntax.md):
+`term.operands` are the columns it is read from, `term.derived` whether it is built from two, and `term.column`
+the fitted-frame column holding its labels, which is also the name Bambi sees (`g_h`, so the PyMC variables are
+`1|g_h`, `1|g_h_sigma`, `1|g_h_offset`); `group_labels(factor, frame)` builds the labels (brms's `g_h` over the
+observed combinations) and `(1 | g/h)` parses to the two terms `(1 | g) + (1 | g:h)`.
+The parameters of coefficient `c` are brms's `sd_m[c]` (`1|g_sigma`, `x|g_sigma`), `z_m[c]`
 (`1|g_offset`, `x|g_offset`, the standardised effects) and `r_m_c` (`1|g`, `x|g`, the effects per level);
 `Model.group_coefficient_names[(factor, coef)]` maps those roles to the PyMC names, and
 `Model.group_names[factor]` keeps the varying intercept's roles with each slope's as `sd:x`, `offset:x`,
