@@ -1,0 +1,74 @@
+{
+ "id": "cumulative_varint",
+ "tier": "B",
+ "feature": "B05_ordinal_categorical",
+ "note": "brms: ordered thresholds Intercept[nthres] (ordered transform), nthres = 3; epred is draws x N x 4",
+ "seed": 167,
+ "n_points": 8,
+ "gate": {
+  "expect": "fail",
+  "reason": "B05_ordinal_categorical not implemented; remove this field when it lands"
+ },
+ "data": {
+  "generator": "tier_b",
+  "seed": 67,
+  "n": 36,
+  "newdata": {
+   "seed": 167,
+   "n": 5
+  }
+ },
+ "brms": {
+  "formula": "ord ~ x + (1 | g)",
+  "family": {
+   "family": "cumulative",
+   "link": "logit"
+  },
+  "factors": {
+   "g": [
+    "a",
+    "b",
+    "c",
+    "d",
+    "e",
+    "f"
+   ]
+  },
+  "priors": [
+   {
+    "prior": "normal(0, 3)",
+    "class": "Intercept"
+   },
+   {
+    "prior": "normal(0, 1.5)",
+    "class": "b"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "sd",
+    "group": "g"
+   }
+  ]
+ },
+ "autobayes": {
+  "constructor": "cumulative",
+  "formula": "ord ~ x + (1 | g)",
+  "kwargs": {},
+  "priors": {
+   "intercept": [
+    "Normal",
+    0,
+    3
+   ],
+   "b": [
+    "Normal",
+    0,
+    1.5
+   ],
+   "sd": [
+    "HalfNormal",
+    1
+   ]
+  }
+ }
+}

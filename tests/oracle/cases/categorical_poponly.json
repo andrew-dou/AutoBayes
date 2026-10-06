@@ -1,0 +1,73 @@
+{
+ "id": "categorical_poponly",
+ "tier": "B",
+ "feature": "B05_ordinal_categorical",
+ "note": "brms: one linear predictor per non-reference category (muc2, muc3); epred is draws x N x 3",
+ "seed": 168,
+ "n_points": 8,
+ "gate": {
+  "expect": "fail",
+  "reason": "B05_ordinal_categorical not implemented; remove this field when it lands"
+ },
+ "data": {
+  "generator": "tier_b",
+  "seed": 68,
+  "n": 36,
+  "newdata": {
+   "seed": 168,
+   "n": 5
+  }
+ },
+ "brms": {
+  "formula": "cat3 ~ x",
+  "family": {
+   "family": "categorical"
+  },
+  "factors": {
+   "cat3": [
+    "c1",
+    "c2",
+    "c3"
+   ]
+  },
+  "priors": [
+   {
+    "prior": "normal(0, 3)",
+    "class": "Intercept",
+    "dpar": "muc2"
+   },
+   {
+    "prior": "normal(0, 3)",
+    "class": "Intercept",
+    "dpar": "muc3"
+   },
+   {
+    "prior": "normal(0, 1.5)",
+    "class": "b",
+    "dpar": "muc2"
+   },
+   {
+    "prior": "normal(0, 1.5)",
+    "class": "b",
+    "dpar": "muc3"
+   }
+  ]
+ },
+ "autobayes": {
+  "constructor": "categorical",
+  "formula": "cat3 ~ x",
+  "kwargs": {},
+  "priors": {
+   "intercept": [
+    "Normal",
+    0,
+    3
+   ],
+   "b": [
+    "Normal",
+    0,
+    1.5
+   ]
+  }
+ }
+}

@@ -1,0 +1,110 @@
+{
+ "id": "gauss_distributional_sigma",
+ "tier": "B",
+ "feature": "B01_distributional",
+ "note": "brms: sigma has its own linear predictor (Intercept_sigma, b_sigma, log link); standata K_sigma, X_sigma",
+ "seed": 161,
+ "n_points": 8,
+ "gate": {
+  "expect": "fail",
+  "reason": "B01_distributional not implemented; remove this field when it lands"
+ },
+ "data": {
+  "generator": "tier_b",
+  "seed": 61,
+  "n": 36,
+  "newdata": {
+   "seed": 161,
+   "n": 5
+  }
+ },
+ "brms": {
+  "formula": [
+   "y ~ x + (1 | g)",
+   "sigma ~ z"
+  ],
+  "family": {
+   "family": "gaussian"
+  },
+  "factors": {
+   "g": [
+    "a",
+    "b",
+    "c",
+    "d",
+    "e",
+    "f"
+   ],
+   "z": [
+    "p",
+    "q",
+    "r"
+   ]
+  },
+  "priors": [
+   {
+    "prior": "normal(0, 5)",
+    "class": "Intercept"
+   },
+   {
+    "prior": "normal(0, 2)",
+    "class": "b"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "sd",
+    "group": "g"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "Intercept",
+    "dpar": "sigma"
+   },
+   {
+    "prior": "normal(0, 0.5)",
+    "class": "b",
+    "dpar": "sigma"
+   }
+  ]
+ },
+ "autobayes": {
+  "constructor": "gaussian",
+  "formula": [
+   "y ~ x + (1 | g)",
+   "sigma ~ z"
+  ],
+  "kwargs": {
+   "categorical": {
+    "z": "p"
+   }
+  },
+  "priors": {
+   "intercept": [
+    "Normal",
+    0,
+    5
+   ],
+   "b": [
+    "Normal",
+    0,
+    2
+   ],
+   "sd": [
+    "HalfNormal",
+    1
+   ],
+   "sigma": {
+    "intercept": [
+     "Normal",
+     0,
+     1
+    ],
+    "b": [
+     "Normal",
+     0,
+     0.5
+    ]
+   }
+  }
+ }
+}

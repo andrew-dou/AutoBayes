@@ -1,0 +1,81 @@
+{
+ "id": "gauss_censored",
+ "tier": "B",
+ "feature": "B02_cens_trunc_weights",
+ "note": "brms standata cens: -1 left-, 0 un-, 1 right-censored rows; the likelihood uses lcdf/lccdf for censored rows",
+ "seed": 162,
+ "n_points": 8,
+ "gate": {
+  "expect": "fail",
+  "reason": "B02_cens_trunc_weights not implemented; remove this field when it lands"
+ },
+ "data": {
+  "generator": "tier_b",
+  "seed": 62,
+  "n": 36,
+  "newdata": {
+   "seed": 162,
+   "n": 5
+  }
+ },
+ "brms": {
+  "formula": "y | cens(cens_ind) ~ x + (1 | g)",
+  "family": {
+   "family": "gaussian"
+  },
+  "factors": {
+   "g": [
+    "a",
+    "b",
+    "c",
+    "d",
+    "e",
+    "f"
+   ]
+  },
+  "priors": [
+   {
+    "prior": "normal(0, 5)",
+    "class": "Intercept"
+   },
+   {
+    "prior": "normal(0, 2)",
+    "class": "b"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "sd",
+    "group": "g"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "sigma"
+   }
+  ]
+ },
+ "autobayes": {
+  "constructor": "gaussian",
+  "formula": "y | cens(cens_ind) ~ x + (1 | g)",
+  "kwargs": {},
+  "priors": {
+   "intercept": [
+    "Normal",
+    0,
+    5
+   ],
+   "b": [
+    "Normal",
+    0,
+    2
+   ],
+   "sd": [
+    "HalfNormal",
+    1
+   ],
+   "sigma": [
+    "HalfNormal",
+    1
+   ]
+  }
+ }
+}
