@@ -2,8 +2,8 @@
 
 brms classes: ``Intercept``, ``b`` (slopes and dummy coefficients), ``sd`` (one group SD per group-level
 coefficient: the varying intercept of ``(1 | g)``, the intercept and each slope of ``(1 + x || g)``) and the
-family's auxiliary parameter: ``sigma`` for Gaussian/Student-t (residual SD/scale respectively), ``shape`` for
-the negative binomial and Gamma families. Every class the model has must be given, and a class the model does
+family's auxiliary parameter: ``sigma`` for Gaussian/Student-t (residual SD/scale respectively) and for the
+lognormal (the SD of ``log y``), ``shape`` for the negative binomial and Gamma families. Every class the model has must be given, and a class the model does
 not have is refused (M3c-1: ``sd`` without a group term; ``shape`` for a Gaussian model); there are no silent
 defaults here (Bambi would supply some, and that is exactly what this layer refuses to let happen). For the
 Bernoulli family the intercept and slope priors are on the logit scale and ``sigma`` must be omitted.
@@ -98,7 +98,7 @@ class Priors:
     intercept: Prior | None = None
     b: Prior | Mapping[str, Prior | Mapping[str, Prior]] | None = None
     sd: Prior | Mapping[str, Prior | Mapping[str, Prior]] | None = None   # required with a group term, refused without one (M3c-1)
-    sigma: Prior | None = None       # Gaussian and Student-t
+    sigma: Prior | None = None       # Gaussian, Student-t and lognormal
     shape: Prior | None = None       # negative binomial and Gamma (brms class ``shape``)
 
     # -- coefficient priors -----------------------------------------------------------------

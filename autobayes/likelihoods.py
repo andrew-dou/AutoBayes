@@ -177,3 +177,17 @@ def binomial_logit_family():
 
     likelihood = bmb.Likelihood("BinomialLogit", params=["logit_p"], parent="logit_p", dist=BinomialLogit)
     return BinomialLogitFamily("binomial_logit", likelihood, link="identity")
+
+
+# ---- lognormal (brms-parity A10) ----------------------------------------------------------------
+# Bambi has no plain lognormal family (its ``hurdle_lognormal`` is a different model), so the family is
+# PyMC's own ``LogNormal(mu, sigma)`` wrapped exactly as Bambi wraps ``Normal`` for ``gaussian``: the
+# identity link on the location ``mu`` (the linear predictor) and ``sigma`` as the auxiliary parameter
+# whose prior comes from the prior dict. ``lognormal_lpdf(y | mu, sigma)`` in Stan and PyMC's density are
+# the same expression; equality with brms is checked in the oracle case ``lognormal_varint``.
+def lognormal_family():
+    """Bambi family for ``log(y) ~ Normal(mu, sigma)``: ``mu`` is the linear predictor, ``sigma`` the SD of ``log y``."""
+    import bambi as bmb
+
+    likelihood = bmb.Likelihood("LogNormal", params=["mu", "sigma"], parent="mu", dist=pm.LogNormal)
+    return bmb.Family("lognormal", likelihood, link={"mu": "identity", "sigma": "log"})

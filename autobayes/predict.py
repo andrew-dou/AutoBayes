@@ -1,8 +1,10 @@
 """Posterior draws of the mean and posterior predictive draws, with named semantics.
 
 ``kind="mean"`` returns draws of the expected response: ``mu`` for the Gaussian family,
-``p = P(y = 1)`` for the Bernoulli family, and for the binomial family ``p`` together with
-``expected = n p`` (brms ``posterior_epred``, which is ``mu * trials`` there).
+``p = P(y = 1)`` for the Bernoulli family, for the binomial family ``p`` together with
+``expected = n p`` (brms ``posterior_epred``, which is ``mu * trials`` there), and for the
+lognormal family ``mean = exp(mu + sigma^2 / 2)`` (brms ``posterior_epred``; ``mu`` is the
+log-scale location, which ``kind="linear"`` returns).
 ``kind="response"`` also returns draws of a new observation ``y``: ``Normal(mu, sigma)``,
 ``Bernoulli(p)`` or ``Binomial(n, p)``, so ``y`` is an integer for the discrete families and
 carries the outcome's own variability (brms ``posterior_predict``). ``kind="probability"``
@@ -53,6 +55,12 @@ def raw_design(model, df: pd.DataFrame) -> np.ndarray:
     interaction."""
     blocks = [pop_term_design(term, df) for term in model.spec.pop_terms]
     return np.concatenate(blocks, axis=1) if blocks else np.zeros((len(df), 0))
+
+
+def expected_response(fam, model, post, eta):
+    """``E[y]`` from the linear predictor: the family's inverse link, or its own function when the mean also depends
+    on an auxiliary parameter (the lognormal's ``exp(mu + sigma^2 / 2)``)."""
+    return fam.inverse_link(eta) if fam.expected_response is None else fam.expected_response(model, post, eta)
 
 
 def _coefficient_draws(post, model):
@@ -162,12 +170,12 @@ def _predict_by_hand(model, idata, df: pd.DataFrame | None, kind: str, seed, pol
         out = {"eta": (dims, mu)}
     else:                                                        # mu held the linear predictor eta
         fam = get_family(model.family)
-        mean = fam.inverse_link(mu)
+        mean = expected_response(fam, model, post, mu)
         out = {fam.mean_name: (dims, mean)}
         if fam.has_trials and kind in ("mean", "response"):      # binomial: expected = n p beside p
             out["expected"] = (dims, mean * df[model.spec.trials].to_numpy(dtype=np.int64))
         if kind == "response":
-            out["y"] = (dims, fam.draw_response(model, post, mean, df, rng))
+            out["y"] = (dims, fam.draw_response(model, post, mu, mean, df, rng))
     ds = xr.Dataset(out, coords={"chain": post["chain"], "draw": post["draw"], "__obs__": np.arange(len(df))})
     _prediction_attrs(model, ds, policies, new_levels, in_sample=False, manual=True, include_group_effects=include_group_effects)
     return ds
@@ -242,7 +250,7 @@ def predict(model, fit_result, *, newdata: pd.DataFrame | None = None, kind: str
         bambi_kind = "response" if kind == "response" else "response_params"
         out = model.bambi_model.predict(idata, kind=bambi_kind, data=df, inplace=False, random_seed=seed)
         mean_name = model.names["mean"]
-        mu = fam.inverse_link(out.posterior[model.names["linpred"]])
+        mu = expected_response(fam, model, out.posterior, out.posterior[model.names["linpred"]])
         data = {mean_name: mu.rename({mu.dims[-1]: "__obs__"}) if mu.dims[-1] != "__obs__" else mu}
         if kind == "response":
             y = out.posterior_predictive[model.names["y"]]

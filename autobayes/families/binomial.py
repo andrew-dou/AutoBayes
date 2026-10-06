@@ -35,7 +35,7 @@ def _response_warnings(spec, df) -> list[str]:
     ]
 
 
-def _draw_response(model, post, mean, df, rng):
+def _draw_response(model, post, eta, mean, df, rng):
     trials = df[model.spec.trials].to_numpy(dtype=np.int64)
     return rng.binomial(trials, mean).astype(np.int64)
 
@@ -67,6 +67,7 @@ BINOMIAL = FamilySpec(
     response_warnings=_response_warnings,
     response_upper_bound=lambda model: model.design.trials,
     inverse_link=expit,
+    expected_response=None,
     draw_response=_draw_response,
     manual_prediction=True, prediction_kinds=frozenset({"probability", "mean", "response", "linear"}),
     kind_error="kind must be 'probability', 'mean', 'response' or 'linear' for a binomial model",

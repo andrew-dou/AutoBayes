@@ -30,7 +30,7 @@ def _inverse_link(eta):
     return exp_mean(eta, "Gamma expected response")
 
 
-def _draw_response(model, post, mean, df, rng):
+def _draw_response(model, post, eta, mean, df, rng):
     """``Gamma(shape, rate = shape / mu)`` draws: numpy's ``gamma(shape, scale = mu / shape)``."""
     shape = post[model.names["shape"]].to_numpy()[..., None]
     return rng.gamma(shape, mean / shape)
@@ -53,6 +53,7 @@ GAMMA = FamilySpec(
     response_warnings=lambda spec, df: [],
     response_upper_bound=lambda model: None,
     inverse_link=_inverse_link,
+    expected_response=None,
     draw_response=_draw_response,
     manual_prediction=True, prediction_kinds=STANDARD_PREDICTION_KINDS,
     kind_error="kind must be 'mean', 'response' or 'linear'",

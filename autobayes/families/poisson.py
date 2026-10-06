@@ -21,7 +21,7 @@ def _inverse_link(eta):
     return exp_mean(eta, "Poisson expected count")
 
 
-def _draw_response(model, post, mean, df, rng):
+def _draw_response(model, post, eta, mean, df, rng):
     limit = np.iinfo(np.int64).max - 10 * np.sqrt(float(np.iinfo(np.int64).max))
     if np.any(mean >= limit):
         raise ValueError("Poisson response prediction exceeds the integer random-generator limit")
@@ -37,6 +37,7 @@ POISSON = FamilySpec(
     response_warnings=_response_warnings,
     response_upper_bound=lambda model: None,
     inverse_link=_inverse_link,
+    expected_response=None,
     draw_response=_draw_response,
     manual_prediction=True, prediction_kinds=STANDARD_PREDICTION_KINDS,
     kind_error="kind must be 'mean', 'response' or 'linear'",
