@@ -115,7 +115,9 @@ for (nm in names(base)) {
     }
   }
 }
-if (any(vapply(upar_map, is.null, TRUE))) stop("some unconstrained coordinates were never reached by probing")
+for (i in which(vapply(upar_map, is.null, TRUE))) {    # a jointly constrained block (a Cholesky factor): the
+  upar_map[[i]] <- list(index = i, par = NA, elem = NA, transform = "unreached", du = NA)   # adapter needs its own map
+}
 
 # -- seeded points: constrained values, log density, gradient --------------------------------------------
 set.seed(case$seed)

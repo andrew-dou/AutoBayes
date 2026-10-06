@@ -1,0 +1,73 @@
+{
+ "id": "poisson_offset",
+ "tier": "A",
+ "feature": "A06_offset",
+ "note": "brms standata carries offsets; the linear predictor adds them",
+ "seed": 147,
+ "n_points": 8,
+ "gate": {
+  "expect": "fail",
+  "reason": "A06_offset not implemented; remove this field when it lands"
+ },
+ "data": {
+  "generator": "tier_a",
+  "seed": 47,
+  "n": 36,
+  "newdata": {
+   "seed": 147,
+   "n": 5
+  }
+ },
+ "brms": {
+  "formula": "cnt ~ x + offset(log(exposure)) + (1 | g)",
+  "family": {
+   "family": "poisson"
+  },
+  "factors": {
+   "g": [
+    "a",
+    "b",
+    "c",
+    "d",
+    "e",
+    "f"
+   ]
+  },
+  "priors": [
+   {
+    "prior": "normal(0, 2)",
+    "class": "Intercept"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "b"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "sd",
+    "group": "g"
+   }
+  ]
+ },
+ "autobayes": {
+  "constructor": "poisson",
+  "formula": "cnt ~ x + offset(log(exposure)) + (1 | g)",
+  "kwargs": {},
+  "priors": {
+   "intercept": [
+    "Normal",
+    0,
+    2
+   ],
+   "b": [
+    "Normal",
+    0,
+    1
+   ],
+   "sd": [
+    "HalfNormal",
+    1
+   ]
+  }
+ }
+}

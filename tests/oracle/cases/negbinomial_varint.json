@@ -1,0 +1,82 @@
+{
+ "id": "negbinomial_varint",
+ "tier": "A",
+ "feature": "A08_negbinomial",
+ "note": "brms negbinomial: log link on mu, shape parameter with a gamma prior",
+ "seed": 148,
+ "n_points": 8,
+ "gate": {
+  "expect": "fail",
+  "reason": "A08_negbinomial not implemented; remove this field when it lands"
+ },
+ "data": {
+  "generator": "tier_a",
+  "seed": 48,
+  "n": 36,
+  "newdata": {
+   "seed": 148,
+   "n": 5
+  }
+ },
+ "brms": {
+  "formula": "ynb ~ x + (1 | g)",
+  "family": {
+   "family": "negbinomial"
+  },
+  "factors": {
+   "g": [
+    "a",
+    "b",
+    "c",
+    "d",
+    "e",
+    "f"
+   ]
+  },
+  "priors": [
+   {
+    "prior": "normal(0, 2)",
+    "class": "Intercept"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "b"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "sd",
+    "group": "g"
+   },
+   {
+    "prior": "gamma(0.01, 0.01)",
+    "class": "shape"
+   }
+  ]
+ },
+ "autobayes": {
+  "constructor": "negbinomial",
+  "formula": "ynb ~ x + (1 | g)",
+  "kwargs": {},
+  "priors": {
+   "intercept": [
+    "Normal",
+    0,
+    2
+   ],
+   "b": [
+    "Normal",
+    0,
+    1
+   ],
+   "sd": [
+    "HalfNormal",
+    1
+   ],
+   "shape": [
+    "Gamma",
+    0.01,
+    0.01
+   ]
+  }
+ }
+}

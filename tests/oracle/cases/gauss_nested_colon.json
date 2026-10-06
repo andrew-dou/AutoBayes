@@ -1,0 +1,99 @@
+{
+ "id": "gauss_nested_colon",
+ "tier": "A",
+ "feature": "A03_grouping_syntax",
+ "note": "the interaction factor g:h as a grouping factor next to g",
+ "seed": 142,
+ "n_points": 8,
+ "gate": {
+  "expect": "fail",
+  "reason": "A03_grouping_syntax not implemented; remove this field when it lands"
+ },
+ "data": {
+  "generator": "tier_a",
+  "seed": 42,
+  "n": 36,
+  "newdata": {
+   "seed": 142,
+   "n": 5,
+   "pairs_from_data": true
+  }
+ },
+ "brms": {
+  "formula": "y ~ x + (1 | g) + (1 | g:h)",
+  "family": {
+   "family": "gaussian"
+  },
+  "factors": {
+   "g": [
+    "a",
+    "b",
+    "c",
+    "d",
+    "e",
+    "f"
+   ],
+   "h": [
+    "h1",
+    "h2",
+    "h3",
+    "h4"
+   ]
+  },
+  "priors": [
+   {
+    "prior": "normal(0, 5)",
+    "class": "Intercept"
+   },
+   {
+    "prior": "normal(0, 2)",
+    "class": "b"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "sd",
+    "group": "g"
+   },
+   {
+    "prior": "normal(0, 0.5)",
+    "class": "sd",
+    "group": "g:h"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "sigma"
+   }
+  ]
+ },
+ "autobayes": {
+  "constructor": "gaussian",
+  "formula": "y ~ x + (1 | g) + (1 | g:h)",
+  "kwargs": {},
+  "priors": {
+   "intercept": [
+    "Normal",
+    0,
+    5
+   ],
+   "b": [
+    "Normal",
+    0,
+    2
+   ],
+   "sd": {
+    "g": [
+     "HalfNormal",
+     1
+    ],
+    "g:h": [
+     "HalfNormal",
+     0.5
+    ]
+   },
+   "sigma": [
+    "HalfNormal",
+    1
+   ]
+  }
+ }
+}

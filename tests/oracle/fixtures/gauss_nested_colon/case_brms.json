@@ -1,0 +1,49 @@
+{
+ "factors": {
+  "g": [
+   "a",
+   "b",
+   "c",
+   "d",
+   "e",
+   "f"
+  ],
+  "h": [
+   "h1",
+   "h2",
+   "h3",
+   "h4"
+  ]
+ },
+ "family": {
+  "family": "gaussian"
+ },
+ "formula": "y ~ x + (1 | g) + (1 | g:h)",
+ "id": "gauss_nested_colon",
+ "n_points": 8,
+ "priors": [
+  {
+   "class": "Intercept",
+   "prior": "normal(0, 5)"
+  },
+  {
+   "class": "b",
+   "prior": "normal(0, 2)"
+  },
+  {
+   "class": "sd",
+   "group": "g",
+   "prior": "normal(0, 1)"
+  },
+  {
+   "class": "sd",
+   "group": "g:h",
+   "prior": "normal(0, 0.5)"
+  },
+  {
+   "class": "sigma",
+   "prior": "normal(0, 1)"
+  }
+ ],
+ "seed": 142
+}

@@ -48,17 +48,42 @@ def baseline(seed: int, n: int = 36) -> pd.DataFrame:
     })
 
 
-def newdata(seed: int, n: int = 5) -> pd.DataFrame:
-    """Rows to predict on, with fitted levels only (unseen levels need stochastic policies on both sides)."""
+def newdata(seed: int, n: int = 5, *, tier_a: bool = False, pairs_from: pd.DataFrame | None = None) -> pd.DataFrame:
+    """Rows to predict on, with fitted levels only (unseen levels need stochastic policies on both sides).
+    ``pairs_from`` copies (g, h) from random rows of the fitted frame, so a nested factor ``g:h`` sees only fitted
+    combinations (brms refuses new levels of a grouping factor by default)."""
     rng = np.random.default_rng(seed)
-    return pd.DataFrame({
+    df = pd.DataFrame({
         "x": np.round(rng.normal(0.0, 1.0, n), 4), "w": np.round(rng.normal(0.5, 1.5, n), 4),
         "z": rng.choice(LEVELS["z"], size=n).astype(object), "g": rng.choice(LEVELS["g"], size=n).astype(object),
         "h": rng.choice(LEVELS["h"], size=n).astype(object), "size": rng.integers(1, 13, n).astype(np.int64),
     })
+    if tier_a:                                                  # drawn after the shared columns, which stay as above
+        df["xpos"] = np.round(np.exp(rng.normal(0.0, 0.5, n)), 4)
+        df["exposure"] = np.round(np.exp(rng.normal(1.0, 0.4, n)), 4)
+    if pairs_from is not None:
+        rows = rng.integers(0, len(pairs_from), n)
+        df["g"] = pairs_from["g"].to_numpy(dtype=object)[rows]
+        df["h"] = pairs_from["h"].to_numpy(dtype=object)[rows]
+    return df
 
 
-GENERATORS = {"baseline": baseline}
+def tier_a(seed: int, n: int = 36) -> pd.DataFrame:
+    """`baseline` plus the columns Tier A features need: positive `xpos` and `ypos` (log/Gamma/lognormal),
+    `exposure` for an offset, a proportion `prop` in (0, 1) for Beta, overdispersed counts `ynb`. Built from
+    its own draws after `baseline`'s so the shared columns equal `baseline(seed, n)` exactly."""
+    df = baseline(seed, n)
+    rng = np.random.default_rng(seed + 7919)
+    eta = 0.3 + 0.4 * df["x"].to_numpy()
+    df["xpos"] = np.round(np.exp(rng.normal(0.0, 0.5, n)), 4)
+    df["ypos"] = np.round(np.exp(eta + rng.normal(0.0, 0.5, n)), 4)
+    df["exposure"] = np.round(np.exp(rng.normal(1.0, 0.4, n)), 4)
+    df["prop"] = np.round(np.clip(rng.beta(2.0 + 2.0 * (eta - eta.min()), 3.0, n), 0.02, 0.98), 4)
+    df["ynb"] = rng.negative_binomial(2.0, 1.0 / (1.0 + np.exp(eta)), n).astype(np.int64)
+    return df
+
+
+GENERATORS = {"baseline": baseline, "tier_a": tier_a}
 
 
 def make(spec: dict) -> tuple[pd.DataFrame, pd.DataFrame | None]:
@@ -66,7 +91,10 @@ def make(spec: dict) -> tuple[pd.DataFrame, pd.DataFrame | None]:
     gen = GENERATORS[spec["generator"]]
     data = gen(int(spec["seed"]), int(spec.get("n", 36)))
     nd = spec.get("newdata")
-    return data, (newdata(int(nd["seed"]), int(nd.get("n", 5))) if nd else None)
+    if not nd:
+        return data, None
+    return data, newdata(int(nd["seed"]), int(nd.get("n", 5)), tier_a=spec["generator"] == "tier_a",
+                         pairs_from=data if nd.get("pairs_from_data") else None)
 
 
 def write_csv(frame: pd.DataFrame, path) -> None:
