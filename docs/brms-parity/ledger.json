@@ -133,13 +133,22 @@
    "depends_on": [
     "P4_term_model"
    ],
-   "status": "queued",
+   "status": "implementing",
    "summary": "(1 + x || g): independent varying slopes, re-landed from PR #8's code and tests; PR #8 then closes as superseded",
    "pr": null,
-   "attempts": 0,
+   "attempts": 1,
    "gates": {},
    "divergences": [],
-   "next_action": ""
+   "next_action": "agent implementing in AutoBayes-worktrees/parity-a01 (stacked on P4); the four cases carry gate.expect=fail until it lands",
+   "fixtures": {
+    "pr": 26,
+    "cases": [
+     "gauss_slope_independent",
+     "gauss_slope_two_groups",
+     "bernoulli_slope_categorical",
+     "poisson_slope_independent"
+    ]
+   }
   },
   {
    "id": "A02_correlated_slopes",
