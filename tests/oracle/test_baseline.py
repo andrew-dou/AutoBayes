@@ -4,10 +4,22 @@ import pytest
 from tests.oracle import fixture as fx
 from tests.oracle import gates
 
-CASES = [cid for cid in fx.case_ids() if fx.has_fixture(cid) and "autobayes" in fx.load_case(cid)]
+def _cases():
+    """Every frozen case with an AutoBayes call. A case whose feature has not landed carries
+    ``"gate": {"expect": "fail", "reason": ...}`` and runs as a strict expected failure: the fixture is frozen
+    first, the tests go red for the right reason, and the implementing branch removes the field."""
+    out = []
+    for cid in fx.case_ids():
+        case = fx.load_case(cid)
+        if not fx.has_fixture(cid) or "autobayes" not in case:
+            continue
+        gate = case.get("gate") or {}
+        marks = [pytest.mark.xfail(strict=True, reason=gate["reason"])] if gate.get("expect") == "fail" else []
+        out.append(pytest.param(cid, id=cid, marks=marks))
+    return out
 
 
-@pytest.fixture(scope="module", params=CASES, ids=CASES)
+@pytest.fixture(scope="module", params=_cases())
 def bundle(request):
     return gates.Bundle(request.param)
 

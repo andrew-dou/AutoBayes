@@ -1,0 +1,88 @@
+{
+ "id": "poisson_slope_independent",
+ "tier": "A",
+ "feature": "A01_independent_slopes",
+ "note": "log link with an independent varying slope",
+ "seed": 134,
+ "n_points": 8,
+ "gate": {
+  "expect": "fail",
+  "reason": "A01 independent varying slopes not implemented; remove this field when they land"
+ },
+ "data": {
+  "generator": "baseline",
+  "seed": 34,
+  "n": 36,
+  "newdata": {
+   "seed": 134,
+   "n": 5
+  }
+ },
+ "brms": {
+  "formula": "cnt ~ x + (1 + x || g)",
+  "family": {
+   "family": "poisson"
+  },
+  "factors": {
+   "g": [
+    "a",
+    "b",
+    "c",
+    "d",
+    "e",
+    "f"
+   ]
+  },
+  "priors": [
+   {
+    "prior": "normal(0, 2)",
+    "class": "Intercept"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "b"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "sd",
+    "group": "g",
+    "coef": "Intercept"
+   },
+   {
+    "prior": "normal(0, 0.5)",
+    "class": "sd",
+    "group": "g",
+    "coef": "x"
+   }
+  ]
+ },
+ "autobayes": {
+  "constructor": "poisson",
+  "formula": "cnt ~ x + (1 + x || g)",
+  "kwargs": {},
+  "priors": {
+   "intercept": [
+    "Normal",
+    0,
+    2
+   ],
+   "b": [
+    "Normal",
+    0,
+    1
+   ],
+   "sd": {
+    "g": {
+     "Intercept": [
+      "HalfNormal",
+      1
+     ],
+     "x": [
+      "HalfNormal",
+      0.5
+     ]
+    }
+   }
+  }
+ }
+}
