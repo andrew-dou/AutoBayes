@@ -6,12 +6,18 @@ group-level terms (``GroupTerm``: ``(1 | g)``, ``(1 + x || g)``); every flat vie
 
 Supported::
 
-    response ~ [1 + | 0 +] predictor [+ predictor ...] [+ x:z ...] [+ offset(col) | offset(log(col))]
+    response ~ [1 + | 0 +] predictor [+ predictor ...] [+ a:b ...] [+ offset(col) | offset(log(col))]
                [+ (1 | factor) | (1 + x [+ w ...] || factor) ...]
     successes | trials(n) ~ ...  the same right-hand side  (binomial, brms syntax)
 
 ``offset(col)`` and ``offset(log(col))`` (A06) add a known column to the linear predictor with no coefficient and
 no prior, as brms's ``offset()`` does; one offset term per formula, held in ``ModelSpec.offset`` (docs/offset.md).
+
+An interaction ``a:b`` (or ``a*b`` = ``a + b + a:b``) is two-way between any two main effects of the formula (A04,
+docs/interactions.md): numeric by declared categorical (``x:z``, the numeric column times each non-reference
+indicator), numeric by numeric (``x:w``, the elementwise product, one coefficient) or categorical by categorical
+(``z:h``, one indicator product per cell of non-reference levels, R's treatment coding of the interaction). Both
+main effects are required; three-way interactions are refused.
 
 A grouping factor is a column, or two columns combined (A03, docs/grouping-syntax.md): ``(1 | g:h)`` groups by the
 observed ``(g, h)`` combinations, labelled ``g_h`` as brms labels them, and ``(1 | g/h)`` is brms's nesting
@@ -21,9 +27,6 @@ Group-level terms are optional and additive across distinct factors (M3c-3): a f
 model, as in brms ``brmsformula`` where group-level terms are optional; ``y ~ 1`` is intercept-only. ``(1 + x || g)``
 is brms's independent varying intercept and slope (A01): each numeric population-level term named varies by level
 with its own SD and no correlation; brms's correlated form ``(1 + x | g)`` is refused (docs/varying-slopes.md).
-
-with ``x:z`` (or the shorthand ``x*z`` = ``x + z + x:z``) distinct interactions between numeric terms
-and declared categorical terms whose main effects are both present (milestone M3a-3).
 
 Predictors are numeric columns, or categorical columns declared with ``categorical={column:
 reference_level}`` (treatment coding, milestone M3a-1); each grouping variable is a column
@@ -100,36 +103,51 @@ POP_TERM_KINDS = ("numeric", "categorical", "interaction")
 @dataclass(frozen=True)
 class PopTerm:
     """One population-level term as written in the formula: ``x`` (``"numeric"``), ``z`` (``"categorical"``,
-    declared with its reference level) or ``x:z`` (``"interaction"``: one numeric by one categorical term).
+    declared with its reference level) or a two-way ``"interaction"``: ``x:z`` (numeric by categorical), ``x:w``
+    (numeric by numeric) or ``z:h`` (categorical by categorical; A04, docs/interactions.md).
 
     ``columns`` are the design-column labels the term expands to, Bambi/formulae's own, in design order:
-    ``x``; ``z[l]`` per coefficient level ``l``; ``x:z[l]``. ``levels`` are the coefficient levels of a
-    vector term (a categorical term's coefficient levels, an interaction's non-reference levels), empty for
-    a scalar term. A categorical term's levels are known once the data are seen; until then it has no
-    levels and its single column is its own name, a placeholder, as ``ModelSpec.columns`` always listed it.
-    The coefficients of the term are brms's ``b`` entries for its columns.
+    ``x``; ``z[l]`` per coefficient level ``l``; ``x:z[l]``; ``x:w``; ``z[l]:h[m]`` per cell, the first operand's
+    level changing slowest. ``levels`` are the coefficient levels of a vector term (a categorical term's
+    coefficient levels; an interaction's non-reference levels of its categorical side, or its cells ``"l, m"``
+    labelled as Bambi labels them), empty for a scalar term. A categorical term's levels are known once the data
+    are seen; until then it has no levels and its single column is its own name, a placeholder, as
+    ``ModelSpec.columns`` always listed it. ``categorical`` names the operands that are declared categorical
+    (``()``, ``("z",)``, ``("z", "h")``), which is what makes a term a vector term before its levels are known;
+    when it is not given it is read from the kind, with the last operand of an interaction taken as the
+    categorical side (the ``x:z`` form). The coefficients of the term are brms's ``b`` entries for its columns.
     """
 
     name: str
     kind: str
     columns: tuple[str, ...]
     levels: tuple[str, ...] = ()
+    categorical: tuple[str, ...] | None = None
 
     def __post_init__(self):
         if self.kind not in POP_TERM_KINDS:
             raise ValueError(f"PopTerm kind must be one of {list(POP_TERM_KINDS)}, got {self.kind!r}")
         object.__setattr__(self, "columns", tuple(self.columns))
         object.__setattr__(self, "levels", tuple(self.levels))
+        if self.categorical is None:
+            default = {"numeric": (), "categorical": (self.name,), "interaction": (self.operands[-1],)}
+            object.__setattr__(self, "categorical", default[self.kind])
+        else:
+            object.__setattr__(self, "categorical", tuple(self.categorical))
+        if any(c not in self.operands for c in self.categorical):
+            raise ValueError(f"PopTerm {self.name!r}: categorical operands {list(self.categorical)} are not among its operands {list(self.operands)}")
 
     @property
     def operands(self) -> tuple[str, ...]:
-        """The data columns the term is built from: ``(x,)``, ``(z,)`` or ``(x, z)`` (numeric first)."""
+        """The data columns the term is built from: ``(x,)``, ``(z,)``, ``(x, z)`` (numeric first), ``(x, w)`` or
+        ``(z, h)`` (main-effect order)."""
         return tuple(self.name.split(":"))
 
     @property
     def is_vector(self) -> bool:
-        """A term with one coefficient per level (categorical or interaction), as opposed to one slope."""
-        return self.kind != "numeric"
+        """A term with one coefficient per level (a categorical term, or an interaction with a categorical
+        operand), as opposed to one coefficient (a numeric term or a numeric-by-numeric interaction)."""
+        return bool(self.categorical)
 
 
 @dataclass(frozen=True)
@@ -274,34 +292,76 @@ def _find_categorical(categoricals, name: str) -> Categorical:
     raise KeyError(name)
 
 
+def interaction_cells(z: Categorical, h: Categorical) -> tuple[tuple[str, str], ...]:
+    """The cells of the categorical-by-categorical interaction ``z:h``: every pair of non-reference levels, the
+    first operand's level changing slowest (the order Bambi/formulae give the columns ``z[l]:h[m]``). R codes
+    the interaction of two treatment-coded factors whose main effects are present the same way."""
+    return tuple((a, b) for a in z.contrasts for b in h.contrasts)
+
+
 def pop_term(name: str, kind: str, categoricals=()) -> PopTerm:
     """The population-level term ``name`` of the given kind, with its coefficient levels and design columns
-    read from the declared categorical terms (a categorical term's coefficient levels; the non-reference
-    levels of an interaction's categorical side; none for a numeric term)."""
+    read from the declared categorical terms: a categorical term's coefficient levels; for an interaction, the
+    non-reference levels of its one categorical operand (``x:z[l]``), the cells of its two categorical operands
+    (``z[l]:h[m]``, levels ``"l, m"``), or no levels at all when both operands are numeric (``x:w``); none for a
+    numeric term."""
     if kind == "numeric":
-        levels: tuple[str, ...] = ()
-    elif kind == "categorical":
+        return PopTerm(name, kind, (name,), (), ())
+    if kind == "categorical":
         levels = _find_categorical(categoricals, name).coefficients
-    elif kind == "interaction":
-        levels = _find_categorical(categoricals, name.split(":", 1)[1]).contrasts
-    else:
+        return PopTerm(name, kind, tuple(f"{name}[{l}]" for l in levels) if levels else (name,), levels, (name,))
+    if kind != "interaction":
         raise ValueError(f"PopTerm kind must be one of {list(POP_TERM_KINDS)}, got {kind!r}")
-    columns = tuple(f"{name}[{l}]" for l in levels) if levels else (name,)
-    return PopTerm(name, kind, columns, levels)
+    operands = tuple(name.split(":"))
+    cats = tuple(c for c in operands if any(k.name == c for k in categoricals))
+    if not cats:                                                   # x:w: the product column, one coefficient
+        return PopTerm(name, kind, (name,), (), ())
+    if len(cats) == 1:                                             # x:z: the numeric column times each indicator
+        levels = _find_categorical(categoricals, cats[0]).contrasts
+        return PopTerm(name, kind, tuple(f"{name}[{l}]" for l in levels) if levels else (name,), levels, cats)
+    z, h = (_find_categorical(categoricals, c) for c in cats)      # z:h: one indicator product per cell
+    cells = interaction_cells(z, h)
+    levels = tuple(f"{a}, {b}" for a, b in cells)
+    if len(set(levels)) != len(levels):
+        dup = next(l for l in levels if levels.count(l) > 1)
+        raise FormulaError(
+            f"interaction {name!r}: two cells both label as {dup!r} (cells are labelled 'level, level', as Bambi labels "
+            "them); rename the levels so that the cell labels are distinct"
+        )
+    columns = tuple(f"{z.name}[{a}]:{h.name}[{b}]" for a, b in cells) if cells else (name,)
+    return PopTerm(name, kind, columns, levels, cats)
 
 
-def pop_term_design(term: PopTerm, df: pd.DataFrame) -> np.ndarray:
+def pop_term_design(term: PopTerm, df: pd.DataFrame, categoricals=()) -> np.ndarray:
     """The raw design block of one population-level term on ``df``: ``(n, len(term.columns))``, one column per
     entry of ``term.columns``. A numeric term is its column as given; a categorical term one 0/1 indicator
     per coefficient level (reference rows all zero); an interaction ``x:z`` the numeric column times each
-    indicator. Categorical columns are read as string labels (a fitted frame holds them recoded)."""
+    indicator, ``x:w`` the elementwise product of the two columns, ``z:h`` the product of the two indicators
+    of each cell, which needs the declared ``Categorical`` terms for the operands' non-reference levels.
+    Categorical columns are read as string labels (a fitted frame holds them recoded)."""
+    n = len(df)
     if term.kind == "numeric":
         return df[term.name].to_numpy(dtype=float)[:, None]
-    *numeric, z = term.operands
+    if term.kind == "interaction" and not term.categorical:
+        a, b = (df[c].to_numpy(dtype=float) for c in term.operands)
+        return (a * b)[:, None]
+    if len(term.categorical) == 2:
+        if not categoricals:
+            raise ValueError(f"pop_term_design needs the declared Categorical terms to build the cells of {term.name!r}")
+        z, h = (_find_categorical(categoricals, c) for c in term.categorical)
+        lz, lh = df[z.name].astype(str).to_numpy(), df[h.name].astype(str).to_numpy()
+        cells = interaction_cells(z, h)
+        if len(cells) != len(term.levels):
+            raise ValueError(f"{term.name!r} has {len(term.levels)} cells but its categorical terms give {len(cells)}")
+        if not cells:
+            return np.zeros((n, 0))
+        return np.column_stack([(lz == a) & (lh == b) for a, b in cells]).astype(float)
+    (z,) = term.categorical
+    numeric = [c for c in term.operands if c != z]
     labels = df[z].astype(str).to_numpy()
-    x = df[numeric[0]].to_numpy(dtype=float) if numeric else np.ones(len(labels))
+    x = df[numeric[0]].to_numpy(dtype=float) if numeric else np.ones(n)
     if not term.levels:
-        return np.zeros((len(df), 0))
+        return np.zeros((n, 0))
     return np.column_stack([x * (labels == lvl) for lvl in term.levels])
 
 
@@ -428,8 +488,15 @@ class ModelSpec:
 
     @property
     def interactions(self) -> tuple[tuple[str, str], ...]:
-        """``(numeric, categorical)`` per interaction term, in term order."""
+        """The operand pair of every interaction term, in term order: ``(numeric, categorical)`` for ``x:z``,
+        ``(x, w)`` or ``(z, h)`` in main-effect order otherwise."""
         return tuple(t.operands for t in self.pop_terms if t.kind == "interaction")
+
+    @property
+    def pop_columns(self) -> tuple[str, ...]:
+        """The data columns the population-level terms read, in formula order without repeats: the numeric and
+        categorical main effects (an interaction reads its main effects' columns)."""
+        return tuple(dict.fromkeys(c for t in self.pop_terms for c in t.operands))
 
     @property
     def groups(self) -> tuple[str, ...]:
@@ -494,7 +561,7 @@ class ModelSpec:
         return tuple(t.name for t in self.pop_terms if t.kind == "interaction")
 
     def interaction_of(self, term: str) -> tuple[str, str]:
-        """``(numeric, categorical)`` of an interaction term; ``KeyError`` for any other name."""
+        """The operands of an interaction term (``(numeric, categorical)`` for ``x:z``); ``KeyError`` for any other name."""
         t = self.pop_term(term)
         if t.kind != "interaction":
             raise KeyError(term)
@@ -505,18 +572,20 @@ class ModelSpec:
         return any(t.name == term and t.is_vector for t in self.pop_terms)
 
     def levels_of(self, term: str) -> tuple[str, ...]:
-        """Coefficient levels of a vector-valued term: a categorical term's coefficient levels,
-        or the non-reference levels of an interaction's categorical side. ``()`` for a numeric term."""
+        """Coefficient levels of a vector-valued term: a categorical term's coefficient levels, the non-reference
+        levels of an interaction's categorical side, or the cells ``"l, m"`` of a categorical-by-categorical
+        interaction. ``()`` for a scalar term."""
         return next((t.levels for t in self.pop_terms if t.name == term), ())
 
     def term_columns(self, term: str) -> tuple[str, ...]:
-        """Design-column labels of one term, Bambi/formulae's own: ``x``; ``z[l]``; ``x:z[l]``."""
+        """Design-column labels of one term, Bambi/formulae's own: ``x``; ``z[l]``; ``x:z[l]``; ``x:w``; ``z[l]:h[m]``."""
         return next((t.columns for t in self.pop_terms if t.name == term), (term,))
 
     @property
     def columns(self) -> tuple[str, ...]:
         """Design-column labels in design order: the terms' columns, one after another (a categorical
-        term expanded into ``z[level]`` dummies, reference omitted; an interaction into ``x:z[level]``)."""
+        term expanded into ``z[level]`` dummies, reference omitted; an interaction into ``x:z[level]``,
+        ``x:w`` or ``z[l]:h[m]``)."""
         return tuple(col for t in self.pop_terms for col in t.columns)
 
     @property
@@ -532,7 +601,8 @@ class ModelSpec:
 
     @property
     def canonical_formula(self) -> str:
-        """The formula as expanded: main effects, then interactions spelled ``numeric:categorical``."""
+        """The formula as expanded: main effects, then interactions (``numeric:categorical``; otherwise the two
+        operands in main-effect order), then the offset and the group terms."""
         lhs = self.response if self.trials is None else f"{self.response} | trials({self.trials})"
         return f"{lhs} ~ {self.rhs}"
 
@@ -891,29 +961,42 @@ def parse_formula(formula: str, data: pd.DataFrame | None = None, family: str = 
                 raise FormulaError(f"{piece!r}: the trials column {trials!r} cannot be the offset")
             offsets.append((offset, piece))
             continue
+        stars, colons = _split_top_level(piece, "*"), _split_top_level(piece, ":")
+        if len(stars) > 1 or len(colons) > 1:                   # an interaction a:b, or the shorthand a*b
+            if len(stars) > 1 and len(colons) > 1:
+                raise FormulaError(f"{piece!r}: mixing '*' and ':' in one term is not supported; write 'x*z' or 'x + z + x:z'")
+            factors = [f.strip() for f in (stars if len(stars) > 1 else colons)]
+            if len(factors) != 2 or any(f == "" for f in factors):
+                raise FormulaError(
+                    f"{piece!r}: only a two-way interaction is supported in this slice ({piece!r} names {len(factors)} terms); "
+                    "three-way and higher-order interactions are not."
+                )
+            left, right = factors
+            for side in (left, right):
+                if side == response or (trials is not None and side == trials):
+                    raise FormulaError(f"{piece!r}: the response or trials column cannot enter an interaction")
+                if _OFFSET_RE.match(side):
+                    raise FormulaError(
+                        f"{piece!r}: offset() cannot enter an interaction; an offset is a known column added to the linear "
+                        "predictor with no coefficient"
+                    )
+                if "(" in side or ")" in side:
+                    raise FormulaError(
+                        f"{piece!r}: function calls and transformations inside the formula are not supported in an "
+                        "interaction; transform the column in the data frame and interact the column instead."
+                    )
+            if left == right:
+                raise FormulaError(f"{piece!r}: a term cannot interact with itself")
+            if len(stars) > 1:                                      # a*b is shorthand for a + b + a:b
+                _main(left, piece)
+                _main(right, piece)
+            raw_interactions.append((left, right, piece))
+            continue
         if "(" in piece or ")" in piece:
             raise FormulaError(
                 f"{piece!r}: function calls and transformations inside the formula are "
                 "not supported in M0; transform the column in the data frame instead."
             )
-        if "*" in piece or ":" in piece:
-            sep = "*" if "*" in piece else ":"
-            if "*" in piece and ":" in piece:
-                raise FormulaError(f"{piece!r}: mixing '*' and ':' in one term is not supported; write 'x*z' or 'x + z + x:z'")
-            factors = [f.strip() for f in piece.split(sep)]
-            if len(factors) != 2 or any(f == "" for f in factors):
-                raise FormulaError(
-                    f"{piece!r}: only a two-way interaction between one numeric and one categorical term is "
-                    "supported in this slice (docs/m3a2-decision.md); higher-order interactions are not."
-                )
-            left, right = factors
-            if left == right:
-                raise FormulaError(f"{piece!r}: a term cannot interact with itself")
-            if sep == "*":                                          # a*b is shorthand for a + b + a:b
-                _main(left, piece)
-                _main(right, piece)
-            raw_interactions.append((left, right, piece))
-            continue
         _main(piece, piece)
 
     if saw_intercept_token and remove_intercept:
@@ -1013,7 +1096,7 @@ def parse_formula(formula: str, data: pd.DataFrame | None = None, family: str = 
                     f"per level of {s!r}) is not supported in this subset; only a numeric population-level term can "
                     f"vary by {term.factor!r}"
                 )
-    interactions: list[tuple[str, str]] = []
+    interactions: list[str] = []                             # canonical interaction names, in formula order
     for left, right, piece in raw_interactions:
         for side in (left, right):
             if not re.fullmatch(_IDENT, side):
@@ -1023,25 +1106,19 @@ def parse_formula(formula: str, data: pd.DataFrame | None = None, family: str = 
             if side == response or (trials is not None and side == trials):
                 raise FormulaError(f"{piece!r}: the response or trials column cannot enter an interaction")
         cats = [s for s in (left, right) if s in cat_names]
-        nums = [s for s in (left, right) if s not in cat_names]
-        if len(cats) != 1:
-            kind = "two categorical terms" if len(cats) == 2 else "two numeric terms"
-            raise FormulaError(
-                f"{piece!r}: an interaction between {kind} is not supported in this slice; only one numeric "
-                "by one declared categorical term is (docs/m3a2-decision.md). A categorical side must be "
-                "declared in categorical=."
-            )
-        x, z = nums[0], cats[0]
-        if (x, z) in interactions:
-            raise FormulaError(f"{piece!r}: the interaction '{x}:{z}' appears more than once after expansion")
-        interactions.append((x, z))
-    parts = ([*predictors, *(f"{x}:{z}" for x, z in interactions)] + ([offset.term] if offset is not None else [])
-             + [t.canonical for t in group_terms])
+        if len(cats) == 1:                                       # x:z: numeric first, as the term model has always spelled it
+            name = f"{[s for s in (left, right) if s not in cat_names][0]}:{cats[0]}"
+        else:                                                    # x:w, z:h: main-effect order, as R orders a term's variables
+            name = ":".join(sorted((left, right), key=predictors.index))
+        if name in interactions:
+            raise FormulaError(f"{piece!r}: the interaction {name!r} appears more than once after expansion")
+        interactions.append(name)
+    parts = [*predictors, *interactions] + ([offset.term] if offset is not None else []) + [t.canonical for t in group_terms]
     canonical_rhs = " + ".join(parts) if parts else "1"           # intercept-only population model: 'y ~ 1'
     if remove_intercept:
         canonical_rhs = "0 + " + canonical_rhs
     pop_terms = (*(pop_term(p, "categorical" if p in cat_names else "numeric", categoricals) for p in predictors),
-                 *(pop_term(f"{x}:{z}", "interaction", categoricals) for x, z in interactions))
+                 *(pop_term(name, "interaction", categoricals) for name in interactions))
     spec = ModelSpec(
         formula=formula.strip(), response=response, intercept=not remove_intercept, trials=trials,
         rhs=canonical_rhs, categoricals=categoricals, pop_terms=pop_terms, group_terms=tuple(group_terms),
@@ -1197,7 +1274,7 @@ def validate_data(spec: ModelSpec, data: pd.DataFrame, family: str = "gaussian")
     if (spec.trials is not None) != fam.has_trials:
         raise FormulaError("a trials column is present exactly for the binomial family")
     operands = [c for t in spec.group_terms for c in t.operands]   # the columns the grouping factors are read from
-    needed = ([spec.response, *spec.predictors, *spec.categorical_names] + operands
+    needed = ([spec.response, *spec.pop_columns] + operands
               + ([spec.trials] if spec.trials else []) + ([spec.offset.column] if spec.offset is not None else []))
     needed = list(dict.fromkeys(needed))                         # the offset column may also be a predictor
     missing = [c for c in needed if c not in data.columns]
@@ -1244,6 +1321,9 @@ def validate_data(spec: ModelSpec, data: pd.DataFrame, family: str = "gaussian")
     for c in spec.predictors:
         if np.isclose(np.std(data[c].to_numpy(dtype=float)), 0.0):
             raise FormulaError(f"predictor {c!r} is constant")
+    for t in spec.pop_terms:                                      # a numeric-by-numeric product column is a predictor too
+        if t.kind == "interaction" and not t.categorical and np.isclose(np.std(pop_term_design(t, data)), 0.0):
+            raise FormulaError(f"interaction {t.name!r} is constant ({' * '.join(t.operands)} takes a single value in the fitted rows)")
     return ModelSpec(
         formula=spec.formula, response=spec.response, intercept=spec.intercept, levels_by_group=levels_by_group,
         trials=spec.trials, rhs=spec.rhs, categoricals=tuple(categoricals),

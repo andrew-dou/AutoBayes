@@ -13,7 +13,7 @@ from tests.conftest import PRIORS, simulate
     ("y ~ x + (1 | g:h:k)", "only two factors"),
     ("y ~ x + (1 | g) + (1 | g)", "duplicate grouping"),
     ("y ~ x + (0 + x || g)", "without the varying intercept"),   # A01: '(1 || g)' is now accepted as '(1 | g)'
-    ("y ~ x * w + (1 | g)", "two numeric terms"),          # M3a-2: only numeric-by-declared-categorical interactions
+    ("y ~ x * w * z + (1 | g)", "only a two-way interaction"),   # A04: 'x * w' and 'z * h' are now accepted; three-way is not
     ("y ~ x:w + (1 | g)", "main effect 'x' is missing"),
     ("y ~ log(x) + (1 | g)", "function calls"),
     ("y ~ (1 | g)", "no population-level predictor"),

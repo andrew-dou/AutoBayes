@@ -23,7 +23,7 @@ from collections.abc import Mapping
 
 from autobayes.families import FAMILIES, FamilySpec, get_family
 from autobayes.formula import (Categorical, FormulaError, ModelSpec, bambi_group_name, binomial_counts, categorical_labels,
-                               factor_column, group_labels, parse_formula, pop_term_design, sd_tag)
+                               factor_column, group_labels, interaction_cells, parse_formula, pop_term_design, sd_tag)
 from autobayes.priors import Priors
 
 _bambi_group_name = bambi_group_name          # ``1|g`` for the varying intercept of ``g``, ``x|g`` for the slope of ``x``
@@ -140,7 +140,7 @@ class Model:
         self.effective_center_predictors = self.center_predictors and spec0.intercept
         priors.validate(spec0, family)                  # structure now; per-level coverage once levels are known
         operands = [c for t in spec0.group_terms for c in t.operands]   # the columns the grouping factors are read from
-        cols = ([spec0.response, *spec0.predictors, *spec0.categorical_names] + operands
+        cols = ([spec0.response, *spec0.pop_columns] + operands
                 + ([spec0.trials] if spec0.trials else []) + ([spec0.offset.column] if spec0.offset is not None else []))
         cols = list(dict.fromkeys(cols))                        # the offset column may also be a predictor
         missing = [c for c in cols if c not in data.columns]
@@ -171,6 +171,14 @@ class Model:
                         )
                 df = df.drop(index=zero).reset_index(drop=True)
         self.spec: ModelSpec = parse_formula(formula, df, family, categorical)   # levels over the fitted rows
+        for t in self.spec.pop_terms:                        # a cell of z:h with no fitted rows has a zero column (brms keeps it too)
+            if t.kind == "interaction" and len(t.categorical) == 2:
+                empty = [lvl for lvl, col in zip(t.levels, pop_term_design(t, df, self.spec.categoricals).T) if not col.any()]
+                if empty:
+                    self.warnings.append(
+                        f"cell(s) {empty} of {t.name!r} have no fitted rows: their coefficients are informed by the prior alone "
+                        "(the design column is zero, as in brms)."
+                    )
         for t in self.spec.group_terms:                      # labels as text; a derived factor g:h gets its own column g_h
             df[t.column] = group_labels(t.factor, df)
         if fam.response_dtype is not None:
@@ -273,37 +281,47 @@ class Model:
         if self.spec.intercept and not np.allclose(Xfull[:, 0], 1.0):
             raise RuntimeError("Bambi's first common column is not an intercept column")
         # Verify Bambi's columns term by term against each term's own design block on the data
-        # (``pop_term_design``): a numeric column as given, a categorical or interaction term as one
-        # column per coefficient level in the recorded order.
+        # (``pop_term_design``): a numeric column as given, a numeric-by-numeric product as one column, a
+        # categorical or other interaction term as one column per coefficient level in the recorded order.
         col = int(self.spec.intercept)
         for term in self.spec.pop_terms:
-            expected = pop_term_design(term, self.data)
-            if term.kind == "numeric":
+            expected = pop_term_design(term, self.data, self.spec.categoricals)
+            bterm = common.terms[term.name]
+            is_inter = term.kind == "interaction"
+            if not term.is_vector:                                     # x, or the product x:w: one column, no levels
+                expected_kind = "interaction" if is_inter else "numeric"
+                if getattr(bterm, "kind", None) != expected_kind or list(bterm.labels) != [term.name] or getattr(bterm, "levels", None):
+                    raise RuntimeError(
+                        f"Bambi coded {term.name!r} as {getattr(bterm, 'kind', None)} with levels {getattr(bterm, 'levels', None)} "
+                        f"and labels {getattr(bterm, 'labels', None)}; expected one {expected_kind} column {term.name!r}"
+                    )
                 if not np.array_equal(Xfull[:, col], expected[:, 0]):
-                    raise RuntimeError(f"Bambi's column for {term.name!r} does not equal the data column")
+                    what = f"the product {' * '.join(term.operands)}" if is_inter else "the data column"
+                    raise RuntimeError(f"Bambi's column for {term.name!r} does not equal {what}")
                 col += 1
                 continue
-            is_inter = term.kind == "interaction"
-            zname = term.operands[-1]
-            cat = self.spec.categorical(zname)
-            bterm = common.terms[term.name]
+            cats = [self.spec.categorical(c) for c in term.categorical]
             expected_kind = "interaction" if is_inter else "categoric"
             if getattr(bterm, "kind", None) != expected_kind or list(bterm.levels) != list(term.levels) \
                     or list(bterm.labels) != list(term.columns):
                 raise RuntimeError(
                     f"Bambi coded {term.name!r} as {getattr(bterm, 'kind', None)} with levels {getattr(bterm, 'levels', None)} "
                     f"and labels {getattr(bterm, 'labels', None)}; expected {expected_kind} coding with reference "
-                    f"{cat.reference!r}, levels {list(term.levels)} and labels {list(term.columns)}"
+                    f"{', '.join(repr(c.reference) for c in cats)}, levels {list(term.levels)} and labels {list(term.columns)}"
                 )
-            labels = self.original_labels[zname]                       # the supplied values' labels, not the recoded column
-            if not np.array_equal(labels, self.data[zname].astype(str).to_numpy()):
-                raise RuntimeError(f"the recoded column {zname!r} does not reproduce the supplied labels")
+            for cat in cats:
+                labels = self.original_labels[cat.name]                # the supplied values' labels, not the recoded column
+                if not np.array_equal(labels, self.data[cat.name].astype(str).to_numpy()):
+                    raise RuntimeError(f"the recoded column {cat.name!r} does not reproduce the supplied labels")
             for j, lvl in enumerate(term.levels):
                 if not np.array_equal(Xfull[:, col + j], expected[:, j]):
-                    what = f"x * indicator of level {lvl!r}" if is_inter else f"the indicator of level {lvl!r}"
+                    what = (f"the indicator of level {lvl!r}" if not is_inter else
+                            f"the indicator product of cell {lvl!r}" if len(cats) == 2 else f"x * indicator of level {lvl!r}")
                     raise RuntimeError(f"Bambi's column {term.columns[j]!r} is not {what}")
-            if not is_inter and not np.array_equal(Xfull[:, col:col + len(term.levels)].sum(1) + (0 if cat.full_rank else (labels == cat.reference)), np.ones(len(labels))):
-                raise RuntimeError(f"the dummies of {term.name!r} and the reference indicator do not partition the rows")
+            if not is_inter:
+                cat, labels = cats[0], self.original_labels[cats[0].name]
+                if not np.array_equal(Xfull[:, col:col + len(term.levels)].sum(1) + (0 if cat.full_rank else (labels == cat.reference)), np.ones(len(labels))):
+                    raise RuntimeError(f"the dummies of {term.name!r} and the reference indicator do not partition the rows")
             coords = [str(c) for c in self.pymc_model.coords.get(f"{term.name}_dim", ())]
             if coords != list(term.levels):
                 raise RuntimeError(f"PyMC coordinates {term.name}_dim = {coords} differ from the coefficient levels {list(term.levels)}")
@@ -552,6 +570,14 @@ class Model:
         def slope_effect(g, c):
             return f"v_{c}|{g}"
         coef = pr.coefficient_priors(s)
+        # the interaction terms by shape: numeric by categorical (the (x, z) pairs the wording below has always
+        # described), numeric by numeric (x:w, one product column) and categorical by categorical (z:h, one cell each)
+        num_cat = [t for t in s.pop_terms if t.kind == "interaction" and len(t.categorical) == 1]
+        num_num = [t for t in s.pop_terms if t.kind == "interaction" and not t.categorical]
+        cat_cat = [t for t in s.pop_terms if t.kind == "interaction" and len(t.categorical) == 2]
+        pairs = [t.operands for t in num_cat]
+        def cells(t):                                        # (cell label, level of the first operand, level of the second)
+            return [(lvl, *pair) for lvl, pair in zip(t.levels, interaction_cells(*(s.categorical(c) for c in t.categorical)))]
         parts = []
         for t in s.pop_terms:
             term = t.name
@@ -559,11 +585,21 @@ class Model:
                 for lvl in t.levels:
                     ind = f"1[{term}_i = {lvl}]"
                     parts.append(f"({ind} - p_{term}[{lvl}]) * b_{term}[{lvl}]" if d.centered else f"{ind} * b_{term}[{lvl}]")
-            elif t.kind == "interaction":
-                xn, zn = t.operands
+            elif t.kind == "interaction" and len(t.categorical) == 1:
+                zn = t.categorical[0]
+                xn = next(c for c in t.operands if c != zn)
                 for lvl in t.levels:
                     prod = f"x_{xn} * 1[{zn}_i = {lvl}]"
                     parts.append(f"({prod} - q_{term}[{lvl}]) * b_{term}[{lvl}]" if d.centered else f"{prod} * b_{term}[{lvl}]")
+            elif t.kind == "interaction" and not t.categorical:
+                xn, wn = t.operands
+                prod = f"x_{xn} * x_{wn}"
+                parts.append(f"({prod} - q_{term}) * b_{term}" if d.centered else f"{prod} * b_{term}")
+            elif t.kind == "interaction":
+                zn, hn = t.operands
+                for lvl, lz, lh in cells(t):
+                    prod = f"1[{zn}_i = {lz}] * 1[{hn}_i = {lh}]"
+                    parts.append(f"({prod} - p_{term}[{lvl}]) * b_{term}[{lvl}]" if d.centered else f"{prod} * b_{term}[{lvl}]")
             else:
                 parts.append(f"(x_{term} - mean(x_{term})) * b_{term}" if d.centered else f"x_{term} * b_{term}")
         xs = " + ".join(parts)
@@ -624,7 +660,7 @@ class Model:
         scale = fam.scale_phrase
         same_group = " (same group)" if len(s.groups) == 1 else (" (same group effects)" if s.groups else "")
         for cat in s.categoricals:
-            partners = [xn for xn, zn in s.interactions if zn == cat.name]
+            partners = [xn for xn, zn in pairs if zn == cat.name]
             changes = "".join(f" + {xn} * b_{xn}:{cat.name}[l]" for xn in partners)
             if cat.full_rank:
                 lines += [f"  b_{cat.name}[l] is the level-specific {scale} baseline at numeric predictors zero, other categorical references, and group effect zero; the reference also has a coefficient."]
@@ -643,7 +679,7 @@ class Model:
                 lines += [f"  b_{cat.name}[l] is the difference between level l and the reference {cat.reference!r} "
                           f"on the {scale} scale at the same predictors{' and group' if s.has_group else ''}; the reference has no coefficient."]
         for xn in s.predictors:
-            partners = [zn for x, zn in s.interactions if x == xn]
+            partners = [zn for x, zn in pairs if x == xn]
             if not partners:
                 continue
             if len(partners) == 1:
@@ -660,20 +696,35 @@ class Model:
                 lines += [f"  The slope in {xn} on the {scale} scale is {slope}, with each categorical reference contribution zero; other predictors and group effects are held fixed."]
                 for zn in partners:
                     lines += [f"  b_{xn}:{zn}[l] is the change in that slope from reference {s.categorical(zn).reference!r} to level l of {zn}, holding the other categorical levels fixed."]
+        for t in num_num:
+            xn, wn = t.operands
+            lines += [f"  {t.name}: the slope in {xn} on the {scale} scale is b_{xn} + {wn} * b_{t.name} and the slope in {wn} is b_{wn} + {xn} * b_{t.name}; "
+                      f"b_{xn} and b_{wn} are the slopes at {wn} = 0 and at {xn} = 0, and b_{t.name} is the change in either slope per unit of the other "
+                      "predictor. Other predictors and group effects are held fixed."]
+        for t in cat_cat:
+            zn, hn = t.operands
+            rz, rh = s.categorical(zn).reference, s.categorical(hn).reference
+            lines += [f"  {t.name}: a row in level l of {zn} and level m of {hn} adds the cell's own b_{t.name}[l, m] to the main-effect "
+                      f"coefficients of {zn} and {hn} on the {scale} scale; the cell coefficient is zero when either level is the reference "
+                      f"({rz!r} for {zn}, {rh!r} for {hn}), so the main-effect coefficient of one factor is the level difference at the other "
+                      "factor's reference, and the cell coefficient is how much that difference changes in cell (l, m). Cells with no "
+                      "fitted rows keep only their prior."]
         lines += fam.mean_lines(self)
         if d.centered:
             what = fam.intercept_meaning
             where = "at the predictor means" if not s.categoricals else \
                 "at the numeric predictor means and at the sample proportions of the categorical levels"
             if s.interactions:
-                where = "at the fitted-row means of every expanded design column (x, 1[z = l], x * 1[z = l])"
+                expanded = ((["x"] if s.predictors else []) + (["1[z = l]"] if s.categoricals else []) + (["x * 1[z = l]"] if num_cat else [])
+                            + (["x * w"] if num_num else []) + (["1[z = l] * 1[h = m]"] if cat_cat else []))
+                where = f"at the fitted-row means of every expanded design column ({', '.join(expanded)})"
             lines += [
                 "  Predictors are centred at their sample means (center_predictors=True, as in",
                 f"  brms and Bambi)" + ("; a dummy column's mean is its level's proportion p_z[l]." if s.categoricals else "."),
             ]
-            if s.interactions:
+            if num_cat:
                 qs = []
-                for xn, zn in s.interactions:
+                for xn, zn in pairs:
                     lab = self.original_labels[zn]; xv = self.data[xn].to_numpy(dtype=float)
                     for lvl in s.levels_of(f"{xn}:{zn}"):
                         m = lab == lvl
@@ -682,11 +733,24 @@ class Model:
                 lines += ["  Each product column x * 1[z = l] is centred at its OWN mean q, which is the level's proportion"] + \
                          [f"  times the mean of x within that level: {q}" for q in qs] + \
                          ["  That point of the expanded design is not a realisable covariate row (a row has x*1[z=l] equal to x or 0)."]
+            for t in num_num:
+                xn, wn = t.operands
+                xv, wv = self.data[xn].to_numpy(dtype=float), self.data[wn].to_numpy(dtype=float)
+                lines += [f"  The product column {xn} * {wn} is centred at its OWN mean q_{t.name} = {np.mean(xv * wv):.4f}, "
+                          f"not at mean({xn}) * mean({wn}) = {xv.mean() * wv.mean():.4f}; the difference is the covariance of {xn} and {wn}."]
+            for t in cat_cat:
+                zn, hn = t.operands
+                lz_all, lh_all = self.original_labels[zn], self.original_labels[hn]
+                ps = ", ".join(f"p_{t.name}[{lvl}] = {np.mean((lz_all == lz) & (lh_all == lh)):.3f}" for lvl, lz, lh in cells(t))
+                lines += [f"  Each cell column 1[{zn} = l] * 1[{hn} = m] is centred at the cell's proportion of the fitted rows: {ps}."]
+            correction = (" - sum_l p_z[l] * b_z[l]" if s.categoricals else "")
+            correction += (" - sum_(x,z),l q_x:z[l] * b_x:z[l]" if len(num_cat) > 1 else (" - sum_l q_x:z[l] * b_x:z[l]" if num_cat else ""))
+            correction += "".join(f" - q_{t.name} * b_{t.name}" for t in num_num)
+            correction += "".join(f" - sum_(l,m) p_{t.name}[l, m] * b_{t.name}[l, m]" for t in cat_cat)
             lines += [
                 f"  a_c is the {what} {where}{' (group effect zero)' if s.has_group else ''}; the",
                 "  prior on the intercept applies to a_c. The posterior reports the raw-scale",
-                "  intercept a = a_c - sum_p mean(x_p) * b_p" + (" - sum_l p_z[l] * b_z[l]" if s.categoricals else "")
-                + (" - sum_(x,z),l q_x:z[l] * b_x:z[l]" if len(s.interactions) > 1 else (" - sum_l q_x:z[l] * b_x:z[l]" if s.interactions else "")) + ", computed after sampling"
+                "  intercept a = a_c - sum_p mean(x_p) * b_p" + correction + ", computed after sampling"
                 + (": the linear predictor at x = 0 and at the reference level." if s.categoricals else "."),
             ]
             if s.categoricals:
@@ -733,7 +797,9 @@ class Model:
             roles[f"{n[fam.scale_parameter]}_log__"] = f"log({fam.scale_parameter})"
         for t in s.pop_terms:
             if t.is_vector:
-                roles[t.name] = f"b_{t.name}[{', '.join(t.levels)}] (vector; dims {t.name}_dim, posterior rows {', '.join(t.columns)})"
+                shown = ", ".join(f"({l})" for l in t.levels) if len(t.categorical) == 2 else ", ".join(t.levels)   # cells read (l, m)
+                rows = ", ".join(f"{t.name}[{l}]" for l in t.levels)      # ArviZ names a row variable[coordinate]
+                roles[t.name] = f"b_{t.name}[{shown}] (vector; dims {t.name}_dim, posterior rows {rows})"
         for v in self.pymc_model.value_vars:
             lines.append(f"  {v.name:<24} {roles.get(v.name, f'b_{v.name}')}")
         lines.append("Deterministic: " + "".join(f"{names['group_effect']} = {effect(g) if c == 'Intercept' else slope_effect(g, c)}, "

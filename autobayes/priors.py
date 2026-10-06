@@ -16,6 +16,7 @@ convention.
 """
 from __future__ import annotations
 
+import re
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 
@@ -112,7 +113,6 @@ class Priors:
 
         if not isinstance(spec, ModelSpec):
             spec = ModelSpec(formula="", response="", predictors=tuple(spec), group=None)
-        cat_names = spec.categorical_names
         if isinstance(self.b, Prior):
             return {col: self.b for col in spec.columns}
         if not isinstance(self.b, Mapping):
@@ -123,12 +123,15 @@ class Priors:
         if missing or extra:
             hint = ""
             for k in extra:
-                if isinstance(k, str) and "[" in k and k.split("[", 1)[0] in (*cat_names, *spec.interaction_names):
+                stripped = re.sub(r"\[[^\]]*\]", "", k) if isinstance(k, str) else k    # 'z[q]:h[h2]' -> 'z:h', 'x:z[q]' -> 'x:z'
+                if isinstance(k, str) and "[" in k and any(t.name == stripped and t.is_vector for t in spec.pop_terms):
                     hint = (f"; {k!r} looks like a design-column label: give per-level priors as "
-                            f"b={{{k.split('[', 1)[0]!r}: {{level: prior}}}}")
+                            f"b={{{stripped!r}: {{level: prior}}}}")
                     break
                 if isinstance(k, str) and ":" in k and ":".join(reversed(k.split(":", 1))) in spec.interaction_names:
-                    hint = f"; write the interaction key in its canonical spelling {':'.join(reversed(k.split(':', 1)))!r} (numeric first)"
+                    canonical = spec.pop_term(":".join(reversed(k.split(":", 1))))
+                    order = "numeric first" if len(canonical.categorical) == 1 else "the main effects' order"
+                    hint = f"; write the interaction key in its canonical spelling {canonical.name!r} ({order})"
                     break
             raise PriorError(
                 f"coefficient priors must cover exactly the predictor terms {list(spec.terms)}; "
@@ -145,7 +148,8 @@ class Priors:
                     )
                 out[term] = entry
                 continue
-            cat = spec.categorical(t.operands[-1])            # the categorical side of a categorical or interaction term
+            cats = [spec.categorical(c) for c in t.categorical]   # the categorical side(s) of a categorical or interaction term
+            cat = cats[-1]
             if isinstance(entry, Prior):
                 for col in t.columns:
                     out[col] = entry
@@ -174,6 +178,13 @@ class Priors:
             missing_l = [l for l in wanted if l not in keyed]
             extra_l = [l for l in keyed if l not in wanted]
             if missing_l or extra_l:
+                if len(cats) == 2:                   # z:h: one key per cell 'l, m' of non-reference levels
+                    z, h = cats
+                    raise PriorError(
+                        f"per-cell priors for {term!r} must cover exactly its cells {wanted} (each 'l, m' pairs a non-reference level "
+                        f"of {z.name!r} with one of {h.name!r}; the references {z.reference!r} and {h.reference!r} have no cell coefficient); "
+                        f"missing {missing_l}, unexpected {extra_l}"
+                    )
                 ref_note = (f" ({cat.reference!r} is the reference level and has no coefficient)"
                             if cat.reference in extra_l and cat.reference not in wanted else "")
                 raise PriorError(
@@ -186,8 +197,8 @@ class Priors:
                     f"per-level priors of {term!r} must share one distribution family (Bambi takes one "
                     f"prior per term, with per-level parameters); got {sorted(names)}"
                 )
-            for l in wanted:
-                out[f"{term}[{l}]"] = keyed[l]
+            for l, col in zip(wanted, t.columns):             # 'z[q]' and 'x:z[q]' for level q; 'z[q]:h[h2]' for cell 'q, h2'
+                out[col] = keyed[l]
         return out
 
     def slope_priors(self, predictors: tuple[str, ...]) -> dict[str, Prior]:

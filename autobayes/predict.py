@@ -52,8 +52,8 @@ def raw_design(model, df: pd.DataFrame) -> np.ndarray:
     """The (n, P) raw design of ``df`` in ``model.coefficients`` order: each population-level term's own
     block (``pop_term_design``) side by side: numeric columns as given, one 0/1 indicator per coefficient
     level of a categorical term (reference rows all zero), the numeric column times each indicator for an
-    interaction."""
-    blocks = [pop_term_design(term, df) for term in model.spec.pop_terms]
+    ``x:z`` interaction, the product column of ``x:w``, the indicator product of each cell of ``z:h``."""
+    blocks = [pop_term_design(term, df, model.spec.categoricals) for term in model.spec.pop_terms]
     return np.concatenate(blocks, axis=1) if blocks else np.zeros((len(df), 0))
 
 
@@ -75,7 +75,7 @@ def _coefficient_draws(post, model):
 def _check_newdata(model, newdata: pd.DataFrame, *, need_trials: bool = False, include_group_effects: bool = True) -> pd.DataFrame:
     s = model.spec
     operands = [c for t in s.group_terms for c in t.operands] if include_group_effects else []   # g and h, never g_h
-    cols = [*s.predictors, *s.categorical_names] + ([s.offset.column] if s.offset is not None else []) + operands
+    cols = [*s.pop_columns] + ([s.offset.column] if s.offset is not None else []) + operands
     cols = list(dict.fromkeys(cols))
     if need_trials:
         if s.trials not in newdata.columns:
