@@ -52,9 +52,9 @@ of an existing interaction is a duplicate.
 ## Refused, with the construct named
 
 Three-way and higher interactions (`x:w:z`, `x * w * z`); an interaction missing a main effect (both are required,
-divergence D13); the same interaction twice in either spelling; a term with itself; the response, the trials
+divergence D14); the same interaction twice in either spelling; a term with itself; the response, the trials
 column or a grouping factor as an operand; `offset()` or a function call as an operand (`log(x):z`, divergence
-D14); an interaction as a varying slope; a product column that is constant in the fitted rows.
+D15); an interaction as a varying slope; a product column that is constant in the fitted rows.
 
 ## Evidence
 
