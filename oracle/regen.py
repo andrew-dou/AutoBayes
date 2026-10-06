@@ -40,14 +40,20 @@ def write_inputs(case: dict, out: Path) -> None:
 
 def generate(case_id: str, out: Path) -> None:
     write_inputs(fx.load_case(case_id), out)
-    subprocess.run([*RSCRIPT, str(out)], check=True)
+    proc = subprocess.run([*RSCRIPT, str(out)], capture_output=True, text=True)
+    if proc.returncode != 0:
+        tail = "\n".join((proc.stdout + proc.stderr).strip().splitlines()[-12:])
+        raise RuntimeError(f"gen_fixture.R failed for {case_id} (exit {proc.returncode}):\n{tail}")
 
 
 def freeze(case_id: str) -> str:
     out = fx.fixture_dir(case_id)
     if (out / "fixture.json").exists():
         return f"{case_id}: already frozen (a changed case needs a new id; `check` compares)"
-    generate(case_id, out)
+    try:
+        generate(case_id, out)
+    except Exception as exc:                                    # one failure must not abort the other cases
+        return f"{case_id}: FAILED\n  " + str(exc).replace("\n", "\n  ")
     return f"{case_id}: frozen in {out.relative_to(REPO)}"
 
 
@@ -122,7 +128,7 @@ def main(argv=None) -> int:
     with ThreadPoolExecutor(max_workers=max(1, args.jobs)) as pool:
         results = list(pool.map(work, ids))
     print("\n".join(results))
-    return 1 if any("DIFFERS" in r or "no frozen fixture" in r for r in results) else 0
+    return 1 if any("DIFFERS" in r or "no frozen fixture" in r or "FAILED" in r for r in results) else 0
 
 
 if __name__ == "__main__":

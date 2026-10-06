@@ -1,0 +1,83 @@
+{
+ "id": "gamma_varint",
+ "tier": "A",
+ "feature": "A09_gamma",
+ "note": "Gamma with a log link; mean mu and shape",
+ "seed": 149,
+ "n_points": 8,
+ "gate": {
+  "expect": "fail",
+  "reason": "A09_gamma not implemented; remove this field when it lands"
+ },
+ "data": {
+  "generator": "tier_a",
+  "seed": 49,
+  "n": 36,
+  "newdata": {
+   "seed": 149,
+   "n": 5
+  }
+ },
+ "brms": {
+  "formula": "ypos ~ x + (1 | g)",
+  "family": {
+   "family": "Gamma",
+   "link": "log"
+  },
+  "factors": {
+   "g": [
+    "a",
+    "b",
+    "c",
+    "d",
+    "e",
+    "f"
+   ]
+  },
+  "priors": [
+   {
+    "prior": "normal(0, 2)",
+    "class": "Intercept"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "b"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "sd",
+    "group": "g"
+   },
+   {
+    "prior": "gamma(0.01, 0.01)",
+    "class": "shape"
+   }
+  ]
+ },
+ "autobayes": {
+  "constructor": "gamma",
+  "formula": "ypos ~ x + (1 | g)",
+  "kwargs": {},
+  "priors": {
+   "intercept": [
+    "Normal",
+    0,
+    2
+   ],
+   "b": [
+    "Normal",
+    0,
+    1
+   ],
+   "sd": [
+    "HalfNormal",
+    1
+   ],
+   "shape": [
+    "Gamma",
+    0.01,
+    0.01
+   ]
+  }
+ }
+}

@@ -1,0 +1,82 @@
+{
+ "id": "beta_varint",
+ "tier": "A",
+ "feature": "A11_beta",
+ "note": "Beta with a logit link and precision phi",
+ "seed": 151,
+ "n_points": 8,
+ "gate": {
+  "expect": "fail",
+  "reason": "A11_beta not implemented; remove this field when it lands"
+ },
+ "data": {
+  "generator": "tier_a",
+  "seed": 51,
+  "n": 36,
+  "newdata": {
+   "seed": 151,
+   "n": 5
+  }
+ },
+ "brms": {
+  "formula": "prop ~ x + (1 | g)",
+  "family": {
+   "family": "Beta"
+  },
+  "factors": {
+   "g": [
+    "a",
+    "b",
+    "c",
+    "d",
+    "e",
+    "f"
+   ]
+  },
+  "priors": [
+   {
+    "prior": "normal(0, 2)",
+    "class": "Intercept"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "b"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "sd",
+    "group": "g"
+   },
+   {
+    "prior": "gamma(0.01, 0.01)",
+    "class": "phi"
+   }
+  ]
+ },
+ "autobayes": {
+  "constructor": "beta",
+  "formula": "prop ~ x + (1 | g)",
+  "kwargs": {},
+  "priors": {
+   "intercept": [
+    "Normal",
+    0,
+    2
+   ],
+   "b": [
+    "Normal",
+    0,
+    1
+   ],
+   "sd": [
+    "HalfNormal",
+    1
+   ],
+   "phi": [
+    "Gamma",
+    0.01,
+    0.01
+   ]
+  }
+ }
+}

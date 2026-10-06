@@ -1,0 +1,80 @@
+{
+ "id": "gauss_interaction_categorical_categorical",
+ "tier": "A",
+ "feature": "A04_general_interactions",
+ "note": "treatment-coded interaction of two categorical terms (six interaction columns)",
+ "seed": 145,
+ "n_points": 8,
+ "gate": {
+  "expect": "fail",
+  "reason": "A04_general_interactions not implemented; remove this field when it lands"
+ },
+ "data": {
+  "generator": "tier_a",
+  "seed": 45,
+  "n": 36,
+  "newdata": {
+   "seed": 145,
+   "n": 5
+  }
+ },
+ "brms": {
+  "formula": "y ~ z * h",
+  "family": {
+   "family": "gaussian"
+  },
+  "factors": {
+   "z": [
+    "p",
+    "q",
+    "r"
+   ],
+   "h": [
+    "h1",
+    "h2",
+    "h3",
+    "h4"
+   ]
+  },
+  "priors": [
+   {
+    "prior": "normal(0, 5)",
+    "class": "Intercept"
+   },
+   {
+    "prior": "normal(0, 2)",
+    "class": "b"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "sigma"
+   }
+  ]
+ },
+ "autobayes": {
+  "constructor": "gaussian",
+  "formula": "y ~ z * h",
+  "kwargs": {
+   "categorical": {
+    "z": "p",
+    "h": "h1"
+   }
+  },
+  "priors": {
+   "intercept": [
+    "Normal",
+    0,
+    5
+   ],
+   "b": [
+    "Normal",
+    0,
+    2
+   ],
+   "sigma": [
+    "HalfNormal",
+    1
+   ]
+  }
+ }
+}

@@ -1,0 +1,92 @@
+{
+ "id": "student_learned_nu",
+ "tier": "A",
+ "feature": "A13_student_learned_nu",
+ "note": "nu is a parameter with lower bound 1 (brms: real<lower=1> nu); its unconstrained transform is log(nu - 1), probed as 'other'",
+ "seed": 154,
+ "n_points": 8,
+ "gate": {
+  "expect": "fail",
+  "reason": "A13_student_learned_nu not implemented; remove this field when it lands"
+ },
+ "data": {
+  "generator": "tier_a",
+  "seed": 54,
+  "n": 36,
+  "newdata": {
+   "seed": 154,
+   "n": 5
+  }
+ },
+ "brms": {
+  "formula": "y ~ x + (1 | g)",
+  "family": {
+   "family": "student"
+  },
+  "factors": {
+   "g": [
+    "a",
+    "b",
+    "c",
+    "d",
+    "e",
+    "f"
+   ]
+  },
+  "priors": [
+   {
+    "prior": "normal(0, 5)",
+    "class": "Intercept"
+   },
+   {
+    "prior": "normal(0, 2)",
+    "class": "b"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "sd",
+    "group": "g"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "sigma"
+   },
+   {
+    "prior": "gamma(2, 0.1)",
+    "class": "nu"
+   }
+  ]
+ },
+ "autobayes": {
+  "constructor": "student",
+  "formula": "y ~ x + (1 | g)",
+  "kwargs": {
+   "nu": null
+  },
+  "priors": {
+   "intercept": [
+    "Normal",
+    0,
+    5
+   ],
+   "b": [
+    "Normal",
+    0,
+    2
+   ],
+   "sd": [
+    "HalfNormal",
+    1
+   ],
+   "sigma": [
+    "HalfNormal",
+    1
+   ],
+   "nu": [
+    "Gamma",
+    2,
+    0.1
+   ]
+  }
+ }
+}
