@@ -5,10 +5,6 @@
  "note": "Gamma with a log link; mean mu and shape",
  "seed": 149,
  "n_points": 8,
- "gate": {
-  "expect": "fail",
-  "reason": "A09_gamma not implemented; remove this field when it lands"
- },
  "data": {
   "generator": "tier_a",
   "seed": 49,

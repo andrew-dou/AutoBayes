@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from autobayes.families.spec import NO_FIXED_PARAMETERS, STANDARD_PREDICTION_KINDS, FamilySpec
+from autobayes.families.spec import NO_FIXED_PARAMETERS, STANDARD_PREDICTION_KINDS, FamilySpec, exp_mean
 from autobayes.formula import check_counts
 
 
@@ -18,11 +18,7 @@ def _response_warnings(spec, df) -> list[str]:
 
 
 def _inverse_link(eta):
-    with np.errstate(over="ignore", invalid="ignore"):
-        expected = np.exp(eta)
-    if not np.isfinite(expected).all():
-        raise ValueError("Poisson expected count overflow/nonfinite prediction; inspect the log-mean draws")
-    return expected
+    return exp_mean(eta, "Poisson expected count")
 
 
 def _draw_response(model, post, mean, df, rng):
@@ -35,7 +31,7 @@ def _draw_response(model, post, mean, df, rng):
 POISSON = FamilySpec(
     name="poisson", tag="Poisson", parent="mu", link="log", link_scale="log", mean_name="mu",
     response_kind="count", response_dtype=np.int64,
-    scale_parameter=None, fixed_parameters=NO_FIXED_PARAMETERS,
+    scale_parameter=None, bambi_scale_parameter=None, fixed_parameters=NO_FIXED_PARAMETERS,
     bambi_family=lambda: "poisson",
     validate_response=_validate_response,
     response_warnings=_response_warnings,
@@ -44,8 +40,8 @@ POISSON = FamilySpec(
     draw_response=_draw_response,
     manual_prediction=True, prediction_kinds=STANDARD_PREDICTION_KINDS,
     kind_error="kind must be 'mean', 'response' or 'linear'",
-    sigma_rule="sigma must be omitted for Poisson",
-    sigma_missing_error=None,
+    scale_rule="sigma and shape must be omitted for Poisson (no auxiliary parameter)",
+    scale_missing_error=None,
     linpred_symbol="eta", scale_phrase="log mean", intercept_meaning="log expected count",
     mean_lines=lambda model: ["  E[y_i] = mu_i = exp(eta_i); eta is log expected count."],
     likelihood_lines=lambda model: ["", "Likelihood", "  y_i ~ Poisson(mu_i); mu_i = exp(eta_i)",

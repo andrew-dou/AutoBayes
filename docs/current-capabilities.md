@@ -5,7 +5,7 @@ This is a capability map, not a percentage of brms implemented.
 
 | Surface | Merged behavior | Tests / documentation |
 | --- | --- | --- |
-| Families | Gaussian, Bernoulli-logit, grouped binomial-logit, fixed finite nu>1 Student-t, Poisson-log | test_logp.py, test_bernoulli.py, test_binomial.py, test_student.py, test_poisson.py |
+| Families | Gaussian, Bernoulli-logit, grouped binomial-logit, fixed finite nu>1 Student-t, Poisson-log, negative binomial-log and Gamma-log with a `shape` prior | test_logp.py, test_bernoulli.py, test_binomial.py, test_student.py, test_poisson.py, test_negbinomial.py, test_gamma.py; [negative binomial](negbinomial.md), [Gamma](gamma.md) |
 | Formula composition | Numeric and declared categorical predictors; multiple numeric-by-categorical interactions with required main effects; optional intercept | test_intercept_controls.py, test_multiple_interactions.py |
 | Hierarchy | Population-only models or multiple independent varying-intercept factors; independent varying slopes `(1 + x || g)` on numeric population-level terms (brms's correlated `(1 + x \| g)` is refused) | test_population_only.py, test_multiple_groups.py, test_varying_slope.py; [varying slopes](varying-slopes.md) |
 | Execution | Inspectable PyMC graph; PyMC NUTS or JAX/NumPyro sampling with explicit device selection | inference.py, test_device.py and test_sampling.py; availability does not establish GPU validation |
@@ -57,3 +57,9 @@ Its API, numerical-domain checks and bounded tests must be decided before code;
 this documentation update does not launch sampling or a prior-predictive campaign.
 
 Prior-predictive modeled-row CPU draws are now available; see [prior predictive](prior-predictive.md). The snapshot and historical counts above refer to PR17, not this addition.
+
+Negative binomial counts (A08, `ab.negbinomial`, brms's `negbinomial` with its `shape` parameter under an explicit
+`Priors(shape=...)`) landed through the brms-parity loop, verified against the frozen fixture `negbinomial_varint`;
+see [negative binomial](negbinomial.md). Gamma responses with a log link (A09, `ab.gamma`, the same `shape` prior;
+brms's default inverse link is not offered, divergence D9) followed, verified against `gamma_varint`; see
+[Gamma](gamma.md).

@@ -54,7 +54,10 @@ def freeze_target(model):
                               'prior': prior(sd_priors[(g, c)])} for g, c, block in slopes]} if slopes else {}),
         'priors': {'intercept': prior(pr.intercept), 'sigma': prior(pr.sigma),
                    'coefficients': {k: prior(v) for k,v in pr.coefficient_priors(s).items()},
-                   'groups': {k: prior(v) for k,v in pr.group_priors(s).items()}},
+                   'groups': {k: prior(v) for k,v in pr.group_priors(s).items()},
+                   # the shape prior (A08/A09) enters only for the families that have one, so every other model
+                   # keeps the identity it had under this schema version
+                   **({'shape': prior(pr.shape)} if pr.shape is not None else {})},
     }
     encoded = json.dumps(_canonical(payload), sort_keys=True, separators=(',', ':'),
                          ensure_ascii=False, allow_nan=False).encode('utf-8')

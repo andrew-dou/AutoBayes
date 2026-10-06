@@ -10,14 +10,14 @@ test or `match`.
 
 ## What a spec holds
 
-| Group | Fields | Gaussian | Student-t | Poisson | Bernoulli | binomial |
-| --- | --- | --- | --- | --- | --- | --- |
-| Names | `name`, `tag`, `parent`, `link`, `link_scale`, `mean_name` | mu / identity / mu | mu / identity / mu | mu / log (log scale) / mu | logit_p / logit (logit scale) / p | logit_p / logit (logit scale) / p |
-| Response | `response_kind`, `response_dtype`, `validate_response`, `response_warnings` | continuous, numeric | continuous, numeric | count, int64, counts in [0, 1e6], all-zero warning | binary, int64, strict 0/1 | binomial (trials), int64, `binomial_counts`, separation warning |
-| Parameters | `scale_parameter` (prior required), `fixed_parameters` (user scalar with its check) | sigma | sigma; nu > 1 | none | none | none |
-| Graph | `bambi_family` | `"gaussian"` | `"t"` | `"poisson"` | `likelihoods.bernoulli_logit_family` | `likelihoods.binomial_logit_family` |
-| Prediction | `inverse_link`, `draw_response`, `manual_prediction`, `prediction_kinds`, `response_upper_bound` | identity, Normal | identity, Student-t | exp with overflow check, Poisson, by hand | expit, Bernoulli, bound 1 | expit, Binomial, by hand, `probability` kind, bound = trials |
-| Wording | `kind_error`, `sigma_rule`, `sigma_missing_error`, `linpred_symbol`, `scale_phrase`, `intercept_meaning`, `mean_lines`, `likelihood_lines`, `centred_intercept_note`, `deterministic_note` | the sentences `describe()`, `predict()`, `value_point` and `Priors.validate` print for that family | | | | |
+| Group | Fields | Gaussian | Student-t | Poisson | negative binomial | Gamma | Bernoulli | binomial |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| Names | `name`, `tag`, `parent`, `link`, `link_scale`, `mean_name` | mu / identity / mu | mu / identity / mu | mu / log (log scale) / mu | mu / log (log scale) / mu | mu / log (log scale) / mu | logit_p / logit (logit scale) / p | logit_p / logit (logit scale) / p |
+| Response | `response_kind`, `response_dtype`, `validate_response`, `response_warnings` | continuous, numeric | continuous, numeric | count, int64, counts in [0, 1e6], all-zero warning | count, int64, counts in [0, 1e6], all-zero warning | continuous, numeric, finite and strictly positive | binary, int64, strict 0/1 | binomial (trials), int64, `binomial_counts`, separation warning |
+| Parameters | `scale_parameter` (brms name; prior required), `bambi_scale_parameter` (Bambi's/PyMC's name), `fixed_parameters` (user scalar with its check) | sigma / sigma | sigma / sigma; nu > 1 | none | shape / alpha | shape / alpha | none | none |
+| Graph | `bambi_family` | `"gaussian"` | `"t"` | `"poisson"` | `"negativebinomial"` | Bambi's `gamma` with `link = "log"` | `likelihoods.bernoulli_logit_family` | `likelihoods.binomial_logit_family` |
+| Prediction | `inverse_link`, `draw_response`, `manual_prediction`, `prediction_kinds`, `response_upper_bound` | identity, Normal | identity, Student-t | exp with overflow check, Poisson, by hand | exp with overflow check, NegativeBinomial(mu, shape), by hand | exp with overflow check, Gamma(shape, shape / mu), by hand | expit, Bernoulli, bound 1 | expit, Binomial, by hand, `probability` kind, bound = trials |
+| Wording | `kind_error`, `scale_rule`, `scale_missing_error`, `linpred_symbol`, `scale_phrase`, `intercept_meaning`, `mean_lines`, `likelihood_lines`, `centred_intercept_note`, `deterministic_note` | the sentences `describe()`, `predict()`, `value_point` and `Priors.validate` print for that family | | | | | | |
 
 The derived properties `continuous`, `discrete` and `has_trials` read `response_kind`. Callable fields take
 the built model (or the `ModelSpec` and frame being validated) because that is what the call sites have;
@@ -29,8 +29,12 @@ and warnings, Bambi family, fixed parameters in the prior dict, post-build obser
 `formula.validate_data` (trials syntax, response validation), `Priors.validate` (scale prior),
 `predict` (kinds, inverse link, response draws, by-hand routing, trials for `newdata`),
 `prior_predictive` (count support), `identity.freeze_target` and `session.fit_record` (fixed parameters,
-link scale, trials fields). Outside `Model`, the spec is looked up from `model.family` by name, so an object
-that exposes the model's attributes still works.
+auxiliary prior, link scale, trials fields). Outside `Model`, the spec is looked up from `model.family` by name,
+so an object that exposes the model's attributes still works.
+
+The auxiliary parameter is one of `Priors`' fields `sigma` or `shape` (`priors.AUXILIARY`), named by
+`scale_parameter`; exactly the family's own must be given to `Priors` and to `Model.value_point`, and
+`model.names[scale_parameter]` is its PyMC variable (`bambi_scale_parameter`: Bambi calls brms's `shape` `alpha`).
 
 ## Adding a family
 
@@ -38,8 +42,9 @@ that exposes the model's attributes still works.
    `autobayes/formula.py` and any hand-written likelihood in `autobayes/likelihoods.py`, and reference them
    from the spec (import the likelihood lazily inside `bambi_family`, as the Bernoulli and binomial modules do).
 2. Register it in `FAMILIES` in `autobayes/families/__init__.py`; add its constructor to `autobayes/model.py`
-   and `autobayes/__init__.py` with the same signature pattern as the existing five. A new fixed parameter
-   needs a keyword on `Model.__init__`; a new auxiliary parameter needs a `Priors` class.
+   and `autobayes/__init__.py` with the same signature pattern as the existing ones. A new fixed parameter
+   needs a keyword on `Model.__init__`; a new auxiliary parameter needs a `Priors` field, an entry in
+   `priors.AUXILIARY` and a keyword on `Model.value_point`.
 3. Add its row to `EXPECTED` and `EXAMPLES` in `tests/test_family_registry.py`, its family tests, and an
    oracle case under `tests/oracle/cases/` with a frozen brms fixture (`oracle/README.md`).
 

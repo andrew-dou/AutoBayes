@@ -321,11 +321,31 @@
    "depends_on": [
     "P3_families_registry"
    ],
-   "status": "implementing",
+   "status": "gates_green",
    "summary": "negative binomial counts with shape parameter",
    "pr": null,
    "attempts": 1,
-   "gates": {},
+   "gates": {
+    "sha": "7d303ff75c4f",
+    "dirty_tree": false,
+    "base": "origin/main",
+    "when": "2026-10-06T15:05Z",
+    "results": {
+     "immutability": {
+      "status": "pass",
+      "seconds": 0.0
+     },
+     "oracle": {
+      "status": "pass",
+      "seconds": 168.1
+     },
+     "suite": {
+      "status": "pass",
+      "seconds": 611.0
+     }
+    },
+    "note": "same branch and run as A09_gamma (both features on parity/a08-a09-negbinomial-gamma)"
+   },
    "divergences": [],
    "next_action": "families lane agent, worktree parity-fam1 (with A09)",
    "fixtures": {
@@ -342,11 +362,30 @@
    "depends_on": [
     "P3_families_registry"
    ],
-   "status": "implementing",
+   "status": "gates_green",
    "summary": "Gamma responses (log link) with shape",
    "pr": null,
    "attempts": 1,
-   "gates": {},
+   "gates": {
+    "sha": "7d303ff75c4f",
+    "dirty_tree": false,
+    "base": "origin/main",
+    "when": "2026-10-06T15:05Z",
+    "results": {
+     "immutability": {
+      "status": "pass",
+      "seconds": 0.0
+     },
+     "oracle": {
+      "status": "pass",
+      "seconds": 168.1
+     },
+     "suite": {
+      "status": "pass",
+      "seconds": 611.0
+     }
+    }
+   },
    "divergences": [],
    "next_action": "families lane agent, worktree parity-fam1 (after A08)",
    "fixtures": {
