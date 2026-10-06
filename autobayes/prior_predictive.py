@@ -4,6 +4,8 @@ import json
 import numpy as np
 import pymc as pm
 
+from autobayes.families import get_family
+
 
 def prior_predictive(model, *, draws=500, seed=None):
     """Return native ArviZ prior groups for modeled rows using CPU forward draws.
@@ -34,10 +36,11 @@ def prior_predictive(model, *, draws=500, seed=None):
     y = result.prior_predictive[model.names['y']].values
     if y.shape != (1, draws, model.design.n):
         raise ValueError('prior predictive response dimensions do not match modeled rows')
-    if model.family in ('bernoulli', 'binomial', 'poisson'):
+    fam = get_family(model.family)
+    if fam.discrete:
         if (y < 0).any() or (y != np.floor(y)).any():
             raise ValueError('prior predictive counts violate response support')
-        bound = 1 if model.family == 'bernoulli' else model.design.trials if model.family == 'binomial' else None
+        bound = fam.response_upper_bound(model)
         if bound is not None and (y > bound).any():
             raise ValueError('prior predictive counts exceed trials')
     if not np.array_equal(result.observed_data[model.names['y']].values, model.design.y):

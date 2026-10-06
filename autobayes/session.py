@@ -81,11 +81,13 @@ def fit_record(model, fit, *, panel: dict | None = None, max_treedepth: int = 10
     """A JSON-serialisable record of one fit: specification, execution, diagnostics, posterior."""
     from autobayes import __version__
     from autobayes.diagnostics import panel as _panel
+    from autobayes.families import get_family
 
     from autobayes.identity import check_fit_binding
     binding = check_fit_binding(model, fit, allow_unverified=allow_unverified)
 
     p = panel if panel is not None else _panel(fit.idata, max_treedepth=max_treedepth)
+    fam = get_family(model.family)
     s, d, pr = model.spec, model.design, model.priors
     coef = pr.coefficient_priors(s)
     group_priors = pr.group_priors(s)
@@ -97,7 +99,7 @@ def fit_record(model, fit, *, panel: dict | None = None, max_treedepth: int = 10
             **({"target_identity": model.target_identity} if binding == "matched" else
                {"requested_target_identity": model.target_identity}),
             "fit_binding_status": binding,
-            **({"family_parameters": {"nu": model.nu}} if model.family == "student" else {}),
+            **({"family_parameters": {name: getattr(model, name) for name in fam.fixed_parameters}} if fam.fixed_parameters else {}),
             "link": model.link,
             "n": int(d.n),
             **({"J": int(d.J), "group": s.group} if len(s.groups) <= 1 else {}),
@@ -123,10 +125,10 @@ def fit_record(model, fit, *, panel: dict | None = None, max_treedepth: int = 10
             "intercept_prior_applies_to": None if not s.intercept else ("centred intercept (at the numeric predictor means"
                                            + (" and the sample proportions of the categorical levels)" if s.categoricals else ")")
                                            if d.centered else "raw intercept")
-                                          + (", log scale" if model.family == "poisson" else ", logit scale" if model.family in ("bernoulli", "binomial") else ""),
+                                          + (f", {fam.link_scale} scale" if fam.link_scale else ""),
             **({"trials": s.trials, "trials_total": int(d.trials.sum()),
                 "zero_trial_rows_dropped": len(model.dropped_rows),
-                "zero_trial_row_positions": list(model.dropped_rows)} if model.family == "binomial" else {}),
+                "zero_trial_row_positions": list(model.dropped_rows)} if fam.has_trials else {}),
             "warnings": list(model.warnings),
         },
         "execution": {

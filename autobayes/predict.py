@@ -37,8 +37,7 @@ import numpy as np
 import pandas as pd
 import xarray as xr
 
-from scipy.special import expit
-
+from autobayes.families import get_family
 from autobayes.formula import FormulaError, categorical_labels, check_counts, reject_complex
 
 _NEW_GROUPS = {"error", "resample_observed", "population"}
@@ -146,44 +145,19 @@ def _predict_by_hand(model, idata, df: pd.DataFrame | None, kind: str, seed, pol
                 new_effects[lvl] = np.take_along_axis(u, chosen[..., None], axis=-1)[..., 0]
         for i, lvl in enumerate(df[g]):
             mu[..., i] += new_effects[lvl] if lvl in new_effects else u[..., levels.index(lvl)]
+    dims = ("chain", "draw", "__obs__")
     if kind == "linear":
         if not np.isfinite(mu).all():
             raise ValueError("linear predictor contains nonfinite draws")
-        out = {"eta": (("chain", "draw", "__obs__"), mu)}
-    elif model.family == "gaussian":
-        out = {"mu": (("chain", "draw", "__obs__"), mu)}
+        out = {"eta": (dims, mu)}
+    else:                                                        # mu held the linear predictor eta
+        fam = get_family(model.family)
+        mean = fam.inverse_link(mu)
+        out = {fam.mean_name: (dims, mean)}
+        if fam.has_trials and kind in ("mean", "response"):      # binomial: expected = n p beside p
+            out["expected"] = (dims, mean * df[model.spec.trials].to_numpy(dtype=np.int64))
         if kind == "response":
-            sigma = post[n["sigma"]].to_numpy()
-            out["y"] = (("chain", "draw", "__obs__"), rng.normal(mu, sigma[..., None]))
-    elif model.family == "poisson":
-        with np.errstate(over="ignore", invalid="ignore"):
-            expected = np.exp(mu)
-        if not np.isfinite(expected).all():
-            raise ValueError("Poisson expected count overflow/nonfinite prediction; inspect the log-mean draws")
-        out = {"mu": (("chain", "draw", "__obs__"), expected)}
-        if kind == "response":
-            limit = np.iinfo(np.int64).max - 10 * np.sqrt(float(np.iinfo(np.int64).max))
-            if np.any(expected >= limit):
-                raise ValueError("Poisson response prediction exceeds the integer random-generator limit")
-            out["y"] = (("chain", "draw", "__obs__"), rng.poisson(expected))
-    elif model.family == "student":
-        out = {"mu": (("chain", "draw", "__obs__"), mu)}
-        if kind == "response":
-            sigma = post[n["sigma"]].to_numpy()
-            out["y"] = (("chain", "draw", "__obs__"), mu + sigma[..., None] * rng.standard_t(model.nu, size=mu.shape))
-    elif model.family == "bernoulli":
-        prob = expit(mu)                                         # mu held the linear predictor eta
-        out = {"p": (("chain", "draw", "__obs__"), prob)}
-        if kind == "response":
-            out["y"] = (("chain", "draw", "__obs__"), rng.binomial(1, prob).astype(np.int64))
-    else:                                                        # binomial: p, expected = n p, count draws
-        prob = expit(mu)
-        out = {"p": (("chain", "draw", "__obs__"), prob)}
-        if kind in ("mean", "response"):
-            trials = df[model.spec.trials].to_numpy(dtype=np.int64)
-            out["expected"] = (("chain", "draw", "__obs__"), prob * trials)
-            if kind == "response":
-                out["y"] = (("chain", "draw", "__obs__"), rng.binomial(trials, prob).astype(np.int64))
+            out["y"] = (dims, fam.draw_response(model, post, mean, df, rng))
     ds = xr.Dataset(out, coords={"chain": post["chain"], "draw": post["draw"], "__obs__": np.arange(len(df))})
     _prediction_attrs(model, ds, policies, new_levels, in_sample=False, manual=True, include_group_effects=include_group_effects)
     return ds
@@ -229,11 +203,9 @@ def predict(model, fit_result, *, newdata: pd.DataFrame | None = None, kind: str
     follows factor formula order, then sorted unseen labels. Equal labels in different
     factors are independent identities. Common intercept draws are already on the raw scale.
     """
-    if model.family == "binomial":
-        if kind not in {"probability", "mean", "response", "linear"}:
-            raise ValueError("kind must be 'probability', 'mean', 'response' or 'linear' for a binomial model")
-    elif kind not in {"mean", "response", "linear"}:
-        raise ValueError("kind must be 'mean', 'response' or 'linear'" + (" ('probability' is for binomial models; here 'mean' is p)" if model.family == "bernoulli" else ""))
+    fam = get_family(model.family)
+    if kind not in fam.prediction_kinds:
+        raise ValueError(fam.kind_error)
     if not isinstance(include_group_effects, (bool, np.bool_)):
         raise ValueError("include_group_effects must be boolean")
     if not include_group_effects and new_groups != "error":
@@ -243,7 +215,7 @@ def predict(model, fit_result, *, newdata: pd.DataFrame | None = None, kind: str
     binding = check_fit_binding(model, fit_result, allow_unverified=True)
     idata = getattr(fit_result, "idata", fit_result)
     df = (None if newdata is None else _check_newdata(
-        model, newdata, need_trials=(model.family == "binomial" and kind in ("mean", "response")), include_group_effects=include_group_effects))
+        model, newdata, need_trials=(fam.has_trials and kind in ("mean", "response")), include_group_effects=include_group_effects))
     new_levels = {g: ([] if df is None else sorted(set(df[g]) - set(model.design.group_designs[g].levels)))
                   for g in (model.spec.groups if include_group_effects else ())}
     for g, unseen in new_levels.items():
@@ -253,21 +225,19 @@ def predict(model, fit_result, *, newdata: pd.DataFrame | None = None, kind: str
                 "Pass new_groups='population' to draw their effects from Normal(0, sd), or "
                 "new_groups='resample_observed' for brms's default 'uncertainty' behaviour; "
                 "an exact-key mapping can set the policy separately for each factor.")
-    manual = not include_group_effects or kind == "linear" or model.family in ("binomial", "poisson") or any(new_levels.values())
+    manual = not include_group_effects or kind == "linear" or fam.manual_prediction or any(new_levels.values())
     if manual:
         ds = _predict_by_hand(model, idata, df, kind, seed, policies, include_group_effects=include_group_effects)
     else:
         bambi_kind = "response" if kind == "response" else "response_params"
         out = model.bambi_model.predict(idata, kind=bambi_kind, data=df, inplace=False, random_seed=seed)
         mean_name = model.names["mean"]
-        mu = out.posterior[model.names["linpred"]]
-        if model.family == "bernoulli":
-            mu = expit(mu)
+        mu = fam.inverse_link(out.posterior[model.names["linpred"]])
         data = {mean_name: mu.rename({mu.dims[-1]: "__obs__"}) if mu.dims[-1] != "__obs__" else mu}
         if kind == "response":
             y = out.posterior_predictive[model.names["y"]]
-            if model.family == "bernoulli":
-                y = y.astype(np.int64)
+            if fam.response_dtype is not None:
+                y = y.astype(fam.response_dtype)
             data["y"] = y.rename({y.dims[-1]: "__obs__"}) if y.dims[-1] != "__obs__" else y
         ds = xr.Dataset({k: v.drop_vars([c for c in v.coords if c not in ("chain", "draw")]) for k, v in data.items()})
         ds = ds.assign_coords(__obs__=np.arange(ds.sizes["__obs__"]))

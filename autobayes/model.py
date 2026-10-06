@@ -17,6 +17,7 @@ import pandas as pd
 
 from collections.abc import Mapping
 
+from autobayes.families import FAMILIES, FamilySpec, get_family
 from autobayes.formula import Categorical, FormulaError, ModelSpec, binomial_counts, categorical_labels, parse_formula
 from autobayes.priors import Priors
 
@@ -82,33 +83,13 @@ class Design:
         return {g: block.column_slice for g, block in self.group_designs.items()}
 
 
-@dataclass(frozen=True)
-class _FamilyMetadata:
-    """Existing family names, not a public distribution extension interface.
-
-    parameter_output is the legacy prediction-parameter name. For binomial it
-    is p, not the expected count; mean predictions also return expected=n*p.
-    """
-    parent: str
-    link: str
-    parameter_output: str
-
-
-_FAMILIES = MappingProxyType({
-    "poisson": _FamilyMetadata("mu", "log", "mu"),
-    "student": _FamilyMetadata("mu", "identity", "mu"),
-    "gaussian": _FamilyMetadata("mu", "identity", "mu"),
-    "bernoulli": _FamilyMetadata("logit_p", "logit", "p"),
-    "binomial": _FamilyMetadata("logit_p", "logit", "p"),
-})
-
-
 class Model:
     """``y ~ x [+ (1 | factor) ...]`` with explicit priors; Gaussian, Student-t, Poisson, Bernoulli or binomial likelihood.
 
     Attributes
     ----------
     family : str               "gaussian", "student", "poisson", "bernoulli" or "binomial"
+    family_spec : FamilySpec   the registered specification of that family (autobayes/families/)
     spec : ModelSpec
     priors : Priors
     bambi_model : bambi.Model  (already built)
@@ -121,15 +102,14 @@ class Model:
                  categorical: Mapping[str, object] | None = None, nu: float | None = None):
         import bambi as bmb
 
-        if family not in _FAMILIES:
-            raise ValueError(f"family must be one of {sorted(_FAMILIES)}, got {family!r}")
-        if family == "student":
-            if isinstance(nu, (bool, np.bool_)) or not isinstance(nu, (int, float, np.integer, np.floating)) or not np.isfinite(nu) or nu <= 1:
-                raise ValueError("student requires a fixed finite scalar nu > 1")
-            self.nu = float(nu)
+        fam = get_family(family)
+        if "nu" in fam.fixed_parameters:
+            self.nu = fam.fixed_parameters["nu"](nu)
         elif nu is not None:
-            raise ValueError("nu applies only to the student family")
+            accepting = [name for name, other in FAMILIES.items() if "nu" in other.fixed_parameters]
+            raise ValueError(f"nu applies only to the {' or '.join(accepting)} family")
         self.family = family
+        self.family_spec: FamilySpec = fam
         self.priors = priors
         self.center_predictors = bool(center_predictors)
         self.dropped_rows: tuple[int, ...] = ()     # binomial: positional indices of zero-trial rows
@@ -144,7 +124,7 @@ class Model:
         if missing:
             raise FormulaError(f"columns not in data: {missing}")
         df = data[cols].copy().reset_index(drop=True)
-        if family == "binomial":
+        if fam.has_trials:
             k, n = binomial_counts(spec0, df)               # validated before any cast, all rows
             zero = np.flatnonzero(n == 0)
             self.dropped_rows = tuple(int(i) for i in zero)
@@ -167,26 +147,12 @@ class Model:
                             "zero-trial row(s) and are not levels of the fitted model; predictions for them are refused."
                         )
                 df = df.drop(index=zero).reset_index(drop=True)
-            k_kept = df[spec0.response].to_numpy()
-            n_kept = df[spec0.trials].to_numpy()
-            if np.all(k_kept == 0) or np.all(k_kept == n_kept):
-                which = "zero successes" if np.all(k_kept == 0) else "all successes"
-                self.warnings.append(
-                    (f"every fitted row has {which}. There is no population intercept; any separating direction "
-                     "depends on the design. Check coefficient-prior sensitivity, without assuming an intercept direction.")
-                    if not spec0.intercept else
-                    f"every fitted row has {which}: the data are separated along the intercept "
-                    "direction, the likelihood is monotone there, and the posterior in that direction "
-                    "is set by the intercept prior's tail and the data's extent. Check prior sensitivity "
-                    "(refit with a wider and a narrower intercept prior and report the movement)."
-                )
         self.spec: ModelSpec = parse_formula(formula, df, family, categorical)   # levels over the fitted rows
         for group in self.spec.groups:
             df[group] = df[group].astype(str)
-        if family in ("bernoulli", "poisson"):
-            df[self.spec.response] = df[self.spec.response].astype(np.int64)
-        if family == "poisson" and (df[self.spec.response] == 0).all():
-            self.warnings.append("all observed counts are zero; check sensitivity to the explicit log-mean priors")
+        if fam.response_dtype is not None:
+            df[self.spec.response] = df[self.spec.response].astype(fam.response_dtype)
+        self.warnings.extend(fam.response_warnings(self.spec, df))   # separation, all-zero counts
         self.original_labels: dict[str, np.ndarray] = {}     # labels of the SUPPLIED column, fitted rows, before any recoding
         for cat in self.spec.categoricals:
             # An ORDERED Categorical with the reference first: formulae keeps this order (it sorts
@@ -202,20 +168,11 @@ class Model:
                 )
         self.data = df
 
-        if family == "bernoulli":
-            from autobayes.likelihoods import bernoulli_logit_family
-
-            bambi_family = bernoulli_logit_family()   # stable likelihood; see likelihoods.py
-        elif family == "binomial":
-            from autobayes.likelihoods import binomial_logit_family
-
-            bambi_family = binomial_logit_family()
-        else:
-            bambi_family = "t" if family == "student" else family
+        bambi_family = fam.bambi_family()
         self._check_generated_names()
         bambi_priors = priors.to_bambi(self.spec, family)
-        if family == "student":
-            bambi_priors["nu"] = self.nu
+        for name in fam.fixed_parameters:                    # Bambi takes a fixed nu through the prior dict
+            bambi_priors[name] = getattr(self, name)
         self.bambi_model = bmb.Model(
             self.spec.bambi_formula, self.data, family=bambi_family,
             priors=bambi_priors,
@@ -224,12 +181,12 @@ class Model:
         self.bambi_model.build()
         self.pymc_model = self.bambi_model.backend.model
         self.design = self._extract_design()
-        if family in ("bernoulli", "binomial", "poisson"):
+        if fam.discrete:
             rv = self.pymc_model[self.names["y"]]
             obs = np.asarray(self.pymc_model.rvs_to_values[rv].eval())
             if not np.array_equal(obs, self.design.y.astype(int)):
                 raise RuntimeError("Bambi's observed response does not equal the response column")
-            if family == "binomial":
+            if fam.has_trials:
                 consts = [np.asarray(i.data) for i in rv.owner.inputs if getattr(i, "data", None) is not None]
                 if not any(c.shape == self.design.trials.shape and np.array_equal(c, self.design.trials) for c in consts):
                     raise RuntimeError("the trials attached to the likelihood do not equal the trials column")
@@ -246,10 +203,9 @@ class Model:
         """Refuse names that would alias a coefficient, effect, likelihood or coordinate."""
         variable_names = (["Intercept"] if self.spec.intercept else []) + list(self.spec.terms)
         variable_names += [self.names["y"], self.names["linpred"]]
-        if self.family in ("gaussian", "student"):
-            variable_names += ["sigma"]
-        if self.family == "student":
-            variable_names += ["nu"]  # Bambi uses this auxiliary-prior key even when fixed.
+        if self.family_spec.scale_parameter is not None:
+            variable_names += [self.family_spec.scale_parameter]
+        variable_names += list(self.family_spec.fixed_parameters)   # Bambi uses "nu" as an auxiliary-prior key even when fixed.
         for roles in self.group_names.values():
             variable_names.extend(roles[k] for k in ("sd", "offset", "group_effect"))
         # Bambi's default result cleaning drops every posterior variable ending in _offset.
@@ -266,7 +222,7 @@ class Model:
 
     # -- design ------------------------------------------------------------------------
     def _extract_design(self) -> Design:
-        comp = self.bambi_model.components[_FAMILIES[self.family].parent]
+        comp = self.bambi_model.components[self.family_spec.parent]
         common = comp.design.common
         group = comp.design.group
         names = list(common.terms)
@@ -363,7 +319,7 @@ class Model:
     # -- naming ------------------------------------------------------------------------
     @property
     def link(self) -> str:
-        return _FAMILIES[self.family].link
+        return self.family_spec.link
 
     @property
     def names(self) -> dict[str, str]:
@@ -372,17 +328,19 @@ class Model:
         for Bernoulli); ``"mean"`` is the name ``predict`` gives the expected response (``mu``
         or ``p``). ``"sigma"`` exists for Gaussian and Student-t families."""
         g = self.spec.groups[0] if len(self.spec.groups) == 1 else None
+        fam = self.family_spec
         out = {
             **({"intercept": "Intercept"} if self.spec.intercept else {}),
             **({"sd": f"1|{g}_sigma", "offset": f"1|{g}_offset", "group_effect": f"1|{g}"} if g is not None else {}),
-            "linpred": _FAMILIES[self.family].parent,
-            "mean": _FAMILIES[self.family].parameter_output,
+            "linpred": fam.parent,
+            "mean": fam.mean_name,
             "y": self.spec.response if self.spec.trials is None else f"p({self.spec.response}, {self.spec.trials})",
             **{f"b:{p}": p for p in self.spec.terms},
         }
-        if self.family in ("gaussian", "student"):
-            out["sigma"] = "sigma"
-            out["mu"] = "mu"
+        if fam.scale_parameter is not None:
+            out[fam.scale_parameter] = fam.scale_parameter
+        if fam.continuous:
+            out["mu"] = "mu"                                  # the continuous families also expose their location by name
         return out
 
     @property
@@ -433,10 +391,8 @@ class Model:
                 z_by_group[g] = np.asarray(z_by_group[g], dtype=float)
                 if z_by_group[g].shape != (block.J,) or not np.isfinite(z_by_group[g]).all():
                     raise ValueError(f"z for {g!r} must have {block.J} finite entries")
-        if (sigma is None) != (self.family not in ("gaussian", "student")):
-            raise ValueError("sigma must be omitted for Poisson" if self.family == "poisson"
-                             else "sigma is required for the Student-t family" if self.family == "student"
-                             else "sigma is required for the Gaussian family and must be omitted for Bernoulli and binomial")
+        if (sigma is None) != (self.family_spec.scale_parameter is None):
+            raise ValueError(self.family_spec.sigma_rule)
         n = self.names
         if self.spec.intercept and intercept is None:
             raise ValueError("intercept is required for a model with a population intercept")
@@ -486,23 +442,19 @@ class Model:
             else:
                 parts.append(f"(x_{term} - mean(x_{term})) * b_{term}" if d.centered else f"x_{term} * b_{term}")
         xs = " + ".join(parts)
-        gaussian = self.family == "gaussian"
-        continuous = self.family in ("gaussian", "student")
-        binomial = self.family == "binomial"
-        poisson = self.family == "poisson"
-        lp = "mu" if continuous else "eta"
+        fam = self.family_spec
+        lp = fam.linpred_symbol
         a = f"a{'_c' if d.centered else ''}" if s.intercept else "0"
-        tag = {"gaussian": "M0", "bernoulli": "M1", "binomial": "M2", "student": "Student-t", "poisson": "Poisson"}[self.family]
         grouping = ("; ".join(f"J = {block.J} levels of {g}" for g, block in d.group_designs.items())
                     if s.has_group else "no group-level term (population-level model)")
         data_line = f"  data      : n = {d.n} observations, {grouping}"
-        if binomial:
+        if fam.has_trials:
             data_line = (f"  data      : {d.n} fitted rows, {int(d.trials.sum())} trials in total, "
                          f"{grouping}; {len(self.dropped_rows)} zero-trial row(s) dropped"
                          + (f" (positions {list(self.dropped_rows)[:10]}{'...' if len(self.dropped_rows) > 10 else ''})"
                             if self.dropped_rows else ""))
         lines = [
-            f"AutoBayes {tag} model" + (" with categorical predictor(s)" if s.categoricals else "")
+            f"AutoBayes {fam.tag} model" + (" with categorical predictor(s)" if s.categoricals else "")
             + (" and interaction(s)" if s.interactions else "") + (" (population-level only)" if not s.has_group else ""),
             f"  formula   : {s.formula}",
         ]
@@ -525,7 +477,7 @@ class Model:
             "Linear predictor",
             f"  {lp}_i = {a}" + (f" + {xs}" if xs else "") + "".join(f" + {effect(g)}[{g}_i]" for g in s.groups),
         ]
-        scale = "response" if continuous else "log mean" if poisson else "log-odds"
+        scale = fam.scale_phrase
         same_group = " (same group)" if len(s.groups) == 1 else (" (same group effects)" if s.groups else "")
         for cat in s.categoricals:
             partners = [xn for xn, zn in s.interactions if zn == cat.name]
@@ -564,15 +516,9 @@ class Model:
                 lines += [f"  The slope in {xn} on the {scale} scale is {slope}, with each categorical reference contribution zero; other predictors and group effects are held fixed."]
                 for zn in partners:
                     lines += [f"  b_{xn}:{zn}[l] is the change in that slope from reference {s.categorical(zn).reference!r} to level l of {zn}, holding the other categorical levels fixed."]
-        if binomial:
-            lines += [f"  P(success) = p_i = expit(eta_i); {s.response}_i ~ Binomial({s.trials}_i, p_i); eta is on the log-odds scale."]
-        elif poisson:
-            lines += ["  E[y_i] = mu_i = exp(eta_i); eta is log expected count."]
-        elif not continuous:
-            lines += ["  P(y_i = 1) = p_i = expit(eta_i) = 1 / (1 + exp(-eta_i)); eta is on the log-odds scale."]
+        lines += fam.mean_lines(self)
         if d.centered:
-            what = ("expected response" if continuous else "log expected count" if poisson else
-                    "per-trial success log-odds" if binomial else "log-odds of y = 1")
+            what = fam.intercept_meaning
             where = "at the predictor means" if not s.categoricals else \
                 "at the numeric predictor means and at the sample proportions of the categorical levels"
             if s.interactions:
@@ -599,9 +545,8 @@ class Model:
                 + (" - sum_(x,z),l q_x:z[l] * b_x:z[l]" if len(s.interactions) > 1 else (" - sum_l q_x:z[l] * b_x:z[l]" if s.interactions else "")) + ", computed after sampling"
                 + (": the linear predictor at x = 0 and at the reference level." if s.categoricals else "."),
             ]
-            if s.categoricals and not continuous and not poisson:
-                lines += ["  expit(a_c) is the probability at that proportion-weighted predictor; it is NOT the",
-                          "  average probability across the levels (the link is nonlinear)."]
+            if s.categoricals:
+                lines += list(fam.centred_intercept_note)
         elif not s.intercept:
             lines += ["  No population intercept or intercept prior. The raw design is used without back-transformation;",
                       f"  center_predictors requested={self.center_predictors}, effective=False (centering requires a free intercept)."]
@@ -617,40 +562,13 @@ class Model:
             lines += ["  Independent priors across factors; group effects are not mean-centered."]
         else:
             lines += ["", "Group effects", "  none: a population-only model (no '(1 | group)' term)"]
-        lines += ["", "Priors" + ("" if continuous else " (location coefficients on the log scale)" if poisson else " (location coefficients on the logit scale)")]
+        lines += ["", "Priors" + ("" if fam.link_scale is None else f" (location coefficients on the {fam.link_scale} scale)")]
         if s.intercept:
             lines += [f"  {a} ~ {pr.intercept}"]
         lines += [f"  b_{col} ~ {coef[col]}" for col in s.columns]
         for g, prior in pr.group_priors(s).items():
             lines += [f"  sd_{g} ~ {prior}"]
-        if self.family == "student":
-            lines += [f"  sigma ~ {pr.sigma}", f"  nu = {self.nu:g} (fixed, not sampled)", "", "Likelihood",
-                      "  y_i ~ StudentT(nu, mu_i, sigma); E[y_i] = mu_i",
-                      "  sigma is scale, not residual SD; variance = sigma^2 * nu/(nu-2) for nu>2",
-                      "  variance is infinite for 1<nu<=2. Learned nu is not supported."]
-        elif poisson:
-            lines += ["", "Likelihood", "  y_i ~ Poisson(mu_i); mu_i = exp(eta_i)",
-                      "  Input counts are integers from 0 through 1e6; zero-count rows are retained.",
-                      "  No exposure/offset, overdispersion or zero-inflation is modeled."]
-        elif gaussian:
-            lines += [f"  sigma ~ {pr.sigma}", "", "Likelihood", "  y_i ~ Normal(mu_i, sigma)"]
-        elif binomial:
-            lines += [
-                "", "Likelihood",
-                f"  log p({s.response}_i | {s.trials}_i, eta_i) = log C({s.trials}_i, {s.response}_i)"
-                f" - {s.response}_i softplus(-eta_i) - ({s.trials}_i - {s.response}_i) softplus(eta_i)",
-                "  with log C computed inside the graph from the evaluated value and a softplus whose gradient",
-                "  is finite on both the PyTensor and the JAX path. Validated (docs/m2-decision.md) for counts",
-                "  up to 1e6 per row at logits to 1e6 against a 60-digit reference; larger counts are refused.",
-                "  Zero-trial rows are dropped before design construction; centering, when effective, uses only fitted rows.",
-            ]
-        else:
-            lines += [
-                "", "Likelihood", "  y_i ~ Bernoulli(p_i), sampled as log p(y_i | eta_i) = y_i * eta_i - softplus(eta_i)",
-                "  with a softplus whose value and gradient are exact for every finite eta on both the",
-                "  PyTensor and the JAX path (autobayes/likelihoods.py; Bambi's built-in bernoulli family",
-                "  is not used because its likelihood is floored at machine epsilon for |eta| > ~37).",
-            ]
+        lines += fam.likelihood_lines(self)
         for w in self.warnings:
             lines += ["", "WARNING: " + w]
         lines += ["", "PyMC variables sampled (value space)"]
@@ -659,15 +577,13 @@ class Model:
         for g, names in self.group_names.items():
             roles[f"{names['sd']}_log__"] = f"log(sd_{g})"
             roles[names["offset"]] = "z" if len(s.groups) == 1 else f"z_{g}"
-        if continuous:
-            roles[f"{n['sigma']}_log__"] = "log(sigma)"
+        if fam.scale_parameter is not None:
+            roles[f"{n[fam.scale_parameter]}_log__"] = f"log({fam.scale_parameter})"
         for term in (*s.categorical_names, *s.interaction_names):
             roles[term] = f"b_{term}[{', '.join(s.levels_of(term))}] (vector; dims {term}_dim, posterior rows {', '.join(s.term_columns(term))})"
         for v in self.pymc_model.value_vars:
             lines.append(f"  {v.name:<24} {roles.get(v.name, f'b_{v.name}')}")
-        lines.append("Deterministic: " + "".join(f"{names['group_effect']} = {effect(g)}, " for g, names in self.group_names.items()) + (f"{n['linpred']} = exp(linear predictor)" if poisson else f"{n['linpred']} = linear predictor")
-                     + ("; mu = exp(eta), expected count" if poisson else "" if continuous else "; p = expit(logit_p)" + (", expected = n p and count draws" if binomial else "")
-                        + " are computed by predict()"))
+        lines.append("Deterministic: " + "".join(f"{names['group_effect']} = {effect(g)}, " for g, names in self.group_names.items()) + fam.deterministic_note)
         return "\n".join(lines)
 
     # -- convenience -------------------------------------------------------------------

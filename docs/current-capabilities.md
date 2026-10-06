@@ -13,6 +13,9 @@ This is a capability map, not a percentage of brms implemented.
 | Provenance | Frozen target identity; fit binding captured before sampling; mismatch refusal; explicit unverified legacy route | test_record_identity.py, test_fit_binding.py; [fit binding](fit-binding.md) |
 
 Test filenames are relative to `tests/`; implementation filenames to `autobayes/`.
+Family-specific behaviour (parent, link, response validation, scale and fixed parameters, prediction rules,
+wording) is dispatched through the registry in `autobayes/families/`, one module per family; see
+[families](families.md). `tests/test_family_registry.py` forbids family-name branches elsewhere.
 Student-t scale is not generally its standard deviation. Binomial expected count
 is n*p, distinct from probability p. Poisson has no exposure/offset interface yet.
 See the family-specific pages for numerical support and refusal boundaries.

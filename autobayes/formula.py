@@ -413,6 +413,9 @@ def parse_formula(formula: str, data: pd.DataFrame | None = None, family: str = 
     ``categorical`` maps a predictor column to its reference level (treatment coding); every
     other predictor term must be numeric.
     """
+    from autobayes.families import get_family
+
+    fam = get_family(family)
     trials = None
     if _BAMBI_PROPORTION_RE.match(formula):
         raise FormulaError(
@@ -421,7 +424,7 @@ def parse_formula(formula: str, data: pd.DataFrame | None = None, family: str = 
         )
     mt = _TRIALS_FORMULA_RE.match(formula)
     if mt:
-        if family != "binomial":
+        if not fam.has_trials:
             raise FormulaError(
                 f"{formula!r}: 'successes | trials(n)' is the binomial family's left-hand side; use "
                 "ab.binomial, or drop '| trials(...)' for a Gaussian or Bernoulli response."
@@ -441,10 +444,10 @@ def parse_formula(formula: str, data: pd.DataFrame | None = None, family: str = 
                 "'y ~ [1 +] x1 [+ x2 ...] [+ (1 | factor) ...]' and, for ab.binomial, "
                 "'successes | trials(n) ~ [1 +] x1 [+ x2 ...] [+ (1 | factor) ...]'."
             )
-        if family == "binomial":
+        if fam.has_trials:
             raise FormulaError(
-                f"{formula!r}: the binomial family needs 'successes | trials(n) ~ ...' (brms syntax); "
-                "counts without a trials column are not a binomial model."
+                f"{formula!r}: the {fam.name} family needs 'successes | trials(n) ~ ...' (brms syntax); "
+                f"counts without a trials column are not a {fam.name} model."
             )
         response, rhs = m.group(1), m.group(2)
     # Only top-level subtraction of the literal 1 is supported. Do not rewrite
@@ -601,7 +604,15 @@ def _is_numeric(s: pd.Series) -> bool:
             and not pd.api.types.is_complex_dtype(s))
 
 
-def _validate_binary_response(name: str, s: pd.Series) -> None:
+def validate_numeric_response(name: str, s: pd.Series, family_label: str) -> None:
+    """A continuous family's response: a real numeric column."""
+    if not _is_numeric(s):
+        raise FormulaError(
+            f"column {name!r} has dtype {s.dtype}; the {family_label} family needs a numeric response."
+        )
+
+
+def validate_binary_response(name: str, s: pd.Series) -> None:
     reject_complex(f"response {name!r}", s)
     if pd.api.types.is_bool_dtype(s):
         raise FormulaError(
@@ -689,7 +700,10 @@ def binomial_counts(spec: ModelSpec, data: pd.DataFrame) -> tuple[np.ndarray, np
 
 def validate_data(spec: ModelSpec, data: pd.DataFrame, family: str = "gaussian") -> ModelSpec:
     """Check columns exist, are numeric where required, and have no missing values."""
-    if (spec.trials is not None) != (family == "binomial"):
+    from autobayes.families import get_family
+
+    fam = get_family(family)
+    if (spec.trials is not None) != fam.has_trials:
         raise FormulaError("a trials column is present exactly for the binomial family")
     needed = ([spec.response, *spec.predictors, *spec.categorical_names] + list(spec.groups)
               + ([spec.trials] if spec.trials else []))
@@ -717,17 +731,7 @@ def validate_data(spec: ModelSpec, data: pd.DataFrame, family: str = "gaussian")
             )
         categoricals.append(Categorical(name=cat.name, reference=cat.reference, levels=levels, unused=unused, full_rank=cat.full_rank))
     reject_complex(f"response {spec.response!r}", data[spec.response])
-    if family == "bernoulli":
-        _validate_binary_response(spec.response, data[spec.response])
-    elif family == "binomial":
-        binomial_counts(spec, data)
-    elif family == "poisson":
-        check_counts(f"response {spec.response!r}", data[spec.response], domain="poisson")
-    elif not _is_numeric(data[spec.response]):
-        raise FormulaError(
-            f"column {spec.response!r} has dtype {data[spec.response].dtype}; the {'Student-t' if family == 'student' else 'Gaussian'} "
-            "family needs a numeric response."
-        )
+    fam.validate_response(spec, data)
     na = data[needed].isna().any()
     if na.any():
         raise FormulaError(
