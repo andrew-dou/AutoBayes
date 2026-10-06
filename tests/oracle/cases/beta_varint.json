@@ -5,10 +5,6 @@
  "note": "Beta with a logit link and precision phi",
  "seed": 151,
  "n_points": 8,
- "gate": {
-  "expect": "fail",
-  "reason": "A11_beta not implemented; remove this field when it lands"
- },
  "data": {
   "generator": "tier_a",
   "seed": 51,

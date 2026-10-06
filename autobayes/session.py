@@ -70,7 +70,7 @@ def _summary_rows(model, idata) -> dict:
     from autobayes.families import get_family
 
     n = model.names
-    scale = get_family(model.family).scale_parameter            # "sigma", "shape" or None
+    scale = get_family(model.family).scale_parameter            # "sigma", "shape", "phi" or None
     names = ([n["intercept"]] if model.spec.intercept else []) + list(model.spec.terms) + [roles["sd"] for roles in model.group_coefficient_names.values()] + ([n[scale]] if scale is not None else [])
     s = az.summary(idata, var_names=names, hdi_prob=0.94, round_to="none")
     rows = {}

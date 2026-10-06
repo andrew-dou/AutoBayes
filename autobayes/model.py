@@ -1,6 +1,6 @@
 """The model: a thin, inspectable layer over a Bambi-built PyMC model.
 
-The families of ``autobayes.families``, including Poisson and negative binomial counts, Gamma, lognormal and
+The families of ``autobayes.families``, including Poisson and negative binomial counts, Gamma, lognormal, Beta and
 fixed-nu Student-t responses. ``"gaussian"`` (M0): identity link, residual SD ``sigma``. ``"bernoulli"``
 (M1): logit link, ``p = expit(eta)``, no residual scale. ``"binomial"`` (M2): logit link on
 ``successes | trials(n)``, counts. All share the right-hand side ``[1 +] x1 [+ x2 ...] [+ offset(log(col))]
@@ -109,7 +109,7 @@ class Model:
 
     Attributes
     ----------
-    family : str               a registered family name: "gaussian", "student", "poisson", "negbinomial", "gamma", "lognormal", "bernoulli", "binomial"
+    family : str               a registered family name: "gaussian", "student", "poisson", "negbinomial", "gamma", "lognormal", "beta", "bernoulli", "binomial"
     family_spec : FamilySpec   the registered specification of that family (autobayes/families/)
     spec : ModelSpec
     priors : Priors
@@ -392,8 +392,8 @@ class Model:
         Bambi builds for the likelihood's parent parameter (``mu`` for Gaussian, ``logit_p``
         for Bernoulli); ``"mean"`` is the name ``predict`` gives the expected response (``mu``
         or ``p``; ``mean`` for the lognormal, whose ``mu`` is the log-scale location). ``"sigma"`` exists for the
-        Gaussian, Student-t and lognormal families and ``"shape"`` for the negative binomial and Gamma families (its
-        value is Bambi's variable name, ``alpha``). ``"b:<term>"`` is the
+        Gaussian, Student-t and lognormal families, ``"shape"`` for the negative binomial and Gamma families (its
+        value is Bambi's variable name, ``alpha``) and ``"phi"`` for the Beta family (the precision). ``"b:<term>"`` is the
         coefficient variable of each population-level term (scalar for a numeric term, a vector
         over the coefficient levels otherwise); with exactly one group-level term its ``sd``,
         ``offset`` and ``group_effect`` roles are included here as well, and ``sd:x``, ``offset:x``,
@@ -410,8 +410,8 @@ class Model:
         }
         if fam.scale_parameter is not None:
             out[fam.scale_parameter] = fam.bambi_scale_parameter
-        if fam.continuous:
-            out["mu"] = "mu"                                  # the continuous families also expose their location by name
+        if fam.continuous and fam.parent == "mu":
+            out["mu"] = "mu"                                  # the continuous families whose parent is the location mu expose it by name (the Beta's parent is logit_mu)
         return out
 
     @staticmethod
@@ -451,7 +451,7 @@ class Model:
         return self.spec.column_terms
 
     def value_point(self, *, intercept: float | None = None, b, sd=None, z=None, sigma: float | None = None,
-                    shape: float | None = None) -> dict[str, np.ndarray]:
+                    shape: float | None = None, phi: float | None = None) -> dict[str, np.ndarray]:
         """A point in PyMC's sampled (value) space, from natural-scale quantities.
 
         ``intercept`` is the *model* intercept (at the predictor means when centred),
@@ -463,7 +463,7 @@ class Model:
         "x": 0.3}}``, ``z={"g": {"Intercept": array(J), "x": array(J)}}``. One factor also accepts the
         entry without the factor key; neither applies without groups. ``sigma`` is the residual
         SD (Gaussian and Student-t; the SD of ``log y`` for the lognormal), ``shape`` the negative binomial / Gamma
-        shape; exactly the family's own is given. Scales are stored on the log scale because that is what PyMC samples.
+        shape, ``phi`` the Beta precision; exactly the family's own is given. Scales are stored on the log scale because that is what PyMC samples.
         """
         b = np.atleast_1d(np.asarray(b, dtype=float))
         if b.shape != (len(self.spec.columns),):
@@ -513,8 +513,8 @@ class Model:
                         what = repr(g) if coef == "Intercept" else f"the slope {coef!r} of {g!r}"
                         raise ValueError(f"z for {what} must have {block.J} finite entries")
                     sd_by_coef[(g, coef)], z_by_coef[(g, coef)] = sds[coef], arr
-        scale = self.family_spec.scale_parameter                 # "sigma", "shape" or None
-        auxiliary = {"sigma": sigma, "shape": shape}
+        scale = self.family_spec.scale_parameter                 # "sigma", "shape", "phi" or None
+        auxiliary = {"sigma": sigma, "shape": shape, "phi": phi}
         if {k for k, v in auxiliary.items() if v is not None} != ({scale} if scale is not None else set()):
             raise ValueError(self.family_spec.scale_rule)
         n = self.names
@@ -835,4 +835,17 @@ def lognormal(formula: str, data: pd.DataFrame, priors: Priors, *,
     offset or distributional (``sigma ~ ...``) formula.
     """
     return Model(formula, data, priors, family="lognormal",
+                 center_predictors=center_predictors, categorical=categorical)
+
+
+def beta(formula: str, data: pd.DataFrame, priors: Priors, *,
+         center_predictors: bool = True, categorical: Mapping[str, object] | None = None) -> Model:
+    """Beta response with a logit link (brms ``Beta()``): proportions strictly inside (0, 1), ``E[y] = mu = expit(eta)``,
+    ``Var[y] = mu (1 - mu) / (1 + phi)``.
+
+    The precision ``phi`` takes its own positive-support prior, ``Priors(phi=ab.Gamma(0.01, 0.01))`` (brms class
+    ``phi``); the intercept and slope priors are on the logit scale. ``predict(kind="mean")`` returns ``mu``; no sigma,
+    shape, nu, other link, zero/one inflation or distributional (``phi ~ ...``) formula.
+    """
+    return Model(formula, data, priors, family="beta",
                  center_predictors=center_predictors, categorical=categorical)

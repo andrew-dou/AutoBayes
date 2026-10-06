@@ -48,9 +48,10 @@ def _prior(v):
 
 def priors_from_spec(spec: dict) -> ab.Priors:
     """``{"intercept": ["Normal", 0, 5], "b": ["Normal", 0, 2] | {term: ...}, "sd": [...] | {factor: ...}, "sigma": [...],
-    "shape": [...]}``."""
+    "shape": [...], "phi": [...]}``."""
     return ab.Priors(intercept=_prior(spec.get("intercept")), b=_prior(spec.get("b")),
-                     sd=_prior(spec.get("sd")), sigma=_prior(spec.get("sigma")), shape=_prior(spec.get("shape")))
+                     sd=_prior(spec.get("sd")), sigma=_prior(spec.get("sigma")), shape=_prior(spec.get("shape")),
+                     phi=_prior(spec.get("phi")))
 
 
 def build_model(case: dict, data: pd.DataFrame) -> ab.Model:
@@ -192,10 +193,11 @@ def match_groups(fixture: Fixture, model: ab.Model) -> GroupMap:
 
 # -- points -------------------------------------------------------------------------------------------------
 def natural_point(model: ab.Model, point: Point, cmap: ColumnMap, gmap: GroupMap) -> dict:
-    """AutoBayes's natural-scale arguments (intercept, b, sd, z, sigma, shape) at a brms point. An intercept-only
+    """AutoBayes's natural-scale arguments (intercept, b, sd, z, sigma, shape, phi) at a brms point. An intercept-only
     factor's ``sd`` and ``z`` are the scalar and the vector; a factor with varying slopes takes the
-    coefficient-keyed mappings ``{"Intercept": ..., "x": ...}`` (``Model.value_point``). ``sigma`` and ``shape``
-    are brms's parameters of those names (the Gaussian/Student-t scale; the negative binomial/Gamma shape)."""
+    coefficient-keyed mappings ``{"Intercept": ..., "x": ...}`` (``Model.value_point``). ``sigma``, ``shape`` and
+    ``phi`` are brms's parameters of those names (the Gaussian/Student-t/lognormal scale; the negative binomial/Gamma
+    shape; the Beta precision)."""
     pars = point.pars
     bb = coefficients(pars)
     b = np.array([bb[cmap.b_index(k)] for k in cmap.x_column], dtype=float)
@@ -219,7 +221,8 @@ def natural_point(model: ab.Model, point: Point, cmap: ColumnMap, gmap: GroupMap
             sd[g], z[g] = per_sd["Intercept"], per_z["Intercept"]
     sigma = float(pars["sigma"]) if "sigma" in pars else None
     shape = float(pars["shape"]) if "shape" in pars else None
-    return dict(intercept=intercept, b=b, sd=sd or None, z=z or None, sigma=sigma, shape=shape)
+    phi = float(pars["phi"]) if "phi" in pars else None
+    return dict(intercept=intercept, b=b, sd=sd or None, z=z or None, sigma=sigma, shape=shape, phi=phi)
 
 
 def value_point(model: ab.Model, point: Point, cmap: ColumnMap, gmap: GroupMap) -> dict:
@@ -260,6 +263,8 @@ def coordinate_map(fixture: Fixture, model: ab.Model, cmap: ColumnMap, gmap: Gro
             target, expect = (f"{names['sigma']}_log__", 0), "log"
         elif par == "shape":                                   # negative binomial / Gamma: PyMC's alpha, sampled on the log scale
             target, expect = (f"{names['shape']}_log__", 0), "log"
+        elif par == "phi":                                     # Beta precision, sampled on the log scale
+            target, expect = (f"{names['phi']}_log__", 0), "log"
         elif par.startswith("sd_") and int(par[3:]) in by_id:
             g = by_id[int(par[3:])]
             if (g, elem + 1) not in by_cn:
@@ -284,7 +289,7 @@ def coordinate_map(fixture: Fixture, model: ab.Model, cmap: ColumnMap, gmap: Gro
 def draws(fixture: Fixture, model: ab.Model, cmap: ColumnMap, gmap: GroupMap) -> az.InferenceData:
     """The fixture's points as one chain of posterior draws under AutoBayes's names: the raw-scale intercept
     (brms ``b_Intercept``), coefficients by term, group SDs and effects by level for every group-level
-    coefficient (``1|g`` from ``r_m_1``, ``x|g`` from the slope's ``r_m_c``), sigma or shape."""
+    coefficient (``1|g`` from ``r_m_1``, ``x|g`` from the slope's ``r_m_c``), sigma, shape or phi."""
     pts = fixture.points
     names = model.names
     data, coords = {}, {"chain": [0], "draw": np.arange(len(pts))}
@@ -316,4 +321,6 @@ def draws(fixture: Fixture, model: ab.Model, cmap: ColumnMap, gmap: GroupMap) ->
         data[names["sigma"]] = (("chain", "draw"), np.array([float(p.pars["sigma"]) for p in pts])[None, :])
     if "shape" in names and "shape" in pts[0].pars:
         data[names["shape"]] = (("chain", "draw"), np.array([float(p.pars["shape"]) for p in pts])[None, :])
+    if "phi" in names and "phi" in pts[0].pars:
+        data[names["phi"]] = (("chain", "draw"), np.array([float(p.pars["phi"]) for p in pts])[None, :])
     return az.InferenceData(posterior=xr.Dataset(data, coords=coords))

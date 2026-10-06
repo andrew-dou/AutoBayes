@@ -3,7 +3,7 @@
 Response families: Gaussian and fixed-nu Student-t with identity links,
 Bernoulli and grouped binomial with logit links, Poisson and negative binomial
 counts and Gamma responses with a log link, lognormal responses with the identity
-link on the log-scale location. Supported formulas combine numeric and declared categorical predictors,
+link on the log-scale location, and Beta proportions with a logit link and precision ``phi``. Supported formulas combine numeric and declared categorical predictors,
 numeric-by-categorical interactions, intercept controls, and optional multiple
 independent varying-intercept factors. Explicit priors are required.
 
@@ -44,7 +44,7 @@ from autobayes.priors import (
     Priors,
     StudentT,
 )
-from autobayes.model import Model, bernoulli, binomial, gamma, gaussian, lognormal, negbinomial, student, poisson
+from autobayes.model import Model, bernoulli, beta, binomial, gamma, gaussian, lognormal, negbinomial, student, poisson
 from autobayes.inference import DeviceError, FitResult, fit
 from autobayes.predict import predict
 from autobayes.prior_predictive import prior_predictive
@@ -54,7 +54,7 @@ from autobayes.session import compare_records, environment, fit_record, format_c
 __all__ = [
     "Categorical", "DeviceError", "Exponential", "FitResult", "FormulaError", "Gamma", "GroupTerm", "HalfCauchy",
     "HalfNormal", "HalfStudentT", "Model", "ModelSpec", "Normal", "PopTerm", "Prior",
-    "PriorError", "Priors", "StudentT", "bernoulli", "binomial", "compare_records", "environment", "fit", "fit_record",
+    "PriorError", "Priors", "StudentT", "bernoulli", "beta", "binomial", "compare_records", "environment", "fit", "fit_record",
     "gamma", "lognormal", "negbinomial", "student", "poisson", "format_comparison", "format_environment", "gaussian", "panel",
     "parse_formula", "predict", "prior_predictive",
 ]
