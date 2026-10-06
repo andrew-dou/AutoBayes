@@ -239,13 +239,13 @@
    "depends_on": [
     "P4_term_model"
    ],
-   "status": "fixtures_frozen",
+   "status": "implementing",
    "summary": "numeric:numeric, categorical:categorical and higher-order interactions with brms/R coding",
    "pr": null,
-   "attempts": 0,
+   "attempts": 1,
    "gates": {},
    "divergences": [],
-   "next_action": "implement when its dependencies merge; remove gate.expect from the cases",
+   "next_action": "formula lane agent, worktree parity-form2 (stacked on #31's branch)",
    "fixtures": {
     "pr": 28,
     "cases": [
@@ -261,13 +261,13 @@
    "depends_on": [
     "P4_term_model"
    ],
-   "status": "fixtures_frozen",
+   "status": "implementing",
    "summary": "in-formula transforms such as log(x), I(x^2), scale(x)",
    "pr": null,
-   "attempts": 0,
+   "attempts": 1,
    "gates": {},
    "divergences": [],
-   "next_action": "implement when its dependencies merge; remove gate.expect from the cases",
+   "next_action": "formula lane agent, worktree parity-form2 (stacked on #31's branch)",
    "fixtures": {
     "pr": 28,
     "cases": [
@@ -321,9 +321,9 @@
    "depends_on": [
     "P3_families_registry"
    ],
-   "status": "gates_green",
+   "status": "merged",
    "summary": "negative binomial counts with shape parameter",
-   "pr": null,
+   "pr": 30,
    "attempts": 1,
    "gates": {
     "sha": "7d303ff75c4f",
@@ -347,7 +347,7 @@
     "note": "same branch and run as A09_gamma (both features on parity/a08-a09-negbinomial-gamma)"
    },
    "divergences": [],
-   "next_action": "families lane agent, worktree parity-fam1 (with A09)",
+   "next_action": "",
    "fixtures": {
     "pr": 28,
     "cases": [
@@ -362,9 +362,9 @@
    "depends_on": [
     "P3_families_registry"
    ],
-   "status": "gates_green",
+   "status": "merged",
    "summary": "Gamma responses (log link) with shape",
-   "pr": null,
+   "pr": 30,
    "attempts": 1,
    "gates": {
     "sha": "7d303ff75c4f",
@@ -387,7 +387,7 @@
     }
    },
    "divergences": [],
-   "next_action": "families lane agent, worktree parity-fam1 (after A08)",
+   "next_action": "",
    "fixtures": {
     "pr": 28,
     "cases": [
@@ -402,13 +402,13 @@
    "depends_on": [
     "P3_families_registry"
    ],
-   "status": "fixtures_frozen",
+   "status": "implementing",
    "summary": "lognormal responses",
    "pr": null,
-   "attempts": 0,
+   "attempts": 1,
    "gates": {},
    "divergences": [],
-   "next_action": "implement when its dependencies merge; remove gate.expect from the cases",
+   "next_action": "families lane agent, worktree parity-fam2 (stacked on #30's branch)",
    "fixtures": {
     "pr": 28,
     "cases": [
@@ -423,13 +423,13 @@
    "depends_on": [
     "P3_families_registry"
    ],
-   "status": "fixtures_frozen",
+   "status": "implementing",
    "summary": "Beta responses (logit link) with precision phi",
    "pr": null,
-   "attempts": 0,
+   "attempts": 1,
    "gates": {},
    "divergences": [],
-   "next_action": "implement when its dependencies merge; remove gate.expect from the cases",
+   "next_action": "families lane agent, worktree parity-fam2 (stacked on #30's branch)",
    "fixtures": {
     "pr": 28,
     "cases": [
