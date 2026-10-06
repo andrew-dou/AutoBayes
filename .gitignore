@@ -15,6 +15,9 @@ slurm-*.out
 *.err
 *.out
 
+# compile cache of tools/parity_gate.py
+.pytensor-gate/
+
 # python
 __pycache__/
 *.py[cod]

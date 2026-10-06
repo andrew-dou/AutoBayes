@@ -1,3 +1,18 @@
+# brms-parity loop: Phase 0 under way (2026-10-05 UTC)
+
+Andrew's direction (2026-10-04): AutoBayes is brms re-implemented in Python on Bambi/PyMC with JAX/NumPyro
+sampling, built from here on by an oracle-gated loop rather than one coordinator-dispatched unit at a time.
+brms 2.23.0 with rstan 2.32.7 on this machine is the oracle: `standata()`, `rstan::log_prob` and
+`posterior_linpred/epred` give deterministic pass/fail checkpoints for every feature; MCMC is never a gate.
+The operating rules, the feature ledger and the divergence log live in `docs/brms-parity/`; the entries
+below this one are the pre-loop history and stay as written.
+
+Phase 0 state: P0 (rstan compiles a brms model) passed; PR #21 merged; P1 (automatic `sampling` marker) is
+PR #22; P2 (oracle harness with fourteen baseline fixtures, calibrated against `tests/reference_logp.py` and
+`tests/reference_binomial.py`) is on `parity/p2-oracle-harness`; P3 (families registry) and P4 (term model)
+follow, then Tier A starts with independent varying slopes re-landed from PR #8, which then closes as
+superseded. The F7 recovery test is no longer an acceptance criterion (Andrew, 2026-10-04).
+
 # M3a-3 candidate: multiple interactions (2026-09-20 UTC)
 
 Isolated branch `m3a3/multiple-interactions` starts from merged PR #11 at `f23beea20607cdd049b808c0c9140072fbcd6bdd`. Decision `562c1ec` precedes implementation. Several distinct numeric-by-declared-categorical pairs retain explicit main effects, strict duplicates, canonical order and exact priors. Descriptions now compose every conditional contrast and slope. Two focused deterministic runs passed (32 and 6 tests; 164.8976 monotonic seconds). The one inherited fast suite is incomplete after root enforced the exceeded UTC wall cap; original receipt and separate intervention are preserved, with no retry. Future supervision must enforce UTC and monotonic deadlines. Hosted checks remain required. No new feature MCMC, calibration or GPU run occurred. Evidence/checkpoint: `/private/tmp/autobayes-m3a3-implementation/`; decision: `docs/m3a3-decision.md`. Root owns review/merge/cleanup. PR8 and original dirty planning checkout remain separate.
