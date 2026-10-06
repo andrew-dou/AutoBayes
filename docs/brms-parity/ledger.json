@@ -152,9 +152,9 @@
    "depends_on": [
     "P4_term_model"
    ],
-   "status": "gates_green",
+   "status": "merged",
    "summary": "(1 + x || g): independent varying slopes, re-landed from PR #8's code and tests; PR #8 then closes as superseded",
-   "pr": null,
+   "pr": 29,
    "attempts": 1,
    "gates": {
     "sha": "a735b7a00adc",
@@ -177,7 +177,7 @@
     }
    },
    "divergences": [],
-   "next_action": "agent implementing in AutoBayes-worktrees/parity-a01 (stacked on P4); the four cases carry gate.expect=fail until it lands",
+   "next_action": "",
    "fixtures": {
     "pr": 26,
     "cases": [
@@ -186,7 +186,8 @@
      "bernoulli_slope_categorical",
      "poisson_slope_independent"
     ]
-   }
+   },
+   "note": "slope SD prior API sd={factor: {coef: prior}} confirmed by Andrew 2026-10-06; PR #8 closed as superseded"
   },
   {
    "id": "A02_correlated_slopes",
@@ -201,7 +202,7 @@
    "attempts": 0,
    "gates": {},
    "divergences": [],
-   "next_action": "implement when its dependencies merge; remove gate.expect from the cases",
+   "next_action": "unblocked by A01; needs a transform-aware adapter for L_m (cholesky_factor_corr) and a custom Cholesky construction (Bambi's LKJ path is disabled); may park",
    "fixtures": {
     "pr": 28,
     "cases": [
