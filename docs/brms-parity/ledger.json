@@ -1,0 +1,501 @@
+{
+ "schema": "autobayes-parity-ledger-v1",
+ "statuses": [
+  "queued",
+  "fixtures_frozen",
+  "implementing",
+  "gates_green",
+  "pr_open",
+  "merged",
+  "parked"
+ ],
+ "lanes": {
+  "infra": "harness, tooling and refactors that every lane builds on",
+  "families": "autobayes/families/: response families, links, auxiliary parameters, default priors",
+  "formula": "autobayes/formula.py and model.py: terms, group-level structure, transforms",
+  "post": "autobayes/predict.py and new summary/comparison modules"
+ },
+ "features": [
+  {
+   "id": "P0_pr21",
+   "tier": "0",
+   "lane": "post",
+   "depends_on": [],
+   "status": "merged",
+   "summary": "include_group_effects stored as an integer attribute so predictions stay netCDF-serialisable",
+   "pr": 21,
+   "attempts": 1,
+   "gates": {},
+   "divergences": [],
+   "next_action": ""
+  },
+  {
+   "id": "P1_sampling_marker",
+   "tier": "0",
+   "lane": "infra",
+   "depends_on": [],
+   "status": "merged",
+   "summary": "tests/conftest.py marks sampling tests automatically; -m 'not slow and not sampling' locally",
+   "pr": 22,
+   "attempts": 1,
+   "gates": {},
+   "divergences": [],
+   "next_action": "measure the non-sampling suite warm on a quiet machine; the 3-minute target is not met by the marker alone"
+  },
+  {
+   "id": "P2_oracle_harness",
+   "tier": "0",
+   "lane": "infra",
+   "depends_on": [],
+   "status": "pr_open",
+   "summary": "P0 go/no-go passed 2026-10-05 (oracle/R/doctor.R); oracle/R/gen_fixture.R, oracle/regen.py, tests/oracle/* and 14 baseline fixtures calibrated against the hand-written references",
+   "pr": 23,
+   "attempts": 1,
+   "gates": {},
+   "divergences": [
+    "D1",
+    "D2",
+    "D3",
+    "D4",
+    "D5"
+   ],
+   "next_action": "merge when hosted CI is green; 137 oracle tests pass locally"
+  },
+  {
+   "id": "P3_families_registry",
+   "tier": "0",
+   "lane": "families",
+   "depends_on": [
+    "P2_oracle_harness"
+   ],
+   "status": "implementing",
+   "summary": "autobayes/families/ FamilySpec registry replaces every family == check; an AST lint bans new ones",
+   "pr": null,
+   "attempts": 1,
+   "gates": {},
+   "divergences": [],
+   "next_action": "agent working in AutoBayes-worktrees/parity-p3 off parity/p2-oracle-harness; PR after P2 merges"
+  },
+  {
+   "id": "P4_term_model",
+   "tier": "0",
+   "lane": "formula",
+   "depends_on": [
+    "P3_families_registry"
+   ],
+   "status": "queued",
+   "summary": "PopTerm and GroupTerm(factor, coefs, correlated) with per-(factor, coefficient) design blocks",
+   "pr": null,
+   "attempts": 0,
+   "gates": {},
+   "divergences": [],
+   "next_action": ""
+  },
+  {
+   "id": "P5_loop_state",
+   "tier": "0",
+   "lane": "infra",
+   "depends_on": [],
+   "status": "pr_open",
+   "summary": "docs/brms-parity/{LOOP.md,ledger.json,divergences.md}, tools/parity_gate.py, tools/parity_status.py, STATUS refresh",
+   "pr": 24,
+   "attempts": 1,
+   "gates": {},
+   "divergences": [],
+   "next_action": "merge after #23"
+  },
+  {
+   "id": "A01_independent_slopes",
+   "tier": "A",
+   "lane": "formula",
+   "depends_on": [
+    "P4_term_model"
+   ],
+   "status": "queued",
+   "summary": "(1 + x || g): independent varying slopes, re-landed from PR #8's code and tests; PR #8 then closes as superseded",
+   "pr": null,
+   "attempts": 0,
+   "gates": {},
+   "divergences": [],
+   "next_action": ""
+  },
+  {
+   "id": "A02_correlated_slopes",
+   "tier": "A",
+   "lane": "formula",
+   "depends_on": [
+    "A01_independent_slopes"
+   ],
+   "status": "queued",
+   "summary": "(1 + x | g) with an LKJ prior on the correlation; Bambi's LKJ path is disabled, so a custom Cholesky transform (may park)",
+   "pr": null,
+   "attempts": 0,
+   "gates": {},
+   "divergences": [],
+   "next_action": ""
+  },
+  {
+   "id": "A03_grouping_syntax",
+   "tier": "A",
+   "lane": "formula",
+   "depends_on": [
+    "P4_term_model"
+   ],
+   "status": "queued",
+   "summary": "g:h and g/h grouping factors",
+   "pr": null,
+   "attempts": 0,
+   "gates": {},
+   "divergences": [],
+   "next_action": ""
+  },
+  {
+   "id": "A04_general_interactions",
+   "tier": "A",
+   "lane": "formula",
+   "depends_on": [
+    "P4_term_model"
+   ],
+   "status": "queued",
+   "summary": "numeric:numeric, categorical:categorical and higher-order interactions with brms/R coding",
+   "pr": null,
+   "attempts": 0,
+   "gates": {},
+   "divergences": [],
+   "next_action": ""
+  },
+  {
+   "id": "A05_formula_transforms",
+   "tier": "A",
+   "lane": "formula",
+   "depends_on": [
+    "P4_term_model"
+   ],
+   "status": "queued",
+   "summary": "in-formula transforms such as log(x), I(x^2), scale(x)",
+   "pr": null,
+   "attempts": 0,
+   "gates": {},
+   "divergences": [],
+   "next_action": ""
+  },
+  {
+   "id": "A06_offset",
+   "tier": "A",
+   "lane": "formula",
+   "depends_on": [
+    "P4_term_model"
+   ],
+   "status": "queued",
+   "summary": "offset(log(exposure))",
+   "pr": null,
+   "attempts": 0,
+   "gates": {},
+   "divergences": [],
+   "next_action": ""
+  },
+  {
+   "id": "A07_default_priors",
+   "tier": "A",
+   "lane": "families",
+   "depends_on": [
+    "P3_families_registry"
+   ],
+   "status": "queued",
+   "summary": "opt-in ab.default_priors() reproducing brms's default_prior() table (G6 becomes a pass/fail gate)",
+   "pr": null,
+   "attempts": 0,
+   "gates": {},
+   "divergences": [
+    "D1",
+    "D2"
+   ],
+   "next_action": ""
+  },
+  {
+   "id": "A08_negbinomial",
+   "tier": "A",
+   "lane": "families",
+   "depends_on": [
+    "P3_families_registry"
+   ],
+   "status": "queued",
+   "summary": "negative binomial counts with shape parameter",
+   "pr": null,
+   "attempts": 0,
+   "gates": {},
+   "divergences": [],
+   "next_action": ""
+  },
+  {
+   "id": "A09_gamma",
+   "tier": "A",
+   "lane": "families",
+   "depends_on": [
+    "P3_families_registry"
+   ],
+   "status": "queued",
+   "summary": "Gamma responses (log link) with shape",
+   "pr": null,
+   "attempts": 0,
+   "gates": {},
+   "divergences": [],
+   "next_action": ""
+  },
+  {
+   "id": "A10_lognormal",
+   "tier": "A",
+   "lane": "families",
+   "depends_on": [
+    "P3_families_registry"
+   ],
+   "status": "queued",
+   "summary": "lognormal responses",
+   "pr": null,
+   "attempts": 0,
+   "gates": {},
+   "divergences": [],
+   "next_action": ""
+  },
+  {
+   "id": "A11_beta",
+   "tier": "A",
+   "lane": "families",
+   "depends_on": [
+    "P3_families_registry"
+   ],
+   "status": "queued",
+   "summary": "Beta responses (logit link) with precision phi",
+   "pr": null,
+   "attempts": 0,
+   "gates": {},
+   "divergences": [],
+   "next_action": ""
+  },
+  {
+   "id": "A12_links",
+   "tier": "A",
+   "lane": "families",
+   "depends_on": [
+    "P3_families_registry"
+   ],
+   "status": "queued",
+   "summary": "non-default links: probit, cloglog, cauchit, log for gaussian, identity/sqrt for poisson",
+   "pr": null,
+   "attempts": 0,
+   "gates": {},
+   "divergences": [],
+   "next_action": ""
+  },
+  {
+   "id": "A13_student_learned_nu",
+   "tier": "A",
+   "lane": "families",
+   "depends_on": [
+    "P3_families_registry"
+   ],
+   "status": "queued",
+   "summary": "Student-t with a prior on nu (brms default gamma(2, 0.1))",
+   "pr": null,
+   "attempts": 0,
+   "gates": {},
+   "divergences": [],
+   "next_action": ""
+  },
+  {
+   "id": "B01_distributional",
+   "tier": "B",
+   "lane": "families",
+   "depends_on": [
+    "A12_links"
+   ],
+   "status": "queued",
+   "summary": "bf(y ~ x, sigma ~ z): formulas on auxiliary parameters",
+   "pr": null,
+   "attempts": 0,
+   "gates": {},
+   "divergences": [],
+   "next_action": ""
+  },
+  {
+   "id": "B02_cens_trunc_weights",
+   "tier": "B",
+   "lane": "formula",
+   "depends_on": [
+    "A06_offset"
+   ],
+   "status": "queued",
+   "summary": "cens(), trunc(), weights() response addition terms",
+   "pr": null,
+   "attempts": 0,
+   "gates": {},
+   "divergences": [],
+   "next_action": ""
+  },
+  {
+   "id": "B03_monotonic",
+   "tier": "B",
+   "lane": "formula",
+   "depends_on": [
+    "A04_general_interactions"
+   ],
+   "status": "queued",
+   "summary": "mo() monotonic effects with the simplex prior",
+   "pr": null,
+   "attempts": 0,
+   "gates": {},
+   "divergences": [],
+   "next_action": ""
+  },
+  {
+   "id": "B04_splines",
+   "tier": "B",
+   "lane": "formula",
+   "depends_on": [
+    "A05_formula_transforms"
+   ],
+   "status": "queued",
+   "summary": "s() smooth terms (mgcv basis construction; likely to park for a decision)",
+   "pr": null,
+   "attempts": 0,
+   "gates": {},
+   "divergences": [],
+   "next_action": ""
+  },
+  {
+   "id": "B05_ordinal_categorical",
+   "tier": "B",
+   "lane": "families",
+   "depends_on": [
+    "A12_links"
+   ],
+   "status": "queued",
+   "summary": "cumulative, sratio, cratio, acat and categorical families",
+   "pr": null,
+   "attempts": 0,
+   "gates": {},
+   "divergences": [],
+   "next_action": ""
+  },
+  {
+   "id": "B06_zero_inflated_hurdle",
+   "tier": "B",
+   "lane": "families",
+   "depends_on": [
+    "A08_negbinomial"
+   ],
+   "status": "queued",
+   "summary": "zero-inflated and hurdle count families",
+   "pr": null,
+   "attempts": 0,
+   "gates": {},
+   "divergences": [],
+   "next_action": ""
+  },
+  {
+   "id": "C01_multivariate",
+   "tier": "C",
+   "lane": "formula",
+   "depends_on": [
+    "B01_distributional"
+   ],
+   "status": "queued",
+   "summary": "mvbind() multivariate responses with residual correlations",
+   "pr": null,
+   "attempts": 0,
+   "gates": {},
+   "divergences": [],
+   "next_action": ""
+  },
+  {
+   "id": "C02_nonlinear",
+   "tier": "C",
+   "lane": "formula",
+   "depends_on": [
+    "B01_distributional"
+   ],
+   "status": "queued",
+   "summary": "bf(nl = TRUE) non-linear formulas",
+   "pr": null,
+   "attempts": 0,
+   "gates": {},
+   "divergences": [],
+   "next_action": ""
+  },
+  {
+   "id": "C03_gaussian_process",
+   "tier": "C",
+   "lane": "formula",
+   "depends_on": [
+    "B04_splines"
+   ],
+   "status": "queued",
+   "summary": "gp() terms",
+   "pr": null,
+   "attempts": 0,
+   "gates": {},
+   "divergences": [],
+   "next_action": ""
+  },
+  {
+   "id": "C04_autocor",
+   "tier": "C",
+   "lane": "formula",
+   "depends_on": [
+    "C01_multivariate"
+   ],
+   "status": "queued",
+   "summary": "ar(), ma(), arma(), car(), sar() autocorrelation",
+   "pr": null,
+   "attempts": 0,
+   "gates": {},
+   "divergences": [],
+   "next_action": ""
+  },
+  {
+   "id": "C05_mixtures",
+   "tier": "C",
+   "lane": "families",
+   "depends_on": [
+    "B06_zero_inflated_hurdle"
+   ],
+   "status": "queued",
+   "summary": "mixture() families",
+   "pr": null,
+   "attempts": 0,
+   "gates": {},
+   "divergences": [],
+   "next_action": ""
+  },
+  {
+   "id": "C06_missing_and_measurement_error",
+   "tier": "C",
+   "lane": "formula",
+   "depends_on": [
+    "C01_multivariate"
+   ],
+   "status": "queued",
+   "summary": "mi() and me() terms",
+   "pr": null,
+   "attempts": 0,
+   "gates": {},
+   "divergences": [],
+   "next_action": ""
+  },
+  {
+   "id": "C07_post_processing",
+   "tier": "C",
+   "lane": "post",
+   "depends_on": [
+    "A07_default_priors"
+   ],
+   "status": "queued",
+   "summary": "loo, bayes_R2, hypothesis, conditional effects through ArviZ where it exists",
+   "pr": null,
+   "attempts": 0,
+   "gates": {},
+   "divergences": [],
+   "next_action": ""
+  }
+ ]
+}

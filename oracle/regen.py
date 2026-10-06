@@ -54,7 +54,7 @@ def freeze(case_id: str) -> str:
 def _diff(a, b, path: str, out: list[str]) -> None:
     if isinstance(a, dict) and isinstance(b, dict):
         for k in sorted(set(a) | set(b)):
-            if path == "meta" and k in IGNORED_META:
+            if path == ".meta" and k in IGNORED_META:
                 continue
             if k not in a or k not in b:
                 out.append(f"{path}.{k}: only in {'committed' if k in a else 'regenerated'}")
@@ -122,7 +122,7 @@ def main(argv=None) -> int:
     with ThreadPoolExecutor(max_workers=max(1, args.jobs)) as pool:
         results = list(pool.map(work, ids))
     print("\n".join(results))
-    return 1 if any("DIFFERS" in r for r in results) else 0
+    return 1 if any("DIFFERS" in r or "no frozen fixture" in r for r in results) else 0
 
 
 if __name__ == "__main__":
