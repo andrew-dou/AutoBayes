@@ -74,29 +74,34 @@ EXPECTED = {                               # family -> (Bambi parent, link, pred
     "poisson": ("mu", "log", "mu"),
     "negbinomial": ("mu", "log", "mu"),
     "gamma": ("mu", "log", "mu"),
+    "lognormal": ("mu", "identity", "mean"),
+    "beta": ("logit_mu", "logit", "mu"),
     "bernoulli": ("logit_p", "logit", "p"),
     "binomial": ("logit_p", "logit", "p"),
 }
 
 
-def test_registry_lists_exactly_the_seven_families():
-    assert set(FAMILIES) == set(EXPECTED) and len(FAMILIES) == 7
+def test_registry_lists_exactly_the_registered_families():
+    assert set(FAMILIES) == set(EXPECTED) and len(FAMILIES) == 9
     for name, (parent, link, mean) in EXPECTED.items():
         spec = get_family(name)
         assert isinstance(spec, FamilySpec) and spec is FAMILIES[name]
         assert (spec.name, spec.parent, spec.link, spec.mean_name) == (name, parent, link, mean)
-    assert {name for name, spec in FAMILIES.items() if spec.scale_parameter == "sigma"} == {"gaussian", "student"}
+    assert {name for name, spec in FAMILIES.items() if spec.scale_parameter == "sigma"} == {"gaussian", "student", "lognormal"}
     assert {name for name, spec in FAMILIES.items() if spec.scale_parameter == "shape"} == {"negbinomial", "gamma"}
-    assert {name for name, spec in FAMILIES.items() if spec.continuous} == {"gaussian", "student", "gamma"}
+    assert {name for name, spec in FAMILIES.items() if spec.scale_parameter == "phi"} == {"beta"}
+    assert {name for name, spec in FAMILIES.items() if spec.continuous} == {"gaussian", "student", "gamma", "lognormal", "beta"}
     assert {spec.bambi_scale_parameter for spec in FAMILIES.values() if spec.scale_parameter == "shape"} == {"alpha"}
+    assert {spec.bambi_scale_parameter for spec in FAMILIES.values() if spec.scale_parameter == "phi"} == {"phi"}
     assert all((spec.scale_parameter is None) == (spec.bambi_scale_parameter is None) for spec in FAMILIES.values())
     assert {name for name, spec in FAMILIES.items() if spec.fixed_parameters} == {"student"}
     assert {name for name, spec in FAMILIES.items() if spec.has_trials} == {"binomial"}
     assert {name for name, spec in FAMILIES.items() if "probability" in spec.prediction_kinds} == {"binomial"}
-    with pytest.raises(ValueError, match=r"family must be one of \['bernoulli', 'binomial', 'gamma', 'gaussian', 'negbinomial', 'poisson', 'student'\], got 'beta'"):
-        get_family("beta")
+    assert {name for name, spec in FAMILIES.items() if spec.expected_response is not None} == {"lognormal"}
+    with pytest.raises(ValueError, match=r"family must be one of \['bernoulli', 'beta', 'binomial', 'gamma', 'gaussian', 'lognormal', 'negbinomial', 'poisson', 'student'\], got 'weibull'"):
+        get_family("weibull")
     with pytest.raises(TypeError):
-        FAMILIES["beta"] = None
+        FAMILIES["weibull"] = None
 
 
 # -- (c) the constructors ---------------------------------------------------------------------------------------
@@ -105,7 +110,7 @@ def frame() -> pd.DataFrame:
     n = 12
     return pd.DataFrame({"x": rng.normal(size=n), "y": rng.normal(size=n), "yb": [0, 1] * (n // 2),
                          "cnt": rng.poisson(2.0, n), "k": rng.integers(0, 6, n), "n": np.full(n, 5),
-                         "ypos": rng.gamma(2.0, 1.0, n)})
+                         "ypos": rng.gamma(2.0, 1.0, n), "prop": rng.uniform(0.05, 0.95, n)})
 
 
 EXAMPLES = {                               # family -> (formula, extra prior classes, constructor keywords)
@@ -114,6 +119,8 @@ EXAMPLES = {                               # family -> (formula, extra prior cla
     "poisson": ("cnt ~ x", {}, {}),
     "negbinomial": ("cnt ~ x", {"shape": ab.Gamma(2, 0.5)}, {}),
     "gamma": ("ypos ~ x", {"shape": ab.Gamma(2, 0.5)}, {}),
+    "lognormal": ("ypos ~ x", {"sigma": ab.HalfNormal(1)}, {}),
+    "beta": ("prop ~ x", {"phi": ab.Gamma(2, 0.5)}, {}),
     "bernoulli": ("yb ~ x", {}, {}),
     "binomial": ("k | trials(n) ~ x", {}, {}),
 }

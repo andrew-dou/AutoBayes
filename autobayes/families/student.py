@@ -20,7 +20,7 @@ def _validate_response(spec, data) -> None:
     validate_numeric_response(spec.response, data[spec.response], "Student-t")
 
 
-def _draw_response(model, post, mean, df, rng):
+def _draw_response(model, post, eta, mean, df, rng):
     sigma = post[model.names["sigma"]].to_numpy()
     return mean + sigma[..., None] * rng.standard_t(model.nu, size=mean.shape)
 
@@ -41,6 +41,7 @@ STUDENT = FamilySpec(
     response_warnings=lambda spec, df: [],
     response_upper_bound=lambda model: None,
     inverse_link=lambda eta: eta,
+    expected_response=None,
     draw_response=_draw_response,
     manual_prediction=False, prediction_kinds=STANDARD_PREDICTION_KINDS,
     kind_error="kind must be 'mean', 'response' or 'linear'",

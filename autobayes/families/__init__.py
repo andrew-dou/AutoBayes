@@ -9,15 +9,17 @@ from __future__ import annotations
 from types import MappingProxyType
 
 from autobayes.families.bernoulli import BERNOULLI
+from autobayes.families.beta import BETA
 from autobayes.families.binomial import BINOMIAL
 from autobayes.families.gamma import GAMMA
 from autobayes.families.gaussian import GAUSSIAN
+from autobayes.families.lognormal import LOGNORMAL
 from autobayes.families.negbinomial import NEGBINOMIAL
 from autobayes.families.poisson import POISSON
 from autobayes.families.spec import FamilySpec
 from autobayes.families.student import STUDENT
 
-FAMILIES = MappingProxyType({spec.name: spec for spec in (GAUSSIAN, STUDENT, POISSON, NEGBINOMIAL, GAMMA, BERNOULLI, BINOMIAL)})
+FAMILIES = MappingProxyType({spec.name: spec for spec in (GAUSSIAN, STUDENT, POISSON, NEGBINOMIAL, GAMMA, LOGNORMAL, BETA, BERNOULLI, BINOMIAL)})
 
 
 def get_family(name: str) -> FamilySpec:

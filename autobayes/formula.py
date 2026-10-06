@@ -1087,6 +1087,22 @@ def validate_positive_response(name: str, s: pd.Series, family_label: str) -> No
         )
 
 
+def validate_proportion_response(name: str, s: pd.Series, family_label: str) -> None:
+    """A proportion family's response (Beta): a real numeric column of values strictly inside (0, 1). Missing values
+    are left to the shared missing-data check that follows."""
+    validate_numeric_response(name, s, family_label)
+    v = s.to_numpy(dtype=float)
+    v = v[~np.isnan(v)]
+    if np.any(np.isinf(v)):
+        raise FormulaError(f"response {name!r} has a non-finite value; the {family_label} family needs proportions strictly inside (0, 1).")
+    bad = v[(v <= 0) | (v >= 1)]
+    if bad.size:
+        raise FormulaError(
+            f"response {name!r} has a value outside the open interval (0, 1) ({bad[0]!r}); the {family_label} family needs "
+            "proportions strictly between 0 and 1 (an exact 0 or 1 is refused, not fitted)."
+        )
+
+
 def validate_binary_response(name: str, s: pd.Series) -> None:
     reject_complex(f"response {name!r}", s)
     if pd.api.types.is_bool_dtype(s):

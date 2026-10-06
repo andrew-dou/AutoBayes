@@ -59,7 +59,9 @@ def freeze_target(model):
                    'groups': {k: prior(v) for k,v in pr.group_priors(s).items()},
                    # the shape prior (A08/A09) enters only for the families that have one, so every other model
                    # keeps the identity it had under this schema version
-                   **({'shape': prior(pr.shape)} if pr.shape is not None else {})},
+                   **({'shape': prior(pr.shape)} if pr.shape is not None else {}),
+                   # the Beta precision prior (A11) likewise
+                   **({'phi': prior(pr.phi)} if pr.phi is not None else {})},
     }
     encoded = json.dumps(_canonical(payload), sort_keys=True, separators=(',', ':'),
                          ensure_ascii=False, allow_nan=False).encode('utf-8')

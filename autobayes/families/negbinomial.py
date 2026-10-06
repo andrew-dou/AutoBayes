@@ -29,7 +29,7 @@ def _inverse_link(eta):
     return exp_mean(eta, "negative binomial expected count")
 
 
-def _draw_response(model, post, mean, df, rng):
+def _draw_response(model, post, eta, mean, df, rng):
     """``NegativeBinomial(mu, shape)`` draws: numpy's ``negative_binomial(n = shape, p = shape / (shape + mu))``
     has mean ``mu`` and variance ``mu + mu^2 / shape``. Means beyond the integer generator's range are refused."""
     limit = np.iinfo(np.int64).max - 10 * np.sqrt(float(np.iinfo(np.int64).max))
@@ -57,6 +57,7 @@ NEGBINOMIAL = FamilySpec(
     response_warnings=_response_warnings,
     response_upper_bound=lambda model: None,
     inverse_link=_inverse_link,
+    expected_response=None,
     draw_response=_draw_response,
     manual_prediction=True, prediction_kinds=STANDARD_PREDICTION_KINDS,
     kind_error="kind must be 'mean', 'response' or 'linear'",

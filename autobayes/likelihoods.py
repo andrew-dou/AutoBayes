@@ -177,3 +177,50 @@ def binomial_logit_family():
 
     likelihood = bmb.Likelihood("BinomialLogit", params=["logit_p"], parent="logit_p", dist=BinomialLogit)
     return BinomialLogitFamily("binomial_logit", likelihood, link="identity")
+
+
+# ---- lognormal (brms-parity A10) ----------------------------------------------------------------
+# Bambi has no plain lognormal family (its ``hurdle_lognormal`` is a different model), so the family is
+# PyMC's own ``LogNormal(mu, sigma)`` wrapped exactly as Bambi wraps ``Normal`` for ``gaussian``: the
+# identity link on the location ``mu`` (the linear predictor) and ``sigma`` as the auxiliary parameter
+# whose prior comes from the prior dict. ``lognormal_lpdf(y | mu, sigma)`` in Stan and PyMC's density are
+# the same expression; equality with brms is checked in the oracle case ``lognormal_varint``.
+def lognormal_family():
+    """Bambi family for ``log(y) ~ Normal(mu, sigma)``: ``mu`` is the linear predictor, ``sigma`` the SD of ``log y``."""
+    import bambi as bmb
+
+    likelihood = bmb.Likelihood("LogNormal", params=["mu", "sigma"], parent="mu", dist=pm.LogNormal)
+    return bmb.Family("lognormal", likelihood, link={"mu": "identity", "sigma": "log"})
+
+
+# ---- Beta with a logit link (brms-parity A11) ----------------------------------------------------
+# brms: ``beta_lpdf(Y | mu * phi, (1 - mu) * phi)`` with ``mu = inv_logit(eta)``. PyMC's ``Beta(alpha, beta)`` is the
+# same density. ``1 - mu`` is computed as ``sigmoid(-eta)`` rather than by subtraction: the same number up to rounding
+# (the oracle case ``beta_varint`` agrees to its tolerance), and it keeps ``beta > 0`` for ``|eta|`` up to about 745,
+# where brms's subtraction returns exactly zero beyond ``eta`` of about 37 (docs/brms-parity/divergences.md, D10).
+# Bambi's own ``beta`` family (mean ``mu`` and ``kappa``, which is brms's ``phi``) would name its deterministic ``mu``
+# and hold ``expit(eta)``; this family keeps the linear predictor as the parent ``logit_mu`` under the identity link,
+# as the Bernoulli and binomial families above do, and names the precision ``phi`` as brms does.
+def _beta_shape_parameters(logit_mu, phi):
+    return pt.sigmoid(logit_mu) * phi, pt.sigmoid(-logit_mu) * phi
+
+
+class BetaLogit:
+    """``y ~ Beta(mu phi, (1 - mu) phi)`` with ``mu = expit(logit_mu)``."""
+
+    def __new__(cls, name, logit_mu, phi, **kwargs):
+        alpha, beta = _beta_shape_parameters(logit_mu, phi)
+        return pm.Beta(name, alpha=alpha, beta=beta, **kwargs)
+
+    @staticmethod
+    def dist(logit_mu, phi, **kwargs):
+        alpha, beta = _beta_shape_parameters(logit_mu, phi)
+        return pm.Beta.dist(alpha=alpha, beta=beta, **kwargs)
+
+
+def beta_logit_family():
+    """Bambi family: identity link on ``logit_mu`` (the linear predictor), the precision ``phi`` with its own prior."""
+    import bambi as bmb
+
+    likelihood = bmb.Likelihood("BetaLogit", params=["logit_mu", "phi"], parent="logit_mu", dist=BetaLogit)
+    return bmb.Family("beta_logit", likelihood, link={"logit_mu": "identity", "phi": "log"})

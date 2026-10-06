@@ -2,7 +2,8 @@
 
 Everything the library once decided by comparing a family name against a string is a field of
 the spec. A family is one module in this package that builds its spec (``gaussian.py``,
-``student.py``, ``poisson.py``, ``negbinomial.py``, ``gamma.py``, ``bernoulli.py``, ``binomial.py``);
+``student.py``, ``poisson.py``, ``negbinomial.py``, ``gamma.py``, ``lognormal.py``, ``beta.py``, ``bernoulli.py``,
+``binomial.py``);
 ``autobayes.families.FAMILIES`` is the registry and ``get_family(name)`` the lookup. Callable fields
 take the built ``Model`` (or the frame being validated) because that is what the call sites have in
 hand; none of them is called before ``Model.__init__`` has resolved the spec.
@@ -51,8 +52,9 @@ class FamilySpec:
     validate_response: Callable[[object, object], None]         # (ModelSpec, DataFrame): refuse a response outside the family's support
     response_warnings: Callable[[object, object], list[str]]    # (ModelSpec, fitted frame): data warnings the model records
     response_upper_bound: Callable[[object], object]            # (model): upper bound of prior-predictive counts, or None
-    inverse_link: Callable[[object], object]     # linear predictor -> expected response, with the family's own checks
-    draw_response: Callable[[object, object, object, object, object], object]   # (model, posterior, mean, frame, rng) -> new observations
+    inverse_link: Callable[[object], object]     # linear predictor -> the parent parameter on its natural scale (the expected response unless ``expected_response`` is set), with the family's own checks
+    expected_response: Callable[[object, object, object], object] | None   # (model, posterior, eta) -> E[y] when it also needs an auxiliary parameter (lognormal: exp(mu + sigma^2 / 2)); None: inverse_link(eta)
+    draw_response: Callable[[object, object, object, object, object, object], object]   # (model, posterior, eta, mean, frame, rng) -> new observations
     manual_prediction: bool                      # ``predict()`` always assembles this family's predictions by hand
     prediction_kinds: frozenset[str]             # the ``kind`` values ``predict()`` accepts
     kind_error: str                              # the message for any other ``kind``

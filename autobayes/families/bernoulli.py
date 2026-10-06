@@ -18,7 +18,7 @@ def _validate_response(spec, data) -> None:
     validate_binary_response(spec.response, data[spec.response])
 
 
-def _draw_response(model, post, mean, df, rng):
+def _draw_response(model, post, eta, mean, df, rng):
     return rng.binomial(1, mean).astype(np.int64)
 
 
@@ -31,6 +31,7 @@ BERNOULLI = FamilySpec(
     response_warnings=lambda spec, df: [],
     response_upper_bound=lambda model: 1,
     inverse_link=expit,
+    expected_response=None,
     draw_response=_draw_response,
     manual_prediction=False, prediction_kinds=STANDARD_PREDICTION_KINDS,
     kind_error="kind must be 'mean', 'response' or 'linear' ('probability' is for binomial models; here 'mean' is p)",

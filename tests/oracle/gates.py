@@ -22,7 +22,7 @@ from tests.oracle.tolerances import DESIGN_ABS, GRAD_REL, LOGP_REL, PRED_REL, ab
 
 
 def prior_names(model) -> list[str]:
-    """The free variables whose densities brms sums into ``lprior``: intercept, coefficients, sigma or shape,
+    """The free variables whose densities brms sums into ``lprior``: intercept, coefficients, sigma, shape or phi,
     the SD of every group-level coefficient (not the standardised offsets, which brms adds in the model block)."""
     names = model.names
     out = [names["intercept"]] if model.spec.intercept else []
@@ -31,6 +31,8 @@ def prior_names(model) -> list[str]:
         out.append(names["sigma"])
     if "shape" in names:                                   # negative binomial / Gamma shape (PyMC's alpha)
         out.append(names["shape"])
+    if "phi" in names:                                     # Beta precision
+        out.append(names["phi"])
     out += [roles["sd"] for roles in model.group_coefficient_names.values()]
     return out
 
@@ -218,6 +220,8 @@ def check_default_prior(b: Bundle) -> None:
         expected.add("sigma")
     if "shape" in b.model.names:
         expected.add("shape")
+    if "phi" in b.model.names:
+        expected.add("phi")
     if not expected <= classes:
         raise OracleMismatch(f"brms default_prior classes {sorted(classes)} lack {sorted(expected - classes)}")
     if not b.fixture.prior_summary:
