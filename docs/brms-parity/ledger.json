@@ -217,13 +217,13 @@
    "depends_on": [
     "P4_term_model"
    ],
-   "status": "fixtures_frozen",
+   "status": "implementing",
    "summary": "g:h and g/h grouping factors",
    "pr": null,
-   "attempts": 0,
+   "attempts": 1,
    "gates": {},
    "divergences": [],
-   "next_action": "implement when its dependencies merge; remove gate.expect from the cases",
+   "next_action": "formula lane agent, worktree parity-form1 (after A06)",
    "fixtures": {
     "pr": 28,
     "cases": [
@@ -282,13 +282,13 @@
    "depends_on": [
     "P4_term_model"
    ],
-   "status": "fixtures_frozen",
+   "status": "implementing",
    "summary": "offset(log(exposure))",
    "pr": null,
-   "attempts": 0,
+   "attempts": 1,
    "gates": {},
    "divergences": [],
-   "next_action": "implement when its dependencies merge; remove gate.expect from the cases",
+   "next_action": "formula lane agent, worktree parity-form1 (with A03)",
    "fixtures": {
     "pr": 28,
     "cases": [
@@ -321,13 +321,13 @@
    "depends_on": [
     "P3_families_registry"
    ],
-   "status": "fixtures_frozen",
+   "status": "implementing",
    "summary": "negative binomial counts with shape parameter",
    "pr": null,
-   "attempts": 0,
+   "attempts": 1,
    "gates": {},
    "divergences": [],
-   "next_action": "implement when its dependencies merge; remove gate.expect from the cases",
+   "next_action": "families lane agent, worktree parity-fam1 (with A09)",
    "fixtures": {
     "pr": 28,
     "cases": [
@@ -342,13 +342,13 @@
    "depends_on": [
     "P3_families_registry"
    ],
-   "status": "fixtures_frozen",
+   "status": "implementing",
    "summary": "Gamma responses (log link) with shape",
    "pr": null,
-   "attempts": 0,
+   "attempts": 1,
    "gates": {},
    "divergences": [],
-   "next_action": "implement when its dependencies merge; remove gate.expect from the cases",
+   "next_action": "families lane agent, worktree parity-fam1 (after A08)",
    "fixtures": {
     "pr": 28,
     "cases": [
