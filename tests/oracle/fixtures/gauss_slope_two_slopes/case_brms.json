@@ -1,0 +1,51 @@
+{
+ "factors": {
+  "g": [
+   "a",
+   "b",
+   "c",
+   "d",
+   "e",
+   "f"
+  ]
+ },
+ "family": {
+  "family": "gaussian"
+ },
+ "formula": "y ~ x + w + (1 + x + w || g)",
+ "id": "gauss_slope_two_slopes",
+ "n_points": 8,
+ "priors": [
+  {
+   "class": "Intercept",
+   "prior": "normal(0, 5)"
+  },
+  {
+   "class": "b",
+   "prior": "normal(0, 2)"
+  },
+  {
+   "class": "sd",
+   "coef": "Intercept",
+   "group": "g",
+   "prior": "normal(0, 1)"
+  },
+  {
+   "class": "sd",
+   "coef": "x",
+   "group": "g",
+   "prior": "normal(0, 0.5)"
+  },
+  {
+   "class": "sd",
+   "coef": "w",
+   "group": "g",
+   "prior": "normal(0, 0.7)"
+  },
+  {
+   "class": "sigma",
+   "prior": "normal(0, 1)"
+  }
+ ],
+ "seed": 135
+}
