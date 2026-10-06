@@ -47,11 +47,14 @@
    "tier": "0",
    "lane": "infra",
    "depends_on": [],
-   "status": "pr_open",
+   "status": "merged",
    "summary": "P0 go/no-go passed 2026-10-05 (oracle/R/doctor.R); oracle/R/gen_fixture.R, oracle/regen.py, tests/oracle/* and 14 baseline fixtures calibrated against the hand-written references",
    "pr": 23,
    "attempts": 1,
-   "gates": {},
+   "gates": {
+    "sha": "b958c0c",
+    "note": "137 oracle tests locally; two hosted fast runs green; regen.py check identical on gauss_varint and poisson_varint"
+   },
    "divergences": [
     "D1",
     "D2",
@@ -59,7 +62,7 @@
     "D4",
     "D5"
    ],
-   "next_action": "merge when hosted CI is green; 137 oracle tests pass locally"
+   "next_action": ""
   },
   {
    "id": "P3_families_registry",
@@ -96,13 +99,13 @@
    "tier": "0",
    "lane": "infra",
    "depends_on": [],
-   "status": "pr_open",
+   "status": "merged",
    "summary": "docs/brms-parity/{LOOP.md,ledger.json,divergences.md}, tools/parity_gate.py, tools/parity_status.py, STATUS refresh",
    "pr": 24,
    "attempts": 1,
    "gates": {},
    "divergences": [],
-   "next_action": "merge after #23"
+   "next_action": ""
   },
   {
    "id": "A01_independent_slopes",
