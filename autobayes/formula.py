@@ -1,16 +1,18 @@
 """The formula grammar, its validation, and the term model a parsed formula is made of.
 
 A parsed formula is a ``ModelSpec`` holding population-level terms (``PopTerm``: ``x``, ``z``, ``x:z``) and
-group-level terms (``GroupTerm``: ``(1 | g)``); every flat view of the formula (``predictors``, ``terms``,
-``columns``, ``groups``, ...) is derived from those two tuples. See docs/term-model.md.
+group-level terms (``GroupTerm``: ``(1 | g)``, ``(1 + x || g)``); every flat view of the formula (``predictors``,
+``terms``, ``columns``, ``groups``, ...) is derived from those two tuples. See docs/term-model.md.
 
 Supported::
 
-    response ~ [1 + | 0 +] predictor [+ predictor ...] [+ x:z ...] [+ (1 | factor) ...]               (Gaussian, Bernoulli)
-    successes | trials(n) ~ [1 + | 0 +] predictor [+ predictor ...] [+ x:z ...] [+ (1 | factor) ...]  (binomial, brms syntax)
+    response ~ [1 + | 0 +] predictor [+ predictor ...] [+ x:z ...] [+ (1 | factor) | (1 + x [+ w ...] || factor) ...]
+    successes | trials(n) ~ ...  the same right-hand side  (binomial, brms syntax)
 
-Varying-intercept terms are optional and additive across distinct factors (M3c-3): a formula without them is a population-only
-model, as in brms ``brmsformula`` where group-level terms are optional; ``y ~ 1`` is intercept-only.
+Group-level terms are optional and additive across distinct factors (M3c-3): a formula without them is a population-only
+model, as in brms ``brmsformula`` where group-level terms are optional; ``y ~ 1`` is intercept-only. ``(1 + x || g)``
+is brms's independent varying intercept and slope (A01): each numeric population-level term named varies by level
+with its own SD and no correlation; brms's correlated form ``(1 + x | g)`` is refused (docs/varying-slopes.md).
 
 with ``x:z`` (or the shorthand ``x*z`` = ``x + z + x:z``) distinct interactions between numeric terms
 and declared categorical terms whose main effects are both present (milestone M3a-3).
@@ -35,7 +37,7 @@ _IDENT = r"[A-Za-z_][A-Za-z0-9_.]*"
 _FORMULA_RE = re.compile(rf"^\s*({_IDENT})\s*~\s*(.+?)\s*$", re.S)
 _TRIALS_FORMULA_RE = re.compile(rf"^\s*({_IDENT})\s*\|\s*trials\(\s*({_IDENT})\s*\)\s*~\s*(.+?)\s*$", re.S)
 _BAMBI_PROPORTION_RE = re.compile(r"^\s*(p|prop|proportion)\s*\(", re.S)
-_GROUP_RE = re.compile(rf"^\(\s*(.+?)\s*\|\s*(.+?)\s*\)$", re.S)
+_GROUP_RE = re.compile(rf"^\(\s*([^|\s][^|]*?)\s*(\|\|?)\s*(.+?)\s*\)$", re.S)   # (inner | factor) or (inner || factor)
 
 COUNT_CAP = 10**6   # the validated domain for binomial counts per row (docs/m2-decision.md, repair record)
 
@@ -124,8 +126,9 @@ class PopTerm:
 class GroupTerm:
     """One group-level term ``(coefs | factor)``, brms's group ``m``: ``factor`` is the grouping column,
     ``coefs`` the population-level coefficients that vary by its level (brms ``M_m`` of them; ``("Intercept",)``
-    for ``(1 | g)``, the only form in this subset), ``correlated`` whether they share a correlation matrix
-    (``|``, brms's default) or are independent (``||``); moot for a single coefficient. The level labels
+    for ``(1 | g)``, ``("Intercept", "x")`` for ``(1 + x || g)``), ``correlated`` whether they share a
+    correlation matrix (``|``, brms's default, not supported with slopes yet) or are independent (``||``);
+    moot for a single coefficient, so ``(1 || g)`` parses to the same term as ``(1 | g)``. The level labels
     are not part of the term: they are known once the data are seen (``ModelSpec.levels_by_group``,
     ``GroupBlock.levels``). Its parameters are brms's ``sd_m`` (one per coefficient), ``z_m`` (the
     standardised effects by coefficient and level) and ``r_m_c`` (the effects of coefficient ``c``).
@@ -137,6 +140,30 @@ class GroupTerm:
 
     def __post_init__(self):
         object.__setattr__(self, "coefs", tuple(self.coefs))
+
+    @property
+    def slopes(self) -> tuple[str, ...]:
+        """The coefficients other than the varying intercept: the numeric terms whose slope varies by level."""
+        return tuple(c for c in self.coefs if c != "Intercept")
+
+    @property
+    def canonical(self) -> str:
+        """The term as the canonical formula writes it: ``(1 | g)``, or ``(1 + x || g)`` for independent slopes."""
+        inner = " + ".join("1" if c == "Intercept" else c for c in self.coefs)
+        bar = "|" if self.correlated or len(self.coefs) == 1 else "||"
+        return f"({inner} {bar} {self.factor})"
+
+
+def bambi_group_name(factor: str, coef: str) -> str:
+    """Bambi's name of one group-level coefficient: ``1|g`` for the varying intercept of ``g``, ``x|g`` for the
+    slope of ``x``. PyMC's variables are this name (the effects per level), ``<name>_sigma`` and ``<name>_offset``."""
+    return f"{'1' if coef == 'Intercept' else coef}|{factor}"
+
+
+def sd_tag(factor: str, coef: str) -> str:
+    """How messages, ``describe()`` and fit records label one group SD: ``g`` for the varying intercept of ``g``
+    (``sd:g``, ``sd_g``, as they have always read) and ``x|g`` for the slope of ``x`` (``sd:x|g``, ``sd_x|g``)."""
+    return factor if coef == "Intercept" else f"{coef}|{factor}"
 
 
 def _find_categorical(categoricals, name: str) -> Categorical:
@@ -310,6 +337,23 @@ class ModelSpec:
                 return t
         raise KeyError(name)
 
+    def group_term_of(self, factor: str) -> GroupTerm:
+        for t in self.group_terms:
+            if t.factor == factor:
+                return t
+        raise KeyError(factor)
+
+    @property
+    def group_coefficients(self) -> tuple[tuple[str, str], ...]:
+        """``(factor, coefficient)`` per group-level coefficient in formula order: the keys of
+        ``Design.group_blocks`` and ``Model.group_coefficient_names``."""
+        return tuple((t.factor, coef) for t in self.group_terms for coef in t.coefs)
+
+    @property
+    def has_slopes(self) -> bool:
+        """Whether any group-level term has a varying slope."""
+        return any(t.slopes for t in self.group_terms)
+
     @property
     def has_group(self) -> bool:
         return bool(self.group_terms)
@@ -390,10 +434,12 @@ class ModelSpec:
     @property
     def bambi_formula(self) -> str:
         """What is handed to Bambi: the canonical right-hand side; brms's ``k | trials(n)`` becomes
-        Bambi's ``p(k, n)``."""
+        Bambi's ``p(k, n)``, and ``(1 + x || g)`` becomes ``(1 + x | g)``, which Bambi (formulae has no
+        ``||``) builds as the independent terms ``1|g`` and ``x|g``; ``Model._extract_design`` verifies that."""
+        rhs = self.rhs.replace("||", "|")
         if self.trials is None:
-            return f"{self.response} ~ {self.rhs}"
-        return f"p({self.response}, {self.trials}) ~ {self.rhs}"
+            return f"{self.response} ~ {rhs}"
+        return f"p({self.response}, {self.trials}) ~ {rhs}"
 
 
 def _split_top_level(rhs: str, sep: str = "+") -> list[str]:
@@ -417,12 +463,12 @@ def _split_top_level(rhs: str, sep: str = "+") -> list[str]:
     return parts
 
 
-def _reject_group_term(inner: str, factor: str, piece: str) -> None:
-    if "||" in piece:
-        raise FormulaError(
-            f"{piece!r}: the '||' (uncorrelated varying effects) syntax is not supported "
-            "in this subset; use varying intercepts '(1 | group)'."
-        )
+def _parse_group_term(inner: str, bars: str, factor: str, piece: str, response: str, trials: str | None) -> GroupTerm:
+    """The ``GroupTerm`` of one ``(inner | factor)`` or ``(inner || factor)`` piece: the varying intercept
+    ``(1 | g)`` (``(1 || g)`` is the same term, one coefficient having nothing to correlate with), or the
+    independent varying intercept and numeric slopes ``(1 + x [+ w ...] || g)``. Everything else brms accepts
+    here is refused with a message naming the construct. Whether a slope is a numeric population-level term of
+    the formula is checked by ``parse_formula`` once every term is read."""
     if "/" in factor or ":" in factor:
         raise FormulaError(
             f"{piece!r}: nested/grouping interaction syntax ('g/h', 'g:h') is not "
@@ -436,11 +482,53 @@ def _reject_group_term(inner: str, factor: str, piece: str) -> None:
         raise FormulaError(f"{piece!r}: transformed grouping factors are not supported; use a column name")
     if not re.fullmatch(_IDENT, factor):
         raise FormulaError(f"{piece!r}: grouping factor must be a single column name")
-    if inner != "1":
+    tokens = [t.strip() for t in _split_top_level(inner)]
+    if any(t == "" for t in tokens):
+        raise FormulaError(f"{piece!r}: empty term inside the group term")
+    slopes = [t for t in tokens if t not in ("0", "1")]
+    for s in slopes:                                            # each slope token is a column name
+        if "(" in s or ")" in s:
+            raise FormulaError(
+                f"{piece!r}: function calls and transformations inside a group term are not supported; "
+                "transform the column in the data frame instead."
+            )
+        if ":" in s or "*" in s:
+            raise FormulaError(
+                f"{piece!r}: an interaction cannot be a varying slope in this subset; only a numeric "
+                f"population-level term of the formula can vary by {factor!r}"
+            )
+        if not re.fullmatch(_IDENT, s):
+            raise FormulaError(f"{piece!r}: {s!r} is not a column name")
+        if s == factor:
+            raise FormulaError(f"{piece!r}: the grouping factor {factor!r} cannot also be a varying slope")
+        if s == response:
+            raise FormulaError(f"{piece!r}: the response {response!r} cannot be a varying slope")
+        if trials is not None and s == trials:
+            raise FormulaError(f"{piece!r}: the trials column {trials!r} cannot be a varying slope")
+    duplicated = [s for s in dict.fromkeys(slopes) if slopes.count(s) > 1]
+    if duplicated:
+        raise FormulaError(f"{piece!r}: duplicated varying slope {duplicated[0]!r}")
+    if "0" in tokens or "1" not in tokens:
+        if not slopes:
+            raise FormulaError(
+                f"{piece!r}: '0' removes the varying intercept and leaves no group-level coefficient; a group term is "
+                f"'(1 | {factor})', or '(1 + x || {factor})' for varying slopes"
+            )
         raise FormulaError(
-            f"{piece!r}: varying slopes are not supported in M0; only a varying "
-            f"intercept '(1 | {factor})' is."
+            f"{piece!r}: varying slopes without the varying intercept are not supported; write "
+            f"'(1 + {' + '.join(slopes)} || {factor})' so that the intercept varies by {factor!r} as well"
         )
+    if tokens.count("1") > 1:
+        raise FormulaError(f"{piece!r}: '1' appears more than once in the group term")
+    if not slopes:
+        return GroupTerm(factor, ("Intercept",), correlated=True)
+    if bars == "|":
+        raise FormulaError(
+            f"{piece!r}: brms's '|' gives the varying intercept and slope(s) a correlation matrix (an LKJ prior on "
+            f"their correlation), which is not supported yet; write '({inner} || {factor})' for independent "
+            "varying slopes, each with its own SD and no correlation"
+        )
+    return GroupTerm(factor, ("Intercept", *slopes), correlated=False)
 
 
 def _normalise_categorical(categorical, terms: list[str], response: str, groups: list[str], trials: str | None,
@@ -610,6 +698,7 @@ def parse_formula(formula: str, data: pd.DataFrame | None = None, family: str = 
 
     predictors: list[str] = []                             # main effects as written, numeric and categorical
     group_terms: list[GroupTerm] = []
+    group_pieces: list[str] = []                           # each group term as written, for the messages below
     groups: list[str] = []                                 # the factors of group_terms, for the checks below
     raw_interactions: list[tuple[str, str, str]] = []      # (left, right, piece as written)
     saw_intercept_token = False
@@ -638,15 +727,15 @@ def parse_formula(formula: str, data: pd.DataFrame | None = None, family: str = 
             continue
         gm = _GROUP_RE.match(piece)
         if gm:
-            inner, factor = gm.group(1).strip(), gm.group(2).strip()
-            _reject_group_term(inner, factor, piece)            # only '(1 | factor)' passes: one coefficient, '|'
-            group_terms.append(GroupTerm(factor, ("Intercept",), correlated=True))
+            inner, bars, factor = gm.group(1).strip(), gm.group(2), gm.group(3).strip()
+            group_terms.append(_parse_group_term(inner, bars, factor, piece, response, trials))   # '(1 | g)' or '(1 + x || g)'
+            group_pieces.append(piece)
             groups.append(factor)
             continue
         if piece.startswith("("):
-            raise FormulaError(f"{piece!r}: parenthesised term is not a '(1 | group)' term")
+            raise FormulaError(f"{piece!r}: parenthesised term is not a '(1 | group)' or '(1 + x || group)' term")
         if "|" in piece:
-            raise FormulaError(f"{piece!r}: a '|' term must be written '(1 | group)'")
+            raise FormulaError(f"{piece!r}: a '|' term must be written '(1 | group)' or '(1 + x || group)'")
         if "(" in piece or ")" in piece:
             raise FormulaError(
                 f"{piece!r}: function calls and transformations inside the formula are "
@@ -675,6 +764,15 @@ def parse_formula(formula: str, data: pd.DataFrame | None = None, family: str = 
     if saw_intercept_token and remove_intercept:
         raise FormulaError(f"{formula!r}: conflicting intercept inclusion/removal; use '0 + terms' or 'terms - 1'")
 
+    for term, piece in zip(group_terms, group_pieces):       # a varying slope is a population-level term of the formula
+        for s in term.slopes:
+            if s not in predictors:
+                raise FormulaError(
+                    f"{piece!r}: the varying slope {s!r} must also be a population-level term of the formula, "
+                    f"as in '{response} ~ {s} + (1 + {s} || {term.factor})' (brms would add the group-level slope "
+                    "without the population-level one; this subset does not)"
+                )
+
     for left, right, piece in raw_interactions:              # both main effects are required in this slice
         for side in (left, right):
             if side not in predictors and re.fullmatch(_IDENT, side) and side not in groups:
@@ -687,7 +785,11 @@ def parse_formula(formula: str, data: pd.DataFrame | None = None, family: str = 
     if remove_intercept and not predictors:
         raise FormulaError(f"{formula!r}: no intercept requires at least one population-level predictor")
     if len(set(groups)) != len(groups):
-        raise FormulaError(f"{formula!r}: duplicate grouping factor; use each '(1 | factor)' once")
+        repeated = next(g for g in groups if groups.count(g) > 1)
+        raise FormulaError(
+            f"{formula!r}: duplicate grouping factor {repeated!r}; a factor appears in one group term, "
+            f"'(1 | {repeated})' or '(1 + x || {repeated})'"
+        )
     if len(predictors) == 0 and not saw_intercept_token:
         raise FormulaError(
             f"{formula!r}: no population-level predictor; write 'y ~ 1 + (1 | group)' "
@@ -703,6 +805,14 @@ def parse_formula(formula: str, data: pd.DataFrame | None = None, family: str = 
     if remove_intercept and categoricals:
         categoricals = (replace(categoricals[0], full_rank=True), *categoricals[1:])
     cat_names = {c.name for c in categoricals}
+    for term, piece in zip(group_terms, group_pieces):
+        for s in term.slopes:
+            if s in cat_names:
+                raise FormulaError(
+                    f"{piece!r}: {s!r} is declared categorical; a categorical varying slope (one varying coefficient "
+                    f"per level of {s!r}) is not supported in this subset; only a numeric population-level term can "
+                    f"vary by {term.factor!r}"
+                )
     interactions: list[tuple[str, str]] = []
     for left, right, piece in raw_interactions:
         for side in (left, right):
@@ -725,7 +835,7 @@ def parse_formula(formula: str, data: pd.DataFrame | None = None, family: str = 
         if (x, z) in interactions:
             raise FormulaError(f"{piece!r}: the interaction '{x}:{z}' appears more than once after expansion")
         interactions.append((x, z))
-    parts = [*predictors, *(f"{x}:{z}" for x, z in interactions)] + [f"(1 | {group})" for group in groups]
+    parts = [*predictors, *(f"{x}:{z}" for x, z in interactions)] + [t.canonical for t in group_terms]
     canonical_rhs = " + ".join(parts) if parts else "1"           # intercept-only population model: 'y ~ 1'
     if remove_intercept:
         canonical_rhs = "0 + " + canonical_rhs

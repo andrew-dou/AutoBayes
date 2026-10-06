@@ -5,10 +5,6 @@
  "note": "a slope factor and an intercept-only factor together; the sd mapping mixes the two forms",
  "seed": 133,
  "n_points": 8,
- "gate": {
-  "expect": "fail",
-  "reason": "A01 independent varying slopes not implemented; remove this field when they land"
- },
  "data": {
   "generator": "baseline",
   "seed": 33,

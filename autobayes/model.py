@@ -3,11 +3,11 @@
 Five families, including Poisson counts and fixed-nu Student-t responses. ``"gaussian"`` (M0): identity link, residual SD ``sigma``. ``"bernoulli"``
 (M1): logit link, ``p = expit(eta)``, no residual scale. ``"binomial"`` (M2): logit link on
 ``successes | trials(n)``, counts. All share the right-hand side ``[1 +] x1 [+ x2 ...]
-[+ (1 | factor) ...]`` with numeric terms and, since M3a-1, treatment-coded categorical terms declared
-with ``categorical={column: reference}``; centring; non-centred group effects when a group term is
-present, and a population-only model without one (M3c-1). The formula is a term model (``PopTerm``,
-``GroupTerm`` in ``autobayes.formula``; docs/term-model.md) and ``Design`` holds one ``GroupBlock`` per
-group-level coefficient.
+[+ (1 | factor) | (1 + x || factor) ...]`` with numeric terms and, since M3a-1, treatment-coded categorical
+terms declared with ``categorical={column: reference}``; centring; non-centred group effects (varying
+intercepts and, with ``||``, independent varying slopes) when a group term is present, and a population-only
+model without one (M3c-1). The formula is a term model (``PopTerm``, ``GroupTerm`` in ``autobayes.formula``;
+docs/term-model.md) and ``Design`` holds one ``GroupBlock`` per group-level coefficient.
 """
 from __future__ import annotations
 
@@ -20,13 +20,11 @@ import pandas as pd
 from collections.abc import Mapping
 
 from autobayes.families import FAMILIES, FamilySpec, get_family
-from autobayes.formula import Categorical, FormulaError, ModelSpec, binomial_counts, categorical_labels, parse_formula, pop_term_design
+from autobayes.formula import (Categorical, FormulaError, ModelSpec, bambi_group_name, binomial_counts, categorical_labels,
+                               parse_formula, pop_term_design, sd_tag)
 from autobayes.priors import Priors
 
-
-def _bambi_group_name(factor: str, coef: str) -> str:
-    """Bambi's name of one group-level coefficient: ``1|g`` for the varying intercept of ``g`` (``x|g`` for a slope)."""
-    return f"{'1' if coef == 'Intercept' else coef}|{factor}"
+_bambi_group_name = bambi_group_name          # ``1|g`` for the varying intercept of ``g``, ``x|g`` for the slope of ``x``
 
 
 @dataclass(frozen=True)
@@ -226,10 +224,10 @@ class Model:
         if self.family_spec.scale_parameter is not None:
             variable_names += [self.family_spec.scale_parameter]
         variable_names += list(self.family_spec.fixed_parameters)   # Bambi uses "nu" as an auxiliary-prior key even when fixed.
-        for roles in self.group_names.values():
+        for roles in self.group_coefficient_names.values():
             variable_names.extend(roles[k] for k in ("sd", "offset", "group_effect"))
         # Bambi's default result cleaning drops every posterior variable ending in _offset.
-        retained = list(self.spec.terms) + [roles["group_effect"] for roles in self.group_names.values()]
+        retained = list(self.spec.terms) + [roles["group_effect"] for roles in self.group_coefficient_names.values()]
         if any(name.endswith("_offset") for name in retained):
             raise FormulaError("generated name collision: coefficient/effect suffix '_offset' is reserved by Bambi; rename the column")
         coords = [roles["coordinate"] for roles in self.group_names.values()]
@@ -291,8 +289,11 @@ class Model:
             raise RuntimeError(f"Bambi's common design has {Xfull.shape[1]} columns, expected {col}")
         X_raw = Xfull[:, int(self.spec.intercept):]
         # One block per (factor, coefficient), in formula order; Bambi's concatenated group design is their
-        # side-by-side concatenation. Only the varying intercept exists in this subset, whose block is the
-        # one-hot indicator of the level (a slope's block would be the indicator times its covariate).
+        # side-by-side concatenation. The varying intercept's block is the one-hot indicator of the level; a
+        # varying slope's is that indicator times the slope's (raw, never centred) column, which is what brms's
+        # Z_m_c spread over J_m is. Bambi was handed '(1 + x | g)' for '(1 + x || g)': it builds '1|g' and 'x|g'
+        # as independent terms, and each block is checked here against the data, so a different coding is a
+        # hard error rather than a silently different model.
         group_blocks: dict[tuple[str, str], GroupBlock] = {}
         if not self.spec.has_group:
             if group is not None:
@@ -312,19 +313,36 @@ class Model:
                 indicator = np.column_stack([labels == level for level in levels]).astype(float)
                 for coef in t.coefs:
                     name = _bambi_group_name(g, coef)
-                    if tuple(str(v) for v in group.terms[name].groups) != levels:
+                    bterm = group.terms[name]
+                    if tuple(str(v) for v in bterm.groups) != levels:
                         raise RuntimeError(f"Bambi level order for {g!r} differs from sorted fitted labels")
                     block_slice = slice(start, start + len(levels))
                     if group.slices[name] != block_slice:
                         raise RuntimeError(f"Bambi group slice for {g!r} differs from formula order")
                     block = Z[:, block_slice]
-                    if not np.array_equal(block, indicator) or not np.array_equal(block.sum(1), np.ones(len(X_raw))):
-                        raise RuntimeError(f"group design for {g!r} does not encode original rows one-hot")
+                    if coef == "Intercept":
+                        if not np.array_equal(block, indicator) or not np.array_equal(block.sum(1), np.ones(len(X_raw))):
+                            raise RuntimeError(f"group design for {g!r} does not encode original rows one-hot")
+                    else:
+                        kind = getattr(getattr(bterm, "expr", None), "kind", None)
+                        if kind != "numeric":
+                            raise RuntimeError(f"Bambi coded the varying slope {name!r} as {kind!r}; expected a numeric slope")
+                        covariate = self.data[coef].to_numpy(dtype=float)
+                        if not np.array_equal(block, indicator * covariate[:, None]):
+                            raise RuntimeError(
+                                f"Bambi's block for {name!r} is not the level indicator of {g!r} times the {coef!r} column"
+                            )
                     group_blocks[(g, coef)] = GroupBlock(levels, block, indicator.argmax(1), block_slice)
                     start += len(levels)
                 coord = self.group_names[g]["coordinate"]
                 if tuple(str(v) for v in self.pymc_model.coords[coord]) != levels:
                     raise RuntimeError(f"PyMC coordinate {coord!r} differs from fitted labels")
+                for coef in t.coefs:                       # every coefficient's effects carry the factor's level dimension
+                    roles = self._group_roles(g, coef)
+                    for key in ("offset", "group_effect"):
+                        dims = tuple(self.pymc_model.named_vars_to_dims.get(roles[key], ()))
+                        if dims != (coord,):
+                            raise RuntimeError(f"PyMC dims of {roles[key]!r} are {dims}; expected ({coord!r},)")
             if Z.shape != (len(X_raw), start):
                 raise RuntimeError("unexpected concatenated group design shape")
         if self.effective_center_predictors:
@@ -353,12 +371,13 @@ class Model:
         or ``p``). ``"sigma"`` exists for Gaussian and Student-t families. ``"b:<term>"`` is the
         coefficient variable of each population-level term (scalar for a numeric term, a vector
         over the coefficient levels otherwise); with exactly one group-level term its ``sd``,
-        ``offset`` and ``group_effect`` roles are included here as well (see ``group_names``)."""
+        ``offset`` and ``group_effect`` roles are included here as well, and ``sd:x``, ``offset:x``,
+        ``group_effect:x`` for each varying slope ``x`` of that term (see ``group_names``)."""
         single = self.spec.group_terms[0] if len(self.spec.group_terms) == 1 else None
         fam = self.family_spec
         out = {
             **({"intercept": "Intercept"} if self.spec.intercept else {}),
-            **({k: v for k, v in self._group_roles(single.factor).items() if k != "coordinate"} if single is not None else {}),
+            **({k: v for k, v in self.group_names[single.factor].items() if k != "coordinate"} if single is not None else {}),
             "linpred": fam.parent,
             "mean": fam.mean_name,
             "y": self.spec.response if self.spec.trials is None else f"p({self.spec.response}, {self.spec.trials})",
@@ -371,17 +390,32 @@ class Model:
         return out
 
     @staticmethod
-    def _group_roles(factor: str) -> dict[str, str]:
-        """PyMC names of the varying intercept of ``factor``: ``sd`` is its scale (brms ``sd_m``), ``offset``
-        the standardised effects (brms ``z_m``), ``group_effect`` the effects per level (brms ``r_m_1``),
-        ``coordinate`` the level dimension of both."""
-        name = _bambi_group_name(factor, "Intercept")
+    def _group_roles(factor: str, coef: str = "Intercept") -> dict[str, str]:
+        """PyMC names of one group-level coefficient of ``factor`` (its varying intercept by default): ``sd`` is
+        the coefficient's scale (brms ``sd_m[c]``), ``offset`` its standardised effects (brms ``z_m[c]``),
+        ``group_effect`` its effects per level (brms ``r_m_c``), ``coordinate`` the level dimension, shared by
+        every coefficient of the factor."""
+        name = _bambi_group_name(factor, coef)
         return {"sd": f"{name}_sigma", "offset": f"{name}_offset", "group_effect": name, "coordinate": f"{factor}__factor_dim"}
 
     @property
     def group_names(self) -> dict[str, dict[str, str]]:
-        """PyMC roles and coordinate of each group-level term's varying intercept, by factor in formula order."""
-        return {t.factor: self._group_roles(t.factor) for t in self.spec.group_terms}
+        """PyMC roles and coordinate of each group-level term's varying intercept, by factor in formula order; a
+        term with varying slopes also lists each slope's roles as ``sd:x``, ``offset:x`` and ``group_effect:x``
+        (``group_coefficient_names`` has the same names keyed by coefficient)."""
+        out = {}
+        for t in self.spec.group_terms:
+            roles = self._group_roles(t.factor)
+            for coef in t.slopes:
+                roles.update({f"{k}:{coef}": v for k, v in self._group_roles(t.factor, coef).items() if k != "coordinate"})
+            out[t.factor] = roles
+        return out
+
+    @property
+    def group_coefficient_names(self) -> dict[tuple[str, str], dict[str, str]]:
+        """PyMC roles (``sd``, ``offset``, ``group_effect``, ``coordinate``) of every group-level coefficient, keyed
+        ``(factor, coefficient)`` in formula order like ``Design.group_blocks``."""
+        return {(g, coef): self._group_roles(g, coef) for g, coef in self.spec.group_coefficients}
 
     @property
     def coefficients(self) -> tuple[tuple[str, str, int | None], ...]:
@@ -391,14 +425,17 @@ class Model:
         per column of each ``PopTerm``."""
         return self.spec.column_terms
 
-    def value_point(self, *, intercept: float | None = None, b, sd: float | Mapping[str, float] | None = None, z=None, sigma: float | None = None) -> dict[str, np.ndarray]:
+    def value_point(self, *, intercept: float | None = None, b, sd=None, z=None, sigma: float | None = None) -> dict[str, np.ndarray]:
         """A point in PyMC's sampled (value) space, from natural-scale quantities.
 
         ``intercept`` is the *model* intercept (at the predictor means when centred),
         ``b`` the coefficients in design-column order (``model.coefficients``: numeric slopes
         and dummy coefficients), ``sd`` and ``z`` exact-key factor mappings of positive
-        scales and standard Normal offset vectors. One factor also accepts scalar/vector
-        arguments; neither applies without groups. ``sigma`` is the residual
+        scales and standard Normal offset vectors. An intercept-only factor's entry is the
+        scale / the vector itself (or the one-entry mapping ``{"Intercept": ...}``); a factor with
+        varying slopes takes a mapping over exactly its coefficients, ``sd={"g": {"Intercept": 0.8,
+        "x": 0.3}}``, ``z={"g": {"Intercept": array(J), "x": array(J)}}``. One factor also accepts the
+        entry without the factor key; neither applies without groups. ``sigma`` is the residual
         SD (Gaussian only). Scales are stored on the log scale because that is what PyMC samples.
         """
         b = np.atleast_1d(np.asarray(b, dtype=float))
@@ -407,25 +444,48 @@ class Model:
         def keyed(value, label):
             if isinstance(value, Mapping):
                 if set(value) != set(self.spec.groups):
-                    raise ValueError(f"{label} must cover exactly the grouping factors {list(self.spec.groups)}")
+                    hint = ""
+                    if len(self.spec.group_terms) == 1 and set(value) <= set(self.spec.group_terms[0].coefs):
+                        t = self.spec.group_terms[0]
+                        hint = (f" ({list(value)} look like the coefficients of {t.factor!r}: nest them under the factor, "
+                                f"{label}={{{t.factor!r}: {{{', '.join(f'{c!r}: ...' for c in t.coefs)}}}}})")
+                    raise ValueError(f"{label} must cover exactly the grouping factors {list(self.spec.groups)}{hint}")
                 return {g: value[g] for g in self.spec.groups}
             if len(self.spec.groups) != 1:
                 raise ValueError(f"{label} requires an exact-key mapping for multiple grouping factors")
             return {self.spec.groups[0]: value}
 
-        sd_by_group, z_by_group = {}, {}
+        def by_coefficient(value, term, label):
+            """One entry per coefficient of ``term``; a bare entry is the varying intercept's (intercept-only factors)."""
+            if isinstance(value, Mapping):
+                if set(value) != set(term.coefs):
+                    raise ValueError(f"{label} for {term.factor!r} must cover exactly its coefficients {list(term.coefs)}; got {list(value)}")
+                return {c: value[c] for c in term.coefs}
+            if term.slopes:
+                raise ValueError(
+                    f"{label} for {term.factor!r} must be a mapping over its coefficients {list(term.coefs)} "
+                    f"('{term.canonical}' has varying slopes)"
+                )
+            return {"Intercept": value}
+
+        sd_by_coef, z_by_coef = {}, {}
         if not self.spec.has_group:
             if sd is not None or z is not None:
                 raise ValueError("this model has no group-level term; sd and z do not apply to a population-only model")
         else:
             if sd is None or z is None:
-                raise ValueError("sd and z are required for every varying intercept")
+                raise ValueError("sd and z are required for every group-level coefficient (varying intercepts and slopes)")
             sd_by_group, z_by_group = keyed(sd, "sd"), keyed(z, "z")
             for t in self.spec.group_terms:
-                g, block = t.factor, self.design.group_blocks[(t.factor, "Intercept")]
-                z_by_group[g] = np.asarray(z_by_group[g], dtype=float)
-                if z_by_group[g].shape != (block.J,) or not np.isfinite(z_by_group[g]).all():
-                    raise ValueError(f"z for {g!r} must have {block.J} finite entries")
+                g = t.factor
+                sds, zs = by_coefficient(sd_by_group[g], t, "sd"), by_coefficient(z_by_group[g], t, "z")
+                for coef in t.coefs:
+                    block = self.design.group_blocks[(g, coef)]
+                    arr = np.asarray(zs[coef], dtype=float)
+                    if arr.shape != (block.J,) or not np.isfinite(arr).all():
+                        what = repr(g) if coef == "Intercept" else f"the slope {coef!r} of {g!r}"
+                        raise ValueError(f"z for {what} must have {block.J} finite entries")
+                    sd_by_coef[(g, coef)], z_by_coef[(g, coef)] = sds[coef], arr
         if (sigma is None) != (self.family_spec.scale_parameter is None):
             raise ValueError(self.family_spec.sigma_rule)
         n = self.names
@@ -440,9 +500,9 @@ class Model:
                 raise ValueError(f"{label} must be a finite positive scalar")
             return np.asarray(np.log(arr))
 
-        for g, roles in self.group_names.items():
-            point[f"{roles['sd']}_log__"] = log_scale(sd_by_group[g], f"sd:{g}")
-            point[roles["offset"]] = z_by_group[g]
+        for (g, coef), roles in self.group_coefficient_names.items():
+            point[f"{roles['sd']}_log__"] = log_scale(sd_by_coef[(g, coef)], f"sd:{sd_tag(g, coef)}")
+            point[roles["offset"]] = z_by_coef[(g, coef)]
         if sigma is not None:
             point[f"{n['sigma']}_log__"] = log_scale(sigma, "sigma")
         i = 0
@@ -460,6 +520,8 @@ class Model:
         s, d, pr = self.spec, self.design, self.priors
         def effect(g):
             return "u" if len(s.groups) == 1 else f"u_{g}"
+        def slope_effect(g, c):
+            return f"v_{c}|{g}"
         coef = pr.coefficient_priors(s)
         parts = []
         for t in s.pop_terms:
@@ -487,9 +549,11 @@ class Model:
                          f"{grouping}; {len(self.dropped_rows)} zero-trial row(s) dropped"
                          + (f" (positions {list(self.dropped_rows)[:10]}{'...' if len(self.dropped_rows) > 10 else ''})"
                             if self.dropped_rows else ""))
+        features = ((["categorical predictor(s)"] if s.categoricals else []) + (["interaction(s)"] if s.interactions else [])
+                    + (["independent varying slope(s)"] if s.has_slopes else []))
         lines = [
-            f"AutoBayes {fam.tag} model" + (" with categorical predictor(s)" if s.categoricals else "")
-            + (" and interaction(s)" if s.interactions else "") + (" (population-level only)" if not s.has_group else ""),
+            f"AutoBayes {fam.tag} model" + (" with " + " and ".join(features) if features else "")
+            + (" (population-level only)" if not s.has_group else ""),
             f"  formula   : {s.formula}",
         ]
         if s.canonical_formula != s.formula:
@@ -509,7 +573,9 @@ class Model:
         lines += [
             "",
             "Linear predictor",
-            f"  {lp}_i = {a}" + (f" + {xs}" if xs else "") + "".join(f" + {effect(g)}[{g}_i]" for g in s.groups),
+            f"  {lp}_i = {a}" + (f" + {xs}" if xs else "")
+            + "".join(f" + {effect(t.factor)}[{t.factor}_i]" + "".join(f" + x_{c},i * {slope_effect(t.factor, c)}[{t.factor}_i]" for c in t.slopes)
+                      for t in s.group_terms),
         ]
         scale = fam.scale_phrase
         same_group = " (same group)" if len(s.groups) == 1 else (" (same group effects)" if s.groups else "")
@@ -591,8 +657,16 @@ class Model:
                       + ((" (x = 0, reference level" + (", group effect zero)." if s.has_group else ").")) if s.categoricals else ".")]
         if s.has_group:
             lines += ["", "Group effects (non-centred)"]
-            for g, block in d.group_designs.items():
+            for t in s.group_terms:
+                g, block = t.factor, d.group_designs[t.factor]
                 lines += [f"  u_{g}[j] = sd_{g} * z_{g}[j], z_{g}[j] ~ Normal(0, 1), j = 0..{block.J - 1}"]
+                for c in t.slopes:
+                    lines += [f"  {slope_effect(g, c)}[j] = sd_{c}|{g} * z_{c}|{g}[j], z_{c}|{g}[j] ~ Normal(0, 1), j = 0..{block.J - 1}: "
+                              f"the slope of {c} varies by {g} ('||': no correlation with u_{g})"]
+                if t.slopes:
+                    lines += [f"  Each varying slope multiplies the raw predictor (never centred, as brms's Z does) and is independent of u_{g}",
+                              f"  by construction; that independence is a statement at x = 0: shifting a predictor by c turns u_{g} into",
+                              f"  u_{g} + c * v, which is correlated with v."]
             lines += ["  Independent priors across factors; group effects are not mean-centered."]
         else:
             lines += ["", "Group effects", "  none: a population-only model (no '(1 | group)' term)"]
@@ -600,17 +674,17 @@ class Model:
         if s.intercept:
             lines += [f"  {a} ~ {pr.intercept}"]
         lines += [f"  b_{col} ~ {coef[col]}" for col in s.columns]
-        for g, prior in pr.group_priors(s).items():
-            lines += [f"  sd_{g} ~ {prior}"]
+        for (g, c), prior in pr.sd_priors(s).items():
+            lines += [f"  sd_{sd_tag(g, c)} ~ {prior}"]
         lines += fam.likelihood_lines(self)
         for w in self.warnings:
             lines += ["", "WARNING: " + w]
         lines += ["", "PyMC variables sampled (value space)"]
         n = self.names
         roles = {n["intercept"]: "a_c" if d.centered else "a"} if s.intercept else {}
-        for g, names in self.group_names.items():
-            roles[f"{names['sd']}_log__"] = f"log(sd_{g})"
-            roles[names["offset"]] = "z" if len(s.groups) == 1 else f"z_{g}"
+        for (g, c), names in self.group_coefficient_names.items():
+            roles[f"{names['sd']}_log__"] = f"log(sd_{sd_tag(g, c)})"
+            roles[names["offset"]] = ("z" if len(s.groups) == 1 else f"z_{g}") if c == "Intercept" else f"z_{c}|{g}"
         if fam.scale_parameter is not None:
             roles[f"{n[fam.scale_parameter]}_log__"] = f"log({fam.scale_parameter})"
         for t in s.pop_terms:
@@ -618,7 +692,8 @@ class Model:
                 roles[t.name] = f"b_{t.name}[{', '.join(t.levels)}] (vector; dims {t.name}_dim, posterior rows {', '.join(t.columns)})"
         for v in self.pymc_model.value_vars:
             lines.append(f"  {v.name:<24} {roles.get(v.name, f'b_{v.name}')}")
-        lines.append("Deterministic: " + "".join(f"{names['group_effect']} = {effect(g)}, " for g, names in self.group_names.items()) + fam.deterministic_note)
+        lines.append("Deterministic: " + "".join(f"{names['group_effect']} = {effect(g) if c == 'Intercept' else slope_effect(g, c)}, "
+                                                 for (g, c), names in self.group_coefficient_names.items()) + fam.deterministic_note)
         return "\n".join(lines)
 
     # -- convenience -------------------------------------------------------------------

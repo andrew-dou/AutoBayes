@@ -29,22 +29,26 @@ its columns; `Model.coefficients` lists `(column, term, index)` per column.
 ## Group-level terms: `GroupTerm(factor, coefs, correlated)`
 
 One entry per `(... | factor)` term, brms's group `m`: `coefs` are the population-level coefficients that
-vary by level (brms `M_m` of them; `("Intercept",)` for `(1 | g)`, the only form in this subset) and
-`correlated` whether they share a correlation matrix (`|`, brms's default) or are independent (`||`). Level
-labels are not part of the term; they are read from the data (`ModelSpec.levels_by_group[factor]`,
-sorted strings). The parameters of the term are brms's `sd_m` (`1|g_sigma`), `z_m` (`1|g_offset`, the
-standardised effects) and `r_m_1` (`1|g`, the effects per level); `Model.group_names[factor]` maps those
-roles to the PyMC names.
+vary by level (brms `M_m` of them; `("Intercept",)` for `(1 | g)`, `("Intercept", "x")` for `(1 + x || g)`)
+and `correlated` whether they share a correlation matrix (`|`, brms's default, not supported with slopes
+yet) or are independent (`||`; moot for one coefficient, so `(1 || g)` is `(1 | g)`). `term.slopes` are
+the coefficients other than the intercept and `term.canonical` the term as the canonical formula writes it.
+Level labels are not part of the term; they are read from the data (`ModelSpec.levels_by_group[factor]`,
+sorted strings). The parameters of coefficient `c` are brms's `sd_m[c]` (`1|g_sigma`, `x|g_sigma`), `z_m[c]`
+(`1|g_offset`, `x|g_offset`, the standardised effects) and `r_m_c` (`1|g`, `x|g`, the effects per level);
+`Model.group_coefficient_names[(factor, coef)]` maps those roles to the PyMC names, and
+`Model.group_names[factor]` keeps the varying intercept's roles with each slope's as `sd:x`, `offset:x`,
+`group_effect:x` (docs/varying-slopes.md).
 
 ## Design blocks: `Design.group_blocks[(factor, coef)]`
 
 `Model.design` holds one `GroupBlock(levels, Z, group_index, column_slice)` per (factor, coefficient), in
 formula order. `Z` is the `(n, J)` block of that coefficient: row `i` carries the coefficient's covariate
-value (one for the intercept, so the block is the one-hot indicator) in the column of row `i`'s level, which
-is brms's `Z_m_c[i]` spread over its group index `J_m[i]`; `group_index` is that index, 0-based; `J` the
-number of levels (brms `N_m`). `Design.Z` is the blocks side by side, exactly Bambi's concatenated group
-design, and `column_slice` says where each sits. `Design.group_designs` (the varying-intercept block per
-factor), `levels`, `group_index`, `J` and `group_slices` are derived views.
+value (one for the intercept, so the block is the one-hot indicator; the raw `x` for the slope of `x`) in the
+column of row `i`'s level, which is brms's `Z_m_c[i]` spread over its group index `J_m[i]`; `group_index` is
+that index, 0-based; `J` the number of levels (brms `N_m`). `Design.Z` is the blocks side by side, exactly
+Bambi's concatenated group design, and `column_slice` says where each sits. `Design.group_designs` (the
+varying-intercept block per factor), `levels`, `group_index`, `J` and `group_slices` are derived views.
 
 ## Adding a term kind
 

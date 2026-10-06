@@ -2,13 +2,9 @@
  "id": "gauss_slope_independent",
  "tier": "A",
  "feature": "A01_independent_slopes",
- "note": "brms: one group id with M_1 = 2 coefficients (Intercept, x), NC_1 = 0; Z_1_2 is the x column",
+ "note": "brms: one group id with M_1 = 2 coefficients (Intercept, x), cor = FALSE and no L_1; standata still carries NC_1 = M_1 (M_1 - 1) / 2 = 1, so correlation is read from the cor flags and a declared L_m, not from NC_m; Z_1_2 is the x column",
  "seed": 131,
  "n_points": 8,
- "gate": {
-  "expect": "fail",
-  "reason": "A01 independent varying slopes not implemented; remove this field when they land"
- },
  "data": {
   "generator": "baseline",
   "seed": 31,

@@ -68,7 +68,7 @@ def _summary_rows(model, idata) -> dict:
     import arviz as az
 
     n = model.names
-    names = ([n["intercept"]] if model.spec.intercept else []) + list(model.spec.terms) + [roles["sd"] for roles in model.group_names.values()] + ([n["sigma"]] if "sigma" in n else [])
+    names = ([n["intercept"]] if model.spec.intercept else []) + list(model.spec.terms) + [roles["sd"] for roles in model.group_coefficient_names.values()] + ([n["sigma"]] if "sigma" in n else [])
     s = az.summary(idata, var_names=names, hdi_prob=0.94, round_to="none")
     rows = {}
     for name, r in s.iterrows():
@@ -83,6 +83,7 @@ def fit_record(model, fit, *, panel: dict | None = None, max_treedepth: int = 10
     from autobayes.diagnostics import panel as _panel
     from autobayes.families import get_family
 
+    from autobayes.formula import sd_tag
     from autobayes.identity import check_fit_binding
     binding = check_fit_binding(model, fit, allow_unverified=allow_unverified)
 
@@ -91,6 +92,7 @@ def fit_record(model, fit, *, panel: dict | None = None, max_treedepth: int = 10
     s, d, pr = model.spec, model.design, model.priors
     coef = pr.coefficient_priors(s)
     group_priors = pr.group_priors(s)
+    sd_priors = pr.sd_priors(s)
     return {
         "autobayes_version": __version__,
         "model": {
@@ -106,7 +108,9 @@ def fit_record(model, fit, *, panel: dict | None = None, max_treedepth: int = 10
             "groups": [{"factor": g, "levels": list(block.levels), "J": block.J,
                         "term": f"1|{g}", "names": model.group_names[g],
                         "coordinate": model.group_names[g]["coordinate"],
-                        "sd_prior": str(group_priors[g]), "noncentered": True}
+                        "sd_prior": str(group_priors[g]), "noncentered": True,
+                        "slopes": [{"coef": c, "term": f"{c}|{g}", "names": model.group_coefficient_names[(g, c)],
+                                    "sd_prior": str(sd_priors[(g, c)])} for c in s.group_term_of(g).slopes]}
                        for g, block in d.group_designs.items()],
             "intercept": s.intercept,
             "center_predictors": bool(d.centered),
@@ -114,6 +118,7 @@ def fit_record(model, fit, *, panel: dict | None = None, max_treedepth: int = 10
             "noncentered": True if s.has_group else None,
             "priors": {**({"intercept": str(pr.intercept)} if s.intercept else {}), **{f"b:{k}": str(v) for k, v in coef.items()},
                        **{("sd" if len(s.groups) == 1 else f"sd:{g}"): str(prior) for g, prior in group_priors.items()},
+                       **{f"sd:{sd_tag(g, c)}": str(prior) for (g, c), prior in sd_priors.items() if c != "Intercept"},
                        **({"sigma": str(pr.sigma)} if pr.sigma is not None else {})},
             "terms": list(s.terms),
             "design_columns": list(s.columns),

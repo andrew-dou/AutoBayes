@@ -5,10 +5,6 @@
  "note": "log link with an independent varying slope",
  "seed": 134,
  "n_points": 8,
- "gate": {
-  "expect": "fail",
-  "reason": "A01 independent varying slopes not implemented; remove this field when they land"
- },
  "data": {
   "generator": "baseline",
   "seed": 34,

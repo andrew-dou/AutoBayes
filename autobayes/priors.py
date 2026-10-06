@@ -1,7 +1,8 @@
 """Explicit priors, by parameter class, in brms terms.
 
-brms classes: ``Intercept``, ``b`` (slopes and dummy coefficients), ``sd`` (group SD, exactly when the formula
-has a ``(1 | group)`` term) and, for Gaussian/Student-t, ``sigma`` (residual SD/scale respectively). Every class the model has
+brms classes: ``Intercept``, ``b`` (slopes and dummy coefficients), ``sd`` (one group SD per group-level
+coefficient: the varying intercept of ``(1 | g)``, the intercept and each slope of ``(1 + x || g)``) and, for
+Gaussian/Student-t, ``sigma`` (residual SD/scale respectively). Every class the model has
 must be given, and a class the model does not have is refused (M3c-1: ``sd`` without a group term); there are no
 silent defaults here (Bambi would supply some, and that is exactly what this layer refuses
 to let happen). For the Bernoulli family the intercept and slope priors are on the logit
@@ -79,13 +80,16 @@ class Priors:
     (the same for every non-reference level) or a mapping ``{level: prior}`` covering exactly
     the actual coefficient levels (all levels for the first categorical main effect
     without an intercept; non-reference levels otherwise). Omit intercept exactly
-    when the formula removes it. SD priors require an exact-key factor mapping for multiple
-    groups; a single group also accepts a scalar Prior. No automatic priors are filled in silently.
+    when the formula removes it. ``sd`` is keyed by grouping factor (an exact-key mapping; a single
+    intercept-only factor also accepts a bare Prior): an intercept-only factor takes one Prior (or the
+    one-entry mapping ``{"Intercept": prior}``), a factor with varying slopes a mapping over exactly its
+    coefficients, ``{"g": {"Intercept": HalfNormal(1), "x": HalfNormal(0.5)}}`` (brms ``class = sd, group =
+    g, coef = x``). No automatic priors are filled in silently and nothing is broadcast.
     """
 
     intercept: Prior | None = None
     b: Prior | Mapping[str, Prior | Mapping[str, Prior]] | None = None
-    sd: Prior | Mapping[str, Prior] | None = None            # required with a '(1 | group)' term, refused without one (M3c-1)
+    sd: Prior | Mapping[str, Prior | Mapping[str, Prior]] | None = None   # required with a group term, refused without one (M3c-1)
     sigma: Prior | None = None
 
     # -- coefficient priors -----------------------------------------------------------------
@@ -179,24 +183,72 @@ class Priors:
         """Numeric-only compatibility form of ``coefficient_priors``."""
         return self.coefficient_priors(tuple(predictors))
 
-    def group_priors(self, spec) -> dict[str, Prior]:
-        """Explicit SD priors in formula order; no multi-factor scalar broadcast."""
-        groups = getattr(spec, "groups", ())
-        if not groups:
+    def sd_priors(self, spec) -> dict[tuple[str, str], Prior]:
+        """One SD prior per group-level coefficient, keyed ``(factor, coefficient)`` in formula order (the order
+        of ``Design.group_blocks``). Coverage is checked exactly, by factor and then by coefficient; the
+        values are checked to be positive-support priors by ``validate``. No scalar is broadcast."""
+        group_terms = getattr(spec, "group_terms", ())
+        groups = [t.factor for t in group_terms]
+        if not group_terms:
             if self.sd is not None:
                 raise PriorError("the formula has no group-level term '(1 | group)'; do not pass sd")
             return {}
         if self.sd is None:
             if len(groups) == 1:
+                t = group_terms[0]
+                if t.slopes:
+                    raise PriorError(
+                        f"the group term '{t.canonical}' needs a prior on the SD of each of its coefficients "
+                        f"{list(t.coefs)}: pass sd={{{t.factor!r}: {{{', '.join(f'{c!r}: <prior>' for c in t.coefs)}}}}}"
+                    )
                 raise PriorError(f"the varying intercept '(1 | {groups[0]})' needs a prior on the SD of its varying intercept: pass sd=...")
             raise PriorError(f"each varying intercept needs a prior on the SD: pass sd for {list(groups)}")
         if isinstance(self.sd, Mapping):
             if set(self.sd) != set(groups):
-                raise PriorError(f"sd must cover exactly the grouping factors {list(groups)}; got {list(self.sd)}")
-            return {g: self.sd[g] for g in groups}
-        if len(groups) != 1:
-            raise PriorError("multiple grouping factors require an exact-key sd mapping; scalar sd is not broadcast")
-        return {groups[0]: self.sd}
+                hint = ""
+                if len(group_terms) == 1 and set(self.sd) <= set(group_terms[0].coefs):
+                    t = group_terms[0]
+                    hint = (f"; {list(self.sd)} look like the coefficients of {t.factor!r}: nest them under the factor, "
+                            f"sd={{{t.factor!r}: {{{', '.join(f'{c!r}: <prior>' for c in t.coefs)}}}}}")
+                raise PriorError(f"sd must cover exactly the grouping factors {list(groups)}; got {list(self.sd)}{hint}")
+            by_factor = {g: self.sd[g] for g in groups}
+        else:
+            if len(groups) != 1:
+                raise PriorError("multiple grouping factors require an exact-key sd mapping; scalar sd is not broadcast")
+            by_factor = {groups[0]: self.sd}
+        out: dict[tuple[str, str], Prior] = {}
+        for t in group_terms:
+            entry = by_factor[t.factor]
+            if isinstance(entry, Mapping):
+                missing = [c for c in t.coefs if c not in entry]
+                extra = [k for k in entry if k not in t.coefs]
+                if missing or extra:
+                    hint = ""
+                    for k in extra:
+                        if isinstance(k, str) and k in getattr(spec, "predictors", ()):
+                            hint = (f" ({k!r} is a population-level term, but '{t.canonical}' has no varying slope on it; "
+                                    f"write '(1 + {k} || {t.factor})' to add one)")
+                            break
+                    raise PriorError(
+                        f"SD priors for {t.factor!r} must cover exactly its coefficients {list(t.coefs)}; "
+                        f"missing {missing}, unexpected {extra}{hint}"
+                    )
+                for c in t.coefs:
+                    out[(t.factor, c)] = entry[c]
+            elif t.slopes:
+                raise PriorError(
+                    f"sd for {t.factor!r} must be a mapping over its coefficients {list(t.coefs)} ('{t.canonical}' has "
+                    f"varying slopes), got a single {type(entry).__name__}; the same prior for every coefficient must be spelled out"
+                )
+            else:
+                out[(t.factor, "Intercept")] = entry
+        return out
+
+    def group_priors(self, spec) -> dict[str, Prior]:
+        """The SD prior of each factor's varying intercept, in formula order (the per-factor view that
+        ``describe()``, fit records and the target identity have always used); ``sd_priors`` has every
+        group-level coefficient, slopes included."""
+        return {g: prior for (g, coef), prior in self.sd_priors(spec).items() if coef == "Intercept"}
 
     def validate(self, spec, family: str = "gaussian") -> None:
         from autobayes.families import get_family
@@ -207,7 +259,7 @@ class Priors:
             raise PriorError("the formula has a population intercept; an intercept prior is required")
         if not has_intercept and self.intercept is not None:
             raise PriorError("the formula has no population intercept; omit the intercept prior (or pass None)")
-        group_priors = self.group_priors(spec)
+        sd_priors = self.sd_priors(spec)
         if fam.scale_parameter is not None and self.sigma is None:
             raise PriorError(fam.sigma_missing_error)
         if fam.scale_parameter is None and self.sigma is not None:
@@ -222,7 +274,9 @@ class Priors:
                 raise PriorError(
                     f"prior for {label!r} must be a location prior ({sorted(_LOCATION)}), got {prior}"
                 )
-        scales = [(f"sd:{g}", prior) for g, prior in group_priors.items()] + ([("sigma", self.sigma)] if self.sigma is not None else [])
+        from autobayes.formula import sd_tag
+
+        scales = [(f"sd:{sd_tag(g, c)}", prior) for (g, c), prior in sd_priors.items()] + ([("sigma", self.sigma)] if self.sigma is not None else [])
         for label, prior in scales:
             if not isinstance(prior, Prior):
                 raise PriorError(f"prior for {label!r} must be a Prior, got {type(prior).__name__}")
@@ -233,11 +287,12 @@ class Priors:
 
     def to_bambi(self, spec, family: str = "gaussian") -> dict:
         """Bambi's prior dict: one prior per term (array-valued parameters for the levels of a
-        categorical term). With a group term, it is Normal(0, sd) with ``sd`` as hyperprior; without one
-        no group prior is emitted (Bambi would accept a stray ``1|g`` entry silently)."""
+        categorical term). Each group-level coefficient (``1|g``, and ``x|g`` for a varying slope) gets
+        Normal(0, sd) with its own ``sd`` as hyperprior; without a group term no group prior is emitted
+        (Bambi would accept a stray ``1|g`` entry silently)."""
         import bambi as bmb
         import numpy as np
-        from autobayes.formula import ModelSpec
+        from autobayes.formula import ModelSpec, bambi_group_name
 
         self.validate(spec, family)
         if not isinstance(spec, ModelSpec):
@@ -254,6 +309,6 @@ class Priors:
             name = priors[0].name
             params = {k: np.array([float(pr.params[k]) for pr in priors]) for k in priors[0].params}
             out[term.name] = bmb.Prior(name, **params)
-        for group, prior in self.group_priors(spec).items():
-            out[f"1|{group}"] = bmb.Prior("Normal", mu=0.0, sigma=prior.to_bambi())
+        for (group, coef), prior in self.sd_priors(spec).items():
+            out[bambi_group_name(group, coef)] = bmb.Prior("Normal", mu=0.0, sigma=prior.to_bambi())
         return out

@@ -22,14 +22,14 @@ from tests.oracle.tolerances import DESIGN_ABS, GRAD_REL, LOGP_REL, PRED_REL, ab
 
 
 def prior_names(model) -> list[str]:
-    """The free variables whose densities brms sums into ``lprior``: intercept, coefficients, sigma, group SDs
-    (not the standardised offsets, which brms adds in the model block)."""
+    """The free variables whose densities brms sums into ``lprior``: intercept, coefficients, sigma, the SD of
+    every group-level coefficient (not the standardised offsets, which brms adds in the model block)."""
     names = model.names
     out = [names["intercept"]] if model.spec.intercept else []
     out += list(model.spec.terms)
     if "sigma" in names:
         out.append(names["sigma"])
-    out += [roles["sd"] for roles in model.group_names.values()]
+    out += [roles["sd"] for roles in model.group_coefficient_names.values()]
     return out
 
 
@@ -134,7 +134,7 @@ def check_gradient(b: Bundle) -> None:
 # -- G3 -----------------------------------------------------------------------------------------------------
 def check_derived(b: Bundle) -> None:
     pmm, names, d = b.model.pymc_model, b.model.names, b.model.design
-    groups = list(b.model.group_names.items())
+    groups = list(b.model.group_coefficient_names.items())          # every group-level coefficient: intercepts and slopes
     dets = [pmm[names["linpred"]]] + [pmm[roles["group_effect"]] for _, roles in groups]
     fn = pmm.compile_fn(pmm.replace_rvs_by_values(dets), inputs=pmm.value_vars, point_fn=True, on_unused_input="ignore")
     ref = b.fixture.prediction("fitted", "epred" if b.model.link == "log" else "linpred")
@@ -144,12 +144,12 @@ def check_derived(b: Bundle) -> None:
         err = rel_err(lin, ref[k])
         if err > PRED_REL:
             raise OracleMismatch(f"point {k}: the graph's {names['linpred']!r} differs from brms by {err}")
-        for (g, _), eff in zip(groups, out[1:]):
-            m, cn = b.gmap.brms_id[g], b.gmap.cn[g]
+        for ((g, coef), _), eff in zip(groups, out[1:]):
+            m, cn = b.gmap.brms_id[g], b.gmap.coef_cn[(g, coef)]
             r = np.asarray(eff, dtype=float).ravel()[b.gmap.level_of[g]]
             err = rel_err(r, np.atleast_1d(p.pars[f"r_{m}_{cn}"]))
             if err > PRED_REL:
-                raise OracleMismatch(f"point {k}: group effects of {g!r} differ from brms r_{m}_{cn} by {err}")
+                raise OracleMismatch(f"point {k}: group effects of {coef!r} of {g!r} differ from brms r_{m}_{cn} by {err}")
         if "b_Intercept" in p.pars:
             nat = adapter.natural_point(b.model, p, b.cmap, b.gmap)
             raw = nat["intercept"] - float(d.x_means @ nat["b"])

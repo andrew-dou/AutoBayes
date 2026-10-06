@@ -12,7 +12,7 @@ from tests.conftest import PRIORS, simulate
     ("y ~ x + (1 | g/h)", "nested"),
     ("y ~ x + (1 | g:h)", "nested"),
     ("y ~ x + (1 | g) + (1 | g)", "duplicate grouping"),
-    ("y ~ x + (1 || g)", "'||'"),
+    ("y ~ x + (0 + x || g)", "without the varying intercept"),   # A01: '(1 || g)' is now accepted as '(1 | g)'
     ("y ~ x * w + (1 | g)", "two numeric terms"),          # M3a-2: only numeric-by-declared-categorical interactions
     ("y ~ x:w + (1 | g)", "main effect 'x' is missing"),
     ("y ~ log(x) + (1 | g)", "function calls"),
