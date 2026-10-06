@@ -105,9 +105,9 @@
    "depends_on": [
     "P3_families_registry"
    ],
-   "status": "gates_green",
+   "status": "merged",
    "summary": "PopTerm and GroupTerm(factor, coefs, correlated) with per-(factor, coefficient) design blocks",
-   "pr": null,
+   "pr": 27,
    "attempts": 1,
    "gates": {
     "sha": "9841af4a0d31",
@@ -130,7 +130,7 @@
     }
    },
    "divergences": [],
-   "next_action": "agent working in AutoBayes-worktrees/parity-p4 (stacked on P3 at 5d29c70); rebase onto main, gate, PR"
+   "next_action": ""
   },
   {
    "id": "P5_loop_state",
