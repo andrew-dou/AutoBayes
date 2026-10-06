@@ -96,13 +96,13 @@
    "tier": "0",
    "lane": "infra",
    "depends_on": [],
-   "status": "implementing",
+   "status": "pr_open",
    "summary": "docs/brms-parity/{LOOP.md,ledger.json,divergences.md}, tools/parity_gate.py, tools/parity_status.py, STATUS refresh",
-   "pr": null,
+   "pr": 24,
    "attempts": 1,
    "gates": {},
    "divergences": [],
-   "next_action": "open the PR after P1 and P2 merge"
+   "next_action": "merge after #23"
   },
   {
    "id": "A01_independent_slopes",
