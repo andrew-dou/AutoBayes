@@ -60,7 +60,7 @@ REFUSALS = [
     ("y ~ x + (0 + x || g)", {}, "varying slopes without the varying intercept are not supported; write '(1 + x || g)' so that the intercept varies by 'g' as well"),
     ("y ~ x + (x || g)", {}, "varying slopes without the varying intercept are not supported; write '(1 + x || g)'"),
     ("y ~ x + (x | g)", {}, "varying slopes without the varying intercept are not supported"),
-    ("y ~ x + (0 | g)", {}, "'0' removes the varying intercept and leaves no group-level coefficient; write '(1 | g)'"),
+    ("y ~ x + (0 | g)", {}, "'0' removes the varying intercept and leaves no group-level coefficient; a group term is '(1 | g)', or '(1 + x || g)' for varying slopes"),
     ("y ~ w + (1 + x || g)", {}, "the varying slope 'x' must also be a population-level term of the formula, as in 'y ~ x + (1 + x || g)'"),
     ("y ~ (1 + x || g)", {}, "the varying slope 'x' must also be a population-level term of the formula"),
     ("y ~ x + z + (1 + z || g)", {"categorical": {"z": "p"}}, "'z' is declared categorical; a categorical varying slope (one varying coefficient per level of 'z') is not supported"),

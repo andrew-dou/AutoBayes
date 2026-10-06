@@ -510,7 +510,10 @@ def _parse_group_term(inner: str, bars: str, factor: str, piece: str, response: 
         raise FormulaError(f"{piece!r}: duplicated varying slope {duplicated[0]!r}")
     if "0" in tokens or "1" not in tokens:
         if not slopes:
-            raise FormulaError(f"{piece!r}: '0' removes the varying intercept and leaves no group-level coefficient; write '(1 | {factor})'")
+            raise FormulaError(
+                f"{piece!r}: '0' removes the varying intercept and leaves no group-level coefficient; a group term is "
+                f"'(1 | {factor})', or '(1 + x || {factor})' for varying slopes"
+            )
         raise FormulaError(
             f"{piece!r}: varying slopes without the varying intercept are not supported; write "
             f"'(1 + {' + '.join(slopes)} || {factor})' so that the intercept varies by {factor!r} as well"
