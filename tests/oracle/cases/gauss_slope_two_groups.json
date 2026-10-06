@@ -1,0 +1,111 @@
+{
+ "id": "gauss_slope_two_groups",
+ "tier": "A",
+ "feature": "A01_independent_slopes",
+ "note": "a slope factor and an intercept-only factor together; the sd mapping mixes the two forms",
+ "seed": 133,
+ "n_points": 8,
+ "gate": {
+  "expect": "fail",
+  "reason": "A01 independent varying slopes not implemented; remove this field when they land"
+ },
+ "data": {
+  "generator": "baseline",
+  "seed": 33,
+  "n": 36,
+  "newdata": {
+   "seed": 133,
+   "n": 5
+  }
+ },
+ "brms": {
+  "formula": "y ~ x + w + (1 + x || g) + (1 | h)",
+  "family": {
+   "family": "gaussian"
+  },
+  "factors": {
+   "g": [
+    "a",
+    "b",
+    "c",
+    "d",
+    "e",
+    "f"
+   ],
+   "h": [
+    "h1",
+    "h2",
+    "h3",
+    "h4"
+   ]
+  },
+  "priors": [
+   {
+    "prior": "normal(0, 5)",
+    "class": "Intercept"
+   },
+   {
+    "prior": "normal(0, 2)",
+    "class": "b"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "sd",
+    "group": "g",
+    "coef": "Intercept"
+   },
+   {
+    "prior": "normal(0, 0.5)",
+    "class": "sd",
+    "group": "g",
+    "coef": "x"
+   },
+   {
+    "prior": "normal(0, 0.5)",
+    "class": "sd",
+    "group": "h"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "sigma"
+   }
+  ]
+ },
+ "autobayes": {
+  "constructor": "gaussian",
+  "formula": "y ~ x + w + (1 + x || g) + (1 | h)",
+  "kwargs": {},
+  "priors": {
+   "intercept": [
+    "Normal",
+    0,
+    5
+   ],
+   "b": [
+    "Normal",
+    0,
+    2
+   ],
+   "sd": {
+    "g": {
+     "Intercept": [
+      "HalfNormal",
+      1
+     ],
+     "x": [
+      "HalfNormal",
+      0.5
+     ]
+    },
+    "h": [
+     "HalfNormal",
+     0.5
+    ]
+   },
+   "sigma": [
+    "HalfNormal",
+    1
+   ]
+  }
+ }
+}

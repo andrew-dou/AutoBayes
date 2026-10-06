@@ -1,0 +1,97 @@
+{
+ "id": "bernoulli_slope_categorical",
+ "tier": "A",
+ "feature": "A01_independent_slopes",
+ "note": "a categorical population term next to an independent varying slope",
+ "seed": 132,
+ "n_points": 8,
+ "gate": {
+  "expect": "fail",
+  "reason": "A01 independent varying slopes not implemented; remove this field when they land"
+ },
+ "data": {
+  "generator": "baseline",
+  "seed": 32,
+  "n": 36,
+  "newdata": {
+   "seed": 132,
+   "n": 5
+  }
+ },
+ "brms": {
+  "formula": "yb ~ x + z + (1 + x || g)",
+  "family": {
+   "family": "bernoulli"
+  },
+  "factors": {
+   "z": [
+    "p",
+    "q",
+    "r"
+   ],
+   "g": [
+    "a",
+    "b",
+    "c",
+    "d",
+    "e",
+    "f"
+   ]
+  },
+  "priors": [
+   {
+    "prior": "normal(0, 2.5)",
+    "class": "Intercept"
+   },
+   {
+    "prior": "normal(0, 1.5)",
+    "class": "b"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "sd",
+    "group": "g",
+    "coef": "Intercept"
+   },
+   {
+    "prior": "normal(0, 0.5)",
+    "class": "sd",
+    "group": "g",
+    "coef": "x"
+   }
+  ]
+ },
+ "autobayes": {
+  "constructor": "bernoulli",
+  "formula": "yb ~ x + z + (1 + x || g)",
+  "kwargs": {
+   "categorical": {
+    "z": "p"
+   }
+  },
+  "priors": {
+   "intercept": [
+    "Normal",
+    0,
+    2.5
+   ],
+   "b": [
+    "Normal",
+    0,
+    1.5
+   ],
+   "sd": {
+    "g": {
+     "Intercept": [
+      "HalfNormal",
+      1
+     ],
+     "x": [
+      "HalfNormal",
+      0.5
+     ]
+    }
+   }
+  }
+ }
+}
