@@ -217,9 +217,9 @@
    "depends_on": [
     "P4_term_model"
    ],
-   "status": "gates_green",
+   "status": "merged",
    "summary": "g:h and g/h grouping factors",
-   "pr": null,
+   "pr": 31,
    "attempts": 1,
    "gates": {
     "sha": "cffe5f1fb535",
@@ -242,7 +242,7 @@
     }
    },
    "divergences": [],
-   "next_action": "formula lane agent, worktree parity-form1 (after A06)",
+   "next_action": "",
    "fixtures": {
     "pr": 28,
     "cases": [
@@ -301,9 +301,9 @@
    "depends_on": [
     "P4_term_model"
    ],
-   "status": "gates_green",
+   "status": "merged",
    "summary": "offset(log(exposure))",
-   "pr": null,
+   "pr": 31,
    "attempts": 1,
    "gates": {
     "sha": "cffe5f1fb535",
@@ -327,7 +327,7 @@
     "note": "same branch and run as A03_grouping_syntax (both features on parity/a06-a03-offset-grouping)"
    },
    "divergences": [],
-   "next_action": "formula lane agent, worktree parity-form1 (with A03)",
+   "next_action": "",
    "fixtures": {
     "pr": 28,
     "cases": [
