@@ -74,8 +74,8 @@ REFUSALS = [
     ("y ~ x + (1 + x + x || g)", {}, "duplicated varying slope 'x'"),
     ("y ~ x + (1 + log(x) || g)", {}, "function calls and transformations inside a group term are not supported"),
     ("y ~ x + (1 + 1 || g)", {}, "'1' appears more than once in the group term"),
-    ("y ~ x + (1 + x || g/h)", {}, "nested/grouping interaction syntax"),
-    ("y ~ x + (1 + x || g:h)", {}, "nested/grouping interaction syntax"),
+    ("y ~ x + (1 + x || g:h:k)", {}, "only two factors can be combined in a grouping factor"),   # A03 accepts '(1 + x || g:h)' and '(1 + x || g/h)'
+    ("y ~ x + (1 + x || g/h:k)", {}, "mixing '/' and ':' in a grouping factor"),
     ("y ~ x + (1 + x || mm(g, h))", {}, "multimembership grouping is not supported"),
     ("y ~ x + (1 + x || log(g))", {}, "transformed grouping factors are not supported"),
     ("y ~ x + (1 + x | id | g)", {}, "correlation IDs are not supported"),

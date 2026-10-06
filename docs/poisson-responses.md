@@ -7,7 +7,7 @@ model = ab.poisson("count ~ x + (1 | group)", data,
 print(model.describe())
 ```
 
-Counts must be finite nonnegative integers from0 through1e6. Zero-count rows are retained; all-zero outcomes trigger a prior-sensitivity warning. Coefficients describe log expected counts. Mean predictions return mu=exp(eta); response predictions additionally return integer y. Both existing new-group policies work through the original-input prediction path. There is no residual sigma, learned dispersion, nu, offset/exposure or zero-inflation in this first count-family implementation. Intercept-only formulas use an explicit empty coefficient-prior mapping b={}.
+Counts must be finite nonnegative integers from0 through1e6. Zero-count rows are retained; all-zero outcomes trigger a prior-sensitivity warning. Coefficients describe log expected counts. Mean predictions return mu=exp(eta); response predictions additionally return integer y. Both existing new-group policies work through the original-input prediction path. There is no residual sigma, learned dispersion, nu or zero-inflation in this first count-family implementation; an exposure enters as `offset(log(exposure))` since brms-parity feature A06 (docs/offset.md). Intercept-only formulas use an explicit empty coefficient-prior mapping b={}.
 
 The input-count limit does not truncate the likelihood or generated counts. Nonfinite predicted means and rates beyond the integer random generator's supported range are refused rather than clipped. Finite means beyond that generator range remain available with kind="mean". The ordinary and unseen-group prediction routes both use the same manual design reconstruction to perform these checks before drawing.
 

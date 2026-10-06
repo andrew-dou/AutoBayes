@@ -52,6 +52,8 @@ def freeze_target(model):
                     'Z': block.Z, 'noncentered': True} for g, block in d.group_designs.items()],
         **({'group_slopes': [{'factor': g, 'coef': c, 'Z': block.Z, 'correlated': s.group_term_of(g).correlated,
                               'prior': prior(sd_priors[(g, c)])} for g, c, block in slopes]} if slopes else {}),
+        # The offset term (A06) likewise enters only when the formula has one.
+        **({'offset': {'term': s.offset.term, 'values': d.offset}} if d.offset is not None else {}),
         'priors': {'intercept': prior(pr.intercept), 'sigma': prior(pr.sigma),
                    'coefficients': {k: prior(v) for k,v in pr.coefficient_priors(s).items()},
                    'groups': {k: prior(v) for k,v in pr.group_priors(s).items()},

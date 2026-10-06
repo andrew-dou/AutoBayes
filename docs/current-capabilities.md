@@ -6,8 +6,8 @@ This is a capability map, not a percentage of brms implemented.
 | Surface | Merged behavior | Tests / documentation |
 | --- | --- | --- |
 | Families | Gaussian, Bernoulli-logit, grouped binomial-logit, fixed finite nu>1 Student-t, Poisson-log, negative binomial-log and Gamma-log with a `shape` prior | test_logp.py, test_bernoulli.py, test_binomial.py, test_student.py, test_poisson.py, test_negbinomial.py, test_gamma.py; [negative binomial](negbinomial.md), [Gamma](gamma.md) |
-| Formula composition | Numeric and declared categorical predictors; multiple numeric-by-categorical interactions with required main effects; optional intercept | test_intercept_controls.py, test_multiple_interactions.py |
-| Hierarchy | Population-only models or multiple independent varying-intercept factors; independent varying slopes `(1 + x || g)` on numeric population-level terms (brms's correlated `(1 + x \| g)` is refused) | test_population_only.py, test_multiple_groups.py, test_varying_slope.py; [varying slopes](varying-slopes.md) |
+| Formula composition | Numeric and declared categorical predictors; multiple numeric-by-categorical interactions with required main effects; optional intercept; one offset term `offset(col)` or `offset(log(col))` added to the linear predictor without a coefficient | test_intercept_controls.py, test_multiple_interactions.py, test_offset.py; [offset](offset.md) |
+| Hierarchy | Population-only models or multiple independent varying-intercept factors; independent varying slopes `(1 + x || g)` on numeric population-level terms (brms's correlated `(1 + x \| g)` is refused); grouping by the observed combinations of two columns, `(1 \| g:h)`, and brms's nesting shorthand `(1 \| g/h)` = `(1 \| g) + (1 \| g:h)`, with brms's `g_h` level labels | test_population_only.py, test_multiple_groups.py, test_varying_slope.py, test_grouping_syntax.py; [varying slopes](varying-slopes.md), [grouping syntax](grouping-syntax.md) |
 | Execution | Inspectable PyMC graph; PyMC NUTS or JAX/NumPyro sampling with explicit device selection | inference.py, test_device.py and test_sampling.py; availability does not establish GPU validation |
 | Prediction | Expected response and replicated observations; explicit unseen-group policies | test_predict.py, test_multiple_groups.py, family tests |
 | Provenance | Frozen target identity; fit binding captured before sampling; mismatch refusal; explicit unverified legacy route | test_record_identity.py, test_fit_binding.py; [fit binding](fit-binding.md) |
@@ -20,7 +20,7 @@ A parsed formula is an explicit term model (`PopTerm`, `GroupTerm`) with one des
 coefficient; the flat views (`predictors`, `terms`, `columns`, `groups`, `group_designs`) are derived from it;
 see [term model](term-model.md).
 Student-t scale is not generally its standard deviation. Binomial expected count
-is n*p, distinct from probability p. Poisson has no exposure/offset interface yet.
+is n*p, distinct from probability p. A Poisson exposure enters as `offset(log(exposure))` (A06).
 See the family-specific pages for numerical support and refusal boundaries.
 
 ## Validation boundaries
@@ -45,9 +45,10 @@ recovery fits or GPU validation. Do not extrapolate one GPU run to all features.
 ## Next foundations and exclusions
 
 Broader model comparison, distributional parameter
-formulas, learned Student-t degrees of freedom, offsets/exposure, censoring and
+formulas, learned Student-t degrees of freedom, censoring and
 truncation remain separate work. Independent varying slopes landed through the brms-parity loop (A01,
-verified against frozen brms fixtures; PR8 is superseded); correlated slopes (A02) are not implemented.
+verified against frozen brms fixtures; PR8 is superseded), as did the offset term (A06); correlated slopes
+(A02) are not implemented.
 Standalone generated source-code export is not implemented. The library builds
 an inspectable PyMC graph and executes through the selected sampler backend.
 

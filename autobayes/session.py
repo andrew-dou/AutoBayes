@@ -125,6 +125,7 @@ def fit_record(model, fit, *, panel: dict | None = None, max_treedepth: int = 10
                        **({fam.scale_parameter: str(getattr(pr, fam.scale_parameter))} if fam.scale_parameter is not None else {})},
             "terms": list(s.terms),
             "design_columns": list(s.columns),
+            **({"offset": s.offset.term} if s.offset is not None else {}),
             "interactions": [list(pair) for pair in s.interactions],
             "canonical_formula": s.canonical_formula,
             "categorical": {c.name: {"reference": c.reference, "levels": list(c.levels),

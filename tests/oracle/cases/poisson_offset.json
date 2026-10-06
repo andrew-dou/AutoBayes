@@ -5,10 +5,6 @@
  "note": "brms standata carries offsets; the linear predictor adds them",
  "seed": 147,
  "n_points": 8,
- "gate": {
-  "expect": "fail",
-  "reason": "A06_offset not implemented; remove this field when it lands"
- },
  "data": {
   "generator": "tier_a",
   "seed": 47,

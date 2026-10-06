@@ -1,7 +1,7 @@
 """The oracle gates, as functions of a `Bundle` (case, fixture, data, AutoBayes model and the two maps).
 Each raises `OracleMismatch` naming the point and the quantities that differ; a passing gate returns None.
 
-G1 `check_design`        standata equals the model's design, response, trials and group coding
+G1 `check_design`        standata equals the model's design, response, trials, offsets and group coding
 G2 `check_logp`          log density with and without the Jacobian, and its prior part, at every point
 G2 `check_gradient`      every gradient coordinate, mapped through the probed parameter table
 G3 `check_derived`       the graph's linear predictor and group effects, and the raw-scale intercept
@@ -94,6 +94,14 @@ def check_design(b: Bundle) -> None:
             raise OracleMismatch(f"trials differ by {err}")
     elif "trials" in sd:
         raise OracleMismatch("brms has trials but AutoBayes does not")
+    if d.offset is not None:                                     # brms's offsets: the offset term's values per row
+        if "offsets" not in sd:
+            raise OracleMismatch("AutoBayes has an offset term but brms standata has no offsets")
+        err = abs_err(sd["offsets"], d.offset)
+        if err > DESIGN_ABS:
+            raise OracleMismatch(f"offsets differ by {err}")
+    elif "offsets" in sd:
+        raise OracleMismatch("brms has offsets but AutoBayes has no offset term")
     # the design columns and the group partitions were matched by content when the maps were built
     adapter.match_columns(b.fixture, b.model)
     adapter.match_groups(b.fixture, b.model)

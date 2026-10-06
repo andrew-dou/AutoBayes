@@ -217,11 +217,30 @@
    "depends_on": [
     "P4_term_model"
    ],
-   "status": "implementing",
+   "status": "gates_green",
    "summary": "g:h and g/h grouping factors",
    "pr": null,
    "attempts": 1,
-   "gates": {},
+   "gates": {
+    "sha": "cffe5f1fb535",
+    "dirty_tree": false,
+    "base": "parity/a08-a09-negbinomial-gamma",
+    "when": "2026-10-06T15:16Z",
+    "results": {
+     "immutability": {
+      "status": "pass",
+      "seconds": 0.0
+     },
+     "oracle": {
+      "status": "pass",
+      "seconds": 76.3
+     },
+     "suite": {
+      "status": "pass",
+      "seconds": 399.6
+     }
+    }
+   },
    "divergences": [],
    "next_action": "formula lane agent, worktree parity-form1 (after A06)",
    "fixtures": {
@@ -282,11 +301,31 @@
    "depends_on": [
     "P4_term_model"
    ],
-   "status": "implementing",
+   "status": "gates_green",
    "summary": "offset(log(exposure))",
    "pr": null,
    "attempts": 1,
-   "gates": {},
+   "gates": {
+    "sha": "cffe5f1fb535",
+    "dirty_tree": false,
+    "base": "parity/a08-a09-negbinomial-gamma",
+    "when": "2026-10-06T15:16Z",
+    "results": {
+     "immutability": {
+      "status": "pass",
+      "seconds": 0.0
+     },
+     "oracle": {
+      "status": "pass",
+      "seconds": 76.3
+     },
+     "suite": {
+      "status": "pass",
+      "seconds": 399.6
+     }
+    },
+    "note": "same branch and run as A03_grouping_syntax (both features on parity/a06-a03-offset-grouping)"
+   },
    "divergences": [],
    "next_action": "formula lane agent, worktree parity-form1 (with A03)",
    "fixtures": {

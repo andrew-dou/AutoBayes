@@ -9,8 +9,8 @@ from tests.conftest import PRIORS, simulate
 @pytest.mark.parametrize("formula,needle", [
     ("y ~ x + (1 + x | g)", "varying slopes"),
     ("y ~ x + (x | g)", "varying slopes"),
-    ("y ~ x + (1 | g/h)", "nested"),
-    ("y ~ x + (1 | g:h)", "nested"),
+    ("y ~ x + (1 | g/h/k)", "only two factors"),          # A03: '(1 | g/h)' and '(1 | g:h)' are now accepted
+    ("y ~ x + (1 | g:h:k)", "only two factors"),
     ("y ~ x + (1 | g) + (1 | g)", "duplicate grouping"),
     ("y ~ x + (0 + x || g)", "without the varying intercept"),   # A01: '(1 || g)' is now accepted as '(1 | g)'
     ("y ~ x * w + (1 | g)", "two numeric terms"),          # M3a-2: only numeric-by-declared-categorical interactions

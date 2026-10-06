@@ -6,8 +6,16 @@ group-level terms (``GroupTerm``: ``(1 | g)``, ``(1 + x || g)``); every flat vie
 
 Supported::
 
-    response ~ [1 + | 0 +] predictor [+ predictor ...] [+ x:z ...] [+ (1 | factor) | (1 + x [+ w ...] || factor) ...]
+    response ~ [1 + | 0 +] predictor [+ predictor ...] [+ x:z ...] [+ offset(col) | offset(log(col))]
+               [+ (1 | factor) | (1 + x [+ w ...] || factor) ...]
     successes | trials(n) ~ ...  the same right-hand side  (binomial, brms syntax)
+
+``offset(col)`` and ``offset(log(col))`` (A06) add a known column to the linear predictor with no coefficient and
+no prior, as brms's ``offset()`` does; one offset term per formula, held in ``ModelSpec.offset`` (docs/offset.md).
+
+A grouping factor is a column, or two columns combined (A03, docs/grouping-syntax.md): ``(1 | g:h)`` groups by the
+observed ``(g, h)`` combinations, labelled ``g_h`` as brms labels them, and ``(1 | g/h)`` is brms's nesting
+shorthand for ``(1 | g) + (1 | g:h)``.
 
 Group-level terms are optional and additive across distinct factors (M3c-3): a formula without them is a population-only
 model, as in brms ``brmsformula`` where group-level terms are optional; ``y ~ 1`` is intercept-only. ``(1 + x || g)``
@@ -38,6 +46,8 @@ _FORMULA_RE = re.compile(rf"^\s*({_IDENT})\s*~\s*(.+?)\s*$", re.S)
 _TRIALS_FORMULA_RE = re.compile(rf"^\s*({_IDENT})\s*\|\s*trials\(\s*({_IDENT})\s*\)\s*~\s*(.+?)\s*$", re.S)
 _BAMBI_PROPORTION_RE = re.compile(r"^\s*(p|prop|proportion)\s*\(", re.S)
 _GROUP_RE = re.compile(rf"^\(\s*([^|\s][^|]*?)\s*(\|\|?)\s*(.+?)\s*\)$", re.S)   # (inner | factor) or (inner || factor)
+_OFFSET_RE = re.compile(r"^offset\s*\((.*)\)$", re.S)                             # offset(<inner>)
+_OFFSET_LOG_RE = re.compile(rf"^log\s*\(\s*({_IDENT})\s*\)$", re.S)              # log(col) inside offset()
 
 COUNT_CAP = 10**6   # the validated domain for binomial counts per row (docs/m2-decision.md, repair record)
 
@@ -124,7 +134,9 @@ class PopTerm:
 
 @dataclass(frozen=True)
 class GroupTerm:
-    """One group-level term ``(coefs | factor)``, brms's group ``m``: ``factor`` is the grouping column,
+    """One group-level term ``(coefs | factor)``, brms's group ``m``: ``factor`` is the grouping column, or the
+    derived factor ``g:h`` built from two columns (``operands``; its labels are the observed combinations joined
+    with ``_`` and it lives in the fitted frame, and is handed to Bambi, under ``column`` = ``g_h``),
     ``coefs`` the population-level coefficients that vary by its level (brms ``M_m`` of them; ``("Intercept",)``
     for ``(1 | g)``, ``("Intercept", "x")`` for ``(1 + x || g)``), ``correlated`` whether they share a
     correlation matrix (``|``, brms's default, not supported with slopes yet) or are independent (``||``);
@@ -153,11 +165,100 @@ class GroupTerm:
         bar = "|" if self.correlated or len(self.coefs) == 1 else "||"
         return f"({inner} {bar} {self.factor})"
 
+    @property
+    def operands(self) -> tuple[str, ...]:
+        """The data columns the factor is read from: ``("g",)``, or ``("g", "h")`` for the derived factor ``g:h``."""
+        return tuple(self.factor.split(":"))
+
+    @property
+    def derived(self) -> bool:
+        """Whether the factor is built from two columns (``g:h``) rather than read from one."""
+        return len(self.operands) > 1
+
+    @property
+    def column(self) -> str:
+        """The fitted-frame column holding the factor's labels, which is also the name Bambi sees (``factor_column``)."""
+        return factor_column(self.factor)
+
+    @property
+    def bambi_canonical(self) -> str:
+        """``canonical`` as handed to Bambi: the factor under its column name and ``||`` as ``|`` (formulae has no ``||``)."""
+        return self.canonical.replace(f" {self.factor})", f" {self.column})").replace("||", "|")
+
+
+def factor_column(factor: str) -> str:
+    """The frame column that holds a grouping factor's labels, and the name it is handed to Bambi under: the
+    factor itself for a column, ``g_h`` for the derived factor ``g:h`` (formulae would read ``(1 | g:h)`` as the
+    full Cartesian product of levels with ``:``-joined labels, which is not brms's model; docs/grouping-syntax.md)."""
+    return factor.replace(":", "_")
+
+
+def group_labels(factor: str, df: pd.DataFrame) -> pd.Series:
+    """The string labels of grouping factor ``factor`` on ``df``: the column as text, or for the derived factor
+    ``g:h`` the row's ``(g, h)`` pair joined with ``_``, brms's ``paste(g, h, sep = "_")`` over the observed
+    combinations. Two distinct pairs whose joined labels coincide are refused rather than merged (brms merges them)."""
+    parts = [df[c].astype(str) for c in factor.split(":")]
+    if len(parts) == 1:
+        return parts[0]
+    labels = parts[0].str.cat(parts[1:], sep="_")
+    seen: dict[str, tuple[str, ...]] = {}
+    for lab, *pair in zip(labels.to_numpy(), *(p.to_numpy() for p in parts)):
+        pair = tuple(str(v) for v in pair)
+        if seen.setdefault(lab, pair) != pair:
+            raise FormulaError(
+                f"grouping factor {factor!r}: the combinations {seen[lab]} and {pair} both label as {lab!r} "
+                "(labels are joined with '_', as brms does); rename the levels so that the labels are distinct"
+            )
+    return labels
+
+
+@dataclass(frozen=True)
+class Offset:
+    """The offset term of a formula, brms's ``offset(col)`` or ``offset(log(col))``: the column (``log``-transformed
+    when ``log`` is set) is added to the linear predictor as written, with no coefficient and no prior. It is not a
+    population-level term: it has no design column and no entry in ``ModelSpec.columns`` or ``Model.coefficients``.
+    """
+
+    column: str
+    log: bool = False
+
+    @property
+    def expression(self) -> str:
+        """``log(col)`` or ``col``: what is inside ``offset()``."""
+        return f"log({self.column})" if self.log else self.column
+
+    @property
+    def term(self) -> str:
+        """The term as the canonical formula writes it: ``offset(log(col))``."""
+        return f"offset({self.expression})"
+
+    def values(self, df: pd.DataFrame, *, where: str = "column") -> np.ndarray:
+        """The offset vector on ``df``: the column as a float array, logged when ``log`` is set. Refuses a
+        non-numeric, missing-valued or (for ``log``) non-positive column; ``where`` names the frame in messages."""
+        if self.column not in df.columns:
+            raise FormulaError(f"{where} {self.column!r} of the offset term {self.term!r} is not in the data")
+        s = df[self.column]
+        reject_complex(f"{where} {self.column!r}", s)
+        if not _is_numeric(s):
+            raise FormulaError(f"{where} {self.column!r} has dtype {s.dtype}; the offset term {self.term!r} needs a numeric column")
+        v = s.to_numpy(dtype=float)
+        if not np.all(np.isfinite(v)):
+            raise FormulaError(f"{where} {self.column!r} of the offset term {self.term!r} has missing or non-finite values")
+        if self.log:
+            if np.any(v <= 0):
+                i = int(np.flatnonzero(v <= 0)[0])
+                raise FormulaError(
+                    f"{where} {self.column!r} must be positive for the offset term {self.term!r}; row {i} has {float(v[i])!r}"
+                )
+            return np.log(v)
+        return v
+
 
 def bambi_group_name(factor: str, coef: str) -> str:
     """Bambi's name of one group-level coefficient: ``1|g`` for the varying intercept of ``g``, ``x|g`` for the
-    slope of ``x``. PyMC's variables are this name (the effects per level), ``<name>_sigma`` and ``<name>_offset``."""
-    return f"{'1' if coef == 'Intercept' else coef}|{factor}"
+    slope of ``x``; a derived factor ``g:h`` appears under its column name, ``1|g_h``. PyMC's variables are this
+    name (the effects per level), ``<name>_sigma`` and ``<name>_offset``."""
+    return f"{'1' if coef == 'Intercept' else coef}|{factor_column(factor)}"
 
 
 def sd_tag(factor: str, coef: str) -> str:
@@ -252,7 +353,8 @@ class ModelSpec:
     """A parsed formula. ``pop_terms`` and ``group_terms`` are the source of truth; ``predictors``, ``terms``,
     ``columns``, ``categorical_names``, ``interactions``, ``groups`` and the per-term lookups are views of them.
     ``categoricals`` carries what a categorical term needs beyond its name (reference, levels, coding) and
-    ``levels_by_group`` the fitted levels of each grouping factor, both filled in once the data are seen."""
+    ``levels_by_group`` the fitted levels of each grouping factor, both filled in once the data are seen.
+    ``offset`` is the formula's ``offset()`` term, or None (docs/offset.md)."""
 
     formula: str
     response: str
@@ -263,14 +365,17 @@ class ModelSpec:
     categoricals: tuple[Categorical, ...]
     pop_terms: tuple[PopTerm, ...]
     group_terms: tuple[GroupTerm, ...]
+    offset: Offset | None
 
     def __init__(self, formula, response, predictors=(), group=None, intercept=True,
                  levels=(), trials=None, rhs="", terms=(), categoricals=(), interactions=(),
-                 *, groups=None, levels_by_group=None, pop_terms=None, group_terms=None):
+                 *, groups=None, levels_by_group=None, pop_terms=None, group_terms=None, offset=None):
         """Keep the original positional constructor: without ``pop_terms`` / ``group_terms`` the term model is
         built from the flat ``predictors``, ``terms``, ``categoricals``, ``interactions`` and ``group(s)``.
         Terms given as mappings (``dataclasses.asdict`` output) are rebuilt."""
         categoricals = tuple(c if isinstance(c, Categorical) else Categorical(**c) for c in categoricals)
+        if offset is not None and not isinstance(offset, Offset):
+            offset = Offset(**offset)
         if group_terms is not None:
             if groups is not None or group is not None:
                 raise ValueError("supply group_terms or group/groups, not both")
@@ -300,7 +405,7 @@ class ModelSpec:
         values = dict(formula=formula, response=response, intercept=intercept,
                       levels_by_group=_GroupLevels((g, level_map[g]) for g in factors),
                       trials=trials, rhs=rhs, categoricals=categoricals,
-                      pop_terms=pop_terms, group_terms=group_terms)
+                      pop_terms=pop_terms, group_terms=group_terms, offset=offset)
         for key, value in values.items():
             object.__setattr__(self, key, value)
 
@@ -308,7 +413,7 @@ class ModelSpec:
         # Preserve hashability of the frozen specification; factor metadata is ordered.
         return hash((self.formula, self.response, self.intercept,
                      tuple(self.levels_by_group[g] for g in self.groups), self.trials, self.rhs,
-                     self.categoricals, self.pop_terms, self.group_terms))
+                     self.categoricals, self.pop_terms, self.group_terms, self.offset))
 
     # -- views of the term model -------------------------------------------------------------
     @property
@@ -434,9 +539,13 @@ class ModelSpec:
     @property
     def bambi_formula(self) -> str:
         """What is handed to Bambi: the canonical right-hand side; brms's ``k | trials(n)`` becomes
-        Bambi's ``p(k, n)``, and ``(1 + x || g)`` becomes ``(1 + x | g)``, which Bambi (formulae has no
-        ``||``) builds as the independent terms ``1|g`` and ``x|g``; ``Model._extract_design`` verifies that."""
-        rhs = self.rhs.replace("||", "|")
+        Bambi's ``p(k, n)``, ``(1 + x || g)`` becomes ``(1 + x | g)``, which Bambi (formulae has no
+        ``||``) builds as the independent terms ``1|g`` and ``x|g``, and a derived factor ``g:h`` appears under
+        its column name, ``(1 | g_h)``; ``Model._extract_design`` verifies all of that."""
+        rhs = self.rhs
+        for t in self.group_terms:
+            rhs = rhs.replace(t.canonical, t.bambi_canonical)
+        rhs = rhs.replace("||", "|")
         if self.trials is None:
             return f"{self.response} ~ {rhs}"
         return f"p({self.response}, {self.trials}) ~ {rhs}"
@@ -463,30 +572,49 @@ def _split_top_level(rhs: str, sep: str = "+") -> list[str]:
     return parts
 
 
-def _parse_group_term(inner: str, bars: str, factor: str, piece: str, response: str, trials: str | None) -> GroupTerm:
-    """The ``GroupTerm`` of one ``(inner | factor)`` or ``(inner || factor)`` piece: the varying intercept
+def _parse_group_term(inner: str, bars: str, factor: str, piece: str, response: str, trials: str | None) -> list[GroupTerm]:
+    """The ``GroupTerm``s of one ``(inner | factor)`` or ``(inner || factor)`` piece: the varying intercept
     ``(1 | g)`` (``(1 || g)`` is the same term, one coefficient having nothing to correlate with), or the
-    independent varying intercept and numeric slopes ``(1 + x [+ w ...] || g)``. Everything else brms accepts
-    here is refused with a message naming the construct. Whether a slope is a numeric population-level term of
-    the formula is checked by ``parse_formula`` once every term is read."""
-    if "/" in factor or ":" in factor:
-        raise FormulaError(
-            f"{piece!r}: nested/grouping interaction syntax ('g/h', 'g:h') is not "
-            "supported; use distinct additive '(1 | group)' terms."
-        )
+    independent varying intercept and numeric slopes ``(1 + x [+ w ...] || g)``. The factor is a column ``g``,
+    the derived factor ``g:h`` (the observed combinations of two columns: one term) or brms's nesting shorthand
+    ``g/h`` (``(1 | g) + (1 | g:h)``: two terms, in that order). Everything else brms accepts here is refused
+    with a message naming the construct. Whether a slope is a numeric population-level term of the formula is
+    checked by ``parse_formula`` once every term is read."""
     if "|" in factor:
         raise FormulaError(f"{piece!r}: correlation IDs are not supported")
     if factor.startswith("mm("):
         raise FormulaError(f"{piece!r}: multimembership grouping is not supported")
     if "(" in factor:
         raise FormulaError(f"{piece!r}: transformed grouping factors are not supported; use a column name")
-    if not re.fullmatch(_IDENT, factor):
-        raise FormulaError(f"{piece!r}: grouping factor must be a single column name")
+    if "/" in factor and ":" in factor:
+        raise FormulaError(
+            f"{piece!r}: mixing '/' and ':' in a grouping factor ({factor!r}) is not supported in this slice; write the "
+            "group terms out, '(1 | g) + (1 | g:h)'"
+        )
+    sep = "/" if "/" in factor else ":" if ":" in factor else None
+    operands = [p.strip() for p in factor.split(sep)] if sep else [factor]
+    if len(operands) > 2:
+        raise FormulaError(
+            f"{piece!r}: only two factors can be combined in a grouping factor in this slice ({factor!r} names "
+            f"{len(operands)} columns); three-way nesting or interaction of grouping factors is not supported"
+        )
+    for p in operands:
+        if not re.fullmatch(_IDENT, p):
+            raise FormulaError(f"{piece!r}: {p!r} is not a column name" if sep else f"{piece!r}: grouping factor must be a single column name")
+    if len(operands) == 2 and operands[0] == operands[1]:
+        raise FormulaError(f"{piece!r}: a grouping factor cannot be combined with itself ({factor!r})")
+    combined = ":".join(operands)                                   # the derived factor as the term model spells it
+    factors = [operands[0], combined] if sep == "/" else [combined]  # (1 | g/h) is (1 | g) + (1 | g:h)
     tokens = [t.strip() for t in _split_top_level(inner)]
     if any(t == "" for t in tokens):
         raise FormulaError(f"{piece!r}: empty term inside the group term")
     slopes = [t for t in tokens if t not in ("0", "1")]
     for s in slopes:                                            # each slope token is a column name
+        if _OFFSET_RE.match(s):
+            raise FormulaError(
+                f"{piece!r}: offset() cannot be placed inside a group term; write it as a population-level term, "
+                f"'{response} ~ ... + {s} + (1 {bars} {factor})'"
+            )
         if "(" in s or ")" in s:
             raise FormulaError(
                 f"{piece!r}: function calls and transformations inside a group term are not supported; "
@@ -499,8 +627,8 @@ def _parse_group_term(inner: str, bars: str, factor: str, piece: str, response: 
             )
         if not re.fullmatch(_IDENT, s):
             raise FormulaError(f"{piece!r}: {s!r} is not a column name")
-        if s == factor:
-            raise FormulaError(f"{piece!r}: the grouping factor {factor!r} cannot also be a varying slope")
+        if s in operands:
+            raise FormulaError(f"{piece!r}: the grouping factor {s!r} cannot also be a varying slope")
         if s == response:
             raise FormulaError(f"{piece!r}: the response {response!r} cannot be a varying slope")
         if trials is not None and s == trials:
@@ -521,14 +649,14 @@ def _parse_group_term(inner: str, bars: str, factor: str, piece: str, response: 
     if tokens.count("1") > 1:
         raise FormulaError(f"{piece!r}: '1' appears more than once in the group term")
     if not slopes:
-        return GroupTerm(factor, ("Intercept",), correlated=True)
+        return [GroupTerm(f, ("Intercept",), correlated=True) for f in factors]
     if bars == "|":
         raise FormulaError(
             f"{piece!r}: brms's '|' gives the varying intercept and slope(s) a correlation matrix (an LKJ prior on "
             f"their correlation), which is not supported yet; write '({inner} || {factor})' for independent "
             "varying slopes, each with its own SD and no correlation"
         )
-    return GroupTerm(factor, ("Intercept", *slopes), correlated=False)
+    return [GroupTerm(f, ("Intercept", *slopes), correlated=False) for f in factors]
 
 
 def _normalise_categorical(categorical, terms: list[str], response: str, groups: list[str], trials: str | None,
@@ -701,6 +829,7 @@ def parse_formula(formula: str, data: pd.DataFrame | None = None, family: str = 
     group_pieces: list[str] = []                           # each group term as written, for the messages below
     groups: list[str] = []                                 # the factors of group_terms, for the checks below
     raw_interactions: list[tuple[str, str, str]] = []      # (left, right, piece as written)
+    offsets: list[tuple[Offset, str]] = []                 # (offset term, piece as written); at most one
     saw_intercept_token = False
     remove_intercept = False
 
@@ -728,14 +857,40 @@ def parse_formula(formula: str, data: pd.DataFrame | None = None, family: str = 
         gm = _GROUP_RE.match(piece)
         if gm:
             inner, bars, factor = gm.group(1).strip(), gm.group(2), gm.group(3).strip()
-            group_terms.append(_parse_group_term(inner, bars, factor, piece, response, trials))   # '(1 | g)' or '(1 + x || g)'
-            group_pieces.append(piece)
-            groups.append(factor)
+            for term in _parse_group_term(inner, bars, factor, piece, response, trials):   # '(1 | g)', '(1 + x || g)', '(1 | g:h)'; '(1 | g/h)' gives two
+                group_terms.append(term)
+                group_pieces.append(piece)
+                groups.append(term.factor)
             continue
         if piece.startswith("("):
             raise FormulaError(f"{piece!r}: parenthesised term is not a '(1 | group)' or '(1 + x || group)' term")
         if "|" in piece:
             raise FormulaError(f"{piece!r}: a '|' term must be written '(1 | group)' or '(1 + x || group)'")
+        om = _OFFSET_RE.match(piece)
+        if om:                                                  # offset(col) or offset(log(col)), brms's offset()
+            inner = om.group(1).strip()
+            lm = _OFFSET_LOG_RE.match(inner)
+            if lm:
+                offset = Offset(lm.group(1), log=True)
+            elif re.fullmatch(_IDENT, inner):
+                offset = Offset(inner)
+            else:
+                raise FormulaError(
+                    f"{piece!r}: only 'offset(col)' and 'offset(log(col))' are supported inside offset(); other "
+                    "expressions (general in-formula transforms) are not part of this slice. Compute the column in "
+                    "the data frame and write 'offset(<column>)'."
+                )
+            if offsets:
+                raise FormulaError(
+                    f"{piece!r}: more than one offset term ({offsets[0][1]!r} and {piece!r}); add the offsets into one "
+                    "column and write a single 'offset(<column>)'"
+                )
+            if offset.column == response:
+                raise FormulaError(f"{piece!r}: the response {response!r} cannot be the offset")
+            if trials is not None and offset.column == trials:
+                raise FormulaError(f"{piece!r}: the trials column {trials!r} cannot be the offset")
+            offsets.append((offset, piece))
+            continue
         if "(" in piece or ")" in piece:
             raise FormulaError(
                 f"{piece!r}: function calls and transformations inside the formula are "
@@ -764,6 +919,7 @@ def parse_formula(formula: str, data: pd.DataFrame | None = None, family: str = 
     if saw_intercept_token and remove_intercept:
         raise FormulaError(f"{formula!r}: conflicting intercept inclusion/removal; use '0 + terms' or 'terms - 1'")
 
+    operands_all = list(dict.fromkeys(c for t in group_terms for c in t.operands))   # every column a grouping factor reads
     for term, piece in zip(group_terms, group_pieces):       # a varying slope is a population-level term of the formula
         for s in term.slopes:
             if s not in predictors:
@@ -775,7 +931,7 @@ def parse_formula(formula: str, data: pd.DataFrame | None = None, family: str = 
 
     for left, right, piece in raw_interactions:              # both main effects are required in this slice
         for side in (left, right):
-            if side not in predictors and re.fullmatch(_IDENT, side) and side not in groups:
+            if side not in predictors and re.fullmatch(_IDENT, side) and side not in operands_all:
                 raise FormulaError(
                     f"{piece!r}: the main effect {side!r} is missing. This slice requires both main effects of an "
                     f"interaction ('{left} + {right} + {left}:{right}' or '{left}*{right}'): omitting one is a different "
@@ -784,24 +940,68 @@ def parse_formula(formula: str, data: pd.DataFrame | None = None, family: str = 
                 )
     if remove_intercept and not predictors:
         raise FormulaError(f"{formula!r}: no intercept requires at least one population-level predictor")
-    if len(set(groups)) != len(groups):
-        repeated = next(g for g in groups if groups.count(g) > 1)
+    seen_partition: dict[frozenset, int] = {}                # a factor, or the same pair of columns in either order, once
+    for i, (term, piece) in enumerate(zip(group_terms, group_pieces)):
+        key = frozenset(term.operands)
+        if key not in seen_partition:
+            seen_partition[key] = i
+            continue
+        other, other_piece = group_terms[seen_partition[key]], group_pieces[seen_partition[key]]
+        if other.factor == term.factor:
+            hint = ""
+            slash = next((p for p in (piece, other_piece) if "/" in _GROUP_RE.match(p).group(3)), None)
+            if slash is not None:
+                a, b = [p.strip() for p in _GROUP_RE.match(slash).group(3).split("/")]
+                hint = f" ('{slash}' expands to '(1 | {a}) + (1 | {a}:{b})')"
+            raise FormulaError(
+                f"{formula!r}: duplicate grouping factor {term.factor!r}; a factor appears in one group term, "
+                f"'(1 | {term.factor})' or '(1 + x || {term.factor})'{hint}"
+            )
         raise FormulaError(
-            f"{formula!r}: duplicate grouping factor {repeated!r}; a factor appears in one group term, "
-            f"'(1 | {repeated})' or '(1 + x || {repeated})'"
+            f"{formula!r}: '{piece}' groups by the same columns as '{other_piece}' ({term.factor!r} and {other.factor!r} "
+            "induce the same partition of the rows); keep one of them"
         )
     if len(predictors) == 0 and not saw_intercept_token:
         raise FormulaError(
             f"{formula!r}: no population-level predictor; write 'y ~ 1 + (1 | group)' "
             "for an intercept-only model."
         )
-    for group in groups:
-        if group in predictors or group == response:
-            raise FormulaError(f"{group!r}: the grouping factor cannot also be a predictor or the response")
-    if trials is not None and (trials in predictors or trials in groups):
+    for col in operands_all:
+        if col in predictors or col == response:
+            raise FormulaError(f"{col!r}: the grouping factor cannot also be a predictor or the response")
+    if trials is not None and (trials in predictors or trials in operands_all):
         raise FormulaError(f"{trials!r}: the trials column cannot also be a predictor or the grouping factor")
+    offset = offsets[0][0] if offsets else None
+    # A derived factor's column (g_h) is added to the fitted frame: it must not shadow a column the formula uses.
+    in_use = {response, *predictors, *operands_all, *([trials] if trials is not None else []),
+              *([offset.column] if offset is not None else [])}
+    derived_columns: dict[str, GroupTerm] = {}
+    for term in group_terms:
+        if not term.derived:
+            continue
+        if term.column in derived_columns:
+            raise FormulaError(
+                f"{formula!r}: the derived grouping factors {derived_columns[term.column].factor!r} and {term.factor!r} would "
+                f"both be handed to Bambi as the column {term.column!r}; rename one of the columns"
+            )
+        if term.column in in_use:
+            raise FormulaError(
+                f"{formula!r}: the derived grouping factor {term.factor!r} is handed to Bambi as the column {term.column!r}, "
+                "which is also a column of the formula; rename that column"
+            )
+        derived_columns[term.column] = term
+    if offset is not None and offset.column in operands_all:
+        raise FormulaError(
+            f"{offsets[0][1]!r}: the grouping factor {offset.column!r} cannot be the offset; an offset is a known "
+            "numeric column added to the linear predictor"
+        )
 
-    categoricals = _normalise_categorical(categorical, predictors, response, groups, trials, formula)
+    categoricals = _normalise_categorical(categorical, predictors, response, operands_all, trials, formula)
+    if offset is not None and any(c.name == offset.column for c in categoricals):
+        raise FormulaError(
+            f"{offsets[0][1]!r}: {offset.column!r} is declared categorical; an offset is a known numeric column added "
+            "to the linear predictor"
+        )
     if remove_intercept and categoricals:
         categoricals = (replace(categoricals[0], full_rank=True), *categoricals[1:])
     cat_names = {c.name for c in categoricals}
@@ -818,7 +1018,7 @@ def parse_formula(formula: str, data: pd.DataFrame | None = None, family: str = 
         for side in (left, right):
             if not re.fullmatch(_IDENT, side):
                 raise FormulaError(f"{piece!r}: {side!r} is not a column name")
-            if side in groups:
+            if side in operands_all:
                 raise FormulaError(f"{piece!r}: the grouping factor {side!r} cannot enter a fixed interaction")
             if side == response or (trials is not None and side == trials):
                 raise FormulaError(f"{piece!r}: the response or trials column cannot enter an interaction")
@@ -835,7 +1035,8 @@ def parse_formula(formula: str, data: pd.DataFrame | None = None, family: str = 
         if (x, z) in interactions:
             raise FormulaError(f"{piece!r}: the interaction '{x}:{z}' appears more than once after expansion")
         interactions.append((x, z))
-    parts = [*predictors, *(f"{x}:{z}" for x, z in interactions)] + [t.canonical for t in group_terms]
+    parts = ([*predictors, *(f"{x}:{z}" for x, z in interactions)] + ([offset.term] if offset is not None else [])
+             + [t.canonical for t in group_terms])
     canonical_rhs = " + ".join(parts) if parts else "1"           # intercept-only population model: 'y ~ 1'
     if remove_intercept:
         canonical_rhs = "0 + " + canonical_rhs
@@ -844,6 +1045,7 @@ def parse_formula(formula: str, data: pd.DataFrame | None = None, family: str = 
     spec = ModelSpec(
         formula=formula.strip(), response=response, intercept=not remove_intercept, trials=trials,
         rhs=canonical_rhs, categoricals=categoricals, pop_terms=pop_terms, group_terms=tuple(group_terms),
+        offset=offset,
     )
     if data is not None:
         spec = validate_data(spec, data, family)
@@ -978,8 +1180,10 @@ def validate_data(spec: ModelSpec, data: pd.DataFrame, family: str = "gaussian")
     fam = get_family(family)
     if (spec.trials is not None) != fam.has_trials:
         raise FormulaError("a trials column is present exactly for the binomial family")
-    needed = ([spec.response, *spec.predictors, *spec.categorical_names] + list(spec.groups)
-              + ([spec.trials] if spec.trials else []))
+    operands = [c for t in spec.group_terms for c in t.operands]   # the columns the grouping factors are read from
+    needed = ([spec.response, *spec.predictors, *spec.categorical_names] + operands
+              + ([spec.trials] if spec.trials else []) + ([spec.offset.column] if spec.offset is not None else []))
+    needed = list(dict.fromkeys(needed))                         # the offset column may also be a predictor
     missing = [c for c in needed if c not in data.columns]
     if missing:
         raise FormulaError(f"columns not in data: {missing}")
@@ -991,6 +1195,8 @@ def validate_data(spec: ModelSpec, data: pd.DataFrame, family: str = "gaussian")
                 f"categorical with its reference level, for example categorical={{{c!r}: <level>}} "
                 "(treatment coding; docs/m3a1-decision.md)."
             )
+    if spec.offset is not None:
+        spec.offset.values(data)                                 # numeric, finite and (for log) positive, or refused
     categoricals = []
     for cat in spec.categoricals:
         labels, unused = categorical_labels(f"categorical predictor {cat.name!r}", data[cat.name])
@@ -1014,11 +1220,11 @@ def validate_data(spec: ModelSpec, data: pd.DataFrame, family: str = "gaussian")
     if len(data) < 2:
         raise FormulaError("need at least two observations")
     levels_by_group = {}
-    for group in spec.groups:
-        levels = tuple(sorted(data[group].astype(str).unique()))
+    for t in spec.group_terms:                                    # a derived factor's levels: the observed combinations
+        levels = tuple(sorted(group_labels(t.factor, data).unique()))
         if len(levels) < 2:
-            raise FormulaError(f"grouping factor {group!r} has a single level; a varying intercept needs at least two.")
-        levels_by_group[group] = levels
+            raise FormulaError(f"grouping factor {t.factor!r} has a single level; a varying intercept needs at least two.")
+        levels_by_group[t.factor] = levels
     for c in spec.predictors:
         if np.isclose(np.std(data[c].to_numpy(dtype=float)), 0.0):
             raise FormulaError(f"predictor {c!r} is constant")
@@ -1026,5 +1232,5 @@ def validate_data(spec: ModelSpec, data: pd.DataFrame, family: str = "gaussian")
         formula=spec.formula, response=spec.response, intercept=spec.intercept, levels_by_group=levels_by_group,
         trials=spec.trials, rhs=spec.rhs, categoricals=tuple(categoricals),
         pop_terms=tuple(pop_term(t.name, t.kind, categoricals) for t in spec.pop_terms),   # levels now known
-        group_terms=spec.group_terms,
+        group_terms=spec.group_terms, offset=spec.offset,
     )

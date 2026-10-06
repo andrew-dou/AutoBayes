@@ -3,9 +3,10 @@
 The families of ``autobayes.families``, including Poisson and negative binomial counts, Gamma and fixed-nu
 Student-t responses. ``"gaussian"`` (M0): identity link, residual SD ``sigma``. ``"bernoulli"``
 (M1): logit link, ``p = expit(eta)``, no residual scale. ``"binomial"`` (M2): logit link on
-``successes | trials(n)``, counts. All share the right-hand side ``[1 +] x1 [+ x2 ...]
+``successes | trials(n)``, counts. All share the right-hand side ``[1 +] x1 [+ x2 ...] [+ offset(log(col))]
 [+ (1 | factor) | (1 + x || factor) ...]`` with numeric terms and, since M3a-1, treatment-coded categorical
-terms declared with ``categorical={column: reference}``; centring; non-centred group effects (varying
+terms declared with ``categorical={column: reference}``; an optional offset term (A06, docs/offset.md), added to
+the linear predictor with no coefficient; centring; non-centred group effects (varying
 intercepts and, with ``||``, independent varying slopes) when a group term is present, and a population-only
 model without one (M3c-1). The formula is a term model (``PopTerm``, ``GroupTerm`` in ``autobayes.formula``;
 docs/term-model.md) and ``Design`` holds one ``GroupBlock`` per group-level coefficient.
@@ -22,7 +23,7 @@ from collections.abc import Mapping
 
 from autobayes.families import FAMILIES, FamilySpec, get_family
 from autobayes.formula import (Categorical, FormulaError, ModelSpec, bambi_group_name, binomial_counts, categorical_labels,
-                               parse_formula, pop_term_design, sd_tag)
+                               factor_column, group_labels, parse_formula, pop_term_design, sd_tag)
 from autobayes.priors import Priors
 
 _bambi_group_name = bambi_group_name          # ``1|g`` for the varying intercept of ``g``, ``x|g`` for the slope of ``x``
@@ -64,6 +65,7 @@ class Design:
     trials: np.ndarray | None = None   # binomial only: (n,) trials per fitted row; y holds the successes
     columns: tuple[str, ...] = ()      # design-column labels in order (``x``, ``z[b]``, ...); == predictors when numeric only
     categoricals: tuple[Categorical, ...] = ()
+    offset: np.ndarray | None = None   # (n,) the offset term's values per fitted row (brms ``offsets``), or None
 
     def __post_init__(self):
         if not self.columns:
@@ -137,8 +139,10 @@ class Model:
         spec0 = parse_formula(formula, None, family, categorical)
         self.effective_center_predictors = self.center_predictors and spec0.intercept
         priors.validate(spec0, family)                  # structure now; per-level coverage once levels are known
-        cols = ([spec0.response, *spec0.predictors, *spec0.categorical_names] + list(spec0.groups)
-                + ([spec0.trials] if spec0.trials else []))
+        operands = [c for t in spec0.group_terms for c in t.operands]   # the columns the grouping factors are read from
+        cols = ([spec0.response, *spec0.predictors, *spec0.categorical_names] + operands
+                + ([spec0.trials] if spec0.trials else []) + ([spec0.offset.column] if spec0.offset is not None else []))
+        cols = list(dict.fromkeys(cols))                        # the offset column may also be a predictor
         missing = [c for c in cols if c not in data.columns]
         if missing:
             raise FormulaError(f"columns not in data: {missing}")
@@ -167,8 +171,8 @@ class Model:
                         )
                 df = df.drop(index=zero).reset_index(drop=True)
         self.spec: ModelSpec = parse_formula(formula, df, family, categorical)   # levels over the fitted rows
-        for group in self.spec.groups:
-            df[group] = df[group].astype(str)
+        for t in self.spec.group_terms:                      # labels as text; a derived factor g:h gets its own column g_h
+            df[t.column] = group_labels(t.factor, df)
         if fam.response_dtype is not None:
             df[self.spec.response] = df[self.spec.response].astype(fam.response_dtype)
         self.warnings.extend(fam.response_warnings(self.spec, df))   # separation, all-zero counts
@@ -245,9 +249,27 @@ class Model:
         common = comp.design.common
         group = comp.design.group
         names = list(common.terms)
-        if names != (["Intercept"] if self.spec.intercept else []) + list(self.spec.terms):
+        offset_terms = [self.spec.offset.term] if self.spec.offset is not None else []
+        if names != (["Intercept"] if self.spec.intercept else []) + list(self.spec.terms) + offset_terms:
             raise RuntimeError(f"unexpected common terms from Bambi: {names}")
         Xfull = np.asarray(common.design_matrix, dtype=float)
+        # The offset term (brms offset(), formulae's kind "offset"): Bambi adds its column to the linear predictor as
+        # given, outside the coefficient design and never centred. Its values are recomputed here from the data and
+        # must equal what Bambi evaluated; the column is then removed from the design that the coefficients multiply.
+        offset = None
+        if self.spec.offset is not None:
+            term = self.spec.offset.term
+            if list(comp.offset_terms) != [term] or getattr(common.terms[term], "kind", None) != "offset":
+                raise RuntimeError(f"Bambi did not build {term!r} as the single offset term (offset terms: {list(comp.offset_terms)})")
+            offset = self.spec.offset.values(self.data)
+            built = np.asarray(comp.offset_terms[term].data, dtype=float).ravel()
+            if built.shape != offset.shape or not np.array_equal(built, offset):
+                raise RuntimeError(f"Bambi's offset {term!r} does not equal {self.spec.offset.expression} computed from the data")
+            if not np.array_equal(Xfull[:, common.slices[term]].ravel(), offset):
+                raise RuntimeError(f"the offset column of Bambi's common design does not equal {self.spec.offset.expression}")
+            Xfull = np.delete(Xfull, common.slices[term], axis=1)
+        if list(comp.common_terms) != list(self.spec.terms):
+            raise RuntimeError(f"Bambi's coefficient terms {list(comp.common_terms)} differ from the formula's {list(self.spec.terms)}")
         if self.spec.intercept and not np.allclose(Xfull[:, 0], 1.0):
             raise RuntimeError("Bambi's first common column is not an intercept column")
         # Verify Bambi's columns term by term against each term's own design block on the data
@@ -310,7 +332,7 @@ class Model:
             for t in self.spec.group_terms:
                 g = t.factor
                 levels = self.spec.levels_by_group[g]
-                labels = self.data[g].to_numpy()
+                labels = self.data[t.column].to_numpy()
                 indicator = np.column_stack([labels == level for level in levels]).astype(float)
                 for coef in t.coefs:
                     name = _bambi_group_name(g, coef)
@@ -357,7 +379,7 @@ class Model:
         return Design(y=y, X_raw=X_raw, X_model=X_model, x_means=x_means,
                       predictors=self.spec.predictors, Z=Z, group_blocks=group_blocks,
                       centered=self.effective_center_predictors, trials=trials,
-                      columns=self.spec.columns, categoricals=self.spec.categoricals)
+                      columns=self.spec.columns, categoricals=self.spec.categoricals, offset=offset)
 
     # -- naming ------------------------------------------------------------------------
     @property
@@ -396,9 +418,9 @@ class Model:
         """PyMC names of one group-level coefficient of ``factor`` (its varying intercept by default): ``sd`` is
         the coefficient's scale (brms ``sd_m[c]``), ``offset`` its standardised effects (brms ``z_m[c]``),
         ``group_effect`` its effects per level (brms ``r_m_c``), ``coordinate`` the level dimension, shared by
-        every coefficient of the factor."""
+        every coefficient of the factor. Bambi names all of them after the factor's column (``g_h`` for ``g:h``)."""
         name = _bambi_group_name(factor, coef)
-        return {"sd": f"{name}_sigma", "offset": f"{name}_offset", "group_effect": name, "coordinate": f"{factor}__factor_dim"}
+        return {"sd": f"{name}_sigma", "offset": f"{name}_offset", "group_effect": name, "coordinate": f"{factor_column(factor)}__factor_dim"}
 
     @property
     def group_names(self) -> dict[str, dict[str, str]]:
@@ -556,7 +578,8 @@ class Model:
                          + (f" (positions {list(self.dropped_rows)[:10]}{'...' if len(self.dropped_rows) > 10 else ''})"
                             if self.dropped_rows else ""))
         features = ((["categorical predictor(s)"] if s.categoricals else []) + (["interaction(s)"] if s.interactions else [])
-                    + (["independent varying slope(s)"] if s.has_slopes else []))
+                    + (["independent varying slope(s)"] if s.has_slopes else []) + (["offset"] if s.offset is not None else [])
+                    + (["derived grouping factor(s)"] if any(t.derived for t in s.group_terms) else []))
         lines = [
             f"AutoBayes {fam.tag} model" + (" with " + " and ".join(features) if features else "")
             + (" (population-level only)" if not s.has_group else ""),
@@ -565,8 +588,18 @@ class Model:
         if s.canonical_formula != s.formula:
             lines += [f"  expanded  : {s.canonical_formula}   (canonical form handed to Bambi)"]
         lines += [f"  family    : {self.family}, {self.link} link", data_line]
+        if s.offset is not None:
+            lines += [f"  offset    : {s.offset.expression}, added to the linear predictor as written (no coefficient, no prior, "
+                      f"never centred; brms offset()); range {d.offset.min():.4f} to {d.offset.max():.4f} over the fitted rows"]
         for g, block in d.group_designs.items():
             lines += [f"  {'levels    ' if len(s.groups) == 1 else 'levels ' + g}: {', '.join(f'{j}={l}' for j, l in enumerate(block.levels))}"]
+        for t in s.group_terms:
+            if t.derived:
+                ga, gb = t.operands
+                name = _bambi_group_name(t.factor, "Intercept")
+                lines += [f"  {t.factor:<10}: derived grouping factor, one level per observed ({ga}, {gb}) combination, labelled {ga}_{gb} as brms "
+                          f"does (paste({ga}, {gb}, sep = \"_\")); unobserved combinations have no level; handed to Bambi as the column "
+                          f"{t.column!r}, so its PyMC variables are {name}, {name}_sigma, {name}_offset"]
         for cat in s.categoricals:
             labels = self.data[cat.name].astype(str).to_numpy()
             props = ", ".join(f"{l} {np.mean(labels == l):.3f}" for l in cat.levels)
@@ -579,10 +612,14 @@ class Model:
         lines += [
             "",
             "Linear predictor",
-            f"  {lp}_i = {a}" + (f" + {xs}" if xs else "")
+            f"  {lp}_i = {a}" + (f" + {xs}" if xs else "") + (" + offset_i" if s.offset is not None else "")
             + "".join(f" + {effect(t.factor)}[{t.factor}_i]" + "".join(f" + x_{c},i * {slope_effect(t.factor, c)}[{t.factor}_i]" for c in t.slopes)
                       for t in s.group_terms),
         ]
+        if s.offset is not None:
+            per_row = f"log({s.offset.column}_i)" if s.offset.log else f"{s.offset.column}_i"
+            lines += [f"  offset_i = {per_row}: the offset term, a known quantity added to every row's {lp}_i; "
+                      "it has no coefficient and no prior and is not centred."]
         scale = fam.scale_phrase
         same_group = " (same group)" if len(s.groups) == 1 else (" (same group effects)" if s.groups else "")
         for cat in s.categoricals:
@@ -754,8 +791,9 @@ def poisson(formula: str, data: pd.DataFrame, priors: Priors, *,
             center_predictors: bool = True, categorical: Mapping[str, object] | None = None) -> Model:
     """Poisson count response with log link and explicit coefficient/group priors.
 
-    Retains zero rows. Input counts must be integers in [0, 1e6]. No sigma, nu,
-    offset/exposure or overdispersion parameter is supported in this slice.
+    Retains zero rows. Input counts must be integers in [0, 1e6]. An exposure enters as
+    ``offset(log(exposure))`` (docs/offset.md). No sigma, nu or overdispersion parameter
+    is supported in this slice.
     """
     return Model(formula, data, priors, family="poisson",
                  center_predictors=center_predictors, categorical=categorical)

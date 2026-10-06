@@ -46,6 +46,8 @@ POISSON = FamilySpec(
     mean_lines=lambda model: ["  E[y_i] = mu_i = exp(eta_i); eta is log expected count."],
     likelihood_lines=lambda model: ["", "Likelihood", "  y_i ~ Poisson(mu_i); mu_i = exp(eta_i)",
                                     "  Input counts are integers from 0 through 1e6; zero-count rows are retained.",
+                                    ("  The exposure enters through the offset term (mu_i = exp(offset_i) * exp(eta_i - offset_i)); "
+                                     "no overdispersion or zero-inflation is modeled.") if model.spec.offset is not None else
                                     "  No exposure/offset, overdispersion or zero-inflation is modeled."],
     centred_intercept_note=(),
     deterministic_note="mu = exp(linear predictor); mu = exp(eta), expected count",

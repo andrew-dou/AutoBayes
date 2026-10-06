@@ -41,7 +41,7 @@ import pandas as pd
 import xarray as xr
 
 from autobayes.families import get_family
-from autobayes.formula import FormulaError, categorical_labels, check_counts, pop_term_design, reject_complex
+from autobayes.formula import FormulaError, categorical_labels, check_counts, group_labels, pop_term_design, reject_complex
 
 _NEW_GROUPS = {"error", "resample_observed", "population"}
 
@@ -66,7 +66,8 @@ def _coefficient_draws(post, model):
 
 def _check_newdata(model, newdata: pd.DataFrame, *, need_trials: bool = False, include_group_effects: bool = True) -> pd.DataFrame:
     s = model.spec
-    cols = [*s.predictors, *s.categorical_names] + (list(s.groups) if include_group_effects else [])
+    operands = [c for t in s.group_terms for c in t.operands] if include_group_effects else []   # g and h, never g_h
+    cols = [*s.predictors, *s.categorical_names] + ([s.offset.column] if s.offset is not None else []) + operands
     cols = list(dict.fromkeys(cols))
     if need_trials:
         if s.trials not in newdata.columns:
@@ -77,7 +78,9 @@ def _check_newdata(model, newdata: pd.DataFrame, *, need_trials: bool = False, i
         cols.append(s.trials)
     missing = [c for c in cols if c not in newdata.columns]
     if missing:
-        raise FormulaError(f"newdata lacks columns {missing}")
+        hint = (f" (the offset term {s.offset.term!r} needs {s.offset.column!r} on every row to predict)"
+                if s.offset is not None and s.offset.column in missing else "")
+        raise FormulaError(f"newdata lacks columns {missing}{hint}")
     df = newdata[cols].copy()
     if df.isna().any().any():
         raise FormulaError("newdata contains missing values")
@@ -85,6 +88,8 @@ def _check_newdata(model, newdata: pd.DataFrame, *, need_trials: bool = False, i
         reject_complex(f"newdata column {c!r}", df[c])
         if not pd.api.types.is_numeric_dtype(df[c]):
             raise FormulaError(f"newdata column {c!r} must be numeric")
+    if s.offset is not None:
+        s.offset.values(df, where="newdata column")               # numeric, finite and (for log) positive, or refused
     for cat in s.categoricals:
         labels, _ = categorical_labels(f"newdata column {cat.name!r}", df[cat.name])
         unseen = sorted(set(labels.tolist()) - set(cat.levels))
@@ -98,15 +103,16 @@ def _check_newdata(model, newdata: pd.DataFrame, *, need_trials: bool = False, i
         df[cat.name] = pd.Categorical(labels, categories=list(cat.categories), ordered=True)
     if need_trials:
         df[s.trials] = check_counts(f"newdata trials {s.trials!r}", df[s.trials])
-    for group in (s.groups if include_group_effects else ()):
-        df[group] = df[group].astype(str)
+    for t in (s.group_terms if include_group_effects else ()):   # labels as text; a derived factor's column is built here
+        df[t.column] = group_labels(t.factor, df)
     return df.reset_index(drop=True)
 
 
 def _predict_by_hand(model, idata, df: pd.DataFrame | None, kind: str, seed, policies: dict[str, str], *, include_group_effects=True) -> xr.Dataset:
     """Linear predictor by hand from the posterior, with one effect per distinct unseen label.
 
-    ``df=None`` means the fitted rows (in-sample). Each group-level coefficient adds its effect at the
+    ``df=None`` means the fitted rows (in-sample). The offset term, when the formula has one, is added as
+    written (brms keeps it under ``re_formula = NA`` too). Each group-level coefficient adds its effect at the
     row's level times its covariate (one for the varying intercept, the raw slope column for a varying
     slope). ``"population"``: a fresh ``Normal(0, sd)`` draw per unseen label, posterior draw and
     coefficient. ``"resample_observed"``: the effects of one uniformly chosen observed level per label
@@ -125,11 +131,14 @@ def _predict_by_hand(model, idata, df: pd.DataFrame | None, kind: str, seed, pol
     mu = np.repeat(a[..., None], len(df), axis=-1)
     if b is not None:
         mu = mu + np.einsum("cdp,np->cdn", b, X)
+    if model.spec.offset is not None:                           # the offset enters as written, with or without group effects
+        mu = mu + model.spec.offset.values(df)
     new_levels = {}
     for term in (model.spec.group_terms if include_group_effects else ()):
         g = term.factor
         levels = list(model.design.group_designs[g].levels)
-        new_levels[g] = sorted(set(df[g]) - set(levels))
+        labels = df[term.column]
+        new_levels[g] = sorted(set(labels) - set(levels))
         # (sd draws, effect draws, covariate column) per coefficient: ones for the intercept, the raw column for a slope
         coefs = []
         for coef in term.coefs:
@@ -143,7 +152,7 @@ def _predict_by_hand(model, idata, df: pd.DataFrame | None, kind: str, seed, pol
             else:                                        # one observed level per draw; its whole effect vector is reused
                 chosen = rng.integers(0, len(levels), size=coefs[0][0].shape)
                 new_effects[lvl] = [np.take_along_axis(u, chosen[..., None], axis=-1)[..., 0] for _, u, _ in coefs]
-        for i, lvl in enumerate(df[g]):
+        for i, lvl in enumerate(labels):
             for k, (_, u, covariate) in enumerate(coefs):
                 mu[..., i] += (new_effects[lvl][k] if lvl in new_effects else u[..., levels.index(lvl)]) * covariate[i]
     dims = ("chain", "draw", "__obs__")
@@ -217,8 +226,8 @@ def predict(model, fit_result, *, newdata: pd.DataFrame | None = None, kind: str
     idata = getattr(fit_result, "idata", fit_result)
     df = (None if newdata is None else _check_newdata(
         model, newdata, need_trials=(fam.has_trials and kind in ("mean", "response")), include_group_effects=include_group_effects))
-    new_levels = {g: ([] if df is None else sorted(set(df[g]) - set(model.design.group_designs[g].levels)))
-                  for g in (model.spec.groups if include_group_effects else ())}
+    new_levels = {t.factor: ([] if df is None else sorted(set(df[t.column]) - set(model.design.group_designs[t.factor].levels)))
+                  for t in (model.spec.group_terms if include_group_effects else ())}
     for g, unseen in new_levels.items():
         if unseen and policies[g] == "error":
             raise FormulaError(
