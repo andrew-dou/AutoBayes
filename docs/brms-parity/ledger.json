@@ -565,13 +565,19 @@
    "depends_on": [
     "A12_links"
    ],
-   "status": "queued",
+   "status": "fixtures_frozen",
    "summary": "bf(y ~ x, sigma ~ z): formulas on auxiliary parameters",
    "pr": null,
    "attempts": 0,
    "gates": {},
    "divergences": [],
-   "next_action": ""
+   "next_action": "implement after the Tier A boundary review",
+   "fixtures": {
+    "pr": 33,
+    "cases": [
+     "gauss_distributional_sigma"
+    ]
+   }
   },
   {
    "id": "B02_cens_trunc_weights",
@@ -580,13 +586,21 @@
    "depends_on": [
     "A06_offset"
    ],
-   "status": "queued",
+   "status": "fixtures_frozen",
    "summary": "cens(), trunc(), weights() response addition terms",
    "pr": null,
    "attempts": 0,
    "gates": {},
    "divergences": [],
-   "next_action": ""
+   "next_action": "implement after the Tier A boundary review",
+   "fixtures": {
+    "pr": 33,
+    "cases": [
+     "gauss_censored",
+     "gauss_truncated",
+     "gauss_weighted"
+    ]
+   }
   },
   {
    "id": "B03_monotonic",
@@ -595,13 +609,19 @@
    "depends_on": [
     "A04_general_interactions"
    ],
-   "status": "queued",
+   "status": "fixtures_frozen",
    "summary": "mo() monotonic effects with the simplex prior",
    "pr": null,
    "attempts": 0,
    "gates": {},
    "divergences": [],
-   "next_action": ""
+   "next_action": "implement after the Tier A boundary review",
+   "fixtures": {
+    "pr": 33,
+    "cases": [
+     "gauss_monotonic"
+    ]
+   }
   },
   {
    "id": "B04_splines",
@@ -610,13 +630,19 @@
    "depends_on": [
     "A05_formula_transforms"
    ],
-   "status": "queued",
+   "status": "fixtures_frozen",
    "summary": "s() smooth terms (mgcv basis construction; likely to park for a decision)",
    "pr": null,
    "attempts": 0,
    "gates": {},
    "divergences": [],
-   "next_action": ""
+   "next_action": "implement after the Tier A boundary review",
+   "fixtures": {
+    "pr": 33,
+    "cases": [
+     "gauss_spline"
+    ]
+   }
   },
   {
    "id": "B05_ordinal_categorical",
@@ -625,13 +651,20 @@
    "depends_on": [
     "A12_links"
    ],
-   "status": "queued",
+   "status": "fixtures_frozen",
    "summary": "cumulative, sratio, cratio, acat and categorical families",
    "pr": null,
    "attempts": 0,
    "gates": {},
    "divergences": [],
-   "next_action": ""
+   "next_action": "implement after the Tier A boundary review",
+   "fixtures": {
+    "pr": 33,
+    "cases": [
+     "cumulative_varint",
+     "categorical_poponly"
+    ]
+   }
   },
   {
    "id": "B06_zero_inflated_hurdle",
@@ -640,13 +673,20 @@
    "depends_on": [
     "A08_negbinomial"
    ],
-   "status": "queued",
+   "status": "fixtures_frozen",
    "summary": "zero-inflated and hurdle count families",
    "pr": null,
    "attempts": 0,
    "gates": {},
    "divergences": [],
-   "next_action": ""
+   "next_action": "implement after the Tier A boundary review",
+   "fixtures": {
+    "pr": 33,
+    "cases": [
+     "zero_inflated_poisson_varint",
+     "hurdle_poisson_varint"
+    ]
+   }
   },
   {
    "id": "C01_multivariate",
