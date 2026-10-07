@@ -1,0 +1,81 @@
+{
+ "id": "gauss_truncated",
+ "tier": "B",
+ "feature": "B02_cens_trunc_weights",
+ "note": "brms standata lb: the likelihood is normalised by the truncated mass",
+ "seed": 163,
+ "n_points": 8,
+ "gate": {
+  "expect": "fail",
+  "reason": "B02_cens_trunc_weights not implemented; remove this field when it lands"
+ },
+ "data": {
+  "generator": "tier_b",
+  "seed": 63,
+  "n": 36,
+  "newdata": {
+   "seed": 163,
+   "n": 5
+  }
+ },
+ "brms": {
+  "formula": "ypos | trunc(lb = 0) ~ x + (1 | g)",
+  "family": {
+   "family": "gaussian"
+  },
+  "factors": {
+   "g": [
+    "a",
+    "b",
+    "c",
+    "d",
+    "e",
+    "f"
+   ]
+  },
+  "priors": [
+   {
+    "prior": "normal(0, 5)",
+    "class": "Intercept"
+   },
+   {
+    "prior": "normal(0, 2)",
+    "class": "b"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "sd",
+    "group": "g"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "sigma"
+   }
+  ]
+ },
+ "autobayes": {
+  "constructor": "gaussian",
+  "formula": "ypos | trunc(lb = 0) ~ x + (1 | g)",
+  "kwargs": {},
+  "priors": {
+   "intercept": [
+    "Normal",
+    0,
+    5
+   ],
+   "b": [
+    "Normal",
+    0,
+    2
+   ],
+   "sd": [
+    "HalfNormal",
+    1
+   ],
+   "sigma": [
+    "HalfNormal",
+    1
+   ]
+  }
+ }
+}

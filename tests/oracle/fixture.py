@@ -26,7 +26,7 @@ FIXTURES = ROOT / "fixtures"
 def decode(obj) -> np.ndarray:
     """A dims/values array from the fixture as a NumPy array (R stores column-major)."""
     dims = [int(d) for d in obj["dims"]]
-    values = np.asarray(obj["values"], dtype=float)
+    values = np.asarray(obj["values"], dtype=float)         # strings "Inf"/"-Inf" (truncation bounds) parse as infinities
     return values.reshape(dims, order="F") if dims else values.reshape(())
 
 

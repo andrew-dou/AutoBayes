@@ -73,10 +73,14 @@ sdat <- standata(fit0)
 code <- stancode(fit0)
 
 # -- encoders ---------------------------------------------------------------------------------------------
-enc <- function(x, dims = NULL) {
+enc <- function(x, dims = NULL, allow_infinite = FALSE) {
   if (is.null(dims)) dims <- if (is.null(dim(x))) (if (length(x) == 1) integer(0) else length(x)) else dim(x)
   v <- as.numeric(as.vector(x))                       # column-major, as R stores it
-  if (any(!is.finite(v))) stop("non-finite value in a fixture array")
+  if (any(is.na(v))) stop("missing value in a fixture array")
+  if (any(!is.finite(v))) {
+    if (!allow_infinite) stop("non-finite value in a fixture array")
+    v <- ifelse(is.finite(v), sprintf("%.17g", v), ifelse(v > 0, "Inf", "-Inf"))   # truncation bounds: strings
+  }
   out <- list(dims = I(as.integer(dims)), values = I(v))
   cn <- if (length(dim(x)) == 2) dimnames(x)[[2]] else NULL    # colnames() errors on a 1-d array with names
   if (!is.null(cn)) out$colnames <- I(cn)
@@ -105,8 +109,11 @@ for (nm in names(base)) {
     du <- u1[changed] - u0[changed]
     if (length(changed) == 1) {
       transform <- if (abs(du - 0.5 * v[k]) < 1e-9) "identity" else if (abs(du - log(1.5)) < 1e-9) "log" else "other"
-      if (!is.null(upar_map[[changed]])) stop(sprintf("coordinate %d is driven by two constrained elements", changed))
-      upar_map[[changed]] <- list(index = changed, par = nm, elem = k, transform = transform, du = du)
+      if (!is.null(upar_map[[changed]])) {                 # ordered thresholds: a later element also moves it
+        upar_map[[changed]]$transform <- "joint"
+      } else {
+        upar_map[[changed]] <- list(index = changed, par = nm, elem = k, transform = transform, du = du)
+      }
     } else {
       for (j in seq_along(changed)) {
         if (is.null(upar_map[[changed[j]]]))
@@ -192,7 +199,7 @@ fixture <- list(
     case_brms_sha256 = sha(file.path(dir, "case_brms.json")), data_sha256 = sha(file.path(dir, "data.csv")),
     newdata_sha256 = if (is.null(nd)) NULL else sha(file.path(dir, "newdata.csv")),
     n_upars = n, n_points = n_points),
-  standata = lapply(setNames(names(sdat), names(sdat)), function(nm) enc(sdat[[nm]])),
+  standata = lapply(setNames(names(sdat), names(sdat)), function(nm) enc(sdat[[nm]], allow_infinite = TRUE)),
   declarations = declarations,
   upars = upar_map,
   groups = groups,

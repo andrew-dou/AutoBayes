@@ -48,7 +48,8 @@ def baseline(seed: int, n: int = 36) -> pd.DataFrame:
     })
 
 
-def newdata(seed: int, n: int = 5, *, tier_a: bool = False, pairs_from: pd.DataFrame | None = None) -> pd.DataFrame:
+def newdata(seed: int, n: int = 5, *, tier_a: bool = False, pairs_from: pd.DataFrame | None = None,
+            tier_b: bool = False) -> pd.DataFrame:
     """Rows to predict on, with fitted levels only (unseen levels need stochastic policies on both sides).
     ``pairs_from`` copies (g, h) from random rows of the fitted frame, so a nested factor ``g:h`` sees only fitted
     combinations (brms refuses new levels of a grouping factor by default)."""
@@ -61,6 +62,10 @@ def newdata(seed: int, n: int = 5, *, tier_a: bool = False, pairs_from: pd.DataF
     if tier_a:                                                  # drawn after the shared columns, which stay as above
         df["xpos"] = np.round(np.exp(rng.normal(0.0, 0.5, n)), 4)
         df["exposure"] = np.round(np.exp(rng.normal(1.0, 0.4, n)), 4)
+    if tier_b:                                                  # addition-term and monotonic columns brms needs on new rows
+        df["w"] = np.round(rng.uniform(0.5, 2.0, n), 4)
+        df["ord"] = rng.integers(1, 5, n).astype(np.int64)
+        df["cens_ind"] = np.zeros(n, dtype=np.int64)
     if pairs_from is not None:
         rows = rng.integers(0, len(pairs_from), n)
         df["g"] = pairs_from["g"].to_numpy(dtype=object)[rows]
@@ -83,7 +88,33 @@ def tier_a(seed: int, n: int = 36) -> pd.DataFrame:
     return df
 
 
-GENERATORS = {"baseline": baseline, "tier_a": tier_a}
+def tier_b(seed: int, n: int = 36) -> pd.DataFrame:
+    """`tier_a` plus the columns Tier B features need: an ordinal predictor/response `ord` (1..4), a three-level
+    categorical response `cat3`, a censoring indicator `cens_ind` (-1 left, 0 none, 1 right), positive weights `w`
+    and zero-inflated counts `zcnt`. Drawn after `tier_a`'s so the shared columns equal `tier_a(seed, n)` exactly."""
+    df = tier_a(seed, n)
+    rng = np.random.default_rng(seed + 104729)
+    eta = 0.3 + 0.5 * df["x"].to_numpy()
+    cuts = np.array([-0.8, 0.2, 1.2])
+    latent = eta + rng.logistic(0.0, 1.0, n)
+    df["ord"] = (1 + (latent[:, None] > cuts[None, :]).sum(1)).astype(np.int64)
+    logits = np.column_stack([np.zeros(n), 0.4 * df["x"].to_numpy() + 0.2, -0.3 * df["x"].to_numpy() - 0.1])
+    probs = np.exp(logits - logits.max(1, keepdims=True)); probs /= probs.sum(1, keepdims=True)
+    df["cat3"] = np.array([f"c{1 + rng.choice(3, p=pr)}" for pr in probs], dtype=object)
+    df["cens_ind"] = rng.choice([-1, 0, 1], size=n, p=[0.15, 0.7, 0.15]).astype(np.int64)
+    df["w"] = np.round(rng.uniform(0.5, 2.0, n), 4)
+    counts = rng.poisson(np.exp(np.clip(eta, -5.0, 4.0)))
+    df["zcnt"] = np.where(rng.uniform(size=n) < 0.3, 0, counts).astype(np.int64)
+    for col, levels in (("ord", (1, 2, 3, 4)), ("cat3", ("c1", "c2", "c3"))):          # every level present
+        vals = df[col].to_numpy(dtype=object)
+        for i, lvl in enumerate(levels):
+            if lvl not in set(vals.tolist()):
+                vals[i] = lvl
+        df[col] = vals.astype(np.int64) if col == "ord" else vals
+    return df
+
+
+GENERATORS = {"baseline": baseline, "tier_a": tier_a, "tier_b": tier_b}
 
 
 def make(spec: dict) -> tuple[pd.DataFrame, pd.DataFrame | None]:
@@ -93,8 +124,8 @@ def make(spec: dict) -> tuple[pd.DataFrame, pd.DataFrame | None]:
     nd = spec.get("newdata")
     if not nd:
         return data, None
-    return data, newdata(int(nd["seed"]), int(nd.get("n", 5)), tier_a=spec["generator"] == "tier_a",
-                         pairs_from=data if nd.get("pairs_from_data") else None)
+    return data, newdata(int(nd["seed"]), int(nd.get("n", 5)), tier_a=spec["generator"] in ("tier_a", "tier_b"),
+                         pairs_from=data if nd.get("pairs_from_data") else None, tier_b=spec["generator"] == "tier_b")
 
 
 def write_csv(frame: pd.DataFrame, path) -> None:

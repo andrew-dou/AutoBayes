@@ -1,0 +1,82 @@
+{
+ "id": "hurdle_poisson_varint",
+ "tier": "B",
+ "feature": "B06_zero_inflated_hurdle",
+ "note": "brms: hu in (0, 1); zero-truncated Poisson for the positive counts",
+ "seed": 170,
+ "n_points": 8,
+ "gate": {
+  "expect": "fail",
+  "reason": "B06_zero_inflated_hurdle not implemented; remove this field when it lands"
+ },
+ "data": {
+  "generator": "tier_b",
+  "seed": 70,
+  "n": 36,
+  "newdata": {
+   "seed": 170,
+   "n": 5
+  }
+ },
+ "brms": {
+  "formula": "zcnt ~ x + (1 | g)",
+  "family": {
+   "family": "hurdle_poisson"
+  },
+  "factors": {
+   "g": [
+    "a",
+    "b",
+    "c",
+    "d",
+    "e",
+    "f"
+   ]
+  },
+  "priors": [
+   {
+    "prior": "normal(0, 2)",
+    "class": "Intercept"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "b"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "sd",
+    "group": "g"
+   },
+   {
+    "prior": "beta(2, 2)",
+    "class": "hu"
+   }
+  ]
+ },
+ "autobayes": {
+  "constructor": "hurdle_poisson",
+  "formula": "zcnt ~ x + (1 | g)",
+  "kwargs": {},
+  "priors": {
+   "intercept": [
+    "Normal",
+    0,
+    2
+   ],
+   "b": [
+    "Normal",
+    0,
+    1
+   ],
+   "sd": [
+    "HalfNormal",
+    1
+   ],
+   "hu": [
+    "Beta",
+    2,
+    2
+   ]
+  }
+ }
+}

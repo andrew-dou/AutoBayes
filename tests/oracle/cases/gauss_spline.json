@@ -1,0 +1,85 @@
+{
+ "id": "gauss_spline",
+ "tier": "B",
+ "feature": "B04_splines",
+ "note": "brms: mgcv thin-plate basis (Xs, Zs_1_1, knots_1), parameters bs, zs_1_1, sds_1_1; expected to park without an mgcv basis in Python",
+ "seed": 166,
+ "n_points": 8,
+ "gate": {
+  "expect": "fail",
+  "reason": "B04_splines not implemented; remove this field when it lands"
+ },
+ "data": {
+  "generator": "tier_b",
+  "seed": 66,
+  "n": 36,
+  "newdata": {
+   "seed": 166,
+   "n": 5
+  }
+ },
+ "brms": {
+  "formula": "y ~ s(x) + (1 | g)",
+  "family": {
+   "family": "gaussian"
+  },
+  "factors": {
+   "g": [
+    "a",
+    "b",
+    "c",
+    "d",
+    "e",
+    "f"
+   ]
+  },
+  "priors": [
+   {
+    "prior": "normal(0, 5)",
+    "class": "Intercept"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "sd",
+    "group": "g"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "sigma"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "sds"
+   }
+  ]
+ },
+ "autobayes": {
+  "constructor": "gaussian",
+  "formula": "y ~ s(x) + (1 | g)",
+  "kwargs": {},
+  "priors": {
+   "intercept": [
+    "Normal",
+    0,
+    5
+   ],
+   "b": [
+    "Normal",
+    0,
+    2
+   ],
+   "sd": [
+    "HalfNormal",
+    1
+   ],
+   "sigma": [
+    "HalfNormal",
+    1
+   ],
+   "sds": [
+    "HalfNormal",
+    1
+   ]
+  }
+ }
+}
