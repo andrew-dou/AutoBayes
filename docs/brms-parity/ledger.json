@@ -258,9 +258,9 @@
    "depends_on": [
     "P4_term_model"
    ],
-   "status": "gates_green",
+   "status": "merged",
    "summary": "numeric:numeric, categorical:categorical and higher-order interactions with brms/R coding",
-   "pr": null,
+   "pr": 34,
    "attempts": 1,
    "gates": {
     "sha": "ebf63b11acd0",
@@ -284,7 +284,7 @@
     "note": "same branch and run as A05_formula_transforms (both features on parity/a04-a05-interactions-transforms)"
    },
    "divergences": [],
-   "next_action": "formula lane agent, worktree parity-form2 (stacked on #31's branch)",
+   "next_action": "",
    "fixtures": {
     "pr": 28,
     "cases": [
@@ -300,9 +300,9 @@
    "depends_on": [
     "P4_term_model"
    ],
-   "status": "gates_green",
+   "status": "merged",
    "summary": "in-formula transforms such as log(x), I(x^2), scale(x)",
-   "pr": null,
+   "pr": 34,
    "attempts": 1,
    "gates": {
     "sha": "ebf63b11acd0",
@@ -325,7 +325,7 @@
     }
    },
    "divergences": [],
-   "next_action": "formula lane agent, worktree parity-form2 (stacked on #31's branch)",
+   "next_action": "",
    "fixtures": {
     "pr": 28,
     "cases": [
