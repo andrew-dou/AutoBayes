@@ -4,7 +4,7 @@ Each raises `OracleMismatch` naming the point and the quantities that differ; a 
 G1 `check_design`        standata equals the model's design, response, trials, offsets and group coding
 G2 `check_logp`          log density with and without the Jacobian, and its prior part, at every point
 G2 `check_gradient`      every gradient coordinate, mapped through the probed parameter table
-G3 `check_derived`       the graph's linear predictor and group effects, and the raw-scale intercept
+G3 `check_derived`       the graph's linear predictor, group effects and correlation matrices, and the raw-scale intercept
 G4 `check_predictions`   predict() on the fixture's draws equals posterior_linpred/posterior_epred
 G5 `check_jax`           the JAX-compiled density equals the PyTensor one at every point
 G6 `check_default_prior` brms's default-prior table is present with the classes this model has
@@ -23,7 +23,8 @@ from tests.oracle.tolerances import DESIGN_ABS, GRAD_REL, LOGP_REL, PRED_REL, ab
 
 def prior_names(model) -> list[str]:
     """The free variables whose densities brms sums into ``lprior``: intercept, coefficients, sigma, shape or phi,
-    the SD of every group-level coefficient (not the standardised offsets, which brms adds in the model block)."""
+    the SD of every group-level coefficient (not the standardised offsets, which brms adds in the model block) and the
+    correlation Cholesky factor of every correlated group term (``lkj_corr_cholesky_lpdf(L_m | eta)``)."""
     names = model.names
     out = [names["intercept"]] if model.spec.intercept else []
     out += list(model.spec.terms)
@@ -34,6 +35,7 @@ def prior_names(model) -> list[str]:
     if "phi" in names:                                     # Beta precision
         out.append(names["phi"])
     out += [roles["sd"] for roles in model.group_coefficient_names.values()]
+    out += [roles["L"] for roles in model.correlation_names.values()]
     return out
 
 
@@ -147,7 +149,8 @@ def check_gradient(b: Bundle) -> None:
 def check_derived(b: Bundle) -> None:
     pmm, names, d = b.model.pymc_model, b.model.names, b.model.design
     groups = list(b.model.group_coefficient_names.items())          # every group-level coefficient: intercepts and slopes
-    dets = [pmm[names["linpred"]]] + [pmm[roles["group_effect"]] for _, roles in groups]
+    cors = list(b.model.correlation_names.items())                  # the correlation matrix of every correlated term (A02)
+    dets = [pmm[names["linpred"]]] + [pmm[roles["group_effect"]] for _, roles in groups] + [pmm[roles["cor"]] for _, roles in cors]
     fn = pmm.compile_fn(pmm.replace_rvs_by_values(dets), inputs=pmm.value_vars, point_fn=True, on_unused_input="ignore")
     ref = b.fixture.prediction("fitted", "epred" if b.model.link == "log" else "linpred")
     for k, p, vp in b.points():
@@ -156,12 +159,18 @@ def check_derived(b: Bundle) -> None:
         err = rel_err(lin, ref[k])
         if err > PRED_REL:
             raise OracleMismatch(f"point {k}: the graph's {names['linpred']!r} differs from brms by {err}")
-        for ((g, coef), _), eff in zip(groups, out[1:]):
+        for ((g, coef), _), eff in zip(groups, out[1:1 + len(groups)]):
             m, cn = b.gmap.brms_id[g], b.gmap.coef_cn[(g, coef)]
             r = np.asarray(eff, dtype=float).ravel()[b.gmap.level_of[g]]
             err = rel_err(r, np.atleast_1d(p.pars[f"r_{m}_{cn}"]))
             if err > PRED_REL:
                 raise OracleMismatch(f"point {k}: group effects of {coef!r} of {g!r} differ from brms r_{m}_{cn} by {err}")
+        for (g, _), cor in zip(cors, out[1 + len(groups):]):
+            m, perm = b.gmap.brms_id[g], adapter.correlation_order(b.model, b.gmap, g)
+            ref_cor = np.atleast_2d(p.pars[f"Cor_{m}"])[np.ix_(perm, perm)]
+            err = rel_err(np.asarray(cor, dtype=float), ref_cor)
+            if err > PRED_REL:
+                raise OracleMismatch(f"point {k}: the correlation matrix of {g!r} differs from brms Cor_{m} by {err}")
         if "b_Intercept" in p.pars:
             nat = adapter.natural_point(b.model, p, b.cmap, b.gmap)
             raw = nat["intercept"] - float(d.x_means @ nat["b"])
@@ -216,6 +225,8 @@ def check_default_prior(b: Bundle) -> None:
         expected.add("b")
     if b.model.spec.groups:
         expected.add("sd")
+    if b.model.correlation_names:                          # a correlated group term's LKJ prior (A02)
+        expected.add("cor")
     if "sigma" in b.model.names:
         expected.add("sigma")
     if "shape" in b.model.names:

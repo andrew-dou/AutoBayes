@@ -96,6 +96,7 @@ def fit_record(model, fit, *, panel: dict | None = None, max_treedepth: int = 10
     coef = pr.coefficient_priors(s)
     group_priors = pr.group_priors(s)
     sd_priors = pr.sd_priors(s)
+    cor_priors = pr.cor_priors(s)
     return {
         "autobayes_version": __version__,
         "model": {
@@ -113,7 +114,10 @@ def fit_record(model, fit, *, panel: dict | None = None, max_treedepth: int = 10
                         "coordinate": model.group_names[g]["coordinate"],
                         "sd_prior": str(group_priors[g]), "noncentered": True,
                         "slopes": [{"coef": c, "term": f"{c}|{g}", "names": model.group_coefficient_names[(g, c)],
-                                    "sd_prior": str(sd_priors[(g, c)])} for c in s.group_term_of(g).slopes]}
+                                    "sd_prior": str(sd_priors[(g, c)])} for c in s.group_term_of(g).slopes],
+                        # a correlated term (A02): its coefficients share a correlation matrix under an LKJ prior
+                        **({"correlated": True, "cor_prior": str(cor_priors[g]), "correlation_names": model.correlation_names[g]}
+                           if g in cor_priors else {})}
                        for g, block in d.group_designs.items()],
             "intercept": s.intercept,
             "center_predictors": bool(d.centered),
@@ -122,6 +126,7 @@ def fit_record(model, fit, *, panel: dict | None = None, max_treedepth: int = 10
             "priors": {**({"intercept": str(pr.intercept)} if s.intercept else {}), **{f"b:{k}": str(v) for k, v in coef.items()},
                        **{("sd" if len(s.groups) == 1 else f"sd:{g}"): str(prior) for g, prior in group_priors.items()},
                        **{f"sd:{sd_tag(g, c)}": str(prior) for (g, c), prior in sd_priors.items() if c != "Intercept"},
+                       **{f"cor:{g}": str(prior) for g, prior in cor_priors.items()},
                        **({fam.scale_parameter: str(getattr(pr, fam.scale_parameter))} if fam.scale_parameter is not None else {})},
             "terms": list(s.terms),
             "design_columns": list(s.columns),

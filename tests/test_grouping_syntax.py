@@ -78,7 +78,6 @@ REFUSALS = [
     ("y ~ x + z + (1 | z:h)", {"categorical": {"z": "p"}}, "'z': the grouping factor cannot also be a predictor or the response"),
     ("y ~ x + (1 + g || g:h)", {}, "the grouping factor 'g' cannot also be a varying slope"),
     ("y ~ x + (1 + h || g/h)", {}, "the grouping factor 'h' cannot also be a varying slope"),
-    ("y ~ x + (1 + x | g:h)", {}, "brms's '|' gives the varying intercept and slope(s) a correlation matrix"),
     ("y ~ x + x:h + (1 | g:h)", {}, "the grouping factor 'h' cannot enter a fixed interaction"),
     ("y ~ x + (1 | g:1h)", {}, "'1h' is not a column name"),
     ("y ~ x + (1 | g:)", {}, "'' is not a column name"),

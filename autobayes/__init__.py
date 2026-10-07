@@ -5,7 +5,7 @@ Bernoulli and grouped binomial with logit links, Poisson and negative binomial
 counts and Gamma responses with a log link, lognormal responses with the identity
 link on the log-scale location, and Beta proportions with a logit link and precision ``phi``. Supported formulas combine numeric and declared categorical predictors,
 numeric-by-categorical interactions, intercept controls, and optional multiple
-independent varying-intercept factors. Explicit priors are required.
+independent varying-intercept factors with independent or correlated varying slopes. Explicit priors are required.
 
 See docs/current-capabilities.md for supported composition, test entry points,
 and the distinction between deterministic checks, CPU examples and GPU evidence.
@@ -38,6 +38,7 @@ from autobayes.priors import (
     HalfCauchy,
     HalfNormal,
     HalfStudentT,
+    LKJ,
     Normal,
     Prior,
     PriorError,
@@ -53,7 +54,7 @@ from autobayes.session import compare_records, environment, fit_record, format_c
 
 __all__ = [
     "Categorical", "DeviceError", "Exponential", "FitResult", "FormulaError", "Gamma", "GroupTerm", "HalfCauchy",
-    "HalfNormal", "HalfStudentT", "Model", "ModelSpec", "Normal", "PopTerm", "Prior",
+    "HalfNormal", "HalfStudentT", "LKJ", "Model", "ModelSpec", "Normal", "PopTerm", "Prior",
     "PriorError", "Priors", "StudentT", "bernoulli", "beta", "binomial", "compare_records", "environment", "fit", "fit_record",
     "gamma", "lognormal", "negbinomial", "student", "poisson", "format_comparison", "format_environment", "gaussian", "panel",
     "parse_formula", "predict", "prior_predictive",

@@ -3,6 +3,7 @@
 brms-parity feature A01. A group term `(1 + x || g)` lets the slope of the numeric population-level term `x`
 vary by level of `g` next to the varying intercept, with no correlation between the two (brms's `||`). Several
 slopes are allowed in one term, `(1 + x + w || g)`; each is independent of the others and of the intercept.
+brms's correlated form `(1 + x | g)` is feature A02 (docs/correlated-slopes.md).
 
 ## The model
 
@@ -43,8 +44,7 @@ deviation into `u_g + c v_x|g`, which is correlated with `v_x|g`. `describe()` s
 
 ## Refused, with the construct named
 
-`(1 + x | g)` (brms's correlated form, an LKJ prior on the correlation: feature A02); `(0 + x || g)` and
-`(x || g)` (a slope without the varying intercept); a slope that is not a numeric population-level term; a
+`(0 + x || g)` and `(x || g)` (a slope without the varying intercept); a slope that is not a numeric population-level term; a
 categorical or interaction slope; a slope equal to the factor, the response or the trials column; a factor in two
 group terms; function calls inside the group term.
 

@@ -37,10 +37,14 @@ per column. `ModelSpec.pop_columns` lists the data columns the population-level 
 ## Group-level terms: `GroupTerm(factor, coefs, correlated)`
 
 One entry per `(... | factor)` term, brms's group `m`: `coefs` are the population-level coefficients that
-vary by level (brms `M_m` of them; `("Intercept",)` for `(1 | g)`, `("Intercept", "x")` for `(1 + x || g)`)
-and `correlated` whether they share a correlation matrix (`|`, brms's default, not supported with slopes
-yet) or are independent (`||`; moot for one coefficient, so `(1 || g)` is `(1 | g)`). `term.slopes` are
+vary by level (brms `M_m` of them; `("Intercept",)` for `(1 | g)`, `("Intercept", "x")` for `(1 + x || g)` and
+`(1 + x | g)`) and `correlated` whether they share a correlation matrix (`|`, brms's default: an LKJ prior on
+the correlation, A02, docs/correlated-slopes.md) or are independent (`||`; moot for one coefficient, so
+`(1 || g)` is `(1 | g)` and `term.has_correlation` is what says a correlation matrix exists). `term.slopes` are
 the coefficients other than the intercept and `term.canonical` the term as the canonical formula writes it.
+A correlated term also has brms's `L_m` (the Cholesky factor of the correlation matrix, PyMC `L|g`, sampled on
+Stan's `cholesky_corr` coordinates `L|g_cholesky_corr__`) and `Cor_m` (`cor|g`), named by
+`Model.correlation_names[factor]` and listed in `Model.group_names[factor]` as `L` and `cor`.
 Level labels are not part of the term; they are read from the data (`ModelSpec.levels_by_group[factor]`,
 sorted strings). The factor is a column, or the derived factor `g:h` (A03, docs/grouping-syntax.md):
 `term.operands` are the columns it is read from, `term.derived` whether it is built from two, and `term.column`

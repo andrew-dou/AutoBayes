@@ -1,7 +1,8 @@
 """Explicit priors, by parameter class, in brms terms.
 
 brms classes: ``Intercept``, ``b`` (slopes and dummy coefficients), ``sd`` (one group SD per group-level
-coefficient: the varying intercept of ``(1 | g)``, the intercept and each slope of ``(1 + x || g)``) and the
+coefficient: the varying intercept of ``(1 | g)``, the intercept and each slope of ``(1 + x || g)``), ``cor`` (the
+LKJ prior on the correlation matrix of the coefficients of ``(1 + x | g)``, brms's ``lkj(eta)``; A02) and the
 family's auxiliary parameter: ``sigma`` for Gaussian/Student-t (residual SD/scale respectively) and for the
 lognormal (the SD of ``log y``), ``shape`` for the negative binomial and Gamma families, ``phi`` for the Beta family
 (the precision). Every class the model has must be given, and a class the model does
@@ -22,6 +23,7 @@ from dataclasses import dataclass, field
 
 _LOCATION = {"Normal", "StudentT"}
 _SCALE = {"HalfNormal", "HalfStudentT", "Exponential", "HalfCauchy", "Gamma"}
+_CORRELATION = {"LKJ"}
 AUXILIARY = {"sigma": "residual SD", "shape": "shape parameter", "phi": "precision parameter"}   # the Priors fields a family's scale_parameter can name
 
 
@@ -79,6 +81,13 @@ def Gamma(alpha: float, beta: float) -> Prior:
     return Prior("Gamma", {"alpha": _positive("alpha", alpha), "beta": _positive("beta", beta)})
 
 
+def LKJ(eta: float) -> Prior:
+    """brms's ``lkj(eta)`` on the correlation matrix of a correlated group term, placed on its Cholesky factor as
+    Stan's ``lkj_corr_cholesky(eta)``: ``eta = 1`` is uniform over correlation matrices, ``eta > 1`` concentrates on
+    the identity (for two coefficients the correlation is ``2 Beta(eta, eta) - 1``)."""
+    return Prior("LKJ", {"eta": _positive("eta", eta)})
+
+
 @dataclass(frozen=True)
 class Priors:
     """Priors for the parameter classes.
@@ -93,7 +102,10 @@ class Priors:
     intercept-only factor also accepts a bare Prior): an intercept-only factor takes one Prior (or the
     one-entry mapping ``{"Intercept": prior}``), a factor with varying slopes a mapping over exactly its
     coefficients, ``{"g": {"Intercept": HalfNormal(1), "x": HalfNormal(0.5)}}`` (brms ``class = sd, group =
-    g, coef = x``). No automatic priors are filled in silently and nothing is broadcast. ``sigma``, ``shape`` and
+    g, coef = x``). ``cor`` is keyed by grouping factor too and covers exactly the correlated group terms
+    ``(1 + x | g)``: ``cor={"g": LKJ(2)}`` (brms ``class = cor, group = g``; a single correlated factor also accepts
+    the bare prior); it is refused for an independent (``||``) or intercept-only term, which has no correlation
+    matrix. No automatic priors are filled in silently and nothing is broadcast. ``sigma``, ``shape`` and
     ``phi`` are the auxiliary parameters: exactly the one the family has (``FamilySpec.scale_parameter``) must be given.
     """
 
@@ -103,6 +115,9 @@ class Priors:
     sigma: Prior | None = None       # Gaussian, Student-t and lognormal
     shape: Prior | None = None       # negative binomial and Gamma (brms class ``shape``)
     phi: Prior | None = None         # Beta (brms class ``phi``, the precision)
+    # LKJ(eta) per correlated group term ``(1 + x | g)`` (A02), refused otherwise; last, so that the positional order
+    # ``Priors(intercept, b, sd, sigma)`` existing callers use is unchanged
+    cor: Prior | Mapping[str, Prior] | None = None
 
     # -- coefficient priors -----------------------------------------------------------------
     def coefficient_priors(self, spec) -> dict[str, Prior]:
@@ -266,6 +281,51 @@ class Priors:
                 out[(t.factor, "Intercept")] = entry
         return out
 
+    def cor_priors(self, spec) -> dict[str, Prior]:
+        """The LKJ prior of each correlated group term (``(1 + x | g)``, two or more coefficients sharing a
+        correlation matrix), keyed by factor in formula order. Coverage is exact: a factor whose term is independent
+        (``||``) or intercept-only has no correlation matrix and is refused here, as is a missing or non-LKJ prior."""
+        group_terms = tuple(getattr(spec, "group_terms", ()))
+        terms = [t for t in group_terms if t.has_correlation]
+        factors = [t.factor for t in terms]
+        if not terms:
+            if self.cor is not None:
+                others = [t for t in group_terms if t.slopes]
+                hint = (f"; '{others[0].canonical}' uses '||', independent slopes with no correlation matrix: write "
+                        f"'{others[0].canonical.replace('||', '|')}' for brms's correlated form" if others else
+                        "; only a group term with varying slopes written with '|', '(1 + x | g)', has a correlation matrix")
+                raise PriorError(f"the formula has no correlated group term '(1 + x | g)'; do not pass cor{hint}")
+            return {}
+        if self.cor is None:
+            t = terms[0]
+            raise PriorError(
+                f"the group term '{t.canonical}' gives its coefficients {list(t.coefs)} a correlation matrix, which needs "
+                f"an LKJ prior: pass cor={{{t.factor!r}: ab.LKJ(eta)}}" + (f" (and for {factors[1:]})" if len(terms) > 1 else "")
+            )
+        if isinstance(self.cor, Mapping):
+            if set(self.cor) != set(factors):
+                extra = [k for k in self.cor if k not in factors]
+                hint = ""
+                for k in extra:
+                    t = next((t for t in group_terms if t.factor == k), None)
+                    if t is not None:
+                        hint = (f" ('{t.canonical}' has no correlation matrix: " +
+                                (f"write '{t.canonical.replace('||', '|')}' for correlated slopes)" if t.slopes else
+                                 "one coefficient has nothing to correlate with)"))
+                        break
+                raise PriorError(f"cor must cover exactly the correlated grouping factors {factors}; got {list(self.cor)}{hint}")
+            by_factor = {g: self.cor[g] for g in factors}
+        else:
+            if len(factors) != 1:
+                raise PriorError(f"multiple correlated grouping factors require an exact-key cor mapping over {factors}; a bare prior is not broadcast")
+            by_factor = {factors[0]: self.cor}
+        for g, prior in by_factor.items():
+            if not isinstance(prior, Prior):
+                raise PriorError(f"prior for 'cor:{g}' must be a Prior, got {type(prior).__name__}")
+            if prior.name not in _CORRELATION:
+                raise PriorError(f"prior for 'cor:{g}' must be a correlation prior ({sorted(_CORRELATION)}, brms's lkj(eta)), got {prior}")
+        return by_factor
+
     def group_priors(self, spec) -> dict[str, Prior]:
         """The SD prior of each factor's varying intercept, in formula order (the per-factor view that
         ``describe()``, fit records and the target identity have always used); ``sd_priors`` has every
@@ -282,6 +342,7 @@ class Priors:
         if not has_intercept and self.intercept is not None:
             raise PriorError("the formula has no population intercept; omit the intercept prior (or pass None)")
         sd_priors = self.sd_priors(spec)
+        self.cor_priors(spec)                                         # exact coverage of the correlated terms (A02)
         scale = fam.scale_parameter                                   # "sigma", "shape", "phi" or None
         auxiliary = {name: getattr(self, name) for name in AUXILIARY}
         if scale is not None and auxiliary[scale] is None:

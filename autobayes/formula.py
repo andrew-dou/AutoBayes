@@ -1,13 +1,13 @@
 """The formula grammar, its validation, and the term model a parsed formula is made of.
 
 A parsed formula is a ``ModelSpec`` holding population-level terms (``PopTerm``: ``x``, ``z``, ``x:z``) and
-group-level terms (``GroupTerm``: ``(1 | g)``, ``(1 + x || g)``); every flat view of the formula (``predictors``,
+group-level terms (``GroupTerm``: ``(1 | g)``, ``(1 + x || g)``, ``(1 + x | g)``); every flat view of the formula (``predictors``,
 ``terms``, ``columns``, ``groups``, ...) is derived from those two tuples. See docs/term-model.md.
 
 Supported::
 
     response ~ [1 + | 0 +] predictor [+ predictor ...] [+ a:b ...] [+ offset(col) | offset(log(col))]
-               [+ (1 | factor) | (1 + x [+ w ...] || factor) ...]
+               [+ (1 | factor) | (1 + x [+ w ...] || factor) | (1 + x [+ w ...] | factor) ...]
     successes | trials(n) ~ ...  the same right-hand side  (binomial, brms syntax)
 
 ``offset(col)`` and ``offset(log(col))`` (A06) add a known column to the linear predictor with no coefficient and
@@ -32,7 +32,8 @@ shorthand for ``(1 | g) + (1 | g:h)``.
 Group-level terms are optional and additive across distinct factors (M3c-3): a formula without them is a population-only
 model, as in brms ``brmsformula`` where group-level terms are optional; ``y ~ 1`` is intercept-only. ``(1 + x || g)``
 is brms's independent varying intercept and slope (A01): each numeric population-level term named varies by level
-with its own SD and no correlation; brms's correlated form ``(1 + x | g)`` is refused (docs/varying-slopes.md).
+with its own SD and no correlation (docs/varying-slopes.md); brms's correlated form ``(1 + x | g)`` (A02) gives the
+coefficients a correlation matrix under an LKJ prior (docs/correlated-slopes.md).
 
 Predictors are numeric columns, or categorical columns declared with ``categorical={column:
 reference_level}`` (treatment coding, milestone M3a-1); each grouping variable is a column
@@ -271,12 +272,14 @@ class GroupTerm:
     derived factor ``g:h`` built from two columns (``operands``; its labels are the observed combinations joined
     with ``_`` and it lives in the fitted frame, and is handed to Bambi, under ``column`` = ``g_h``),
     ``coefs`` the population-level coefficients that vary by its level (brms ``M_m`` of them; ``("Intercept",)``
-    for ``(1 | g)``, ``("Intercept", "x")`` for ``(1 + x || g)``), ``correlated`` whether they share a
-    correlation matrix (``|``, brms's default, not supported with slopes yet) or are independent (``||``);
-    moot for a single coefficient, so ``(1 || g)`` parses to the same term as ``(1 | g)``. The level labels
+    for ``(1 | g)``, ``("Intercept", "x")`` for ``(1 + x || g)`` and ``(1 + x | g)``), ``correlated`` whether they
+    share a correlation matrix (``|``, brms's default: an LKJ prior on the correlation of the coefficients, A02,
+    docs/correlated-slopes.md) or are independent (``||``); moot for a single coefficient, so ``(1 || g)`` parses to
+    the same term as ``(1 | g)`` and ``has_correlation`` is what says a correlation matrix exists. The level labels
     are not part of the term: they are known once the data are seen (``ModelSpec.levels_by_group``,
     ``GroupBlock.levels``). Its parameters are brms's ``sd_m`` (one per coefficient), ``z_m`` (the
-    standardised effects by coefficient and level) and ``r_m_c`` (the effects of coefficient ``c``).
+    standardised effects by coefficient and level), ``r_m_c`` (the effects of coefficient ``c``) and, when
+    correlated, ``L_m`` (the Cholesky factor of the correlation matrix).
     """
 
     factor: str
@@ -292,8 +295,15 @@ class GroupTerm:
         return tuple(c for c in self.coefs if c != "Intercept")
 
     @property
+    def has_correlation(self) -> bool:
+        """Whether the term carries a correlation matrix: ``|`` with two or more coefficients (brms's ``L_m``,
+        ``NC_m > 0`` with ``cor = TRUE``). A single coefficient has nothing to correlate with."""
+        return self.correlated and len(self.coefs) > 1
+
+    @property
     def canonical(self) -> str:
-        """The term as the canonical formula writes it: ``(1 | g)``, or ``(1 + x || g)`` for independent slopes."""
+        """The term as the canonical formula writes it: ``(1 | g)``, ``(1 + x || g)`` for independent slopes,
+        ``(1 + x | g)`` for correlated ones."""
         inner = " + ".join("1" if c == "Intercept" else c for c in self.coefs)
         bar = "|" if self.correlated or len(self.coefs) == 1 else "||"
         return f"({inner} {bar} {self.factor})"
@@ -650,6 +660,11 @@ class ModelSpec:
         return any(t.slopes for t in self.group_terms)
 
     @property
+    def correlated_terms(self) -> tuple[GroupTerm, ...]:
+        """The group-level terms whose coefficients share a correlation matrix, ``(1 + x | g)`` (A02), in formula order."""
+        return tuple(t for t in self.group_terms if t.has_correlation)
+
+    @property
     def has_group(self) -> bool:
         return bool(self.group_terms)
 
@@ -767,8 +782,9 @@ def _split_top_level(rhs: str, sep: str = "+") -> list[str]:
 
 def _parse_group_term(inner: str, bars: str, factor: str, piece: str, response: str, trials: str | None) -> list[GroupTerm]:
     """The ``GroupTerm``s of one ``(inner | factor)`` or ``(inner || factor)`` piece: the varying intercept
-    ``(1 | g)`` (``(1 || g)`` is the same term, one coefficient having nothing to correlate with), or the
-    independent varying intercept and numeric slopes ``(1 + x [+ w ...] || g)``. The factor is a column ``g``,
+    ``(1 | g)`` (``(1 || g)`` is the same term, one coefficient having nothing to correlate with), the
+    independent varying intercept and numeric slopes ``(1 + x [+ w ...] || g)`` (A01), or the correlated ones
+    ``(1 + x [+ w ...] | g)`` (A02, an LKJ prior on their correlation matrix). The factor is a column ``g``,
     the derived factor ``g:h`` (the observed combinations of two columns: one term) or brms's nesting shorthand
     ``g/h`` (``(1 | g) + (1 | g:h)``: two terms, in that order). Everything else brms accepts here is refused
     with a message naming the construct. Whether a slope is a numeric population-level term of the formula is
@@ -777,6 +793,11 @@ def _parse_group_term(inner: str, bars: str, factor: str, piece: str, response: 
         raise FormulaError(f"{piece!r}: correlation IDs are not supported")
     if factor.startswith("mm("):
         raise FormulaError(f"{piece!r}: multimembership grouping is not supported")
+    if re.match(r"gr\s*\(", factor):                             # brms's gr(g, cor = FALSE, by = ..., ...)
+        raise FormulaError(
+            f"{piece!r}: brms's gr() grouping options are not supported; write the grouping column itself, with "
+            "'||' for independent effects (gr(g, cor = FALSE)) or '|' for correlated ones"
+        )
     if "(" in factor:
         raise FormulaError(f"{piece!r}: transformed grouping factors are not supported; use a column name")
     if "/" in factor and ":" in factor:
@@ -835,21 +856,17 @@ def _parse_group_term(inner: str, bars: str, factor: str, piece: str, response: 
                 f"{piece!r}: '0' removes the varying intercept and leaves no group-level coefficient; a group term is "
                 f"'(1 | {factor})', or '(1 + x || {factor})' for varying slopes"
             )
-        raise FormulaError(
+        raise FormulaError(                                     # the hint keeps the bars as written: '|' correlated (A02), '||' not
             f"{piece!r}: varying slopes without the varying intercept are not supported; write "
-            f"'(1 + {' + '.join(slopes)} || {factor})' so that the intercept varies by {factor!r} as well"
+            f"'(1 + {' + '.join(slopes)} {bars} {factor})' so that the intercept varies by {factor!r} as well"
         )
     if tokens.count("1") > 1:
         raise FormulaError(f"{piece!r}: '1' appears more than once in the group term")
     if not slopes:
         return [GroupTerm(f, ("Intercept",), correlated=True) for f in factors]
-    if bars == "|":
-        raise FormulaError(
-            f"{piece!r}: brms's '|' gives the varying intercept and slope(s) a correlation matrix (an LKJ prior on "
-            f"their correlation), which is not supported yet; write '({inner} || {factor})' for independent "
-            "varying slopes, each with its own SD and no correlation"
-        )
-    return [GroupTerm(f, ("Intercept", *slopes), correlated=False) for f in factors]
+    # '|' is brms's correlated form (A02): the intercept and slope(s) share a correlation matrix under an LKJ prior;
+    # '||' the independent form (A01). '(1 + x | g/h)' gives '(1 + x | g) + (1 + x | g:h)', both correlated, as brms.
+    return [GroupTerm(f, ("Intercept", *slopes), correlated=(bars == "|")) for f in factors]
 
 
 def _normalise_categorical(categorical, terms: list[str], response: str, groups: list[str], trials: str | None,
@@ -1141,7 +1158,7 @@ def parse_formula(formula: str, data: pd.DataFrame | None = None, family: str = 
             if s not in predictors:
                 raise FormulaError(
                     f"{piece!r}: the varying slope {s!r} must also be a population-level term of the formula, "
-                    f"as in '{response} ~ {s} + (1 + {s} || {term.factor})' (brms would add the group-level slope "
+                    f"as in '{response} ~ {s} + (1 + {s} {'|' if term.correlated else '||'} {term.factor})' (brms would add the group-level slope "
                     "without the population-level one; this subset does not)"
                 )
 
