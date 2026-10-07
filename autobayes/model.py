@@ -5,12 +5,16 @@ Student-t responses (``nu`` fixed or learned). ``"gaussian"`` (M0): identity lin
 (M1): logit link, ``p = expit(eta)``, no residual scale. ``"binomial"`` (M2): logit link on
 ``successes | trials(n)``, counts. The Bernoulli and binomial families also take ``link="probit"`` (A12,
 docs/links.md; brms's cloglog link is withheld there). All share the right-hand side ``[1 +] x1 [+ x2 ...] [+ offset(log(col))]
-[+ (1 | factor) | (1 + x || factor) ...]`` with numeric terms and, since M3a-1, treatment-coded categorical
+[+ (1 | factor) | (1 + x || factor) | (1 + x | factor) ...]`` with numeric terms and, since M3a-1, treatment-coded categorical
 terms declared with ``categorical={column: reference}``; an optional offset term (A06, docs/offset.md), added to
 the linear predictor with no coefficient; centring; non-centred group effects (varying
-intercepts and, with ``||``, independent varying slopes) when a group term is present, and a population-only
+intercepts and, with ``||``, independent varying slopes; with ``|``, slopes correlated with the intercept under an
+LKJ prior, A02, docs/correlated-slopes.md) when a group term is present, and a population-only
 model without one (M3c-1). The formula is a term model (``PopTerm``, ``GroupTerm`` in ``autobayes.formula``;
-docs/term-model.md) and ``Design`` holds one ``GroupBlock`` per group-level coefficient.
+docs/term-model.md) and ``Design`` holds one ``GroupBlock`` per group-level coefficient. Bambi builds every
+group-level coefficient as an independent non-centred term; for a correlated term ``Model`` then rewrites the
+slopes' deterministics in the PyMC graph to brms's ``r = (diag(sd) L z)^T`` with a Cholesky factor ``L`` sampled on
+Stan's ``cholesky_corr`` coordinates (``autobayes.correlation``).
 """
 from __future__ import annotations
 
@@ -22,6 +26,7 @@ import pandas as pd
 
 from collections.abc import Mapping
 
+from autobayes.correlation import check_correlation_cholesky, cholesky_corr_free, cholesky_corr_rv, n_free
 from autobayes.families import FAMILIES, FamilySpec, get_family
 from autobayes.formula import (Categorical, FormulaError, ModelSpec, bambi_group_name, binomial_counts, categorical_labels,
                                factor_column, group_labels, interaction_cells, parse_formula, pop_term_design, sd_tag)
@@ -233,6 +238,9 @@ class Model:
         )
         self.bambi_model.build()
         self.pymc_model = self.bambi_model.backend.model
+        if self.spec.correlated_terms:                       # brms's correlated slopes (A02): a post-build edit of Bambi's graph
+            self.pymc_model = self._correlate_group_effects(self.pymc_model)
+            self.bambi_model.backend.model = self.pymc_model  # what Bambi's fit() samples and cleans
         self.design = self._extract_design()
         if fam.discrete:
             rv = self.pymc_model[self.names["y"]]
@@ -261,17 +269,67 @@ class Model:
         variable_names += list(self.family_spec.fixed_parameters)   # Bambi uses "nu" as an auxiliary-prior key even when fixed.
         for roles in self.group_coefficient_names.values():
             variable_names.extend(roles[k] for k in ("sd", "offset", "group_effect"))
+        for roles in self.correlation_names.values():
+            variable_names.extend(roles[k] for k in ("L", "cor"))
         # Bambi's default result cleaning drops every posterior variable ending in _offset.
         retained = list(self.spec.terms) + [roles["group_effect"] for roles in self.group_coefficient_names.values()]
         if any(name.endswith("_offset") for name in retained):
             raise FormulaError("generated name collision: coefficient/effect suffix '_offset' is reserved by Bambi; rename the column")
         coords = [roles["coordinate"] for roles in self.group_names.values()]
+        coords += [roles[k] for roles in self.correlation_names.values() for k in ("coordinate", "coordinate_T")]
         coords += [f"{t.name}_dim" for t in self.spec.pop_terms if t.is_vector]
         coords += ["__obs__"]
         names = variable_names + coords
         duplicates = sorted({n for n in names if names.count(n) > 1})
         if duplicates:
             raise FormulaError(f"generated variable/coordinate name collision: {duplicates}; rename the conflicting column")
+
+    # -- correlated group effects (A02) -------------------------------------------------
+    def _correlate_group_effects(self, model):
+        """brms's correlated construction for every ``(1 + x | g)`` term, as an edit of the PyMC graph Bambi built.
+
+        Bambi built each coefficient ``c`` of the factor as the independent non-centred term ``r_c = sd_c * z_c``
+        (``x|g = x|g_sigma * x|g_offset``). brms's ``scale_r_cor(z, sd, L)`` is ``r = (diag(sd) L z)^T``, i.e.
+        ``r_c = sd_c * sum_{k <= c} L[c, k] z_k``; its first row is the intercept's own ``sd_0 z_0`` (``L[0, 0] = 1``),
+        so only the slopes' deterministics change. The graph is converted to a function graph
+        (``pymc.model.fgraph``), a free variable ``L|g`` (brms ``L_m``, ``lkj_corr_cholesky(eta)``, sampled on Stan's
+        ``cholesky_corr`` coordinates) and the deterministic ``cor|g = L L^T`` (brms ``Cor_m``) are added, each slope's
+        deterministic is replaced by the correlated expression everywhere it is used (the linear predictor included),
+        and a new ``pymc.Model`` is rebuilt; ``_extract_design`` then verifies names, dims and coordinates."""
+        import pytensor
+        from pymc.model.fgraph import fgraph_from_model, model_deterministic, model_free_rv, model_from_fgraph
+        from pymc.pytensorf import toposort_replace
+
+        cor_priors = self.priors.cor_priors(self.spec)
+        fgraph, memo = fgraph_from_model(model, inlined_views=True)
+        replacements, added = [], []
+        for t in self.spec.correlated_terms:
+            g, M = t.factor, len(t.coefs)
+            names = self._correlation_roles(g)
+            rv, transform, value = cholesky_corr_rv(names["L"], float(cor_priors[g].params["eta"]), M)
+            for dim in (names["coordinate"], names["coordinate_T"]):
+                fgraph._coords[dim] = tuple(t.coefs)
+                fgraph._dim_lengths[dim] = pytensor.shared(M, name=dim)
+            L = model_free_rv(rv, value, transform, names["coordinate"], names["coordinate_T"])
+            L.name = names["L"]
+            cor = L @ L.T
+            cor.name = names["cor"]
+            cor_det = model_deterministic(cor, names["coordinate"], names["coordinate_T"])
+            cor_det.name = names["cor"]
+            added += [L, cor_det]
+            roles = [self._group_roles(g, c) for c in t.coefs]
+            zs = [memo[model[r["offset"]]] for r in roles]
+            for c in range(1, M):
+                sd = memo[model[roles[c]["sd"]]]
+                expr = sd * sum(L[c, k] * zs[k] for k in range(c + 1))
+                expr.name = roles[c]["group_effect"]
+                det = model_deterministic(expr, roles[c]["coordinate"])
+                det.name = roles[c]["group_effect"]
+                replacements.append((memo[model[roles[c]["group_effect"]]], det))
+        toposort_replace(fgraph, tuple(replacements))
+        for var in added:
+            fgraph.add_output(var)
+        return model_from_fgraph(fgraph, mutate_fgraph=True)
 
     # -- design ------------------------------------------------------------------------
     def _extract_design(self) -> Design:
@@ -408,6 +466,23 @@ class Model:
                             raise RuntimeError(f"PyMC dims of {roles[key]!r} are {dims}; expected ({coord!r},)")
             if Z.shape != (len(X_raw), start):
                 raise RuntimeError("unexpected concatenated group design shape")
+            for t in self.spec.correlated_terms:             # the correlation factor (A02): a free variable on Stan's coordinates
+                names, M = self._correlation_roles(t.factor), len(t.coefs)
+                L = self.pymc_model[names["L"]]
+                if L not in self.pymc_model.free_RVs or tuple(L.type.shape) != (M, M):
+                    raise RuntimeError(f"{names['L']!r} is not a free {M} x {M} variable of the graph")
+                value = self.pymc_model.rvs_to_values[L]
+                if value.name != f"{names['L']}_cholesky_corr__" or tuple(value.type.shape) != (n_free(M),):
+                    raise RuntimeError(f"{names['L']!r} is not sampled on the {n_free(M)} cholesky_corr coordinates")
+                if names["cor"] not in self.pymc_model.named_vars or self.pymc_model[names["cor"]] not in self.pymc_model.deterministics:
+                    raise RuntimeError(f"{names['cor']!r} is not a deterministic of the graph")
+                for key in ("L", "cor"):
+                    dims = tuple(self.pymc_model.named_vars_to_dims.get(names[key], ()))
+                    if dims != (names["coordinate"], names["coordinate_T"]):
+                        raise RuntimeError(f"PyMC dims of {names[key]!r} are {dims}; expected the coefficient dimensions")
+                for dim in (names["coordinate"], names["coordinate_T"]):
+                    if tuple(str(v) for v in self.pymc_model.coords[dim]) != t.coefs:
+                        raise RuntimeError(f"PyMC coordinate {dim!r} differs from the coefficients {list(t.coefs)}")
         if self.effective_center_predictors:
             x_means = X_raw.mean(0)
             X_model = X_raw - x_means
@@ -475,16 +550,32 @@ class Model:
         name = _bambi_group_name(factor, coef)
         return {"sd": f"{name}_sigma", "offset": f"{name}_offset", "group_effect": name, "coordinate": f"{factor_column(factor)}__factor_dim"}
 
+    @staticmethod
+    def _correlation_roles(factor: str) -> dict[str, str]:
+        """PyMC names of a correlated term's correlation structure (A02): ``L`` the Cholesky factor of the correlation
+        matrix (brms ``L_m``; its value variable is ``L|g_cholesky_corr__``), ``cor`` the correlation matrix (brms
+        ``Cor_m``), ``coordinate`` / ``coordinate_T`` the two coefficient dimensions of those matrices."""
+        column = factor_column(factor)
+        return {"L": f"L|{column}", "cor": f"cor|{column}", "coordinate": f"{column}__cor_dim", "coordinate_T": f"{column}__cor_dim_T"}
+
+    @property
+    def correlation_names(self) -> dict[str, dict[str, str]]:
+        """``_correlation_roles`` of every correlated group term, by factor in formula order (empty without one)."""
+        return {t.factor: self._correlation_roles(t.factor) for t in self.spec.correlated_terms}
+
     @property
     def group_names(self) -> dict[str, dict[str, str]]:
         """PyMC roles and coordinate of each group-level term's varying intercept, by factor in formula order; a
         term with varying slopes also lists each slope's roles as ``sd:x``, ``offset:x`` and ``group_effect:x``
-        (``group_coefficient_names`` has the same names keyed by coefficient)."""
+        (``group_coefficient_names`` has the same names keyed by coefficient), and a correlated term its ``L`` and
+        ``cor`` (``correlation_names``)."""
         out = {}
         for t in self.spec.group_terms:
             roles = self._group_roles(t.factor)
             for coef in t.slopes:
                 roles.update({f"{k}:{coef}": v for k, v in self._group_roles(t.factor, coef).items() if k != "coordinate"})
+            if t.has_correlation:
+                roles.update({k: v for k, v in self._correlation_roles(t.factor).items() if k in ("L", "cor")})
             out[t.factor] = roles
         return out
 
@@ -502,7 +593,7 @@ class Model:
         per column of each ``PopTerm``."""
         return self.spec.column_terms
 
-    def value_point(self, *, intercept: float | None = None, b, sd=None, z=None, sigma: float | None = None,
+    def value_point(self, *, intercept: float | None = None, b, sd=None, z=None, L=None, sigma: float | None = None,
                     shape: float | None = None, phi: float | None = None, nu: float | None = None) -> dict[str, np.ndarray]:
         """A point in PyMC's sampled (value) space, from natural-scale quantities.
 
@@ -513,7 +604,10 @@ class Model:
         scale / the vector itself (or the one-entry mapping ``{"Intercept": ...}``); a factor with
         varying slopes takes a mapping over exactly its coefficients, ``sd={"g": {"Intercept": 0.8,
         "x": 0.3}}``, ``z={"g": {"Intercept": array(J), "x": array(J)}}``. One factor also accepts the
-        entry without the factor key; neither applies without groups. ``sigma`` is the residual
+        entry without the factor key; neither applies without groups. ``L`` is the Cholesky factor of the
+        correlation matrix of each correlated term, ``L={"g": array(M, M)}`` (brms ``L_m``: lower triangular, unit-norm
+        rows), required exactly for the correlated factors (a single one also accepts the bare matrix) and stored on
+        Stan's ``cholesky_corr`` coordinates. ``sigma`` is the residual
         SD (Gaussian and Student-t; the SD of ``log y`` for the lognormal), ``shape`` the negative binomial / Gamma
         shape, ``phi`` the Beta precision; exactly the family's own is given. Scales are stored on the log scale because that is what PyMC samples.
         ``nu`` is the degrees of freedom of a Student-t model that learns them (``learned_parameters``), given exactly then
@@ -567,6 +661,24 @@ class Model:
                         what = repr(g) if coef == "Intercept" else f"the slope {coef!r} of {g!r}"
                         raise ValueError(f"z for {what} must have {block.J} finite entries")
                     sd_by_coef[(g, coef)], z_by_coef[(g, coef)] = sds[coef], arr
+        L_by_group = {}
+        correlated = [t.factor for t in self.spec.correlated_terms]
+        if not correlated:
+            if L is not None:
+                raise ValueError("this model has no correlated group term '(1 + x | g)'; L does not apply")
+        else:
+            if L is None:
+                raise ValueError(f"L (the Cholesky factor of the correlation matrix) is required for the correlated factors {correlated}")
+            if isinstance(L, Mapping):
+                if set(L) != set(correlated):
+                    raise ValueError(f"L must cover exactly the correlated grouping factors {correlated}; got {list(L)}")
+                by_group = {g: L[g] for g in correlated}
+            elif len(correlated) == 1:
+                by_group = {correlated[0]: L}
+            else:
+                raise ValueError(f"L requires an exact-key mapping for multiple correlated grouping factors {correlated}")
+            for t in self.spec.correlated_terms:
+                L_by_group[t.factor] = check_correlation_cholesky(by_group[t.factor], len(t.coefs), f"L for {t.factor!r}")
         scale = self.family_spec.scale_parameter                 # "sigma", "shape", "phi" or None
         auxiliary = {"sigma": sigma, "shape": shape, "phi": phi}
         if {k for k, v in auxiliary.items() if v is not None} != ({scale} if scale is not None else set()):
@@ -586,6 +698,8 @@ class Model:
         for (g, coef), roles in self.group_coefficient_names.items():
             point[f"{roles['sd']}_log__"] = log_scale(sd_by_coef[(g, coef)], f"sd:{sd_tag(g, coef)}")
             point[roles["offset"]] = z_by_coef[(g, coef)]
+        for g, roles in self.correlation_names.items():              # Stan's cholesky_corr coordinates of L (A02)
+            point[f"{roles['L']}_cholesky_corr__"] = cholesky_corr_free(L_by_group[g])
         if scale is not None:
             point[f"{n[scale]}_log__"] = log_scale(auxiliary[scale], scale)
         learned = self.learned_parameters
@@ -666,7 +780,8 @@ class Model:
                             if self.dropped_rows else ""))
         features = ((["categorical predictor(s)"] if s.categoricals else []) + (["interaction(s)"] if s.interactions else [])
                     + (["in-formula transform(s)"] if s.transform_terms else [])
-                    + (["independent varying slope(s)"] if s.has_slopes else []) + (["offset"] if s.offset is not None else [])
+                    + (["independent varying slope(s)"] if any(t.slopes and not t.has_correlation for t in s.group_terms) else [])
+                    + (["correlated varying slope(s)"] if s.correlated_terms else []) + (["offset"] if s.offset is not None else [])
                     + (["derived grouping factor(s)"] if any(t.derived for t in s.group_terms) else []))
         lines = [
             f"AutoBayes {fam.tag} model" + (" with " + " and ".join(features) if features else "")
@@ -827,6 +942,20 @@ class Model:
             for t in s.group_terms:
                 g, block = t.factor, d.group_designs[t.factor]
                 lines += [f"  u_{g}[j] = sd_{g} * z_{g}[j], z_{g}[j] ~ Normal(0, 1), j = 0..{block.J - 1}"]
+                if t.has_correlation:
+                    zs = [f"z_{g}[j]"] + [f"z_{c}|{g}[j]" for c in t.slopes]
+                    for i, c in enumerate(t.slopes, start=1):
+                        terms = " + ".join(f"L_{g}[{i},{k}] * {zs[k]}" for k in range(i + 1))
+                        lines += [f"  {slope_effect(g, c)}[j] = sd_{c}|{g} * ({terms}), z_{c}|{g}[j] ~ Normal(0, 1), j = 0..{block.J - 1}: "
+                                  f"the slope of {c} varies by {g} ('|': correlated with u_{g})"]
+                    vec = ", ".join([f"u_{g}[j]"] + [f"{slope_effect(g, c)}[j]" for c in t.slopes])
+                    sds = ", ".join([f"sd_{g}"] + [f"sd_{c}|{g}" for c in t.slopes])
+                    lines += [f"  ({vec}) = diag({sds}) L_{g} ({', '.join(zs)}): L_{g} is the Cholesky factor of the correlation matrix",
+                              f"  Cor_{g} = L_{g} L_{g}^T of the coefficients ({', '.join(t.coefs)}) (brms's scale_r_cor; PyMC {self._correlation_roles(g)['cor']}),",
+                              f"  so Cor_{g}[Intercept, {t.slopes[0]}] is the correlation between a level's intercept deviation and its slope deviation.",
+                              f"  Each varying slope multiplies the raw predictor (never centred, as brms's Z does); the correlation is a statement",
+                              f"  at x = 0: shifting a predictor by c turns u_{g} into u_{g} + c * v and changes it."]
+                    continue
                 for c in t.slopes:
                     lines += [f"  {slope_effect(g, c)}[j] = sd_{c}|{g} * z_{c}|{g}[j], z_{c}|{g}[j] ~ Normal(0, 1), j = 0..{block.J - 1}: "
                               f"the slope of {c} varies by {g} ('||': no correlation with u_{g})"]
@@ -843,6 +972,8 @@ class Model:
         lines += [f"  b_{col} ~ {coef[col]}" for col in s.columns]
         for (g, c), prior in pr.sd_priors(s).items():
             lines += [f"  sd_{sd_tag(g, c)} ~ {prior}"]
+        for g, prior in pr.cor_priors(s).items():
+            lines += [f"  Cor_{g} ~ {prior} (brms lkj({prior.params['eta']:g}) on the correlation matrix, placed on L_{g} as lkj_corr_cholesky)"]
         lines += fam.likelihood_lines(self)
         for w in self.warnings:
             lines += ["", "WARNING: " + w]
@@ -852,6 +983,8 @@ class Model:
         for (g, c), names in self.group_coefficient_names.items():
             roles[f"{names['sd']}_log__"] = f"log(sd_{sd_tag(g, c)})"
             roles[names["offset"]] = ("z" if len(s.groups) == 1 else f"z_{g}") if c == "Intercept" else f"z_{c}|{g}"
+        for g, names in self.correlation_names.items():
+            roles[f"{names['L']}_cholesky_corr__"] = f"L_{g} on Stan's cholesky_corr coordinates (canonical partial correlations, arctanh scale)"
         if fam.scale_parameter is not None:
             roles[f"{n[fam.scale_parameter]}_log__"] = f"log({fam.scale_parameter})"
         for name, lower in self.learned_parameters.items():
@@ -864,7 +997,8 @@ class Model:
         for v in self.pymc_model.value_vars:
             lines.append(f"  {v.name:<24} {roles.get(v.name, f'b_{v.name}')}")
         lines.append("Deterministic: " + "".join(f"{names['group_effect']} = {effect(g) if c == 'Intercept' else slope_effect(g, c)}, "
-                                                 for (g, c), names in self.group_coefficient_names.items()) + fam.deterministic_note)
+                                                 for (g, c), names in self.group_coefficient_names.items())
+                     + "".join(f"{names['cor']} = Cor_{g} = L_{g} L_{g}^T, " for g, names in self.correlation_names.items()) + fam.deterministic_note)
         return "\n".join(lines)
 
     # -- convenience -------------------------------------------------------------------

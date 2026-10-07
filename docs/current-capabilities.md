@@ -7,7 +7,7 @@ This is a capability map, not a percentage of brms implemented.
 | --- | --- | --- |
 | Families | Gaussian, Bernoulli and grouped binomial with a logit or probit link (brms's cloglog link withheld, D18), Student-t with a fixed finite nu > 1 or nu learned under its own prior truncated to nu > 1, Poisson-log, negative binomial-log and Gamma-log with a `shape` prior, lognormal (identity link on the log-scale location, `sigma` the SD of `log y`), Beta-logit proportions with a precision `phi` prior | test_logp.py, test_bernoulli.py, test_binomial.py, test_links.py, test_student.py, test_student_learned_nu.py, test_poisson.py, test_negbinomial.py, test_gamma.py, test_lognormal.py, test_beta.py; [negative binomial](negbinomial.md), [Gamma](gamma.md), [lognormal](lognormal.md), [Beta](beta.md), [links](links.md), [Student-t learned nu](student-learned-nu.md) |
 | Formula composition | Numeric and declared categorical predictors; multiple numeric-by-categorical interactions with required main effects; optional intercept; one offset term `offset(col)` or `offset(log(col))` added to the linear predictor without a coefficient | test_intercept_controls.py, test_multiple_interactions.py, test_offset.py; [offset](offset.md) |
-| Hierarchy | Population-only models or multiple independent varying-intercept factors; independent varying slopes `(1 + x || g)` on numeric population-level terms (brms's correlated `(1 + x \| g)` is refused); grouping by the observed combinations of two columns, `(1 \| g:h)`, and brms's nesting shorthand `(1 \| g/h)` = `(1 \| g) + (1 \| g:h)`, with brms's `g_h` level labels | test_population_only.py, test_multiple_groups.py, test_varying_slope.py, test_grouping_syntax.py; [varying slopes](varying-slopes.md), [grouping syntax](grouping-syntax.md) |
+| Hierarchy | Population-only models or multiple independent varying-intercept factors; independent varying slopes `(1 + x || g)` on numeric population-level terms, and brms's correlated form `(1 + x \| g)` with an LKJ prior `cor={"g": ab.LKJ(eta)}` on the correlation of the intercept and slope(s) (Stan's `cholesky_corr` coordinates); grouping by the observed combinations of two columns, `(1 \| g:h)`, and brms's nesting shorthand `(1 \| g/h)` = `(1 \| g) + (1 \| g:h)`, with brms's `g_h` level labels | test_population_only.py, test_multiple_groups.py, test_varying_slope.py, test_correlated_slopes.py, test_grouping_syntax.py; [varying slopes](varying-slopes.md), [correlated slopes](correlated-slopes.md), [grouping syntax](grouping-syntax.md) |
 | Execution | Inspectable PyMC graph; PyMC NUTS or JAX/NumPyro sampling with explicit device selection | inference.py, test_device.py and test_sampling.py; availability does not establish GPU validation |
 | Prediction | Expected response and replicated observations; explicit unseen-group policies | test_predict.py, test_multiple_groups.py, family tests |
 | Provenance | Frozen target identity; fit binding captured before sampling; mismatch refusal; explicit unverified legacy route | test_record_identity.py, test_fit_binding.py; [fit binding](fit-binding.md) |
@@ -47,8 +47,9 @@ recovery fits or GPU validation. Do not extrapolate one GPU run to all features.
 Broader model comparison, distributional parameter
 formulas, learned Student-t degrees of freedom, censoring and
 truncation remain separate work. Independent varying slopes landed through the brms-parity loop (A01,
-verified against frozen brms fixtures; PR8 is superseded), as did the offset term (A06); correlated slopes
-(A02) are not implemented.
+verified against frozen brms fixtures; PR8 is superseded), as did the offset term (A06) and correlated varying
+slopes (A02, `(1 + x | g)` under an LKJ prior, verified against the frozen fixture `gauss_slope_correlated`; see
+[correlated slopes](correlated-slopes.md)).
 Standalone generated source-code export is not implemented. The library builds
 an inspectable PyMC graph and executes through the selected sampler backend.
 

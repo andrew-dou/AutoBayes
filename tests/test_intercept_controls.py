@@ -55,7 +55,7 @@ def test_spellings(rhs, group):
 @pytest.mark.parametrize("rhs,match", [("0", "at least one"), ("0 + (1|g)", "at least one"),
     ("x - 2", "only subtracting"), ("x - z", "only subtracting"), ("x - 1.0", "only subtracting"),
     ("x - 1*x", "only subtracting"), ("1 + 0 + x", "conflicting"), ("0 + x + 1", "conflicting"),
-    ("x + (0|g)", "varying slopes"), ("0 + x:z", "main effect"), ("0 + x + (1+x|g)", "varying slopes")])
+    ("x + (0|g)", "varying slopes"), ("0 + x:z", "main effect"), ("0 + x + (x|g)", "varying slopes")])   # A02 accepts '(1+x|g)'
 def test_scoped_refusals(rhs, match):
     with pytest.raises(ab.FormulaError, match=match):
         ab.parse_formula("y ~ " + rhs, categorical={"z": "b"} if "x:z" in rhs else None)

@@ -30,7 +30,9 @@ than the default ``"error"`` is refused rather than ignored):
 - ``"population"``: brms's ``sample_new_levels="gaussian"``: for each posterior draw,
   draw a fresh effect from ``Normal(0, sd_group)`` (on the linear-predictor scale, i.e. the
   logit scale for Bernoulli), independently for each coefficient of the factor (intercept
-  and every varying slope, each from its own ``Normal(0, sd)``). This is the population
+  and every varying slope, each from its own ``Normal(0, sd)``); for a correlated term
+  ``(1 + x | g)`` the level's whole effect vector comes from the implied multivariate normal,
+  ``diag(sd) L z`` with ``z`` standard normal and ``L`` the draw's Cholesky factor. This is the population
   distribution the model actually fit and is implemented here because Bambi does not offer it.
 """
 from __future__ import annotations
@@ -127,7 +129,9 @@ def _predict_by_hand(model, idata, df: pd.DataFrame | None, kind: str, seed, pol
     written (brms keeps it under ``re_formula = NA`` too). Each group-level coefficient adds its effect at the
     row's level times its covariate (one for the varying intercept, the raw slope column for a varying
     slope). ``"population"``: a fresh ``Normal(0, sd)`` draw per unseen label, posterior draw and
-    coefficient. ``"resample_observed"``: the effects of one uniformly chosen observed level per label
+    coefficient, which for a correlated term is a draw ``z`` per coefficient turned into the effect vector
+    ``diag(sd) L z`` (the same random numbers as the independent case, where ``L`` is the identity).
+    ``"resample_observed"``: the effects of one uniformly chosen observed level per label
     and posterior draw, all coefficients from that same level. In both cases every row with the same
     label shares that label's effects.
     """
@@ -157,10 +161,21 @@ def _predict_by_hand(model, idata, df: pd.DataFrame | None, kind: str, seed, pol
             names = model.group_coefficient_names[(g, coef)]
             covariate = np.ones(len(df)) if coef == "Intercept" else df[coef].to_numpy(dtype=float)
             coefs.append((post[names["sd"]].to_numpy(), post[names["group_effect"]].to_numpy(), covariate))
+        # a correlated term (A02) drawing unseen levels from the population: the draws' Cholesky factors,
+        # (chain, draw, M, M), rows and columns selected by coefficient label in the term's order
+        L = None
+        if term.has_correlation and policies[g] == "population" and new_levels[g]:
+            cn = model.correlation_names[g]
+            rows = {cn["coordinate"]: list(term.coefs), cn["coordinate_T"]: list(term.coefs)}
+            L = post[cn["L"]].sel(rows).transpose("chain", "draw", cn["coordinate"], cn["coordinate_T"]).to_numpy()
         new_effects = {}
         for lvl in new_levels[g]:
-            if policies[g] == "population":              # each coefficient from its own Normal(0, sd)
-                new_effects[lvl] = [rng.normal(0.0, 1.0, size=sd.shape) * sd for sd, _, _ in coefs]
+            if policies[g] == "population":              # each coefficient from its own Normal(0, sd); correlated: diag(sd) L z
+                zs = [rng.normal(0.0, 1.0, size=sd.shape) for sd, _, _ in coefs]
+                if L is None:
+                    new_effects[lvl] = [z * sd for z, (sd, _, _) in zip(zs, coefs)]
+                else:
+                    new_effects[lvl] = [sd * sum(L[..., c, k] * zs[k] for k in range(c + 1)) for c, (sd, _, _) in enumerate(coefs)]
             else:                                        # one observed level per draw; its whole effect vector is reused
                 chosen = rng.integers(0, len(levels), size=coefs[0][0].shape)
                 new_effects[lvl] = [np.take_along_axis(u, chosen[..., None], axis=-1)[..., 0] for _, u, _ in coefs]

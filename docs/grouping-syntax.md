@@ -24,7 +24,8 @@ a column named `g_h` is refused, so the derived column cannot shadow a real one.
 ## Using it
 
 - Formula: `y ~ x + (1 | g) + (1 | g:h)` or, equivalently, `y ~ x + (1 | g/h)`; `(1 | g:h)` alone is allowed;
-  `(1 + x || g:h)` and `(1 + x || g/h)` give independent varying slopes per combination (docs/varying-slopes.md).
+  `(1 + x || g:h)` and `(1 + x || g/h)` give independent varying slopes per combination (docs/varying-slopes.md),
+  `(1 + x | g:h)` and `(1 + x | g/h)` correlated ones, one correlation matrix per term (docs/correlated-slopes.md).
 - Priors: `sd={"g": HalfNormal(1), "g:h": HalfNormal(0.5)}` (brms `class = sd, group = "g:h"`).
 - `predict()`: `newdata` needs `g` and `h` (not `g_h`); an unseen combination follows the policy given for
   `"g:h"` in `new_groups` (`"population"`: a fresh `Normal(0, sd_g:h)` effect; `"resample_observed"`: an observed

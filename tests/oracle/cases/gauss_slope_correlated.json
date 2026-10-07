@@ -5,10 +5,6 @@
  "note": "brms: L_1 is a cholesky_factor_corr whose unconstrained coordinate the probing cannot reach (transform 'unreached'); z_1 is a matrix",
  "seed": 141,
  "n_points": 8,
- "gate": {
-  "expect": "fail",
-  "reason": "A02_correlated_slopes not implemented; remove this field when it lands"
- },
  "data": {
   "generator": "tier_a",
   "seed": 41,
