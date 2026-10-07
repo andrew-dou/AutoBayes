@@ -5,10 +5,6 @@
  "note": "probit link",
  "seed": 152,
  "n_points": 8,
- "gate": {
-  "expect": "fail",
-  "reason": "A12_links not implemented; remove this field when it lands"
- },
  "data": {
   "generator": "tier_a",
   "seed": 52,

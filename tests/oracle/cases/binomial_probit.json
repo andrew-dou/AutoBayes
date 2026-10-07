@@ -1,0 +1,72 @@
+{
+ "id": "binomial_probit",
+ "tier": "A",
+ "feature": "A12_links",
+ "note": "probit link on grouped binomial counts",
+ "seed": 155,
+ "n_points": 8,
+ "data": {
+  "generator": "tier_a",
+  "seed": 55,
+  "n": 36,
+  "newdata": {
+   "seed": 155,
+   "n": 5
+  }
+ },
+ "brms": {
+  "formula": "k | trials(size) ~ x + (1 | g)",
+  "family": {
+   "family": "binomial",
+   "link": "probit"
+  },
+  "factors": {
+   "g": [
+    "a",
+    "b",
+    "c",
+    "d",
+    "e",
+    "f"
+   ]
+  },
+  "priors": [
+   {
+    "prior": "normal(0, 2.5)",
+    "class": "Intercept"
+   },
+   {
+    "prior": "normal(0, 1.5)",
+    "class": "b"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "sd",
+    "group": "g"
+   }
+  ]
+ },
+ "autobayes": {
+  "constructor": "binomial",
+  "formula": "k | trials(size) ~ x + (1 | g)",
+  "kwargs": {
+   "link": "probit"
+  },
+  "priors": {
+   "intercept": [
+    "Normal",
+    0,
+    2.5
+   ],
+   "b": [
+    "Normal",
+    0,
+    1.5
+   ],
+   "sd": [
+    "HalfNormal",
+    1
+   ]
+  }
+ }
+}

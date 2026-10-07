@@ -272,10 +272,11 @@ class Priors:
         group-level coefficient, slopes included."""
         return {g: prior for (g, coef), prior in self.sd_priors(spec).items() if coef == "Intercept"}
 
-    def validate(self, spec, family: str = "gaussian") -> None:
-        from autobayes.families import get_family
+    def validate(self, spec, family="gaussian") -> None:
+        """``family`` is a registered family name, or the model's resolved ``FamilySpec`` (which carries its link)."""
+        from autobayes.families import FamilySpec, get_family
 
-        fam = get_family(family)
+        fam = family if isinstance(family, FamilySpec) else get_family(family)
         has_intercept = getattr(spec, "intercept", True)
         if has_intercept and self.intercept is None:
             raise PriorError("the formula has a population intercept; an intercept prior is required")
@@ -311,18 +312,18 @@ class Priors:
                     f"prior for {label!r} must be a positive-support prior ({sorted(_SCALE)}), got {prior}"
                 )
 
-    def to_bambi(self, spec, family: str = "gaussian") -> dict:
+    def to_bambi(self, spec, family="gaussian") -> dict:
         """Bambi's prior dict: one prior per term (array-valued parameters for the levels of a
         categorical term). Each group-level coefficient (``1|g``, and ``x|g`` for a varying slope) gets
         Normal(0, sd) with its own ``sd`` as hyperprior; without a group term no group prior is emitted
-        (Bambi would accept a stray ``1|g`` entry silently)."""
+        (Bambi would accept a stray ``1|g`` entry silently). ``family`` as for ``validate``."""
         import bambi as bmb
         import numpy as np
-        from autobayes.families import get_family
+        from autobayes.families import FamilySpec, get_family
         from autobayes.formula import ModelSpec, bambi_group_name
 
         self.validate(spec, family)
-        fam = get_family(family)
+        fam = family if isinstance(family, FamilySpec) else get_family(family)
         if not isinstance(spec, ModelSpec):
             spec = ModelSpec(formula="", response="", predictors=tuple(spec), group=None)
         per_column = self.coefficient_priors(spec)

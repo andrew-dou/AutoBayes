@@ -1,8 +1,9 @@
-"""The family registry: one ``FamilySpec`` per response family, looked up by name.
+"""The family registry: one ``FamilySpec`` per response family, looked up by name (and link).
 
 Adding a family is one module in this package that builds its spec, plus its entry in ``FAMILIES``;
-see docs/families.md. Nothing outside this package compares a family name against a string
-(``tests/test_family_registry.py`` enforces that).
+see docs/families.md. A family with several links (Bernoulli, binomial: logit and probit; brms's cloglog is
+withheld) registers its default link's spec and reaches the others through ``FamilySpec.links`` (docs/links.md).
+Nothing outside this package compares a family name against a string (``tests/test_family_registry.py`` enforces that).
 """
 from __future__ import annotations
 
@@ -22,11 +23,17 @@ from autobayes.families.student import STUDENT
 FAMILIES = MappingProxyType({spec.name: spec for spec in (GAUSSIAN, STUDENT, POISSON, NEGBINOMIAL, GAMMA, LOGNORMAL, BETA, BERNOULLI, BINOMIAL)})
 
 
-def get_family(name: str) -> FamilySpec:
-    """The registered specification of ``name``; the error lists every family."""
+def get_family(name: str, link: str | None = None) -> FamilySpec:
+    """The registered specification of ``name`` (the error lists every family), under ``link`` when one is given
+    (``FamilySpec.with_link``: the registered spec for ``None`` or the family's default link)."""
     if name not in FAMILIES:
         raise ValueError(f"family must be one of {sorted(FAMILIES)}, got {name!r}")
-    return FAMILIES[name]
+    return FAMILIES[name].with_link(link)
 
 
-__all__ = ["FAMILIES", "FamilySpec", "get_family"]
+def family_of(model) -> FamilySpec:
+    """The spec of a built model, or of any object exposing ``family`` and (optionally) ``link``, looked up by name."""
+    return get_family(model.family, getattr(model, "link", None))
+
+
+__all__ = ["FAMILIES", "FamilySpec", "family_of", "get_family"]

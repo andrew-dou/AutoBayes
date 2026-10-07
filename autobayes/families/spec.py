@@ -11,17 +11,15 @@ hand; none of them is called before ``Model.__init__`` has resolved the spec.
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from types import MappingProxyType
 
 import numpy as np
 
 NO_FIXED_PARAMETERS: Mapping[str, Callable[[object], float]] = MappingProxyType({})
+NO_OTHER_LINKS: Mapping[str, Callable[[], "FamilySpec"]] = MappingProxyType({})
+NO_PARKED_LINKS: Mapping[str, str] = MappingProxyType({})
 STANDARD_PREDICTION_KINDS = frozenset({"mean", "response", "linear"})
-LOGIT_INTERCEPT_NOTE = (                     # shared by the logit-link families
-    "  expit(a_c) is the probability at that proportion-weighted predictor; it is NOT the",
-    "  average probability across the levels (the link is nonlinear).",
-)
 
 
 def exp_mean(eta, what: str):
@@ -39,9 +37,9 @@ class FamilySpec:
 
     name: str                                    # the registry key and ``model.family``
     tag: str                                     # the ``describe()`` heading: "M0", "M1", "M2", "Student-t", "Poisson"
-    parent: str                                  # Bambi's parent parameter, the linear predictor's name: "mu" or "logit_p"
-    link: str                                    # "identity", "logit" or "log"
-    link_scale: str | None                       # the scale the location priors live on when it is not the response ("logit", "log")
+    parent: str                                  # Bambi's parent parameter, the linear predictor's name: "mu", "logit_p", "probit_p"
+    link: str                                    # "identity", "logit", "log" or "probit"
+    link_scale: str | None                       # the scale the location priors live on when it is not the response ("logit", "log", "probit")
     mean_name: str                               # the name ``predict()`` gives the expected response: "mu" or "p"
     response_kind: str                           # "continuous", "binary", "count" or "binomial" (successes with trials)
     response_dtype: object | None                # the response column and its draws are cast to this (int64 for the discrete families)
@@ -67,6 +65,22 @@ class FamilySpec:
     likelihood_lines: Callable[[object], list[str]]   # (model): the scale prior, fixed parameters and likelihood paragraph
     centred_intercept_note: tuple[str, ...]      # ``describe()`` lines after a centred intercept with categorical predictors
     deterministic_note: str                      # the tail of ``describe()``'s "Deterministic:" line
+    links: Mapping[str, Callable[[], "FamilySpec"]] = field(default_factory=lambda: NO_OTHER_LINKS)   # the family's other links by name, each building this family's spec under that link (Bernoulli, binomial: probit); empty for a one-link family
+    parked_links: Mapping[str, str] = field(default_factory=lambda: NO_PARKED_LINKS)   # links brms offers for this family that this library withholds, each with the reason ``with_link`` reports (Bernoulli, binomial: cloglog; docs/links.md)
+
+    def with_link(self, link: str | None) -> "FamilySpec":
+        """This family's spec under ``link``: this spec for ``None`` or its own link, the one a ``links`` entry builds
+        for another of the family's links; otherwise a ``ValueError`` naming what the family accepts, or, for a link
+        in ``parked_links``, why it is withheld."""
+        if link is None or link == self.link:
+            return self
+        if isinstance(link, str) and link in self.links:
+            return self.links[link]()
+        if isinstance(link, str) and link in self.parked_links:
+            raise ValueError(f"the {link} link of the {self.name} family is withheld: {self.parked_links[link]}")
+        if self.links:
+            raise ValueError(f"link must be one of {sorted([self.link, *self.links])} for the {self.name} family, got {link!r}")
+        raise ValueError(f"the {self.name} family has the {self.link} link only; link={link!r} is not available")
 
     @property
     def continuous(self) -> bool:

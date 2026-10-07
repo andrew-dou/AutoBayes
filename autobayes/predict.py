@@ -42,7 +42,7 @@ import numpy as np
 import pandas as pd
 import xarray as xr
 
-from autobayes.families import get_family
+from autobayes.families import family_of
 from autobayes.formula import FormulaError, categorical_labels, check_counts, group_labels, pop_term_design, reject_complex
 
 _NEW_GROUPS = {"error", "resample_observed", "population"}
@@ -173,7 +173,7 @@ def _predict_by_hand(model, idata, df: pd.DataFrame | None, kind: str, seed, pol
             raise ValueError("linear predictor contains nonfinite draws")
         out = {"eta": (dims, mu)}
     else:                                                        # mu held the linear predictor eta
-        fam = get_family(model.family)
+        fam = family_of(model)
         mean = expected_response(fam, model, post, mu)
         out = {fam.mean_name: (dims, mean)}
         if fam.has_trials and kind in ("mean", "response"):      # binomial: expected = n p beside p
@@ -225,7 +225,7 @@ def predict(model, fit_result, *, newdata: pd.DataFrame | None = None, kind: str
     follows factor formula order, then sorted unseen labels. Equal labels in different
     factors are independent identities. Common intercept draws are already on the raw scale.
     """
-    fam = get_family(model.family)
+    fam = family_of(model)                                      # the family under the model's link
     if kind not in fam.prediction_kinds:
         raise ValueError(fam.kind_error)
     if not isinstance(include_group_effects, (bool, np.bool_)):

@@ -1,7 +1,7 @@
 """Bayesian hierarchical models built through Bambi/PyMC, with JAX/NumPyro sampling.
 
 Response families: Gaussian and fixed-nu Student-t with identity links,
-Bernoulli and grouped binomial with logit links, Poisson and negative binomial
+Bernoulli and grouped binomial with a logit or probit link, Poisson and negative binomial
 counts and Gamma responses with a log link, lognormal responses with the identity
 link on the log-scale location, and Beta proportions with a logit link and precision ``phi``. Supported formulas combine numeric and declared categorical predictors,
 numeric-by-categorical interactions, intercept controls, and optional multiple

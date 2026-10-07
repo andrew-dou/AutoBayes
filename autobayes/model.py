@@ -3,7 +3,8 @@
 The families of ``autobayes.families``, including Poisson and negative binomial counts, Gamma, lognormal, Beta and
 fixed-nu Student-t responses. ``"gaussian"`` (M0): identity link, residual SD ``sigma``. ``"bernoulli"``
 (M1): logit link, ``p = expit(eta)``, no residual scale. ``"binomial"`` (M2): logit link on
-``successes | trials(n)``, counts. All share the right-hand side ``[1 +] x1 [+ x2 ...] [+ offset(log(col))]
+``successes | trials(n)``, counts. The Bernoulli and binomial families also take ``link="probit"`` (A12,
+docs/links.md; brms's cloglog link is withheld there). All share the right-hand side ``[1 +] x1 [+ x2 ...] [+ offset(log(col))]
 [+ (1 | factor) | (1 + x || factor) ...]`` with numeric terms and, since M3a-1, treatment-coded categorical
 terms declared with ``categorical={column: reference}``; an optional offset term (A06, docs/offset.md), added to
 the linear predictor with no coefficient; centring; non-centred group effects (varying
@@ -110,7 +111,8 @@ class Model:
     Attributes
     ----------
     family : str               a registered family name: "gaussian", "student", "poisson", "negbinomial", "gamma", "lognormal", "beta", "bernoulli", "binomial"
-    family_spec : FamilySpec   the registered specification of that family (autobayes/families/)
+    family_spec : FamilySpec   the specification of that family under the model's link (autobayes/families/; the registered spec unless ``link`` names another of the family's links)
+    link : str                 the link: the family's own, or the ``link`` given ("probit" for the Bernoulli and binomial families)
     spec : ModelSpec
     priors : Priors
     bambi_model : bambi.Model  (already built)
@@ -120,10 +122,18 @@ class Model:
 
     def __init__(self, formula: str, data: pd.DataFrame, priors: Priors, *,
                  family: str = "gaussian", center_predictors: bool = True,
-                 categorical: Mapping[str, object] | None = None, nu: float | None = None):
+                 categorical: Mapping[str, object] | None = None, nu: float | None = None, link: str | None = None):
         import bambi as bmb
 
         fam = get_family(family)
+        if link is not None:                                   # the family's spec under another of its links (A12)
+            try:
+                fam = fam.with_link(link)
+            except ValueError as e:
+                offering = [name for name, other in FAMILIES.items() if other.links]
+                hint = (f" (link= applies to the {' and '.join(offering)} families, which take "
+                        f"{sorted({l for name in offering for l in (FAMILIES[name].link, *FAMILIES[name].links)})})") if not fam.links else ""
+                raise ValueError(f"{e}{hint}") from None
         if "nu" in fam.fixed_parameters:
             self.nu = fam.fixed_parameters["nu"](nu)
         elif nu is not None:
@@ -138,7 +148,7 @@ class Model:
 
         spec0 = parse_formula(formula, None, family, categorical)
         self.effective_center_predictors = self.center_predictors and spec0.intercept
-        priors.validate(spec0, family)                  # structure now; per-level coverage once levels are known
+        priors.validate(spec0, fam)                     # structure now; per-level coverage once levels are known
         operands = [c for t in spec0.group_terms for c in t.operands]   # the columns the grouping factors are read from
         cols = ([spec0.response, *spec0.pop_columns] + operands
                 + ([spec0.trials] if spec0.trials else []) + ([spec0.offset.column] if spec0.offset is not None else []))
@@ -203,7 +213,7 @@ class Model:
 
         bambi_family = fam.bambi_family()
         self._check_generated_names()
-        bambi_priors = priors.to_bambi(self.spec, family)
+        bambi_priors = priors.to_bambi(self.spec, fam)
         for name in fam.fixed_parameters:                    # Bambi takes a fixed nu through the prior dict
             bambi_priors[name] = getattr(self, name)
         self.bambi_model = bmb.Model(
@@ -404,6 +414,8 @@ class Model:
     # -- naming ------------------------------------------------------------------------
     @property
     def link(self) -> str:
+        """The link the model was built with: the family's own ("identity", "log", "logit") or the one given to
+        ``link=`` ("probit" for the Bernoulli and binomial families; docs/links.md)."""
         return self.family_spec.link
 
     @property
@@ -845,16 +857,22 @@ def gaussian(formula: str, data: pd.DataFrame, priors: Priors, *, center_predict
     return Model(formula, data, priors, family="gaussian", center_predictors=center_predictors, categorical=categorical)
 
 
-def bernoulli(formula: str, data: pd.DataFrame, priors: Priors, *, center_predictors: bool = True,
+def bernoulli(formula: str, data: pd.DataFrame, priors: Priors, *, link: str = "logit", center_predictors: bool = True,
               categorical: Mapping[str, object] | None = None) -> Model:
-    """Build the Bernoulli model (logit link, response strictly 0/1), with or without a varying intercept."""
-    return Model(formula, data, priors, family="bernoulli", center_predictors=center_predictors, categorical=categorical)
+    """Build the Bernoulli model (response strictly 0/1), with or without a varying intercept.
+
+    ``link`` is ``"logit"`` (``p = expit(eta)``, the default) or ``"probit"`` (``p = Phi(eta)``), brms's
+    ``bernoulli(link = ...)``; the intercept and slope priors are on that link's scale. brms's ``cloglog`` link is
+    withheld and its ``cauchit`` link is not offered (docs/links.md).
+    """
+    return Model(formula, data, priors, family="bernoulli", link=link, center_predictors=center_predictors, categorical=categorical)
 
 
-def binomial(formula: str, data: pd.DataFrame, priors: Priors, *, center_predictors: bool = True,
+def binomial(formula: str, data: pd.DataFrame, priors: Priors, *, link: str = "logit", center_predictors: bool = True,
              categorical: Mapping[str, object] | None = None) -> Model:
-    """Build the binomial model ``successes | trials(n) ~ x [+ (1 | group)]``, with or without a varying intercept."""
-    return Model(formula, data, priors, family="binomial", center_predictors=center_predictors, categorical=categorical)
+    """Build the binomial model ``successes | trials(n) ~ x [+ (1 | group)]``, with or without a varying intercept;
+    ``link`` as for ``bernoulli`` (``"logit"`` or ``"probit"``)."""
+    return Model(formula, data, priors, family="binomial", link=link, center_predictors=center_predictors, categorical=categorical)
 
 
 def student(formula: str, data: pd.DataFrame, priors: Priors, *, nu: float,

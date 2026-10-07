@@ -5,7 +5,7 @@ import json
 from numbers import Real
 import numpy as np
 
-from autobayes.families import get_family
+from autobayes.families import family_of
 
 SCHEMA = 'autobayes-target-v1'
 
@@ -40,7 +40,7 @@ def freeze_target(model):
     slopes = [(g, c, block) for (g, c), block in d.group_blocks.items() if c != 'Intercept']
     payload = {
         'schema': SCHEMA, 'family': model.family,
-        'family_parameters': {name: getattr(model, name) for name in get_family(model.family).fixed_parameters},
+        'family_parameters': {name: getattr(model, name) for name in family_of(model).fixed_parameters},
         'formula': s.canonical_formula, 'link': model.link,
         'intercept': s.intercept, 'centered': d.centered,
         'columns': d.columns, 'y': d.y, 'trials': d.trials,
