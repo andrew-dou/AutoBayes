@@ -4,7 +4,8 @@ brms classes: ``Intercept``, ``b`` (slopes and dummy coefficients), ``sd`` (one 
 coefficient: the varying intercept of ``(1 | g)``, the intercept and each slope of ``(1 + x || g)``) and the
 family's auxiliary parameter: ``sigma`` for Gaussian/Student-t (residual SD/scale respectively) and for the
 lognormal (the SD of ``log y``), ``shape`` for the negative binomial and Gamma families, ``phi`` for the Beta family
-(the precision). Every class the model has must be given, and a class the model does
+(the precision), and ``nu`` for a Student-t model that learns its degrees of freedom (``nu=None``; brms class ``nu``,
+truncated to ``nu > 1``). Every class the model has must be given, and a class the model does
 not have is refused (M3c-1: ``sd`` without a group term; ``shape`` for a Gaussian model); there are no silent
 defaults here (Bambi would supply some, and that is exactly what this layer refuses to let happen). For the
 Bernoulli family the intercept and slope priors are on the logit scale and ``sigma`` must be omitted.
@@ -23,6 +24,9 @@ from dataclasses import dataclass, field
 _LOCATION = {"Normal", "StudentT"}
 _SCALE = {"HalfNormal", "HalfStudentT", "Exponential", "HalfCauchy", "Gamma"}
 AUXILIARY = {"sigma": "residual SD", "shape": "shape parameter", "phi": "precision parameter"}   # the Priors fields a family's scale_parameter can name
+# The priors of a learned parameter with a lower bound (the Student-t nu, A13): the positive-support priors whose
+# truncation at the bound PyMC can renormalise (it needs their CDF; PyMC has none for HalfStudentT).
+TRUNCATABLE = frozenset({"Gamma", "Exponential", "HalfNormal", "HalfCauchy"})
 
 
 class PriorError(ValueError):
@@ -42,6 +46,21 @@ class Prior:
         import bambi as bmb
 
         return bmb.Prior(self.name, **dict(self.params))
+
+    def to_bambi_truncated(self, lower: float):
+        """Bambi's prior for a parameter bounded below by ``lower`` (brms's ``real<lower=1> nu``, A13): this distribution
+        truncated to ``(lower, inf)`` and renormalised there, ``pm.Truncated``, which PyMC samples as
+        ``log(value - lower)`` (its interval transform, whose Jacobian is that coordinate), as Stan does. Bambi builds an
+        auxiliary parameter from a ``Prior`` with ``dist`` by calling ``dist(name, **params)``."""
+        import bambi as bmb
+        import pymc as pm
+
+        base = getattr(pm, self.name)
+
+        def truncated(name, **params):
+            return pm.Truncated(name, base.dist(**params), lower=lower)
+
+        return bmb.Prior(f"Truncated{self.name}", dist=truncated, **dict(self.params))
 
 
 def _positive(name: str, value: float) -> float:
@@ -95,6 +114,8 @@ class Priors:
     coefficients, ``{"g": {"Intercept": HalfNormal(1), "x": HalfNormal(0.5)}}`` (brms ``class = sd, group =
     g, coef = x``). No automatic priors are filled in silently and nothing is broadcast. ``sigma``, ``shape`` and
     ``phi`` are the auxiliary parameters: exactly the one the family has (``FamilySpec.scale_parameter``) must be given.
+    ``nu`` is the prior of a Student-t model's learned degrees of freedom (``ab.student(..., nu=None)``): one of
+    ``TRUNCATABLE``, truncated to ``nu > 1`` and renormalised there (brms-parity A13); refused for every other model.
     """
 
     intercept: Prior | None = None
@@ -103,6 +124,7 @@ class Priors:
     sigma: Prior | None = None       # Gaussian, Student-t and lognormal
     shape: Prior | None = None       # negative binomial and Gamma (brms class ``shape``)
     phi: Prior | None = None         # Beta (brms class ``phi``, the precision)
+    nu: Prior | None = None          # Student-t with nu=None: the learned degrees of freedom (brms class ``nu``)
 
     # -- coefficient priors -----------------------------------------------------------------
     def coefficient_priors(self, spec) -> dict[str, Prior]:
@@ -294,6 +316,25 @@ class Priors:
                     + (f" Its auxiliary parameter is {scale}: pass {scale}=..." if scale is not None else "")
                     + (f" Its intercept and slope priors are on the {fam.link_scale} scale." if fam.link_scale is not None else "")
                 )
+        if self.nu is not None:                                       # the learned Student-t degrees of freedom (A13)
+            if "nu" not in fam.learnable_parameters:
+                raise PriorError(
+                    f"the {fam.name} family has no degrees of freedom; do not pass nu."
+                    + (f" Its auxiliary parameter is {scale}: pass {scale}=..." if scale is not None else "")
+                )
+            lower = fam.learnable_parameters["nu"]
+            if not isinstance(self.nu, Prior):
+                raise PriorError(f"prior for 'nu' must be a Prior, got {type(self.nu).__name__}")
+            if self.nu.name in _SCALE and self.nu.name not in TRUNCATABLE:
+                raise PriorError(
+                    f"prior for 'nu' cannot be {self.nu.name}: PyMC has no CDF for it, so its truncation to nu > {lower:g} "
+                    f"cannot be renormalised as brms's is; use one of {sorted(TRUNCATABLE)}"
+                )
+            if self.nu.name not in TRUNCATABLE:
+                raise PriorError(
+                    f"prior for 'nu' must be a positive-support prior {sorted(TRUNCATABLE)}; got {self.nu} (nu is learned "
+                    f"on nu > {lower:g}, under its prior truncated there and renormalised, as brms does)"
+                )
         for label, prior in ([("intercept", self.intercept)] if has_intercept else []) + list(self.coefficient_priors(spec).items()):
             if not isinstance(prior, Prior):
                 raise PriorError(f"prior for {label!r} must be a Prior, got {type(prior).__name__}")
@@ -330,6 +371,8 @@ class Priors:
         out = {"Intercept": self.intercept.to_bambi()} if spec.intercept else {}
         if fam.scale_parameter is not None:                 # under Bambi's name: "sigma", or "alpha" for brms's "shape"
             out[fam.bambi_scale_parameter] = getattr(self, fam.scale_parameter).to_bambi()
+        if self.nu is not None:                             # a learned Student-t nu (A13): its prior truncated at the bound
+            out["nu"] = self.nu.to_bambi_truncated(fam.learnable_parameters["nu"])
         for term in spec.pop_terms:
             if not term.is_vector:
                 out[term.name] = per_column[term.name].to_bambi()

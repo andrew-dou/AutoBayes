@@ -1,4 +1,5 @@
-"""Student-t response with a fixed, user-supplied ``nu > 1``: identity link on ``mu``, scale ``sigma``."""
+"""Student-t response: identity link on ``mu``, scale ``sigma``, and degrees of freedom ``nu`` either fixed by the user
+(``nu > 1``) or learned under its own prior truncated to ``nu > 1`` (brms-parity A13, docs/student-learned-nu.md)."""
 from __future__ import annotations
 
 from types import MappingProxyType
@@ -7,6 +8,8 @@ import numpy as np
 
 from autobayes.families.spec import STANDARD_PREDICTION_KINDS, FamilySpec
 from autobayes.formula import validate_numeric_response
+
+NU_LOWER = 1.0                    # brms's real<lower=1> nu: a learned nu's prior is truncated here, and it is sampled as log(nu - 1)
 
 
 def check_nu(nu) -> float:
@@ -22,10 +25,21 @@ def _validate_response(spec, data) -> None:
 
 def _draw_response(model, post, eta, mean, df, rng):
     sigma = post[model.names["sigma"]].to_numpy()
+    if model.nu is None:                                       # learned: each posterior draw's own degrees of freedom
+        nu = post[model.names["nu"]].to_numpy()[..., None]
+        return mean + sigma[..., None] * rng.standard_t(nu, size=mean.shape)
     return mean + sigma[..., None] * rng.standard_t(model.nu, size=mean.shape)
 
 
 def _likelihood_lines(model) -> list[str]:
+    if model.nu is None:                                       # learned (A13)
+        return [f"  sigma ~ {model.priors.sigma}",
+                f"  nu ~ {model.priors.nu}, truncated to nu > {NU_LOWER:g} and renormalised there (brms's real<lower=1> nu:",
+                f"       the prior minus its log probability of nu > {NU_LOWER:g}); nu is learned, sampled as log(nu - {NU_LOWER:g})",
+                "", "Likelihood",
+                "  y_i ~ StudentT(nu, mu_i, sigma); E[y_i] = mu_i",
+                "  sigma is scale, not residual SD; variance = sigma^2 * nu/(nu-2) for nu>2",
+                "  variance is infinite for 1<nu<=2."]
     return [f"  sigma ~ {model.priors.sigma}", f"  nu = {model.nu:g} (fixed, not sampled)", "", "Likelihood",
             "  y_i ~ StudentT(nu, mu_i, sigma); E[y_i] = mu_i",
             "  sigma is scale, not residual SD; variance = sigma^2 * nu/(nu-2) for nu>2",
@@ -52,4 +66,5 @@ STUDENT = FamilySpec(
     likelihood_lines=_likelihood_lines,
     centred_intercept_note=(),
     deterministic_note="mu = linear predictor",
+    learnable_parameters=MappingProxyType({"nu": NU_LOWER}),
 )

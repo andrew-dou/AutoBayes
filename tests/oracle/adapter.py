@@ -15,6 +15,7 @@ effects (`NC_m > 0`) have no adapter yet.
 """
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 
 import arviz as az
@@ -48,10 +49,10 @@ def _prior(v):
 
 def priors_from_spec(spec: dict) -> ab.Priors:
     """``{"intercept": ["Normal", 0, 5], "b": ["Normal", 0, 2] | {term: ...}, "sd": [...] | {factor: ...}, "sigma": [...],
-    "shape": [...], "phi": [...]}``."""
+    "shape": [...], "phi": [...], "nu": [...]}``."""
     return ab.Priors(intercept=_prior(spec.get("intercept")), b=_prior(spec.get("b")),
                      sd=_prior(spec.get("sd")), sigma=_prior(spec.get("sigma")), shape=_prior(spec.get("shape")),
-                     phi=_prior(spec.get("phi")))
+                     phi=_prior(spec.get("phi")), nu=_prior(spec.get("nu")))
 
 
 def build_model(case: dict, data: pd.DataFrame) -> ab.Model:
@@ -193,11 +194,12 @@ def match_groups(fixture: Fixture, model: ab.Model) -> GroupMap:
 
 # -- points -------------------------------------------------------------------------------------------------
 def natural_point(model: ab.Model, point: Point, cmap: ColumnMap, gmap: GroupMap) -> dict:
-    """AutoBayes's natural-scale arguments (intercept, b, sd, z, sigma, shape, phi) at a brms point. An intercept-only
+    """AutoBayes's natural-scale arguments (intercept, b, sd, z, sigma, shape, phi, nu) at a brms point. An intercept-only
     factor's ``sd`` and ``z`` are the scalar and the vector; a factor with varying slopes takes the
     coefficient-keyed mappings ``{"Intercept": ..., "x": ...}`` (``Model.value_point``). ``sigma``, ``shape`` and
     ``phi`` are brms's parameters of those names (the Gaussian/Student-t/lognormal scale; the negative binomial/Gamma
-    shape; the Beta precision)."""
+    shape; the Beta precision); ``nu`` is brms's ``nu`` when the model learns it (a fixed nu is no value variable here,
+    though brms reports it among its parameters)."""
     pars = point.pars
     bb = coefficients(pars)
     b = np.array([bb[cmap.b_index(k)] for k in cmap.x_column], dtype=float)
@@ -222,7 +224,8 @@ def natural_point(model: ab.Model, point: Point, cmap: ColumnMap, gmap: GroupMap
     sigma = float(pars["sigma"]) if "sigma" in pars else None
     shape = float(pars["shape"]) if "shape" in pars else None
     phi = float(pars["phi"]) if "phi" in pars else None
-    return dict(intercept=intercept, b=b, sd=sd or None, z=z or None, sigma=sigma, shape=shape, phi=phi)
+    nu = float(pars["nu"]) if "nu" in model.names else None
+    return dict(intercept=intercept, b=b, sd=sd or None, z=z or None, sigma=sigma, shape=shape, phi=phi, nu=nu)
 
 
 def value_point(model: ab.Model, point: Point, cmap: ColumnMap, gmap: GroupMap) -> dict:
@@ -237,6 +240,12 @@ def value_layout(model: ab.Model, point: dict) -> dict[str, slice]:
         out[v.name] = slice(i, i + size)
         i += size
     return out
+
+
+# brms's probe (oracle/R/gen_fixture.R) puts every unconstrained coordinate at 0.3 and moves one constrained value to 1.5
+# times its value there; for real<lower=1> nu sampled as log(nu - 1), the probed step du is therefore this number exactly.
+_NU0 = 1.0 + math.exp(0.3)
+LOG_NU_MINUS_ONE_STEP = math.log(1.5 * _NU0 - 1.0) - 0.3
 
 
 def coordinate_map(fixture: Fixture, model: ab.Model, cmap: ColumnMap, gmap: GroupMap) -> list[tuple[int, str, int]]:
@@ -265,6 +274,12 @@ def coordinate_map(fixture: Fixture, model: ab.Model, cmap: ColumnMap, gmap: Gro
             target, expect = (f"{names['shape']}_log__", 0), "log"
         elif par == "phi":                                     # Beta precision, sampled on the log scale
             target, expect = (f"{names['phi']}_log__", 0), "log"
+        elif par == "nu":                                      # learned Student-t nu, brms real<lower=1> nu: PyMC's interval log(nu - 1)
+            if "nu" not in names:
+                raise OracleMismatch("brms samples nu but the AutoBayes model does not learn it")
+            if abs(float(e["du"]) - LOG_NU_MINUS_ONE_STEP) > 1e-9:
+                raise OracleMismatch(f"brms's probe moved the coordinate of nu by {e['du']!r}; log(nu - 1) moves it by {LOG_NU_MINUS_ONE_STEP!r}")
+            target, expect = (f"{names['nu']}_interval__", 0), "other"
         elif par.startswith("sd_") and int(par[3:]) in by_id:
             g = by_id[int(par[3:])]
             if (g, elem + 1) not in by_cn:
@@ -289,7 +304,7 @@ def coordinate_map(fixture: Fixture, model: ab.Model, cmap: ColumnMap, gmap: Gro
 def draws(fixture: Fixture, model: ab.Model, cmap: ColumnMap, gmap: GroupMap) -> az.InferenceData:
     """The fixture's points as one chain of posterior draws under AutoBayes's names: the raw-scale intercept
     (brms ``b_Intercept``), coefficients by term, group SDs and effects by level for every group-level
-    coefficient (``1|g`` from ``r_m_1``, ``x|g`` from the slope's ``r_m_c``), sigma, shape or phi."""
+    coefficient (``1|g`` from ``r_m_1``, ``x|g`` from the slope's ``r_m_c``), sigma, shape or phi, and a learned nu."""
     pts = fixture.points
     names = model.names
     data, coords = {}, {"chain": [0], "draw": np.arange(len(pts))}
@@ -323,4 +338,6 @@ def draws(fixture: Fixture, model: ab.Model, cmap: ColumnMap, gmap: GroupMap) ->
         data[names["shape"]] = (("chain", "draw"), np.array([float(p.pars["shape"]) for p in pts])[None, :])
     if "phi" in names and "phi" in pts[0].pars:
         data[names["phi"]] = (("chain", "draw"), np.array([float(p.pars["phi"]) for p in pts])[None, :])
+    if "nu" in names and "nu" in pts[0].pars:
+        data[names["nu"]] = (("chain", "draw"), np.array([float(p.pars["nu"]) for p in pts])[None, :])
     return az.InferenceData(posterior=xr.Dataset(data, coords=coords))

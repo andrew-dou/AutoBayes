@@ -1,5 +1,8 @@
 # Student-t responses with fixed tails
 
+> brms-parity A13 added learned degrees of freedom: `ab.student(..., nu=None)` with `Priors(nu=...)`; see
+> [Student-t learned nu](student-learned-nu.md). This page describes a fixed `nu`, which is unchanged.
+
 ```python
 import autobayes as ab
 model = ab.student("y ~ x + (1 | group)", data,

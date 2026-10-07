@@ -72,6 +72,7 @@ def _summary_rows(model, idata) -> dict:
     n = model.names
     scale = family_of(model).scale_parameter                    # "sigma", "shape", "phi" or None
     names = ([n["intercept"]] if model.spec.intercept else []) + list(model.spec.terms) + [roles["sd"] for roles in model.group_coefficient_names.values()] + ([n[scale]] if scale is not None else [])
+    names += [n[name] for name in model.learned_parameters]     # a learned Student-t nu (A13)
     s = az.summary(idata, var_names=names, hdi_prob=0.94, round_to="none")
     rows = {}
     for name, r in s.iterrows():
@@ -96,6 +97,7 @@ def fit_record(model, fit, *, panel: dict | None = None, max_treedepth: int = 10
     coef = pr.coefficient_priors(s)
     group_priors = pr.group_priors(s)
     sd_priors = pr.sd_priors(s)
+    fixed = {name: getattr(model, name) for name in fam.fixed_parameters if getattr(model, name) is not None}   # not a learned nu (A13)
     return {
         "autobayes_version": __version__,
         "model": {
@@ -104,7 +106,7 @@ def fit_record(model, fit, *, panel: dict | None = None, max_treedepth: int = 10
             **({"target_identity": model.target_identity} if binding == "matched" else
                {"requested_target_identity": model.target_identity}),
             "fit_binding_status": binding,
-            **({"family_parameters": {name: getattr(model, name) for name in fam.fixed_parameters}} if fam.fixed_parameters else {}),
+            **({"family_parameters": fixed} if fixed else {}),
             "link": model.link,
             "n": int(d.n),
             **({"J": int(d.J), "group": s.group} if len(s.groups) <= 1 else {}),
@@ -122,7 +124,8 @@ def fit_record(model, fit, *, panel: dict | None = None, max_treedepth: int = 10
             "priors": {**({"intercept": str(pr.intercept)} if s.intercept else {}), **{f"b:{k}": str(v) for k, v in coef.items()},
                        **{("sd" if len(s.groups) == 1 else f"sd:{g}"): str(prior) for g, prior in group_priors.items()},
                        **{f"sd:{sd_tag(g, c)}": str(prior) for (g, c), prior in sd_priors.items() if c != "Intercept"},
-                       **({fam.scale_parameter: str(getattr(pr, fam.scale_parameter))} if fam.scale_parameter is not None else {})},
+                       **({fam.scale_parameter: str(getattr(pr, fam.scale_parameter))} if fam.scale_parameter is not None else {}),
+                       **({"nu": str(pr.nu)} if pr.nu is not None else {})},
             "terms": list(s.terms),
             "design_columns": list(s.columns),
             **({"offset": s.offset.term} if s.offset is not None else {}),

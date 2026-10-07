@@ -40,7 +40,9 @@ def freeze_target(model):
     slopes = [(g, c, block) for (g, c), block in d.group_blocks.items() if c != 'Intercept']
     payload = {
         'schema': SCHEMA, 'family': model.family,
-        'family_parameters': {name: getattr(model, name) for name in family_of(model).fixed_parameters},
+        # a learned Student-t nu (A13) is not a value: it enters through its prior below, so fixed-nu identities are unchanged
+        'family_parameters': {name: getattr(model, name) for name in family_of(model).fixed_parameters
+                              if getattr(model, name) is not None},
         'formula': s.canonical_formula, 'link': model.link,
         'intercept': s.intercept, 'centered': d.centered,
         'columns': d.columns, 'y': d.y, 'trials': d.trials,
@@ -61,7 +63,9 @@ def freeze_target(model):
                    # keeps the identity it had under this schema version
                    **({'shape': prior(pr.shape)} if pr.shape is not None else {}),
                    # the Beta precision prior (A11) likewise
-                   **({'phi': prior(pr.phi)} if pr.phi is not None else {})},
+                   **({'phi': prior(pr.phi)} if pr.phi is not None else {}),
+                   # the prior of a learned Student-t nu (A13) likewise
+                   **({'nu': prior(pr.nu)} if pr.nu is not None else {})},
     }
     encoded = json.dumps(_canonical(payload), sort_keys=True, separators=(',', ':'),
                          ensure_ascii=False, allow_nan=False).encode('utf-8')

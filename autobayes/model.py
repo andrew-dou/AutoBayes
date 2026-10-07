@@ -1,7 +1,7 @@
 """The model: a thin, inspectable layer over a Bambi-built PyMC model.
 
 The families of ``autobayes.families``, including Poisson and negative binomial counts, Gamma, lognormal, Beta and
-fixed-nu Student-t responses. ``"gaussian"`` (M0): identity link, residual SD ``sigma``. ``"bernoulli"``
+Student-t responses (``nu`` fixed or learned). ``"gaussian"`` (M0): identity link, residual SD ``sigma``. ``"bernoulli"``
 (M1): logit link, ``p = expit(eta)``, no residual scale. ``"binomial"`` (M2): logit link on
 ``successes | trials(n)``, counts. The Bernoulli and binomial families also take ``link="probit"`` (A12,
 docs/links.md; brms's cloglog link is withheld there). All share the right-hand side ``[1 +] x1 [+ x2 ...] [+ offset(log(col))]
@@ -25,7 +25,7 @@ from collections.abc import Mapping
 from autobayes.families import FAMILIES, FamilySpec, get_family
 from autobayes.formula import (Categorical, FormulaError, ModelSpec, bambi_group_name, binomial_counts, categorical_labels,
                                factor_column, group_labels, interaction_cells, parse_formula, pop_term_design, sd_tag)
-from autobayes.priors import Priors
+from autobayes.priors import PriorError, Priors
 
 _bambi_group_name = bambi_group_name          # ``1|g`` for the varying intercept of ``g``, ``x|g`` for the slope of ``x``
 
@@ -135,7 +135,16 @@ class Model:
                         f"{sorted({l for name in offering for l in (FAMILIES[name].link, *FAMILIES[name].links)})})") if not fam.links else ""
                 raise ValueError(f"{e}{hint}") from None
         if "nu" in fam.fixed_parameters:
-            self.nu = fam.fixed_parameters["nu"](nu)
+            if nu is not None and priors.nu is not None:
+                raise ValueError(f"nu={nu!r} fixes the degrees of freedom and Priors(nu={priors.nu}) learns them: pass one "
+                                 "or the other (nu=None with the prior learns nu, as brms's student() does)")
+            if nu is None and "nu" in fam.learnable_parameters:   # learned under its own prior (A13)
+                if priors.nu is None:
+                    raise PriorError(f"the {family} family needs nu: a fixed nu > {fam.learnable_parameters['nu']:g} (nu=4), or "
+                                     "nu=None with a positive-support prior Priors(nu=...) to learn it")
+                self.nu = None
+            else:
+                self.nu = fam.fixed_parameters["nu"](nu)
         elif nu is not None:
             accepting = [name for name, other in FAMILIES.items() if "nu" in other.fixed_parameters]
             raise ValueError(f"nu applies only to the {' or '.join(accepting)} family")
@@ -214,8 +223,9 @@ class Model:
         bambi_family = fam.bambi_family()
         self._check_generated_names()
         bambi_priors = priors.to_bambi(self.spec, fam)
-        for name in fam.fixed_parameters:                    # Bambi takes a fixed nu through the prior dict
-            bambi_priors[name] = getattr(self, name)
+        for name in fam.fixed_parameters:                    # Bambi takes a fixed nu through the prior dict; a learned
+            if name not in self.learned_parameters:          # one's truncated prior came from Priors.to_bambi (A13)
+                bambi_priors[name] = getattr(self, name)
         self.bambi_model = bmb.Model(
             self.spec.bambi_formula, self.data, family=bambi_family,
             priors=bambi_priors,
@@ -419,13 +429,21 @@ class Model:
         return self.family_spec.link
 
     @property
+    def learned_parameters(self) -> dict[str, float]:
+        """The family's fixed parameters this model learns instead, each under its own prior, by name with the lower
+        bound it is truncated at: ``{"nu": 1.0}`` for a Student-t model built with ``nu=None`` and ``Priors(nu=...)``
+        (A13, docs/student-learned-nu.md); empty otherwise."""
+        return {name: lower for name, lower in self.family_spec.learnable_parameters.items() if getattr(self, name) is None}
+
+    @property
     def names(self) -> dict[str, str]:
         """PyMC variable names for each role in the model. ``"linpred"`` is the deterministic
         Bambi builds for the likelihood's parent parameter (``mu`` for Gaussian, ``logit_p``
         for Bernoulli); ``"mean"`` is the name ``predict`` gives the expected response (``mu``
         or ``p``; ``mean`` for the lognormal, whose ``mu`` is the log-scale location). ``"sigma"`` exists for the
         Gaussian, Student-t and lognormal families, ``"shape"`` for the negative binomial and Gamma families (its
-        value is Bambi's variable name, ``alpha``) and ``"phi"`` for the Beta family (the precision). ``"b:<term>"`` is the
+        value is Bambi's variable name, ``alpha``) and ``"phi"`` for the Beta family (the precision); ``"nu"`` for a Student-t
+        model that learns its degrees of freedom (``learned_parameters``). ``"b:<term>"`` is the
         coefficient variable of each population-level term (scalar for a numeric term, a vector
         over the coefficient levels otherwise); with exactly one group-level term its ``sd``,
         ``offset`` and ``group_effect`` roles are included here as well, and ``sd:x``, ``offset:x``,
@@ -442,6 +460,8 @@ class Model:
         }
         if fam.scale_parameter is not None:
             out[fam.scale_parameter] = fam.bambi_scale_parameter
+        for name in self.learned_parameters:                  # a learned nu (A13): the PyMC variable of that name
+            out[name] = name
         if fam.continuous and fam.parent == "mu":
             out["mu"] = "mu"                                  # the continuous families whose parent is the location mu expose it by name (the Beta's parent is logit_mu)
         return out
@@ -483,7 +503,7 @@ class Model:
         return self.spec.column_terms
 
     def value_point(self, *, intercept: float | None = None, b, sd=None, z=None, sigma: float | None = None,
-                    shape: float | None = None, phi: float | None = None) -> dict[str, np.ndarray]:
+                    shape: float | None = None, phi: float | None = None, nu: float | None = None) -> dict[str, np.ndarray]:
         """A point in PyMC's sampled (value) space, from natural-scale quantities.
 
         ``intercept`` is the *model* intercept (at the predictor means when centred),
@@ -496,6 +516,8 @@ class Model:
         entry without the factor key; neither applies without groups. ``sigma`` is the residual
         SD (Gaussian and Student-t; the SD of ``log y`` for the lognormal), ``shape`` the negative binomial / Gamma
         shape, ``phi`` the Beta precision; exactly the family's own is given. Scales are stored on the log scale because that is what PyMC samples.
+        ``nu`` is the degrees of freedom of a Student-t model that learns them (``learned_parameters``), given exactly then
+        and stored as ``log(nu - 1)``, PyMC's interval coordinate.
         """
         b = np.atleast_1d(np.asarray(b, dtype=float))
         if b.shape != (len(self.spec.columns),):
@@ -566,6 +588,17 @@ class Model:
             point[roles["offset"]] = z_by_coef[(g, coef)]
         if scale is not None:
             point[f"{n[scale]}_log__"] = log_scale(auxiliary[scale], scale)
+        learned = self.learned_parameters
+        if "nu" in learned:                                    # learned (A13): sampled as log(nu - lower), the interval coordinate
+            if nu is None:
+                raise ValueError("nu is required: this model learns nu (built with nu=None and Priors(nu=...))")
+            arr = np.asarray(nu, dtype=float)
+            if arr.shape != () or not np.isfinite(arr) or arr <= learned["nu"]:
+                raise ValueError(f"nu must be a finite scalar > {learned['nu']:g}")
+            point[f"{n['nu']}_interval__"] = np.asarray(np.log(arr - learned["nu"]))
+        elif nu is not None:
+            raise ValueError(f"nu is fixed at {self.nu:g} in this model, not sampled; omit it" if getattr(self, "nu", None) is not None
+                             else f"the {self.family} family has no nu; omit it")
         i = 0
         for term in self.spec.pop_terms:                      # b in design-column order: one entry per term column
             k = len(term.columns)
@@ -821,6 +854,8 @@ class Model:
             roles[names["offset"]] = ("z" if len(s.groups) == 1 else f"z_{g}") if c == "Intercept" else f"z_{c}|{g}"
         if fam.scale_parameter is not None:
             roles[f"{n[fam.scale_parameter]}_log__"] = f"log({fam.scale_parameter})"
+        for name, lower in self.learned_parameters.items():
+            roles[f"{n[name]}_interval__"] = f"log({name} - {lower:g})"
         for t in s.pop_terms:
             if t.is_vector:
                 shown = ", ".join(f"({l})" for l in t.levels) if len(t.categorical) == 2 else ", ".join(t.levels)   # cells read (l, m)
@@ -875,12 +910,15 @@ def binomial(formula: str, data: pd.DataFrame, priors: Priors, *, link: str = "l
     return Model(formula, data, priors, family="binomial", link=link, center_predictors=center_predictors, categorical=categorical)
 
 
-def student(formula: str, data: pd.DataFrame, priors: Priors, *, nu: float,
+def student(formula: str, data: pd.DataFrame, priors: Priors, *, nu: float | None = None,
             center_predictors: bool = True, categorical: Mapping[str, object] | None = None) -> Model:
-    """Student-t response with fixed finite nu>1 and an explicit sigma scale prior.
+    """Student-t response with an explicit sigma scale prior and degrees of freedom ``nu``, fixed or learned.
 
-    The expected response is mu. Sigma is not the residual standard deviation.
-    Learned degrees of freedom and distributional auxiliary formulas are not supported.
+    ``nu=4`` (any finite ``nu > 1``) fixes them. ``nu=None``, the default, learns them under ``Priors(nu=...)``: a
+    ``Gamma``, ``Exponential``, ``HalfNormal`` or ``HalfCauchy`` prior truncated to ``nu > 1`` and renormalised there, as
+    brms's ``real<lower=1> nu`` (brms's default prior is ``gamma(2, 0.1)``, ``ab.Gamma(2, 0.1)``, which is not filled in;
+    A13, docs/student-learned-nu.md). The expected response is mu. Sigma is not the residual standard deviation.
+    Distributional auxiliary formulas are not supported.
     """
     return Model(formula, data, priors, family="student", nu=nu,
                  center_predictors=center_predictors, categorical=categorical)
