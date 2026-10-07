@@ -173,3 +173,59 @@ def test_swapped_levels_fail(gauss_bundle):
 def test_fixture_json_has_no_timestamps(gauss_bundle):
     text = json.dumps(gauss_bundle.fixture.raw)
     assert "generated" not in text and "date" not in gauss_bundle.fixture.meta
+
+
+# -- the correlated case (A02): L_1 is matched on Stan's cholesky_corr coordinate, not passed through -----------
+@pytest.fixture(scope="module")
+def correlated_bundle():
+    if not fx.has_fixture("gauss_slope_correlated") or fx.load_case("gauss_slope_correlated").get("gate"):
+        pytest.skip("correlated case not frozen or still gated")
+    return gates.Bundle("gauss_slope_correlated")
+
+
+def _L_coordinate(raw) -> int:
+    (idx,) = [int(e["index"]) - 1 for e in raw["upars"] if e["par"] == "L_1"]
+    return idx
+
+
+def test_corrupted_correlation_coordinate_fails(correlated_bundle):
+    """brms's unconstrained L_1 value must be Stan's cholesky_corr coordinate of L_1 at every point, so a fixture
+    whose u disagrees (as if brms sampled L_1 through another transform) stops the gradient gate."""
+    def mutate(raw):
+        raw["points"][2]["u"]["values"][_L_coordinate(raw)] += 1e-6
+    with pytest.raises(OracleMismatch, match="point 2: Stan's cholesky_corr coordinate 0 of L_1"):
+        gates.check_gradient(_corrupted(correlated_bundle, mutate))
+
+
+def test_corrupted_correlation_gradient_fails(correlated_bundle):
+    def mutate(raw):
+        raw["points"][0]["grad"]["values"][_L_coordinate(raw)] *= 1 + 1e-6
+    with pytest.raises(OracleMismatch, match=r"point 0: gradient of L\|g_cholesky_corr__\[0\]"):
+        gates.check_gradient(_corrupted(correlated_bundle, mutate))
+
+
+def test_corrupted_correlation_matrix_fails(correlated_bundle):
+    def mutate(raw):
+        raw["points"][1]["pars"]["Cor_1"]["values"][1] += 1e-8          # Cor_1[2, 1], column-major
+    with pytest.raises(OracleMismatch, match="point 1: the correlation matrix of 'g' differs from brms Cor_1"):
+        gates.check_derived(_corrupted(correlated_bundle, mutate))
+
+
+def test_independent_model_does_not_match_a_correlated_fixture(correlated_bundle):
+    """The adapter refuses to put '(1 + x || g)' against brms's '(1 + x | g)' (and the reverse) instead of
+    comparing the parameters the two share."""
+    import dataclasses
+
+    import autobayes as ab
+
+    pr = ab.Priors(intercept=ab.Normal(0, 5), b=ab.Normal(0, 2), sigma=ab.HalfNormal(1),
+                   sd={"g": {"Intercept": ab.HalfNormal(1), "x": ab.HalfNormal(0.5)}})
+    independent = ab.gaussian("y ~ x + (1 + x || g)", correlated_bundle.data, pr)
+    with pytest.raises(OracleMismatch, match="AutoBayes's term '\\(1 \\+ x \\|\\| g\\)' is independent"):
+        gates.Bundle("gauss_slope_correlated", model=independent)
+    if fx.has_fixture("gauss_slope_independent"):
+        case = fx.load_case("gauss_slope_independent")
+        data = fx.read_frame(case, fx.fixture_dir("gauss_slope_independent") / "data.csv")
+        correlated = ab.gaussian("y ~ x + (1 + x | g)", data, dataclasses.replace(pr, cor=ab.LKJ(2)))
+        with pytest.raises(OracleMismatch, match="AutoBayes's term '\\(1 \\+ x \\| g\\)' is correlated"):
+            gates.Bundle("gauss_slope_independent", model=correlated)

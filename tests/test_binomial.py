@@ -469,7 +469,7 @@ def test_invalid_inputs(cdata):
         ab.binomial("k | trials(n) ~ 0 + x + (1 | g)", cdata, PRIORS)
     for bad_formula, needle in [
         ("k ~ x + (1 | g)", "needs 'successes | trials"), ("p(k, n) ~ x + (1 | g)", "Bambi's 'p"),
-        ("k | trials(n) ~ x + (1 + x | g)", "varying slopes"), ("k | trials(n) ~ x + (1 | g/h/k)", "only two factors"),   # A03 accepts '(1 | g/h)'
+        ("k | trials(n) ~ x + (x | g)", "varying slopes"), ("k | trials(n) ~ x + (1 | g/h/k)", "only two factors"),   # A03 accepts '(1 | g/h)', A02 '(1 + x | g)'
         ("k | trials(n) ~ n + (1 | g)", "cannot also be a predictor"), ("k | trials(n) ~ x + (1 | n)", "cannot also be a predictor"),
         ("k | trials(k) ~ x + (1 | g)", "cannot also be the response"), ("k | n ~ x + (1 | g)", "exactly 'successes | trials"),
         ("k | weights(n) ~ x + (1 | g)", "exactly 'successes | trials"),

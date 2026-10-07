@@ -7,8 +7,7 @@ from tests.conftest import PRIORS, simulate
 
 
 @pytest.mark.parametrize("formula,needle", [
-    ("y ~ x + (1 + x | g)", "varying slopes"),
-    ("y ~ x + (x | g)", "varying slopes"),
+    ("y ~ x + (x | g)", "varying slopes"),                  # A02: '(1 + x | g)' is now accepted (brms's correlated form)
     ("y ~ x + (1 | g/h/k)", "only two factors"),          # A03: '(1 | g/h)' and '(1 | g:h)' are now accepted
     ("y ~ x + (1 | g:h:k)", "only two factors"),
     ("y ~ x + (1 | g) + (1 | g)", "duplicate grouping"),

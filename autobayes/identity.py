@@ -35,8 +35,11 @@ def freeze_target(model):
     def prior(p):
         return None if p is None else {'name': p.name, 'parameters': dict(p.params)}
     sd_priors = pr.sd_priors(s)
+    cor_priors = pr.cor_priors(s)
     # Varying slopes (A01) enter as their own entry, present only when the formula has one, so that every model
-    # without slopes keeps the identity it had under this schema version.
+    # without slopes keeps the identity it had under this schema version; the LKJ prior of a correlated term (A02)
+    # likewise enters only when the formula has one (the 'correlated' flag of the slope entries already separates
+    # '(1 + x | g)' from '(1 + x || g)').
     slopes = [(g, c, block) for (g, c), block in d.group_blocks.items() if c != 'Intercept']
     payload = {
         'schema': SCHEMA, 'family': model.family,
@@ -52,6 +55,8 @@ def freeze_target(model):
                     'Z': block.Z, 'noncentered': True} for g, block in d.group_designs.items()],
         **({'group_slopes': [{'factor': g, 'coef': c, 'Z': block.Z, 'correlated': s.group_term_of(g).correlated,
                               'prior': prior(sd_priors[(g, c)])} for g, c, block in slopes]} if slopes else {}),
+        **({'correlations': [{'factor': g, 'coefs': list(s.group_term_of(g).coefs), 'prior': prior(p)}
+                             for g, p in cor_priors.items()]} if cor_priors else {}),
         # The offset term (A06) likewise enters only when the formula has one.
         **({'offset': {'term': s.offset.term, 'values': d.offset}} if d.offset is not None else {}),
         'priors': {'intercept': prior(pr.intercept), 'sigma': prior(pr.sigma),

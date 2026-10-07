@@ -54,9 +54,7 @@ def two_factor():
 
 
 # -- 1. the grammar: what is accepted and every refusal by message -------------------------------------------
-REFUSALS = [
-    ("y ~ x + (1 + x | g)", {}, "brms's '|' gives the varying intercept and slope(s) a correlation matrix (an LKJ prior on their "
-                                "correlation), which is not supported yet; write '(1 + x || g)' for independent varying slopes"),
+REFUSALS = [                                   # '(1 + x | g)', once refused here, is brms's correlated form (A02, tests/test_correlated_slopes.py)
     ("y ~ x + (0 + x || g)", {}, "varying slopes without the varying intercept are not supported; write '(1 + x || g)' so that the intercept varies by 'g' as well"),
     ("y ~ x + (x || g)", {}, "varying slopes without the varying intercept are not supported; write '(1 + x || g)'"),
     ("y ~ x + (x | g)", {}, "varying slopes without the varying intercept are not supported"),
@@ -96,11 +94,13 @@ def test_refusals_name_the_construct(formula, kwargs, message):
         ab.parse_formula(formula, **kwargs)
 
 
-def test_correlated_and_slope_only_refusals_still_mention_varying_slopes():
-    """The needles of the pre-existing tests (``"varying slopes"``) keep matching the kept refusals."""
-    for formula in ("y ~ x + (1 + x | g)", "y ~ x + (x | g)", "y ~ x + (0 + x || g)"):
+def test_slope_only_refusals_still_mention_varying_slopes():
+    """The needles of the pre-existing tests (``"varying slopes"``) keep matching the kept refusals; ``(1 + x | g)`` is
+    no longer among them (A02)."""
+    for formula in ("y ~ x + (x | g)", "y ~ x + (0 + x || g)"):
         with pytest.raises(ab.FormulaError, match="varying slopes"):
             ab.parse_formula(formula)
+    assert ab.parse_formula("y ~ x + (1 + x | g)").group_terms == (GroupTerm("g", ("Intercept", "x"), True),)
 
 
 def test_accepted_forms_and_the_term_model():

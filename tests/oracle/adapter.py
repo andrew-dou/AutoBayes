@@ -10,8 +10,11 @@ column exactly when brms carries the separate (centred) `Intercept` parameter; `
 of coefficient-by-level standardised effects; `r_m_c` the corresponding effects on the natural scale. A
 group-level coefficient `c` of brms group `m` (the varying intercept, or a varying slope of `(1 + x || g)`) is
 matched to the AutoBayes block `(factor, coef)` by the partition of the rows `J_m` induces and by the content
-of `Z_m_c`, which is the coefficient's covariate column (ones for the intercept, `x` for a slope); correlated
-effects (`NC_m > 0`) have no adapter yet.
+of `Z_m_c`, which is the coefficient's covariate column (ones for the intercept, `x` for a slope). A correlated
+group (`cor = TRUE`, a declared `cholesky_factor_corr` `L_m`; `(1 + x | g)`, A02) must meet a correlated AutoBayes
+term and vice versa; its `L_m` is AutoBayes's `L` (in the same coefficient order, or the oracle stops), and its
+unconstrained coordinate(s) are Stan's `cholesky_corr` coordinates, which `coordinate_map` recomputes from `L_m`
+and checks against the fixture's `u` before mapping them to `L|g_cholesky_corr__`.
 """
 from __future__ import annotations
 
@@ -23,6 +26,7 @@ import pandas as pd
 import xarray as xr
 
 import autobayes as ab
+from autobayes.correlation import cholesky_corr_free
 from tests.oracle.fixture import Fixture, Point
 from tests.oracle.tolerances import DESIGN_ABS
 
@@ -47,11 +51,11 @@ def _prior(v):
 
 
 def priors_from_spec(spec: dict) -> ab.Priors:
-    """``{"intercept": ["Normal", 0, 5], "b": ["Normal", 0, 2] | {term: ...}, "sd": [...] | {factor: ...}, "sigma": [...],
-    "shape": [...], "phi": [...]}``."""
+    """``{"intercept": ["Normal", 0, 5], "b": ["Normal", 0, 2] | {term: ...}, "sd": [...] | {factor: ...}, "cor": {factor: ["LKJ", eta]},
+    "sigma": [...], "shape": [...], "phi": [...]}``."""
     return ab.Priors(intercept=_prior(spec.get("intercept")), b=_prior(spec.get("b")),
-                     sd=_prior(spec.get("sd")), sigma=_prior(spec.get("sigma")), shape=_prior(spec.get("shape")),
-                     phi=_prior(spec.get("phi")))
+                     sd=_prior(spec.get("sd")), cor=_prior(spec.get("cor")), sigma=_prior(spec.get("sigma")),
+                     shape=_prior(spec.get("shape")), phi=_prior(spec.get("phi")))
 
 
 def build_model(case: dict, data: pd.DataFrame) -> ab.Model:
@@ -131,7 +135,8 @@ def match_groups(fixture: Fixture, model: ab.Model) -> GroupMap:
     """Match every AutoBayes group block ``(factor, coef)`` to one brms group coefficient ``(id, cn)``: the one
     whose ``J_id`` induces the block's partition of the rows and whose ``Z_id_cn`` equals the block's covariate
     column (ones for the varying intercept, the slope's column otherwise); then check the coefficient's brms
-    label, the level order, that every brms coefficient was used, and that no group is correlated."""
+    label, the level order, that every brms coefficient was used, and that each group is correlated on both
+    sides or on neither."""
     ids, cns, levels_of, coef_cn, used = {}, {}, {}, {}, set()
     n = model.design.n
     for (g, coef), block in model.design.group_blocks.items():
@@ -181,21 +186,43 @@ def match_groups(fixture: Fixture, model: ab.Model) -> GroupMap:
         if M != len(t.coefs):
             raise OracleMismatch(f"{t.factor!r}: brms group {m} has M_{m} = {M} coefficients, AutoBayes {len(t.coefs)}")
         # brms's standata carries NC_m = M_m (M_m - 1) / 2 whether or not the effects are correlated; what says
-        # they are is the term's `cor` flag and a declared Cholesky factor L_m, neither of which this adapter maps.
+        # they are is the term's `cor` flag and a declared Cholesky factor L_m (A02): both must agree with the
+        # AutoBayes term, which is correlated exactly when it has two or more coefficients written with '|'.
         correlated = any(bool(grp["cor"]) for grp in fixture.groups if int(grp["id"]) == m)
-        if M > 1 and (correlated or f"L_{m}" in fixture.declarations or t.correlated):
+        declared = f"L_{m}" in fixture.declarations
+        if M > 1 and correlated != declared:
+            raise OracleMismatch(f"{t.factor!r}: brms group {m} has cor = {correlated} but L_{m} is {'' if declared else 'not '}declared")
+        if M > 1 and (correlated or declared) != t.has_correlation:
             raise OracleMismatch(
                 f"{t.factor!r}: brms group {m} has {M} coefficients with cor = {correlated}"
-                f"{' and a correlation matrix L_' + str(m) if f'L_{m}' in fixture.declarations else ''}; AutoBayes's term is "
-                f"{'correlated' if t.correlated else 'independent'} and the adapter maps independent effects only")
+                f"{' and a correlation matrix L_' + str(m) if declared else ''}; AutoBayes's term '{t.canonical}' is "
+                f"{'correlated' if t.has_correlation else 'independent'}")
     return GroupMap(ids, cns, levels_of, coef_cn)
+
+
+def correlation_order(model: ab.Model, gmap: GroupMap, factor: str) -> list[int]:
+    """brms's 0-based coefficient numbers in the AutoBayes coefficient order of a correlated factor: the permutation
+    that takes brms's ``L_m`` / ``Cor_m`` rows and columns to AutoBayes's ``L`` / ``cor``."""
+    return [gmap.coef_cn[(factor, c)] - 1 for c in model.spec.group_term_of(factor).coefs]
+
+
+def brms_cholesky(model: ab.Model, gmap: GroupMap, factor: str, pars: dict) -> np.ndarray:
+    """brms's ``L_m`` of a correlated factor in AutoBayes's coefficient order: ``L_m`` itself when the orders agree,
+    otherwise the Cholesky factor of the permuted ``Cor_m`` (a permuted Cholesky factor is not one)."""
+    m = gmap.brms_id[factor]
+    L = np.atleast_2d(pars[f"L_{m}"])
+    perm = correlation_order(model, gmap, factor)
+    if perm == list(range(len(perm))):
+        return L
+    return np.linalg.cholesky((L @ L.T)[np.ix_(perm, perm)])
 
 
 # -- points -------------------------------------------------------------------------------------------------
 def natural_point(model: ab.Model, point: Point, cmap: ColumnMap, gmap: GroupMap) -> dict:
-    """AutoBayes's natural-scale arguments (intercept, b, sd, z, sigma, shape, phi) at a brms point. An intercept-only
+    """AutoBayes's natural-scale arguments (intercept, b, sd, z, L, sigma, shape, phi) at a brms point. An intercept-only
     factor's ``sd`` and ``z`` are the scalar and the vector; a factor with varying slopes takes the
-    coefficient-keyed mappings ``{"Intercept": ..., "x": ...}`` (``Model.value_point``). ``sigma``, ``shape`` and
+    coefficient-keyed mappings ``{"Intercept": ..., "x": ...}`` (``Model.value_point``); a correlated factor's ``L`` is
+    brms's ``L_m`` (A02). ``sigma``, ``shape`` and
     ``phi`` are brms's parameters of those names (the Gaussian/Student-t/lognormal scale; the negative binomial/Gamma
     shape; the Beta precision)."""
     pars = point.pars
@@ -219,10 +246,11 @@ def natural_point(model: ab.Model, point: Point, cmap: ColumnMap, gmap: GroupMap
             sd[g], z[g] = per_sd, per_z
         else:
             sd[g], z[g] = per_sd["Intercept"], per_z["Intercept"]
+    L = {t.factor: brms_cholesky(model, gmap, t.factor, pars) for t in model.spec.correlated_terms}
     sigma = float(pars["sigma"]) if "sigma" in pars else None
     shape = float(pars["shape"]) if "shape" in pars else None
     phi = float(pars["phi"]) if "phi" in pars else None
-    return dict(intercept=intercept, b=b, sd=sd or None, z=z or None, sigma=sigma, shape=shape, phi=phi)
+    return dict(intercept=intercept, b=b, sd=sd or None, z=z or None, L=L or None, sigma=sigma, shape=shape, phi=phi)
 
 
 def value_point(model: ab.Model, point: Point, cmap: ColumnMap, gmap: GroupMap) -> dict:
@@ -247,6 +275,7 @@ def coordinate_map(fixture: Fixture, model: ab.Model, cmap: ColumnMap, gmap: Gro
     by_cn = {(g, cn): coef for (g, coef), cn in gmap.coef_cn.items()}     # (factor, brms coefficient number) -> coefficient
     roles = model.group_coefficient_names
     pars = fixture.points[0].pars
+    seen_L: dict[str, int] = {}                                            # L_m coordinates met so far, in index order
     out = []
     for e in fixture.upars:
         par, elem, transform, idx = e["par"], int(e["elem"]) - 1, e["transform"], int(e["index"]) - 1
@@ -277,6 +306,27 @@ def coordinate_map(fixture: Fixture, model: ab.Model, cmap: ColumnMap, gmap: Gro
             if (g, c + 1) not in by_cn:
                 raise OracleMismatch(f"{par} coefficient {c + 1} is not a group-level coefficient of {g!r}")
             target, expect = (roles[(g, by_cn[(g, c + 1)])]["offset"], int(gmap.level_of[g][j])), "identity"
+        elif par.startswith("L_") and int(par[2:]) in by_id:     # the Cholesky factor of a correlated factor (A02)
+            g = by_id[int(par[2:])]
+            if g not in model.correlation_names:
+                raise OracleMismatch(f"{par} is brms's correlation Cholesky factor of {g!r}, whose AutoBayes term is not correlated")
+            perm = correlation_order(model, gmap, g)
+            if perm != list(range(len(perm))):
+                raise OracleMismatch(
+                    f"{g!r}: brms orders the coefficients as {[by_cn[(g, c + 1)] for c in range(len(perm))]}, AutoBayes as "
+                    f"{list(model.spec.group_term_of(g).coefs)}; the cholesky_corr coordinates of {par} are not comparable")
+            k = seen_L.get(g, 0)
+            seen_L[g] = k + 1
+            # brms samples L_m on Stan's cholesky_corr coordinates (the probing saw a non-elementwise change, 'other'):
+            # recompute coordinate k from L_m at every point and require it to be the fixture's u, so that the
+            # AutoBayes transform is Stan's transform coordinate by coordinate before the gradient is compared.
+            for q, pt_ in enumerate(fixture.points):
+                u = cholesky_corr_free(np.atleast_2d(pt_.pars[par]))
+                if k >= u.size or abs(u[k] - pt_.u[idx]) > 1e-10:
+                    raise OracleMismatch(
+                        f"point {q}: Stan's cholesky_corr coordinate {k} of {par} is {u[k] if k < u.size else 'absent'!r}; "
+                        f"brms's unconstrained value is {pt_.u[idx]!r}")
+            target, expect = (f"{model.correlation_names[g]['L']}_cholesky_corr__", k), "other"
         else:
             raise OracleMismatch(f"no adapter for brms parameter {par!r} ({fixture.declarations.get(par, 'undeclared')})")
         if transform != expect:
@@ -289,7 +339,8 @@ def coordinate_map(fixture: Fixture, model: ab.Model, cmap: ColumnMap, gmap: Gro
 def draws(fixture: Fixture, model: ab.Model, cmap: ColumnMap, gmap: GroupMap) -> az.InferenceData:
     """The fixture's points as one chain of posterior draws under AutoBayes's names: the raw-scale intercept
     (brms ``b_Intercept``), coefficients by term, group SDs and effects by level for every group-level
-    coefficient (``1|g`` from ``r_m_1``, ``x|g`` from the slope's ``r_m_c``), sigma, shape or phi."""
+    coefficient (``1|g`` from ``r_m_1``, ``x|g`` from the slope's ``r_m_c``), the Cholesky factor and correlation
+    matrix of a correlated factor (``L|g`` from ``L_m``, ``cor|g`` from ``L_m L_m^T``), sigma, shape or phi."""
     pts = fixture.points
     names = model.names
     data, coords = {}, {"chain": [0], "draw": np.arange(len(pts))}
@@ -317,6 +368,12 @@ def draws(fixture: Fixture, model: ab.Model, cmap: ColumnMap, gmap: GroupMap) ->
         data[roles["sd"]] = (("chain", "draw"), sd[None, :])
         data[roles["group_effect"]] = (("chain", "draw", roles["coordinate"]), r[None])
         coords[roles["coordinate"]] = list(model.design.group_blocks[(g, coef)].levels)
+    for g, roles in model.correlation_names.items():             # L and the correlation matrix of a correlated factor (A02)
+        L = np.stack([brms_cholesky(model, gmap, g, p.pars) for p in pts])
+        dims = ("chain", "draw", roles["coordinate"], roles["coordinate_T"])
+        data[roles["L"]] = (dims, L[None])
+        data[roles["cor"]] = (dims, (L @ np.swapaxes(L, -1, -2))[None])
+        coords[roles["coordinate"]] = coords[roles["coordinate_T"]] = list(model.spec.group_term_of(g).coefs)
     if "sigma" in names and "sigma" in pts[0].pars:
         data[names["sigma"]] = (("chain", "draw"), np.array([float(p.pars["sigma"]) for p in pts])[None, :])
     if "shape" in names and "shape" in pts[0].pars:
