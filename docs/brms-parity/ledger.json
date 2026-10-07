@@ -196,11 +196,26 @@
    "depends_on": [
     "A01_independent_slopes"
    ],
-   "status": "implementing",
+   "status": "gates_green",
    "summary": "(1 + x | g) with an LKJ prior on the correlation; Bambi's LKJ path is disabled, so a custom Cholesky transform (may park)",
    "pr": null,
    "attempts": 1,
-   "gates": {},
+   "gates": {
+    "sha": "f6582c8f8ab9",
+    "dirty_tree": false,
+    "base": "origin/main",
+    "when": "2026-10-07T23:10Z",
+    "results": {
+     "immutability": {
+      "status": "pass",
+      "seconds": 0.0
+     },
+     "oracle": {
+      "status": "pass",
+      "seconds": 72.7
+     }
+    }
+   },
    "divergences": [],
    "next_action": "formula lane agent, worktree parity-a02 (stacked on the interactions/transforms branch); may park",
    "fixtures": {
