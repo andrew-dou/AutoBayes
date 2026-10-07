@@ -196,9 +196,9 @@
    "depends_on": [
     "A01_independent_slopes"
    ],
-   "status": "gates_green",
+   "status": "merged",
    "summary": "(1 + x | g) with an LKJ prior on the correlation; Bambi's LKJ path is disabled, so a custom Cholesky transform (may park)",
-   "pr": null,
+   "pr": 35,
    "attempts": 1,
    "gates": {
     "sha": "f6582c8f8ab9",
@@ -216,8 +216,11 @@
      }
     }
    },
-   "divergences": [],
-   "next_action": "formula lane agent, worktree parity-a02 (stacked on the interactions/transforms branch); may park",
+   "divergences": [
+    "D20",
+    "D21"
+   ],
+   "next_action": "",
    "fixtures": {
     "pr": 28,
     "cases": [
