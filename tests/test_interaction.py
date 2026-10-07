@@ -117,11 +117,12 @@ def test_canonical_expansion_equivalence_and_refusals():
                          ("y ~ x*z + w*v + (1 | g)", {"z": "a", "v": "p"})]:                     # shorthand twice
         model = ab.gaussian(formula, df_w, G_PRIORS, categorical=cat)
         assert len(model.spec.interactions) == 2  # M3a-3 extends the old scope guard.
-    with pytest.raises(ab.FormulaError, match="two numeric terms"):
-        ab.gaussian("y ~ x + z + x:z + (1 | g)", df.assign(z=df.x ** 2), G_PRIORS)
+    # A04 (tests/test_general_interactions.py): two numeric or two categorical terms may interact; both were refused before
+    both_numeric = ab.gaussian("y ~ x + z + x:z + (1 | g)", df.assign(z=df.x ** 2), G_PRIORS)
+    assert both_numeric.spec.columns == ("x", "z", "x:z") and not both_numeric.spec.pop_term("x:z").is_vector
     df2 = df.assign(w=np.where(df.index % 2 == 0, "p", "q"))
-    with pytest.raises(ab.FormulaError, match="two categorical terms"):
-        ab.gaussian("y ~ z + w + z:w + (1 | g)", df2, G_PRIORS, categorical={"z": "a", "w": "p"})
+    both_categorical = ab.gaussian("y ~ z + w + z:w + (1 | g)", df2, G_PRIORS, categorical={"z": "a", "w": "p"})
+    assert both_categorical.spec.columns == ("z[b]", "z[c]", "w[q]", "z[b]:w[q]", "z[c]:w[q]")
     with pytest.raises(ab.FormulaError, match="grouping factor 'g' cannot enter"):
         build("gaussian", df, G_PRIORS, formula="y ~ x + z + x:g + (1 | g)")
     with pytest.raises(ab.FormulaError, match="cannot interact with itself"):

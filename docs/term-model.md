@@ -6,25 +6,33 @@ read from a flat description of the formula (`predictors`, `terms`, `columns`, `
 from them, kept so that existing callers keep working. brms's names for the same things are given where they
 exist, so the oracle adapter (`tests/oracle/adapter.py`) extends to new term kinds without renaming.
 
-## Population-level terms: `PopTerm(name, kind, columns, levels)`
+## Population-level terms: `PopTerm(name, kind, columns, levels, categorical)`
 
 One entry per term as written, in design order (main effects, then interactions):
 
-| formula | `kind` | `columns` (design labels, Bambi's own) | `levels` (coefficient levels) |
-| --- | --- | --- | --- |
-| `x` | `numeric` | `("x",)` | `()` |
-| `z` (declared `categorical={"z": "p"}`) | `categorical` | `("z[q]", "z[r]")`; all levels under `0 +` | the coefficient levels of the `Categorical` |
-| `x:z` (`x*z` expands to `x + z + x:z`) | `interaction` | `("x:z[q]", "x:z[r]")` | the non-reference levels of `z` |
+| formula | `kind` | `columns` (design labels, Bambi's own) | `levels` (coefficient levels) | `categorical` |
+| --- | --- | --- | --- | --- |
+| `x` | `numeric` | `("x",)` | `()` | `()` |
+| `z` (declared `categorical={"z": "p"}`) | `categorical` | `("z[q]", "z[r]")`; all levels under `0 +` | the coefficient levels of the `Categorical` | `("z",)` |
+| `x:z` (`x*z` expands to `x + z + x:z`) | `interaction` | `("x:z[q]", "x:z[r]")` | the non-reference levels of `z` | `("z",)` |
+| `x:w` (A04, docs/interactions.md) | `interaction` | `("x:w",)` | `()` | `()` |
+| `z:h` (A04) | `interaction` | `("z[q]:h[h2]", "z[q]:h[h3]", ...)`, first operand slowest | the cells `("q, h2", "q, h3", ...)`, Bambi's labels | `("z", "h")` |
+| `log(xpos)`, `I(x^2)` (A05, docs/transforms.md) | `transform` | `("log(xpos)",)`, the evaluated column named as written | `()` | `()` |
 
-`term.operands` are the data columns the term is built from (`(x,)`, `(z,)`, `(x, z)`); `term.is_vector` says
-whether it has one coefficient per level. A categorical term's levels are known once the data are seen:
-before that it has no levels and its single column is its own name, a placeholder, exactly as
+`term.operands` are the data columns the term is built from (`(x,)`, `(z,)`, `(x, z)`, `(x, w)`, `(z, h)`, and
+`(xpos,)` for `log(xpos)`); `term.categorical` names the operands declared categorical and `term.is_vector` (one
+coefficient per level) is whether there are any, which is known before the data are seen. A transform term's
+`term.transform` (a `Transform(fn, column, constant)`) says how its column is evaluated, `term.bambi_name` is the
+backticked name under which Bambi reads the evaluated column from the fitted frame, and `ModelSpec.transform_terms`
+lists the transform terms. A categorical term's levels are known once the
+data are seen: before that it has no levels and its single column is its own name, a placeholder, exactly as
 `ModelSpec.columns` has always listed it. The `Categorical` objects (`ModelSpec.categoricals`) keep what a
 categorical term needs beyond its name: reference level, fitted levels, unused declared categories, coding.
-`pop_term(name, kind, categoricals)` builds a term from those; `pop_term_design(term, frame)` is its
-`(n, len(columns))` raw design block on any frame, which both the Bambi verification in
-`Model._extract_design` and `predict.raw_design` use. The coefficients of a term are brms's `b` entries for
-its columns; `Model.coefficients` lists `(column, term, index)` per column.
+`pop_term(name, kind, categoricals)` builds a term from those; `pop_term_design(term, frame, categoricals)` is
+its `(n, len(columns))` raw design block on any frame (the `Categorical`s are needed only to build the cells of
+`z:h`), which both the Bambi verification in `Model._extract_design` and `predict.raw_design` use. The
+coefficients of a term are brms's `b` entries for its columns; `Model.coefficients` lists `(column, term, index)`
+per column. `ModelSpec.pop_columns` lists the data columns the population-level terms read.
 
 ## Group-level terms: `GroupTerm(factor, coefs, correlated)`
 

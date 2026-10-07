@@ -140,7 +140,7 @@ def test_grammar_accepts_population_only_forms_and_keeps_refusals():
         ab.parse_formula("y ~ x").group_term
     for formula, needle in [("y ~ x + (1 | g) + (1 | g)", "duplicate grouping"),
                             ("y ~ x + (1 + x | g)", "varying slopes"), ("y ~ (1 | g)", "no population-level predictor"), ("y ~ x + (x || g)", "without the varying intercept"),
-                            ("y ~ log(x)", "function calls"), ("y ~ x + x", "duplicated"), ("y ~ y", "response cannot also be"),
+                            ("y ~ sin(x)", "function calls"), ("y ~ x + x", "duplicated"), ("y ~ y", "response cannot also be"),   # A05 accepts log(x)
                             ("y ~ x:z", "main effect 'x' is missing"), ("y ~ x + (1 | g/h/k)", "only two factors"), ("y x", "expected 'response ~ terms'")]:   # A03 accepts '(1 | g/h)'
         with pytest.raises(ab.FormulaError, match=needle):
             ab.parse_formula(formula)

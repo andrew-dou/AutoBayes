@@ -258,11 +258,31 @@
    "depends_on": [
     "P4_term_model"
    ],
-   "status": "implementing",
+   "status": "gates_green",
    "summary": "numeric:numeric, categorical:categorical and higher-order interactions with brms/R coding",
    "pr": null,
    "attempts": 1,
-   "gates": {},
+   "gates": {
+    "sha": "ebf63b11acd0",
+    "dirty_tree": false,
+    "base": "origin/main",
+    "when": "2026-10-07T19:31Z",
+    "results": {
+     "immutability": {
+      "status": "pass",
+      "seconds": 0.0
+     },
+     "oracle": {
+      "status": "pass",
+      "seconds": 82.7
+     },
+     "suite": {
+      "status": "pass",
+      "seconds": 447.6
+     }
+    },
+    "note": "same branch and run as A05_formula_transforms (both features on parity/a04-a05-interactions-transforms)"
+   },
    "divergences": [],
    "next_action": "formula lane agent, worktree parity-form2 (stacked on #31's branch)",
    "fixtures": {
@@ -280,11 +300,30 @@
    "depends_on": [
     "P4_term_model"
    ],
-   "status": "implementing",
+   "status": "gates_green",
    "summary": "in-formula transforms such as log(x), I(x^2), scale(x)",
    "pr": null,
    "attempts": 1,
-   "gates": {},
+   "gates": {
+    "sha": "ebf63b11acd0",
+    "dirty_tree": false,
+    "base": "origin/main",
+    "when": "2026-10-07T19:31Z",
+    "results": {
+     "immutability": {
+      "status": "pass",
+      "seconds": 0.0
+     },
+     "oracle": {
+      "status": "pass",
+      "seconds": 82.7
+     },
+     "suite": {
+      "status": "pass",
+      "seconds": 447.6
+     }
+    }
+   },
    "divergences": [],
    "next_action": "formula lane agent, worktree parity-form2 (stacked on #31's branch)",
    "fixtures": {

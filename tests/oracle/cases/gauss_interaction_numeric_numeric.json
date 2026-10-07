@@ -5,10 +5,6 @@
  "note": "a numeric-by-numeric interaction column x:w",
  "seed": 144,
  "n_points": 8,
- "gate": {
-  "expect": "fail",
-  "reason": "A04_general_interactions not implemented; remove this field when it lands"
- },
  "data": {
   "generator": "tier_a",
   "seed": 44,

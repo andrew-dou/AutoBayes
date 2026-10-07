@@ -71,8 +71,8 @@ REFUSALS = [
     ("cnt ~ x + (1 | offset(g))", {}, "transformed grouping factors are not supported"),
     ("cnt ~ offset(exposure)", {}, "no population-level predictor"),
     ("cnt ~ offset(exposure) + (1 | g)", {}, "no population-level predictor"),
-    ("cnt ~ x + offset(log(exposure)) + log(exposure)", {}, "function calls and transformations inside the formula are not supported"),
-    ("cnt ~ x + offset(log(exposure)):z", {}, "function calls and transformations inside the formula are not supported"),
+    ("cnt ~ x + offset(log(exposure)) + log(exposure, 2)", {}, "function calls and transformations inside the formula are not supported"),   # A05 accepts log(exposure) next to the offset
+    ("cnt ~ x + offset(log(exposure)):z", {}, "offset() cannot enter an interaction; an offset is a known column added to the linear predictor with no coefficient"),
 ]
 
 
