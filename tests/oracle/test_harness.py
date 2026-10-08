@@ -170,6 +170,40 @@ def test_swapped_levels_fail(gauss_bundle):
         gates.check_logp(_corrupted(gauss_bundle, mutate))
 
 
+def test_corrupted_default_prior_table_fails(gauss_bundle):
+    """G6 compares every row of brms's default_prior() with ab.default_priors() written as brms's table (A07): a changed
+    location, a missing row or a changed bound fails; the same table spelled with other whitespace and number
+    formatting passes."""
+    def location(raw):
+        raw["default_prior"][0]["prior"] = "student_t(3, 0.8, 2.5)"            # brms: student_t(3, 0.9, 2.5)
+    def row(raw):
+        del raw["default_prior"][2]                                            # the b row of coefficient x
+    def bound(raw):
+        (sigma,) = [r for r in raw["default_prior"] if r["class"] == "sigma"]
+        sigma["lb"] = ""
+    for mutate in (location, row, bound):
+        with pytest.raises(OracleMismatch, match="differs from brms's default_prior"):
+            gates.check_default_prior(_corrupted(gauss_bundle, mutate))
+    def respelled(raw):
+        raw["default_prior"][0]["prior"] = "student_t( 3,0.90, 2.5e0 )"
+        (sigma,) = [r for r in raw["default_prior"] if r["class"] == "sigma"]
+        sigma["lb"] = "0.0"
+    gates.check_default_prior(_corrupted(gauss_bundle, respelled))
+
+
+def test_default_prior_numbers_compare_to_the_last_digit_brms_prints():
+    """brms writes the offset-shifted location of poisson_offset with 15 significant digits; one unit in the last of
+    them is a different prior."""
+    if not fx.has_fixture("poisson_offset"):
+        pytest.skip("fixture not frozen")
+    bundle = gates.Bundle("poisson_offset")
+    assert bundle.fixture.default_prior[0]["prior"] == "student_t(3, -0.978004218445523, 2.5)"
+    def last_digit(raw):
+        raw["default_prior"][0]["prior"] = "student_t(3, -0.978004218445524, 2.5)"
+    with pytest.raises(OracleMismatch, match="differs from brms's default_prior"):
+        gates.check_default_prior(_corrupted(bundle, last_digit))
+
+
 def test_fixture_json_has_no_timestamps(gauss_bundle):
     text = json.dumps(gauss_bundle.fixture.raw)
     assert "generated" not in text and "date" not in gauss_bundle.fixture.meta

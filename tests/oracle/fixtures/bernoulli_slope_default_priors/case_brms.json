@@ -1,0 +1,20 @@
+{
+ "factors": {
+  "g": [
+   "a",
+   "b",
+   "c",
+   "d",
+   "e",
+   "f"
+  ]
+ },
+ "family": {
+  "family": "bernoulli"
+ },
+ "formula": "yb ~ x + (1 + x | g)",
+ "id": "bernoulli_slope_default_priors",
+ "n_points": 8,
+ "priors": [],
+ "seed": 173
+}

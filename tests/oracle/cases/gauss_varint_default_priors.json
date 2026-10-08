@@ -1,0 +1,40 @@
+{
+ "id": "gauss_varint_default_priors",
+ "tier": "A",
+ "feature": "A07_default_priors",
+ "note": "no priors on the brms side: brms's defaults are the model (Intercept student_t(3, 0.6, 2.5) at round(median(y), 1), flat b, sd and sigma student_t(3, 0, 2.5) with lower bound 0); AutoBayes builds it with ab.default_priors()",
+ "seed": 171,
+ "n_points": 8,
+ "data": {
+  "generator": "baseline",
+  "seed": 71,
+  "n": 36,
+  "newdata": {
+   "seed": 171,
+   "n": 5
+  }
+ },
+ "brms": {
+  "formula": "y ~ x + (1 | g)",
+  "family": {
+   "family": "gaussian"
+  },
+  "factors": {
+   "g": [
+    "a",
+    "b",
+    "c",
+    "d",
+    "e",
+    "f"
+   ]
+  },
+  "priors": []
+ },
+ "autobayes": {
+  "constructor": "gaussian",
+  "formula": "y ~ x + (1 | g)",
+  "kwargs": {},
+  "priors": "default"
+ }
+}

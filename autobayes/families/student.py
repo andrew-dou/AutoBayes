@@ -8,6 +8,7 @@ import numpy as np
 
 from autobayes.families.spec import STANDARD_PREDICTION_KINDS, FamilySpec
 from autobayes.formula import validate_numeric_response
+from autobayes.priors import Gamma, HalfStudentT, describe_prior
 
 NU_LOWER = 1.0                    # brms's real<lower=1> nu: a learned nu's prior is truncated here, and it is sampled as log(nu - 1)
 
@@ -33,14 +34,14 @@ def _draw_response(model, post, eta, mean, df, rng):
 
 def _likelihood_lines(model) -> list[str]:
     if model.nu is None:                                       # learned (A13)
-        return [f"  sigma ~ {model.priors.sigma}",
-                f"  nu ~ {model.priors.nu}, truncated to nu > {NU_LOWER:g} and renormalised there (brms's real<lower=1> nu:",
+        return [f"  sigma ~ {describe_prior(model.priors.sigma, lb=0)}",
+                f"  nu ~ {describe_prior(model.priors.nu, lb=NU_LOWER)}, truncated to nu > {NU_LOWER:g} and renormalised there (brms's real<lower=1> nu:",
                 f"       the prior minus its log probability of nu > {NU_LOWER:g}); nu is learned, sampled as log(nu - {NU_LOWER:g})",
                 "", "Likelihood",
                 "  y_i ~ StudentT(nu, mu_i, sigma); E[y_i] = mu_i",
                 "  sigma is scale, not residual SD; variance = sigma^2 * nu/(nu-2) for nu>2",
                 "  variance is infinite for 1<nu<=2."]
-    return [f"  sigma ~ {model.priors.sigma}", f"  nu = {model.nu:g} (fixed, not sampled)", "", "Likelihood",
+    return [f"  sigma ~ {describe_prior(model.priors.sigma, lb=0)}", f"  nu = {model.nu:g} (fixed, not sampled)", "", "Likelihood",
             "  y_i ~ StudentT(nu, mu_i, sigma); E[y_i] = mu_i",
             "  sigma is scale, not residual SD; variance = sigma^2 * nu/(nu-2) for nu>2",
             "  variance is infinite for 1<nu<=2. Learned nu is not supported."]
@@ -67,4 +68,7 @@ STUDENT = FamilySpec(
     centred_intercept_note=(),
     deterministic_note="mu = linear predictor",
     learnable_parameters=MappingProxyType({"nu": NU_LOWER}),
+    default_prior_link="identity",                                  # brms reads y as given, as for the Gaussian
+    default_scale_prior=lambda scale: HalfStudentT(3, scale),       # brms sigma: student_t(3, 0, scale), lb 0
+    default_learned_priors=MappingProxyType({"nu": lambda: Gamma(2, 0.1)}),   # brms nu: gamma(2, 0.1), lb 1
 )

@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from autobayes.families.spec import NO_FIXED_PARAMETERS, STANDARD_PREDICTION_KINDS, FamilySpec
 from autobayes.formula import validate_numeric_response
+from autobayes.priors import HalfStudentT, describe_prior
 
 
 def _validate_response(spec, data) -> None:
@@ -15,7 +16,7 @@ def _draw_response(model, post, eta, mean, df, rng):
 
 
 def _likelihood_lines(model) -> list[str]:
-    return [f"  sigma ~ {model.priors.sigma}", "", "Likelihood", "  y_i ~ Normal(mu_i, sigma)"]
+    return [f"  sigma ~ {describe_prior(model.priors.sigma, lb=0)}", "", "Likelihood", "  y_i ~ Normal(mu_i, sigma)"]
 
 
 GAUSSIAN = FamilySpec(
@@ -38,4 +39,6 @@ GAUSSIAN = FamilySpec(
     likelihood_lines=_likelihood_lines,
     centred_intercept_note=(),
     deterministic_note="mu = linear predictor",
+    default_prior_link="identity",                                  # brms reads y as given: student_t(3, round(median(y), 1), max(2.5, round(mad(y), 1)))
+    default_scale_prior=lambda scale: HalfStudentT(3, scale),       # brms sigma: student_t(3, 0, scale), lb 0
 )

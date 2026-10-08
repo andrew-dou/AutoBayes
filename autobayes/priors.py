@@ -8,13 +8,17 @@ lognormal (the SD of ``log y``), ``shape`` for the negative binomial and Gamma f
 (the precision), and ``nu`` for a Student-t model that learns its degrees of freedom (``nu=None``; brms class ``nu``,
 truncated to ``nu > 1``). Every class the model has must be given, and a class the model does
 not have is refused (M3c-1: ``sd`` without a group term; ``shape`` for a Gaussian model); there are no silent
-defaults here (Bambi would supply some, and that is exactly what this layer refuses to let happen). For the
+defaults here (Bambi would supply some, and that is exactly what this layer refuses to let happen). brms's own
+defaults are available on request, explicitly: ``ab.default_priors(formula, data, ...)`` returns them as a ``Priors``
+(A07, ``autobayes.default_priors``), each prior marked ``source="default"``. An intercept-only model has no ``b``
+coefficient and needs no ``b`` prior (D2). For the
 Bernoulli family the intercept and slope priors are on the logit scale and ``sigma`` must be omitted.
 
 The parameterisation follows PyMC/Bambi: ``Normal(mu, sigma)`` is mean and standard
 deviation, ``StudentT(nu, mu, sigma)`` has a scale ``sigma``, ``Exponential(lam)`` is a
-rate, ``HalfCauchy(beta)`` a scale, ``Gamma(alpha, beta)`` is shape and rate. This is also brms's (Stan's)
-convention.
+rate, ``HalfCauchy(beta)`` a scale, ``Gamma(alpha, beta)`` is shape and rate, ``InverseGamma(alpha, beta)`` shape
+and scale. This is also brms's (Stan's) convention. ``Flat()`` is brms's flat prior (its default for ``b``): improper,
+it adds nothing to the log density. ``brms_prior`` writes any of them in brms's syntax.
 """
 from __future__ import annotations
 
@@ -22,13 +26,14 @@ import re
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 
-_LOCATION = {"Normal", "StudentT"}
-_SCALE = {"HalfNormal", "HalfStudentT", "Exponential", "HalfCauchy", "Gamma"}
+_LOCATION = {"Normal", "StudentT", "Flat"}       # Flat: brms's improper flat prior, its default for b (A07)
+_SCALE = {"HalfNormal", "HalfStudentT", "Exponential", "HalfCauchy", "Gamma", "InverseGamma"}
 _CORRELATION = {"LKJ"}
 AUXILIARY = {"sigma": "residual SD", "shape": "shape parameter", "phi": "precision parameter"}   # the Priors fields a family's scale_parameter can name
 # The priors of a learned parameter with a lower bound (the Student-t nu, A13): the positive-support priors whose
 # truncation at the bound PyMC can renormalise (it needs their CDF; PyMC has none for HalfStudentT).
 TRUNCATABLE = frozenset({"Gamma", "Exponential", "HalfNormal", "HalfCauchy"})
+_NO_CDF = frozenset({"HalfStudentT"})            # positive-support priors whose CDF PyMC lacks, so no truncation of them
 
 
 class PriorError(ValueError):
@@ -39,6 +44,10 @@ class PriorError(ValueError):
 class Prior:
     name: str
     params: Mapping[str, float] = field(default_factory=dict)
+    # Who chose the prior: "user" (a constructor call) or "default" (``ab.default_priors``, brms's default for its class;
+    # A07). It is not part of the prior: equality, ``str()``, the target identity and the graph ignore it, while
+    # ``describe()``, ``Priors.table`` and fit records report it.
+    source: str = field(default="user", compare=False, repr=False)
 
     def __str__(self) -> str:
         inside = ", ".join(f"{k}={v:g}" for k, v in self.params.items())
@@ -100,6 +109,58 @@ def Gamma(alpha: float, beta: float) -> Prior:
     return Prior("Gamma", {"alpha": _positive("alpha", alpha), "beta": _positive("beta", beta)})
 
 
+def InverseGamma(alpha: float, beta: float) -> Prior:
+    """Shape ``alpha`` and scale ``beta`` (density proportional to ``x^(-alpha - 1) exp(-beta / x)``), as Stan's
+    ``inv_gamma(alpha, beta)`` and PyMC's ``InverseGamma``; brms's default prior on the negative binomial ``shape`` is
+    ``inv_gamma(0.4, 0.3)``."""
+    return Prior("InverseGamma", {"alpha": _positive("alpha", alpha), "beta": _positive("beta", beta)})
+
+
+def Flat() -> Prior:
+    """brms's flat prior, an empty prior string (its default for ``b``, and for the intercept when predictors are not
+    centred): the improper uniform density on the real line, PyMC's ``Flat``, which adds nothing to the log density. A
+    location prior (intercept and ``b``); a model with one has no prior predictive distribution, so
+    ``prior_predictive()`` refuses it."""
+    return Prior("Flat", {})
+
+
+_BRMS = {   # prior name -> (brms's distribution, its arguments in Stan's order: a parameter name, or a literal number)
+    "Normal": ("normal", ("mu", "sigma")), "StudentT": ("student_t", ("nu", "mu", "sigma")),
+    "HalfNormal": ("normal", (0, "sigma")), "HalfStudentT": ("student_t", ("nu", 0, "sigma")),
+    "HalfCauchy": ("cauchy", (0, "beta")), "Exponential": ("exponential", ("lam",)),
+    "Gamma": ("gamma", ("alpha", "beta")), "InverseGamma": ("inv_gamma", ("alpha", "beta")), "LKJ": ("lkj", ("eta",)),
+}
+
+
+def brms_prior(prior: Prior) -> str:
+    """The prior in brms's syntax with its numbers as R prints them: ``normal(0, 5)``, ``student_t(3, 0.9, 2.5)``,
+    ``gamma(2, 0.1)``, ``inv_gamma(0.4, 0.3)``, ``lkj(1)``; a half prior is the full distribution at location 0, as brms
+    writes it on a class bounded below by 0 (``HalfStudentT(3, 2.5)`` is ``student_t(3, 0, 2.5)``, ``HalfNormal(1)``
+    ``normal(0, 1)``); ``Flat()`` is the empty string, brms's flat prior."""
+    if prior.name == "Flat":
+        return ""
+    if prior.name not in _BRMS:
+        raise PriorError(f"{prior} has no brms spelling")
+    from autobayes.default_priors import r_number
+
+    fn, args = _BRMS[prior.name]
+    return f"{fn}({', '.join(r_number(float(prior.params[a] if isinstance(a, str) else a)) for a in args)})"
+
+
+def describe_prior(prior: Prior, lb: float | None = None) -> str:
+    """How ``describe()`` prints a prior: ``str(prior)``, followed for a brms default (``ab.default_priors``) by brms's
+    spelling and bound, ``HalfStudentT(nu=3, sigma=2.5)   (brms default student_t(3, 0, 2.5), lb 0)``. A user's prior
+    prints as it always has."""
+    if getattr(prior, "source", "user") != "default":
+        return str(prior)
+    text = brms_prior(prior)
+    if not text:
+        return f"{prior}   (brms default: flat, improper)"
+    from autobayes.default_priors import r_number
+
+    return f"{prior}   (brms default {text}{'' if lb is None else ', lb ' + r_number(lb)})"
+
+
 def LKJ(eta: float) -> Prior:
     """brms's ``lkj(eta)`` on the correlation matrix of a correlated group term, placed on its Cholesky factor as
     Stan's ``lkj_corr_cholesky(eta)``: ``eta = 1`` is uniform over correlation matrices, ``eta > 1`` concentrates on
@@ -116,7 +177,8 @@ class Priors:
     must cover every predictor term exactly. For a categorical term the entry is one prior
     (the same for every non-reference level) or a mapping ``{level: prior}`` covering exactly
     the actual coefficient levels (all levels for the first categorical main effect
-    without an intercept; non-reference levels otherwise). Omit intercept exactly
+    without an intercept; non-reference levels otherwise); an intercept-only formula has no coefficient, and ``b``
+    may then be omitted (brms needs no ``b`` prior there either, D2). Omit intercept exactly
     when the formula removes it. ``sd`` is keyed by grouping factor (an exact-key mapping; a single
     intercept-only factor also accepts a bare Prior): an intercept-only factor takes one Prior (or the
     one-entry mapping ``{"Intercept": prior}``), a factor with varying slopes a mapping over exactly its
@@ -152,6 +214,8 @@ class Priors:
             spec = ModelSpec(formula="", response="", predictors=tuple(spec), group=None)
         if isinstance(self.b, Prior):
             return {col: self.b for col in spec.columns}
+        if self.b is None and not spec.pop_terms:             # an intercept-only model: no coefficient, so no b prior (D2)
+            return {}
         if not isinstance(self.b, Mapping):
             raise PriorError(f"b must be a Prior or a mapping from term to prior, got {type(self.b).__name__}")
         given = dict(self.b)
@@ -348,6 +412,22 @@ class Priors:
                 raise PriorError(f"prior for 'cor:{g}' must be a correlation prior ({sorted(_CORRELATION)}, brms's lkj(eta)), got {prior}")
         return by_factor
 
+    def table(self, spec, family="gaussian", *, center_predictors: bool = True) -> list[dict[str, str]]:
+        """These priors in brms's table form, the rows of brms's ``default_prior()`` (prior, class, coef, group, resp,
+        dpar, nlpar, lb, ub, tag, source; all strings), sorted as brms sorts them: ``autobayes.default_priors.prior_table``.
+        ``spec`` is the parsed formula with its data seen (``model.spec``; ``Model.prior_table()`` passes the model's own),
+        ``family`` a family name or the model's ``FamilySpec``, ``center_predictors`` whether the intercept is centred
+        (otherwise it is brms's ``b`` coefficient ``Intercept``)."""
+        from autobayes.default_priors import prior_table
+
+        return prior_table(self, spec, family, center_predictors=center_predictors)
+
+    def improper(self, spec) -> list[str]:
+        """The parameters under a flat prior (``Flat()``, brms's default for ``b``), labelled as fit records label them
+        (``intercept``, ``b:x``); such a model has no prior predictive distribution."""
+        out = ["intercept"] if getattr(spec, "intercept", True) and isinstance(self.intercept, Prior) and self.intercept.name == "Flat" else []
+        return out + [f"b:{col}" for col, p in self.coefficient_priors(spec).items() if p.name == "Flat"]
+
     def group_priors(self, spec) -> dict[str, Prior]:
         """The SD prior of each factor's varying intercept, in formula order (the per-factor view that
         ``describe()``, fit records and the target identity have always used); ``sd_priors`` has every
@@ -387,10 +467,9 @@ class Priors:
             if not isinstance(self.nu, Prior):
                 raise PriorError(f"prior for 'nu' must be a Prior, got {type(self.nu).__name__}")
             if self.nu.name in _SCALE and self.nu.name not in TRUNCATABLE:
-                raise PriorError(
-                    f"prior for 'nu' cannot be {self.nu.name}: PyMC has no CDF for it, so its truncation to nu > {lower:g} "
-                    f"cannot be renormalised as brms's is; use one of {sorted(TRUNCATABLE)}"
-                )
+                why = (f"PyMC has no CDF for it, so its truncation to nu > {lower:g} cannot be renormalised as brms's is"
+                       if self.nu.name in _NO_CDF else f"its truncation to nu > {lower:g} is not one this library renormalises")
+                raise PriorError(f"prior for 'nu' cannot be {self.nu.name}: {why}; use one of {sorted(TRUNCATABLE)}")
             if self.nu.name not in TRUNCATABLE:
                 raise PriorError(
                     f"prior for 'nu' must be a positive-support prior {sorted(TRUNCATABLE)}; got {self.nu} (nu is learned "

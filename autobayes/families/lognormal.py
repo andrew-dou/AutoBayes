@@ -14,6 +14,7 @@ from __future__ import annotations
 
 from autobayes.families.spec import NO_FIXED_PARAMETERS, STANDARD_PREDICTION_KINDS, FamilySpec, exp_mean
 from autobayes.formula import validate_positive_response
+from autobayes.priors import HalfStudentT, describe_prior
 
 
 def _bambi_family():
@@ -39,7 +40,7 @@ def _draw_response(model, post, eta, mean, df, rng):
 
 
 def _likelihood_lines(model) -> list[str]:
-    return [f"  sigma ~ {model.priors.sigma}", "", "Likelihood",
+    return [f"  sigma ~ {describe_prior(model.priors.sigma, lb=0)}", "", "Likelihood",
             "  y_i ~ LogNormal(mu_i, sigma), i.e. log(y_i) ~ Normal(mu_i, sigma); brms's lognormal_lpdf(y | mu, sigma)",
             "  E[y_i] = exp(mu_i + sigma^2 / 2), median exp(mu_i), Var[y_i] = (exp(sigma^2) - 1) exp(2 mu_i + sigma^2);",
             "  sigma is the SD of log y, sampled as log(sigma). predict(kind='mean') returns E[y_i]; kind='linear' returns mu_i.",
@@ -67,4 +68,6 @@ LOGNORMAL = FamilySpec(
     likelihood_lines=_likelihood_lines,
     centred_intercept_note=(),
     deterministic_note="mu = linear predictor (log-scale location); the expected response exp(mu + sigma^2 / 2) is computed by predict()",
+    default_prior_link="log",                                       # brms's log-scale family: it reads log(y)
+    default_scale_prior=lambda scale: HalfStudentT(3, scale),       # brms sigma: student_t(3, 0, scale), lb 0
 )

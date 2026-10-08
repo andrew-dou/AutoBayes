@@ -60,9 +60,17 @@ def priors_from_spec(spec: dict) -> ab.Priors:
 
 
 def build_model(case: dict, data: pd.DataFrame) -> ab.Model:
+    """The case's AutoBayes model on ``data``. ``"priors": "default"`` builds it under brms's default priors,
+    ``ab.default_priors`` for the same formula, data, family and keyword arguments (A07): the case whose brms side has
+    no priors (``"priors": []``)."""
     spec = case["autobayes"]
     constructor = getattr(ab, spec["constructor"])
-    return constructor(spec["formula"], data, priors_from_spec(spec["priors"]), **spec.get("kwargs", {}))
+    kwargs = spec.get("kwargs", {})
+    if spec["priors"] == "default":
+        priors = ab.default_priors(spec["formula"], data, family=spec.get("family", spec["constructor"]), **kwargs)
+    else:
+        priors = priors_from_spec(spec["priors"])
+    return constructor(spec["formula"], data, priors, **kwargs)
 
 
 # -- design columns -----------------------------------------------------------------------------------------

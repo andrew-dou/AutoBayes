@@ -1,0 +1,20 @@
+{
+ "factors": {
+  "g": [
+   "a",
+   "b",
+   "c",
+   "d",
+   "e",
+   "f"
+  ]
+ },
+ "family": {
+  "family": "negbinomial"
+ },
+ "formula": "ynb ~ x + (1 | g)",
+ "id": "negbinomial_default_priors",
+ "n_points": 8,
+ "priors": [],
+ "seed": 174
+}

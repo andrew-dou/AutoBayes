@@ -27,7 +27,7 @@ Student-t family, docs/families.md); a model built with `nu=None` lists it in `m
 - `ab.student(formula, data, priors)` (`nu=None`, the default) with `Priors(nu=...)` learns nu; `ab.student(..., nu=4)`
   fixes it as before: fixed-nu models, their `describe()`, names and target identities are unchanged.
 - The prior is one whose truncation PyMC can renormalise: `Gamma` (brms's default for `nu` is `gamma(2, 0.1)`, which
-  this library does not fill in: D1), `Exponential`, `HalfNormal(s)` (brms `normal(0, s)` on `nu`: the truncation makes
+  this library does not fill in: D1; `ab.default_priors(..., family="student")` returns it on request, A07), `Exponential`, `HalfNormal(s)` (brms `normal(0, s)` on `nu`: the truncation makes
   the two equal) or `HalfCauchy(s)` (brms `cauchy(0, s)`).
 - Refused, naming what is accepted: `nu=4` together with `Priors(nu=...)`; `nu=None` without a nu prior; a location
   prior (`Normal`, `StudentT`; brms accepts e.g. `normal(5, 2)` on `nu`) and `HalfStudentT`, which PyMC cannot truncate

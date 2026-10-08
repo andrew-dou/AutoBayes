@@ -1,0 +1,42 @@
+{
+ "id": "student_default_priors",
+ "tier": "A",
+ "feature": "A07_default_priors",
+ "note": "brms's Student-t defaults on a response whose MAD exceeds 2.5: Intercept student_t(3, 7, 4.4), sd and sigma student_t(3, 0, 4.4), nu gamma(2, 0.1) with lower bound 1",
+ "seed": 175,
+ "n_points": 8,
+ "data": {
+  "generator": "baseline",
+  "seed": 75,
+  "n": 36,
+  "newdata": {
+   "seed": 175,
+   "n": 5
+  }
+ },
+ "brms": {
+  "formula": "size ~ x + (1 | g)",
+  "family": {
+   "family": "student"
+  },
+  "factors": {
+   "g": [
+    "a",
+    "b",
+    "c",
+    "d",
+    "e",
+    "f"
+   ]
+  },
+  "priors": []
+ },
+ "autobayes": {
+  "constructor": "student",
+  "formula": "size ~ x + (1 | g)",
+  "kwargs": {
+   "nu": null
+  },
+  "priors": "default"
+ }
+}

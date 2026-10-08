@@ -1,0 +1,25 @@
+{
+ "factors": {
+  "g": [
+   "a",
+   "b",
+   "c",
+   "d",
+   "e",
+   "f"
+  ],
+  "z": [
+   "p",
+   "q",
+   "r"
+  ]
+ },
+ "family": {
+  "family": "poisson"
+ },
+ "formula": "cnt ~ x + z + (1 | g)",
+ "id": "poisson_categorical_default_priors",
+ "n_points": 8,
+ "priors": [],
+ "seed": 177
+}

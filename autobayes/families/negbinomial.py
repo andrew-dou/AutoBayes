@@ -12,6 +12,7 @@ import numpy as np
 
 from autobayes.families.spec import NO_FIXED_PARAMETERS, STANDARD_PREDICTION_KINDS, FamilySpec, exp_mean
 from autobayes.formula import check_counts
+from autobayes.priors import InverseGamma, describe_prior
 
 
 def _validate_response(spec, data) -> None:
@@ -40,7 +41,7 @@ def _draw_response(model, post, eta, mean, df, rng):
 
 
 def _likelihood_lines(model) -> list[str]:
-    return [f"  shape ~ {model.priors.shape}", "", "Likelihood",
+    return [f"  shape ~ {describe_prior(model.priors.shape, lb=0)}", "", "Likelihood",
             "  y_i ~ NegativeBinomial(mu_i, shape); mu_i = exp(eta_i); Var[y_i] = mu_i + mu_i^2 / shape",
             "  brms's neg_binomial_2 parameterisation: shape is the inverse overdispersion (Poisson as shape -> infinity);",
             "  PyMC's NegativeBinomial(mu, alpha) with alpha = shape, sampled as log(shape).",
@@ -68,4 +69,6 @@ NEGBINOMIAL = FamilySpec(
     likelihood_lines=_likelihood_lines,
     centred_intercept_note=(),
     deterministic_note="mu = exp(linear predictor); mu = exp(eta), expected count",
+    default_prior_link="log",                                       # brms reads log(y), zeros as 0.1
+    default_scale_prior=lambda scale: InverseGamma(0.4, 0.3),       # brms negbinomial()$prior: shape inv_gamma(0.4, 0.3), lb 0
 )

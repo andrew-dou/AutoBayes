@@ -16,6 +16,7 @@ from scipy.special import expit
 
 from autobayes.families.spec import NO_FIXED_PARAMETERS, STANDARD_PREDICTION_KINDS, FamilySpec
 from autobayes.formula import validate_proportion_response
+from autobayes.priors import Gamma, describe_prior
 
 _INTERCEPT_NOTE = (
     "  expit(a_c) is the expected proportion at that proportion-weighted predictor; it is NOT the",
@@ -44,7 +45,7 @@ def _draw_response(model, post, eta, mean, df, rng):
 
 
 def _likelihood_lines(model) -> list[str]:
-    return [f"  phi ~ {model.priors.phi}", "", "Likelihood",
+    return [f"  phi ~ {describe_prior(model.priors.phi, lb=0)}", "", "Likelihood",
             "  y_i ~ Beta(mu_i phi, (1 - mu_i) phi); mu_i = expit(eta_i); E[y_i] = mu_i, Var[y_i] = mu_i (1 - mu_i) / (1 + phi)",
             "  brms's parameterisation beta_lpdf(y | mu * phi, (1 - mu) * phi) through PyMC's Beta(alpha, beta), with",
             "  1 - mu computed as expit(-eta); phi is the precision, sampled as log(phi).",
@@ -72,4 +73,6 @@ BETA = FamilySpec(
     likelihood_lines=_likelihood_lines,
     centred_intercept_note=_INTERCEPT_NOTE,
     deterministic_note="logit_mu = linear predictor; mu = expit(logit_mu), the expected proportion, is computed by predict()",
+    default_prior_link=None,                                        # logit: brms's defaults are student_t(3, 0, 2.5)
+    default_scale_prior=lambda scale: Gamma(0.01, 0.01),            # brms phi: gamma(0.01, 0.01), lb 0
 )

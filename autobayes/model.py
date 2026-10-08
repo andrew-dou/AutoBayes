@@ -30,7 +30,7 @@ from autobayes.correlation import check_correlation_cholesky, cholesky_corr_free
 from autobayes.families import FAMILIES, FamilySpec, get_family
 from autobayes.formula import (Categorical, FormulaError, ModelSpec, bambi_group_name, binomial_counts, categorical_labels,
                                factor_column, group_labels, interaction_cells, parse_formula, pop_term_design, sd_tag)
-from autobayes.priors import PriorError, Priors
+from autobayes.priors import PriorError, Priors, describe_prior
 
 _bambi_group_name = bambi_group_name          # ``1|g`` for the varying intercept of ``g``, ``x|g`` for the slope of ``x``
 
@@ -968,13 +968,22 @@ class Model:
             lines += ["", "Group effects", "  none: a population-only model (no '(1 | group)' term)"]
         lines += ["", "Priors" + ("" if fam.link_scale is None else f" (location coefficients on the {fam.link_scale} scale)")]
         if s.intercept:
-            lines += [f"  {a} ~ {pr.intercept}"]
-        lines += [f"  b_{col} ~ {coef[col]}" for col in s.columns]
+            lines += [f"  {a} ~ {describe_prior(pr.intercept)}"]
+        lines += [f"  b_{col} ~ {describe_prior(coef[col])}" for col in s.columns]
         for (g, c), prior in pr.sd_priors(s).items():
-            lines += [f"  sd_{sd_tag(g, c)} ~ {prior}"]
+            lines += [f"  sd_{sd_tag(g, c)} ~ {describe_prior(prior, lb=0)}"]
         for g, prior in pr.cor_priors(s).items():
-            lines += [f"  Cor_{g} ~ {prior} (brms lkj({prior.params['eta']:g}) on the correlation matrix, placed on L_{g} as lkj_corr_cholesky)"]
+            lines += [f"  Cor_{g} ~ {prior} (brms lkj({prior.params['eta']:g}) on the correlation matrix, placed on L_{g} as lkj_corr_cholesky)"
+                      + ("   (brms default)" if prior.source == "default" else "")]
         lines += fam.likelihood_lines(self)
+        if self.default_prior_labels:                         # priors filled in by ab.default_priors() (A07)
+            from autobayes.default_priors import BRMS_VERSION
+            lines += ["", "Default priors (ab.default_priors(); docs/default-priors.md)",
+                      f"  {', '.join(self.default_prior_labels)}: brms {BRMS_VERSION}'s default_prior() for this formula, data and family,",
+                      "  marked (brms default) above with brms's spelling. The Intercept's student_t(3, location, scale) has the median of",
+                      "  the response on the link scale rounded to one decimal as its location (minus the mean offset; 0 under a logit or",
+                      "  probit link) and max(2.5, its MAD rounded to one decimal) as its scale, which sd and sigma share; a flat prior is",
+                      "  improper: it adds nothing to the log density, and prior_predictive() is refused."]
         for w in self.warnings:
             lines += ["", "WARNING: " + w]
         lines += ["", "PyMC variables sampled (value space)"]
@@ -1000,6 +1009,27 @@ class Model:
                                                  for (g, c), names in self.group_coefficient_names.items())
                      + "".join(f"{names['cor']} = Cor_{g} = L_{g} L_{g}^T, " for g, names in self.correlation_names.items()) + fam.deterministic_note)
         return "\n".join(lines)
+
+    # -- priors ------------------------------------------------------------------------
+    @property
+    def default_prior_labels(self) -> list[str]:
+        """The parameters whose prior came from ``ab.default_priors`` (brms's defaults; A07), labelled as the prior
+        messages label them (``intercept``, ``b:x``, ``sd:g``, ``sd:x|g``, ``cor:g``, ``sigma``, ``nu``), in that order; empty
+        when the user gave every prior. ``fit_record`` stores them under ``"default_priors"``."""
+        s, pr, fam = self.spec, self.priors, self.family_spec
+        found = ([("intercept", pr.intercept)] if s.intercept else []) + [(f"b:{k}", v) for k, v in pr.coefficient_priors(s).items()]
+        found += [(f"sd:{sd_tag(g, c)}", v) for (g, c), v in pr.sd_priors(s).items()]
+        found += [(f"cor:{g}", v) for g, v in pr.cor_priors(s).items()]
+        if fam.scale_parameter is not None:
+            found.append((fam.scale_parameter, getattr(pr, fam.scale_parameter)))
+        if pr.nu is not None:
+            found.append(("nu", pr.nu))
+        return [label for label, prior in found if getattr(prior, "source", "user") == "default"]
+
+    def prior_table(self) -> list[dict[str, str]]:
+        """This model's priors in brms's table form (``Priors.table``): the rows brms's ``default_prior()`` prints for the
+        same model, with this model's priors in brms's syntax."""
+        return self.priors.table(self.spec, self.family_spec, center_predictors=self.effective_center_predictors)
 
     # -- convenience -------------------------------------------------------------------
     def prior_predictive(self, *, draws=500, seed=None):
@@ -1050,8 +1080,9 @@ def student(formula: str, data: pd.DataFrame, priors: Priors, *, nu: float | Non
 
     ``nu=4`` (any finite ``nu > 1``) fixes them. ``nu=None``, the default, learns them under ``Priors(nu=...)``: a
     ``Gamma``, ``Exponential``, ``HalfNormal`` or ``HalfCauchy`` prior truncated to ``nu > 1`` and renormalised there, as
-    brms's ``real<lower=1> nu`` (brms's default prior is ``gamma(2, 0.1)``, ``ab.Gamma(2, 0.1)``, which is not filled in;
-    A13, docs/student-learned-nu.md). The expected response is mu. Sigma is not the residual standard deviation.
+    brms's ``real<lower=1> nu`` (brms's default prior is ``gamma(2, 0.1)``, ``ab.Gamma(2, 0.1)``, which is not filled in
+    silently; ``ab.default_priors(..., family="student")`` returns it with brms's other defaults; A13,
+    docs/student-learned-nu.md). The expected response is mu. Sigma is not the residual standard deviation.
     Distributional auxiliary formulas are not supported.
     """
     return Model(formula, data, priors, family="student", nu=nu,
