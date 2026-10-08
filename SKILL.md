@@ -63,9 +63,16 @@ for the outcome families:
   (`docs/m2-decision.md`, repair record). GPU execution **pending**. Evidence
   `docs/m2-evidence/`, checks in `docs/m2-decision.md`.
 
+**Current status (October 2026).** Since Tier A of the brms-parity loop, more is verified than the three
+families above: every family and term listed under "Current status" in `README.md` is accepted only after its
+model reproduces brms's own Stan data, log density, gradient and predictions on frozen fixtures
+(`docs/brms-parity/`). Recovery sampling and GPU execution for the new families and terms are not yet validated;
+the oracle establishes that the target equals brms's, not that sampling converges on it.
+
 **What is not verified.** Every other formula and family (other links,
 varying slopes, correlation IDs, grouping `/` or `:` syntax, multimembership,
-beta-binomial). The library refuses them with an error naming the construct. Population-only
+beta-binomial). The library refuses them with an error naming the construct. (Superseded in part: the probit
+link, varying slopes and `/`/`:` grouping are verified against brms since Tier A; see the paragraph above.) Population-only
 models (M3c-1) are verified deterministically (density, gradients, closed form, predictions)
 and one Gaussian CPU example has sampling evidence accepted in `docs/m3c1-decision.md`; this is not calibration or all-family sampling evidence. Do not loosen the parser to get past that
 error; go to "Outside the verified family" below.

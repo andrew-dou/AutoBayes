@@ -197,7 +197,7 @@ def lognormal_family():
 # brms: ``beta_lpdf(Y | mu * phi, (1 - mu) * phi)`` with ``mu = inv_logit(eta)``. PyMC's ``Beta(alpha, beta)`` is the
 # same density. ``1 - mu`` is computed as ``sigmoid(-eta)`` rather than by subtraction: the same number up to rounding
 # (the oracle case ``beta_varint`` agrees to its tolerance), and it keeps ``beta > 0`` for ``|eta|`` up to about 745,
-# where brms's subtraction returns exactly zero beyond ``eta`` of about 37 (docs/brms-parity/divergences.md, D10).
+# where brms's subtraction returns exactly zero beyond ``eta`` of about 37 (docs/brms-parity/divergences.md, D13).
 # Bambi's own ``beta`` family (mean ``mu`` and ``kappa``, which is brms's ``phi``) would name its deterministic ``mu``
 # and hold ``expit(eta)``; this family keeps the linear predictor as the parent ``logit_mu`` under the identity link,
 # as the Bernoulli and binomial families above do, and names the precision ``phi`` as brms does.
