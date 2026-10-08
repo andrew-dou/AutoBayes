@@ -399,16 +399,16 @@
    "depends_on": [
     "P3_families_registry"
    ],
-   "status": "queued",
+   "status": "implementing",
    "summary": "opt-in ab.default_priors() reproducing brms's default_prior() table (G6 becomes a pass/fail gate)",
    "pr": null,
-   "attempts": 0,
+   "attempts": 1,
    "gates": {},
    "divergences": [
     "D1",
     "D2"
    ],
-   "next_action": ""
+   "next_action": "agent in worktree parity-a07 (stacked on #36's merge commit ad8a5c1)"
   },
   {
    "id": "A08_negbinomial",
@@ -579,9 +579,9 @@
    "depends_on": [
     "P3_families_registry"
    ],
-   "status": "gates_green",
+   "status": "merged",
    "summary": "probit link for the Bernoulli and binomial families (link= on ab.bernoulli / ab.binomial); brms's cloglog link parked (D18: brms's own gradient is 3.8e-7 relative off the exact value at a frozen point); other links (cauchit, and links of other families) not offered (D19)",
-   "pr": null,
+   "pr": 36,
    "attempts": 1,
    "gates": {
     "sha": "ad8a5c17f8ca",
@@ -609,7 +609,7 @@
     "D18",
     "D19"
    ],
-   "next_action": "merge; cloglog park goes to Andrew at the Tier A boundary",
+   "next_action": "cloglog park to Andrew at the Tier A boundary",
    "fixtures": {
     "pr": 28,
     "cases": [
@@ -625,9 +625,9 @@
    "depends_on": [
     "P3_families_registry"
    ],
-   "status": "gates_green",
+   "status": "merged",
    "summary": "Student-t with a prior on nu (brms default gamma(2, 0.1))",
-   "pr": null,
+   "pr": 36,
    "attempts": 1,
    "gates": {
     "sha": "ad8a5c17f8ca",
@@ -652,7 +652,7 @@
    "divergences": [
     "D22"
    ],
-   "next_action": "merge",
+   "next_action": "",
    "fixtures": {
     "pr": 28,
     "cases": [
