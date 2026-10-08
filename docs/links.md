@@ -52,7 +52,7 @@ stack. brms's `bernoulli_lpmf(Y | Phi(eta))` is `-inf` where Stan's `Phi` is exa
 brms's `bernoulli(link = "cloglog")` is `bernoulli_lpmf(Y | inv_cloglog(eta))` with `inv_cloglog(eta) = 1 - exp(-exp(eta))`.
 Its gradient for a `y = 0` row forms `1 - theta` by subtraction, which loses `eps * exp(exp(eta))` relative: about
 `1e-7` at `eta = 3`, everything at `eta` above about 3.7, where brms's density is `-inf`. The frozen fixture
-`bernoulli_cloglog` (`yb ~ x + (1 | g)`, seed 153) probes exactly such a point: at seeded point 5, rows 29 and 34 have
+`bernoulli_cloglog` (`yb ~ x + (1 | g)`, seed 153) probes exactly such a point: at seeded point 5 (0-based: the sixth of eight), rows 29 and 34 have
 `y = 0` at `eta = 2.71` and `3.01`, and brms's gradient with respect to `b[1]` is `-1.00559172179031` where the exact
 50-digit value is `-1.00559210649608`, a relative error of `3.8e-7` against the oracle's `GRAD_REL` of `1e-7`
 (AutoBayes's stable form agrees with the exact gradient to `5e-15` at every point, and both sides agree with it to

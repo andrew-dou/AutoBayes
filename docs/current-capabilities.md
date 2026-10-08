@@ -76,7 +76,7 @@ location `mu`, `sigma` the SD of `log y` under `Priors(sigma=...)`, `predict(kin
 `posterior_epred` `exp(mu + sigma^2 / 2)` as `mean`) followed, verified against `lognormal_varint`; see
 [lognormal](lognormal.md). Beta proportions with a logit link (A11, `ab.beta`, brms's `Beta()`: precision `phi` under
 `Priors(phi=...)`, the likelihood built as this library's own Bambi family so that the graph keeps the linear predictor
-`logit_mu` and brms's name `phi`; `1 - mu` as `expit(-eta)`, divergence D10) followed, verified against `beta_varint`;
+`logit_mu` and brms's name `phi`; `1 - mu` as `expit(-eta)`, divergence D13) followed, verified against `beta_varint`;
 see [Beta](beta.md). The probit link for the Bernoulli and binomial families (A12, `link="probit"`: `p = Phi(eta)`
 through a stable `log Phi`, the graph keeping `eta` as `probit_p`) followed, verified against `bernoulli_probit` and
 `binomial_probit`; brms's cloglog link is withheld because its frozen fixture records a brms gradient off by 3.8e-7

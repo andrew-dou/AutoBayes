@@ -28,12 +28,37 @@ Three parts:
   Student-t, Poisson, negative binomial and Gamma have deterministic CPU/JAX checks; new recovery fits and
   GPU execution are not yet validated;
   anything else is refused with an error naming the construct. See
-  [Library](#library-milestones-m0-m1-and-m2) below.
+  [Library](#library-milestones-m0-m1-and-m2) below. (Superseded since Tier A of the brms-parity loop: see
+  [Current status](#current-status-brms-parity-after-tier-a).)
 
 It came out of a multi-month hierarchical-modelling program that fit roughly sixty
 successive model versions on GPU, each conditional on the last. The modelling was the
 research; this is what made the modelling survivable once an agent was doing most of
 the typing.
+
+## Current status: brms parity after Tier A
+
+AutoBayes is being built out as brms in Python by an oracle-gated loop: a feature merges only when the model it
+builds reproduces brms's own Stan data, log density and gradient (with and without the Jacobian) and predictions on
+fixtures frozen from brms 2.23.0 with rstan ([loop rules](docs/brms-parity/LOOP.md), [oracle](oracle/README.md)).
+Tier A is complete (October 2026):
+
+- **Families**: Gaussian; Student-t with a fixed or learned `nu`; Poisson; negative binomial; Gamma (log link);
+  lognormal; Beta; Bernoulli and binomial with a logit or probit link (brms's cloglog link is parked, see
+  [links](docs/links.md)).
+- **Population-level terms**: numeric and declared categorical predictors; two-way interactions `x:w`, `x:z`, `z:h`
+  with their main effects ([interactions](docs/interactions.md)); `log()`, `exp()`, `sqrt()`, `I(x^k)`, `I(x * k)`,
+  `I(x + k)`, `I(x - k)` ([transforms](docs/transforms.md)); `offset(col)` and `offset(log(col))` ([offset](docs/offset.md)).
+- **Group-level terms**: any number of factors; `(1 | g)`; independent slopes `(1 + x || g)`
+  ([varying slopes](docs/varying-slopes.md)); correlated slopes `(1 + x | g)` with an LKJ prior
+  ([correlated slopes](docs/correlated-slopes.md)); grouping by `g:h` and `g/h` ([grouping syntax](docs/grouping-syntax.md)).
+- **Priors**: explicit by default; brms's defaults on request with `ab.default_priors()` ([default priors](docs/default-priors.md)).
+
+Every known difference from brms is listed in [divergences](docs/brms-parity/divergences.md), and the feature ledger
+is [ledger.json](docs/brms-parity/ledger.json) (`python tools/parity_status.py`). The Tier A review is
+[docs/brms-parity/reports/tier-a-review.pdf](docs/brms-parity/reports/tier-a-review.pdf). The sections below are the
+earlier milestone record and are kept as written; where they call one of the constructs above unsupported, this
+section supersedes them.
 
 ## The problem
 
@@ -143,12 +168,12 @@ versions.
 | One numeric-by-categorical interaction `x:z` (`x*z`) with both main effects, all three families | CPU-validated (`docs/m3a2-decision.md`) | CPU-validated | **pending** | M3a-2, merged (PR #7) |
 | Multiple numeric-by-categorical interactions, shared or disjoint sides; existing families, intercept controls and multiple groups | deterministic checks; one Gaussian CPU example independently accepted | same deterministic coverage and Gaussian CPU example | **pending** | M3a-3, merged (PR #12); [evidence summary](docs/current-capabilities.md#validation-boundaries) |
 | Population-only models, no group-level term: `y ~ 1`, `y ~ x`, `y ~ x + z + x:z`, `k \| trials(n) ~ x`, all three families | deterministic density/gradient/design/prediction checks for all three families; Gaussian example CPU sampling accepted after explicit finite-statistic policy correction ([review](docs/m3c1-decision.md#independent-acceptance-review-2026-09-19)) | same deterministic coverage; Gaussian example CPU sampling and seven-mean agreement accepted in the same review | **pending** | M3c-1, PR #9; merged; one Gaussian development example, not calibration |
-| One independent varying slope `(1 + x \|\| g)` | under independent review, not merged | same | same | M3b-1, PR #8 open |
+| One independent varying slope `(1 + x \|\| g)` | under independent review, not merged | same | same | M3b-1, PR #8 open (superseded: A01, #29, merged; PR #8 closed) |
 | No population intercept: `0 + x`, `x - 1`, categorical and one interaction, optional group | three-family deterministic checks; one Gaussian CPU example accepted at `target_accept=0.99` | same deterministic coverage and Gaussian CPU acceptance | **pending** | M3c-2, PR #10; [review and preserved initial failures](docs/m3c2-decision.md#independent-acceptance-review-2026-09-20-utc) |
 | Multiple independent intercepts `(1 \| county) + (1 \| year)`, all three families | three-family deterministic checks; one crossed Gaussian CPU example independently accepted | same deterministic coverage and Gaussian CPU acceptance | **pending** | M3c-3, merged (PR #11); [decision](docs/m3c3-decision.md) |
 | Fixed-nu Student-t, identity link | deterministic graph/density/gradient/prediction checks | deterministic CPU JAX checks; recovery sampling pending | **pending** | merged (PR #14); [semantics](docs/student-responses.md) |
 | Poisson, log link | deterministic graph/density/gradient/prediction checks | deterministic CPU JAX checks; recovery sampling pending | **pending** | merged (PR #15); [semantics](docs/poisson-responses.md) |
-| Correlated effects, grouping `/` or `:`, varying slopes, additional families and links | refused with an error naming the construct | same | same | later slices, `docs/coordination/NEXT_MILESTONES_PROPOSAL.md` |
+| Correlated effects, grouping `/` or `:`, varying slopes, additional families and links | refused with an error naming the construct | same | same | later slices, `docs/coordination/NEXT_MILESTONES_PROPOSAL.md` (superseded: supported since Tier A, see Current status) |
 
 Device rules on every path: `device="gpu"` without a visible GPU raises `DeviceError`
 (no silent CPU fallback); the fit report states the actual device, dtype (float64) and
@@ -174,7 +199,8 @@ factor contrast uses `b_z[l] - b_z[reference]` as its baseline difference.
 
 Both main effects are required. Strict duplicate rules remain: `x*z + w*z` repeats
 `z`; write `x + w + z + x:z + w:z`. Numeric-by-numeric, categorical-by-categorical,
-higher-order interactions and transforms remain unsupported. Changing a reference
+higher-order interactions and transforms remain unsupported (superseded: two-way interactions of every kind and
+the transforms in `docs/transforms.md` are supported since A04/A05; three-way interactions are still refused). Changing a reference
 can change independent-prior meaning; the library does not transport priors.
 Unseen categorical levels are always refused, independently of any new-group policy.
 See the build-only [example](examples/m3a3_multiple_interactions.py) and
@@ -213,7 +239,8 @@ legacy `group`/`J` entries. Common centering and intercept back-transformation a
 Distinct additive factors can describe crossed or observationally nested memberships;
 the library never expands nesting syntax or combines labels with their parent. Slopes,
 duplicate factors, correlation IDs, `||`, grouping `/` or `:` and multimembership remain
-refused. See the build-only [example](examples/m3c3_multiple_intercepts.py) and
+refused. (Superseded: `||`, `/` and `:` are supported since A01/A03;
+correlation IDs and multimembership are still refused.) See the build-only [example](examples/m3c3_multiple_intercepts.py) and
 [decision](docs/m3c3-decision.md). One crossed Gaussian CPU example passed independent
 validation on PyMC and NumPyro at `target_accept=0.99`; see the [evidence and limits](docs/m3c3-evidence/cpu-validation/README.md).
 Other-family sampling, calibration and GPU validation remain pending.
