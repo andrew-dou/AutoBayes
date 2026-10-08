@@ -399,9 +399,9 @@
    "depends_on": [
     "P3_families_registry"
    ],
-   "status": "gates_green",
+   "status": "merged",
    "summary": "opt-in ab.default_priors() reproducing brms's default_prior() table (G6 becomes a pass/fail gate)",
-   "pr": null,
+   "pr": 37,
    "attempts": 1,
    "gates": {
     "sha": "db825049583c",
@@ -425,7 +425,7 @@
     "D2",
     "D23"
    ],
-   "next_action": "merge"
+   "next_action": ""
   },
   {
    "id": "A08_negbinomial",
