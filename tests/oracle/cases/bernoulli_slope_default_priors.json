@@ -1,0 +1,40 @@
+{
+ "id": "bernoulli_slope_default_priors",
+ "tier": "A",
+ "feature": "A07_default_priors",
+ "note": "brms's defaults under the logit link: Intercept student_t(3, 0, 2.5), flat b, sd student_t(3, 0, 2.5) for the intercept and the slope, cor lkj(1)",
+ "seed": 173,
+ "n_points": 8,
+ "data": {
+  "generator": "baseline",
+  "seed": 73,
+  "n": 36,
+  "newdata": {
+   "seed": 173,
+   "n": 5
+  }
+ },
+ "brms": {
+  "formula": "yb ~ x + (1 + x | g)",
+  "family": {
+   "family": "bernoulli"
+  },
+  "factors": {
+   "g": [
+    "a",
+    "b",
+    "c",
+    "d",
+    "e",
+    "f"
+   ]
+  },
+  "priors": []
+ },
+ "autobayes": {
+  "constructor": "bernoulli",
+  "formula": "yb ~ x + (1 + x | g)",
+  "kwargs": {},
+  "priors": "default"
+ }
+}

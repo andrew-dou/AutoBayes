@@ -52,4 +52,6 @@ POISSON = FamilySpec(
                                     "  No exposure/offset, overdispersion or zero-inflation is modeled."],
     centred_intercept_note=(),
     deterministic_note="mu = exp(linear predictor); mu = exp(eta), expected count",
+    default_prior_link="log",                                       # brms reads log(y), zeros as 0.1
+    default_scale_prior=None,
 )

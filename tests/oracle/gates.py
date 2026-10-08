@@ -7,13 +7,18 @@ G2 `check_gradient`      every gradient coordinate, mapped through the probed pa
 G3 `check_derived`       the graph's linear predictor, group effects and correlation matrices, and the raw-scale intercept
 G4 `check_predictions`   predict() on the fixture's draws equals posterior_linpred/posterior_epred
 G5 `check_jax`           the JAX-compiled density equals the PyTensor one at every point
-G6 `check_default_prior` brms's default-prior table is present with the classes this model has
+G6 `check_default_prior` brms's default-prior table has the classes this model has, and `ab.default_priors()` for the
+                         same formula, data and family, written as brms's table, equals it row by row (A07)
 """
 from __future__ import annotations
 
+import re
 from functools import cached_property
+from itertools import zip_longest
 
 import numpy as np
+
+import autobayes as ab
 
 from tests.oracle import adapter
 from tests.oracle import fixture as fx
@@ -218,6 +223,30 @@ def check_jax(b: Bundle) -> None:
 
 
 # -- G6 -----------------------------------------------------------------------------------------------------
+_NUMBER = re.compile(r"(?<![A-Za-z_0-9.])[-+]?(?:\d+\.?\d*|\.\d+)(?:[eE][-+]?\d+)?")
+
+
+def normalise_prior(text: str) -> str:
+    """A prior string or bound with the whitespace removed and every number written as the double it denotes, so that
+    ``student_t(3, 0.9, 2.5)`` and ``student_t(3,0.9,2.5)``, ``3`` and ``3.0``, ``1e+05`` and ``100000`` compare equal and
+    nothing else does (brms prints 15 significant digits; ``ab.default_priors`` reproduces them, so equal strings are
+    equal doubles)."""
+    return _NUMBER.sub(lambda m: repr(float(m.group())), re.sub(r"\s+", "", text))
+
+
+def default_prior_table(b: Bundle) -> list[dict[str, str]]:
+    """``ab.default_priors`` for the case's formula, data, family and keyword arguments, written as brms's table for the
+    case's model (``Priors.table``). brms's ``default_prior()`` is computed from the formula, data and family alone, so
+    it describes brms's default model, which learns a Student-t ``nu``: a case that fixes nu (brms ``constant(4)``) is
+    compared under ``nu=None``."""
+    spec = b.case["autobayes"]
+    kwargs = dict(spec.get("kwargs", {}))
+    if "nu" in b.model.family_spec.learnable_parameters:
+        kwargs["nu"] = None
+    priors = ab.default_priors(spec["formula"], b.data, family=b.model.family, **kwargs)
+    return priors.table(b.model.spec, b.model.family_spec, center_predictors=b.model.effective_center_predictors)
+
+
 def check_default_prior(b: Bundle) -> None:
     classes = {row["class"] for row in b.fixture.default_prior}
     expected = set()
@@ -241,6 +270,19 @@ def check_default_prior(b: Bundle) -> None:
         raise OracleMismatch(f"brms default_prior classes {sorted(classes)} lack {sorted(expected - classes)}")
     if not b.fixture.prior_summary:
         raise OracleMismatch("fixture has no prior_summary table")
+    # ab.default_priors() reproduces brms's table: every row, in brms's order, every column (A07)
+    ours, theirs = default_prior_table(b), b.fixture.default_prior
+
+    def key(row):
+        if row is None:
+            return None
+        return tuple(normalise_prior(row.get(k, "")) if k in ("prior", "lb", "ub") else row.get(k, "")
+                     for k in ("prior", "class", "coef", "group", "resp", "dpar", "nlpar", "lb", "ub", "tag", "source"))
+    diff = [f"  row {i}: AutoBayes {key(a)} vs brms {key(t)}"
+            for i, (a, t) in enumerate(zip_longest(ours, theirs)) if key(a) != key(t)]
+    if diff:
+        raise OracleMismatch(f"ab.default_priors() written as brms's table differs from brms's default_prior() "
+                             f"({len(ours)} rows vs {len(theirs)}):\n" + "\n".join(diff[:12]))
 
 
 ALL = (check_design, check_logp, check_gradient, check_derived, check_predictions, check_jax, check_default_prior)

@@ -1,0 +1,20 @@
+{
+ "factors": {
+  "g": [
+   "a",
+   "b",
+   "c",
+   "d",
+   "e",
+   "f"
+  ]
+ },
+ "family": {
+  "family": "gaussian"
+ },
+ "formula": "y ~ x + (1 | g)",
+ "id": "gauss_varint_default_priors",
+ "n_points": 8,
+ "priors": [],
+ "seed": 171
+}

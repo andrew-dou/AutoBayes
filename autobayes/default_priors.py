@@ -1,0 +1,408 @@
+"""brms's default priors, opt-in (brms-parity A07, docs/default-priors.md).
+
+``default_priors(formula, data, ...)`` returns the ``Priors`` brms 2.23 uses when it is given no prior: the table of
+``brms::default_prior()`` for the same formula, data and family, as priors the model constructors accept. Nothing here
+is filled in behind the user's back: the constructors still require every prior (D1), and these are passed to them
+explicitly, ``ab.gaussian(f, df, ab.default_priors(f, df))``. Each prior it returns is marked ``source="default"``, which
+``describe()`` and fit records report.
+
+brms's rules (``default_prior()``, ``def_dpar_prior``, ``def_scale_prior``, ``prior_re``, ``prior_fe`` in brms 2.23):
+
+- ``Intercept`` (the centred intercept): ``student_t(3, location, scale)``. When brms reads the response through its
+  family's link (identity; log, where zeros count as 0.1; the lognormal's log scale), ``location`` is
+  ``round(median(y_link), 1)`` minus the mean of the offset, and ``scale`` is ``max(2.5, round(mad(y_link), 1))``; for
+  any other link (logit, probit) they are 0 and 2.5. ``FamilySpec.default_prior_link`` says which.
+- ``b``: flat (an empty prior string), ``Flat()``. Without centring (``center_predictors=False``) the intercept is one
+  of brms's ``b`` coefficients and flat as well.
+- ``sd`` and ``sigma``: ``student_t(3, 0, scale)`` bounded below by 0, ``HalfStudentT(3, scale)``, with the scale above.
+- ``cor``: ``lkj(1)``. The family's auxiliary parameter and a learned ``nu``: the family's own default
+  (``FamilySpec.default_scale_prior``, ``FamilySpec.default_learned_priors``): negative binomial ``shape``
+  ``inv_gamma(0.4, 0.3)``, Gamma ``shape`` and Beta ``phi`` ``gamma(0.01, 0.01)``, Student-t ``nu`` ``gamma(2, 0.1)``.
+
+The data-dependent numbers are R's arithmetic, transcribed here and checked against R itself: ``median``, ``mad``
+(constant 1.4826) and ``mean`` (R's two-pass mean on doubles), ``round(x, 1)`` (R 4's algorithm, which picks the
+nearer of the two one-decimal candidates in double arithmetic) and ``as.character`` (``r_number``: 15 significant
+digits chosen as R's ``formatReal`` does, so that ``-0.978004218445523`` prints as brms prints it). Logs use the C
+library's ``log``, as R does.
+
+``prior_table`` renders any ``Priors`` in brms's table form (the rows of ``default_prior()``: prior, class, coef, group,
+resp, dpar, nlpar, lb, ub, tag, source), sorted as brms sorts them; the oracle gate G6 compares it with the table every
+frozen fixture records.
+"""
+from __future__ import annotations
+
+import math
+from collections.abc import Mapping, Sequence
+from dataclasses import replace
+
+import numpy as np
+import pandas as pd
+
+from autobayes.priors import LKJ, Flat, HalfStudentT, Prior, PriorError, Priors, StudentT, brms_prior
+
+BRMS_VERSION = "2.23.0"          # the brms whose default_prior() this reproduces (the oracle fixtures' meta.brms)
+DF = 3.0                         # the degrees of freedom of brms's student_t(3, ., .) defaults
+SCALE = 2.5                      # brms's smallest default scale
+COLUMNS = ("prior", "class", "coef", "group", "resp", "dpar", "nlpar", "lb", "ub", "tag", "source")   # brms's table
+
+
+# -- R's arithmetic ---------------------------------------------------------------------------------------------------
+def r_round(x: float, digits: int = 1) -> float:
+    """R 4's ``round(x, digits)`` for ``digits >= 0``: of the two candidates ``floor(x 10^d) / 10^d`` and
+    ``ceiling(x 10^d) / 10^d`` the nearer to ``x`` in double arithmetic, the even one on a tie; values with more than
+    15 significant digits before the cut are returned unchanged."""
+    x = float(x)
+    if math.isnan(x) or math.isinf(x) or x == 0.0:
+        return x
+    sgn = 1.0
+    if x < 0.0:
+        sgn, x = -1.0, -x
+    if digits > 0 and math.log10(x) + digits > 15:
+        return sgn * x
+    pow10 = 1.0
+    for _ in range(digits):
+        pow10 *= 10.0
+    x10 = pow10 * x
+    i10 = math.floor(x10)
+    xd, xu = i10 / pow10, math.ceil(x10) / pow10
+    du, dd = xu - x, x - xd
+    return sgn * (xu if (du < dd or (du == dd and math.fmod(i10, 2.0) == 1.0)) else xd)
+
+
+def r_mean(values: Sequence[float]) -> float:
+    """R's ``mean()`` of a double vector: the sum in order, divided by n, then corrected by the mean of the
+    residuals (R's second pass), in double arithmetic (this R has no extended long double)."""
+    xs = [float(v) for v in values]
+    s = 0.0
+    for v in xs:
+        s += v
+    s /= len(xs)
+    if math.isfinite(s):
+        t = 0.0
+        for v in xs:
+            t += v - s
+        s += t / len(xs)
+    return s
+
+
+def r_median(values: Sequence[float]) -> float:
+    """R's ``median()``: the middle value, or R's mean of the two middle values; NaN when any value is NaN."""
+    xs = [float(v) for v in values]
+    if any(math.isnan(v) for v in xs):
+        return math.nan
+    xs.sort()
+    n = len(xs)
+    half = (n + 1) // 2
+    return xs[half - 1] if n % 2 == 1 else r_mean(xs[half - 1:half + 1])
+
+
+def r_mad(values: Sequence[float]) -> float:
+    """R's ``mad()``: ``1.4826 * median(|x - median(x)|)``."""
+    xs = [float(v) for v in values]
+    center = r_median(xs)
+    return 1.4826 * r_median([abs(v - center) for v in xs])
+
+
+_POW10 = [10.0 ** k for k in range(23)]                  # exact powers of ten up to 1e22
+
+
+def _r_scientific(x: float) -> tuple[bool, int, int, bool]:
+    """R's ``scientific()`` (format.c) at 15 digits: sign, decimal exponent, significant digits, and whether rounding
+    widens the number, with R's scaling of ``|x|`` to a 15-digit integer."""
+    neg = x < 0.0
+    r = -x if neg else x
+    kp = int(math.floor(math.log10(r))) - 15 + 1
+    r_prec = r
+    if abs(kp) <= 22:
+        if kp > 0:
+            r_prec /= _POW10[kp]
+        elif kp < 0:
+            r_prec *= _POW10[-kp]
+    elif kp <= -308:
+        r_prec = (r * 1e303) / math.pow(10.0, kp + 303)
+    else:
+        r_prec /= math.pow(10.0, kp)
+    if r_prec < _POW10[14]:
+        r_prec *= 10.0
+        kp -= 1
+    alpha = float(round(r_prec))                           # nearbyint: half to even
+    nsig = 15
+    for _ in range(15):
+        alpha /= 10.0
+        if alpha == math.floor(alpha):
+            nsig -= 1
+        else:
+            break
+    if nsig == 0:
+        nsig, kp = 1, kp + 1
+    kpower = kp + 15 - 1
+    rgt = min(max(15 - kpower, 0), 22)
+    widens = 0 < kpower <= 22 and r < _POW10[kpower] - 0.5 / _POW10[rgt]
+    return neg, kpower, nsig, widens
+
+
+def r_number(x: float) -> str:
+    """``as.character(x)`` for one double, as R prints it in brms's prior strings (``sargs``): 15 significant digits,
+    fixed or scientific notation by R's width rule, trailing zeros dropped (``3``, ``0.9``, ``-0.978004218445523``,
+    ``1e+05``)."""
+    x = float(x)
+    if math.isnan(x):
+        return "NaN"
+    if math.isinf(x):
+        return "Inf" if x > 0 else "-Inf"
+    if x == 0.0:
+        return "0"
+    neg, kpower, nsig, widens = _r_scientific(x)
+    left = kpower + 1 - (1 if widens else 0)
+    rgt = max(0, nsig - left)
+    width_fixed = int(neg) + (1 if left <= 0 else left) + rgt + (1 if rgt else 0)
+    d = nsig - 1 if nsig > 1 else 0
+    width_sci = int(neg) + (1 if d > 0 else 0) + d + 4 + (2 if (kpower >= 100 or kpower <= -99) else 1)
+    if width_fixed <= width_sci:
+        s = f"{x:.{rgt}f}"
+        return s.rstrip("0").rstrip(".") if "." in s else s
+    mant, exp = f"{x:.{d}e}".split("e")
+    if "." in mant:
+        mant = mant.rstrip("0").rstrip(".")
+    return f"{mant}e{exp[0]}{exp[1:].lstrip('0').rjust(2, '0')}"
+
+
+# -- brms's data-dependent location and scale -------------------------------------------------------------------------
+def _on_link(y: Sequence[float], link: str) -> list[float]:
+    """The response as brms's ``def_scale_prior`` reads it: as given under ``"identity"``; under ``"log"`` with zeros
+    read as 0.1 (``ifelse(y == 0, y + 0.1, y)``) and logged (a negative value is NaN, as in R)."""
+    if link == "identity":
+        return [float(v) for v in y]
+    if link == "log":
+        out = []
+        for v in y:
+            v = 0.1 if float(v) == 0.0 else float(v)
+            out.append(math.log(v) if v > 0 else math.nan)
+        return out
+    raise ValueError(f"brms reads the response for its default priors through 'identity' or 'log', not {link!r}")
+
+
+def location_scale(y: Sequence[float], link: str | None, offset: Sequence[float] | None = None) -> tuple[float, float]:
+    """brms's ``def_scale_prior`` arithmetic: the location and scale of the default Intercept prior
+    ``student_t(3, location, scale)`` (the scale is also that of the default ``sd`` and ``sigma`` priors). ``link`` is
+    the family's ``default_prior_link``; ``None`` gives brms's constants 0 and 2.5. ``offset`` is the offset term's
+    values, whose mean brms subtracts from the location (not rounded)."""
+    location, scale = 0.0, SCALE
+    if link is None:
+        return location, scale
+    v = _on_link(y, link)
+    scale_y = r_round(r_mad(v), 1)
+    if math.isfinite(scale_y):
+        scale = max(scale, scale_y)
+    location_y = r_round(r_median(v), 1)
+    if math.isfinite(location_y):
+        location = location_y
+    if offset is not None and len(offset):
+        mean_offset = r_mean(offset)
+        if math.isfinite(mean_offset):
+            location = location - mean_offset
+    return (0.0 if location == 0 else location), scale          # R's -0 (round(-0.04, 1)) prints as 0: the same prior
+
+
+def _offset_values(spec, data: pd.DataFrame) -> list[float] | None:
+    """The offset term's values per row as brms computes them (R's ``log`` of the column for ``offset(log(col))``)."""
+    if spec.offset is None:
+        return None
+    col = [float(v) for v in data[spec.offset.column].to_numpy(dtype=float)]
+    return [math.log(v) for v in col] if spec.offset.log else col
+
+
+def _default(prior: Prior) -> Prior:
+    return replace(prior, source="default")
+
+
+def default_priors(formula: str, data: pd.DataFrame, *, family: str = "gaussian", categorical: Mapping[str, object] | None = None,
+                   nu: float | None = None, link: str | None = None, center_predictors: bool = True) -> Priors:
+    """brms's default priors for ``formula`` on ``data`` under ``family`` (brms 2.23's ``default_prior()``), as a
+    ``Priors`` the constructors accept: ``ab.gaussian(f, df, ab.default_priors(f, df))``.
+
+    ``categorical``, ``link`` and ``center_predictors`` are the constructor's own and say which model the defaults are
+    for (without centring, brms's intercept is a flat ``b`` coefficient). ``nu`` is the Student-t degrees of freedom: left
+    ``None`` the model learns them and they get brms's ``gamma(2, 0.1)``; a fixed value gets no prior. The data-dependent
+    location and scale are computed from the response as brms computes them (module docstring). Every prior is marked
+    ``source="default"``. Refused: a family or link the library does not have, a formula outside the supported subset
+    (the same errors as the constructors), and a family whose parameter has no recorded brms default."""
+    from autobayes.families import FAMILIES, get_family
+    from autobayes.formula import parse_formula
+
+    fam = get_family(family, link)                                    # an unknown family, or a withheld link, is refused here
+    learned = {}
+    if "nu" in fam.fixed_parameters:
+        if nu is None and "nu" in fam.learnable_parameters:           # learned under brms's default prior
+            learned["nu"] = fam.default_learned_priors.get("nu")
+        else:
+            fam.fixed_parameters["nu"](nu)                            # a fixed nu, checked as the constructor checks it: no prior
+    elif nu is not None:
+        accepting = [name for name, other in FAMILIES.items() if "nu" in other.fixed_parameters]
+        raise ValueError(f"nu applies only to the {' or '.join(accepting)} family")
+    spec = parse_formula(formula, data, family, categorical)
+    y = np.asarray(data[spec.response], dtype=float)
+    location, scale = location_scale(y, fam.default_prior_link, _offset_values(spec, data))
+    intercept = None
+    if spec.intercept:
+        intercept = StudentT(DF, location, scale) if center_predictors else Flat()
+    sd = {}
+    for t in spec.group_terms:
+        sd[t.factor] = HalfStudentT(DF, scale) if not t.slopes else {c: HalfStudentT(DF, scale) for c in t.coefs}
+    cor = {t.factor: LKJ(1) for t in spec.correlated_terms}
+    auxiliary = {}
+    if fam.scale_parameter is not None:
+        if fam.default_scale_prior is None:
+            raise PriorError(f"no brms default prior is recorded for the {fam.name} family's {fam.scale_parameter}; "
+                             f"give the priors explicitly (ab.Priors(..., {fam.scale_parameter}=...))")
+        auxiliary[fam.scale_parameter] = fam.default_scale_prior(scale)
+    for name, make in learned.items():
+        if make is None:
+            raise PriorError(f"no brms default prior is recorded for the {fam.name} family's learned {name}; "
+                             f"give the priors explicitly (ab.Priors(..., {name}=...))")
+        learned[name] = make()
+
+    def mark(value):
+        if value is None:
+            return None
+        if isinstance(value, Mapping):
+            return {k: mark(v) for k, v in value.items()}
+        return _default(value)
+
+    priors = Priors(intercept=mark(intercept), b=mark(Flat()) if spec.pop_terms else None, sd=mark(sd) or None,
+                    cor=mark(cor) or None, nu=mark(learned.get("nu")), **{k: mark(v) for k, v in auxiliary.items()})
+    priors.validate(spec, fam)
+    return priors
+
+
+# -- brms's table ---------------------------------------------------------------------------------------------------
+_RENAME = ((" ", ""), ("(", ""), (")", ""), ("[", ""), ("]", ""), (",", ""), ('"', ""), ("'", ""), ("?", ""),
+           ("+", "P"), ("-", "M"), ("*", "MU"), ("/", "D"), ("^", "E"), ("=", "EQ"), ("$", "USD"))
+
+
+def brms_rename(name: str) -> str:
+    """brms's ``rename()`` of a model-matrix column name into a coefficient name (``log(xpos)`` -> ``logxpos``,
+    ``I(x^2)`` -> ``IxE2``, ``(Intercept)`` -> ``Intercept``)."""
+    for old, new in _RENAME:
+        name = name.replace(old, new)
+    return name
+
+
+def _r_variable_order(spec) -> dict[str, int]:
+    """The position of each main effect in the formula: the order in which R lists the variables of brms's
+    fixed-effects formula (main effects before interactions, each in the order written) and so writes the operands of
+    an interaction column, ``x:zq`` for ``x * z`` and ``zq:x`` for ``z * x`` or ``x:z + z + x`` (checked against
+    brms 2.23's ``default_prior()``). Every interaction operand is a main effect here (D14)."""
+    return {t.name: i for i, t in enumerate(spec.pop_terms) if t.kind in ("numeric", "categorical")}
+
+
+def brms_coefficient_names(spec) -> dict[str, str]:
+    """brms's name of each design column of ``spec`` (its ``b`` coefficient labels, ``rename()`` of R's model-matrix
+    column names): ``x``; ``zq`` for level ``q`` of ``z``; ``x:zq``, ``x:w`` and ``zq:hh2`` with the operands in the order
+    R writes them; ``logxpos`` and ``IxE2`` for transforms. ``spec`` must have seen the data (the levels name columns)."""
+    from autobayes.formula import interaction_cells
+
+    if any(not c.levels for c in spec.categoricals):
+        raise ValueError("brms's coefficient names need the categorical levels: parse the formula with the data")
+    order = _r_variable_order(spec)
+    out: dict[str, str] = {}
+    for t in spec.pop_terms:
+        if t.kind == "numeric":
+            out[t.columns[0]] = brms_rename(t.name)
+        elif t.kind == "transform":
+            out[t.columns[0]] = brms_rename(t.transform.term)
+        elif t.kind == "categorical":
+            for level, col in zip(t.levels, t.columns):
+                out[col] = brms_rename(f"{t.name}{level}")
+        else:
+            ops = sorted(t.operands, key=lambda c: order.get(c, len(order)))
+            if not t.categorical:                                     # x:w, one product column
+                out[t.columns[0]] = brms_rename(":".join(ops))
+            elif len(t.categorical) == 1:                             # x:z, one column per non-reference level of z
+                z = t.categorical[0]
+                for level, col in zip(t.levels, t.columns):
+                    out[col] = brms_rename(":".join(f"{z}{level}" if op == z else op for op in ops))
+            else:                                                     # z:h, one column per cell
+                zc, hc = (spec.categorical(c) for c in t.categorical)
+                for (lz, lh), col in zip(interaction_cells(zc, hc), t.columns):
+                    piece = {zc.name: f"{zc.name}{lz}", hc.name: f"{hc.name}{lh}"}
+                    out[col] = brms_rename(":".join(piece[op] for op in ops))
+    return out
+
+
+def prior_table(priors: Priors, spec, family="gaussian", *, center_predictors: bool = True) -> list[dict[str, str]]:
+    """``priors`` in brms's table form: one row per class, group and coefficient as brms's ``default_prior()`` lists
+    them, with the columns ``COLUMNS`` (all strings), sorted as brms sorts them (by resp, dpar, nlpar, class, group, coef;
+    C-locale order). A prior shared by every member of a class sits on the class row and the member rows are empty
+    (they inherit it), as brms writes its defaults; otherwise the most general level shared by the members carries it
+    (an ``sd`` prior per factor on the group row, a coefficient's own prior on its row). Priors are written in brms's
+    syntax (``brms_prior``: ``HalfStudentT(3, 2.5)`` on ``sd`` is ``student_t(3, 0, 2.5)`` with ``lb`` 0; ``Flat()`` is
+    the empty string); ``source`` is ``default`` for a prior from ``default_priors`` and ``user`` otherwise.
+    ``spec`` is the model's parsed formula with its data seen (``model.spec``); without centring the intercept is
+    brms's ``b`` coefficient ``Intercept``."""
+    from autobayes.families import FamilySpec, get_family
+
+    fam = family if isinstance(family, FamilySpec) else get_family(family)
+    priors.validate(spec, fam)
+    rows: list[dict[str, str]] = []
+
+    def add(prior, cls, *, coef="", group="", lb="", source=None):
+        text = brms_prior(prior) if isinstance(prior, Prior) else ""
+        src = source if source is not None else (prior.source if isinstance(prior, Prior) else "default")
+        rows.append(dict(zip(COLUMNS, (text, cls, coef, group, "", "", "", lb, "", "", src))))
+
+    def same(ps):
+        return all(p == ps[0] for p in ps)
+
+    names = brms_coefficient_names(spec)
+    coefs = [(names[col], p) for col, p in priors.coefficient_priors(spec).items()]
+    if spec.intercept and center_predictors:
+        add(priors.intercept, "Intercept")
+    elif spec.intercept:
+        coefs.insert(0, ("Intercept", priors.intercept))              # brms's uncentred intercept is a b coefficient
+    if coefs:
+        ps = [p for _, p in coefs]
+        if same(ps):
+            add(ps[0], "b")
+            for name, p in coefs:
+                add(None, "b", coef=name, source=p.source)
+        else:
+            add(None, "b")
+            for name, p in coefs:
+                add(p, "b", coef=name)
+    if fam.scale_parameter is not None:
+        add(getattr(priors, fam.scale_parameter), fam.scale_parameter, lb="0")
+    if priors.nu is not None:
+        add(priors.nu, "nu", lb=r_number(fam.learnable_parameters["nu"]))
+    sd = priors.sd_priors(spec)
+    if sd:
+        ps = list(sd.values())
+        if same(ps):
+            add(ps[0], "sd", lb="0")
+        else:
+            add(None, "sd", lb="0")
+        for t in spec.group_terms:
+            mine = [sd[(t.factor, c)] for c in t.coefs]
+            if same(ps):
+                add(None, "sd", group=t.factor, source=mine[0].source)
+                for c, p in zip(t.coefs, mine):
+                    add(None, "sd", coef=brms_rename(c), group=t.factor, source=p.source)
+            elif same(mine):
+                add(mine[0], "sd", group=t.factor)
+                for c, p in zip(t.coefs, mine):
+                    add(None, "sd", coef=brms_rename(c), group=t.factor, source=p.source)
+            else:
+                add(None, "sd", group=t.factor)
+                for c, p in zip(t.coefs, mine):
+                    add(p, "sd", coef=brms_rename(c), group=t.factor)
+    cor = priors.cor_priors(spec)
+    if cor:
+        ps = list(cor.values())
+        add(ps[0] if same(ps) else None, "cor")
+        for g, p in cor.items():
+            if same(ps):
+                add(None, "cor", group=g, source=p.source)
+            else:
+                add(p, "cor", group=g)
+    rows.sort(key=lambda r: (r["resp"], r["dpar"], r["nlpar"], r["class"], r["group"], r["coef"], r["tag"]))
+    return rows

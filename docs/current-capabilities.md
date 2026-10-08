@@ -85,3 +85,9 @@ offered (D19); see [links](links.md). Student-t with learned degrees of freedom 
 `Priors(nu=...)`: the prior truncated to `nu > 1` and renormalised there as brms's `real<lower=1> nu`, sampled as
 `log(nu - 1)`; Gamma, Exponential, HalfNormal and HalfCauchy priors, D22) followed, verified against
 `student_learned_nu`; see [Student-t learned nu](student-learned-nu.md).
+brms's default priors (A07, `ab.default_priors(formula, data, ...)`: brms 2.23's `default_prior()` for the formula, data
+and family as a `Priors` to pass to a constructor, with brms's data-dependent Intercept location and scales; flat `b` as
+`ab.Flat()`, the negative binomial shape's `inv_gamma(0.4, 0.3)` as `ab.InverseGamma`) are available on request and
+marked as defaults in `describe()` and fit records; nothing is filled in unasked (D1). Gate G6 now compares them with
+the `default_prior()` table of every fixture, and five fixtures frozen without priors check the densities under them;
+an intercept-only model needs no `b` prior (D2); see [default priors](default-priors.md).

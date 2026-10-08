@@ -28,7 +28,7 @@ feature), `divergences.md` (where AutoBayes knowingly differs from brms) and the
 | G3 | derived quantities per draw (linear predictor, group effects, raw-scale intercept) | `tests/oracle` |
 | G4 | `predict()` equals `posterior_linpred` / `posterior_epred` to 1e-9 relative | `tests/oracle` |
 | G5 | the JAX-compiled density equals the PyTensor one | `tests/oracle` |
-| G6 | brms's `default_prior()` table recorded; `ab.default_priors()` reproduces it once that feature lands | `tests/oracle` |
+| G6 | `ab.default_priors()` written as brms's table equals the fixture's `default_prior()` table, every row and column (A07) | `tests/oracle` |
 | G7 | the non-sampling suite locally (`-m "not slow and not sampling"`); the full fast suite in hosted CI | `tests` |
 | G8 | advisory only: one 120-second sampling smoke, zero retries | `--smoke` |
 

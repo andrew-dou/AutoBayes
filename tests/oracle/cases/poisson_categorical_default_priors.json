@@ -1,0 +1,49 @@
+{
+ "id": "poisson_categorical_default_priors",
+ "tier": "A",
+ "feature": "A07_default_priors",
+ "note": "brms's defaults under the log link: the Intercept location is the median of log(cnt) with zeros read as 0.1 (the two middle values 0 and log 2 give 0.3, where log(median) would give 0.4); flat b over x and the dummies of z",
+ "seed": 177,
+ "n_points": 8,
+ "data": {
+  "generator": "baseline",
+  "seed": 77,
+  "n": 36,
+  "newdata": {
+   "seed": 177,
+   "n": 5
+  }
+ },
+ "brms": {
+  "formula": "cnt ~ x + z + (1 | g)",
+  "family": {
+   "family": "poisson"
+  },
+  "factors": {
+   "z": [
+    "p",
+    "q",
+    "r"
+   ],
+   "g": [
+    "a",
+    "b",
+    "c",
+    "d",
+    "e",
+    "f"
+   ]
+  },
+  "priors": []
+ },
+ "autobayes": {
+  "constructor": "poisson",
+  "formula": "cnt ~ x + z + (1 | g)",
+  "kwargs": {
+   "categorical": {
+    "z": "p"
+   }
+  },
+  "priors": "default"
+ }
+}

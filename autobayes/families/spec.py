@@ -20,6 +20,7 @@ NO_FIXED_PARAMETERS: Mapping[str, Callable[[object], float]] = MappingProxyType(
 NO_OTHER_LINKS: Mapping[str, Callable[[], "FamilySpec"]] = MappingProxyType({})
 NO_PARKED_LINKS: Mapping[str, str] = MappingProxyType({})
 NO_LEARNABLE_PARAMETERS: Mapping[str, float] = MappingProxyType({})
+NO_LEARNED_DEFAULTS: Mapping[str, Callable[[], object]] = MappingProxyType({})
 STANDARD_PREDICTION_KINDS = frozenset({"mean", "response", "linear"})
 
 
@@ -66,9 +67,13 @@ class FamilySpec:
     likelihood_lines: Callable[[object], list[str]]   # (model): the scale prior, fixed parameters and likelihood paragraph
     centred_intercept_note: tuple[str, ...]      # ``describe()`` lines after a centred intercept with categorical predictors
     deterministic_note: str                      # the tail of ``describe()``'s "Deterministic:" line
+    # brms's default priors (A07, ``ab.default_priors``, docs/default-priors.md):
+    default_prior_link: str | None               # how brms reads the response for its data-dependent defaults (def_scale_prior): "identity", "log" (zeros read as 0.1; also the lognormal's log scale), or None for a link it does not read the response through (logit, probit), whose defaults are student_t(3, 0, 2.5)
+    default_scale_prior: Callable[[float], object] | None   # (brms's data-dependent scale) -> brms's default prior of the auxiliary parameter (sigma: HalfStudentT(3, scale); shape, phi: the family's constant); None without one
     links: Mapping[str, Callable[[], "FamilySpec"]] = field(default_factory=lambda: NO_OTHER_LINKS)   # the family's other links by name, each building this family's spec under that link (Bernoulli, binomial: probit); empty for a one-link family
     parked_links: Mapping[str, str] = field(default_factory=lambda: NO_PARKED_LINKS)   # links brms offers for this family that this library withholds, each with the reason ``with_link`` reports (Bernoulli, binomial: cloglog; docs/links.md)
     learnable_parameters: Mapping[str, float] = field(default_factory=lambda: NO_LEARNABLE_PARAMETERS)   # fixed parameters a model learns instead when none is given, each under its own prior truncated at the lower bound given here (Student-t: nu > 1, brms's real<lower=1> nu; docs/student-learned-nu.md)
+    default_learned_priors: Mapping[str, Callable[[], object]] = field(default_factory=lambda: NO_LEARNED_DEFAULTS)   # brms's default prior of each learnable parameter (Student-t nu: gamma(2, 0.1), Gamma(2, 0.1)); A07
 
     def with_link(self, link: str | None) -> "FamilySpec":
         """This family's spec under ``link``: this spec for ``None`` or its own link, the one a ``links`` entry builds

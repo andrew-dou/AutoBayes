@@ -399,16 +399,33 @@
    "depends_on": [
     "P3_families_registry"
    ],
-   "status": "implementing",
+   "status": "gates_green",
    "summary": "opt-in ab.default_priors() reproducing brms's default_prior() table (G6 becomes a pass/fail gate)",
    "pr": null,
    "attempts": 1,
-   "gates": {},
+   "gates": {
+    "sha": "db825049583c",
+    "dirty_tree": false,
+    "base": "origin/main",
+    "when": "2026-10-08T01:15Z",
+    "results": {
+     "immutability": {
+      "status": "pass",
+      "seconds": 0.0
+     },
+     "oracle": {
+      "status": "pass",
+      "seconds": 100.2
+     }
+    },
+    "note": "rebased onto main; the agent's full suite on the same code (74e5f85): 1401 passed, 56 deselected, 77 xfailed in 1109 s"
+   },
    "divergences": [
     "D1",
-    "D2"
+    "D2",
+    "D23"
    ],
-   "next_action": "agent in worktree parity-a07 (stacked on #36's merge commit ad8a5c1)"
+   "next_action": "merge"
   },
   {
    "id": "A08_negbinomial",

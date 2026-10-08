@@ -99,6 +99,8 @@ def fit_record(model, fit, *, panel: dict | None = None, max_treedepth: int = 10
     sd_priors = pr.sd_priors(s)
     fixed = {name: getattr(model, name) for name in fam.fixed_parameters if getattr(model, name) is not None}   # not a learned nu (A13)
     cor_priors = pr.cor_priors(s)
+    from autobayes.default_priors import BRMS_VERSION
+    defaults = getattr(model, "default_prior_labels", [])
     return {
         "autobayes_version": __version__,
         "model": {
@@ -131,6 +133,8 @@ def fit_record(model, fit, *, panel: dict | None = None, max_treedepth: int = 10
                        **{f"cor:{g}": str(prior) for g, prior in cor_priors.items()},
                        **({fam.scale_parameter: str(getattr(pr, fam.scale_parameter))} if fam.scale_parameter is not None else {}),
                        **({"nu": str(pr.nu)} if pr.nu is not None else {})},
+            # which of those priors ab.default_priors() filled in (brms's defaults, A07); absent when the user gave them all
+            **({"default_priors": {"brms": BRMS_VERSION, "parameters": list(defaults)}} if defaults else {}),
             "terms": list(s.terms),
             "design_columns": list(s.columns),
             **({"offset": s.offset.term} if s.offset is not None else {}),

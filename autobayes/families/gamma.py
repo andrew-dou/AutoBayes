@@ -12,6 +12,7 @@ from __future__ import annotations
 
 from autobayes.families.spec import NO_FIXED_PARAMETERS, STANDARD_PREDICTION_KINDS, FamilySpec, exp_mean
 from autobayes.formula import validate_positive_response
+from autobayes.priors import Gamma, describe_prior
 
 
 def _bambi_family():
@@ -37,7 +38,7 @@ def _draw_response(model, post, eta, mean, df, rng):
 
 
 def _likelihood_lines(model) -> list[str]:
-    return [f"  shape ~ {model.priors.shape}", "", "Likelihood",
+    return [f"  shape ~ {describe_prior(model.priors.shape, lb=0)}", "", "Likelihood",
             "  y_i ~ Gamma(shape, rate = shape / mu_i); mu_i = exp(eta_i); E[y_i] = mu_i, Var[y_i] = mu_i^2 / shape",
             "  brms's parameterisation gamma_lpdf(y | shape, shape / mu), through PyMC's Gamma with alpha = shape,",
             "  sampled as log(shape). The link is log; brms's default Gamma link is inverse (divergence D9).",
@@ -64,4 +65,6 @@ GAMMA = FamilySpec(
     likelihood_lines=_likelihood_lines,
     centred_intercept_note=(),
     deterministic_note="mu = exp(linear predictor); mu = exp(eta), expected response",
+    default_prior_link="log",                                       # brms reads log(y) under the log link
+    default_scale_prior=lambda scale: Gamma(0.01, 0.01),            # brms shape: gamma(0.01, 0.01), lb 0
 )

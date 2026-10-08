@@ -17,6 +17,11 @@ def prior_predictive(model, *, draws=500, seed=None):
         raise ValueError('draws must be a positive integer')
     if seed is not None and (isinstance(seed, (bool, np.bool_)) or not isinstance(seed, Integral) or seed < 0):
         raise ValueError('seed must be a nonnegative integer or None')
+    priors = getattr(model, 'priors', None)               # a flat prior (ab.Flat, brms's default for b) has nothing to draw from
+    improper = priors.improper(model.spec) if priors is not None else []
+    if improper:
+        raise ValueError(f'the prior of {improper} is flat (Flat(), brms\'s default for b): an improper prior has no prior '
+                         'predictive distribution; give proper priors for these parameters to draw from the prior')
     identity = json.dumps(model.target_identity, sort_keys=True)
     try:
         result = pm.sample_prior_predictive(draws=int(draws), random_seed=None if seed is None else int(seed),

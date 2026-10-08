@@ -1,0 +1,40 @@
+{
+ "id": "negbinomial_default_priors",
+ "tier": "A",
+ "feature": "A07_default_priors",
+ "note": "brms's negbinomial defaults: shape inv_gamma(0.4, 0.3) (ab.InverseGamma), Intercept at the median of log(ynb)",
+ "seed": 174,
+ "n_points": 8,
+ "data": {
+  "generator": "tier_a",
+  "seed": 74,
+  "n": 36,
+  "newdata": {
+   "seed": 174,
+   "n": 5
+  }
+ },
+ "brms": {
+  "formula": "ynb ~ x + (1 | g)",
+  "family": {
+   "family": "negbinomial"
+  },
+  "factors": {
+   "g": [
+    "a",
+    "b",
+    "c",
+    "d",
+    "e",
+    "f"
+   ]
+  },
+  "priors": []
+ },
+ "autobayes": {
+  "constructor": "negbinomial",
+  "formula": "ynb ~ x + (1 | g)",
+  "kwargs": {},
+  "priors": "default"
+ }
+}

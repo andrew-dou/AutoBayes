@@ -71,6 +71,8 @@ def _spec(link: str) -> FamilySpec:
         likelihood_lines=lambda model: list(_LIKELIHOOD_LINES[link]),
         centred_intercept_note=L.centred_intercept_note,
         deterministic_note=f"{L.parent} = linear predictor; p = {L.probability.replace('eta_i', L.parent)} are computed by predict()",
+        default_prior_link=None,                                    # logit and probit: brms's defaults are student_t(3, 0, 2.5)
+        default_scale_prior=None,
         links=MappingProxyType({other: partial(_spec, other) for other in LINKS if other != link}),
         parked_links=PARKED_LINKS,
     )

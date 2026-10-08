@@ -5,7 +5,8 @@ Bernoulli and grouped binomial with a logit or probit link, Poisson and negative
 counts and Gamma responses with a log link, lognormal responses with the identity
 link on the log-scale location, and Beta proportions with a logit link and precision ``phi``. Supported formulas combine numeric and declared categorical predictors,
 numeric-by-categorical interactions, intercept controls, and optional multiple
-independent varying-intercept factors with independent or correlated varying slopes. Explicit priors are required.
+independent varying-intercept factors with independent or correlated varying slopes. Explicit priors are required;
+brms's own defaults are available explicitly with ``default_priors(formula, data, ...)``.
 
 See docs/current-capabilities.md for supported composition, test entry points,
 and the distinction between deterministic checks, CPU examples and GPU evidence.
@@ -34,10 +35,12 @@ except ImportError:
 from autobayes.formula import Categorical, FormulaError, GroupTerm, ModelSpec, PopTerm, parse_formula
 from autobayes.priors import (
     Exponential,
+    Flat,
     Gamma,
     HalfCauchy,
     HalfNormal,
     HalfStudentT,
+    InverseGamma,
     LKJ,
     Normal,
     Prior,
@@ -45,6 +48,7 @@ from autobayes.priors import (
     Priors,
     StudentT,
 )
+from autobayes.default_priors import default_priors
 from autobayes.model import Model, bernoulli, beta, binomial, gamma, gaussian, lognormal, negbinomial, student, poisson
 from autobayes.inference import DeviceError, FitResult, fit
 from autobayes.predict import predict
@@ -53,9 +57,9 @@ from autobayes.diagnostics import panel
 from autobayes.session import compare_records, environment, fit_record, format_comparison, format_environment
 
 __all__ = [
-    "Categorical", "DeviceError", "Exponential", "FitResult", "FormulaError", "Gamma", "GroupTerm", "HalfCauchy",
-    "HalfNormal", "HalfStudentT", "LKJ", "Model", "ModelSpec", "Normal", "PopTerm", "Prior",
-    "PriorError", "Priors", "StudentT", "bernoulli", "beta", "binomial", "compare_records", "environment", "fit", "fit_record",
+    "Categorical", "DeviceError", "Exponential", "FitResult", "Flat", "FormulaError", "Gamma", "GroupTerm", "HalfCauchy",
+    "HalfNormal", "HalfStudentT", "InverseGamma", "LKJ", "Model", "ModelSpec", "Normal", "PopTerm", "Prior",
+    "PriorError", "Priors", "StudentT", "bernoulli", "beta", "binomial", "compare_records", "default_priors", "environment", "fit", "fit_record",
     "gamma", "lognormal", "negbinomial", "student", "poisson", "format_comparison", "format_environment", "gaussian", "panel",
     "parse_formula", "predict", "prior_predictive",
 ]
