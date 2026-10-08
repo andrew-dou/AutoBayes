@@ -5,7 +5,7 @@ This is a capability map, not a percentage of brms implemented.
 
 | Surface | Merged behavior | Tests / documentation |
 | --- | --- | --- |
-| Families | Gaussian, Bernoulli-logit, grouped binomial-logit, fixed finite nu>1 Student-t, Poisson-log, negative binomial-log and Gamma-log with a `shape` prior | test_logp.py, test_bernoulli.py, test_binomial.py, test_student.py, test_poisson.py, test_negbinomial.py, test_gamma.py; [negative binomial](negbinomial.md), [Gamma](gamma.md) |
+| Families | Gaussian, Bernoulli and grouped binomial with a logit or probit link (brms's cloglog link withheld, D18), Student-t with a fixed finite nu > 1 or nu learned under its own prior truncated to nu > 1, Poisson-log, negative binomial-log and Gamma-log with a `shape` prior, lognormal (identity link on the log-scale location, `sigma` the SD of `log y`), Beta-logit proportions with a precision `phi` prior | test_logp.py, test_bernoulli.py, test_binomial.py, test_links.py, test_student.py, test_student_learned_nu.py, test_poisson.py, test_negbinomial.py, test_gamma.py, test_lognormal.py, test_beta.py; [negative binomial](negbinomial.md), [Gamma](gamma.md), [lognormal](lognormal.md), [Beta](beta.md), [links](links.md), [Student-t learned nu](student-learned-nu.md) |
 | Formula composition | Numeric and declared categorical predictors; multiple numeric-by-categorical interactions with required main effects; optional intercept; one offset term `offset(col)` or `offset(log(col))` added to the linear predictor without a coefficient | test_intercept_controls.py, test_multiple_interactions.py, test_offset.py; [offset](offset.md) |
 | Hierarchy | Population-only models or multiple independent varying-intercept factors; independent varying slopes `(1 + x || g)` on numeric population-level terms, and brms's correlated form `(1 + x \| g)` with an LKJ prior `cor={"g": ab.LKJ(eta)}` on the correlation of the intercept and slope(s) (Stan's `cholesky_corr` coordinates); grouping by the observed combinations of two columns, `(1 \| g:h)`, and brms's nesting shorthand `(1 \| g/h)` = `(1 \| g) + (1 \| g:h)`, with brms's `g_h` level labels | test_population_only.py, test_multiple_groups.py, test_varying_slope.py, test_correlated_slopes.py, test_grouping_syntax.py; [varying slopes](varying-slopes.md), [correlated slopes](correlated-slopes.md), [grouping syntax](grouping-syntax.md) |
 | Execution | Inspectable PyMC graph; PyMC NUTS or JAX/NumPyro sampling with explicit device selection | inference.py, test_device.py and test_sampling.py; availability does not establish GPU validation |
@@ -77,4 +77,11 @@ location `mu`, `sigma` the SD of `log y` under `Priors(sigma=...)`, `predict(kin
 [lognormal](lognormal.md). Beta proportions with a logit link (A11, `ab.beta`, brms's `Beta()`: precision `phi` under
 `Priors(phi=...)`, the likelihood built as this library's own Bambi family so that the graph keeps the linear predictor
 `logit_mu` and brms's name `phi`; `1 - mu` as `expit(-eta)`, divergence D10) followed, verified against `beta_varint`;
-see [Beta](beta.md).
+see [Beta](beta.md). The probit link for the Bernoulli and binomial families (A12, `link="probit"`: `p = Phi(eta)`
+through a stable `log Phi`, the graph keeping `eta` as `probit_p`) followed, verified against `bernoulli_probit` and
+`binomial_probit`; brms's cloglog link is withheld because its frozen fixture records a brms gradient off by 3.8e-7
+relative where AutoBayes's form is exact (D18), and its cauchit link and the other families' non-default links are not
+offered (D19); see [links](links.md). Student-t with learned degrees of freedom (A13, `ab.student(..., nu=None)` with
+`Priors(nu=...)`: the prior truncated to `nu > 1` and renormalised there as brms's `real<lower=1> nu`, sampled as
+`log(nu - 1)`; Gamma, Exponential, HalfNormal and HalfCauchy priors, D22) followed, verified against
+`student_learned_nu`; see [Student-t learned nu](student-learned-nu.md).

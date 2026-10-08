@@ -5,10 +5,6 @@
  "note": "nu is a parameter with lower bound 1 (brms: real<lower=1> nu); its unconstrained transform is log(nu - 1), probed as 'other'",
  "seed": 154,
  "n_points": 8,
- "gate": {
-  "expect": "fail",
-  "reason": "A13_student_learned_nu not implemented; remove this field when it lands"
- },
  "data": {
   "generator": "tier_a",
   "seed": 54,

@@ -67,11 +67,12 @@ def format_environment(env: dict) -> str:
 def _summary_rows(model, idata) -> dict:
     import arviz as az
 
-    from autobayes.families import get_family
+    from autobayes.families import family_of
 
     n = model.names
-    scale = get_family(model.family).scale_parameter            # "sigma", "shape", "phi" or None
+    scale = family_of(model).scale_parameter                    # "sigma", "shape", "phi" or None
     names = ([n["intercept"]] if model.spec.intercept else []) + list(model.spec.terms) + [roles["sd"] for roles in model.group_coefficient_names.values()] + ([n[scale]] if scale is not None else [])
+    names += [n[name] for name in model.learned_parameters]     # a learned Student-t nu (A13)
     s = az.summary(idata, var_names=names, hdi_prob=0.94, round_to="none")
     rows = {}
     for name, r in s.iterrows():
@@ -84,18 +85,19 @@ def fit_record(model, fit, *, panel: dict | None = None, max_treedepth: int = 10
     """A JSON-serialisable record of one fit: specification, execution, diagnostics, posterior."""
     from autobayes import __version__
     from autobayes.diagnostics import panel as _panel
-    from autobayes.families import get_family
+    from autobayes.families import family_of
 
     from autobayes.formula import sd_tag
     from autobayes.identity import check_fit_binding
     binding = check_fit_binding(model, fit, allow_unverified=allow_unverified)
 
     p = panel if panel is not None else _panel(fit.idata, max_treedepth=max_treedepth)
-    fam = get_family(model.family)
+    fam = family_of(model)                                     # the family under the model's link
     s, d, pr = model.spec, model.design, model.priors
     coef = pr.coefficient_priors(s)
     group_priors = pr.group_priors(s)
     sd_priors = pr.sd_priors(s)
+    fixed = {name: getattr(model, name) for name in fam.fixed_parameters if getattr(model, name) is not None}   # not a learned nu (A13)
     cor_priors = pr.cor_priors(s)
     return {
         "autobayes_version": __version__,
@@ -105,7 +107,7 @@ def fit_record(model, fit, *, panel: dict | None = None, max_treedepth: int = 10
             **({"target_identity": model.target_identity} if binding == "matched" else
                {"requested_target_identity": model.target_identity}),
             "fit_binding_status": binding,
-            **({"family_parameters": {name: getattr(model, name) for name in fam.fixed_parameters}} if fam.fixed_parameters else {}),
+            **({"family_parameters": fixed} if fixed else {}),
             "link": model.link,
             "n": int(d.n),
             **({"J": int(d.J), "group": s.group} if len(s.groups) <= 1 else {}),
@@ -127,7 +129,8 @@ def fit_record(model, fit, *, panel: dict | None = None, max_treedepth: int = 10
                        **{("sd" if len(s.groups) == 1 else f"sd:{g}"): str(prior) for g, prior in group_priors.items()},
                        **{f"sd:{sd_tag(g, c)}": str(prior) for (g, c), prior in sd_priors.items() if c != "Intercept"},
                        **{f"cor:{g}": str(prior) for g, prior in cor_priors.items()},
-                       **({fam.scale_parameter: str(getattr(pr, fam.scale_parameter))} if fam.scale_parameter is not None else {})},
+                       **({fam.scale_parameter: str(getattr(pr, fam.scale_parameter))} if fam.scale_parameter is not None else {}),
+                       **({"nu": str(pr.nu)} if pr.nu is not None else {})},
             "terms": list(s.terms),
             "design_columns": list(s.columns),
             **({"offset": s.offset.term} if s.offset is not None else {}),

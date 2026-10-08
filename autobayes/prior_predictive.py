@@ -4,7 +4,7 @@ import json
 import numpy as np
 import pymc as pm
 
-from autobayes.families import get_family
+from autobayes.families import family_of
 
 
 def prior_predictive(model, *, draws=500, seed=None):
@@ -36,7 +36,7 @@ def prior_predictive(model, *, draws=500, seed=None):
     y = result.prior_predictive[model.names['y']].values
     if y.shape != (1, draws, model.design.n):
         raise ValueError('prior predictive response dimensions do not match modeled rows')
-    fam = get_family(model.family)
+    fam = family_of(model)
     if fam.discrete:
         if (y < 0).any() or (y != np.floor(y)).any():
             raise ValueError('prior predictive counts violate response support')
