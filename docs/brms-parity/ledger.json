@@ -580,14 +580,14 @@
     "P3_families_registry"
    ],
    "status": "gates_green",
-   "summary": "non-default links: probit, cloglog, cauchit, log for gaussian, identity/sqrt for poisson",
+   "summary": "probit link for the Bernoulli and binomial families (link= on ab.bernoulli / ab.binomial); brms's cloglog link parked (D18: brms's own gradient is 3.8e-7 relative off the exact value at a frozen point); other links (cauchit, and links of other families) not offered (D19)",
    "pr": null,
    "attempts": 1,
    "gates": {
-    "sha": "4e77349857bb",
+    "sha": "ad8a5c17f8ca",
     "dirty_tree": false,
     "base": "origin/main",
-    "when": "2026-10-07T23:20Z",
+    "when": "2026-10-08T00:03Z",
     "results": {
      "immutability": {
       "status": "pass",
@@ -595,12 +595,21 @@
      },
      "oracle": {
       "status": "pass",
-      "seconds": 269.9
+      "seconds": 234.2
+     },
+     "suite": {
+      "status": "pass",
+      "seconds": 708.5
      }
-    }
+    },
+    "note": "same branch and run as A13_student_learned_nu (merged with main after A02)"
    },
-   "divergences": [],
-   "next_action": "families lane agent, worktree parity-fam3 (stacked on #32's branch)",
+   "divergences": [
+    "D17",
+    "D18",
+    "D19"
+   ],
+   "next_action": "merge; cloglog park goes to Andrew at the Tier A boundary",
    "fixtures": {
     "pr": 28,
     "cases": [
@@ -621,10 +630,10 @@
    "pr": null,
    "attempts": 1,
    "gates": {
-    "sha": "15cb72fb72bc",
+    "sha": "ad8a5c17f8ca",
     "dirty_tree": false,
     "base": "origin/main",
-    "when": "2026-10-07T23:40Z",
+    "when": "2026-10-08T00:03Z",
     "results": {
      "immutability": {
       "status": "pass",
@@ -632,12 +641,18 @@
      },
      "oracle": {
       "status": "pass",
-      "seconds": 89.3
+      "seconds": 234.2
+     },
+     "suite": {
+      "status": "pass",
+      "seconds": 708.5
      }
     }
    },
-   "divergences": [],
-   "next_action": "families lane agent, worktree parity-fam3 (stacked on #32's branch)",
+   "divergences": [
+    "D22"
+   ],
+   "next_action": "merge",
    "fixtures": {
     "pr": 28,
     "cases": [
