@@ -690,7 +690,7 @@
    "attempts": 1,
    "gates": {},
    "divergences": [],
-   "next_action": "agent (opus) in worktree parity-b01 (stacked on B02)",
+   "next_action": "done; agent resolving its rebase onto B05",
    "fixtures": {
     "pr": 33,
     "cases": [
@@ -776,13 +776,13 @@
    "depends_on": [
     "A05_formula_transforms"
    ],
-   "status": "fixtures_frozen",
+   "status": "implementing",
    "summary": "s() smooth terms (mgcv basis construction; likely to park for a decision)",
    "pr": null,
-   "attempts": 0,
+   "attempts": 1,
    "gates": {},
    "divergences": [],
-   "next_action": "implement after the Tier A boundary review",
+   "next_action": "phase 1 (standalone mgcv basis port, verified against R) by an agent in worktree parity-b04; phase 2 integration after B01 merges; may park",
    "fixtures": {
     "pr": 33,
     "cases": [
@@ -803,7 +803,7 @@
    "attempts": 1,
    "gates": {},
    "divergences": [],
-   "next_action": "agent (opus) in worktree parity-b05 (stacked on B06)",
+   "next_action": "rebased onto main (B02) at 03b7d47; full gate running",
    "fixtures": {
     "pr": 33,
     "cases": [
