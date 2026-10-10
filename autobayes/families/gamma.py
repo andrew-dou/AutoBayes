@@ -6,13 +6,14 @@ brms's parameterisation is ``gamma_lpdf(y | shape, shape / mu)``: ``E[y] = mu``,
 which PyMC turns back into ``alpha = mu^2 / sigma^2`` and ``beta = mu / sigma^2 = alpha / mu``; that round trip's
 rounding is inside the oracle tolerance, checked against brms in the case ``gamma_varint``, not assumed. The
 sampled variable is ``alpha_log__`` (``model.names["shape"]`` is ``"alpha"``). This library's Gamma link is ``log``;
-brms's default is ``inverse`` (docs/brms-parity/divergences.md, D9).
+brms's default is ``inverse`` (docs/brms-parity/divergences.md, D9). ``shape`` may have its own formula under a log link
+(B01, docs/distributional.md; ``gamma_distributional_shape``), Bambi's distributional ``alpha``.
 """
 from __future__ import annotations
 
-from autobayes.families.spec import NO_FIXED_PARAMETERS, STANDARD_PREDICTION_KINDS, FamilySpec, exp_mean
+from autobayes.families.spec import NO_FIXED_PARAMETERS, STANDARD_PREDICTION_KINDS, FamilySpec, auxiliary, exp_mean, scale_line, scale_symbol
 from autobayes.formula import validate_positive_response
-from autobayes.priors import Gamma, describe_prior
+from autobayes.priors import Gamma, StudentT
 
 
 def _bambi_family():
@@ -33,15 +34,17 @@ def _inverse_link(eta):
 
 def _draw_response(model, post, eta, mean, df, rng):
     """``Gamma(shape, rate = shape / mu)`` draws: numpy's ``gamma(shape, scale = mu / shape)``."""
-    shape = post[model.names["shape"]].to_numpy()[..., None]
+    shape = auxiliary(model, post, "shape")                    # per draw, or per draw and row (B01)
     return rng.gamma(shape, mean / shape)
 
 
 def _likelihood_lines(model) -> list[str]:
-    return [f"  shape ~ {describe_prior(model.priors.shape, lb=0)}", "", "Likelihood",
-            "  y_i ~ Gamma(shape, rate = shape / mu_i); mu_i = exp(eta_i); E[y_i] = mu_i, Var[y_i] = mu_i^2 / shape",
+    s = scale_symbol(model)                                    # "shape", or "shape_i" with its own formula (B01)
+    return [scale_line(model), "", "Likelihood",
+            f"  y_i ~ Gamma({s}, rate = {s} / mu_i); mu_i = exp(eta_i); E[y_i] = mu_i, Var[y_i] = mu_i^2 / {s}",
             "  brms's parameterisation gamma_lpdf(y | shape, shape / mu), through PyMC's Gamma with alpha = shape,",
-            "  sampled as log(shape). The link is log; brms's default Gamma link is inverse (divergence D9).",
+            ("  sampled as log(shape)." if s == "shape" else "  one shape_i per row.")
+            + " The link is log; brms's default Gamma link is inverse (divergence D9).",
             "  Responses are strictly positive finite reals."]
 
 
@@ -61,11 +64,13 @@ GAMMA = FamilySpec(
     scale_rule="shape is required for the Gamma family; sigma does not apply",
     scale_missing_error="the Gamma family needs a prior on the shape parameter: pass shape=...",
     linpred_symbol="eta", scale_phrase="log mean", intercept_meaning="log expected response",
-    mean_lines=lambda model: ["  E[y_i] = mu_i = exp(eta_i); eta is the log expected response; Var[y_i] = mu_i^2 / shape."],
+    mean_lines=lambda model: [f"  E[y_i] = mu_i = exp(eta_i); eta is the log expected response; Var[y_i] = mu_i^2 / {scale_symbol(model)}."],
     likelihood_lines=_likelihood_lines,
     centred_intercept_note=(),
     deterministic_note="mu = exp(linear predictor); mu = exp(eta), expected response",
     default_prior_link="log",                                       # brms reads log(y) under the log link
     default_scale_prior=lambda scale: Gamma(0.01, 0.01),            # brms shape: gamma(0.01, 0.01), lb 0
     addition_terms=frozenset({"weights"}),                      # B02: weights(), verified against the frozen case gamma_weighted
+    distributional_link="log",                                      # B01: shape ~ z, brms's log link (gamma_distributional_shape)
+    default_distributional_intercept=lambda scale: StudentT(3, 0, 2.5),   # brms Intercept_shape: student_t(3, 0, 2.5) under the log link
 )

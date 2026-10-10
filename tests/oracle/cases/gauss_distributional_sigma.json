@@ -5,10 +5,6 @@
  "note": "brms: sigma has its own linear predictor (Intercept_sigma, b_sigma, log link); standata K_sigma, X_sigma",
  "seed": 161,
  "n_points": 8,
- "gate": {
-  "expect": "fail",
-  "reason": "B01_distributional not implemented; remove this field when it lands"
- },
  "data": {
   "generator": "tier_b",
   "seed": 61,

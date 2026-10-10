@@ -27,6 +27,9 @@ model only when `ab.default_priors()` is called and its result passed in.
 | `nu` (Student-t, learned) | `gamma(2, 0.1)`, lower bound 1 | `Gamma(2, 0.1)`, truncated at 1 as in A13 |
 | `zi`, `hu` (zero-inflated, hurdle; B06) | `beta(1, 1)`, lower bound 0, upper bound 1 | `Beta(1, 1)` |
 | `Intercept` of the cumulative thresholds, and of each category of a categorical model (B05) | `student_t(3, 0, 2.5)` on the class row, one row per threshold (`coef` `1`, ...) or per category (`dpar` `muc2`, ...); the thresholds keep the class `Intercept` when not centred | `StudentT(3, 0, 2.5)`, one prior for all thresholds or categories (`Model.prior_table()` writes the rows) |
+| `Intercept` of a distributional formula (`dpar = sigma`, B01) | `student_t(3, 0, scale)` with the scale of `log y` (zeros read as 0.1; 2.5 when a response is negative) | `StudentT(3, 0, scale)` in `Priors(sigma={"intercept": ...})` |
+| `Intercept` of `shape ~ ...`, `phi ~ ...` (B01) | `student_t(3, 0, 2.5)` | `StudentT(3, 0, 2.5)` |
+| `b` of a distributional formula (B01) | flat | `Flat()` |
 
 The location and scale are brms's `def_scale_prior` arithmetic on the response read through the family's link
 (`FamilySpec.default_prior_link`): the response itself for the Gaussian and Student-t families; `log(y)`, zeros read as

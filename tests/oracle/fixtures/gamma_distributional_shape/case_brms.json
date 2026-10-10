@@ -1,0 +1,48 @@
+{
+ "factors": {
+  "g": [
+   "a",
+   "b",
+   "c",
+   "d",
+   "e",
+   "f"
+  ]
+ },
+ "family": {
+  "family": "Gamma",
+  "link": "log"
+ },
+ "formula": [
+  "ypos ~ x + (1 | g)",
+  "shape ~ log(xpos)"
+ ],
+ "id": "gamma_distributional_shape",
+ "n_points": 8,
+ "priors": [
+  {
+   "class": "Intercept",
+   "prior": "normal(0, 2)"
+  },
+  {
+   "class": "b",
+   "prior": "normal(0, 1)"
+  },
+  {
+   "class": "sd",
+   "group": "g",
+   "prior": "normal(0, 1)"
+  },
+  {
+   "class": "Intercept",
+   "dpar": "shape",
+   "prior": "normal(0, 1)"
+  },
+  {
+   "class": "b",
+   "dpar": "shape",
+   "prior": "normal(0, 0.5)"
+  }
+ ],
+ "seed": 194
+}

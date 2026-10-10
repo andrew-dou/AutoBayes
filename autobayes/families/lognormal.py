@@ -8,13 +8,14 @@ intercept is the expected log response at the predictor means. Bambi has no plai
 prior is ``Priors(sigma=...)`` (brms class ``sigma``) and the sampled variable ``sigma_log__``. ``predict(kind="mean")``
 returns brms's ``posterior_epred`` ``exp(mu + sigma^2 / 2)`` under the name ``mean`` (not ``exp(mu)``, the median, and not
 ``mu``, which is the location); ``kind="linear"`` returns ``mu``. Checked against brms in the oracle case
-``lognormal_varint``, not assumed.
+``lognormal_varint``, not assumed. ``sigma`` may have its own formula under a log link (B01, docs/distributional.md;
+``lognormal_distributional_sigma``), and the mean then uses each row's ``sigma``.
 """
 from __future__ import annotations
 
-from autobayes.families.spec import NO_FIXED_PARAMETERS, STANDARD_PREDICTION_KINDS, FamilySpec, exp_mean
+from autobayes.families.spec import NO_FIXED_PARAMETERS, STANDARD_PREDICTION_KINDS, FamilySpec, auxiliary, exp_mean, scale_line, scale_symbol
 from autobayes.formula import validate_positive_response
-from autobayes.priors import HalfStudentT, describe_prior
+from autobayes.priors import HalfStudentT, StudentT
 
 
 def _bambi_family():
@@ -28,22 +29,23 @@ def _validate_response(spec, data) -> None:
 
 
 def _expected_response(model, post, eta):
-    """brms's ``posterior_epred`` ``exp(mu + sigma^2 / 2)`` per draw, refused rather than clipped when it overflows."""
-    sigma = post[model.names["sigma"]].to_numpy()
-    return exp_mean(eta + 0.5 * sigma[..., None] ** 2, "lognormal expected response")
+    """brms's ``posterior_epred`` ``exp(mu + sigma^2 / 2)`` per draw (and row, when sigma has its own formula, B01), refused
+    rather than clipped when it overflows."""
+    return exp_mean(eta + 0.5 * auxiliary(model, post, "sigma") ** 2, "lognormal expected response")
 
 
 def _draw_response(model, post, eta, mean, df, rng):
     """``LogNormal(mu, sigma)`` draws with ``mu`` the linear predictor (numpy's ``lognormal(mean, sigma)`` of ``log y``)."""
-    sigma = post[model.names["sigma"]].to_numpy()
-    return rng.lognormal(eta, sigma[..., None])
+    return rng.lognormal(eta, auxiliary(model, post, "sigma"))
 
 
 def _likelihood_lines(model) -> list[str]:
-    return [f"  sigma ~ {describe_prior(model.priors.sigma, lb=0)}", "", "Likelihood",
-            "  y_i ~ LogNormal(mu_i, sigma), i.e. log(y_i) ~ Normal(mu_i, sigma); brms's lognormal_lpdf(y | mu, sigma)",
-            "  E[y_i] = exp(mu_i + sigma^2 / 2), median exp(mu_i), Var[y_i] = (exp(sigma^2) - 1) exp(2 mu_i + sigma^2);",
-            "  sigma is the SD of log y, sampled as log(sigma). predict(kind='mean') returns E[y_i]; kind='linear' returns mu_i.",
+    s = scale_symbol(model)                                    # "sigma", or "sigma_i" with its own formula (B01)
+    return [scale_line(model), "", "Likelihood",
+            f"  y_i ~ LogNormal(mu_i, {s}), i.e. log(y_i) ~ Normal(mu_i, {s}); brms's lognormal_lpdf(y | mu, sigma)",
+            f"  E[y_i] = exp(mu_i + {s}^2 / 2), median exp(mu_i), Var[y_i] = (exp({s}^2) - 1) exp(2 mu_i + {s}^2);",
+            ("  sigma is the SD of log y, sampled as log(sigma)." if s == "sigma" else "  sigma_i is the SD of log y_i.")
+            + " predict(kind='mean') returns E[y_i]; kind='linear' returns mu_i.",
             "  Responses are strictly positive finite reals."]
 
 
@@ -63,12 +65,14 @@ LOGNORMAL = FamilySpec(
     scale_rule="sigma is required for the lognormal family; no other auxiliary parameter applies",
     scale_missing_error="the lognormal family needs a prior on the SD of log y: pass sigma=...",
     linpred_symbol="mu", scale_phrase="log response", intercept_meaning="expected log response",
-    mean_lines=lambda model: ["  log(y_i) ~ Normal(mu_i, sigma): mu is the location of log y, so the coefficients act on log y;",
-                              "  E[y_i] = exp(mu_i + sigma^2 / 2) (brms posterior_epred), median(y_i) = exp(mu_i)."],
+    mean_lines=lambda model: [f"  log(y_i) ~ Normal(mu_i, {scale_symbol(model)}): mu is the location of log y, so the coefficients act on log y;",
+                              f"  E[y_i] = exp(mu_i + {scale_symbol(model)}^2 / 2) (brms posterior_epred), median(y_i) = exp(mu_i)."],
     likelihood_lines=_likelihood_lines,
     centred_intercept_note=(),
     deterministic_note="mu = linear predictor (log-scale location); the expected response exp(mu + sigma^2 / 2) is computed by predict()",
     default_prior_link="log",                                       # brms's log-scale family: it reads log(y)
     default_scale_prior=lambda scale: HalfStudentT(3, scale),       # brms sigma: student_t(3, 0, scale), lb 0
     addition_terms=frozenset({"weights"}),                      # B02: weights(), verified against the frozen case lognormal_weighted
+    distributional_link="log",                                      # B01: sigma ~ z, brms's log link (lognormal_distributional_sigma)
+    default_distributional_intercept=lambda scale: StudentT(3, 0, scale),   # brms Intercept_sigma: student_t(3, 0, scale of log y)
 )

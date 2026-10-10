@@ -18,6 +18,14 @@ A model with response addition terms (B02, docs/addition-terms.md) is predicted 
 neither column), while under ``trunc()`` the mean is the truncated distribution's mean and ``y`` is drawn from the
 truncated distribution, as brms does (``cens()`` and ``trunc()`` are withheld; see ``formula.PARKED_ADDITIONS``).
 
+A model whose auxiliary parameter has its own formula (B01, docs/distributional.md: ``["y ~ x", "sigma ~ z"]``) is
+predicted in this layer too: ``kind="linear"`` and ``kind="mean"`` keep their meaning (the linear predictor of ``mu`` and
+the expected response, brms's ``posterior_linpred`` and ``posterior_epred``), with each row's own ``sigma`` wherever the
+family needs it (the lognormal's mean, every ``kind="response"`` draw); ``dpar="sigma"`` returns the parameter itself,
+its linear predictor under ``kind="linear"`` (brms ``posterior_linpred(dpar = "sigma")``, named ``eta``) or its values
+under ``kind="mean"`` (brms ``posterior_epred(dpar = "sigma")``, named ``sigma``). Its intercept draws are on the raw scale,
+as Bambi reports them after sampling.
+
 ``new_groups`` decides what happens when ``newdata`` contains a level of the grouping
 factor that was not in the training data (a population-only model has no grouping factor: it
 needs no such column, its result carries ``new_groups = "not_applicable"``, and any value other
@@ -50,6 +58,7 @@ import pandas as pd
 import xarray as xr
 
 from autobayes.families import family_of
+from autobayes.families.spec import DISTRIBUTIONAL_INVERSE_LINKS
 from autobayes.formula import FormulaError, categorical_labels, check_counts, group_labels, pop_term_design, reject_complex
 
 _NEW_GROUPS = {"error", "resample_observed", "population"}
@@ -85,10 +94,39 @@ def _coefficient_draws(post, model):
     return np.concatenate(parts, axis=-1 if category is None else -2) if parts else None
 
 
+def dpar_linear_predictor(model, post, df: pd.DataFrame, name: str) -> np.ndarray:
+    """(chain, draw, row) draws of distributional parameter ``name``'s linear predictor (B01) on the rows of ``df`` (the
+    fitted frame, or checked new rows): its raw-scale intercept draws plus its raw design times its coefficient draws, as
+    the response formula's is computed here."""
+    ds, roles = model.spec.dpar(name), model.dpar_names[name]
+    shape = (post.sizes["chain"], post.sizes["draw"])
+    a = post[roles["intercept"]].to_numpy() if ds.intercept else np.zeros(shape)
+    eta = np.repeat(a[..., None], len(df), axis=-1)
+    if ds.pop_terms:
+        X = np.concatenate([pop_term_design(t, df, ds.categoricals) for t in ds.pop_terms], axis=1)
+        b = np.concatenate([post[roles[f"b:{t.name}"]].to_numpy() if t.levels else post[roles[f"b:{t.name}"]].to_numpy()[..., None]
+                            for t in ds.pop_terms], axis=-1)
+        eta = eta + np.einsum("cdp,np->cdn", b, X)
+    return eta
+
+
+def dpar_values(model, post, df: pd.DataFrame, name: str) -> np.ndarray:
+    """(chain, draw, row) draws of distributional parameter ``name`` itself (B01): the inverse link of its linear
+    predictor, refused where it is not a positive finite number."""
+    return DISTRIBUTIONAL_INVERSE_LINKS[model.design.dpars[name].link](dpar_linear_predictor(model, post, df, name), name)
+
+
+def _with_dpars(model, post, df: pd.DataFrame):
+    """The posterior with each distributional parameter's per-row draws under its PyMC name (B01), the form in which the
+    families' mean and response functions read an auxiliary parameter (``families.spec.auxiliary``)."""
+    return post.assign({model.dpar_names[name]["value"]: (("chain", "draw", "__row__"), dpar_values(model, post, df, name))
+                        for name in model.spec.dpar_names})
+
+
 def _check_newdata(model, newdata: pd.DataFrame, *, need_trials: bool = False, include_group_effects: bool = True) -> pd.DataFrame:
     s = model.spec
     operands = [c for t in s.group_terms for c in t.operands] if include_group_effects else []   # g and h, never g_h
-    cols = [*s.pop_columns] + ([s.offset.column] if s.offset is not None else []) + operands
+    cols = [*s.model_columns] + ([s.offset.column] if s.offset is not None else []) + operands   # every formula's columns (B01)
     cols = list(dict.fromkeys(cols))
     if need_trials:
         if s.trials not in newdata.columns:
@@ -105,17 +143,18 @@ def _check_newdata(model, newdata: pd.DataFrame, *, need_trials: bool = False, i
     df = newdata[cols].copy()
     if df.isna().any().any():
         raise FormulaError("newdata contains missing values")
-    for c in s.pop_columns:                                      # numeric predictors and the raw columns of transforms
-        if c in s.categorical_names:
+    categorical_names = {c.name for c in s.all_categoricals}
+    for c in s.model_columns:                                    # numeric predictors and the raw columns of transforms
+        if c in categorical_names:
             continue
         reject_complex(f"newdata column {c!r}", df[c])
         if not pd.api.types.is_numeric_dtype(df[c]):
             raise FormulaError(f"newdata column {c!r} must be numeric")
     if s.offset is not None:
         s.offset.values(df, where="newdata column")               # numeric, finite and (for log) positive, or refused
-    for t in s.transform_terms:                                   # the evaluated columns Bambi's path reads, recomputed from the raw ones
+    for t in (*s.transform_terms, *(t for d in s.dpars for t in d.transform_terms)):   # the evaluated columns, recomputed from the raw ones
         df[t.name] = t.transform.values(df, where="newdata column")
-    for cat in s.categoricals:
+    for cat in s.all_categoricals:
         labels, _ = categorical_labels(f"newdata column {cat.name!r}", df[cat.name])
         unseen = sorted(set(labels.tolist()) - set(cat.levels))
         if unseen:
@@ -131,6 +170,27 @@ def _check_newdata(model, newdata: pd.DataFrame, *, need_trials: bool = False, i
     for t in (s.group_terms if include_group_effects else ()):   # labels as text; a derived factor's column is built here
         df[t.column] = group_labels(t.factor, df)
     return df.reset_index(drop=True)
+
+
+def _predict_dpar(model, idata, df: pd.DataFrame | None, kind: str, name: str) -> xr.Dataset:
+    """``predict(..., dpar=name)`` (B01): the distributional parameter's linear predictor (``kind="linear"``, ``eta``) or
+    its values (``kind="mean"``, under its brms name), per draw and row; its formula has no group-level terms, so the group
+    policies change nothing here and nothing is random (``predict()`` writes the policy attributes)."""
+    if df is None:
+        df = model.data
+    post = idata.posterior
+    eta = dpar_linear_predictor(model, post, df, name)
+    if kind == "linear":
+        if not np.isfinite(eta).all():
+            raise ValueError(f"the linear predictor of {name} contains nonfinite draws")
+        out = {"eta": eta}
+    else:
+        out = {name: DISTRIBUTIONAL_INVERSE_LINKS[model.design.dpars[name].link](eta, name)}
+    dims = ("chain", "draw", "__obs__")
+    ds = xr.Dataset({k: (dims, v) for k, v in out.items()},
+                    coords={"chain": post["chain"], "draw": post["draw"], "__obs__": np.arange(len(df))})
+    ds.attrs["dpar"] = name
+    return ds
 
 
 def _predict_by_hand(model, idata, df: pd.DataFrame | None, kind: str, seed, policies: dict[str, str], *, include_group_effects=True) -> xr.Dataset:
@@ -213,6 +273,8 @@ def _predict_by_hand(model, idata, df: pd.DataFrame | None, kind: str, seed, pol
             out = {"eta": (dims, mu)}
     else:                                                        # mu held the linear predictor eta
         trunc = model.spec.addition("trunc")
+        if model.spec.dpars and (kind == "response" or fam.expected_response is not None or trunc is not None):
+            post = _with_dpars(model, post, df)                  # each row's own sigma, shape or phi (B01)
         if trunc is None:
             mean = expected_response(fam, model, post, mu)
         else:                                                    # brms's posterior_epred of a truncated model: the truncated mean (B02)
@@ -268,16 +330,27 @@ def _prediction_attrs(model, ds, policies, new_levels, *, in_sample, manual, inc
 
 
 def predict(model, fit_result, *, newdata: pd.DataFrame | None = None, kind: str = "response",
-            new_groups: str | Mapping[str, str] = "error", seed: int | None = None, include_group_effects: bool = True) -> xr.Dataset:
+            new_groups: str | Mapping[str, str] = "error", seed: int | None = None, include_group_effects: bool = True,
+            dpar: str | None = None) -> xr.Dataset:
     """Expected response or new response draws, with explicit policies for unseen factors.
 
     A string applies to every factor; a mapping covers every factor exactly. RNG traversal
     follows factor formula order, then sorted unseen labels. Equal labels in different
     factors are independent identities. Common intercept draws are already on the raw scale.
+    ``dpar`` names a distributional parameter with its own formula (B01): ``kind="linear"`` then returns its linear
+    predictor and ``kind="mean"`` its values (brms's ``dpar =``); ``kind="response"`` does not apply.
     """
     fam = family_of(model)                                      # the family under the model's link
     if kind not in fam.prediction_kinds:
         raise ValueError(fam.kind_error)
+    if dpar is not None:                                        # a distributional parameter itself (B01)
+        if dpar not in model.spec.dpar_names:
+            raise ValueError(f"dpar must name a distributional parameter with its own formula, {list(model.spec.dpar_names)}; "
+                             f"got {dpar!r}" if model.spec.dpars else
+                             f"this model has no distributional formula; dpar does not apply (got {dpar!r})")
+        if kind not in ("linear", "mean"):
+            raise ValueError(f"dpar={dpar!r} takes kind='linear' (its linear predictor) or kind='mean' (its values); a new "
+                             "observation is drawn for the response only")
     if not isinstance(include_group_effects, (bool, np.bool_)):
         raise ValueError("include_group_effects must be boolean")
     if not include_group_effects and new_groups != "error":
@@ -298,8 +371,11 @@ def predict(model, fit_result, *, newdata: pd.DataFrame | None = None, kind: str
                 "new_groups='resample_observed' for brms's default 'uncertainty' behaviour; "
                 "an exact-key mapping can set the policy separately for each factor.")
     manual = (not include_group_effects or kind == "linear" or fam.manual_prediction or any(new_levels.values())
-              or bool(model.spec.additions))                   # addition terms (B02): the truncated mean and draws are this layer's
-    if manual:
+              or bool(model.spec.additions)                    # addition terms (B02): the truncated mean and draws are this layer's
+              or bool(model.spec.dpars))                       # distributional formulas (B01): each row's own sigma is this layer's
+    if dpar is not None:
+        ds = _predict_dpar(model, idata, df, kind, dpar)
+    elif manual:
         ds = _predict_by_hand(model, idata, df, kind, seed, policies, include_group_effects=include_group_effects)
     else:
         bambi_kind = "response" if kind == "response" else "response_params"
@@ -317,5 +393,5 @@ def predict(model, fit_result, *, newdata: pd.DataFrame | None = None, kind: str
     _prediction_attrs(model, ds, policies, new_levels, in_sample=df is None, manual=manual, include_group_effects=include_group_effects)
     ds.attrs["fit_binding_status"] = binding
     if kind == "linear":
-        ds.attrs.update(prediction_scale="linear", link=model.link)
+        ds.attrs.update(prediction_scale="linear", link=model.link if dpar is None else model.design.dpars[dpar].link)
     return ds

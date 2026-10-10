@@ -2,11 +2,12 @@
 Each raises `OracleMismatch` naming the point and the quantities that differ; a passing gate returns None.
 
 G1 `check_design`        standata equals the model's design, response, trials, offsets, group coding and addition-term
-                         data (weights, cens, lb, ub; B02)
+                         data (weights, cens, lb, ub; B02), and each distributional formula's X_<dpar> (B01)
 G2 `check_logp`          log density with and without the Jacobian, and its prior part, at every point
 G2 `check_gradient`      every gradient coordinate, mapped through the probed parameter table
 G3 `check_derived`       the graph's linear predictor, group effects and correlation matrices, and the raw-scale intercept
-                         (the cumulative thresholds and a categorical model's per-category intercepts, B05)
+                         (the cumulative thresholds and a categorical model's per-category intercepts, B05); an
+                         auxiliary parameter's own formula: its per-row values and raw-scale intercept (B01)
 G4 `check_predictions`   predict() on the fixture's draws equals posterior_linpred/posterior_epred
 G5 `check_jax`           the JAX-compiled density equals the PyTensor one at every point
 G6 `check_default_prior` brms's default-prior table has the classes this model has, and `ab.default_priors()` for the
@@ -31,16 +32,19 @@ from tests.oracle.tolerances import DESIGN_ABS, GRAD_REL, LOGP_REL, PRED_REL, ab
 def prior_names(model) -> list[str]:
     """The free variables whose densities brms sums into ``lprior``: intercept, coefficients, sigma, shape or phi, a learned nu,
     zi or hu (B06), the SD of every group-level coefficient (not the standardised offsets, which brms adds in the model block) and the
-    correlation Cholesky factor of every correlated group term (``lkj_corr_cholesky_lpdf(L_m | eta)``)."""
+    correlation Cholesky factor of every correlated group term (``lkj_corr_cholesky_lpdf(L_m | eta)``); for an auxiliary
+    parameter with its own formula (B01), that formula's intercept and coefficients (brms's ``Intercept_sigma``, ``b_sigma``)."""
     names = model.names
     out = [names["intercept"]] if model.spec.intercept else []
     out += list(model.spec.terms)
-    if "sigma" in names:
+    distributional = model.spec.dpar_names                  # the auxiliary parameters with a formula of their own (B01)
+    if "sigma" in names and "sigma" not in distributional:
         out.append(names["sigma"])
-    if "shape" in names:                                   # negative binomial / Gamma shape (PyMC's alpha)
+    if "shape" in names and "shape" not in distributional:   # negative binomial / Gamma shape (PyMC's alpha)
         out.append(names["shape"])
-    if "phi" in names:                                     # Beta precision
+    if "phi" in names and "phi" not in distributional:       # Beta precision
         out.append(names["phi"])
+    out += [v for name in distributional for k, v in model.dpar_names[name].items() if k != "value"]   # their formulas (B01)
     if "nu" in names:                                      # a learned Student-t nu, its prior truncated to nu > 1 (A13)
         out.append(names["nu"])
     out += [names[par] for par in ("zi", "hu") if par in names]   # the zero-inflation / hurdle probability (B06)
@@ -142,7 +146,14 @@ def check_design(b: Bundle) -> None:
         err = abs_err(theirs[~inf], mine[~inf])
         if not err <= DESIGN_ABS:
             raise OracleMismatch(f"{key} differ by {err}")
-    # the design columns and the group partitions were matched by content when the maps were built
+    for name, dd in d.dpars.items():                            # an auxiliary parameter's own formula (B01): X_sigma
+        key = f"X_{name}"
+        if key not in sd:
+            raise OracleMismatch(f"AutoBayes gives {name} its own formula but brms standata has no {key}")
+        if sd[key].shape != (d.n, dd.X_raw.shape[1] + int(b.model.spec.dpar(name).intercept)):
+            raise OracleMismatch(f"brms {key} is {sd[key].shape}; AutoBayes has {dd.X_raw.shape[1]} design columns for {name} "
+                                 f"and intercept={b.model.spec.dpar(name).intercept}")
+    # the design columns (every formula's) and the group partitions were matched by content when the maps were built
     adapter.match_columns(b.fixture, b.model)
     adapter.match_groups(b.fixture, b.model)
 
@@ -186,8 +197,10 @@ def check_derived(b: Bundle) -> None:
     pmm, names, d = b.model.pymc_model, b.model.names, b.model.design
     groups = list(b.model.group_coefficient_names.items())          # every group-level coefficient: intercepts and slopes
     cors = list(b.model.correlation_names.items())                  # the correlation matrix of every correlated term (A02)
-    dets = [pmm[names["linpred"]]] + [pmm[roles["group_effect"]] for _, roles in groups] + [pmm[roles["cor"]] for _, roles in cors]
-    if b.cmap.thresholds:                                           # B05: the graph's b_Intercept, brms's raw thresholds
+    distributional = list(b.model.dpar_names.items())               # each auxiliary parameter's own formula (B01): its per-row values
+    dets = ([pmm[names["linpred"]]] + [pmm[roles["group_effect"]] for _, roles in groups] + [pmm[roles["cor"]] for _, roles in cors]
+            + [pmm[roles["value"]] for _, roles in distributional])
+    if b.cmap.thresholds:                                           # B05: the graph's b_Intercept, brms's raw thresholds (the last)
         dets.append(pmm[names["thresholds"]])
     fn = pmm.compile_fn(pmm.replace_rvs_by_values(dets), inputs=pmm.value_vars, point_fn=True, on_unused_input="ignore")
     # Under a log link Bambi's parent deterministic holds the mean exp(eta), which is brms's epred when the parent is the
@@ -214,6 +227,26 @@ def check_derived(b: Bundle) -> None:
             err = rel_err(np.asarray(cor, dtype=float), ref_cor)
             if err > PRED_REL:
                 raise OracleMismatch(f"point {k}: the correlation matrix of {g!r} differs from brms Cor_{m} by {err}")
+        start = 1 + len(groups) + len(cors)
+        for (name, _), value in zip(distributional, out[start:start + len(distributional)]):   # B01: exp of brms's own predictor
+            X = b.fixture.standata[f"X_{name}"]
+            dmap = b.cmap.distributional[name]
+            bd = adapter.coefficients(p.pars, f"b_{name}")
+            if dmap.centred_intercept:                              # brms: Intercept_<name> + Xc_<name> b_<name>, Xc centred on its means
+                Xc = np.delete(X, dmap.intercept_column, axis=1)
+                eta = float(p.pars[f"Intercept_{name}"]) + (Xc - Xc.mean(0)) @ bd
+            else:
+                eta = X @ bd
+            err = rel_err(np.asarray(value, dtype=float).ravel(), np.exp(eta))
+            if err > PRED_REL:
+                raise OracleMismatch(f"point {k}: the graph's {name} differs from exp of brms's linear predictor of {name} by {err}")
+            if f"b_{name}_Intercept" in p.pars:                      # the raw-scale intercept of name's formula
+                nat = adapter.natural_point(b.model, p, b.cmap, b.gmap)[name]
+                raw = nat["intercept"] - float(b.model.design.dpars[name].x_means @ nat["b"])
+                err = rel_err(raw, float(p.pars[f"b_{name}_Intercept"]))
+                if err > PRED_REL:
+                    raise OracleMismatch(f"point {k}: raw-scale intercept of {name} {raw!r} vs brms b_{name}_Intercept "
+                                         f"{float(p.pars[f'b_{name}_Intercept'])!r}")
         if b.cmap.thresholds:                                        # B05: b_Intercept = Intercept + sum_p mean(x_p) b_p
             nat = adapter.natural_point(b.model, p, b.cmap, b.gmap)
             brms = np.atleast_1d(p.pars["b_Intercept"])
@@ -312,12 +345,19 @@ def check_default_prior(b: Bundle) -> None:
         expected.add("sd")
     if b.model.correlation_names:                          # a correlated group term's LKJ prior (A02)
         expected.add("cor")
-    if "sigma" in b.model.names:
+    distributional = b.model.spec.dpar_names               # an auxiliary parameter with its own formula has no class row (B01)
+    if "sigma" in b.model.names and "sigma" not in distributional:
         expected.add("sigma")
-    if "shape" in b.model.names:
+    if "shape" in b.model.names and "shape" not in distributional:
         expected.add("shape")
-    if "phi" in b.model.names:
+    if "phi" in b.model.names and "phi" not in distributional:
         expected.add("phi")
+    dpar_rows = {(row["class"], row.get("dpar", "")) for row in b.fixture.default_prior}
+    for name in distributional:                            # its formula's Intercept and b rows, dpar = name
+        ds = b.model.spec.dpar(name)
+        wanted = ({("Intercept", name)} if ds.intercept else set()) | ({("b", name)} if ds.columns else set())
+        if not wanted <= dpar_rows:
+            raise OracleMismatch(f"brms default_prior lacks the rows {sorted(wanted - dpar_rows)} of {name}'s formula")
     if "nu" in b.model.names:
         expected.add("nu")
     expected |= {par for par in ("zi", "hu") if par in b.model.names}     # B06

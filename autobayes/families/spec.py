@@ -33,6 +33,54 @@ def exp_mean(eta, what: str):
     return expected
 
 
+# -- distributional parameters (B01, docs/distributional.md) ------------------------------------------------------------
+def _exp_parameter(eta, name: str):
+    with np.errstate(over="ignore", invalid="ignore"):
+        value = np.exp(eta)
+    if not (np.isfinite(value).all() and (value > 0).all()):
+        raise ValueError(f"{name} = exp(linear predictor) overflows or underflows to 0 for some draws and rows; inspect the "
+                         f"draws of {name}'s formula")
+    return value
+
+
+# The inverse link of a distributional parameter's formula (NumPy): (its linear predictor, its name) -> the parameter, one
+# value per draw and row, refused rather than clipped where it is not a positive finite number.
+DISTRIBUTIONAL_INVERSE_LINKS: Mapping[str, Callable] = MappingProxyType({"log": _exp_parameter})
+
+
+def auxiliary(model, post, parameter: str):
+    """The posterior draws of the auxiliary parameter ``parameter`` (``sigma``, ``shape``, ``phi``, by brms name) as an
+    array that broadcasts against the linear predictor's ``(chain, draw, row)``: a parameter without a formula has
+    ``(chain, draw)`` draws, which gain a row axis; a distributional parameter's (B01) are one per row already
+    (``predict()`` puts them into the posterior under the parameter's PyMC name, as Bambi does its response parameters)."""
+    values = post[model.names[parameter]].to_numpy()
+    return values if values.ndim == 3 else values[..., None]
+
+
+def is_distributional(model, parameter: str | None) -> bool:
+    """Whether ``parameter`` has its own formula in the model (B01)."""
+    return parameter is not None and parameter in model.spec.dpar_names
+
+
+def scale_symbol(model) -> str:
+    """How ``describe()`` writes the family's auxiliary parameter in its likelihood lines: ``sigma``, or ``sigma_i`` when
+    it has its own formula (B01), one value per row."""
+    name = model.family_spec.scale_parameter
+    return f"{name}_i" if is_distributional(model, name) else name
+
+
+def scale_line(model) -> str:
+    """``describe()``'s prior line of the family's auxiliary parameter (lower bound 0); for a distributional one (B01), a
+    pointer to the paragraph that writes its formula out instead."""
+    from autobayes.priors import describe_prior
+
+    name = model.family_spec.scale_parameter
+    if is_distributional(model, name):
+        return (f"  {name}_i = exp(eta_{name},i), one per row: the formula '{model.spec.dpar(name).formula}' "
+                f"(Distributional parameter {name}, above)")
+    return f"  {name} ~ {describe_prior(getattr(model.priors, name), lb=0)}"
+
+
 @dataclass(frozen=True, eq=False)
 class FamilySpec:
     """One response family. Fields in the order the model consults them."""
@@ -100,6 +148,12 @@ class FamilySpec:
     bambi_setup: Callable[[object, dict], tuple] | None = None
     check_formula: Callable[[object], None] | None = None
     intercept_lines: Callable[[object], list[str]] | None = None
+    # brms's distributional formulas (B01, docs/distributional.md): the auxiliary parameter ``scale_parameter`` may have
+    # its own formula, ``["y ~ x", "sigma ~ z"]``, under this link (brms's default for sigma, shape and phi: "log", a key
+    # of DISTRIBUTIONAL_INVERSE_LINKS); None: it takes no formula. Bambi builds it as a distributional component named
+    # ``bambi_scale_parameter``.
+    distributional_link: str | None = None
+    default_distributional_intercept: Callable[[float], object] | None = None   # (brms's scale of the response read on the log scale) -> brms's default prior on that formula's intercept (def_dpar_prior: sigma student_t(3, 0, scale); shape and phi student_t(3, 0, 2.5)); A07
 
     def with_link(self, link: str | None) -> "FamilySpec":
         """This family's spec under ``link``: this spec for ``None`` or its own link, the one a ``links`` entry builds

@@ -617,14 +617,18 @@ def standard_truncated_mean(a, b):
 
 
 def _normal_truncated_mean(model, post, eta, lb, ub):
-    sigma = post[model.names["sigma"]].to_numpy()[..., None]
+    from autobayes.families.spec import auxiliary          # sigma per draw, or per draw and row (B01)
+
+    sigma = auxiliary(model, post, "sigma")
     return eta + sigma * standard_truncated_mean((lb - eta) / sigma, (ub - eta) / sigma)
 
 
 def _normal_draw_truncated(model, post, eta, lb, ub, rng):
     from scipy.stats import truncnorm
 
-    sigma = np.broadcast_to(post[model.names["sigma"]].to_numpy()[..., None], eta.shape)
+    from autobayes.families.spec import auxiliary
+
+    sigma = np.broadcast_to(auxiliary(model, post, "sigma"), eta.shape)
     # size= keeps a leading chain axis of length one, which scipy squeezes away when it infers the shape itself
     return truncnorm.rvs((lb - eta) / sigma, (ub - eta) / sigma, loc=eta, scale=sigma, size=eta.shape, random_state=rng)
 

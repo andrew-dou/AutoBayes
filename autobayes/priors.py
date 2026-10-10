@@ -6,7 +6,9 @@ LKJ prior on the correlation matrix of the coefficients of ``(1 + x | g)``, brms
 family's auxiliary parameter: ``sigma`` for Gaussian/Student-t (residual SD/scale respectively) and for the
 lognormal (the SD of ``log y``), ``shape`` for the negative binomial and Gamma families, ``phi`` for the Beta family
 (the precision), and ``nu`` for a Student-t model that learns its degrees of freedom (``nu=None``; brms class ``nu``,
-truncated to ``nu > 1``); ``zi`` or ``hu``, the zero-inflation or hurdle probability (B06, a ``Beta`` prior).
+truncated to ``nu > 1``); ``zi`` or ``hu``, the zero-inflation or hurdle probability (B06, a ``Beta`` prior). An
+auxiliary parameter with its own formula (B01, ``["y ~ x", "sigma ~ z"]``) takes the priors of that formula's intercept
+and coefficients instead, ``sigma={"intercept": ..., "b": ...}`` (brms's ``Intercept`` and ``b`` with ``dpar = sigma``).
 Every class the model has must be given, and a class the model does
 not have is refused (M3c-1: ``sd`` without a group term; ``shape`` for a Gaussian model); there are no silent
 defaults here (Bambi would supply some, and that is exactly what this layer refuses to let happen). brms's own
@@ -206,6 +208,10 @@ class Priors:
     the bare prior); it is refused for an independent (``||``) or intercept-only term, which has no correlation
     matrix. No automatic priors are filled in silently and nothing is broadcast. ``sigma``, ``shape`` and
     ``phi`` are the auxiliary parameters: exactly the one the family has (``FamilySpec.scale_parameter``) must be given.
+    When that parameter has its own formula (B01, ``["y ~ x", "sigma ~ z"]``, docs/distributional.md) its entry is instead
+    a mapping over that formula's intercept and coefficients, ``sigma={"intercept": Normal(0, 1), "b": Normal(0, 0.5)}``
+    (brms ``class = Intercept`` and ``class = b`` with ``dpar = sigma``), read as the response formula's ``intercept`` and
+    ``b`` are (``dpar_priors``): ``"intercept"`` exactly when that formula has one, ``"b"`` one prior or a mapping by term.
     ``nu`` is the prior of a Student-t model's learned degrees of freedom (``ab.student(..., nu=None)``): one of
     ``TRUNCATABLE``, truncated to ``nu > 1`` and renormalised there (brms-parity A13); refused for every other model.
     ``zi`` and ``hu`` are the zero-inflation and hurdle probabilities (B06): exactly the one the family has
@@ -215,9 +221,10 @@ class Priors:
     intercept: Prior | None = None
     b: Prior | Mapping[str, Prior | Mapping[str, Prior]] | None = None
     sd: Prior | Mapping[str, Prior | Mapping[str, Prior]] | None = None   # required with a group term, refused without one (M3c-1)
-    sigma: Prior | None = None       # Gaussian, Student-t and lognormal
-    shape: Prior | None = None       # negative binomial and Gamma (brms class ``shape``)
-    phi: Prior | None = None         # Beta (brms class ``phi``, the precision)
+    # Each auxiliary parameter: one prior, or with its own formula (B01) a mapping {"intercept": ..., "b": ...} over it
+    sigma: Prior | Mapping[str, object] | None = None       # Gaussian, Student-t and lognormal
+    shape: Prior | Mapping[str, object] | None = None       # negative binomial and Gamma (brms class ``shape``)
+    phi: Prior | Mapping[str, object] | None = None         # Beta (brms class ``phi``, the precision)
     # LKJ(eta) per correlated group term ``(1 + x | g)`` (A02), refused otherwise; after the classic fields, so the positional order
     # ``Priors(intercept, b, sd, sigma)`` existing callers use is unchanged
     cor: Prior | Mapping[str, Prior] | None = None
@@ -434,6 +441,36 @@ class Priors:
                 raise PriorError(f"prior for 'cor:{g}' must be a correlation prior ({sorted(_CORRELATION)}, brms's lkj(eta)), got {prior}")
         return by_factor
 
+    def dpar_priors(self, spec, name: str) -> "Priors":
+        """The priors of distributional parameter ``name``'s own formula (B01, ``spec.dpar(name)``) as a ``Priors`` with
+        ``intercept`` and ``b`` only, read from ``Priors(<name>={"intercept": ..., "b": ...})``, so that the response
+        formula's rules apply to it unchanged (``coefficient_priors(spec.dpar(name))``, location priors). ``"intercept"`` is
+        required exactly when that formula has an intercept; ``"b"`` when it has a population-level term (an intercept-only
+        formula needs none, and one given anyway changes nothing, as for the response formula, D2)."""
+        dspec = spec.dpar(name)
+        entry = getattr(self, name)
+        brms = f"brms class Intercept and b with dpar = {name}"
+        if entry is None:
+            raise PriorError(
+                f"the formula '{dspec.formula}' gives {name} its own linear predictor, which needs priors on its intercept and "
+                f"coefficients: pass {name}={{'intercept': ..., 'b': ...}} ({brms}; docs/distributional.md)")
+        if not isinstance(entry, Mapping):
+            raise PriorError(
+                f"{name} has its own formula '{dspec.formula}': its priors are a mapping {{'intercept': prior, 'b': prior}} over "
+                f"that formula's intercept and coefficients ({brms}), not {type(entry).__name__} {entry}")
+        extra = [k for k in entry if k not in ("intercept", "b")]
+        if extra:
+            raise PriorError(f"the priors of {name}'s formula '{dspec.formula}' take the keys 'intercept' and 'b' ({brms}); "
+                             f"unexpected {extra}")
+        if dspec.intercept and entry.get("intercept") is None:
+            raise PriorError(f"'{dspec.formula}' has an intercept, which needs a prior: pass {name}={{'intercept': ..., ...}}")
+        if not dspec.intercept and entry.get("intercept") is not None:
+            raise PriorError(f"'{dspec.formula}' has no intercept; omit 'intercept' from the priors of {name}'s formula")
+        if dspec.pop_terms and entry.get("b") is None:
+            raise PriorError(f"'{dspec.formula}' has the population-level term(s) {list(dspec.terms)}, which need priors: pass "
+                             f"{name}={{..., 'b': ...}} (one prior, or a mapping by term as for the response formula's b)")
+        return Priors(intercept=entry.get("intercept"), b=entry.get("b"))
+
     def table(self, spec, family="gaussian", *, center_predictors: bool = True, categories=None) -> list[dict[str, str]]:
         """These priors in brms's table form, the rows of brms's ``default_prior()`` (prior, class, coef, group, resp,
         dpar, nlpar, lb, ub, tag, source; all strings), sorted as brms sorts them: ``autobayes.default_priors.prior_table``.
@@ -449,7 +486,10 @@ class Priors:
         """The parameters under a flat prior (``Flat()``, brms's default for ``b``), labelled as fit records label them
         (``intercept``, ``b:x``); such a model has no prior predictive distribution."""
         out = ["intercept"] if getattr(spec, "intercept", True) and isinstance(self.intercept, Prior) and self.intercept.name == "Flat" else []
-        return out + [f"b:{col}" for col, p in self.coefficient_priors(spec).items() if p.name == "Flat"]
+        out += [f"b:{col}" for col, p in self.coefficient_priors(spec).items() if p.name == "Flat"]
+        for name in getattr(spec, "dpar_names", ()):                  # a distributional parameter's formula (B01): sigma:b:zq
+            out += [f"{name}:{label}" for label in self.dpar_priors(spec, name).improper(spec.dpar(name))]
+        return out
 
     def group_priors(self, spec) -> dict[str, Prior]:
         """The SD prior of each factor's varying intercept, in formula order (the per-factor view that
@@ -472,7 +512,8 @@ class Priors:
         scale = fam.scale_parameter                                   # "sigma", "shape", "phi" or None
         zero = fam.zero_parameter                                     # "zi", "hu" or None (B06)
         auxiliary = {name: getattr(self, name) for name in AUXILIARY}
-        if scale is not None and auxiliary[scale] is None:
+        predicted = scale is not None and scale in getattr(spec, "dpar_names", ())   # the scale parameter has its own formula (B01)
+        if scale is not None and auxiliary[scale] is None and not predicted:
             raise PriorError(fam.scale_missing_error)
         if zero is not None and auxiliary[zero] is None:
             raise PriorError(f"the {fam.name} family needs a prior on the {AUXILIARY[zero]} {zero}: pass {zero}=..., "
@@ -503,7 +544,17 @@ class Priors:
                     f"prior for 'nu' must be a positive-support prior {sorted(TRUNCATABLE)}; got {self.nu} (nu is learned "
                     f"on nu > {lower:g}, under its prior truncated there and renormalised, as brms does)"
                 )
-        for label, prior in ([("intercept", self.intercept)] if has_intercept else []) + list(self.coefficient_priors(spec).items()):
+        location = ([("intercept", self.intercept)] if has_intercept else []) + list(self.coefficient_priors(spec).items())
+        if predicted:                                                 # its formula's intercept and coefficients (B01): location priors
+            dspec, sub = spec.dpar(scale), self.dpar_priors(spec, scale)
+            location += (([(f"{scale}:intercept", sub.intercept)] if dspec.intercept else [])
+                         + [(f"{scale}:b:{col}", p) for col, p in sub.coefficient_priors(dspec).items()])
+        elif scale is not None and isinstance(auxiliary[scale], Mapping):
+            raise PriorError(
+                f"prior for {scale!r} is a mapping, the form of the priors of {scale}'s own formula ('{scale} ~ ...', B01); "
+                f"this model gives {scale} none: pass one positive-support prior, or add the formula "
+                f"(['<response formula>', '{scale} ~ ...'], docs/distributional.md)")
+        for label, prior in location:
             if not isinstance(prior, Prior):
                 raise PriorError(f"prior for {label!r} must be a Prior, got {type(prior).__name__}")
             if prior.name not in _LOCATION:
@@ -512,7 +563,7 @@ class Priors:
                 )
         from autobayes.formula import sd_tag
 
-        scales = [(f"sd:{sd_tag(g, c)}", prior) for (g, c), prior in sd_priors.items()] + ([(scale, auxiliary[scale])] if scale is not None else [])
+        scales = [(f"sd:{sd_tag(g, c)}", prior) for (g, c), prior in sd_priors.items()] + ([(scale, auxiliary[scale])] if scale is not None and not predicted else [])
         for label, prior in scales:
             if not isinstance(prior, Prior):
                 raise PriorError(f"prior for {label!r} must be a Prior, got {type(prior).__name__}")
@@ -532,9 +583,9 @@ class Priors:
         """Bambi's prior dict: one prior per term (array-valued parameters for the levels of a
         categorical term). Each group-level coefficient (``1|g``, and ``x|g`` for a varying slope) gets
         Normal(0, sd) with its own ``sd`` as hyperprior; without a group term no group prior is emitted
-        (Bambi would accept a stray ``1|g`` entry silently). ``family`` as for ``validate``."""
+        (Bambi would accept a stray ``1|g`` entry silently). ``family`` as for ``validate``. An auxiliary parameter with its
+        own formula (B01) gets the dict of its formula's term priors, which Bambi reads for that distributional component."""
         import bambi as bmb
-        import numpy as np
         from autobayes.families import FamilySpec, get_family
         from autobayes.formula import ModelSpec, bambi_group_name
 
@@ -542,14 +593,30 @@ class Priors:
         fam = family if isinstance(family, FamilySpec) else get_family(family)
         if not isinstance(spec, ModelSpec):
             spec = ModelSpec(formula="", response="", predictors=tuple(spec), group=None)
-        per_column = self.coefficient_priors(spec)
         out = {"Intercept": self.intercept.to_bambi()} if spec.intercept else {}
-        if fam.scale_parameter is not None:                 # under Bambi's name: "sigma", or "alpha" for brms's "shape"
+        if fam.scale_parameter in spec.dpar_names:         # its own formula (B01): Bambi's distributional component's priors
+            sub, dspec = self.dpar_priors(spec, fam.scale_parameter), spec.dpar(fam.scale_parameter)
+            out[fam.bambi_scale_parameter] = {**({"Intercept": sub.intercept.to_bambi()} if dspec.intercept else {}),
+                                              **sub._bambi_terms(dspec)}
+        elif fam.scale_parameter is not None:              # under Bambi's name: "sigma", or "alpha" for brms's "shape"
             out[fam.bambi_scale_parameter] = getattr(self, fam.scale_parameter).to_bambi()
         if fam.zero_parameter is not None:                  # the zero-inflation / hurdle probability, under brms's name (B06)
             out[fam.zero_parameter] = getattr(self, fam.zero_parameter).to_bambi()
         if self.nu is not None:                             # a learned Student-t nu (A13): its prior truncated at the bound
             out["nu"] = self.nu.to_bambi_truncated(fam.learnable_parameters["nu"])
+        out.update(self._bambi_terms(spec))
+        for (group, coef), prior in self.sd_priors(spec).items():
+            out[bambi_group_name(group, coef)] = bmb.Prior("Normal", mu=0.0, sigma=prior.to_bambi())
+        return out
+
+    def _bambi_terms(self, spec) -> dict:
+        """Bambi's priors of the population-level terms of ``spec`` (a formula's own, the response's or a distributional
+        parameter's): one prior per term, with array-valued parameters for the levels of a vector term."""
+        import bambi as bmb
+        import numpy as np
+
+        per_column = self.coefficient_priors(spec)
+        out = {}
         for term in spec.pop_terms:
             if not term.is_vector:
                 out[term.name] = per_column[term.name].to_bambi()
@@ -558,6 +625,4 @@ class Priors:
             name = priors[0].name
             params = {k: np.array([float(pr.params[k]) for pr in priors]) for k in priors[0].params}
             out[term.name] = bmb.Prior(name, **params)
-        for (group, coef), prior in self.sd_priors(spec).items():
-            out[bambi_group_name(group, coef)] = bmb.Prior("Normal", mu=0.0, sigma=prior.to_bambi())
         return out
