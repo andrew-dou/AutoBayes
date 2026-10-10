@@ -705,9 +705,9 @@
    "depends_on": [
     "A06_offset"
    ],
-   "status": "gates_green",
+   "status": "merged",
    "summary": "weights() for the nine Tier A families (each verified by a frozen weighted case); cens() and trunc() implemented for the Gaussian family but parked: brms's own gradients (and the truncated epred) are inexact at points of their frozen fixtures (D24, D25)",
-   "pr": null,
+   "pr": 40,
    "attempts": 1,
    "gates": {
     "sha": "8adda7ec7d07",
@@ -731,7 +731,7 @@
     "D25",
     "D26"
    ],
-   "next_action": "merge weights(); cens()/trunc() await Andrew's policy decision",
+   "next_action": "cens()/trunc() parked (D24, D25) pending Andrew's policy decision; weights() for the zero-inflated/hurdle families needs frozen weighted cases",
    "fixtures": {
     "cases": [
      "gauss_weighted",
