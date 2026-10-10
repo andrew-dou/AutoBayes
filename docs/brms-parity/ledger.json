@@ -705,19 +705,46 @@
    "depends_on": [
     "A06_offset"
    ],
-   "status": "implementing",
-   "summary": "cens(), trunc(), weights() response addition terms",
+   "status": "gates_green",
+   "summary": "weights() for the nine Tier A families (each verified by a frozen weighted case); cens() and trunc() implemented for the Gaussian family but parked: brms's own gradients (and the truncated epred) are inexact at points of their frozen fixtures (D24, D25)",
    "pr": null,
    "attempts": 1,
-   "gates": {},
-   "divergences": [],
-   "next_action": "weights() green for all families; cens()/trunc() parked pending Andrew's policy decision (brms's own gradients inexact at frozen points); rebased onto B06, gate running",
+   "gates": {
+    "sha": "8adda7ec7d07",
+    "dirty_tree": false,
+    "base": "origin/main",
+    "when": "2026-10-10T19:10Z",
+    "results": {
+     "immutability": {
+      "status": "pass",
+      "seconds": 0.0
+     },
+     "oracle": {
+      "status": "pass",
+      "seconds": 112.7
+     }
+    },
+    "note": "full suite on B02+B06 before the final fix: 1594 passed, 1 failed (the registry test, fixed in the second commit; the affected test files then 113 passed)"
+   },
+   "divergences": [
+    "D24",
+    "D25",
+    "D26"
+   ],
+   "next_action": "merge weights(); cens()/trunc() await Andrew's policy decision",
    "fixtures": {
-    "pr": 33,
     "cases": [
+     "gauss_weighted",
      "gauss_censored",
      "gauss_truncated",
-     "gauss_weighted"
+     "student_weighted",
+     "poisson_weighted",
+     "negbinomial_weighted",
+     "gamma_weighted",
+     "lognormal_weighted",
+     "beta_weighted",
+     "bernoulli_weighted",
+     "binomial_weighted"
     ]
    }
   },
