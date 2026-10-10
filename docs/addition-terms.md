@@ -3,7 +3,7 @@
 brms-parity feature B02. brms writes information about the response on the left-hand side of the formula, after a
 `|`, as addition terms joined with `+`: `k | trials(n)` (the binomial trials, M2), `y | weights(w)`,
 `y | cens(c)`, `y | trunc(lb = 0)`, and combinations such as `k | trials(n) + weights(w)`. This library parses all
-four into the term model; `weights()` is offered for every family, and `cens()` and `trunc()` are implemented for
+four into the term model; `weights()` is offered for the nine Tier A families (each verified by a frozen weighted case; not yet the zero-inflated and hurdle families), and `cens()` and `trunc()` are implemented for
 the Gaussian family but withheld, because brms's own numbers for their frozen fixtures are not exact enough to
 certify them (below, and divergences D24 and D25).
 
@@ -34,7 +34,7 @@ brms adds `weights[n] * family_lpdf(Y[n] | ...)` for each row (with `trunc()`, t
 weighted as a whole). The likelihood here is a `pm.CustomDist` around the family's own distribution
 (`likelihoods.addition_family`): its log density is the family's elementwise log density times the row's weight, and
 its draws are the family's own. So `model.logp()`, the JAX density and pointwise log likelihoods all carry the
-weights, for every family: the hand-written Bernoulli, binomial and Beta likelihoods, the probit link, PyMC's
+weights, for each of those families: the hand-written Bernoulli, binomial and Beta likelihoods, the probit link, PyMC's
 `Normal`, `StudentT`, `Poisson`, `NegativeBinomial`, `Gamma` and `LogNormal`; correlated slopes, offsets and derived
 grouping factors compose with it unchanged.
 

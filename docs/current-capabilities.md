@@ -100,7 +100,7 @@ followed, verified against `zero_inflated_poisson_varint` and `hurdle_poisson_va
 (D29), and brms's other zero-inflated and hurdle families and formulas on `zi` / `hu` are not offered (D30); see
 [zero-inflated and hurdle counts](zero-inflated-hurdle.md).
 
-brms's response addition terms (B02): `weights(w)` multiplies each row's log likelihood by its weight for every family
+brms's response addition terms (B02): `weights(w)` multiplies each row's log likelihood by its weight for every Tier A family (not yet the zero-inflated and hurdle families)
 (`y | weights(w) ~ ...`, `k | trials(n) + weights(w) ~ ...`), verified against `gauss_weighted` and one frozen weighted
 case per family; brms's `cens()` and `trunc()` are parsed and implemented for the Gaussian family but withheld, because
 brms's own gradients (Stan's `normal_lcdf` derivative approximations, `normal_lccdf`'s `1 - erf`) and truncated mean

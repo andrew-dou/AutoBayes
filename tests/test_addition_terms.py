@@ -135,8 +135,9 @@ def test_the_park_and_the_family_registry():
     assert "D24" in F.PARKED_ADDITIONS["cens"] and "2.5e-6" in F.PARKED_ADDITIONS["cens"]
     assert "D25" in F.PARKED_ADDITIONS["trunc"] and "4.2e-7" in F.PARKED_ADDITIONS["trunc"]
     from autobayes.families import FAMILIES, get_family
-    for name, spec in FAMILIES.items():
-        assert "weights" in spec.addition_terms, name
+    verified = {"gaussian", "student", "poisson", "negbinomial", "gamma", "lognormal", "beta", "bernoulli", "binomial"}
+    for name, spec in FAMILIES.items():                     # weights() only where a frozen weighted brms case verifies it
+        assert ("weights" in spec.addition_terms) == (name in verified), name
         assert ({"cens", "trunc"} <= spec.addition_terms) == (spec.tails is not None) == (name == "gaussian"), name
     assert get_family("bernoulli", "probit").addition_terms == get_family("binomial", "probit").addition_terms == frozenset({"weights"})
     assert get_family("gaussian").tails() is lk.NORMAL_TAILS
