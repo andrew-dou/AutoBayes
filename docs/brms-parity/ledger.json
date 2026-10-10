@@ -684,13 +684,13 @@
    "depends_on": [
     "A12_links"
    ],
-   "status": "fixtures_frozen",
+   "status": "implementing",
    "summary": "bf(y ~ x, sigma ~ z): formulas on auxiliary parameters",
    "pr": null,
-   "attempts": 0,
+   "attempts": 1,
    "gates": {},
    "divergences": [],
-   "next_action": "implement after the Tier A boundary review",
+   "next_action": "agent (opus) in worktree parity-b01 (stacked on B02)",
    "fixtures": {
     "pr": 33,
     "cases": [
@@ -711,7 +711,7 @@
    "attempts": 1,
    "gates": {},
    "divergences": [],
-   "next_action": "agent (opus) in worktree parity-b02",
+   "next_action": "weights() green for all families; cens()/trunc() parked pending Andrew's policy decision (brms's own gradients inexact at frozen points); rebased onto B06, gate running",
    "fixtures": {
     "pr": 33,
     "cases": [
@@ -770,13 +770,13 @@
    "depends_on": [
     "A12_links"
    ],
-   "status": "fixtures_frozen",
+   "status": "implementing",
    "summary": "cumulative, sratio, cratio, acat and categorical families",
    "pr": null,
-   "attempts": 0,
+   "attempts": 1,
    "gates": {},
    "divergences": [],
-   "next_action": "implement after the Tier A boundary review",
+   "next_action": "agent (opus) in worktree parity-b05 (stacked on B06)",
    "fixtures": {
     "pr": 33,
     "cases": [
@@ -792,9 +792,9 @@
    "depends_on": [
     "A08_negbinomial"
    ],
-   "status": "gates_green",
+   "status": "merged",
    "summary": "zero-inflated and hurdle count families",
-   "pr": null,
+   "pr": 39,
    "attempts": 1,
    "gates": {
     "sha": "a9ca8b30ff13",
@@ -818,7 +818,7 @@
     "D29",
     "D30"
    ],
-   "next_action": "merge; zero-inflated/hurdle negative binomial left for later (D30)",
+   "next_action": "zero-inflated/hurdle negative binomial left for later (D30)",
    "fixtures": {
     "pr": 33,
     "cases": [
