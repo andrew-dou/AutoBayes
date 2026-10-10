@@ -684,9 +684,9 @@
    "depends_on": [
     "A12_links"
    ],
-   "status": "gates_green",
+   "status": "merged",
    "summary": "bf(y ~ x, sigma ~ z): formulas on auxiliary parameters",
-   "pr": null,
+   "pr": 42,
    "attempts": 1,
    "gates": {
     "sha": "065a5298873b",
@@ -711,7 +711,7 @@
     "D34",
     "D35"
    ],
-   "next_action": "merge; group terms and offsets in distributional formulas, formulas on nu/zi/hu not offered (D32, D33)",
+   "next_action": "group terms/offsets in dpar formulas and formulas on nu/zi/hu not offered (D32, D33)",
    "fixtures": {
     "cases": [
      "gauss_distributional_sigma",
