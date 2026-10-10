@@ -702,14 +702,24 @@
       "status": "pass",
       "seconds": 114.7
      }
-    }
+    },
+    "note": "rebased onto main after B05's merge; code identical to the tested commit 065a529 (suite 1768 passed, oracle 564 passed)"
    },
-   "divergences": [],
-   "next_action": "done; agent resolving its rebase onto B05",
+   "divergences": [
+    "D32",
+    "D33",
+    "D34",
+    "D35"
+   ],
+   "next_action": "merge; group terms and offsets in distributional formulas, formulas on nu/zi/hu not offered (D32, D33)",
    "fixtures": {
-    "pr": 33,
     "cases": [
-     "gauss_distributional_sigma"
+     "gauss_distributional_sigma",
+     "student_distributional_sigma",
+     "lognormal_distributional_sigma",
+     "negbinomial_distributional_shape",
+     "gamma_distributional_shape",
+     "beta_distributional_phi"
     ]
    }
   },
