@@ -1,0 +1,78 @@
+{
+ "id": "beta_weighted",
+ "tier": "B",
+ "feature": "B02_cens_trunc_weights",
+ "note": "brms standata weights: each row's log likelihood is multiplied by its weight (weights() for the beta family)",
+ "seed": 186,
+ "n_points": 8,
+ "data": {
+  "generator": "tier_b",
+  "seed": 86,
+  "n": 36,
+  "newdata": {
+   "seed": 186,
+   "n": 5
+  }
+ },
+ "brms": {
+  "formula": "prop | weights(w) ~ x + (1 | g)",
+  "family": {
+   "family": "Beta"
+  },
+  "factors": {
+   "g": [
+    "a",
+    "b",
+    "c",
+    "d",
+    "e",
+    "f"
+   ]
+  },
+  "priors": [
+   {
+    "prior": "normal(0, 2)",
+    "class": "Intercept"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "b"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "sd",
+    "group": "g"
+   },
+   {
+    "prior": "gamma(0.01, 0.01)",
+    "class": "phi"
+   }
+  ]
+ },
+ "autobayes": {
+  "constructor": "beta",
+  "formula": "prop | weights(w) ~ x + (1 | g)",
+  "kwargs": {},
+  "priors": {
+   "intercept": [
+    "Normal",
+    0,
+    2
+   ],
+   "b": [
+    "Normal",
+    0,
+    1
+   ],
+   "sd": [
+    "HalfNormal",
+    1
+   ],
+   "phi": [
+    "Gamma",
+    0.01,
+    0.01
+   ]
+  }
+ }
+}

@@ -70,4 +70,5 @@ LOGNORMAL = FamilySpec(
     deterministic_note="mu = linear predictor (log-scale location); the expected response exp(mu + sigma^2 / 2) is computed by predict()",
     default_prior_link="log",                                       # brms's log-scale family: it reads log(y)
     default_scale_prior=lambda scale: HalfStudentT(3, scale),       # brms sigma: student_t(3, 0, scale), lb 0
+    addition_terms=frozenset({"weights"}),                      # B02: weights(), verified against the frozen case lognormal_weighted
 )

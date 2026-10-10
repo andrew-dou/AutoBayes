@@ -67,4 +67,5 @@ GAMMA = FamilySpec(
     deterministic_note="mu = exp(linear predictor); mu = exp(eta), expected response",
     default_prior_link="log",                                       # brms reads log(y) under the log link
     default_scale_prior=lambda scale: Gamma(0.01, 0.01),            # brms shape: gamma(0.01, 0.01), lb 0
+    addition_terms=frozenset({"weights"}),                      # B02: weights(), verified against the frozen case gamma_weighted
 )

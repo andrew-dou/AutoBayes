@@ -75,4 +75,5 @@ BETA = FamilySpec(
     deterministic_note="logit_mu = linear predictor; mu = expit(logit_mu), the expected proportion, is computed by predict()",
     default_prior_link=None,                                        # logit: brms's defaults are student_t(3, 0, 2.5)
     default_scale_prior=lambda scale: Gamma(0.01, 0.01),            # brms phi: gamma(0.01, 0.01), lb 0
+    addition_terms=frozenset({"weights"}),                      # B02: weights(), verified against the frozen case beta_weighted
 )

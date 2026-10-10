@@ -55,6 +55,9 @@ Tier A is complete (October 2026):
   ([varying slopes](docs/varying-slopes.md)); correlated slopes `(1 + x | g)` with an LKJ prior
   ([correlated slopes](docs/correlated-slopes.md)); grouping by `g:h` and `g/h` ([grouping syntax](docs/grouping-syntax.md)).
 - **Priors**: explicit by default; brms's defaults on request with `ab.default_priors()` ([default priors](docs/default-priors.md)).
+- **Response addition terms** (Tier B, B02): `weights()` for every family; brms's `cens()` and `trunc()` are implemented
+  for the Gaussian family and parked, because brms's own gradients of their fixtures are not exact enough to certify
+  them ([addition terms](docs/addition-terms.md)).
 
 Every known difference from brms is listed in [divergences](docs/brms-parity/divergences.md), and the feature ledger
 is [ledger.json](docs/brms-parity/ledger.json) (`python tools/parity_status.py`). The Tier A review is

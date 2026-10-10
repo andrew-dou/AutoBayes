@@ -13,6 +13,11 @@ TRUE)``). Binomial predictions are computed in this layer from the posterior; fo
 ``newdata``, ``mean`` and ``response`` need the trials column named in the formula, and a row
 with zero trials gives ``expected = 0`` and ``y = 0``.
 
+A model with response addition terms (B02, docs/addition-terms.md) is predicted in this layer: ``weights()`` and
+``cens()`` change nothing here (brms's ``posterior_epred`` and ``posterior_predict`` ignore them, and new rows need
+neither column), while under ``trunc()`` the mean is the truncated distribution's mean and ``y`` is drawn from the
+truncated distribution, as brms does (``cens()`` and ``trunc()`` are withheld; see ``formula.PARKED_ADDITIONS``).
+
 ``new_groups`` decides what happens when ``newdata`` contains a level of the grouping
 factor that was not in the training data (a population-only model has no grouping factor: it
 needs no such column, its result carries ``new_groups = "not_applicable"``, and any value other
@@ -189,12 +194,18 @@ def _predict_by_hand(model, idata, df: pd.DataFrame | None, kind: str, seed, pol
         out = {"eta": (dims, mu)}
     else:                                                        # mu held the linear predictor eta
         fam = family_of(model)
-        mean = expected_response(fam, model, post, mu)
+        trunc = model.spec.addition("trunc")
+        if trunc is None:
+            mean = expected_response(fam, model, post, mu)
+        else:                                                    # brms's posterior_epred of a truncated model: the truncated mean (B02)
+            lb, ub = (-np.inf if trunc.lb is None else trunc.lb), (np.inf if trunc.ub is None else trunc.ub)
+            mean = fam.tails().truncated_mean(model, post, mu, lb, ub)
         out = {fam.mean_name: (dims, mean)}
         if fam.has_trials and kind in ("mean", "response"):      # binomial: expected = n p beside p
             out["expected"] = (dims, mean * df[model.spec.trials].to_numpy(dtype=np.int64))
-        if kind == "response":
-            out["y"] = (dims, fam.draw_response(model, post, mu, mean, df, rng))
+        if kind == "response":                                   # brms's posterior_predict ignores weights and censoring
+            out["y"] = (dims, fam.draw_response(model, post, mu, mean, df, rng) if trunc is None
+                        else fam.tails().draw_truncated(model, post, mu, lb, ub, rng))   # and draws from the truncated distribution
     ds = xr.Dataset(out, coords={"chain": post["chain"], "draw": post["draw"], "__obs__": np.arange(len(df))})
     _prediction_attrs(model, ds, policies, new_levels, in_sample=False, manual=True, include_group_effects=include_group_effects)
     return ds
@@ -262,7 +273,8 @@ def predict(model, fit_result, *, newdata: pd.DataFrame | None = None, kind: str
                 "Pass new_groups='population' to draw their effects from Normal(0, sd), or "
                 "new_groups='resample_observed' for brms's default 'uncertainty' behaviour; "
                 "an exact-key mapping can set the policy separately for each factor.")
-    manual = not include_group_effects or kind == "linear" or fam.manual_prediction or any(new_levels.values())
+    manual = (not include_group_effects or kind == "linear" or fam.manual_prediction or any(new_levels.values())
+              or bool(model.spec.additions))                   # addition terms (B02): the truncated mean and draws are this layer's
     if manual:
         ds = _predict_by_hand(model, idata, df, kind, seed, policies, include_group_effects=include_group_effects)
     else:

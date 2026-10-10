@@ -1,7 +1,8 @@
 """The oracle gates, as functions of a `Bundle` (case, fixture, data, AutoBayes model and the two maps).
 Each raises `OracleMismatch` naming the point and the quantities that differ; a passing gate returns None.
 
-G1 `check_design`        standata equals the model's design, response, trials, offsets and group coding
+G1 `check_design`        standata equals the model's design, response, trials, offsets, group coding and addition-term
+                         data (weights, cens, lb, ub; B02)
 G2 `check_logp`          log density with and without the Jacobian, and its prior part, at every point
 G2 `check_gradient`      every gradient coordinate, mapped through the probed parameter table
 G3 `check_derived`       the graph's linear predictor, group effects and correlation matrices, and the raw-scale intercept
@@ -114,6 +115,23 @@ def check_design(b: Bundle) -> None:
             raise OracleMismatch(f"offsets differ by {err}")
     elif "offsets" in sd:
         raise OracleMismatch("brms has offsets but AutoBayes has no offset term")
+    for key in ("weights", "cens", "lb", "ub"):                  # brms's addition-term data (B02): weights(), cens(), trunc() bounds
+        mine = getattr(d, key)
+        if mine is None:
+            if key in sd:
+                raise OracleMismatch(f"brms has {key} but AutoBayes does not")
+            continue
+        if key not in sd:
+            raise OracleMismatch(f"AutoBayes has {key} but brms standata has none")
+        theirs, mine = np.asarray(sd[key], dtype=float), np.asarray(mine, dtype=float)
+        if theirs.shape != mine.shape:
+            raise OracleMismatch(f"brms {key} has shape {theirs.shape}, AutoBayes {mine.shape}")
+        inf = np.isinf(theirs)                                   # an open truncation bound: brms's Inf where the model has inf, same sign
+        if not np.array_equal(theirs[inf], mine[inf]) or np.isinf(mine[~inf]).any():
+            raise OracleMismatch(f"{key}: brms's infinite entries (rows {np.flatnonzero(inf)[:5].tolist()}...) differ from AutoBayes's")
+        err = abs_err(theirs[~inf], mine[~inf])
+        if not err <= DESIGN_ABS:
+            raise OracleMismatch(f"{key} differ by {err}")
     # the design columns and the group partitions were matched by content when the maps were built
     adapter.match_columns(b.fixture, b.model)
     adapter.match_groups(b.fixture, b.model)
