@@ -792,13 +792,33 @@
    "depends_on": [
     "A08_negbinomial"
    ],
-   "status": "implementing",
+   "status": "gates_green",
    "summary": "zero-inflated and hurdle count families",
    "pr": null,
    "attempts": 1,
-   "gates": {},
-   "divergences": [],
-   "next_action": "agent (opus) in worktree parity-b06",
+   "gates": {
+    "sha": "a9ca8b30ff13",
+    "dirty_tree": false,
+    "base": "origin/main",
+    "when": "2026-10-10T18:36Z",
+    "results": {
+     "immutability": {
+      "status": "pass",
+      "seconds": 0.0
+     },
+     "oracle": {
+      "status": "pass",
+      "seconds": 104.0
+     }
+    },
+    "note": "rebased onto main; the agent's full suite on the same code (12bfb40): 1455 passed, 56 deselected, 63 xfailed"
+   },
+   "divergences": [
+    "D28",
+    "D29",
+    "D30"
+   ],
+   "next_action": "merge; zero-inflated/hurdle negative binomial left for later (D30)",
    "fixtures": {
     "pr": 33,
     "cases": [
