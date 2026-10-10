@@ -14,7 +14,10 @@ model without one (M3c-1). The formula is a term model (``PopTerm``, ``GroupTerm
 docs/term-model.md) and ``Design`` holds one ``GroupBlock`` per group-level coefficient. Bambi builds every
 group-level coefficient as an independent non-centred term; for a correlated term ``Model`` then rewrites the
 slopes' deterministics in the PyMC graph to brms's ``r = (diag(sd) L z)^T`` with a Cholesky factor ``L`` sampled on
-Stan's ``cholesky_corr`` coordinates (``autobayes.correlation``).
+Stan's ``cholesky_corr`` coordinates (``autobayes.correlation``). The left-hand side may carry brms's ``weights(col)``
+next to the binomial's ``trials(n)`` (B02, docs/addition-terms.md): the family's likelihood is then wrapped so that each
+row's log density is multiplied by its weight (``likelihoods.addition_family``); ``cens()`` and ``trunc()`` are parsed
+and implemented for the Gaussian family but withheld (``formula.PARKED_ADDITIONS``).
 """
 from __future__ import annotations
 
@@ -28,8 +31,9 @@ from collections.abc import Mapping
 
 from autobayes.correlation import check_correlation_cholesky, cholesky_corr_free, cholesky_corr_rv, n_free
 from autobayes.families import FAMILIES, FamilySpec, get_family
-from autobayes.formula import (Categorical, FormulaError, ModelSpec, bambi_group_name, binomial_counts, categorical_labels,
-                               factor_column, group_labels, interaction_cells, parse_formula, pop_term_design, sd_tag)
+from autobayes.formula import (Categorical, FormulaError, ModelSpec, addition_data, bambi_group_name, binomial_counts,
+                               categorical_labels, factor_column, group_labels, interaction_cells, parse_formula, pop_term_design,
+                               sd_tag)
 from autobayes.priors import AUXILIARY, PriorError, Priors, describe_prior
 
 _bambi_group_name = bambi_group_name          # ``1|g`` for the varying intercept of ``g``, ``x|g`` for the slope of ``x``
@@ -72,6 +76,10 @@ class Design:
     columns: tuple[str, ...] = ()      # design-column labels in order (``x``, ``z[b]``, ...); == predictors when numeric only
     categoricals: tuple[Categorical, ...] = ()
     offset: np.ndarray | None = None   # (n,) the offset term's values per fitted row (brms ``offsets``), or None
+    weights: np.ndarray | None = None  # (n,) brms ``weights`` of a ``weights(col)`` term (B02), or None
+    cens: np.ndarray | None = None     # (n,) brms ``cens`` of a ``cens(col)`` term: -1 left-, 0 un-, 1 right-censored (B02, parked)
+    lb: np.ndarray | None = None       # (n,) brms ``lb`` and ``ub`` of a ``trunc()`` term, -inf / inf on an open side (B02, parked)
+    ub: np.ndarray | None = None
 
     def __post_init__(self):
         if not self.columns:
@@ -166,7 +174,8 @@ class Model:
         priors.validate(spec0, fam)                     # structure now; per-level coverage once levels are known
         operands = [c for t in spec0.group_terms for c in t.operands]   # the columns the grouping factors are read from
         cols = ([spec0.response, *spec0.pop_columns] + operands
-                + ([spec0.trials] if spec0.trials else []) + ([spec0.offset.column] if spec0.offset is not None else []))
+                + ([spec0.trials] if spec0.trials else []) + ([spec0.offset.column] if spec0.offset is not None else [])
+                + [c for a in spec0.additions for c in a.columns])          # weights() and cens() columns (B02)
         cols = list(dict.fromkeys(cols))                        # the offset column may also be a predictor
         missing = [c for c in cols if c not in data.columns]
         if missing:
@@ -227,6 +236,9 @@ class Model:
         self.data = df
 
         bambi_family = fam.bambi_family()
+        if self.spec.additions:                              # brms's response addition terms act on the likelihood (B02)
+            from autobayes.likelihoods import addition_family
+            bambi_family = addition_family(bambi_family, fam, addition_data(self.spec, self.data))
         self._check_generated_names()
         bambi_priors = priors.to_bambi(self.spec, fam)
         for name in fam.fixed_parameters:                    # Bambi takes a fixed nu through the prior dict; a learned
@@ -494,10 +506,12 @@ class Model:
             X_model = X_raw
         y = np.asarray(self.data[self.spec.response], dtype=float)
         trials = np.asarray(self.data[self.spec.trials], dtype=np.int64) if self.spec.trials else None
+        additions = addition_data(self.spec, self.data)      # brms's weights, cens, lb and ub on the fitted rows (B02)
         return Design(y=y, X_raw=X_raw, X_model=X_model, x_means=x_means,
                       predictors=self.spec.predictors, Z=Z, group_blocks=group_blocks,
                       centered=self.effective_center_predictors, trials=trials,
-                      columns=self.spec.columns, categoricals=self.spec.categoricals, offset=offset)
+                      columns=self.spec.columns, categoricals=self.spec.categoricals, offset=offset,
+                      weights=additions.get("weights"), cens=additions.get("cens"), lb=additions.get("lb"), ub=additions.get("ub"))
 
     # -- naming ------------------------------------------------------------------------
     @property
@@ -803,7 +817,8 @@ class Model:
                     + (["in-formula transform(s)"] if s.transform_terms else [])
                     + (["independent varying slope(s)"] if any(t.slopes and not t.has_correlation for t in s.group_terms) else [])
                     + (["correlated varying slope(s)"] if s.correlated_terms else []) + (["offset"] if s.offset is not None else [])
-                    + (["derived grouping factor(s)"] if any(t.derived for t in s.group_terms) else []))
+                    + (["derived grouping factor(s)"] if any(t.derived for t in s.group_terms) else [])
+                    + ([f"response addition term(s) {', '.join(a.term for a in s.additions)}"] if s.additions else []))
         lines = [
             f"AutoBayes {fam.tag} model" + (" with " + " and ".join(features) if features else "")
             + (" (population-level only)" if not s.has_group else ""),
@@ -815,6 +830,7 @@ class Model:
         if s.offset is not None:
             lines += [f"  offset    : {s.offset.expression}, added to the linear predictor as written (no coefficient, no prior, "
                       f"never centred; brms offset()); range {d.offset.min():.4f} to {d.offset.max():.4f} over the fitted rows"]
+        lines += self._addition_lines()
         for t in s.transform_terms:
             tr, col = t.transform, d.X_raw[:, s.columns.index(t.name)]
             lines += [f"  {t.name:<10}: in-formula transform of {tr.column!r}, {tr.expression(f'{tr.column}_i')}, range {col.min():.4f} to "
@@ -997,6 +1013,7 @@ class Model:
             lines += [f"  Cor_{g} ~ {prior} (brms lkj({prior.params['eta']:g}) on the correlation matrix, placed on L_{g} as lkj_corr_cholesky)"
                       + ("   (brms default)" if prior.source == "default" else "")]
         lines += fam.likelihood_lines(self)
+        lines += self._addition_likelihood_lines()
         if self.default_prior_labels:                         # priors filled in by ab.default_priors() (A07)
             from autobayes.default_priors import BRMS_VERSION
             lines += ["", "Default priors (ab.default_priors(); docs/default-priors.md)",
@@ -1032,6 +1049,39 @@ class Model:
                                                  for (g, c), names in self.group_coefficient_names.items())
                      + "".join(f"{names['cor']} = Cor_{g} = L_{g} L_{g}^T, " for g, names in self.correlation_names.items()) + fam.deterministic_note)
         return "\n".join(lines)
+
+    def _addition_lines(self) -> list[str]:
+        """``describe()``'s data lines for the response addition terms (B02, docs/addition-terms.md)."""
+        d, out = self.design, []
+        for a in self.spec.additions:
+            if a.kind == "weights":
+                out += [f"  weights   : {a.column}, each fitted row's log likelihood multiplied by its weight (brms weights()); weights "
+                        f"{d.weights.min():.4f} to {d.weights.max():.4f}, sum {d.weights.sum():.4f} over {d.n} rows; the priors are not "
+                        "weighted, and predict() ignores the weights (brms's posterior_epred and posterior_predict do too)"]
+            elif a.kind == "cens":
+                left, right = int((d.cens == -1).sum()), int((d.cens == 1).sum())
+                out += [f"  censoring : {a.column}: {left} left-censored row(s) (-1: y_i is an upper bound, log P(Y_i <= y_i)), {right} "
+                        f"right-censored (1: a lower bound, log P(Y_i > y_i)), {d.n - left - right} observed (0); brms cens(); predict() "
+                        "ignores the censoring, as brms does"]
+            else:
+                lb, ub = ("-inf" if a.lb is None else f"{a.lb:g}"), ("inf" if a.ub is None else f"{a.ub:g}")
+                out += [f"  truncation: {a.term}: the response lies in [{lb}, {ub}]; each row's density is divided by the probability of "
+                        "that interval (brms trunc()); predict(kind='mean') is the truncated mean and kind='response' draws from the "
+                        "truncated distribution, as brms's posterior_epred and posterior_predict do"]
+        return out
+
+    def _addition_likelihood_lines(self) -> list[str]:
+        """The likelihood paragraph's lines for the response addition terms (B02)."""
+        out = []
+        for a in self.spec.additions:
+            if a.kind == "weights":
+                out += [f"  weights(): the log likelihood is sum_i w_i log p(y_i | ...), w_i the {a.column} of row i (brms's weights[n] *)"]
+            elif a.kind == "cens":
+                out += ["  cens(): a left-censored row contributes log P(Y_i <= y_i), a right-censored row log P(Y_i > y_i), any other row its "
+                        "log density (Stan's _lcdf / _lccdf / _lpdf as brms writes them)"]
+            else:
+                out += [f"  trunc(): every row's log density minus log P(lb < Y_i <= ub), the log mass of {a.term}"]
+        return out
 
     # -- priors ------------------------------------------------------------------------
     @property

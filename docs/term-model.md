@@ -65,6 +65,14 @@ prior and no design column, so it is a separate field, `Offset(column, log)`, wi
 (brms `offsets`) and `predict()` adds it on every row (docs/offset.md). `columns`, `coefficients` and the prior
 dictionary never see it.
 
+## Response addition terms: `ModelSpec.additions`
+
+brms's addition terms after `|` other than `trials()` (B02, docs/addition-terms.md) are data of the formula too, with no
+coefficient, prior or design column: `AdditionTerm(kind, column, lb, ub)` for `weights(col)`, `cens(col)` and
+`trunc(lb = a, ub = b)`, in the order written (`spec.addition(kind)` finds one; `term` is its canonical spelling, which
+the canonical formula writes after `trials()`). `formula.addition_data(spec, frame)` gives brms's Stan data (`weights`,
+`cens`, `lb`, `ub`) and `Design` holds them on the fitted rows; the likelihood, not Bambi's formula, reads them.
+
 ## Design blocks: `Design.group_blocks[(factor, coef)]`
 
 `Model.design` holds one `GroupBlock(levels, Z, group_index, column_slice)` per (factor, coefficient), in

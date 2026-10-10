@@ -75,6 +75,7 @@ def _spec(link: str) -> FamilySpec:
         default_scale_prior=None,
         links=MappingProxyType({other: partial(_spec, other) for other in LINKS if other != link}),
         parked_links=PARKED_LINKS,
+        addition_terms=frozenset({"weights"}),                  # B02: weights(), verified against the frozen case bernoulli_weighted (logit; the probit link's likelihood is weighted the same way)
     )
 
 

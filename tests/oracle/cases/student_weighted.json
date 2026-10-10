@@ -1,0 +1,83 @@
+{
+ "id": "student_weighted",
+ "tier": "B",
+ "feature": "B02_cens_trunc_weights",
+ "note": "brms standata weights: each row's log likelihood is multiplied by its weight (weights() for the student family)",
+ "seed": 181,
+ "n_points": 8,
+ "data": {
+  "generator": "tier_b",
+  "seed": 81,
+  "n": 36,
+  "newdata": {
+   "seed": 181,
+   "n": 5
+  }
+ },
+ "brms": {
+  "formula": "y | weights(w) ~ x + (1 | g)",
+  "family": {
+   "family": "student"
+  },
+  "factors": {
+   "g": [
+    "a",
+    "b",
+    "c",
+    "d",
+    "e",
+    "f"
+   ]
+  },
+  "priors": [
+   {
+    "prior": "normal(0, 5)",
+    "class": "Intercept"
+   },
+   {
+    "prior": "normal(0, 2)",
+    "class": "b"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "sd",
+    "group": "g"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "sigma"
+   },
+   {
+    "prior": "constant(4)",
+    "class": "nu"
+   }
+  ]
+ },
+ "autobayes": {
+  "constructor": "student",
+  "formula": "y | weights(w) ~ x + (1 | g)",
+  "kwargs": {
+   "nu": 4
+  },
+  "priors": {
+   "intercept": [
+    "Normal",
+    0,
+    5
+   ],
+   "b": [
+    "Normal",
+    0,
+    2
+   ],
+   "sd": [
+    "HalfNormal",
+    1
+   ],
+   "sigma": [
+    "HalfNormal",
+    1
+   ]
+  }
+ }
+}

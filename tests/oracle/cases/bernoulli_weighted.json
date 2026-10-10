@@ -1,0 +1,69 @@
+{
+ "id": "bernoulli_weighted",
+ "tier": "B",
+ "feature": "B02_cens_trunc_weights",
+ "note": "brms standata weights: each row's log likelihood is multiplied by its weight (weights() for the bernoulli family)",
+ "seed": 187,
+ "n_points": 8,
+ "data": {
+  "generator": "tier_b",
+  "seed": 87,
+  "n": 36,
+  "newdata": {
+   "seed": 187,
+   "n": 5
+  }
+ },
+ "brms": {
+  "formula": "yb | weights(w) ~ x + (1 | g)",
+  "family": {
+   "family": "bernoulli"
+  },
+  "factors": {
+   "g": [
+    "a",
+    "b",
+    "c",
+    "d",
+    "e",
+    "f"
+   ]
+  },
+  "priors": [
+   {
+    "prior": "normal(0, 2.5)",
+    "class": "Intercept"
+   },
+   {
+    "prior": "normal(0, 1.5)",
+    "class": "b"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "sd",
+    "group": "g"
+   }
+  ]
+ },
+ "autobayes": {
+  "constructor": "bernoulli",
+  "formula": "yb | weights(w) ~ x + (1 | g)",
+  "kwargs": {},
+  "priors": {
+   "intercept": [
+    "Normal",
+    0,
+    2.5
+   ],
+   "b": [
+    "Normal",
+    0,
+    1.5
+   ],
+   "sd": [
+    "HalfNormal",
+    1
+   ]
+  }
+ }
+}

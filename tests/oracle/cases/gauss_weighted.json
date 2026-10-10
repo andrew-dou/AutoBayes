@@ -5,10 +5,6 @@
  "note": "brms standata weights: each row's log likelihood is multiplied by its weight",
  "seed": 164,
  "n_points": 8,
- "gate": {
-  "expect": "fail",
-  "reason": "B02_cens_trunc_weights not implemented; remove this field when it lands"
- },
  "data": {
   "generator": "tier_b",
   "seed": 64,

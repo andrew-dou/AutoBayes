@@ -61,6 +61,11 @@ def freeze_target(model):
                              for g, p in cor_priors.items()]} if cor_priors else {}),
         # The offset term (A06) likewise enters only when the formula has one.
         **({'offset': {'term': s.offset.term, 'values': d.offset}} if d.offset is not None else {}),
+        # So do the response addition terms (B02): the terms as the canonical formula writes them (trunc()'s bounds are
+        # in them) and the per-row weights and censoring codes they read.
+        **({'additions': {'terms': [a.term for a in s.additions],
+                          **({'weights': d.weights} if d.weights is not None else {}),
+                          **({'cens': d.cens} if d.cens is not None else {})}} if s.additions else {}),
         'priors': {'intercept': prior(pr.intercept), 'sigma': prior(pr.sigma),
                    'coefficients': {k: prior(v) for k,v in pr.coefficient_priors(s).items()},
                    'groups': {k: prior(v) for k,v in pr.group_priors(s).items()},

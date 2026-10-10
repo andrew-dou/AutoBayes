@@ -25,6 +25,8 @@ with the plain one. Verified in ``tests/test_bernoulli.py`` on both paths at log
 from __future__ import annotations
 
 import math
+from collections.abc import Callable, Mapping
+from dataclasses import dataclass
 
 import numpy as np
 import pymc as pm
@@ -527,3 +529,186 @@ def hurdle_poisson_family():
 
     likelihood = bmb.Likelihood("HurdlePoissonLog", params=["log_mu", "hu"], parent="log_mu", dist=HurdlePoissonLog)
     return bmb.Family("hurdle_poisson_log", likelihood, link={"log_mu": "identity", "hu": "logit"})
+
+
+# ---- brms's response addition terms (brms-parity B02, docs/addition-terms.md) --------------------------------------
+# weights(w): brms adds weights[n] * family_lpdf(Y[n] | ...) row by row (its stan_log_lik_weights), so the likelihood here
+# is the family's own elementwise log density times the row's weight, whatever the family's likelihood is (PyMC's own
+# distribution or one of the hand-written ones above). cens(c) (-1 left, 0 none, 1 right) replaces a censored row's
+# density by log P(Y <= y) or log P(Y > y), and trunc(lb, ub) subtracts the log mass between the bounds from every row,
+# both through the family's Tails (Gaussian: NORMAL_TAILS); with weights, a row's whole log likelihood is weighted, as
+# brms writes it for every combination accepted here (brms leaves the truncation mass unweighted only for cens() with
+# trunc(), which is refused). Both are withheld (formula.PARKED_ADDITIONS): brms's own gradients of the frozen
+# fixtures are not exact enough to certify them. PyMC's Normal log-CDF goes through erfcx, which has no JAX lowering on
+# this stack, so the Gaussian's tails are built from log_normal_cdf above and erf, finite with a finite gradient on both
+# paths for every finite argument, every piecewise branch evaluated on arguments clipped into its own domain.
+#
+# The likelihood is a pm.CustomDist whose draws are the family's own distribution (the truncated one under trunc(): brms's
+# posterior_predict draws from the truncated distribution and ignores censoring and weights) and whose log density is the
+# weighted, censored or truncated one, so model.logp(), the JAX density and pointwise log likelihoods all carry them.
+
+def normal_log_cdf(value, mu, sigma):
+    """``log P(Y <= value)`` for ``Y ~ Normal(mu, sigma)``: ``log Phi((value - mu) / sigma)``."""
+    return log_normal_cdf((value - mu) / sigma)
+
+
+def normal_log_ccdf(value, mu, sigma):
+    """``log P(Y > value)`` for ``Y ~ Normal(mu, sigma)``: ``log Phi((mu - value) / sigma)``, exact in the upper tail
+    (Stan's normal_lccdf forms ``1 - erf`` by subtraction there)."""
+    return log_normal_cdf((mu - value) / sigma)
+
+
+def normal_log_mass(lower, upper, mu, sigma):
+    """``log P(lower < Y <= upper)`` for ``Y ~ Normal(mu, sigma)`` and finite ``lower < upper``. With ``a``, ``b`` the
+    standardised bounds: above zero (``a > 0``) ``log Q(a) + log1mexp(log Q(b) - log Q(a))`` from the upper tail; below it
+    (``b < 0``) ``log Phi(b) + log1mexp(log Phi(a) - log Phi(b))``; across it ``log((erf(b / sqrt 2) - erf(a / sqrt 2)) / 2)``,
+    a sum of two non-negative terms. Each branch is evaluated on bounds replaced by a fixed valid pair where it is not
+    taken, so that no untaken branch is infinite or NaN. Bounds closer than about 1e-6 SD keep about ``eps / (b - a)``
+    relative accuracy in a tail (brms's ``log_diff_exp`` of two ``normal_lcdf`` loses more)."""
+    a, b = (lower - mu) / sigma, (upper - mu) / sigma
+    above, below = a > 0.0, b < 0.0
+    a_hi, b_hi = pt.switch(above, a, 1.0), pt.switch(above, b, 2.0)
+    lq_a, lq_b = log_normal_cdf(-a_hi), log_normal_cdf(-b_hi)
+    upper_tail = lq_a + pt.log1mexp(lq_b - lq_a)
+    a_lo, b_lo = pt.switch(below, a, -2.0), pt.switch(below, b, -1.0)
+    lp_a, lp_b = log_normal_cdf(a_lo), log_normal_cdf(b_lo)
+    lower_tail = lp_b + pt.log1mexp(lp_a - lp_b)
+    across = pt.or_(above, below)
+    a_mid, b_mid = pt.switch(across, -1.0, a), pt.switch(across, 1.0, b)
+    middle = pt.log(0.5 * (pt.erf(b_mid / _SQRT2) - pt.erf(a_mid / _SQRT2)))
+    return pt.switch(above, upper_tail, pt.switch(below, lower_tail, middle))
+
+
+def _log_phi(x):
+    with np.errstate(over="ignore"):
+        return -0.5 * np.square(x) - _HALF_LOG_2PI
+
+
+def _upper_mills(a, b):
+    """``(phi(a) - phi(b)) / (Q(a) - Q(b))`` for ``0 < a < b <= inf``, in logs so that neither difference cancels in the
+    tail (``log phi(b) - log phi(a)`` is formed as ``-(b - a)(b + a) / 2``; for bounds closer than about 1e-6 SD the
+    difference of the two ``log Q`` keeps about ``eps / (b - a)`` relative accuracy)."""
+    from scipy.special import log_ndtr
+
+    lq_a, lq_b = log_ndtr(-a), log_ndtr(-b)
+    with np.errstate(invalid="ignore", over="ignore"):
+        dphi = np.where(np.isinf(b), -np.inf, -0.5 * (b - a) * (b + a))
+        return np.exp(_log_phi(a) - lq_a) * -np.expm1(dphi) / -np.expm1(lq_b - lq_a)
+
+
+def standard_truncated_mean(a, b):
+    """``E[Z | a < Z < b]`` for a standard Normal ``Z`` and ``a < b`` (either may be infinite), exact in both tails: from the
+    upper tail when ``a > 0``, by symmetry when ``b < 0``, directly across zero (``Phi(b) - Phi(a)`` as a sum of erfs).
+    brms's posterior_epred forms ``(dnorm(a) - dnorm(b)) / (pnorm(b) - pnorm(a))`` by subtraction, which loses all its
+    digits beyond about ``a = 8``."""
+    from scipy.special import erf
+
+    a, b = np.broadcast_arrays(np.asarray(a, dtype=float), np.asarray(b, dtype=float))
+    out = np.empty(a.shape)
+    above, below = a > 0, b < 0
+    middle = ~(above | below)
+    out[above] = _upper_mills(a[above], b[above])
+    out[below] = -_upper_mills(-b[below], -a[below])
+    am, bm = a[middle], b[middle]
+    with np.errstate(under="ignore"):
+        num = np.exp(_log_phi(am)) - np.exp(_log_phi(bm))
+    out[middle] = num / (0.5 * (erf(bm / _SQRT2) - erf(am / _SQRT2)))
+    return out
+
+
+def _normal_truncated_mean(model, post, eta, lb, ub):
+    sigma = post[model.names["sigma"]].to_numpy()[..., None]
+    return eta + sigma * standard_truncated_mean((lb - eta) / sigma, (ub - eta) / sigma)
+
+
+def _normal_draw_truncated(model, post, eta, lb, ub, rng):
+    from scipy.stats import truncnorm
+
+    sigma = np.broadcast_to(post[model.names["sigma"]].to_numpy()[..., None], eta.shape)
+    # size= keeps a leading chain axis of length one, which scipy squeezes away when it infers the shape itself
+    return truncnorm.rvs((lb - eta) / sigma, (ub - eta) / sigma, loc=eta, scale=sigma, size=eta.shape, random_state=rng)
+
+
+@dataclass(frozen=True)
+class Tails:
+    """What cens() and trunc() need from a family (B02): ``log_cdf(value, **params)``, ``log_ccdf(value, **params)`` and
+    ``log_mass(lower, upper, **params)`` as PyTensor graphs of the likelihood's parameters by Bambi's names, finite with a
+    finite gradient; ``truncated(lower, upper, size=, **params)`` the PyMC distribution truncated to the bounds (``None``
+    for an open side), for draws; ``truncated_mean(model, post, eta, lb, ub)`` and ``draw_truncated(model, post, eta, lb,
+    ub, rng)`` brms's posterior_epred and posterior_predict of a truncated model, from posterior draws (NumPy)."""
+
+    log_cdf: Callable
+    log_ccdf: Callable
+    log_mass: Callable
+    truncated: Callable
+    truncated_mean: Callable
+    draw_truncated: Callable
+
+
+NORMAL_TAILS = Tails(
+    log_cdf=normal_log_cdf, log_ccdf=normal_log_ccdf, log_mass=normal_log_mass,
+    truncated=lambda lower, upper, *, size=None, mu, sigma: pm.TruncatedNormal.dist(mu=mu, sigma=sigma, lower=lower, upper=upper, size=size),
+    truncated_mean=_normal_truncated_mean, draw_truncated=_normal_draw_truncated,
+)
+
+
+def _addition_dist(base_dist, data: Mapping[str, np.ndarray], tails: Tails | None):
+    """The likelihood class Bambi calls with the family's parameters by name: ``base_dist`` (the family's PyMC
+    distribution, or its hand-written class) with the addition terms of ``data`` (``formula.addition_data`` on the fitted
+    rows) applied to its log density."""
+    weights, cens = data.get("weights"), data.get("cens")
+    lower = None if "lb" not in data or np.isneginf(data["lb"][0]) else float(data["lb"][0])   # numeric bounds, one per model
+    upper = None if "ub" not in data or np.isposinf(data["ub"][0]) else float(data["ub"][0])
+    truncated = lower is not None or upper is not None
+    if (cens is not None or truncated) and tails is None:
+        raise ValueError("cens() and trunc() need the family's tails (FamilySpec.tails)")
+
+    def forms(keys):
+        def draw(*args):
+            *params, size = args
+            kw = dict(zip(keys, params))
+            return tails.truncated(lower, upper, size=size, **kw) if truncated else base_dist.dist(**kw, size=size)
+
+        def logp(value, *params):
+            kw = dict(zip(keys, params))
+            ll = pm.logp(base_dist.dist(**kw), value)
+            if cens is not None:                               # brms: lpdf if 0, lccdf if 1, lcdf if -1
+                ll = pt.switch(pt.eq(cens, 1), tails.log_ccdf(value, **kw), pt.switch(pt.eq(cens, -1), tails.log_cdf(value, **kw), ll))
+            if truncated:                                      # minus the log mass between the bounds, every row
+                ll = ll - (tails.log_mass(lower, upper, **kw) if lower is not None and upper is not None
+                           else tails.log_ccdf(lower, **kw) if lower is not None else tails.log_cdf(upper, **kw))
+            return ll if weights is None else weights * ll    # each row's log likelihood times its weight
+        return draw, logp
+
+    class AdditionDist:
+        """``y ~ family(...)`` with brms's addition terms on its log density; draws are the family's own (truncated)."""
+
+        def __new__(cls, name, *, observed=None, dims=None, **params):
+            keys = tuple(params)
+            draw, logp = forms(keys)
+            return pm.CustomDist(name, *(params[k] for k in keys), dist=draw, logp=logp, observed=observed, dims=dims)
+
+        @staticmethod
+        def dist(**params):
+            return base_dist.dist(**params)
+
+    return AdditionDist
+
+
+def addition_family(base, family_spec, data: Mapping[str, np.ndarray]):
+    """The Bambi family ``base`` (``FamilySpec.bambi_family()``: a built-in family's name or a family object) with brms's
+    response addition terms applied to its likelihood; ``data`` is ``formula.addition_data`` on the fitted rows and
+    ``family_spec`` the model's spec, whose ``tails`` give the censored and truncated forms. Everything else about the
+    family (its parameters, links, priors, response handling) is the base family's own."""
+    import copy
+
+    import bambi as bmb
+    from bambi.backend.utils import get_distribution_from_likelihood
+    from bambi.defaults import get_builtin_family
+
+    family = get_builtin_family(base) if isinstance(base, str) else copy.copy(base)
+    lk = family.likelihood
+    tails = family_spec.tails() if family_spec.tails is not None else None
+    family.likelihood = bmb.Likelihood(lk.name, params=lk.params, parent=lk.parent,
+                                       dist=_addition_dist(get_distribution_from_likelihood(lk), data, tails))
+    return family

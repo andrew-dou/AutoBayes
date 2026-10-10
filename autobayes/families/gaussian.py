@@ -19,6 +19,12 @@ def _likelihood_lines(model) -> list[str]:
     return [f"  sigma ~ {describe_prior(model.priors.sigma, lb=0)}", "", "Likelihood", "  y_i ~ Normal(mu_i, sigma)"]
 
 
+def _tails():
+    from autobayes.likelihoods import NORMAL_TAILS        # lazily, as the families that build their likelihood import it
+
+    return NORMAL_TAILS
+
+
 GAUSSIAN = FamilySpec(
     name="gaussian", tag="M0", parent="mu", link="identity", link_scale=None, mean_name="mu",
     response_kind="continuous", response_dtype=None,
@@ -41,4 +47,6 @@ GAUSSIAN = FamilySpec(
     deterministic_note="mu = linear predictor",
     default_prior_link="identity",                                  # brms reads y as given: student_t(3, round(median(y), 1), max(2.5, round(mad(y), 1)))
     default_scale_prior=lambda scale: HalfStudentT(3, scale),       # brms sigma: student_t(3, 0, scale), lb 0
+    addition_terms=frozenset({"weights", "cens", "trunc"}),         # B02: weights(); cens() and trunc() are parked (formula.PARKED_ADDITIONS)
+    tails=_tails,
 )

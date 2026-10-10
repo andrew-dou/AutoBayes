@@ -9,9 +9,16 @@ Supported::
     response ~ [1 + | 0 +] predictor [+ predictor ...] [+ a:b ...] [+ offset(col) | offset(log(col))]
                [+ (1 | factor) | (1 + x [+ w ...] || factor) | (1 + x [+ w ...] | factor) ...]
     successes | trials(n) ~ ...  the same right-hand side  (binomial, brms syntax)
+    response | weights(col) ~ ...  (and successes | trials(n) + weights(col) ~ ...)
 
 ``offset(col)`` and ``offset(log(col))`` (A06) add a known column to the linear predictor with no coefficient and
 no prior, as brms's ``offset()`` does; one offset term per formula, held in ``ModelSpec.offset`` (docs/offset.md).
+
+brms's response addition terms other than ``trials()`` (B02, docs/addition-terms.md) are ``AdditionTerm`` entries of
+``ModelSpec.additions``, joined with ``+`` after the ``|`` as brms writes them: ``weights(col)`` multiplies each row's
+log likelihood by its weight. ``cens(col)`` and ``trunc(lb = a, ub = b)`` are parsed, represented and implemented
+(Gaussian) but withheld (``PARKED_ADDITIONS``): brms's own gradients of their frozen fixtures are not exact enough to
+certify them.
 
 An interaction ``a:b`` (or ``a*b`` = ``a + b + a:b``) is two-way between any two main effects of the formula (A04,
 docs/interactions.md): numeric by declared categorical (``x:z``, the numeric column times each non-reference
@@ -47,13 +54,15 @@ import re
 import math
 from collections.abc import Mapping
 from dataclasses import dataclass, replace
+from types import MappingProxyType
 
 import numpy as np
 import pandas as pd
 
 _IDENT = r"[A-Za-z_][A-Za-z0-9_.]*"
 _FORMULA_RE = re.compile(rf"^\s*({_IDENT})\s*~\s*(.+?)\s*$", re.S)
-_TRIALS_FORMULA_RE = re.compile(rf"^\s*({_IDENT})\s*\|\s*trials\(\s*({_IDENT})\s*\)\s*~\s*(.+?)\s*$", re.S)
+_ADDITIONS_FORMULA_RE = re.compile(rf"^\s*({_IDENT})\s*\|\s*([^~]+?)\s*~\s*(.+?)\s*$", re.S)   # response | addition terms ~ rhs
+_ADDITION_CALL_RE = re.compile(rf"^({_IDENT})\s*\((.*)\)$", re.S)                               # trials(n), weights(w), trunc(lb = 0)
 _BAMBI_PROPORTION_RE = re.compile(r"^\s*(p|prop|proportion)\s*\(", re.S)
 _GROUP_RE = re.compile(rf"^\(\s*([^|\s][^|]*?)\s*(\|\|?)\s*(.+?)\s*\)$", re.S)   # (inner | factor) or (inner || factor)
 _OFFSET_RE = re.compile(r"^offset\s*\((.*)\)$", re.S)                             # offset(<inner>)
@@ -397,6 +406,205 @@ class Offset:
         return v
 
 
+ADDITION_KINDS = ("weights", "cens", "trunc")    # brms's response addition terms besides trials() that are parsed (B02)
+
+# Addition terms that are parsed, represented and implemented (Gaussian family) but withheld, each with the reason its
+# refusal carries (docs/addition-terms.md, divergences D24 and D25). Removing an entry un-parks the term;
+# tests/test_addition_terms.py does that under monkeypatch to check the withheld forms against the frozen fixtures.
+PARKED_ADDITIONS = MappingProxyType({
+    "cens": ("brms's own gradient of a censored Gaussian model is not exact enough to certify it: for a left-censored row "
+             "Stan's normal_lcdf differentiates through piecewise polynomial approximations (Abramowitz and Stegun 7.1.26 "
+             "and Taylor fits), off by up to 4e-4 absolute, so the frozen fixture gauss_censored records gradients that "
+             "differ from the exact ones by up to 2.5e-6 relative at 5 of its 8 points (the oracle's GRAD_REL is 1e-7), "
+             "while its log densities agree to 3e-16; AutoBayes's censored likelihood is exact on both paths and is "
+             "withheld until Andrew decides how such a feature is certified (docs/addition-terms.md, divergence D24)"),
+    "trunc": ("brms's own gradient and expected value of a truncated Gaussian model are not exact enough to certify it far "
+              "in the tail: Stan's normal_lccdf forms 1 - erf(z / sqrt(2)) by subtraction and brms's posterior_epred "
+              "1 - pnorm(z), so at point 4 of the frozen fixture gauss_truncated, where a row's location sits 6.17 SD below "
+              "the bound, brms's gradient is 4.2e-7 relative off the exact one (GRAD_REL 1e-7) and its posterior_epred up "
+              "to 1.0e-3 (PRED_REL 1e-9), while its log densities agree to 7e-11; AutoBayes's truncated likelihood and mean "
+              "are exact and are withheld until a decision (docs/addition-terms.md, divergence D25)"),
+})
+
+
+def _number_text(v: float) -> str:
+    """A truncation bound as the canonical formula writes it: ``0`` for 0.0, ``2.5``, ``-1e-05``."""
+    text = repr(float(v))
+    return text[:-2] if text.endswith(".0") else text
+
+
+@dataclass(frozen=True)
+class AdditionTerm:
+    """A response addition term of brms's left-hand side other than ``trials()`` (B02, docs/addition-terms.md), data
+    of the formula rather than a population-level term: it has no coefficient, no prior and no design column.
+
+    ``kind`` is ``"weights"`` (``weights(col)``: each row's log likelihood is multiplied by its weight), ``"cens"``
+    (``cens(col)``: a censoring indicator per row, -1 left-, 0 un-, 1 right-censored) or ``"trunc"`` (``trunc(lb = a,
+    ub = b)``: the response truncated to numeric bounds, ``None`` for an open side). ``column`` is the data column of
+    ``weights`` and ``cens``. ``addition_data`` turns the terms into brms's Stan data on a frame."""
+
+    kind: str
+    column: str | None = None
+    lb: float | None = None
+    ub: float | None = None
+
+    @property
+    def term(self) -> str:
+        """The term as the canonical formula writes it: ``weights(w)``, ``cens(c)``, ``trunc(lb = 0)``, ``trunc(lb = 0, ub = 5)``."""
+        if self.kind == "trunc":
+            sides = [f"{side} = {_number_text(v)}" for side, v in (("lb", self.lb), ("ub", self.ub)) if v is not None]
+            return f"trunc({', '.join(sides)})"
+        return f"{self.kind}({self.column})"
+
+    @property
+    def columns(self) -> tuple[str, ...]:
+        """The data columns the term reads (none for ``trunc``, whose bounds are numbers)."""
+        return () if self.column is None else (self.column,)
+
+
+def _parse_trunc(args: list[str], piece: str, formula: str) -> AdditionTerm:
+    """``trunc(lb = a, ub = b)``, ``trunc(lb = a)``, ``trunc(ub = b)`` or brms's positional ``trunc(a, b)``, with numeric
+    bounds (``Inf`` / ``-Inf`` for an open side, brms's defaults)."""
+    bounds: dict[str, float] = {}
+    for i, arg in enumerate(args):
+        km = re.fullmatch(rf"({_IDENT})\s*=\s*(.+)", arg, re.S)
+        side, value = (km.group(1), km.group(2).strip()) if km else (("lb", "ub")[i] if i < 2 else None, arg)
+        if side not in ("lb", "ub") or side in bounds:
+            raise FormulaError(f"{formula!r}: {piece!r}: trunc() takes the bounds lb and ub, each at most once")
+        if re.fullmatch(_NUMBER, value):
+            bounds[side] = float(value)
+        elif value in ("Inf", "-Inf"):
+            bounds[side] = math.inf if value == "Inf" else -math.inf
+        else:
+            raise FormulaError(
+                f"{formula!r}: {piece!r}: a truncation bound must be a number; per-row bounds read from a column "
+                f"({value!r}) are not part of this slice (docs/addition-terms.md)"
+            )
+    lb, ub = bounds.get("lb", -math.inf), bounds.get("ub", math.inf)
+    if not lb < ub:
+        raise FormulaError(f"{formula!r}: {piece!r}: the truncation bounds must satisfy lb < ub (brms refuses lb >= ub too)")
+    if lb == -math.inf and ub == math.inf:
+        raise FormulaError(f"{formula!r}: {piece!r} has no finite bound and truncates nothing; drop it")
+    return AdditionTerm("trunc", lb=None if lb == -math.inf else lb, ub=None if ub == math.inf else ub)
+
+
+def _parse_additions(text: str, formula: str) -> tuple[str | None, tuple[AdditionTerm, ...]]:
+    """The addition terms after the ``|`` of brms's left-hand side, joined with ``+``: the ``trials()`` column (or None)
+    and the other terms in the order written. Each term at most once; anything else is refused naming the term."""
+    trials, additions, seen = None, [], set()
+    for piece in _split_top_level(text):
+        m = _ADDITION_CALL_RE.match(piece)
+        kind = m.group(1) if m else None
+        if kind not in ("trials", *ADDITION_KINDS):
+            raise FormulaError(
+                f"{formula!r}: {piece!r} is not a supported response addition term. brms's left-hand side "
+                "'response | term + term' takes weights(col), cens(col) and trunc(lb = a, ub = b) here "
+                "(docs/addition-terms.md); a binomial response is exactly 'successes | trials(n)', with any other terms after it."
+            )
+        if kind in seen:
+            raise FormulaError(f"{formula!r}: {kind}() appears more than once on the left-hand side")
+        seen.add(kind)
+        args = [a.strip() for a in _split_top_level(m.group(2), ",")] if m.group(2).strip() else []
+        if kind == "trunc":
+            additions.append(_parse_trunc(args, piece, formula))
+            continue
+        if len(args) != 1 or not re.fullmatch(_IDENT, args[0]):
+            hint = {"weights": "; brms's weights(col, scale = TRUE), which rescales the weights to sum to the number of rows, "
+                               "is not supported: rescale the column",
+                    "cens": "; interval censoring, cens(col, y2), is not part of this slice", "trials": ""}[kind]
+            raise FormulaError(f"{formula!r}: {piece!r}: {kind}() takes one column name{hint}")
+        if kind == "trials":
+            trials = args[0]
+        else:
+            additions.append(AdditionTerm(kind, column=args[0]))
+    return trials, tuple(additions)
+
+
+def _check_additions(additions: tuple[AdditionTerm, ...], fam, formula: str) -> None:
+    """Refuse a withheld addition term (``PARKED_ADDITIONS``, with its reason), a term the family's likelihood does not
+    take (``FamilySpec.addition_terms``, naming the families that take it), and ``cens()`` with ``trunc()``: brms writes a
+    censored row of a truncated model as the untruncated distribution's tail minus the truncation mass, which is not the
+    censored probability of the truncated distribution (docs/addition-terms.md)."""
+    from autobayes.families import FAMILIES
+
+    for a in additions:
+        if a.kind in PARKED_ADDITIONS:
+            raise FormulaError(f"{formula!r}: {a.term!r}: brms's {a.kind}() is withheld: {PARKED_ADDITIONS[a.kind]}")
+        if a.kind not in fam.addition_terms:
+            offering = [name for name, other in FAMILIES.items() if a.kind in other.addition_terms]
+            raise FormulaError(
+                f"{formula!r}: {a.term!r} is not available for the {fam.name} family; brms's {a.kind}() is verified here "
+                f"for the {', '.join(offering) or 'no'} famil{'y' if len(offering) == 1 else 'ies'} (docs/addition-terms.md)"
+            )
+    if {"cens", "trunc"} <= {a.kind for a in additions}:
+        raise FormulaError(
+            f"{formula!r}: cens() together with trunc() is not supported: brms adds a censored row of a truncated model as "
+            "the untruncated tail log P(Y <= y) or log P(Y > y) minus the log mass between the bounds, which is not the "
+            "censored probability of the truncated distribution (docs/addition-terms.md, divergence D25)"
+        )
+
+
+def _weights_values(column: str, s: pd.Series, where: str) -> np.ndarray:
+    reject_complex(f"{where} {column!r}", s)
+    if not _is_numeric(s):
+        raise FormulaError(f"{where} {column!r} has dtype {s.dtype}; the weights of 'weights({column})' must be numeric")
+    v = s.to_numpy(dtype=float)
+    if not np.all(np.isfinite(v)):
+        raise FormulaError(f"{where} {column!r} of 'weights({column})' has missing or non-finite values")
+    if np.any(v <= 0):
+        i = int(np.flatnonzero(v <= 0)[0])
+        raise FormulaError(
+            f"{where} {column!r}: weights must be positive; row {i} has {float(v[i])!r} (brms accepts a zero weight, which "
+            "removes the row from the likelihood but not from the centring means and level sets: drop the row instead; "
+            "docs/addition-terms.md, divergence D26)"
+        )
+    return v
+
+
+def _cens_values(column: str, s: pd.Series, where: str) -> np.ndarray:
+    reject_complex(f"{where} {column!r}", s)
+    if not _is_numeric(s):
+        raise FormulaError(
+            f"{where} {column!r} has dtype {s.dtype}; the censoring indicator of 'cens({column})' must be numeric, -1 (left), "
+            "0 (none) or 1 (right); recode brms's labels 'left' / 'none' / 'right' and TRUE / FALSE explicitly"
+        )
+    v = s.to_numpy(dtype=float)
+    if not np.all(np.isfinite(v)):
+        raise FormulaError(f"{where} {column!r} of 'cens({column})' has missing or non-finite values")
+    if np.any(v == 2):
+        raise FormulaError(f"{where} {column!r}: code 2 (interval censoring) needs brms's cens({column}, y2), which is not part of this slice")
+    bad = v[~np.isin(v, (-1.0, 0.0, 1.0))]
+    if bad.size:
+        raise FormulaError(f"{where} {column!r}: censoring codes must be -1 (left), 0 (none) or 1 (right); found {float(bad[0])!r}")
+    return v.astype(np.int64)
+
+
+def addition_data(spec: "ModelSpec", df: pd.DataFrame, *, where: str = "column") -> dict[str, np.ndarray]:
+    """brms's Stan data of the formula's addition terms on ``df`` (B02), under brms's names: ``weights`` (positive finite
+    weights), ``cens`` (-1, 0 or 1 per row, int64) and ``lb`` / ``ub`` (the truncation bounds per row, ``-inf`` / ``inf``
+    on an open side, as brms writes both whenever ``trunc()`` is present). Each is checked here: a response outside the
+    truncation bounds is refused, as brms refuses it. Empty without addition terms."""
+    out: dict[str, np.ndarray] = {}
+    for a in spec.additions:
+        if a.kind == "weights":
+            out["weights"] = _weights_values(a.column, df[a.column], where)
+        elif a.kind == "cens":
+            out["cens"] = _cens_values(a.column, df[a.column], where)
+        else:
+            lb = -math.inf if a.lb is None else a.lb
+            ub = math.inf if a.ub is None else a.ub
+            y = df[spec.response].to_numpy(dtype=float)
+            outside = np.flatnonzero((y < lb) | (y > ub))
+            if outside.size:
+                i = int(outside[0])
+                raise FormulaError(
+                    f"response {spec.response!r} at row {i} is {float(y[i])!r}, outside the bounds of {a.term!r} "
+                    f"({outside.size} row(s) outside); brms refuses responses outside the truncation bounds too"
+                )
+            out["lb"], out["ub"] = np.full(len(df), lb), np.full(len(df), ub)
+    return out
+
+
 def bambi_group_name(factor: str, coef: str) -> str:
     """Bambi's name of one group-level coefficient: ``1|g`` for the varying intercept of ``g``, ``x|g`` for the
     slope of ``x``; a derived factor ``g:h`` appears under its column name, ``1|g_h``. PyMC's variables are this
@@ -541,7 +749,8 @@ class ModelSpec:
     ``columns``, ``categorical_names``, ``interactions``, ``groups`` and the per-term lookups are views of them.
     ``categoricals`` carries what a categorical term needs beyond its name (reference, levels, coding) and
     ``levels_by_group`` the fitted levels of each grouping factor, both filled in once the data are seen.
-    ``offset`` is the formula's ``offset()`` term, or None (docs/offset.md)."""
+    ``offset`` is the formula's ``offset()`` term, or None (docs/offset.md). ``additions`` are the response addition
+    terms after ``|`` other than ``trials()`` (``weights()``, ``cens()``, ``trunc()``; B02, docs/addition-terms.md)."""
 
     formula: str
     response: str
@@ -553,16 +762,18 @@ class ModelSpec:
     pop_terms: tuple[PopTerm, ...]
     group_terms: tuple[GroupTerm, ...]
     offset: Offset | None
+    additions: tuple[AdditionTerm, ...]
 
     def __init__(self, formula, response, predictors=(), group=None, intercept=True,
                  levels=(), trials=None, rhs="", terms=(), categoricals=(), interactions=(),
-                 *, groups=None, levels_by_group=None, pop_terms=None, group_terms=None, offset=None):
+                 *, groups=None, levels_by_group=None, pop_terms=None, group_terms=None, offset=None, additions=()):
         """Keep the original positional constructor: without ``pop_terms`` / ``group_terms`` the term model is
         built from the flat ``predictors``, ``terms``, ``categoricals``, ``interactions`` and ``group(s)``.
         Terms given as mappings (``dataclasses.asdict`` output) are rebuilt."""
         categoricals = tuple(c if isinstance(c, Categorical) else Categorical(**c) for c in categoricals)
         if offset is not None and not isinstance(offset, Offset):
             offset = Offset(**offset)
+        additions = tuple(a if isinstance(a, AdditionTerm) else AdditionTerm(**a) for a in additions)
         if group_terms is not None:
             if groups is not None or group is not None:
                 raise ValueError("supply group_terms or group/groups, not both")
@@ -592,7 +803,7 @@ class ModelSpec:
         values = dict(formula=formula, response=response, intercept=intercept,
                       levels_by_group=_GroupLevels((g, level_map[g]) for g in factors),
                       trials=trials, rhs=rhs, categoricals=categoricals,
-                      pop_terms=pop_terms, group_terms=group_terms, offset=offset)
+                      pop_terms=pop_terms, group_terms=group_terms, offset=offset, additions=additions)
         for key, value in values.items():
             object.__setattr__(self, key, value)
 
@@ -600,7 +811,11 @@ class ModelSpec:
         # Preserve hashability of the frozen specification; factor metadata is ordered.
         return hash((self.formula, self.response, self.intercept,
                      tuple(self.levels_by_group[g] for g in self.groups), self.trials, self.rhs,
-                     self.categoricals, self.pop_terms, self.group_terms, self.offset))
+                     self.categoricals, self.pop_terms, self.group_terms, self.offset, self.additions))
+
+    def addition(self, kind: str) -> AdditionTerm | None:
+        """The addition term of ``kind`` (``"weights"``, ``"cens"``, ``"trunc"``), or None when the formula has none."""
+        return next((a for a in self.additions if a.kind == kind), None)
 
     # -- views of the term model -------------------------------------------------------------
     @property
@@ -740,8 +955,10 @@ class ModelSpec:
     @property
     def canonical_formula(self) -> str:
         """The formula as expanded: main effects, then interactions (``numeric:categorical``; otherwise the two
-        operands in main-effect order), then the offset and the group terms."""
-        lhs = self.response if self.trials is None else f"{self.response} | trials({self.trials})"
+        operands in main-effect order), then the offset and the group terms; on the left, ``trials()`` first and the
+        other addition terms in the order written."""
+        extra = ([f"trials({self.trials})"] if self.trials is not None else []) + [a.term for a in self.additions]
+        lhs = self.response if not extra else f"{self.response} | {' + '.join(extra)}"
         return f"{lhs} ~ {self.rhs}"
 
     @property
@@ -750,7 +967,8 @@ class ModelSpec:
         becomes Bambi's ``p(k, n)``, ``(1 + x || g)`` becomes ``(1 + x | g)``, which Bambi (formulae has no
         ``||``) builds as the independent terms ``1|g`` and ``x|g``, a derived factor ``g:h`` appears under its
         column name, ``(1 | g_h)``, and a transform term under its own name in backticks, the evaluated column
-        the fitted frame carries; ``Model._extract_design`` verifies all of that."""
+        the fitted frame carries; ``Model._extract_design`` verifies all of that. The other addition terms never reach
+        Bambi's formula: they act on the likelihood (``likelihoods.addition_family``)."""
         parts = ([] if self.intercept else ["0"]) + [t.bambi_name for t in self.pop_terms]
         parts += ([self.offset.term] if self.offset is not None else []) + [t.bambi_canonical for t in self.group_terms]
         rhs = " + ".join(parts) if parts else "1"
@@ -989,26 +1207,35 @@ def parse_formula(formula: str, data: pd.DataFrame | None = None, family: str = 
     from autobayes.families import get_family
 
     fam = get_family(family)
-    trials = None
+    trials, additions = None, ()
     if _BAMBI_PROPORTION_RE.match(formula):
         raise FormulaError(
             f"{formula!r}: Bambi's 'p(successes, trials)' left-hand side is not accepted; write the brms "
             "form 'successes | trials(n) ~ ...' (ab.binomial)."
         )
-    mt = _TRIALS_FORMULA_RE.match(formula)
-    if mt:
-        if not fam.has_trials:
+    ma = _ADDITIONS_FORMULA_RE.match(formula)              # brms's 'response | term + term ~ ...' (trials(), B02's terms)
+    if ma:
+        response, rhs = ma.group(1), ma.group(3)
+        trials, additions = _parse_additions(ma.group(2), formula)
+        if trials is not None and not fam.has_trials:
             raise FormulaError(
                 f"{formula!r}: 'successes | trials(n)' is the binomial family's left-hand side; use "
                 "ab.binomial, or drop '| trials(...)' for a Gaussian or Bernoulli response."
             )
-        response, trials, rhs = mt.group(1), mt.group(2), mt.group(3)
+        if trials is None and fam.has_trials:
+            raise FormulaError(
+                f"{formula!r}: the {fam.name} family needs exactly 'successes | trials(n)' on the left-hand side (brms "
+                "syntax), with any other addition terms after it: 'k | trials(n) + weights(w) ~ ...'."
+            )
         if trials == response:
             raise FormulaError(f"{trials!r}: the trials column cannot also be the response")
+        _check_additions(additions, fam, formula)
     else:
         if "~" in formula and "|" in formula.split("~", 1)[0]:
             raise FormulaError(
-                f"{formula!r}: a '|' on the left-hand side must be exactly 'successes | trials(n)'."
+                f"{formula!r}: the left-hand side must be 'response | term + term' with a column name as the response "
+                "and brms's addition terms after the '|' (weights(col), cens(col), trunc(lb = a, ub = b); exactly "
+                "'successes | trials(n)' for a binomial response; docs/addition-terms.md)."
             )
         m = _FORMULA_RE.match(formula)
         if not m:
@@ -1208,7 +1435,7 @@ def parse_formula(formula: str, data: pd.DataFrame | None = None, family: str = 
     offset = offsets[0][0] if offsets else None
     # A derived factor's column (g_h) is added to the fitted frame: it must not shadow a column the formula uses.
     in_use = {response, *predictors, *transform_columns, *operands_all, *([trials] if trials is not None else []),
-              *([offset.column] if offset is not None else [])}
+              *([offset.column] if offset is not None else []), *(c for a in additions for c in a.columns)}
     derived_columns: dict[str, GroupTerm] = {}
     for term in group_terms:
         if not term.derived:
@@ -1277,7 +1504,7 @@ def parse_formula(formula: str, data: pd.DataFrame | None = None, family: str = 
     spec = ModelSpec(
         formula=formula.strip(), response=response, intercept=not remove_intercept, trials=trials,
         rhs=canonical_rhs, categoricals=categoricals, pop_terms=pop_terms, group_terms=tuple(group_terms),
-        offset=offset,
+        offset=offset, additions=additions,
     )
     if data is not None:
         spec = validate_data(spec, data, family)
@@ -1430,7 +1657,8 @@ def validate_data(spec: ModelSpec, data: pd.DataFrame, family: str = "gaussian")
         raise FormulaError("a trials column is present exactly for the binomial family")
     operands = [c for t in spec.group_terms for c in t.operands]   # the columns the grouping factors are read from
     needed = ([spec.response, *spec.pop_columns] + operands
-              + ([spec.trials] if spec.trials else []) + ([spec.offset.column] if spec.offset is not None else []))
+              + ([spec.trials] if spec.trials else []) + ([spec.offset.column] if spec.offset is not None else [])
+              + [c for a in spec.additions for c in a.columns])
     needed = list(dict.fromkeys(needed))                         # the offset column may also be a predictor
     missing = [c for c in needed if c not in data.columns]
     if missing:
@@ -1469,6 +1697,7 @@ def validate_data(spec: ModelSpec, data: pd.DataFrame, family: str = "gaussian")
         )
     if len(data) < 2:
         raise FormulaError("need at least two observations")
+    addition_data(spec, data)                                     # positive weights, censoring codes, responses inside the bounds (B02)
     levels_by_group = {}
     for t in spec.group_terms:                                    # a derived factor's levels: the observed combinations
         levels = tuple(sorted(group_labels(t.factor, data).unique()))
@@ -1488,5 +1717,5 @@ def validate_data(spec: ModelSpec, data: pd.DataFrame, family: str = "gaussian")
         formula=spec.formula, response=spec.response, intercept=spec.intercept, levels_by_group=levels_by_group,
         trials=spec.trials, rhs=spec.rhs, categoricals=tuple(categoricals),
         pop_terms=tuple(pop_term(t.name, t.kind, categoricals) for t in spec.pop_terms),   # levels now known
-        group_terms=spec.group_terms, offset=spec.offset,
+        group_terms=spec.group_terms, offset=spec.offset, additions=spec.additions,
     )

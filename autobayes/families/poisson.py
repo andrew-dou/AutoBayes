@@ -54,4 +54,5 @@ POISSON = FamilySpec(
     deterministic_note="mu = exp(linear predictor); mu = exp(eta), expected count",
     default_prior_link="log",                                       # brms reads log(y), zeros as 0.1
     default_scale_prior=None,
+    addition_terms=frozenset({"weights"}),                      # B02: weights(), verified against the frozen case poisson_weighted
 )

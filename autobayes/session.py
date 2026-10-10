@@ -141,6 +141,7 @@ def fit_record(model, fit, *, panel: dict | None = None, max_treedepth: int = 10
             "terms": list(s.terms),
             "design_columns": list(s.columns),
             **({"offset": s.offset.term} if s.offset is not None else {}),
+            **({"addition_terms": [a.term for a in s.additions]} if s.additions else {}),   # weights() (B02)
             **({"transforms": [t.name for t in s.transform_terms]} if s.transform_terms else {}),
             "interactions": [list(pair) for pair in s.interactions],
             "canonical_formula": s.canonical_formula,

@@ -71,4 +71,5 @@ STUDENT = FamilySpec(
     default_prior_link="identity",                                  # brms reads y as given, as for the Gaussian
     default_scale_prior=lambda scale: HalfStudentT(3, scale),       # brms sigma: student_t(3, 0, scale), lb 0
     default_learned_priors=MappingProxyType({"nu": lambda: Gamma(2, 0.1)}),   # brms nu: gamma(2, 0.1), lb 1
+    addition_terms=frozenset({"weights"}),                      # B02: weights(), verified against the frozen case student_weighted
 )

@@ -7,7 +7,7 @@
  "n_points": 8,
  "gate": {
   "expect": "fail",
-  "reason": "B02_cens_trunc_weights not implemented; remove this field when it lands"
+  "reason": "B02_cens_trunc_weights: cens() is withheld (docs/addition-terms.md, divergence D24). For a left-censored row brms's gradient is Stan's normal_lcdf partial derivative, a piecewise polynomial approximation (Abramowitz and Stegun 7.1.26 and Taylor fits): at seeded point 4 brms's gradient with respect to sd_1 (the log SD of g) is 3.4398114909533386 where the exact 50-digit value is 3.4398200705418716, a relative error of 2.5e-6 against the oracle's GRAD_REL of 1e-7, and points 0, 5, 6 and 7 are over the tolerance as well (2.3e-7, 2.1e-6, 2.1e-7, 3.4e-7). Every log density agrees with the exact one to 3e-16; with the park lifted AutoBayes passes G1, the G2 density, G3, G4, G5 and G6 and agrees with the exact gradient to 9e-15 at every point. Remove this field when Andrew decides how censoring is certified: Stan's normal_lcdf derivative is off by up to 3e-6 absolute for -1 <= z < 2.97 and up to 4e-4 below, and within 3e-8 above z = 2.97, where Phi(z) > 0.998."
  },
  "data": {
   "generator": "tier_b",
