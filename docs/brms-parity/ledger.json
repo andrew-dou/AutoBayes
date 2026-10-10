@@ -705,13 +705,13 @@
    "depends_on": [
     "A06_offset"
    ],
-   "status": "fixtures_frozen",
+   "status": "implementing",
    "summary": "cens(), trunc(), weights() response addition terms",
    "pr": null,
-   "attempts": 0,
+   "attempts": 1,
    "gates": {},
    "divergences": [],
-   "next_action": "implement after the Tier A boundary review",
+   "next_action": "agent (opus) in worktree parity-b02",
    "fixtures": {
     "pr": 33,
     "cases": [
@@ -792,13 +792,13 @@
    "depends_on": [
     "A08_negbinomial"
    ],
-   "status": "fixtures_frozen",
+   "status": "implementing",
    "summary": "zero-inflated and hurdle count families",
    "pr": null,
-   "attempts": 0,
+   "attempts": 1,
    "gates": {},
    "divergences": [],
-   "next_action": "implement after the Tier A boundary review",
+   "next_action": "agent (opus) in worktree parity-b06",
    "fixtures": {
     "pr": 33,
     "cases": [
