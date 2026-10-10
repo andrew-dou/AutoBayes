@@ -20,6 +20,11 @@ brms's rules (``default_prior()``, ``def_dpar_prior``, ``def_scale_prior``, ``pr
   ``inv_gamma(0.4, 0.3)``, Gamma ``shape`` and Beta ``phi`` ``gamma(0.01, 0.01)``, Student-t ``nu`` ``gamma(2, 0.1)``.
   The zero-inflation or hurdle probability of the zero-inflated and hurdle families (B06): ``beta(1, 1)`` with bounds 0
   and 1 (``FamilySpec.default_zero_prior``).
+- An auxiliary parameter with its own formula (B01, ``sigma ~ z``; brms's ``def_dpar_prior`` under the formula's log link):
+  its intercept ``student_t(3, 0, scale)`` with brms's scale of the response read on the log scale for ``sigma``
+  (``max(2.5, round(mad(log y), 1))``, zeros read as 0.1, 2.5 when a response is negative) and ``student_t(3, 0, 2.5)``
+  for ``shape`` and ``phi`` (``FamilySpec.default_distributional_intercept``); its coefficients flat; no class row of
+  the parameter itself.
 
 The data-dependent numbers are R's arithmetic, transcribed here and checked against R itself: ``median``, ``mad``
 (constant 1.4826) and ``mean`` (R's two-pass mean on doubles), ``round(x, 1)`` (R 4's algorithm, which picks the
@@ -218,10 +223,11 @@ def _default(prior: Prior) -> Prior:
     return replace(prior, source="default")
 
 
-def default_priors(formula: str, data: pd.DataFrame, *, family: str = "gaussian", categorical: Mapping[str, object] | None = None,
+def default_priors(formula: str | list[str], data: pd.DataFrame, *, family: str = "gaussian", categorical: Mapping[str, object] | None = None,
                    nu: float | None = None, link: str | None = None, center_predictors: bool = True) -> Priors:
     """brms's default priors for ``formula`` on ``data`` under ``family`` (brms 2.23's ``default_prior()``), as a
-    ``Priors`` the constructors accept: ``ab.gaussian(f, df, ab.default_priors(f, df))``.
+    ``Priors`` the constructors accept: ``ab.gaussian(f, df, ab.default_priors(f, df))``. ``formula`` may be a list with a
+    distributional formula (B01, ``["y ~ x", "sigma ~ z"]``), whose priors are its intercept's and coefficients'.
 
     ``categorical``, ``link`` and ``center_predictors`` are the constructor's own and say which model the defaults are
     for (without centring, brms's intercept is a flat ``b`` coefficient). ``nu`` is the Student-t degrees of freedom: left
@@ -255,7 +261,15 @@ def default_priors(formula: str, data: pd.DataFrame, *, family: str = "gaussian"
         sd[t.factor] = HalfStudentT(DF, scale) if not t.slopes else {c: HalfStudentT(DF, scale) for c in t.coefs}
     cor = {t.factor: LKJ(1) for t in spec.correlated_terms}
     auxiliary = {}
-    if fam.scale_parameter is not None:
+    if fam.scale_parameter in spec.dpar_names:                       # its own formula (B01): brms's def_dpar_prior, log link
+        ds = spec.dpar(fam.scale_parameter)
+        if fam.default_distributional_intercept is None:
+            raise PriorError(f"no brms default prior is recorded for the intercept of {fam.scale_parameter}'s formula in the "
+                             f"{fam.name} family; give the priors explicitly")
+        _, log_scale = location_scale(y, "log")                      # brms's def_scale_prior with the formula's log link
+        auxiliary[fam.scale_parameter] = {**({"intercept": fam.default_distributional_intercept(log_scale)} if ds.intercept else {}),
+                                          **({"b": Flat()} if ds.pop_terms else {})}
+    elif fam.scale_parameter is not None:
         if fam.default_scale_prior is None:
             raise PriorError(f"no brms default prior is recorded for the {fam.name} family's {fam.scale_parameter}; "
                              f"give the priors explicitly (ab.Priors(..., {fam.scale_parameter}=...))")
@@ -385,6 +399,18 @@ def prior_table(priors: Priors, spec, family="gaussian", *, center_predictors: b
     def same(ps):
         return all(p == ps[0] for p in ps)
 
+    def add_coefficients(coefs, dpar=""):
+        if coefs:
+            ps = [p for _, p in coefs]
+            if same(ps):
+                add(ps[0], "b", dpar=dpar)
+                for name, p in coefs:
+                    add(None, "b", coef=name, source=p.source, dpar=dpar)
+            else:
+                add(None, "b", dpar=dpar)
+                for name, p in coefs:
+                    add(p, "b", coef=name, dpar=dpar)
+
     names = brms_coefficient_names(spec)
     coefficient_priors = priors.coefficient_priors(spec)
     for dpar in (brms_dpar_names(categories[1:]) if fam.per_category else [""]):   # brms's mu<k>: one block per category (B05)
@@ -396,17 +422,13 @@ def prior_table(priors: Priors, spec, family="gaussian", *, center_predictors: b
                     add(None, "Intercept", coef=str(k), source=priors.intercept.source)
         elif spec.intercept:
             coefs.insert(0, ("Intercept", priors.intercept))          # brms's uncentred intercept is a b coefficient
-        if coefs:
-            ps = [p for _, p in coefs]
-            if same(ps):
-                add(ps[0], "b", dpar=dpar)
-                for name, p in coefs:
-                    add(None, "b", coef=name, source=p.source, dpar=dpar)
-            else:
-                add(None, "b", dpar=dpar)
-                for name, p in coefs:
-                    add(p, "b", coef=name, dpar=dpar)
-    if fam.scale_parameter is not None:
+        add_coefficients(coefs, dpar=dpar)
+    for ds in spec.dpars:                                             # an auxiliary parameter's own formula (B01): its dpar rows
+        sub, dnames = priors.dpar_priors(spec, ds.response), brms_coefficient_names(ds)
+        if ds.intercept:                                              # brms's centred Intercept_<dpar>, class Intercept
+            add(sub.intercept, "Intercept", dpar=ds.response)
+        add_coefficients([(dnames[col], p) for col, p in sub.coefficient_priors(ds).items()], dpar=ds.response)
+    if fam.scale_parameter is not None and fam.scale_parameter not in spec.dpar_names:
         add(getattr(priors, fam.scale_parameter), fam.scale_parameter, lb="0")
     if fam.zero_parameter is not None:                                # brms's real<lower=0,upper=1> zi / hu (B06)
         add(getattr(priors, fam.zero_parameter), fam.zero_parameter, lb="0", ub="1")

@@ -71,7 +71,11 @@ def _summary_rows(model, idata) -> dict:
 
     n = model.names
     scale = family_of(model).scale_parameter                    # "sigma", "shape", "phi" or None
-    names = ([n["intercept"]] if model.spec.intercept else []) + list(model.spec.terms) + [roles["sd"] for roles in model.group_coefficient_names.values()] + ([n[scale]] if scale is not None else [])
+    if scale in model.spec.dpar_names:                          # its own formula (B01): its intercept and coefficients
+        scale_names = [v for k, v in model.dpar_names[scale].items() if k != "value"]
+    else:
+        scale_names = [n[scale]] if scale is not None else []
+    names = ([n["intercept"]] if model.spec.intercept else []) + list(model.spec.terms) + [roles["sd"] for roles in model.group_coefficient_names.values()] + scale_names
     names += [n[name] for name in model.learned_parameters]     # a learned Student-t nu (A13)
     zero = family_of(model).zero_parameter                      # the zero-inflation / hurdle probability (B06)
     names += [n[zero]] if zero is not None else []
@@ -81,6 +85,19 @@ def _summary_rows(model, idata) -> dict:
         rows[name] = {k: float(r[k]) for k in ("mean", "sd", "hdi_3%", "hdi_97%", "mcse_mean",
                                                 "ess_bulk", "ess_tail", "r_hat")}
     return rows
+
+
+def _scale_priors(model) -> dict:
+    """The fit record's entries of the auxiliary parameter's prior: ``{"sigma": "HalfNormal(sigma=1)"}``, or with its own
+    formula (B01) its intercept's and coefficients' priors, ``{"sigma:intercept": ..., "sigma:b:z[q]": ...}``."""
+    from autobayes.families import family_of
+
+    scale, s, pr = family_of(model).scale_parameter, model.spec, model.priors
+    if scale not in s.dpar_names:
+        return {scale: str(getattr(pr, scale))}
+    ds, sub = s.dpar(scale), pr.dpar_priors(s, scale)
+    return {**({f"{scale}:intercept": str(sub.intercept)} if ds.intercept else {}),
+            **{f"{scale}:b:{col}": str(p) for col, p in sub.coefficient_priors(ds).items()}}
 
 
 def fit_record(model, fit, *, panel: dict | None = None, max_treedepth: int = 10, allow_unverified: bool = False) -> dict:
@@ -133,7 +150,7 @@ def fit_record(model, fit, *, panel: dict | None = None, max_treedepth: int = 10
                        **{("sd" if len(s.groups) == 1 else f"sd:{g}"): str(prior) for g, prior in group_priors.items()},
                        **{f"sd:{sd_tag(g, c)}": str(prior) for (g, c), prior in sd_priors.items() if c != "Intercept"},
                        **{f"cor:{g}": str(prior) for g, prior in cor_priors.items()},
-                       **({fam.scale_parameter: str(getattr(pr, fam.scale_parameter))} if fam.scale_parameter is not None else {}),
+                       **(_scale_priors(model) if fam.scale_parameter is not None else {}),
                        **({fam.zero_parameter: str(getattr(pr, fam.zero_parameter))} if fam.zero_parameter is not None else {}),
                        **({"nu": str(pr.nu)} if pr.nu is not None else {})},
             # which of those priors ab.default_priors() filled in (brms's defaults, A07); absent when the user gave them all
@@ -142,6 +159,12 @@ def fit_record(model, fit, *, panel: dict | None = None, max_treedepth: int = 10
             "design_columns": list(s.columns),
             **({"offset": s.offset.term} if s.offset is not None else {}),
             **({"addition_terms": [a.term for a in s.additions]} if s.additions else {}),   # weights() (B02)
+            # each distributional parameter's own formula (B01): as written, canonical, link, terms, columns and PyMC names
+            **({"distributional": {ds.response: {"formula": ds.formula, "canonical_formula": ds.canonical_formula,
+                                                 "link": d.dpars[ds.response].link, "intercept": ds.intercept,
+                                                 "centered": d.dpars[ds.response].centered, "terms": list(ds.terms),
+                                                 "design_columns": list(ds.columns), "names": model.dpar_names[ds.response]}
+                                   for ds in s.dpars}} if s.dpars else {}),
             **({"transforms": [t.name for t in s.transform_terms]} if s.transform_terms else {}),
             "interactions": [list(pair) for pair in s.interactions],
             "canonical_formula": s.canonical_formula,
@@ -176,10 +199,11 @@ def compare_records(a: dict, b: dict, *, k: float = 4.0, allow_legacy: bool = Fa
     from autobayes.identity import comparison_identity
 
     identity_status = comparison_identity(a, b, allow_legacy=allow_legacy)
-    same = all(a["model"].get(k) == b["model"].get(k) for k in ("formula", "priors", "family"))
+    same = all(a["model"].get(k) == b["model"].get(k) for k in ("formula", "priors", "family", "distributional"))
     same = same and a["model"].get("family_parameters", {}) == b["model"].get("family_parameters", {})
     if not same:
-        raise ValueError("records fit different models; agreement is only defined for the same family, family parameters, formula and priors")
+        raise ValueError("records fit different models; agreement is only defined for the same family, family parameters, formula "
+                         "(distributional formulas included) and priors")
     if set(a["posterior"]) != set(b["posterior"]):
         raise ValueError("records must contain identical posterior parameter sets")
     rows, agree = {}, True

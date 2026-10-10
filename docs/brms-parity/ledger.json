@@ -684,17 +684,42 @@
    "depends_on": [
     "A12_links"
    ],
-   "status": "implementing",
+   "status": "gates_green",
    "summary": "bf(y ~ x, sigma ~ z): formulas on auxiliary parameters",
    "pr": null,
    "attempts": 1,
-   "gates": {},
-   "divergences": [],
-   "next_action": "done; agent resolving its rebase onto B05",
+   "gates": {
+    "sha": "065a5298873b",
+    "dirty_tree": false,
+    "base": "parity/b05-ordinal-categorical",
+    "when": "2026-10-10T22:08Z",
+    "results": {
+     "immutability": {
+      "status": "pass",
+      "seconds": 0.0
+     },
+     "oracle": {
+      "status": "pass",
+      "seconds": 114.7
+     }
+    },
+    "note": "rebased onto main after B05's merge; code identical to the tested commit 065a529 (suite 1768 passed, oracle 564 passed)"
+   },
+   "divergences": [
+    "D32",
+    "D33",
+    "D34",
+    "D35"
+   ],
+   "next_action": "merge; group terms and offsets in distributional formulas, formulas on nu/zi/hu not offered (D32, D33)",
    "fixtures": {
-    "pr": 33,
     "cases": [
-     "gauss_distributional_sigma"
+     "gauss_distributional_sigma",
+     "student_distributional_sigma",
+     "lognormal_distributional_sigma",
+     "negbinomial_distributional_shape",
+     "gamma_distributional_shape",
+     "beta_distributional_phi"
     ]
    }
   },

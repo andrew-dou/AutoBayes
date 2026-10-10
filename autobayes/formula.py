@@ -36,6 +36,11 @@ A grouping factor is a column, or two columns combined (A03, docs/grouping-synta
 observed ``(g, h)`` combinations, labelled ``g_h`` as brms labels them, and ``(1 | g/h)`` is brms's nesting
 shorthand for ``(1 | g) + (1 | g:h)``.
 
+A model may also be given a list of formulas (B01, docs/distributional.md): the response formula first, then one
+formula per distributional parameter, ``["y ~ x + (1 | g)", "sigma ~ z"]`` (brms's ``bf(y ~ x + (1 | g), sigma ~ z)``).
+Each distributional formula is parsed as a formula of its own (population-level terms only, its own intercept) into
+``ModelSpec.dpars``; which parameters take one is the family's (``FamilySpec.distributional_link``).
+
 Group-level terms are optional and additive across distinct factors (M3c-3): a formula without them is a population-only
 model, as in brms ``brmsformula`` where group-level terms are optional; ``y ~ 1`` is intercept-only. ``(1 + x || g)``
 is brms's independent varying intercept and slope (A01): each numeric population-level term named varies by level
@@ -750,7 +755,10 @@ class ModelSpec:
     ``categoricals`` carries what a categorical term needs beyond its name (reference, levels, coding) and
     ``levels_by_group`` the fitted levels of each grouping factor, both filled in once the data are seen.
     ``offset`` is the formula's ``offset()`` term, or None (docs/offset.md). ``additions`` are the response addition
-    terms after ``|`` other than ``trials()`` (``weights()``, ``cens()``, ``trunc()``; B02, docs/addition-terms.md)."""
+    terms after ``|`` other than ``trials()`` (``weights()``, ``cens()``, ``trunc()``; B02, docs/addition-terms.md).
+    ``dpars`` are the formulas of distributional parameters (B01, docs/distributional.md: brms's ``bf(y ~ x, sigma ~ z)``),
+    each a ``ModelSpec`` of its own whose ``response`` is the parameter's brms name (``sigma``, ``shape``, ``phi``) and
+    whose population-level terms make that parameter's linear predictor; empty for a single formula."""
 
     formula: str
     response: str
@@ -763,17 +771,19 @@ class ModelSpec:
     group_terms: tuple[GroupTerm, ...]
     offset: Offset | None
     additions: tuple[AdditionTerm, ...]
+    dpars: tuple["ModelSpec", ...]
 
     def __init__(self, formula, response, predictors=(), group=None, intercept=True,
                  levels=(), trials=None, rhs="", terms=(), categoricals=(), interactions=(),
-                 *, groups=None, levels_by_group=None, pop_terms=None, group_terms=None, offset=None, additions=()):
+                 *, groups=None, levels_by_group=None, pop_terms=None, group_terms=None, offset=None, additions=(), dpars=()):
         """Keep the original positional constructor: without ``pop_terms`` / ``group_terms`` the term model is
         built from the flat ``predictors``, ``terms``, ``categoricals``, ``interactions`` and ``group(s)``.
-        Terms given as mappings (``dataclasses.asdict`` output) are rebuilt."""
+        Terms given as mappings (``dataclasses.asdict`` output) are rebuilt, the distributional formulas too."""
         categoricals = tuple(c if isinstance(c, Categorical) else Categorical(**c) for c in categoricals)
         if offset is not None and not isinstance(offset, Offset):
             offset = Offset(**offset)
         additions = tuple(a if isinstance(a, AdditionTerm) else AdditionTerm(**a) for a in additions)
+        dpars = tuple(d if isinstance(d, ModelSpec) else ModelSpec(**d) for d in dpars)
         if group_terms is not None:
             if groups is not None or group is not None:
                 raise ValueError("supply group_terms or group/groups, not both")
@@ -803,7 +813,7 @@ class ModelSpec:
         values = dict(formula=formula, response=response, intercept=intercept,
                       levels_by_group=_GroupLevels((g, level_map[g]) for g in factors),
                       trials=trials, rhs=rhs, categoricals=categoricals,
-                      pop_terms=pop_terms, group_terms=group_terms, offset=offset, additions=additions)
+                      pop_terms=pop_terms, group_terms=group_terms, offset=offset, additions=additions, dpars=dpars)
         for key, value in values.items():
             object.__setattr__(self, key, value)
 
@@ -811,11 +821,45 @@ class ModelSpec:
         # Preserve hashability of the frozen specification; factor metadata is ordered.
         return hash((self.formula, self.response, self.intercept,
                      tuple(self.levels_by_group[g] for g in self.groups), self.trials, self.rhs,
-                     self.categoricals, self.pop_terms, self.group_terms, self.offset, self.additions))
+                     self.categoricals, self.pop_terms, self.group_terms, self.offset, self.additions)
+                    + ((self.dpars,) if self.dpars else ()))
 
     def addition(self, kind: str) -> AdditionTerm | None:
         """The addition term of ``kind`` (``"weights"``, ``"cens"``, ``"trunc"``), or None when the formula has none."""
         return next((a for a in self.additions if a.kind == kind), None)
+
+    # -- distributional formulas (B01) ---------------------------------------------------------
+    @property
+    def dpar_names(self) -> tuple[str, ...]:
+        """The distributional parameters that have their own formula, by brms name, in the order written."""
+        return tuple(d.response for d in self.dpars)
+
+    def dpar(self, name: str) -> "ModelSpec":
+        """The formula of distributional parameter ``name`` (``KeyError`` when it has none)."""
+        for d in self.dpars:
+            if d.response == name:
+                return d
+        raise KeyError(name)
+
+    @property
+    def formulas(self) -> tuple[str, ...]:
+        """Every formula as written: the response formula, then each distributional parameter's."""
+        return (self.formula, *(d.formula for d in self.dpars))
+
+    @property
+    def all_categoricals(self) -> tuple[Categorical, ...]:
+        """The declared categorical columns of every formula, each once (the response formula's first, then those only a
+        distributional formula uses): what the fitted frame recodes."""
+        out = list(self.categoricals)
+        for d in self.dpars:
+            out += [c for c in d.categoricals if all(c.name != o.name for o in out)]
+        return tuple(out)
+
+    @property
+    def model_columns(self) -> tuple[str, ...]:
+        """The data columns the population-level terms of every formula read, without repeats (``pop_columns`` of the
+        response formula, then of each distributional formula)."""
+        return tuple(dict.fromkeys([*self.pop_columns, *(c for d in self.dpars for c in d.pop_columns)]))
 
     # -- views of the term model -------------------------------------------------------------
     @property
@@ -969,12 +1013,17 @@ class ModelSpec:
         column name, ``(1 | g_h)``, and a transform term under its own name in backticks, the evaluated column
         the fitted frame carries; ``Model._extract_design`` verifies all of that. The other addition terms never reach
         Bambi's formula: they act on the likelihood (``likelihoods.addition_family``)."""
+        if self.trials is None:
+            return f"{self.response} ~ {self.bambi_rhs}"
+        return f"p({self.response}, {self.trials}) ~ {self.bambi_rhs}"
+
+    @property
+    def bambi_rhs(self) -> str:
+        """The right-hand side of ``bambi_formula``, rebuilt term by term; a distributional formula (B01) is handed to Bambi
+        as ``<parameter> ~ <bambi_rhs>`` under Bambi's name for the parameter (``alpha`` for brms's ``shape``)."""
         parts = ([] if self.intercept else ["0"]) + [t.bambi_name for t in self.pop_terms]
         parts += ([self.offset.term] if self.offset is not None else []) + [t.bambi_canonical for t in self.group_terms]
-        rhs = " + ".join(parts) if parts else "1"
-        if self.trials is None:
-            return f"{self.response} ~ {rhs}"
-        return f"p({self.response}, {self.trials}) ~ {rhs}"
+        return " + ".join(parts) if parts else "1"
 
 
 def _split_top_level(rhs: str, sep: str = "+") -> list[str]:
@@ -1197,15 +1246,125 @@ def _scalar(label: str, v, *, where: str = "value") -> str:
         raise FormulaError(f"{label}: {where} {v!r} refused: {e}") from None
 
 
-def parse_formula(formula: str, data: pd.DataFrame | None = None, family: str = "gaussian",
+DISTRIBUTIONAL_FORM = ("a list of formulas, the response formula first and then one formula per distributional parameter, "
+                       "['y ~ x + (1 | g)', 'sigma ~ z'] (brms's bf(y ~ x + (1 | g), sigma ~ z); docs/distributional.md)")
+
+
+def _distributional_offer(fam) -> str:
+    """Which parameters take a formula here, for the refusals below."""
+    from autobayes.families import FAMILIES
+
+    offering = [f"{name} ({spec.scale_parameter})" for name, spec in FAMILIES.items() if spec.distributional_link is not None]
+    return (f"a distributional formula is offered for the auxiliary parameter of the {', '.join(offering)} families, with a "
+            "log link (docs/distributional.md, divergence D33)")
+
+
+def _parse_formulas(formulas, data: pd.DataFrame | None, family: str, categorical) -> ModelSpec:
+    """A list of formulas (B01, docs/distributional.md): the response formula and the formulas of distributional
+    parameters, brms's ``bf(y ~ x + (1 | g), sigma ~ z)``. Each distributional formula is ``<parameter> ~ <terms>`` with
+    the parameter's brms name on the left, and is parsed as a formula of its own (population-level terms of every kind the
+    response formula takes: numeric, declared categorical, interactions, transforms; its own intercept and centring),
+    held in ``ModelSpec.dpars``. ``categorical`` is shared: a declared column is declared in every formula that names it
+    as a main effect. Refused, naming the construct: a parameter the family has not, or one whose formula is not offered
+    here (D33); group-level terms and ``offset()`` in a distributional formula (D32); a distributional formula that reads
+    the response, the trials column or a grouping factor of the response formula (D35)."""
+    from autobayes.families import get_family
+
+    fam = get_family(family)
+    if not isinstance(formulas, (list, tuple)) or not formulas or not all(isinstance(f, str) for f in formulas):
+        raise FormulaError(f"a formula is a string, or {DISTRIBUTIONAL_FORM}; got {formulas!r}")
+    main, *rest = formulas
+    if not rest:
+        return parse_formula(main, data, family, categorical)
+    head = _ADDITIONS_FORMULA_RE.match(main) or _FORMULA_RE.match(main)
+    response = head.group(1) if head else None
+    parsed: list[tuple[str, str, str]] = []                   # (parameter, right-hand side, formula as written)
+    for text in rest:
+        m = _FORMULA_RE.match(text)
+        if not m or "|" in text.split("~", 1)[0]:
+            raise FormulaError(
+                f"{text!r}: a distributional formula is '<parameter> ~ <terms>' with the parameter's name on the left, as "
+                "brms writes 'sigma ~ z'; addition terms belong to the response formula, which comes first in the list"
+            )
+        name, rhs = m.group(1), m.group(2)
+        if name == response or name in ("mu", fam.parent):
+            raise FormulaError(
+                f"{text!r}: {name!r} is the response formula's; the first formula of the list is the response's ({main!r}) "
+                f"and the others are distributional parameters' ({DISTRIBUTIONAL_FORM})"
+            )
+        if name in (p for p, _, _ in parsed):
+            raise FormulaError(f"{text!r}: {name!r} has two formulas; give each distributional parameter one")
+        if name != fam.scale_parameter or fam.distributional_link is None:
+            if name in (fam.scale_parameter, fam.zero_parameter, *fam.fixed_parameters, *fam.learnable_parameters):
+                why = f"brms's {name} ~ ... is not offered here"
+            else:
+                own = [p for p in (fam.scale_parameter, fam.zero_parameter, *fam.fixed_parameters) if p is not None]
+                why = (f"the {fam.name} family has no parameter {name!r}"
+                       + (f" (its parameters besides the mean are {own})" if own else " (it has no parameter besides the mean)"))
+            raise FormulaError(f"{text!r}: {why}; {_distributional_offer(fam)}")
+        parsed.append((name, rhs, text.strip()))
+
+    # Route the declared categorical columns: each formula receives the declarations of its own main effects (read
+    # without the data); a declaration that names no formula's main effect stays with the response formula, which
+    # refuses it as it always has.
+    main0 = parse_formula(main, None, family, None)
+    dpar0 = [parse_formula(f"{name} ~ {rhs}", None, family, None) for name, rhs, _ in parsed]
+    mains = [{t.name for t in s.pop_terms if t.kind == "numeric"} for s in (main0, *dpar0)]
+    if isinstance(categorical, Mapping):                    # a declared column is categorical in every formula
+        for t in (t for s in (main0, *dpar0) for t in s.transform_terms):
+            if t.transform.column in categorical:
+                raise FormulaError(f"{t.name!r}: {t.transform.column!r} is declared categorical; an in-formula transform applies to a numeric column")
+        reads = (([(main0.offset.term, main0.offset.column)] if main0.offset is not None else [])
+                 + [(a.term, c) for a in main0.additions for c in a.columns])        # columns the response formula reads as numbers
+        for term, col in reads:
+            if col in categorical:
+                raise FormulaError(f"{term!r}: {col!r} is declared categorical; the response formula reads it as a number")
+        main_cat = {k: v for k, v in categorical.items() if k in mains[0] or not any(k in m for m in mains[1:])}
+        dpar_cat = [{k: v for k, v in categorical.items() if k in m} for m in mains[1:]]
+    else:
+        main_cat, dpar_cat = categorical, [None] * len(parsed)
+    spec = parse_formula(main, data, family, main_cat)
+    operands = {c for t in spec.group_terms for c in t.operands}
+    dpars = []
+    for (name, rhs, text), cat in zip(parsed, dpar_cat):
+        d = parse_formula(f"{name} ~ {rhs}", None, family, cat or None)
+        if d.group_terms:
+            raise FormulaError(
+                f"{text!r}: group-level terms in a distributional formula ({', '.join(t.canonical for t in d.group_terms)}) are "
+                f"not supported in this slice: brms would give {name} its own varying effects; a distributional formula "
+                "takes population-level terms only here (docs/distributional.md, divergence D32)"
+            )
+        if d.offset is not None:
+            raise FormulaError(
+                f"{text!r}: {d.offset.term!r} in a distributional formula is not supported in this slice; an offset belongs "
+                "to the response formula here (docs/distributional.md, divergence D32)"
+            )
+        for col in d.pop_columns:
+            role = ("the response" if col == spec.response else "the trials column" if col == spec.trials
+                    else "a grouping factor of the response formula" if col in operands else None)
+            if role is not None:
+                raise FormulaError(
+                    f"{text!r}: {col!r} is {role}; it cannot also be a predictor of {name} in this slice "
+                    "(docs/distributional.md, divergence D35)"
+                )
+        if data is not None:
+            d = validate_data(d, data, family, dpar=True)
+        dpars.append(d)
+    return replace(spec, dpars=tuple(dpars))
+
+
+def parse_formula(formula: str | list[str], data: pd.DataFrame | None = None, family: str = "gaussian",
                   categorical: Mapping[str, object] | None = None) -> ModelSpec:
     """Parse and validate a formula in the supported subset, optionally against a data frame.
 
     ``categorical`` maps a predictor column to its reference level (treatment coding); every
-    other predictor term must be numeric.
+    other predictor term must be numeric. ``formula`` may also be a list (B01): the response formula, then one formula
+    per distributional parameter, ``["y ~ x + (1 | g)", "sigma ~ z"]`` (``_parse_formulas``, docs/distributional.md).
     """
     from autobayes.families import get_family
 
+    if not isinstance(formula, str):
+        return _parse_formulas(formula, data, family, categorical)
     fam = get_family(family)
     trials, additions = None, ()
     if _BAMBI_PROPORTION_RE.match(formula):
@@ -1717,15 +1876,17 @@ def binomial_counts(spec: ModelSpec, data: pd.DataFrame) -> tuple[np.ndarray, np
     return k, n
 
 
-def validate_data(spec: ModelSpec, data: pd.DataFrame, family: str = "gaussian") -> ModelSpec:
-    """Check columns exist, are numeric where required, and have no missing values."""
+def validate_data(spec: ModelSpec, data: pd.DataFrame, family: str = "gaussian", *, dpar: bool = False) -> ModelSpec:
+    """Check columns exist, are numeric where required, and have no missing values. ``dpar=True`` validates a
+    distributional parameter's formula (B01), whose left-hand side names a parameter rather than a column: its terms
+    only."""
     from autobayes.families import get_family
 
     fam = get_family(family)
-    if (spec.trials is not None) != fam.has_trials:
+    if not dpar and (spec.trials is not None) != fam.has_trials:
         raise FormulaError("a trials column is present exactly for the binomial family")
     operands = [c for t in spec.group_terms for c in t.operands]   # the columns the grouping factors are read from
-    needed = ([spec.response, *spec.pop_columns] + operands
+    needed = (([] if dpar else [spec.response]) + [*spec.pop_columns] + operands
               + ([spec.trials] if spec.trials else []) + ([spec.offset.column] if spec.offset is not None else [])
               + [c for a in spec.additions for c in a.columns])
     needed = list(dict.fromkeys(needed))                         # the offset column may also be a predictor
@@ -1756,8 +1917,9 @@ def validate_data(spec: ModelSpec, data: pd.DataFrame, family: str = "gaussian")
                 f"observed levels: {list(levels)}"
             )
         categoricals.append(Categorical(name=cat.name, reference=cat.reference, levels=levels, unused=unused, full_rank=cat.full_rank))
-    reject_complex(f"response {spec.response!r}", data[spec.response])
-    fam.validate_response(spec, data)
+    if not dpar:
+        reject_complex(f"response {spec.response!r}", data[spec.response])
+        fam.validate_response(spec, data)
     na = data[needed].isna().any()
     if na.any():
         raise FormulaError(
@@ -1786,5 +1948,5 @@ def validate_data(spec: ModelSpec, data: pd.DataFrame, family: str = "gaussian")
         formula=spec.formula, response=spec.response, intercept=spec.intercept, levels_by_group=levels_by_group,
         trials=spec.trials, rhs=spec.rhs, categoricals=tuple(categoricals),
         pop_terms=tuple(pop_term(t.name, t.kind, categoricals) for t in spec.pop_terms),   # levels now known
-        group_terms=spec.group_terms, offset=spec.offset, additions=spec.additions,
+        group_terms=spec.group_terms, offset=spec.offset, additions=spec.additions, dpars=spec.dpars,
     )

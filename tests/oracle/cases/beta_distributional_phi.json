@@ -1,0 +1,106 @@
+{
+ "id": "beta_distributional_phi",
+ "tier": "B",
+ "feature": "B01_distributional",
+ "note": "brms Beta() with phi ~ x * z (log link): an interaction in a distributional formula; X_phi has x, zq, zr, x:zq, x:zr",
+ "seed": 195,
+ "n_points": 8,
+ "data": {
+  "generator": "tier_b",
+  "seed": 95,
+  "n": 36,
+  "newdata": {
+   "seed": 195,
+   "n": 5
+  }
+ },
+ "brms": {
+  "formula": [
+   "prop ~ x + (1 | g)",
+   "phi ~ x * z"
+  ],
+  "family": {
+   "family": "Beta"
+  },
+  "factors": {
+   "g": [
+    "a",
+    "b",
+    "c",
+    "d",
+    "e",
+    "f"
+   ],
+   "z": [
+    "p",
+    "q",
+    "r"
+   ]
+  },
+  "priors": [
+   {
+    "prior": "normal(0, 2)",
+    "class": "Intercept"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "b"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "sd",
+    "group": "g"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "Intercept",
+    "dpar": "phi"
+   },
+   {
+    "prior": "normal(0, 0.5)",
+    "class": "b",
+    "dpar": "phi"
+   }
+  ]
+ },
+ "autobayes": {
+  "constructor": "beta",
+  "formula": [
+   "prop ~ x + (1 | g)",
+   "phi ~ x * z"
+  ],
+  "kwargs": {
+   "categorical": {
+    "z": "p"
+   }
+  },
+  "priors": {
+   "intercept": [
+    "Normal",
+    0,
+    2
+   ],
+   "b": [
+    "Normal",
+    0,
+    1
+   ],
+   "sd": [
+    "HalfNormal",
+    1
+   ],
+   "phi": {
+    "intercept": [
+     "Normal",
+     0,
+     1
+    ],
+    "b": [
+     "Normal",
+     0,
+     0.5
+    ]
+   }
+  }
+ }
+}

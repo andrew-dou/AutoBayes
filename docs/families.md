@@ -20,6 +20,12 @@ test or `match`.
 | Wording | `kind_error`, `scale_rule`, `scale_missing_error`, `linpred_symbol`, `scale_phrase`, `intercept_meaning`, `mean_lines`, `likelihood_lines`, `centred_intercept_note`, `deterministic_note` | the sentences `describe()`, `predict()`, `value_point` and `Priors.validate` print for that family | | | | | | | | |
 | Default priors (A07) | `default_prior_link` (how brms reads the response for its data-dependent defaults), `default_scale_prior` (brms's default of the auxiliary parameter, given brms's scale), `default_learned_priors` | identity; sigma `HalfStudentT(3, scale)` | identity; sigma `HalfStudentT(3, scale)`; nu `Gamma(2, 0.1)` | log | log; shape `InverseGamma(0.4, 0.3)` | log; shape `Gamma(0.01, 0.01)` | log (brms's log-scale family); sigma `HalfStudentT(3, scale)` | none (logit); phi `Gamma(0.01, 0.01)` | none (logit, probit) | none (logit, probit) |
 | Addition terms (B02) | `addition_terms` (the response addition terms besides `trials()` the likelihood takes), `tails` (the log-CDF, log-CCDF, log mass, truncated mean and draws that `cens()` and `trunc()` need) | weights, cens and trunc (the last two parked); `likelihoods.NORMAL_TAILS` | weights | weights | weights | weights | weights | weights | weights | weights |
+| Distributional formula (B01) | `distributional_link` (the link of a formula on `scale_parameter`, `["y ~ x", "sigma ~ z"]`; None: no formula), `default_distributional_intercept` (brms's default prior of that formula's intercept, given brms's scale of `log y`) | log; `student_t(3, 0, scale)` | log; `student_t(3, 0, scale)` | none | log (Bambi's `alpha`); `student_t(3, 0, 2.5)` | log (Bambi's `alpha`); `student_t(3, 0, 2.5)` | log; `student_t(3, 0, scale)` | log; `student_t(3, 0, 2.5)` | none | none |
+
+A family with a `distributional_link` lets its auxiliary parameter have its own formula (docs/distributional.md): Bambi
+builds it as a distributional component named `bambi_scale_parameter`, `model.names[scale_parameter]` is then the per-row
+deterministic, and the families' mean and response functions read the parameter through `families.spec.auxiliary`, which
+broadcasts a per-draw value and a per-row one alike; the zero-inflated and hurdle Poisson families have none (D33).
 
 The derived properties `continuous`, `discrete` and `has_trials` read `response_kind`. Callable fields take
 the built model (or the `ModelSpec` and frame being validated) because that is what the call sites have;

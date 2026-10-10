@@ -1,9 +1,9 @@
-"""Gaussian response (M0): identity link on ``mu``, residual SD ``sigma``."""
+"""Gaussian response (M0): identity link on ``mu``, residual SD ``sigma`` (or ``sigma``'s own formula under a log link, B01)."""
 from __future__ import annotations
 
-from autobayes.families.spec import NO_FIXED_PARAMETERS, STANDARD_PREDICTION_KINDS, FamilySpec
+from autobayes.families.spec import NO_FIXED_PARAMETERS, STANDARD_PREDICTION_KINDS, FamilySpec, auxiliary, scale_line, scale_symbol
 from autobayes.formula import validate_numeric_response
-from autobayes.priors import HalfStudentT, describe_prior
+from autobayes.priors import HalfStudentT, StudentT
 
 
 def _validate_response(spec, data) -> None:
@@ -11,12 +11,11 @@ def _validate_response(spec, data) -> None:
 
 
 def _draw_response(model, post, eta, mean, df, rng):
-    sigma = post[model.names["sigma"]].to_numpy()
-    return rng.normal(mean, sigma[..., None])
+    return rng.normal(mean, auxiliary(model, post, "sigma"))       # sigma per draw, or per draw and row (B01)
 
 
 def _likelihood_lines(model) -> list[str]:
-    return [f"  sigma ~ {describe_prior(model.priors.sigma, lb=0)}", "", "Likelihood", "  y_i ~ Normal(mu_i, sigma)"]
+    return [scale_line(model), "", "Likelihood", f"  y_i ~ Normal(mu_i, {scale_symbol(model)})"]
 
 
 def _tails():
@@ -49,4 +48,6 @@ GAUSSIAN = FamilySpec(
     default_scale_prior=lambda scale: HalfStudentT(3, scale),       # brms sigma: student_t(3, 0, scale), lb 0
     addition_terms=frozenset({"weights", "cens", "trunc"}),         # B02: weights(); cens() and trunc() are parked (formula.PARKED_ADDITIONS)
     tails=_tails,
+    distributional_link="log",                                      # B01: sigma ~ z, brms's log link
+    default_distributional_intercept=lambda scale: StudentT(3, 0, scale),   # brms Intercept_sigma: student_t(3, 0, scale of log y)
 )

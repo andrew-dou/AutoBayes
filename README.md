@@ -60,6 +60,9 @@ Tier A is complete (October 2026):
 - **Response addition terms** (Tier B, B02): `weights()` for the nine Tier A families; brms's `cens()` and `trunc()` are implemented
   for the Gaussian family and parked, because brms's own gradients of their fixtures are not exact enough to certify
   them ([addition terms](docs/addition-terms.md)).
+- **Distributional formulas** (Tier B, B01): `["y ~ x", "sigma ~ z"]` gives `sigma` (Gaussian, Student-t, lognormal),
+  `shape` (negative binomial, Gamma) or `phi` (Beta) its own linear predictor under a log link
+  ([distributional formulas](docs/distributional.md)).
 
 Every known difference from brms is listed in [divergences](docs/brms-parity/divergences.md), and the feature ledger
 is [ledger.json](docs/brms-parity/ledger.json) (`python tools/parity_status.py`). The Tier A review is

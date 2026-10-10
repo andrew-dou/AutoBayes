@@ -73,6 +73,16 @@ coefficient, prior or design column: `AdditionTerm(kind, column, lb, ub)` for `w
 the canonical formula writes after `trials()`). `formula.addition_data(spec, frame)` gives brms's Stan data (`weights`,
 `cens`, `lb`, `ub`) and `Design` holds them on the fitted rows; the likelihood, not Bambi's formula, reads them.
 
+## Distributional formulas: `ModelSpec.dpars`
+
+A model given a list of formulas (B01, docs/distributional.md), `["y ~ x + (1 | g)", "sigma ~ z"]`, holds each formula
+after the first as a `ModelSpec` of its own in `ModelSpec.dpars`, whose `response` is the parameter's brms name
+(`spec.dpar("sigma")`, `spec.dpar_names`, `spec.formulas`): its population-level terms are `PopTerm`s of every kind, with
+its own intercept, columns, coefficients and centring; it has no group-level term, offset or addition term (refused).
+`spec.all_categoricals` and `spec.model_columns` gather every formula's categorical columns and data columns;
+`Design.dpars[name]` (`DparDesign`) is its design and `Model.dpar_names[name]` its PyMC variables (`sigma_Intercept`,
+`sigma_z`), Bambi's distributional component named after the parameter (`alpha` for brms's `shape`).
+
 ## Design blocks: `Design.group_blocks[(factor, coef)]`
 
 `Model.design` holds one `GroupBlock(levels, Z, group_index, column_slice)` per (factor, coefficient), in

@@ -115,3 +115,11 @@ new `category` dimension) followed, verified against `cumulative_varint`, `categ
 categorical predictor frozen with it; a categorical model takes population-level terms only and its categories are
 sorted labels (D36, D37), and other ordinal links, `disc`, `cs()` and the `sratio` / `cratio` / `acat` families are not
 offered (D38); see [ordinal and categorical responses](ordinal-categorical.md).
+
+Distributional formulas (B01, brms's `bf(y ~ x, sigma ~ z)`): a list of formulas, `["y ~ x + (1 | g)", "sigma ~ z"]`,
+gives the auxiliary parameter its own population-level linear predictor under a log link, with
+`Priors(sigma={"intercept": ..., "b": ...})`, for `sigma` (Gaussian, Student-t, lognormal), `shape` (negative
+binomial, Gamma) and `phi` (Beta); `predict()` uses each row's parameter and returns it with `dpar="sigma"`. Verified
+against `gauss_distributional_sigma` and one frozen case per further family; group-level terms in such a formula,
+formulas on `nu`, `zi` or `hu`, and other links are refused (D32-D35); see
+[distributional formulas](distributional.md).

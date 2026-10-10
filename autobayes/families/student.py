@@ -1,14 +1,15 @@
 """Student-t response: identity link on ``mu``, scale ``sigma``, and degrees of freedom ``nu`` either fixed by the user
-(``nu > 1``) or learned under its own prior truncated to ``nu > 1`` (brms-parity A13, docs/student-learned-nu.md)."""
+(``nu > 1``) or learned under its own prior truncated to ``nu > 1`` (brms-parity A13, docs/student-learned-nu.md). ``sigma``
+may have its own formula under a log link (B01, docs/distributional.md)."""
 from __future__ import annotations
 
 from types import MappingProxyType
 
 import numpy as np
 
-from autobayes.families.spec import STANDARD_PREDICTION_KINDS, FamilySpec
+from autobayes.families.spec import STANDARD_PREDICTION_KINDS, FamilySpec, auxiliary, scale_line, scale_symbol
 from autobayes.formula import validate_numeric_response
-from autobayes.priors import Gamma, HalfStudentT, describe_prior
+from autobayes.priors import Gamma, HalfStudentT, StudentT, describe_prior
 
 NU_LOWER = 1.0                    # brms's real<lower=1> nu: a learned nu's prior is truncated here, and it is sampled as log(nu - 1)
 
@@ -25,24 +26,25 @@ def _validate_response(spec, data) -> None:
 
 
 def _draw_response(model, post, eta, mean, df, rng):
-    sigma = post[model.names["sigma"]].to_numpy()
+    sigma = auxiliary(model, post, "sigma")                    # per draw, or per draw and row (B01)
     if model.nu is None:                                       # learned: each posterior draw's own degrees of freedom
         nu = post[model.names["nu"]].to_numpy()[..., None]
-        return mean + sigma[..., None] * rng.standard_t(nu, size=mean.shape)
-    return mean + sigma[..., None] * rng.standard_t(model.nu, size=mean.shape)
+        return mean + sigma * rng.standard_t(nu, size=mean.shape)
+    return mean + sigma * rng.standard_t(model.nu, size=mean.shape)
 
 
 def _likelihood_lines(model) -> list[str]:
+    sigma = scale_symbol(model)                                # "sigma", or "sigma_i" with its own formula (B01)
     if model.nu is None:                                       # learned (A13)
-        return [f"  sigma ~ {describe_prior(model.priors.sigma, lb=0)}",
+        return [scale_line(model),
                 f"  nu ~ {describe_prior(model.priors.nu, lb=NU_LOWER)}, truncated to nu > {NU_LOWER:g} and renormalised there (brms's real<lower=1> nu:",
                 f"       the prior minus its log probability of nu > {NU_LOWER:g}); nu is learned, sampled as log(nu - {NU_LOWER:g})",
                 "", "Likelihood",
-                "  y_i ~ StudentT(nu, mu_i, sigma); E[y_i] = mu_i",
+                f"  y_i ~ StudentT(nu, mu_i, {sigma}); E[y_i] = mu_i",
                 "  sigma is scale, not residual SD; variance = sigma^2 * nu/(nu-2) for nu>2",
                 "  variance is infinite for 1<nu<=2."]
-    return [f"  sigma ~ {describe_prior(model.priors.sigma, lb=0)}", f"  nu = {model.nu:g} (fixed, not sampled)", "", "Likelihood",
-            "  y_i ~ StudentT(nu, mu_i, sigma); E[y_i] = mu_i",
+    return [scale_line(model), f"  nu = {model.nu:g} (fixed, not sampled)", "", "Likelihood",
+            f"  y_i ~ StudentT(nu, mu_i, {sigma}); E[y_i] = mu_i",
             "  sigma is scale, not residual SD; variance = sigma^2 * nu/(nu-2) for nu>2",
             "  variance is infinite for 1<nu<=2. Learned nu is not supported."]
 
@@ -72,4 +74,6 @@ STUDENT = FamilySpec(
     default_scale_prior=lambda scale: HalfStudentT(3, scale),       # brms sigma: student_t(3, 0, scale), lb 0
     default_learned_priors=MappingProxyType({"nu": lambda: Gamma(2, 0.1)}),   # brms nu: gamma(2, 0.1), lb 1
     addition_terms=frozenset({"weights"}),                      # B02: weights(), verified against the frozen case student_weighted
+    distributional_link="log",                                      # B01: sigma ~ z, brms's log link (student_distributional_sigma)
+    default_distributional_intercept=lambda scale: StudentT(3, 0, scale),   # brms Intercept_sigma: student_t(3, 0, scale of log y)
 )

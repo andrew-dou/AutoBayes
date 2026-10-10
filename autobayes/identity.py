@@ -2,6 +2,7 @@
 from __future__ import annotations
 import hashlib
 import json
+from collections.abc import Mapping
 from numbers import Real
 import numpy as np
 
@@ -29,11 +30,27 @@ def _canonical(value):
     raise TypeError(f'unsupported target identity type: {type(value).__name__}')
 
 
+def _prior(p):
+    # an auxiliary parameter with its own formula (B01) has a mapping of priors, which enters with its formula instead
+    return None if p is None or isinstance(p, Mapping) else {'name': p.name, 'parameters': dict(p.params)}
+
+
+def _dpar_payload(model, ds):
+    """The target identity's entry of one distributional parameter's own formula (B01)."""
+    dd = model.design.dpars[ds.response]
+    sub = model.priors.dpar_priors(model.spec, ds.response)
+    return {'parameter': ds.response, 'formula': ds.canonical_formula, 'link': dd.link, 'intercept': ds.intercept,
+            'centered': dd.centered, 'columns': dd.columns, 'X_raw': dd.X_raw, 'X_model': dd.X_model, 'x_means': dd.x_means,
+            'categorical': [{'name': c.name, 'reference': c.reference, 'levels': c.levels, 'coefficients': c.coefficients,
+                             'full_rank': c.full_rank} for c in ds.categoricals],
+            'priors': {'intercept': _prior(sub.intercept) if ds.intercept else None,
+                       'coefficients': {k: _prior(v) for k, v in sub.coefficient_priors(ds).items()}}}
+
+
 def freeze_target(model):
     """Call once immediately after construction; only the digest is retained."""
     s, d, pr = model.spec, model.design, model.priors
-    def prior(p):
-        return None if p is None else {'name': p.name, 'parameters': dict(p.params)}
+    prior = _prior
     sd_priors = pr.sd_priors(s)
     cor_priors = pr.cor_priors(s)
     # Varying slopes (A01) enter as their own entry, present only when the formula has one, so that every model
@@ -68,6 +85,9 @@ def freeze_target(model):
                           **({'cens': d.cens} if d.cens is not None else {})}} if s.additions else {}),
         # The response's categories (B05: cumulative, categorical), whose 1-based codes are y, likewise
         **({'categories': list(model.categories)} if getattr(model, 'categories', ()) else {}),
+        # So do distributional formulas (B01): each parameter's canonical formula, link, design and priors; its own
+        # entry under 'priors' is then None.
+        **({'distributional': [_dpar_payload(model, ds) for ds in s.dpars]} if s.dpars else {}),
         'priors': {'intercept': prior(pr.intercept), 'sigma': prior(pr.sigma),
                    'coefficients': {k: prior(v) for k,v in pr.coefficient_priors(s).items()},
                    'groups': {k: prior(v) for k,v in pr.group_priors(s).items()},

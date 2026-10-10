@@ -17,11 +17,14 @@ slopes' deterministics in the PyMC graph to brms's ``r = (diag(sd) L z)^T`` with
 Stan's ``cholesky_corr`` coordinates (``autobayes.correlation``). The left-hand side may carry brms's ``weights(col)``
 next to the binomial's ``trials(n)`` (B02, docs/addition-terms.md): the family's likelihood is then wrapped so that each
 row's log density is multiplied by its weight (``likelihoods.addition_family``); ``cens()`` and ``trunc()`` are parsed
-and implemented for the Gaussian family but withheld (``formula.PARKED_ADDITIONS``).
+and implemented for the Gaussian family but withheld (``formula.PARKED_ADDITIONS``). The family's auxiliary parameter
+(``sigma``, ``shape``, ``phi``) may have its own formula (B01, docs/distributional.md): ``formula`` is then a list,
+``["y ~ x + (1 | g)", "sigma ~ z"]``, and Bambi builds the parameter as a distributional component under a log link
+(``Design.dpars`` holds its design, ``Model.dpar_names`` its PyMC names).
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from types import MappingProxyType
 
 import numpy as np
@@ -61,6 +64,23 @@ class GroupBlock:
 
 
 @dataclass(frozen=True)
+class DparDesign:
+    """The design of one distributional parameter's own formula (B01, docs/distributional.md): brms's ``X_<dpar>`` without
+    its intercept column. ``name`` is the parameter's brms name (``sigma``, ``shape``, ``phi``), ``columns`` its design
+    labels (``ModelSpec.dpar(name).columns``), ``X_raw`` the columns as built, ``X_model`` what multiplies its coefficients
+    (centred at ``x_means`` when ``centered``: the formula has an intercept, and brms and Bambi then centre its design on
+    its own means, brms's ``Xc_<dpar>``), and ``link`` its link (``log``): the parameter is the inverse link of its linear
+    predictor, one value per row."""
+    name: str
+    X_raw: np.ndarray
+    X_model: np.ndarray
+    x_means: np.ndarray
+    columns: tuple[str, ...]
+    centered: bool
+    link: str
+
+
+@dataclass(frozen=True)
 class Design:
     """What the model was actually fit to. All arrays are dense NumPy."""
 
@@ -80,6 +100,7 @@ class Design:
     cens: np.ndarray | None = None     # (n,) brms ``cens`` of a ``cens(col)`` term: -1 left-, 0 un-, 1 right-censored (B02, parked)
     lb: np.ndarray | None = None       # (n,) brms ``lb`` and ``ub`` of a ``trunc()`` term, -inf / inf on an open side (B02, parked)
     ub: np.ndarray | None = None
+    dpars: Mapping[str, DparDesign] = field(default_factory=lambda: MappingProxyType({}))   # each distributional parameter's own design, by brms name (B01)
 
     def __post_init__(self):
         if not self.columns:
@@ -118,6 +139,46 @@ class Design:
         return {g: block.column_slice for g, block in self.group_designs.items()}
 
 
+def _cells(spec: ModelSpec, t) -> list[tuple[str, str, str]]:
+    """``describe()``'s cells of a categorical-by-categorical interaction: (cell label, level of the first operand, level of
+    the second)."""
+    return [(lvl, *pair) for lvl, pair in zip(t.levels, interaction_cells(*(spec.categorical(c) for c in t.categorical)))]
+
+
+def _linear_terms(spec: ModelSpec, centered: bool, b: str = "b") -> list[str]:
+    """``describe()``'s population-level terms of one formula's linear predictor, each column times its coefficient
+    ``<b>_<term>``: the response formula's (``b``) or a distributional parameter's (``b_sigma``, B01), centred columns
+    written with their means (``p_z[l]``, ``q_x:z[l]``, ``mean(x)``) when the formula is centred."""
+    parts = []
+    for t in spec.pop_terms:
+        term = t.name
+        if t.kind == "categorical":
+            for lvl in t.levels:
+                ind = f"1[{term}_i = {lvl}]"
+                parts.append(f"({ind} - p_{term}[{lvl}]) * {b}_{term}[{lvl}]" if centered else f"{ind} * {b}_{term}[{lvl}]")
+        elif t.kind == "interaction" and len(t.categorical) == 1:
+            zn = t.categorical[0]
+            xn = next(c for c in t.operands if c != zn)
+            for lvl in t.levels:
+                prod = f"x_{xn} * 1[{zn}_i = {lvl}]"
+                parts.append(f"({prod} - q_{term}[{lvl}]) * {b}_{term}[{lvl}]" if centered else f"{prod} * {b}_{term}[{lvl}]")
+        elif t.kind == "interaction" and not t.categorical:
+            xn, wn = t.operands
+            prod = f"x_{xn} * x_{wn}"
+            parts.append(f"({prod} - q_{term}) * {b}_{term}" if centered else f"{prod} * {b}_{term}")
+        elif t.kind == "interaction":
+            zn, hn = t.operands
+            for lvl, lz, lh in _cells(spec, t):
+                prod = f"1[{zn}_i = {lz}] * 1[{hn}_i = {lh}]"
+                parts.append(f"({prod} - p_{term}[{lvl}]) * {b}_{term}[{lvl}]" if centered else f"{prod} * {b}_{term}[{lvl}]")
+        elif t.kind == "transform":
+            value = t.transform.expression(f"{t.transform.column}_i")
+            parts.append(f"({value} - mean({term})) * {b}_{term}" if centered else f"{value} * {b}_{term}")
+        else:
+            parts.append(f"(x_{term} - mean(x_{term})) * {b}_{term}" if centered else f"x_{term} * {b}_{term}")
+    return parts
+
+
 class Model:
     """``y ~ x [+ (1 | factor) ...]`` with explicit priors; Gaussian, Student-t, Poisson, Bernoulli or binomial likelihood.
 
@@ -133,9 +194,13 @@ class Model:
     bambi_model : bambi.Model  (already built)
     pymc_model : pymc.Model    the graph that is sampled; inspect it directly
     design : Design            design matrices and group coding
+
+    ``formula`` is one formula, or a list of them (B01, docs/distributional.md): the response formula, then a formula of
+    the family's auxiliary parameter (``["y ~ x + (1 | g)", "sigma ~ z"]``, brms's ``bf(y ~ x + (1 | g), sigma ~ z)``),
+    whose priors are ``Priors(sigma={"intercept": ..., "b": ...})``.
     """
 
-    def __init__(self, formula: str, data: pd.DataFrame, priors: Priors, *,
+    def __init__(self, formula: str | list[str], data: pd.DataFrame, priors: Priors, *,
                  family: str = "gaussian", center_predictors: bool = True,
                  categorical: Mapping[str, object] | None = None, nu: float | None = None, link: str | None = None):
         import bambi as bmb
@@ -172,11 +237,20 @@ class Model:
 
         spec0 = parse_formula(formula, None, family, categorical)
         self.effective_center_predictors = self.center_predictors and spec0.intercept
+        centred = [d for d in spec0.dpars if d.intercept and d.pop_terms]   # a distributional formula brms centres (B01)
+        if centred and not self.center_predictors:
+            raise FormulaError(
+                f"center_predictors=False with the formula '{centred[0].formula}' is not supported: brms centres a "
+                "distributional parameter's own formula on its means even under bf(..., center = FALSE), and Bambi centres "
+                "every formula that has an intercept or none; keep center_predictors=True, or write that formula without an "
+                "intercept, '0 + ...' (docs/distributional.md, divergence D34)"
+            )
         priors.validate(spec0, fam)                     # structure now; per-level coverage once levels are known
         operands = [c for t in spec0.group_terms for c in t.operands]   # the columns the grouping factors are read from
         cols = ([spec0.response, *spec0.pop_columns] + operands
                 + ([spec0.trials] if spec0.trials else []) + ([spec0.offset.column] if spec0.offset is not None else [])
-                + [c for a in spec0.additions for c in a.columns])          # weights() and cens() columns (B02)
+                + [c for a in spec0.additions for c in a.columns]          # weights() and cens() columns (B02)
+                + [c for d in spec0.dpars for c in d.pop_columns])         # the columns distributional formulas read (B01)
         cols = list(dict.fromkeys(cols))                        # the offset column may also be a predictor
         missing = [c for c in cols if c not in data.columns]
         if missing:
@@ -206,18 +280,19 @@ class Model:
                         )
                 df = df.drop(index=zero).reset_index(drop=True)
         self.spec: ModelSpec = parse_formula(formula, df, family, categorical)   # levels over the fitted rows
-        for t in self.spec.pop_terms:                        # a cell of z:h with no fitted rows has a zero column (brms keeps it too)
-            if t.kind == "interaction" and len(t.categorical) == 2:
-                empty = [lvl for lvl, col in zip(t.levels, pop_term_design(t, df, self.spec.categoricals).T) if not col.any()]
-                if empty:
-                    self.warnings.append(
-                        f"cell(s) {empty} of {t.name!r} have no fitted rows: their coefficients are informed by the prior alone "
-                        "(the design column is zero, as in brms)."
-                    )
+        for s in (self.spec, *self.spec.dpars):              # a distributional formula's terms too (B01)
+            for t in s.pop_terms:                            # a cell of z:h with no fitted rows has a zero column (brms keeps it too)
+                if t.kind == "interaction" and len(t.categorical) == 2:
+                    empty = [lvl for lvl, col in zip(t.levels, pop_term_design(t, df, s.categoricals).T) if not col.any()]
+                    if empty:
+                        self.warnings.append(
+                            f"cell(s) {empty} of {t.name!r}{'' if s is self.spec else ' in the formula of ' + s.response} have no "
+                            "fitted rows: their coefficients are informed by the prior alone (the design column is zero, as in brms)."
+                        )
         for t in self.spec.group_terms:                      # labels as text; a derived factor g:h gets its own column g_h
             df[t.column] = group_labels(t.factor, df)
-        for t in self.spec.transform_terms:                  # the evaluated column Bambi is handed, under the term's own name (A05)
-            df[t.name] = t.transform.values(df)
+        for t in (*self.spec.transform_terms, *(t for d in self.spec.dpars for t in d.transform_terms)):
+            df[t.name] = t.transform.values(df)              # the evaluated column Bambi is handed, under the term's own name (A05)
         self.categories: tuple[str, ...] = ()               # the response's categories, in order (B05: cumulative, categorical)
         if fam.response_categories is not None:              # the response is fitted as its 1-based category, brms's Y
             self.categories, codes, notes = fam.response_categories(self.spec, df[self.spec.response])
@@ -227,7 +302,7 @@ class Model:
             df[self.spec.response] = df[self.spec.response].astype(fam.response_dtype)
         self.warnings.extend(fam.response_warnings(self.spec, df))   # separation, all-zero counts
         self.original_labels: dict[str, np.ndarray] = {}     # labels of the SUPPLIED column, fitted rows, before any recoding
-        for cat in self.spec.categoricals:
+        for cat in self.spec.all_categoricals:               # every formula's, each column once (B01)
             # An ORDERED Categorical with the reference first: formulae keeps this order (it sorts
             # anything else) and takes the first category as the treatment reference; built from
             # the observed labels only, so an unused declared category never becomes a zero column.
@@ -250,13 +325,21 @@ class Model:
         for name in fam.fixed_parameters:                    # Bambi takes a fixed nu through the prior dict; a learned
             if name not in self.learned_parameters:          # one's truncated prior came from Priors.to_bambi (A13)
                 bambi_priors[name] = getattr(self, name)
-        bambi_center = self.effective_center_predictors
+        bambi_formula = self.spec.bambi_formula
+        # Bambi centres every formula that has an intercept, or none. Without a distributional formula that is the
+        # response formula's centring as it has always been; with one (B01), brms centres each formula that has an
+        # intercept on its own means, and the refusal above leaves exactly that case. A family that builds what Bambi is
+        # handed from the model (B05: cumulative, categorical; neither takes a distributional formula) decides it itself.
+        self._bambi_centring = self.effective_center_predictors
+        if self.spec.dpars:                                  # brms's bf(y ~ ..., sigma ~ ...): Bambi's distributional components (B01)
+            bambi_formula = bmb.Formula(bambi_formula, *(f"{self._bambi_dpar(d.response)} ~ {d.bambi_rhs}" for d in self.spec.dpars))
+            self._bambi_centring = self.center_predictors
         if fam.bambi_setup is not None:                      # B05: the family builds what Bambi is handed from the model
-            bambi_family, bambi_priors, bambi_center = fam.bambi_setup(self, bambi_priors)
+            bambi_family, bambi_priors, self._bambi_centring = fam.bambi_setup(self, bambi_priors)
         self.bambi_model = bmb.Model(
-            self.spec.bambi_formula, self.data, family=bambi_family,
+            bambi_formula, self.data, family=bambi_family,
             priors=bambi_priors,
-            noncentered=True, center_predictors=bambi_center,
+            noncentered=True, center_predictors=self._bambi_centring,
         )
         self.bambi_model.build()
         self.pymc_model = self.bambi_model.backend.model
@@ -299,13 +382,16 @@ class Model:
             variable_names.extend(roles[k] for k in ("sd", "offset", "group_effect"))
         for roles in self.correlation_names.values():
             variable_names.extend(roles[k] for k in ("L", "cor"))
+        dpar_coefficients = [v for roles in self.dpar_names.values() for k, v in roles.items() if k != "value"]   # B01
+        variable_names += dpar_coefficients
         # Bambi's default result cleaning drops every posterior variable ending in _offset.
-        retained = list(self.spec.terms) + [roles["group_effect"] for roles in self.group_coefficient_names.values()]
+        retained = list(self.spec.terms) + [roles["group_effect"] for roles in self.group_coefficient_names.values()] + dpar_coefficients
         if any(name.endswith("_offset") for name in retained):
             raise FormulaError("generated name collision: coefficient/effect suffix '_offset' is reserved by Bambi; rename the column")
         coords = [roles["coordinate"] for roles in self.group_names.values()]
         coords += [roles[k] for roles in self.correlation_names.values() for k in ("coordinate", "coordinate_T")]
         coords += [f"{t.name}_dim" for t in self.spec.pop_terms if t.is_vector]
+        coords += [f"{self.dpar_names[d.response][f'b:{t.name}']}_dim" for d in self.spec.dpars for t in d.pop_terms if t.is_vector]
         coords += ["__obs__"]
         names = variable_names + coords
         duplicates = sorted({n for n in names if names.count(n) > 1})
@@ -360,6 +446,65 @@ class Model:
         return model_from_fgraph(fgraph, mutate_fgraph=True)
 
     # -- design ------------------------------------------------------------------------
+    def _population_design(self, comp, spec: ModelSpec, Xfull: np.ndarray, prefix: str = "") -> np.ndarray:
+        """Bambi's common design ``Xfull`` of one formula (the response formula's, or a distributional parameter's, B01,
+        whose PyMC names carry the component's ``prefix``, ``sigma_``), without an offset column, checked term by term
+        against the data; returns the columns the coefficients multiply (``X_raw``)."""
+        common = comp.design.common
+        if list(comp.common_terms) != list(spec.terms):
+            raise RuntimeError(f"Bambi's coefficient terms {list(comp.common_terms)} differ from the formula's {list(spec.terms)}")
+        if spec.intercept and not np.allclose(Xfull[:, 0], 1.0):
+            raise RuntimeError("Bambi's first common column is not an intercept column")
+        # Verify Bambi's columns term by term against each term's own design block on the data
+        # (``pop_term_design``): a numeric column as given, a numeric-by-numeric product as one column, a
+        # categorical or other interaction term as one column per coefficient level in the recorded order.
+        col = int(spec.intercept)
+        for term in spec.pop_terms:
+            expected = pop_term_design(term, self.data, spec.categoricals)
+            bterm = common.terms[term.name]
+            is_inter = term.kind == "interaction"
+            if not term.is_vector:                                     # x, or the product x:w: one column, no levels
+                expected_kind = "interaction" if is_inter else "numeric"
+                if getattr(bterm, "kind", None) != expected_kind or list(bterm.labels) != [term.name] or getattr(bterm, "levels", None):
+                    raise RuntimeError(
+                        f"Bambi coded {term.name!r} as {getattr(bterm, 'kind', None)} with levels {getattr(bterm, 'levels', None)} "
+                        f"and labels {getattr(bterm, 'labels', None)}; expected one {expected_kind} column {term.name!r}"
+                    )
+                if not np.array_equal(Xfull[:, col], expected[:, 0]):
+                    what = f"the product {' * '.join(term.operands)}" if is_inter else "the data column"
+                    raise RuntimeError(f"Bambi's column for {term.name!r} does not equal {what}")
+                col += 1
+                continue
+            cats = [spec.categorical(c) for c in term.categorical]
+            expected_kind = "interaction" if is_inter else "categoric"
+            if getattr(bterm, "kind", None) != expected_kind or list(bterm.levels) != list(term.levels) \
+                    or list(bterm.labels) != list(term.columns):
+                raise RuntimeError(
+                    f"Bambi coded {term.name!r} as {getattr(bterm, 'kind', None)} with levels {getattr(bterm, 'levels', None)} "
+                    f"and labels {getattr(bterm, 'labels', None)}; expected {expected_kind} coding with reference "
+                    f"{', '.join(repr(c.reference) for c in cats)}, levels {list(term.levels)} and labels {list(term.columns)}"
+                )
+            for cat in cats:
+                labels = self.original_labels[cat.name]                # the supplied values' labels, not the recoded column
+                if not np.array_equal(labels, self.data[cat.name].astype(str).to_numpy()):
+                    raise RuntimeError(f"the recoded column {cat.name!r} does not reproduce the supplied labels")
+            for j, lvl in enumerate(term.levels):
+                if not np.array_equal(Xfull[:, col + j], expected[:, j]):
+                    what = (f"the indicator of level {lvl!r}" if not is_inter else
+                            f"the indicator product of cell {lvl!r}" if len(cats) == 2 else f"x * indicator of level {lvl!r}")
+                    raise RuntimeError(f"Bambi's column {term.columns[j]!r} is not {what}")
+            if not is_inter:
+                cat, labels = cats[0], self.original_labels[cats[0].name]
+                if not np.array_equal(Xfull[:, col:col + len(term.levels)].sum(1) + (0 if cat.full_rank else (labels == cat.reference)), np.ones(len(labels))):
+                    raise RuntimeError(f"the dummies of {term.name!r} and the reference indicator do not partition the rows")
+            coords = [str(c) for c in self.pymc_model.coords.get(f"{prefix}{term.name}_dim", ())]
+            if coords != list(term.levels):
+                raise RuntimeError(f"PyMC coordinates {prefix}{term.name}_dim = {coords} differ from the coefficient levels {list(term.levels)}")
+            col += len(term.levels)
+        if col != Xfull.shape[1]:
+            raise RuntimeError(f"Bambi's common design has {Xfull.shape[1]} columns, expected {col}")
+        return Xfull[:, int(spec.intercept):]
+
     def _extract_design(self) -> Design:
         comp = self.bambi_model.components[self.family_spec.parent]
         common = comp.design.common
@@ -384,59 +529,7 @@ class Model:
             if not np.array_equal(Xfull[:, common.slices[term]].ravel(), offset):
                 raise RuntimeError(f"the offset column of Bambi's common design does not equal {self.spec.offset.expression}")
             Xfull = np.delete(Xfull, common.slices[term], axis=1)
-        if list(comp.common_terms) != list(self.spec.terms):
-            raise RuntimeError(f"Bambi's coefficient terms {list(comp.common_terms)} differ from the formula's {list(self.spec.terms)}")
-        if self.spec.intercept and not np.allclose(Xfull[:, 0], 1.0):
-            raise RuntimeError("Bambi's first common column is not an intercept column")
-        # Verify Bambi's columns term by term against each term's own design block on the data
-        # (``pop_term_design``): a numeric column as given, a numeric-by-numeric product as one column, a
-        # categorical or other interaction term as one column per coefficient level in the recorded order.
-        col = int(self.spec.intercept)
-        for term in self.spec.pop_terms:
-            expected = pop_term_design(term, self.data, self.spec.categoricals)
-            bterm = common.terms[term.name]
-            is_inter = term.kind == "interaction"
-            if not term.is_vector:                                     # x, or the product x:w: one column, no levels
-                expected_kind = "interaction" if is_inter else "numeric"
-                if getattr(bterm, "kind", None) != expected_kind or list(bterm.labels) != [term.name] or getattr(bterm, "levels", None):
-                    raise RuntimeError(
-                        f"Bambi coded {term.name!r} as {getattr(bterm, 'kind', None)} with levels {getattr(bterm, 'levels', None)} "
-                        f"and labels {getattr(bterm, 'labels', None)}; expected one {expected_kind} column {term.name!r}"
-                    )
-                if not np.array_equal(Xfull[:, col], expected[:, 0]):
-                    what = f"the product {' * '.join(term.operands)}" if is_inter else "the data column"
-                    raise RuntimeError(f"Bambi's column for {term.name!r} does not equal {what}")
-                col += 1
-                continue
-            cats = [self.spec.categorical(c) for c in term.categorical]
-            expected_kind = "interaction" if is_inter else "categoric"
-            if getattr(bterm, "kind", None) != expected_kind or list(bterm.levels) != list(term.levels) \
-                    or list(bterm.labels) != list(term.columns):
-                raise RuntimeError(
-                    f"Bambi coded {term.name!r} as {getattr(bterm, 'kind', None)} with levels {getattr(bterm, 'levels', None)} "
-                    f"and labels {getattr(bterm, 'labels', None)}; expected {expected_kind} coding with reference "
-                    f"{', '.join(repr(c.reference) for c in cats)}, levels {list(term.levels)} and labels {list(term.columns)}"
-                )
-            for cat in cats:
-                labels = self.original_labels[cat.name]                # the supplied values' labels, not the recoded column
-                if not np.array_equal(labels, self.data[cat.name].astype(str).to_numpy()):
-                    raise RuntimeError(f"the recoded column {cat.name!r} does not reproduce the supplied labels")
-            for j, lvl in enumerate(term.levels):
-                if not np.array_equal(Xfull[:, col + j], expected[:, j]):
-                    what = (f"the indicator of level {lvl!r}" if not is_inter else
-                            f"the indicator product of cell {lvl!r}" if len(cats) == 2 else f"x * indicator of level {lvl!r}")
-                    raise RuntimeError(f"Bambi's column {term.columns[j]!r} is not {what}")
-            if not is_inter:
-                cat, labels = cats[0], self.original_labels[cats[0].name]
-                if not np.array_equal(Xfull[:, col:col + len(term.levels)].sum(1) + (0 if cat.full_rank else (labels == cat.reference)), np.ones(len(labels))):
-                    raise RuntimeError(f"the dummies of {term.name!r} and the reference indicator do not partition the rows")
-            coords = [str(c) for c in self.pymc_model.coords.get(f"{term.name}_dim", ())]
-            if coords != list(term.levels):
-                raise RuntimeError(f"PyMC coordinates {term.name}_dim = {coords} differ from the coefficient levels {list(term.levels)}")
-            col += len(term.levels)
-        if col != Xfull.shape[1]:
-            raise RuntimeError(f"Bambi's common design has {Xfull.shape[1]} columns, expected {col}")
-        X_raw = Xfull[:, int(self.spec.intercept):]
+        X_raw = self._population_design(comp, self.spec, Xfull)
         # One block per (factor, coefficient), in formula order; Bambi's concatenated group design is their
         # side-by-side concatenation. The varying intercept's block is the one-hot indicator of the level; a
         # varying slope's is that indicator times the slope's (raw, never centred) column, which is what brms's
@@ -524,7 +617,44 @@ class Model:
                       predictors=self.spec.predictors, Z=Z, group_blocks=group_blocks,
                       centered=self.effective_center_predictors, trials=trials,
                       columns=self.spec.columns, categoricals=self.spec.categoricals, offset=offset,
-                      weights=additions.get("weights"), cens=additions.get("cens"), lb=additions.get("lb"), ub=additions.get("ub"))
+                      weights=additions.get("weights"), cens=additions.get("cens"), lb=additions.get("lb"), ub=additions.get("ub"),
+                      dpars=MappingProxyType({d.response: self._dpar_design(d) for d in self.spec.dpars}))
+
+    def _dpar_design(self, d: ModelSpec) -> DparDesign:
+        """The design of distributional parameter ``d.response``'s formula (B01), as Bambi built its distributional
+        component (named after the parameter, Bambi's ``alpha`` for brms's ``shape``): the intercept and population-level
+        terms checked term by term against the data as the response formula's are, no group-level or offset term, the
+        parameter itself a per-row deterministic, its coefficients free variables named ``<component>_<term>``. Centred on
+        its own means when it has an intercept (brms's ``Xc_<dpar>``; Bambi centres every formula with an intercept)."""
+        bname = self._bambi_dpar(d.response)
+        comp = self.bambi_model.components.get(bname)
+        if comp is None or comp.design.common is None:
+            raise RuntimeError(f"Bambi built no distributional component {bname!r} for the formula '{d.formula}'")
+        if comp.design.group is not None:
+            raise RuntimeError(f"Bambi built group-level terms for the formula '{d.formula}', which has none")
+        names = list(comp.design.common.terms)
+        if names != (["Intercept"] if d.intercept else []) + list(d.terms):
+            raise RuntimeError(f"unexpected terms from Bambi for the formula '{d.formula}': {names}")
+        X_raw = self._population_design(comp, d, np.asarray(comp.design.common.design_matrix, dtype=float), prefix=f"{bname}_")
+        roles = self.dpar_names[d.response]
+        value = self.pymc_model[roles["value"]]
+        if value not in self.pymc_model.deterministics or tuple(self.pymc_model.named_vars_to_dims.get(roles["value"], ())) != ("__obs__",):
+            raise RuntimeError(f"{roles['value']!r} is not the per-row deterministic of {d.response}'s formula")
+        for key, name in roles.items():
+            if key != "value" and self.pymc_model[name] not in self.pymc_model.free_RVs:
+                raise RuntimeError(f"{name!r} is not a free variable of the graph")
+        if self.bambi_model.family.link[bname].name != self.family_spec.distributional_link:
+            raise RuntimeError(f"Bambi's link of {bname!r} is {self.bambi_model.family.link[bname].name}, expected "
+                               f"{self.family_spec.distributional_link}")
+        centered = bool(self._bambi_centring and d.intercept and d.pop_terms)   # an intercept-only formula has nothing to centre
+        x_means = X_raw.mean(0) if centered else np.zeros(X_raw.shape[1])
+        return DparDesign(name=d.response, X_raw=X_raw, X_model=X_raw - x_means if centered else X_raw, x_means=x_means,
+                          columns=d.columns, centered=centered, link=self.family_spec.distributional_link)
+
+    def _bambi_dpar(self, name: str) -> str:
+        """Bambi's (and so PyMC's) name of distributional parameter ``name`` (B01): the family's ``bambi_scale_parameter``
+        (``alpha`` for brms's ``shape``), the only parameter that takes a formula here."""
+        return self.family_spec.bambi_scale_parameter if name == self.family_spec.scale_parameter else name
 
     # -- naming ------------------------------------------------------------------------
     @property
@@ -553,7 +683,8 @@ class Model:
         coefficient variable of each population-level term (scalar for a numeric term, a vector
         over the coefficient levels otherwise); with exactly one group-level term its ``sd``,
         ``offset`` and ``group_effect`` roles are included here as well, and ``sd:x``, ``offset:x``,
-        ``group_effect:x`` for each varying slope ``x`` of that term (see ``group_names``)."""
+        ``group_effect:x`` for each varying slope ``x`` of that term (see ``group_names``). An auxiliary parameter with its own
+        formula (B01) keeps its entry, now a per-row deterministic; its formula's variables are in ``dpar_names``."""
         single = self.spec.group_terms[0] if len(self.spec.group_terms) == 1 else None
         fam = self.family_spec
         out = {
@@ -577,6 +708,22 @@ class Model:
             out["category_dim"] = f"{self.spec.response}_reduced_dim"
         if fam.continuous and fam.parent == "mu":
             out["mu"] = "mu"                                  # the continuous families whose parent is the location mu expose it by name (the Beta's parent is logit_mu)
+        return out
+
+    @property
+    def dpar_names(self) -> dict[str, dict[str, str]]:
+        """PyMC names of each distributional parameter's own formula (B01), by brms name in formula order: ``"value"`` the
+        parameter itself, a deterministic with one value per row (``sigma``; Bambi's ``alpha`` for brms's ``shape``;
+        the same variable as ``names[<parameter>]``), ``"intercept"`` its formula's intercept (``sigma_Intercept``; the
+        sampled value is centred, brms's ``Intercept_sigma``, and a posterior from ``fit()`` holds Bambi's raw-scale one,
+        brms's ``b_sigma_Intercept``) when it has one, and ``"b:<term>"`` the coefficient variable of each of its
+        population-level terms (``sigma_z``, a vector over ``sigma_z_dim`` for a vector term; brms's ``b_sigma``). Empty
+        without a distributional formula."""
+        out = {}
+        for d in self.spec.dpars:
+            b = self._bambi_dpar(d.response)
+            out[d.response] = {"value": b, **({"intercept": f"{b}_Intercept"} if d.intercept else {}),
+                               **{f"b:{t.name}": f"{b}_{t.name}" for t in d.pop_terms}}
         return out
 
     @staticmethod
@@ -631,8 +778,8 @@ class Model:
         per column of each ``PopTerm``."""
         return self.spec.column_terms
 
-    def value_point(self, *, intercept: float | None = None, b, sd=None, z=None, L=None, sigma: float | None = None,
-                    shape: float | None = None, phi: float | None = None, nu: float | None = None,
+    def value_point(self, *, intercept: float | None = None, b, sd=None, z=None, L=None, sigma=None,
+                    shape=None, phi=None, nu: float | None = None,
                     zi: float | None = None, hu: float | None = None) -> dict[str, np.ndarray]:
         """A point in PyMC's sampled (value) space, from natural-scale quantities.
 
@@ -655,7 +802,10 @@ class Model:
         log-odds coordinate (Stan's for ``real<lower=0,upper=1>``). For the cumulative family (B05) ``intercept`` is the
         K - 1 thresholds (brms's ``Intercept``: of the centred design when centred), strictly increasing, stored on Stan's
         ordered coordinates ``(tau_1, log(tau_2 - tau_1), ...)``; for the categorical family it has one entry per
-        non-reference category and ``b`` is ``(columns, K - 1)``, one column per non-reference category.
+        non-reference category and ``b`` is ``(columns, K - 1)``, one column per non-reference category. An auxiliary
+        parameter with its own formula (B01) is given as that formula's ``{"intercept": ..., "b": ...}`` instead: the
+        intercept as sampled (centred when the formula is, brms's ``Intercept_sigma``) and the coefficients in its
+        design-column order (brms's ``b_sigma``), each stored under its own variable (``Model.dpar_names``), unconstrained.
         """
         b = np.atleast_1d(np.asarray(b, dtype=float))
         if self.family_spec.per_category:                     # B05: one coefficient per design column and non-reference category
@@ -768,7 +918,9 @@ class Model:
             point[roles["offset"]] = z_by_coef[(g, coef)]
         for g, roles in self.correlation_names.items():              # Stan's cholesky_corr coordinates of L (A02)
             point[f"{roles['L']}_cholesky_corr__"] = cholesky_corr_free(L_by_group[g])
-        if scale is not None:
+        if scale in self.spec.dpar_names:                      # its own formula (B01): the intercept and coefficients as sampled
+            point.update(self._dpar_point(scale, auxiliary[scale]))
+        elif scale is not None:
             point[f"{n[scale]}_log__"] = log_scale(auxiliary[scale], scale)
         if zero is not None:                                   # B06: a probability, sampled as its log-odds
             p = np.asarray(probabilities[zero], dtype=float)
@@ -796,6 +948,34 @@ class Model:
             raise RuntimeError(f"value names {sorted(point)} do not match PyMC's {sorted(expected)}")
         return point
 
+    def _dpar_point(self, name: str, value) -> dict[str, np.ndarray]:
+        """``value_point``'s entries of distributional parameter ``name``'s formula (B01) from ``{"intercept": float,
+        "b": array}``: the intercept (as sampled) and the coefficients term by term in design-column order."""
+        d, roles = self.spec.dpar(name), self.dpar_names[name]
+        if not isinstance(value, Mapping) or set(value) - {"intercept", "b"}:
+            raise ValueError(f"{name} has its own formula '{d.formula}': give {name}={{'intercept': float, 'b': array}} "
+                             "(the formula's intercept as sampled and its coefficients in design-column order)")
+        point = {}
+        if d.intercept:
+            if value.get("intercept") is None:
+                raise ValueError(f"{name}['intercept'] is required: '{d.formula}' has an intercept")
+            a = np.asarray(value["intercept"], dtype=float)
+            if a.shape != () or not np.isfinite(a):
+                raise ValueError(f"{name}['intercept'] must be a finite scalar")
+            point[roles["intercept"]] = a
+        elif value.get("intercept") is not None:
+            raise ValueError(f"'{d.formula}' has no intercept; omit {name}['intercept']")
+        b = np.atleast_1d(np.asarray(value.get("b", ()), dtype=float))
+        if b.shape != (len(d.columns),) or not np.isfinite(b).all():
+            raise ValueError(f"{name}['b'] must have {len(d.columns)} finite entries, one per design column {list(d.columns)} "
+                             f"of '{d.formula}'")
+        i = 0
+        for term in d.pop_terms:
+            k = len(term.columns)
+            point[roles[f"b:{term.name}"]] = np.array(b[i:i + k]) if term.levels else np.asarray(b[i])
+            i += k
+        return point
+
     # -- description -------------------------------------------------------------------
     def describe(self) -> str:
         s, d, pr = self.spec, self.design, self.priors
@@ -811,37 +991,10 @@ class Model:
         cat_cat = [t for t in s.pop_terms if t.kind == "interaction" and len(t.categorical) == 2]
         pairs = [t.operands for t in num_cat]
         def cells(t):                                        # (cell label, level of the first operand, level of the second)
-            return [(lvl, *pair) for lvl, pair in zip(t.levels, interaction_cells(*(s.categorical(c) for c in t.categorical)))]
+            return _cells(s, t)
         fam = self.family_spec
         centred_x = d.centered and not fam.thresholds        # B05: the cumulative mu is on the raw design
-        parts = []
-        for t in s.pop_terms:
-            term = t.name
-            if t.kind == "categorical":
-                for lvl in t.levels:
-                    ind = f"1[{term}_i = {lvl}]"
-                    parts.append(f"({ind} - p_{term}[{lvl}]) * b_{term}[{lvl}]" if centred_x else f"{ind} * b_{term}[{lvl}]")
-            elif t.kind == "interaction" and len(t.categorical) == 1:
-                zn = t.categorical[0]
-                xn = next(c for c in t.operands if c != zn)
-                for lvl in t.levels:
-                    prod = f"x_{xn} * 1[{zn}_i = {lvl}]"
-                    parts.append(f"({prod} - q_{term}[{lvl}]) * b_{term}[{lvl}]" if centred_x else f"{prod} * b_{term}[{lvl}]")
-            elif t.kind == "interaction" and not t.categorical:
-                xn, wn = t.operands
-                prod = f"x_{xn} * x_{wn}"
-                parts.append(f"({prod} - q_{term}) * b_{term}" if centred_x else f"{prod} * b_{term}")
-            elif t.kind == "interaction":
-                zn, hn = t.operands
-                for lvl, lz, lh in cells(t):
-                    prod = f"1[{zn}_i = {lz}] * 1[{hn}_i = {lh}]"
-                    parts.append(f"({prod} - p_{term}[{lvl}]) * b_{term}[{lvl}]" if centred_x else f"{prod} * b_{term}[{lvl}]")
-            elif t.kind == "transform":
-                value = t.transform.expression(f"{t.transform.column}_i")
-                parts.append(f"({value} - mean({term})) * b_{term}" if centred_x else f"{value} * b_{term}")
-            else:
-                parts.append(f"(x_{term} - mean(x_{term})) * b_{term}" if centred_x else f"x_{term} * b_{term}")
-        xs = " + ".join(parts)
+        xs = " + ".join(_linear_terms(s, centred_x))
         lp = fam.linpred_symbol
         a = f"a{'_c' if d.centered else ''}" if s.intercept else "0"
         grouping = ("; ".join(f"J = {block.J} levels of {g}" for g, block in d.group_designs.items())
@@ -857,7 +1010,8 @@ class Model:
                     + (["independent varying slope(s)"] if any(t.slopes and not t.has_correlation for t in s.group_terms) else [])
                     + (["correlated varying slope(s)"] if s.correlated_terms else []) + (["offset"] if s.offset is not None else [])
                     + (["derived grouping factor(s)"] if any(t.derived for t in s.group_terms) else [])
-                    + ([f"response addition term(s) {', '.join(a.term for a in s.additions)}"] if s.additions else []))
+                    + ([f"response addition term(s) {', '.join(a.term for a in s.additions)}"] if s.additions else [])
+                    + ([f"distributional formula(s) for {', '.join(s.dpar_names)}"] if s.dpars else []))
         lines = [
             f"AutoBayes {fam.tag} model" + (" with " + " and ".join(features) if features else "")
             + (" (population-level only)" if not s.has_group else ""),
@@ -865,6 +1019,11 @@ class Model:
         ]
         if s.canonical_formula != s.formula:
             lines += [f"  expanded  : {s.canonical_formula}   (canonical form handed to Bambi)"]
+        for ds in s.dpars:                                   # a distributional parameter's own formula (B01)
+            lines += [f"  {ds.response:<10}: {ds.formula}   (distributional formula: {ds.response} has its own linear predictor, "
+                      f"{d.dpars[ds.response].link} link)"]
+            if ds.canonical_formula != ds.formula:
+                lines += [f"  expanded  : {ds.canonical_formula}"]
         lines += [f"  family    : {self.family}, {self.link} link", data_line]
         if self.categories:                                   # B05: the response's categories, fitted as brms's 1-based Y
             lines += [f"  {s.response:<10}: response categories " + ", ".join(f"{k}={c}" for k, c in enumerate(self.categories, start=1))
@@ -888,12 +1047,14 @@ class Model:
                 lines += [f"  {t.factor:<10}: derived grouping factor, one level per observed ({ga}, {gb}) combination, labelled {ga}_{gb} as brms "
                           f"does (paste({ga}, {gb}, sep = \"_\")); unobserved combinations have no level; handed to Bambi as the column "
                           f"{t.column!r}, so its PyMC variables are {name}, {name}_sigma, {name}_offset"]
-        for cat in s.categoricals:
+        for cat in s.all_categoricals:                       # a distributional formula's too (B01), b_sigma_z
+            owners = [(b, f.categorical(cat.name)) for b, f in [("b", s), *((f"b_{ds.response}", ds) for ds in s.dpars)]
+                      if cat.name in f.categorical_names]
             labels = self.data[cat.name].astype(str).to_numpy()
             props = ", ".join(f"{l} {np.mean(labels == l):.3f}" for l in cat.levels)
             lines += [
                 f"  {cat.name:<10}: categorical, {'full-level coding' if cat.full_rank else 'treatment coding'}, reference {cat.reference!r}; levels (sorted) "
-                f"{', '.join(cat.levels)}; coefficients b_{cat.name}[{', '.join(cat.coefficients)}]"
+                f"{', '.join(cat.levels)}; coefficients " + "; ".join(f"{b}_{cat.name}[{', '.join(c.coefficients)}]" for b, c in owners)
                 + (f"; unused declared categories {list(cat.unused)}" if cat.unused else ""),
                 f"              proportions among fitted rows: {props}",
             ]
@@ -1024,6 +1185,8 @@ class Model:
         else:
             lines += ["  Predictors are not centred (center_predictors=False); a is the raw-scale intercept"
                       + ((" (x = 0, reference level" + (", group effect zero)." if s.has_group else ").")) if s.categoricals else ".")]
+        for ds in s.dpars:                                   # each distributional parameter's own linear predictor (B01)
+            lines += self._dpar_lines(ds)
         if s.has_group:
             lines += ["", "Group effects (non-centred)"]
             for t in s.group_terms:
@@ -1068,6 +1231,11 @@ class Model:
         for g, prior in pr.cor_priors(s).items():
             lines += [f"  Cor_{g} ~ {prior} (brms lkj({prior.params['eta']:g}) on the correlation matrix, placed on L_{g} as lkj_corr_cholesky)"
                       + ("   (brms default)" if prior.source == "default" else "")]
+        for ds in s.dpars:                                   # a distributional formula's intercept and coefficients (B01)
+            name, sub, dd = ds.response, pr.dpar_priors(s, ds.response), d.dpars[ds.response]
+            if ds.intercept:
+                lines += [f"  a_{name}{'_c' if dd.centered else ''} ~ {describe_prior(sub.intercept)}   (on the {dd.link} scale of {name})"]
+            lines += [f"  b_{name}_{col} ~ {describe_prior(prior)}" for col, prior in sub.coefficient_priors(ds).items()]
         lines += fam.likelihood_lines(self)
         lines += self._addition_likelihood_lines()
         if self.default_prior_labels:                         # priors filled in by ab.default_priors() (A07)
@@ -1096,8 +1264,17 @@ class Model:
             roles[names["offset"]] = ("z" if len(s.groups) == 1 else f"z_{g}") if c == "Intercept" else f"z_{c}|{g}"
         for g, names in self.correlation_names.items():
             roles[f"{names['L']}_cholesky_corr__"] = f"L_{g} on Stan's cholesky_corr coordinates (canonical partial correlations, arctanh scale)"
-        if fam.scale_parameter is not None:
+        if fam.scale_parameter is not None and fam.scale_parameter not in s.dpar_names:
             roles[f"{n[fam.scale_parameter]}_log__"] = f"log({fam.scale_parameter})"
+        for ds in s.dpars:                                   # a distributional formula's variables (B01); scalar ones read b_sigma_x
+            dn = self.dpar_names[ds.response]
+            if ds.intercept:
+                roles[dn["intercept"]] = f"a_{ds.response}{'_c' if d.dpars[ds.response].centered else ''} (the intercept of {ds.response}'s formula)"
+            for t in ds.pop_terms:
+                if t.is_vector:
+                    var = dn[f"b:{t.name}"]
+                    shown = ", ".join(f"({l})" for l in t.levels) if len(t.categorical) == 2 else ", ".join(t.levels)
+                    roles[var] = f"b_{var}[{shown}] (vector; dims {var}_dim, posterior rows {', '.join(f'{var}[{l}]' for l in t.levels)})"
         if fam.zero_parameter is not None:
             roles[f"{n[fam.zero_parameter]}_logodds__"] = f"logit({fam.zero_parameter})"
         for name, lower in self.learned_parameters.items():
@@ -1113,8 +1290,26 @@ class Model:
             lines.append(f"  {v.name:<24} {roles.get(v.name, f'b_{v.name}')}")
         lines.append("Deterministic: " + "".join(f"{names['group_effect']} = {effect(g) if c == 'Intercept' else slope_effect(g, c)}, "
                                                  for (g, c), names in self.group_coefficient_names.items())
-                     + "".join(f"{names['cor']} = Cor_{g} = L_{g} L_{g}^T, " for g, names in self.correlation_names.items()) + fam.deterministic_note)
+                     + "".join(f"{names['cor']} = Cor_{g} = L_{g} L_{g}^T, " for g, names in self.correlation_names.items()) + fam.deterministic_note
+                     + "".join(f"; {dn['value']} = exp(eta_{name}), one {name} per row (B01)" for name, dn in self.dpar_names.items()))
         return "\n".join(lines)
+
+    def _dpar_lines(self, ds: ModelSpec) -> list[str]:
+        """``describe()``'s paragraph of distributional parameter ``ds.response``'s own formula (B01): its linear
+        predictor written out (coefficients ``b_<parameter>_<term>``), its link, and its centring."""
+        name, dd = ds.response, self.design.dpars[ds.response]
+        a = f"a_{name}{'_c' if dd.centered else ''}" if ds.intercept else "0"
+        xs = " + ".join(_linear_terms(ds, dd.centered, b=f"b_{name}"))
+        lines = ["", f"Distributional parameter {name} (its own formula '{ds.formula}', {dd.link} link; brms's bf(..., {ds.formula}))",
+                 f"  {dd.link}({name}_i) = eta_{name},i = {a}" + (f" + {xs}" if xs else ""),
+                 f"  {name}_i = exp(eta_{name},i) > 0 is row i's {name} in the likelihood below; the coefficients act on log {name}."]
+        if dd.centered:
+            lines += [f"  Its columns are centred at their own fitted-row means (brms's Xc_{name}), so a_{name}_c is log {name} there and",
+                      f"  its prior applies to a_{name}_c; the posterior reports the raw-scale intercept",
+                      f"  a_{name} = a_{name}_c - sum_p mean(x_p) * b_{name}_p (brms's b_{name}_Intercept), computed after sampling."]
+        elif not ds.intercept:
+            lines += [f"  No intercept: log {name} is the raw design times its coefficients."]
+        return lines
 
     def _addition_lines(self) -> list[str]:
         """``describe()``'s data lines for the response addition terms (B02, docs/addition-terms.md)."""
@@ -1154,13 +1349,17 @@ class Model:
     def default_prior_labels(self) -> list[str]:
         """The parameters whose prior came from ``ab.default_priors`` (brms's defaults; A07), labelled as the prior
         messages label them (``intercept``, ``b:x``, ``sd:g``, ``sd:x|g``, ``cor:g``, ``sigma``, ``nu``), in that order; empty
-        when the user gave every prior (``zi`` or ``hu`` after the auxiliary parameter, B06). ``fit_record`` stores them
-        under ``"default_priors"``."""
+        when the user gave every prior (``zi`` or ``hu`` after the auxiliary parameter, B06; a distributional formula's
+        ``sigma:intercept``, ``sigma:b:z[q]`` in place of ``sigma``, B01). ``fit_record`` stores them under ``"default_priors"``."""
         s, pr, fam = self.spec, self.priors, self.family_spec
         found = ([("intercept", pr.intercept)] if s.intercept else []) + [(f"b:{k}", v) for k, v in pr.coefficient_priors(s).items()]
         found += [(f"sd:{sd_tag(g, c)}", v) for (g, c), v in pr.sd_priors(s).items()]
         found += [(f"cor:{g}", v) for g, v in pr.cor_priors(s).items()]
-        if fam.scale_parameter is not None:
+        if fam.scale_parameter in s.dpar_names:              # its own formula's priors (B01)
+            ds, sub = s.dpar(fam.scale_parameter), pr.dpar_priors(s, fam.scale_parameter)
+            found += [(f"{ds.response}:intercept", sub.intercept)] if ds.intercept else []
+            found += [(f"{ds.response}:b:{k}", v) for k, v in sub.coefficient_priors(ds).items()]
+        elif fam.scale_parameter is not None:
             found.append((fam.scale_parameter, getattr(pr, fam.scale_parameter)))
         if fam.zero_parameter is not None:
             found.append((fam.zero_parameter, getattr(pr, fam.zero_parameter)))
@@ -1191,11 +1390,13 @@ class Model:
         return predict(self, fit_result, **kwargs)
 
 
-def gaussian(formula: str, data: pd.DataFrame, priors: Priors, *, center_predictors: bool = True,
+def gaussian(formula: str | list[str], data: pd.DataFrame, priors: Priors, *, center_predictors: bool = True,
              categorical: Mapping[str, object] | None = None) -> Model:
     """Build the Gaussian model (identity link, residual SD ``sigma``), with a varying intercept when the
     formula has ``(1 | group)`` and population-only otherwise (M3c-1).
-    ``categorical={column: reference_level}`` declares treatment-coded categorical predictors."""
+    ``categorical={column: reference_level}`` declares treatment-coded categorical predictors. ``sigma`` may have its own
+    formula (B01, docs/distributional.md): ``["y ~ x + (1 | g)", "sigma ~ z"]`` with
+    ``Priors(..., sigma={"intercept": ab.Normal(0, 1), "b": ab.Normal(0, 0.5)})``, a log link, brms's ``bf(y ~ ..., sigma ~ z)``."""
     return Model(formula, data, priors, family="gaussian", center_predictors=center_predictors, categorical=categorical)
 
 
@@ -1217,7 +1418,7 @@ def binomial(formula: str, data: pd.DataFrame, priors: Priors, *, link: str = "l
     return Model(formula, data, priors, family="binomial", link=link, center_predictors=center_predictors, categorical=categorical)
 
 
-def student(formula: str, data: pd.DataFrame, priors: Priors, *, nu: float | None = None,
+def student(formula: str | list[str], data: pd.DataFrame, priors: Priors, *, nu: float | None = None,
             center_predictors: bool = True, categorical: Mapping[str, object] | None = None) -> Model:
     """Student-t response with an explicit sigma scale prior and degrees of freedom ``nu``, fixed or learned.
 
@@ -1225,8 +1426,8 @@ def student(formula: str, data: pd.DataFrame, priors: Priors, *, nu: float | Non
     ``Gamma``, ``Exponential``, ``HalfNormal`` or ``HalfCauchy`` prior truncated to ``nu > 1`` and renormalised there, as
     brms's ``real<lower=1> nu`` (brms's default prior is ``gamma(2, 0.1)``, ``ab.Gamma(2, 0.1)``, which is not filled in
     silently; ``ab.default_priors(..., family="student")`` returns it with brms's other defaults; A13,
-    docs/student-learned-nu.md). The expected response is mu. Sigma is not the residual standard deviation.
-    Distributional auxiliary formulas are not supported.
+    docs/student-learned-nu.md). The expected response is mu. Sigma is not the residual standard deviation. ``sigma`` may
+    have its own formula under a log link (B01, ``["y ~ x", "sigma ~ z"]``, docs/distributional.md); ``nu`` takes none.
     """
     return Model(formula, data, priors, family="student", nu=nu,
                  center_predictors=center_predictors, categorical=categorical)
@@ -1244,52 +1445,55 @@ def poisson(formula: str, data: pd.DataFrame, priors: Priors, *,
                  center_predictors=center_predictors, categorical=categorical)
 
 
-def negbinomial(formula: str, data: pd.DataFrame, priors: Priors, *,
+def negbinomial(formula: str | list[str], data: pd.DataFrame, priors: Priors, *,
                 center_predictors: bool = True, categorical: Mapping[str, object] | None = None) -> Model:
     """Negative binomial count response (brms ``negbinomial``): log link, ``Var[y] = mu + mu^2 / shape``.
 
     Counts as for Poisson (integers in [0, 1e6], zero rows retained). The overdispersion parameter ``shape``
-    takes its own positive-support prior, ``Priors(shape=ab.Gamma(0.01, 0.01))``; no sigma, nu, offset/exposure
-    or zero-inflation.
+    takes its own positive-support prior, ``Priors(shape=ab.Gamma(0.01, 0.01))``, or its own formula under a log link (B01,
+    ``["y ~ x", "shape ~ z"]``, docs/distributional.md); no sigma, nu, offset/exposure or zero-inflation.
     """
     return Model(formula, data, priors, family="negbinomial",
                  center_predictors=center_predictors, categorical=categorical)
 
 
-def gamma(formula: str, data: pd.DataFrame, priors: Priors, *,
+def gamma(formula: str | list[str], data: pd.DataFrame, priors: Priors, *,
           center_predictors: bool = True, categorical: Mapping[str, object] | None = None) -> Model:
     """Gamma response with a log link (brms ``Gamma(link = "log")``): ``E[y] = mu = exp(eta)``, ``Var[y] = mu^2 / shape``.
 
     Responses are strictly positive finite reals. The shape parameter takes its own positive-support prior,
-    ``Priors(shape=ab.Gamma(0.01, 0.01))``; no sigma, nu, offset or other link (brms's default Gamma link is
-    inverse; docs/brms-parity/divergences.md, D9).
+    ``Priors(shape=ab.Gamma(0.01, 0.01))``, or its own formula under a log link (B01, ``["y ~ x", "shape ~ z"]``,
+    docs/distributional.md); no sigma, nu, offset or other link (brms's default Gamma link is inverse;
+    docs/brms-parity/divergences.md, D9).
     """
     return Model(formula, data, priors, family="gamma",
                  center_predictors=center_predictors, categorical=categorical)
 
 
-def lognormal(formula: str, data: pd.DataFrame, priors: Priors, *,
+def lognormal(formula: str | list[str], data: pd.DataFrame, priors: Priors, *,
               center_predictors: bool = True, categorical: Mapping[str, object] | None = None) -> Model:
     """Lognormal response (brms ``lognormal()``): ``log(y) ~ Normal(mu, sigma)`` with the identity link on the log-scale
     location ``mu``; ``E[y] = exp(mu + sigma^2 / 2)``.
 
     Responses are strictly positive finite reals. ``sigma``, the SD of ``log y``, takes its own positive-support prior,
     ``Priors(sigma=ab.HalfNormal(1))``; the intercept and slope priors act on ``log y``. ``predict(kind="mean")`` returns
-    brms's ``posterior_epred`` ``exp(mu + sigma^2 / 2)`` as ``mean``; ``kind="linear"`` returns ``mu``. No shape, nu,
-    offset or distributional (``sigma ~ ...``) formula.
+    brms's ``posterior_epred`` ``exp(mu + sigma^2 / 2)`` as ``mean``; ``kind="linear"`` returns ``mu``. ``sigma`` may have its
+    own formula under a log link (B01, ``["y ~ x", "sigma ~ z"]``, docs/distributional.md), and the mean then uses each
+    row's ``sigma``. No shape, nu or offset.
     """
     return Model(formula, data, priors, family="lognormal",
                  center_predictors=center_predictors, categorical=categorical)
 
 
-def beta(formula: str, data: pd.DataFrame, priors: Priors, *,
+def beta(formula: str | list[str], data: pd.DataFrame, priors: Priors, *,
          center_predictors: bool = True, categorical: Mapping[str, object] | None = None) -> Model:
     """Beta response with a logit link (brms ``Beta()``): proportions strictly inside (0, 1), ``E[y] = mu = expit(eta)``,
     ``Var[y] = mu (1 - mu) / (1 + phi)``.
 
     The precision ``phi`` takes its own positive-support prior, ``Priors(phi=ab.Gamma(0.01, 0.01))`` (brms class
-    ``phi``); the intercept and slope priors are on the logit scale. ``predict(kind="mean")`` returns ``mu``; no sigma,
-    shape, nu, other link, zero/one inflation or distributional (``phi ~ ...``) formula.
+    ``phi``), or its own formula under a log link (B01, ``["y ~ x", "phi ~ z"]``, docs/distributional.md); the intercept and
+    slope priors are on the logit scale. ``predict(kind="mean")`` returns ``mu``; no sigma, shape, nu, other link or
+    zero/one inflation.
     """
     return Model(formula, data, priors, family="beta",
                  center_predictors=center_predictors, categorical=categorical)

@@ -8,7 +8,8 @@ Poisson counts with the zero-inflation or hurdle probability ``zi`` / ``hu`` und
 brms's cumulative logit model and unordered categorical responses with one linear predictor per non-reference category.
 Supported formulas combine numeric and declared categorical predictors,
 numeric-by-categorical interactions, intercept controls, and optional multiple
-independent varying-intercept factors with independent or correlated varying slopes. Explicit priors are required;
+independent varying-intercept factors with independent or correlated varying slopes, and a formula of its own for the
+auxiliary parameter (``["y ~ x", "sigma ~ z"]``: sigma, shape or phi under a log link). Explicit priors are required;
 brms's own defaults are available explicitly with ``default_priors(formula, data, ...)``.
 
 See docs/current-capabilities.md for supported composition, test entry points,

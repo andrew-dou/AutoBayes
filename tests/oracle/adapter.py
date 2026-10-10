@@ -21,11 +21,18 @@ is the `ordered[nthres]` thresholds, matched to AutoBayes's thresholds on Stan's
 `Intercept` at every point and checked against the fixture's `u`, as for `cholesky_corr`); brms's categorical model has
 one design `X_mu<k>` and parameters `b_mu<k>`, `Intercept_mu<k>` per non-reference category, matched to the trailing
 category axis of AutoBayes's coefficients by brms's name of each category's linear predictor (`brms_dpar_names`).
+
+A distributional parameter's own formula (B01, brms's `bf(y ~ ..., sigma ~ z)`) has its own design `X_sigma`, matched by
+content to the model's `Design.dpars["sigma"]` as `X` is (`match_distributional_columns`; its map rides on the response
+formula's `ColumnMap.distributional`, which is not B05's `ColumnMap.dpars`: brms calls both kinds of linear predictor
+dpars, but a categorical model's `mu<k>` share the response formula's design while `sigma`'s formula has its own), and
+its own `Intercept_sigma` (centred when brms centres) and `b_sigma`, mapped to the formula's PyMC variables
+(`Model.dpar_names`); brms reports the raw-scale intercept as `b_sigma_Intercept`.
 """
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 import arviz as az
 import numpy as np
@@ -60,7 +67,8 @@ def _prior(v):
 
 def priors_from_spec(spec: dict) -> ab.Priors:
     """``{"intercept": ["Normal", 0, 5], "b": ["Normal", 0, 2] | {term: ...}, "sd": [...] | {factor: ...}, "cor": {factor: ["LKJ", eta]},
-    "sigma": [...], "shape": [...], "phi": [...], "nu": [...], "zi": ["Beta", a, b], "hu": ["Beta", a, b]}``."""
+    "sigma": [...], "shape": [...], "phi": [...], "nu": [...], "zi": ["Beta", a, b], "hu": ["Beta", a, b]}``; an auxiliary
+    parameter with its own formula (B01) takes ``{"intercept": [...], "b": [...]}``."""
     return ab.Priors(intercept=_prior(spec.get("intercept")), b=_prior(spec.get("b")),
                      sd=_prior(spec.get("sd")), cor=_prior(spec.get("cor")), sigma=_prior(spec.get("sigma")),
                      shape=_prior(spec.get("shape")), phi=_prior(spec.get("phi")), nu=_prior(spec.get("nu")),
@@ -88,12 +96,16 @@ class ColumnMap:
     column if any, and whether brms carries the separate centred ``Intercept`` parameter. ``thresholds``: brms's
     ``Intercept`` is the cumulative model's ``ordered`` thresholds and ``X`` has no intercept column (B05); ``dpars``: the
     categorical model's brms name of each non-reference category's linear predictor (``muc2``, ...), in AutoBayes's
-    category order, each with its own ``X_<dpar>``, ``b_<dpar>`` and ``Intercept_<dpar>`` mapped alike (B05)."""
+    category order, each with its own ``X_<dpar>``, ``b_<dpar>`` and ``Intercept_<dpar>`` mapped alike (B05).
+    ``distributional``: the ``ColumnMap`` of each auxiliary parameter's own formula (B01, ``X_sigma`` of ``sigma ~ z``) by
+    parameter name, a design of its own matched to ``Design.dpars``, unlike the categorical ``dpars``, which share the
+    response formula's design."""
     x_column: tuple[int, ...]
     intercept_column: int | None
     centred_intercept: bool
     thresholds: bool = False
     dpars: tuple[str, ...] = ()
+    distributional: dict = None           # B01: the column map of each auxiliary parameter's own formula (X_sigma), by name
 
     def b_index(self, x_col: int) -> int:
         """Index into brms's ``b`` of design column ``x_col``."""
@@ -159,7 +171,7 @@ def _match_design(fixture: Fixture, model: ab.Model, X_name: str = "X", b_name: 
 def match_columns(fixture: Fixture, model: ab.Model) -> ColumnMap:
     fam = model.family_spec
     if not fam.per_category:
-        return _match_design(fixture, model, thresholds=fam.thresholds)
+        return _with_distributional(fixture, model, _match_design(fixture, model, thresholds=fam.thresholds))
     # B05, the categorical family: one brms design per non-reference category, each matched like X; all must map alike
     from autobayes.default_priors import brms_dpar_names
 
@@ -172,6 +184,61 @@ def match_columns(fixture: Fixture, model: ab.Model) -> ColumnMap:
     if any(m != maps[0] for m in maps):
         raise OracleMismatch(f"brms's category designs {list(dpars)} do not map alike onto the AutoBayes design")
     return ColumnMap(maps[0].x_column, maps[0].intercept_column, maps[0].centred_intercept, dpars=dpars)
+
+
+def _with_distributional(fixture: Fixture, model: ab.Model, cmap: ColumnMap) -> ColumnMap:
+    """``cmap`` with the column map of each auxiliary parameter's own formula (B01): a formula on either side must exist
+    on both (brms's ``X_<parameter>`` of the family's auxiliary parameter), and each is matched by content."""
+    scale = model.family_spec.scale_parameter
+    if scale is not None and f"X_{scale}" in fixture.standata and scale not in model.spec.dpar_names:
+        raise OracleMismatch(f"brms gives {scale} its own formula (standata X_{scale}); the AutoBayes model has none")
+    return replace(cmap, distributional={name: match_distributional_columns(fixture, model, name) for name in model.spec.dpar_names})
+
+
+def match_distributional_columns(fixture: Fixture, model: ab.Model, name: str) -> ColumnMap:
+    """The column map of distributional parameter ``name``'s formula (B01): brms's ``X_<name>`` matched by content to
+    ``model.design.dpars[name].X_raw`` column by column, its intercept column, and whether brms carries the separate
+    (centred) ``Intercept_<name>``, with ``b_<name>`` and ``Kc_<name>`` checked against them, as ``match_columns`` does
+    for the response formula's ``X``."""
+    key = f"X_{name}"
+    if key not in fixture.standata:
+        raise OracleMismatch(f"the AutoBayes model gives {name} its own formula; brms's standata has no {key}")
+    X = fixture.standata[key]
+    labels = fixture.colnames(key) or [str(k) for k in range(X.shape[1])]
+    ds, XA = model.spec.dpar(name), model.design.dpars[name].X_raw
+    if X.shape[0] != XA.shape[0]:
+        raise OracleMismatch(f"brms {key} has {X.shape[0]} rows, AutoBayes {XA.shape[0]}")
+    taken, cols = set(), []
+    for c, label in enumerate(ds.columns):
+        hits = [k for k in range(X.shape[1]) if k not in taken and np.max(np.abs(X[:, k] - XA[:, c])) <= DESIGN_ABS]
+        if len(hits) != 1:
+            raise OracleMismatch(f"{name}'s design column {label!r} matches {len(hits)} brms {key} columns {[labels[k] for k in hits]} within {DESIGN_ABS}")
+        cols.append(hits[0])
+        taken.add(hits[0])
+    rest = [k for k in range(X.shape[1]) if k not in taken]
+    intercept_col = None
+    if ds.intercept:
+        ones = [k for k in rest if np.max(np.abs(X[:, k] - 1.0)) <= DESIGN_ABS]
+        if len(ones) != 1:
+            raise OracleMismatch(f"expected one intercept column in brms {key}, found {[labels[k] for k in ones]}")
+        intercept_col = ones[0]
+        rest.remove(intercept_col)
+    if rest:
+        raise OracleMismatch(f"brms {key} columns without an AutoBayes counterpart: {[labels[k] for k in rest]}")
+    pars = fixture.points[0].pars
+    centred = f"Intercept_{name}" in pars
+    if centred and intercept_col is None:
+        raise OracleMismatch(f"brms has a centred Intercept_{name} but AutoBayes's formula of {name} has no intercept")
+    expected_b = X.shape[1] - (1 if centred else 0)
+    got = coefficients(pars, f"b_{name}").size
+    if got != expected_b:
+        raise OracleMismatch(f"brms b_{name} has {got} entries; expected {expected_b} from {X.shape[1]} {key} columns")
+    if f"Kc_{name}" in fixture.standata and int(fixture.standata[f"Kc_{name}"]) != expected_b:
+        raise OracleMismatch(f"brms Kc_{name} = {int(fixture.standata[f'Kc_{name}'])} but b_{name} has {expected_b} entries")
+    if ds.columns and centred != model.design.dpars[name].centered:     # moot without a column to centre (sigma ~ 1)
+        raise OracleMismatch(f"brms {'centres' if centred else 'does not centre'} the formula of {name}; AutoBayes "
+                             f"{'does' if model.design.dpars[name].centered else 'does not'}")
+    return ColumnMap(tuple(cols), intercept_col, centred)
 
 
 # -- group-level terms --------------------------------------------------------------------------------------
@@ -314,6 +381,15 @@ def natural_point(model: ab.Model, point: Point, cmap: ColumnMap, gmap: GroupMap
     sigma = float(pars["sigma"]) if "sigma" in pars else None
     shape = float(pars["shape"]) if "shape" in pars else None
     phi = float(pars["phi"]) if "phi" in pars else None
+    formulas = {}                                          # B01: an auxiliary parameter's own formula: its intercept (as sampled) and b
+    for name, dmap in (cmap.distributional or {}).items():
+        bd = coefficients(pars, f"b_{name}")
+        ds = model.spec.dpar(name)
+        formulas[name] = {"b": np.array([bd[dmap.b_index(k)] for k in dmap.x_column], dtype=float)}
+        if ds.intercept:
+            formulas[name]["intercept"] = (float(pars[f"Intercept_{name}"]) if dmap.centred_intercept
+                                           else float(bd[dmap.b_index(dmap.intercept_column)]))
+    sigma, shape, phi = formulas.get("sigma", sigma), formulas.get("shape", shape), formulas.get("phi", phi)
     nu = float(pars["nu"]) if "nu" in model.names else None
     zi = float(pars["zi"]) if "zi" in pars else None
     hu = float(pars["hu"]) if "hu" in pars else None
@@ -396,6 +472,17 @@ def coordinate_map(fixture: Fixture, model: ab.Model, cmap: ColumnMap, gmap: Gro
             target, expect = (f"{names['shape']}_log__", 0), "log"
         elif par == "phi":                                     # Beta precision, sampled on the log scale
             target, expect = (f"{names['phi']}_log__", 0), "log"
+        elif par.startswith("Intercept_") and par[len("Intercept_"):] in (cmap.distributional or {}):   # B01: brms's centred
+            target, expect = (model.dpar_names[par[len("Intercept_"):]]["intercept"], 0), "identity"       # Intercept_sigma
+        elif par.startswith("b_") and par[2:] in (cmap.distributional or {}):                           # B01: brms's b_sigma
+            name = par[2:]
+            dmap, ds = cmap.distributional[name], model.spec.dpar(name)
+            k = dmap.x_of_b(elem)
+            if dmap.intercept_column is not None and k == dmap.intercept_column:
+                target, expect = (model.dpar_names[name]["intercept"], 0), "identity"
+            else:
+                _, term, j = ds.column_terms[dmap.x_column.index(k)]
+                target, expect = (model.dpar_names[name][f"b:{term}"], 0 if j is None else j), "identity"
         elif par == "nu":                                      # learned Student-t nu, brms real<lower=1> nu: PyMC's interval log(nu - 1)
             if "nu" not in names:
                 raise OracleMismatch("brms samples nu but the AutoBayes model does not learn it")
@@ -512,6 +599,21 @@ def draws(fixture: Fixture, model: ab.Model, cmap: ColumnMap, gmap: GroupMap) ->
     for par in ("zi", "hu"):                                    # the zero-inflation / hurdle probability (B06)
         if par in names and par in pts[0].pars:
             data[names[par]] = (("chain", "draw"), np.array([float(p.pars[par]) for p in pts])[None, :])
+    for name, dmap in (cmap.distributional or {}).items():       # B01: an auxiliary parameter's own formula, raw-scale intercept and b
+        ds, roles = model.spec.dpar(name), model.dpar_names[name]
+        if ds.intercept:
+            a = [float(p.pars[f"b_{name}_Intercept"]) if dmap.centred_intercept
+                 else float(coefficients(p.pars, f"b_{name}")[dmap.b_index(dmap.intercept_column)]) for p in pts]
+            data[roles["intercept"]] = (("chain", "draw"), np.array(a)[None, :])
+        for t in ds.pop_terms:
+            positions = [(c, j) for c, (_, term, j) in enumerate(ds.column_terms) if term == t.name]
+            vals = np.array([[coefficients(p.pars, f"b_{name}")[dmap.b_index(dmap.x_column[c])] for c, _ in positions] for p in pts])
+            var = roles[f"b:{t.name}"]
+            if t.is_vector:
+                data[var] = (("chain", "draw", f"{var}_dim"), vals[None])
+                coords[f"{var}_dim"] = list(t.levels)
+            else:
+                data[var] = (("chain", "draw"), vals[:, 0][None, :])
     return az.InferenceData(posterior=xr.Dataset(data, coords=coords))
 
 
