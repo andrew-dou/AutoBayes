@@ -1,0 +1,62 @@
+{
+ "id": "cumulative_poponly_categorical",
+ "tier": "B",
+ "feature": "B05_ordinal_categorical",
+ "note": "brms: cumulative thresholds of the centred design with a treatment-coded predictor (zq, zr in X, no intercept column); b_Intercept adds the dummies' means",
+ "seed": 181,
+ "n_points": 8,
+ "data": {
+  "generator": "tier_b",
+  "seed": 81,
+  "n": 36,
+  "newdata": {
+   "seed": 181,
+   "n": 5
+  }
+ },
+ "brms": {
+  "formula": "ord ~ x + z",
+  "family": {
+   "family": "cumulative",
+   "link": "logit"
+  },
+  "factors": {
+   "z": [
+    "p",
+    "q",
+    "r"
+   ]
+  },
+  "priors": [
+   {
+    "prior": "normal(0, 3)",
+    "class": "Intercept"
+   },
+   {
+    "prior": "normal(0, 1.5)",
+    "class": "b"
+   }
+  ]
+ },
+ "autobayes": {
+  "constructor": "cumulative",
+  "formula": "ord ~ x + z",
+  "kwargs": {
+   "categorical": {
+    "z": "p"
+   }
+  },
+  "priors": {
+   "intercept": [
+    "Normal",
+    0,
+    3
+   ],
+   "b": [
+    "Normal",
+    0,
+    1.5
+   ]
+  }
+ }
+}

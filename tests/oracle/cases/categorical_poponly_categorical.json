@@ -1,0 +1,78 @@
+{
+ "id": "categorical_poponly_categorical",
+ "tier": "B",
+ "feature": "B05_ordinal_categorical",
+ "note": "brms: a treatment-coded predictor in each category's design (X_muc2, X_muc3 with zq, zr); the (level, category) layout of its coefficients",
+ "seed": 182,
+ "n_points": 8,
+ "data": {
+  "generator": "tier_b",
+  "seed": 82,
+  "n": 36,
+  "newdata": {
+   "seed": 182,
+   "n": 5
+  }
+ },
+ "brms": {
+  "formula": "cat3 ~ x + z",
+  "family": {
+   "family": "categorical"
+  },
+  "factors": {
+   "cat3": [
+    "c1",
+    "c2",
+    "c3"
+   ],
+   "z": [
+    "p",
+    "q",
+    "r"
+   ]
+  },
+  "priors": [
+   {
+    "prior": "normal(0, 3)",
+    "class": "Intercept",
+    "dpar": "muc2"
+   },
+   {
+    "prior": "normal(0, 3)",
+    "class": "Intercept",
+    "dpar": "muc3"
+   },
+   {
+    "prior": "normal(0, 1.5)",
+    "class": "b",
+    "dpar": "muc2"
+   },
+   {
+    "prior": "normal(0, 1.5)",
+    "class": "b",
+    "dpar": "muc3"
+   }
+  ]
+ },
+ "autobayes": {
+  "constructor": "categorical",
+  "formula": "cat3 ~ x + z",
+  "kwargs": {
+   "categorical": {
+    "z": "p"
+   }
+  },
+  "priors": {
+   "intercept": [
+    "Normal",
+    0,
+    3
+   ],
+   "b": [
+    "Normal",
+    0,
+    1.5
+   ]
+  }
+ }
+}

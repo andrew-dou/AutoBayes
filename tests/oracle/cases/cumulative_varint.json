@@ -5,10 +5,6 @@
  "note": "brms: ordered thresholds Intercept[nthres] (ordered transform), nthres = 3; epred is draws x N x 4",
  "seed": 167,
  "n_points": 8,
- "gate": {
-  "expect": "fail",
-  "reason": "B05_ordinal_categorical not implemented; remove this field when it lands"
- },
  "data": {
   "generator": "tier_b",
   "seed": 67,

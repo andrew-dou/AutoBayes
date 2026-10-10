@@ -3,7 +3,7 @@
 Everything the library once decided by comparing a family name against a string is a field of
 the spec. A family is one module in this package that builds its spec (``gaussian.py``,
 ``student.py``, ``poisson.py``, ``negbinomial.py``, ``gamma.py``, ``lognormal.py``, ``beta.py``, ``bernoulli.py``,
-``binomial.py``, ``zero_inflated_poisson.py``, ``hurdle_poisson.py``);
+``binomial.py``, ``zero_inflated_poisson.py``, ``hurdle_poisson.py``, ``cumulative.py``, ``categorical.py``);
 ``autobayes.families.FAMILIES`` is the registry and ``get_family(name)`` the lookup. Callable fields
 take the built ``Model`` (or the frame being validated) because that is what the call sites have in
 hand; none of them is called before ``Model.__init__`` has resolved the spec.
@@ -85,6 +85,21 @@ class FamilySpec:
     # brms's response addition terms (B02, docs/addition-terms.md):
     addition_terms: frozenset[str] = frozenset()   # the addition terms besides trials() the family's likelihood takes: "weights" where a frozen brms case verifies it; "cens" and "trunc" where the family has tails (Gaussian; both parked, formula.PARKED_ADDITIONS)
     tails: Callable[[], object] | None = None      # () -> likelihoods.Tails: the log-CDF, log-CCDF and log mass between bounds (PyTensor, finite with a finite gradient) and the truncated mean and draws (NumPy) that cens() and trunc() need; None without them
+    # Ordinal and categorical responses (B05, docs/ordinal-categorical.md). ``response_categories`` turns the response
+    # column into brms's ``Y``: (ModelSpec, column) -> (the categories in order as labels, each row's 1-based category,
+    # warnings); the model keeps the categories as ``model.categories`` and fits the codes. ``thresholds``: the intercept
+    # is brms's vector of ordered thresholds ``Intercept`` (cumulative), which is not part of the linear predictor.
+    # ``per_category``: one linear predictor per non-reference category (categorical), every coefficient with a trailing
+    # category axis. ``bambi_setup``: (model, Bambi prior dict) -> (Bambi family, prior dict, whether Bambi centres the
+    # design), for a family whose likelihood is built from the model (its categories, terms and column means).
+    # ``check_formula`` refuses a formula the family does not take; ``intercept_lines`` is ``describe()``'s paragraph on
+    # the intercept in place of the generic one. None / False for every other family.
+    response_categories: Callable[[object, object], tuple] | None = None
+    thresholds: bool = False
+    per_category: bool = False
+    bambi_setup: Callable[[object, dict], tuple] | None = None
+    check_formula: Callable[[object], None] | None = None
+    intercept_lines: Callable[[object], list[str]] | None = None
 
     def with_link(self, link: str | None) -> "FamilySpec":
         """This family's spec under ``link``: this spec for ``None`` or its own link, the one a ``links`` entry builds

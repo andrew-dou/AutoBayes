@@ -12,6 +12,8 @@ from types import MappingProxyType
 from autobayes.families.bernoulli import BERNOULLI
 from autobayes.families.beta import BETA
 from autobayes.families.binomial import BINOMIAL
+from autobayes.families.categorical import CATEGORICAL
+from autobayes.families.cumulative import CUMULATIVE
 from autobayes.families.gamma import GAMMA
 from autobayes.families.gaussian import GAUSSIAN
 from autobayes.families.hurdle_poisson import HURDLE_POISSON
@@ -23,7 +25,7 @@ from autobayes.families.student import STUDENT
 from autobayes.families.zero_inflated_poisson import ZERO_INFLATED_POISSON
 
 FAMILIES = MappingProxyType({spec.name: spec for spec in (GAUSSIAN, STUDENT, POISSON, NEGBINOMIAL, GAMMA, LOGNORMAL, BETA, BERNOULLI, BINOMIAL,
-                                                          ZERO_INFLATED_POISSON, HURDLE_POISSON)})
+                                                          ZERO_INFLATED_POISSON, HURDLE_POISSON, CUMULATIVE, CATEGORICAL)})
 
 
 def get_family(name: str, link: str | None = None) -> FamilySpec:

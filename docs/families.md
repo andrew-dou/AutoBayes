@@ -76,6 +76,25 @@ would keep both; every other family has `zero_parameter=None`. Their mean needs 
 | Prediction | `inverse_link` exp with overflow check (the Poisson part's mean); `expected_response` `(1 - zi) mu`; a structural zero below `zi`, else Poisson; by hand | `expected_response` `(1 - hu) mu / (1 - exp(-mu))`; zero below `hu`, else a zero-truncated Poisson; by hand |
 | Default priors | log (zeros read as 0.1); zi `Beta(1, 1)` | log (zeros read as 0.1); hu `Beta(1, 1)` |
 
+The ordinal and categorical families (B05, docs/ordinal-categorical.md) have a response of K categories, which
+`FamilySpec.response_categories` turns into brms's `Y`, each row's 1-based category, keeping the labels as
+`model.categories`; their `bambi_setup` builds what Bambi is handed from the model (the family, the prior dict, whether
+Bambi centres the design) because their likelihoods need the model's categories, terms and column means, and their
+`check_formula` refuses what they do not take. `thresholds` marks the cumulative family, whose intercept is brms's
+vector of ordered thresholds `Intercept` (not part of the linear predictor `mu`), and `per_category` the categorical
+family, whose every coefficient has a trailing axis over the non-reference categories; `intercept_lines` replaces
+`describe()`'s paragraph on the intercept. `predict(kind="mean")` returns the probability of every category with a new
+`category` dimension. Every other family has none of these.
+
+| Group | cumulative | categorical |
+| --- | --- | --- |
+| Names | `mu` / logit (logit scale) / `p` | `mu` (one column per non-reference category) / logit (logit scale) / `p` |
+| Response | ordinal, int64: positive integers `1..K` or an ordered pandas Categorical (`formula.ordinal_categories`) | categorical, int64: labels sorted as brms's `as.factor` (`formula.categorical_categories`), the first the reference |
+| Parameters | no auxiliary parameter; the thresholds `Intercept` (centred design, Stan's ordered coordinates) and the deterministic `b_Intercept` | no auxiliary parameter; per-category intercepts and coefficients |
+| Graph | `likelihoods.cumulative_logit_family` (built per model: `b_Intercept = Intercept + sum_p mean(x_p) b_p`), `likelihoods.ordered_thresholds`, `likelihoods.no_intercept`; Bambi's design uncentred | `likelihoods.categorical_logit_family` (Bambi's categorical family, the parent `mu` under the identity link) |
+| Prediction | `expected_response`: the category probabilities from `b_Intercept` (`likelihoods.cumulative_probabilities`); 1-based category draws; by hand | `inverse_link`: the softmax of `(0, mu)`; 1-based category draws; by hand |
+| Default priors | none (logit): `student_t(3, 0, 2.5)` on the thresholds, also uncentred | none (logit): `student_t(3, 0, 2.5)` on each category's intercept |
+
 ## Adding a family
 
 1. Write `autobayes/families/<name>.py` building one `FamilySpec`; keep the response validation primitives in

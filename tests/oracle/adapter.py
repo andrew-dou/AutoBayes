@@ -15,6 +15,12 @@ group (`cor = TRUE`, a declared `cholesky_factor_corr` `L_m`; `(1 + x | g)`, A02
 term and vice versa; its `L_m` is AutoBayes's `L` (in the same coefficient order, or the oracle stops), and its
 unconstrained coordinate(s) are Stan's `cholesky_corr` coordinates, which `coordinate_map` recomputes from `L_m`
 and checks against the fixture's `u` before mapping them to `L|g_cholesky_corr__`.
+
+The ordinal and categorical families (B05): brms's cumulative model has no intercept column in `X` and its `Intercept`
+is the `ordered[nthres]` thresholds, matched to AutoBayes's thresholds on Stan's `ordered` coordinates (recomputed from
+`Intercept` at every point and checked against the fixture's `u`, as for `cholesky_corr`); brms's categorical model has
+one design `X_mu<k>` and parameters `b_mu<k>`, `Intercept_mu<k>` per non-reference category, matched to the trailing
+category axis of AutoBayes's coefficients by brms's name of each category's linear predictor (`brms_dpar_names`).
 """
 from __future__ import annotations
 
@@ -36,9 +42,10 @@ class OracleMismatch(AssertionError):
     """The AutoBayes model and the brms fixture disagree, or cannot be put in correspondence."""
 
 
-def coefficients(pars: dict) -> np.ndarray:
-    """brms's ``b``; rstan omits a zero-length parameter from constrain_pars(), so an intercept-only model has none."""
-    return np.atleast_1d(pars["b"]) if "b" in pars else np.zeros(0)
+def coefficients(pars: dict, name: str = "b") -> np.ndarray:
+    """brms's ``b`` (``b_mu<k>`` of a categorical model's category, B05); rstan omits a zero-length parameter from
+    constrain_pars(), so an intercept-only model has none."""
+    return np.atleast_1d(pars[name]) if name in pars else np.zeros(0)
 
 
 # -- the AutoBayes side of a case ---------------------------------------------------------------------------
@@ -78,13 +85,20 @@ def build_model(case: dict, data: pd.DataFrame) -> ab.Model:
 @dataclass(frozen=True)
 class ColumnMap:
     """brms X column of each AutoBayes design column (in ``model.spec.columns`` order), brms's intercept
-    column if any, and whether brms carries the separate centred ``Intercept`` parameter."""
+    column if any, and whether brms carries the separate centred ``Intercept`` parameter. ``thresholds``: brms's
+    ``Intercept`` is the cumulative model's ``ordered`` thresholds and ``X`` has no intercept column (B05); ``dpars``: the
+    categorical model's brms name of each non-reference category's linear predictor (``muc2``, ...), in AutoBayes's
+    category order, each with its own ``X_<dpar>``, ``b_<dpar>`` and ``Intercept_<dpar>`` mapped alike (B05)."""
     x_column: tuple[int, ...]
     intercept_column: int | None
     centred_intercept: bool
+    thresholds: bool = False
+    dpars: tuple[str, ...] = ()
 
     def b_index(self, x_col: int) -> int:
         """Index into brms's ``b`` of design column ``x_col``."""
+        if self.thresholds:                                   # no intercept column in X: b has one entry per column
+            return x_col
         if self.centred_intercept:
             if x_col == self.intercept_column:
                 raise OracleMismatch("the intercept column has no entry in b when brms centres")
@@ -92,14 +106,20 @@ class ColumnMap:
         return x_col
 
     def x_of_b(self, b_idx: int) -> int:
+        if self.thresholds:
+            return b_idx
         if self.centred_intercept:
             return b_idx + (1 if b_idx >= self.intercept_column else 0)
         return b_idx
 
 
-def match_columns(fixture: Fixture, model: ab.Model) -> ColumnMap:
-    X = fixture.standata["X"]
-    names = fixture.colnames("X") or [str(k) for k in range(X.shape[1])]
+def _match_design(fixture: Fixture, model: ab.Model, X_name: str = "X", b_name: str = "b", intercept_name: str = "Intercept",
+                  Kc_name: str = "Kc", thresholds: bool = False) -> ColumnMap:
+    """Match AutoBayes's design columns to brms's design ``X_name`` by content (the population-level design ``X``, or a
+    categorical model's ``X_mu<k>``), with ``b_name`` and ``intercept_name`` brms's coefficients and centred intercept of
+    that design. ``thresholds``: the cumulative model's ``X``, which has no intercept column (B05)."""
+    X = fixture.standata[X_name]
+    names = fixture.colnames(X_name) or [str(k) for k in range(X.shape[1])]
     XA = model.design.X_raw
     if X.shape[0] != XA.shape[0]:
         raise OracleMismatch(f"brms has {X.shape[0]} rows, AutoBayes {XA.shape[0]}")
@@ -112,7 +132,11 @@ def match_columns(fixture: Fixture, model: ab.Model) -> ColumnMap:
         taken.add(hits[0])
     rest = [k for k in range(X.shape[1]) if k not in taken]
     intercept_col = None
-    if model.spec.intercept:
+    if thresholds:                                            # B05: brms's ordinal X has no intercept column, its Intercept
+        declared = fixture.declarations.get(intercept_name, "")  # is the vector of ordered thresholds
+        if "nthres" not in fixture.standata or not declared.startswith("ordered["):
+            raise OracleMismatch(f"AutoBayes's cumulative model has thresholds but brms declares {intercept_name!r} as {declared!r}")
+    elif model.spec.intercept:
         ones = [k for k in rest if np.max(np.abs(X[:, k] - 1.0)) <= DESIGN_ABS]
         if len(ones) != 1:
             raise OracleMismatch(f"expected one brms intercept column, found {[names[k] for k in ones]}")
@@ -121,15 +145,33 @@ def match_columns(fixture: Fixture, model: ab.Model) -> ColumnMap:
     if rest:
         raise OracleMismatch(f"brms design columns without an AutoBayes counterpart: {[names[k] for k in rest]}")
     pars = fixture.points[0].pars
-    centred = "Intercept" in pars
-    if centred and intercept_col is None:
+    centred = intercept_name in pars
+    if centred and intercept_col is None and not thresholds:
         raise OracleMismatch("brms has a centred Intercept parameter but AutoBayes has no population intercept")
-    expected_b = X.shape[1] - (1 if centred else 0)
-    if coefficients(pars).size != expected_b:
-        raise OracleMismatch(f"brms b has {coefficients(pars).size} entries; expected {expected_b} from {X.shape[1]} design columns")
-    if "Kc" in fixture.standata and int(fixture.standata["Kc"]) != expected_b:
-        raise OracleMismatch(f"brms Kc = {int(fixture.standata['Kc'])} but b has {expected_b} entries")
-    return ColumnMap(tuple(cols), intercept_col, centred)
+    expected_b = X.shape[1] - (1 if centred and not thresholds else 0)
+    if coefficients(pars, b_name).size != expected_b:
+        raise OracleMismatch(f"brms {b_name} has {coefficients(pars, b_name).size} entries; expected {expected_b} from {X.shape[1]} design columns")
+    if Kc_name in fixture.standata and int(fixture.standata[Kc_name]) != expected_b:
+        raise OracleMismatch(f"brms {Kc_name} = {int(fixture.standata[Kc_name])} but {b_name} has {expected_b} entries")
+    return ColumnMap(tuple(cols), intercept_col, centred, thresholds=thresholds)
+
+
+def match_columns(fixture: Fixture, model: ab.Model) -> ColumnMap:
+    fam = model.family_spec
+    if not fam.per_category:
+        return _match_design(fixture, model, thresholds=fam.thresholds)
+    # B05, the categorical family: one brms design per non-reference category, each matched like X; all must map alike
+    from autobayes.default_priors import brms_dpar_names
+
+    dpars = tuple(brms_dpar_names(model.categories[1:]))
+    designs = sorted(k[2:] for k in fixture.standata if k.startswith("X_"))
+    if sorted(dpars) != designs:
+        raise OracleMismatch(f"brms has the category designs {designs}; AutoBayes's non-reference categories "
+                             f"{list(model.categories[1:])} are brms's {sorted(dpars)}")
+    maps = [_match_design(fixture, model, f"X_{dp}", f"b_{dp}", f"Intercept_{dp}", f"Kc_{dp}") for dp in dpars]
+    if any(m != maps[0] for m in maps):
+        raise OracleMismatch(f"brms's category designs {list(dpars)} do not map alike onto the AutoBayes design")
+    return ColumnMap(maps[0].x_column, maps[0].intercept_column, maps[0].centred_intercept, dpars=dpars)
 
 
 # -- group-level terms --------------------------------------------------------------------------------------
@@ -229,7 +271,9 @@ def brms_cholesky(model: ab.Model, gmap: GroupMap, factor: str, pars: dict) -> n
 
 # -- points -------------------------------------------------------------------------------------------------
 def natural_point(model: ab.Model, point: Point, cmap: ColumnMap, gmap: GroupMap) -> dict:
-    """AutoBayes's natural-scale arguments (intercept, b, sd, z, L, sigma, shape, phi, nu) at a brms point. An intercept-only
+    """AutoBayes's natural-scale arguments (intercept, b, sd, z, L, sigma, shape, phi, nu) at a brms point (the cumulative
+    model's intercept is brms's vector of thresholds; a categorical model's intercept has one entry per non-reference
+    category and its b one column per such category, B05). An intercept-only
     factor's ``sd`` and ``z`` are the scalar and the vector; a factor with varying slopes takes the
     coefficient-keyed mappings ``{"Intercept": ..., "x": ...}`` (``Model.value_point``); a correlated factor's ``L`` is
     brms's ``L_m`` (A02). ``sigma``, ``shape`` and
@@ -237,11 +281,20 @@ def natural_point(model: ab.Model, point: Point, cmap: ColumnMap, gmap: GroupMap
     shape; the Beta precision); ``nu`` is brms's ``nu`` when the model learns it (a fixed nu is no value variable here,
     though brms reports it among its parameters); ``zi`` and ``hu`` are brms's zero-inflation and hurdle probabilities (B06)."""
     pars = point.pars
-    bb = coefficients(pars)
-    b = np.array([bb[cmap.b_index(k)] for k in cmap.x_column], dtype=float)
     intercept = None
-    if model.spec.intercept:
-        intercept = float(pars["Intercept"]) if cmap.centred_intercept else float(bb[cmap.b_index(cmap.intercept_column)])
+    if cmap.dpars:                                             # B05, categorical: one column of b and one intercept per category
+        bs = [coefficients(pars, f"b_{dp}") for dp in cmap.dpars]
+        b = np.array([[bb[cmap.b_index(k)] for bb in bs] for k in cmap.x_column], dtype=float).reshape(len(cmap.x_column), len(bs))
+        if model.spec.intercept:
+            intercept = np.array([float(pars[f"Intercept_{dp}"]) if cmap.centred_intercept else float(bb[cmap.b_index(cmap.intercept_column)])
+                                  for dp, bb in zip(cmap.dpars, bs)])
+    else:
+        bb = coefficients(pars)
+        b = np.array([bb[cmap.b_index(k)] for k in cmap.x_column], dtype=float)
+        if model.spec.intercept and cmap.thresholds:           # B05: brms's ordered thresholds, a vector
+            intercept = np.atleast_1d(pars["Intercept"]).astype(float)
+        elif model.spec.intercept:
+            intercept = float(pars["Intercept"]) if cmap.centred_intercept else float(bb[cmap.b_index(cmap.intercept_column)])
     sd, z = {}, {}
     for t in model.spec.group_terms:
         g = t.factor
@@ -300,10 +353,35 @@ def coordinate_map(fixture: Fixture, model: ab.Model, cmap: ColumnMap, gmap: Gro
     roles = model.group_coefficient_names
     pars = fixture.points[0].pars
     seen_L: dict[str, int] = {}                                            # L_m coordinates met so far, in index order
+    seen_thresholds = 0                                                    # Intercept coordinates met so far (B05)
+    others = len(cmap.dpars)
     out = []
     for e in fixture.upars:
         par, elem, transform, idx = e["par"], int(e["elem"]) - 1, e["transform"], int(e["index"]) - 1
-        if par == "b":
+        if cmap.dpars and par.startswith("b_") and par[2:] in cmap.dpars:          # B05: a coefficient of category k
+            k = cmap.dpars.index(par[2:])
+            col = cmap.x_of_b(elem)
+            if cmap.intercept_column is not None and col == cmap.intercept_column:
+                target, expect = (names["intercept"], k), "identity"
+            else:
+                _, term, j = model.coefficients[cmap.x_column.index(col)]
+                target, expect = (term, (0 if j is None else j) * others + k), "identity"   # (levels, categories), C order
+        elif cmap.dpars and par.startswith("Intercept_") and par[len("Intercept_"):] in cmap.dpars:   # B05: its intercept
+            target, expect = (names["intercept"], cmap.dpars.index(par[len("Intercept_"):])), "identity"
+        elif par == "Intercept" and cmap.thresholds:          # B05: the cumulative thresholds, brms's ordered[nthres]
+            k = seen_thresholds
+            seen_thresholds += 1
+            # brms samples them on Stan's ordered coordinates (the probe saw each move a later one: 'joint'): recompute
+            # coordinate k from Intercept at every point and require it to be the fixture's u, so that the AutoBayes
+            # transform is Stan's coordinate by coordinate before the gradient is compared.
+            for q, pt_ in enumerate(fixture.points):
+                tau = np.atleast_1d(pt_.pars["Intercept"]).astype(float)
+                u = np.r_[tau[0], np.log(np.diff(tau))]
+                if k >= u.size or abs(u[k] - pt_.u[idx]) > 1e-10:
+                    raise OracleMismatch(f"point {q}: Stan's ordered coordinate {k} of Intercept is "
+                                         f"{u[k] if k < u.size else 'absent'!r}; brms's unconstrained value is {pt_.u[idx]!r}")
+            target, expect = (f"{names['intercept']}_ordered__", k), "joint"
+        elif par == "b":
             k = cmap.x_of_b(elem)
             if cmap.intercept_column is not None and k == cmap.intercept_column:
                 target, expect = (names["intercept"], 0), "identity"
@@ -381,11 +459,19 @@ def draws(fixture: Fixture, model: ab.Model, cmap: ColumnMap, gmap: GroupMap) ->
     (brms ``b_Intercept``), coefficients by term, group SDs and effects by level for every group-level
     coefficient (``1|g`` from ``r_m_1``, ``x|g`` from the slope's ``r_m_c``), the Cholesky factor and correlation
     matrix of a correlated factor (``L|g`` from ``L_m``, ``cor|g`` from ``L_m L_m^T``), sigma, shape or phi, a learned nu,
-    and zi or hu (B06)."""
+    and zi or hu (B06); the cumulative thresholds as brms's ``Intercept`` and ``b_Intercept``, which a fit's posterior
+    keeps under those names, and a categorical model's intercepts and coefficients per category (B05)."""
     pts = fixture.points
     names = model.names
     data, coords = {}, {"chain": [0], "draw": np.arange(len(pts))}
-    if model.spec.intercept:
+    if cmap.dpars:                                             # B05: the categorical family, one column per category
+        return _category_draws(fixture, model, cmap, data, coords)
+    if model.spec.intercept and cmap.thresholds:               # B05: the thresholds, centred (Intercept) and raw (b_Intercept)
+        dims = ("chain", "draw", names["threshold_dim"])
+        data[names["intercept"]] = (dims, np.stack([np.atleast_1d(p.pars["Intercept"]) for p in pts])[None])
+        data[names["thresholds"]] = (dims, np.stack([np.atleast_1d(p.pars["b_Intercept"]) for p in pts])[None])
+        coords[names["threshold_dim"]] = [str(k) for k in range(1, len(model.categories))]
+    elif model.spec.intercept:
         a = [float(p.pars["b_Intercept"]) if cmap.centred_intercept else float(coefficients(p.pars)[cmap.b_index(cmap.intercept_column)]) for p in pts]
         data[names["intercept"]] = (("chain", "draw"), np.array(a)[None, :])
     for term in model.spec.terms:
@@ -426,4 +512,27 @@ def draws(fixture: Fixture, model: ab.Model, cmap: ColumnMap, gmap: GroupMap) ->
     for par in ("zi", "hu"):                                    # the zero-inflation / hurdle probability (B06)
         if par in names and par in pts[0].pars:
             data[names[par]] = (("chain", "draw"), np.array([float(p.pars[par]) for p in pts])[None, :])
+    return az.InferenceData(posterior=xr.Dataset(data, coords=coords))
+
+
+def _category_draws(fixture: Fixture, model: ab.Model, cmap: ColumnMap, data: dict, coords: dict) -> az.InferenceData:
+    """``draws`` for the categorical family (B05): the raw-scale intercept of every non-reference category (brms
+    ``b_mu<k>_Intercept``, as Bambi's posterior holds it after uncentring) and every coefficient with the categories as its
+    last axis, brms's ``b_mu<k>`` in column k; the family takes population-level terms only."""
+    pts, names, category = fixture.points, model.names, model.names["category_dim"]
+    coords[category] = list(model.categories[1:])
+    if model.spec.intercept:
+        a = np.array([[float(p.pars[f"b_{dp}_Intercept"]) if cmap.centred_intercept
+                       else float(coefficients(p.pars, f"b_{dp}")[cmap.b_index(cmap.intercept_column)]) for dp in cmap.dpars]
+                      for p in pts])
+        data[names["intercept"]] = (("chain", "draw", category), a[None])
+    for term in model.spec.terms:
+        positions = [(c, j) for c, (_, t, j) in enumerate(model.coefficients) if t == term]
+        vals = np.array([[[coefficients(p.pars, f"b_{dp}")[cmap.b_index(cmap.x_column[c])] for dp in cmap.dpars] for c, _ in positions]
+                         for p in pts])                                        # (draw, columns of the term, categories)
+        if model.spec.is_vector_term(term):
+            data[term] = (("chain", "draw", f"{term}_dim", category), vals[None])
+            coords[f"{term}_dim"] = list(model.spec.levels_of(term))
+        else:
+            data[term] = (("chain", "draw", category), vals[None, :, 0, :])
     return az.InferenceData(posterior=xr.Dataset(data, coords=coords))

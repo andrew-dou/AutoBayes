@@ -1506,6 +1506,8 @@ def parse_formula(formula: str, data: pd.DataFrame | None = None, family: str = 
         rhs=canonical_rhs, categoricals=categoricals, pop_terms=pop_terms, group_terms=tuple(group_terms),
         offset=offset, additions=additions,
     )
+    if fam.check_formula is not None:                        # a family that does not take every formula (B05)
+        fam.check_formula(spec)
     if data is not None:
         spec = validate_data(spec, data, family)
     return spec
@@ -1585,6 +1587,73 @@ def validate_binary_response(name: str, s: pd.Series) -> None:
         raise FormulaError(
             f"response {name!r} is constant ({sorted(vals)}); a Bernoulli model needs both outcomes."
         )
+
+
+def ordinal_categories(name: str, s: pd.Series) -> tuple[tuple[str, ...], np.ndarray, list[str]]:
+    """brms's ordinal response (the cumulative family, B05): an ordered pandas Categorical, whose categories in their
+    declared order are the response's (every declared category, observed or not: brms's ordered factor), or positive
+    whole numbers, whose categories are ``1..max(y)`` (brms's rule for a numeric response, so a value in between that no
+    row takes is still a category); anything else is refused as brms refuses it. Returns the categories as labels, each
+    row's 1-based category (brms's ``Y``) and a warning naming the categories no fitted row takes."""
+    label = f"response {name!r}"
+    reject_complex(label, s)
+    need = ("the cumulative family needs an ordinal response: positive integers 1..K or an ordered pandas Categorical "
+            "(pd.Categorical(values, categories=[lowest, ..., highest], ordered=True), brms's ordered factor)")
+    if isinstance(s.dtype, pd.CategoricalDtype):
+        if not s.cat.ordered:
+            raise FormulaError(f"{label} is an unordered pandas Categorical, whose category order means nothing; {need}")
+        categories = tuple(_scalar(label, c, where="declared category") for c in s.cat.categories)
+        if len(set(categories)) != len(categories):
+            raise FormulaError(f"{label} has declared categories that collide after normalisation: {list(categories)}")
+        if len({_kind(c) for c in s.cat.categories}) > 1:
+            raise FormulaError(f"{label} mixes text labels and numeric codes in its declared categories; recode it explicitly")
+        if s.isna().any():
+            raise FormulaError(f"{label} has missing values; drop or impute them explicitly before fitting.")
+        codes = s.cat.codes.to_numpy().astype(np.int64) + 1
+    else:
+        if pd.api.types.is_bool_dtype(s):
+            raise FormulaError(f"{label} is boolean; {need}")
+        if not pd.api.types.is_numeric_dtype(s):
+            raise FormulaError(f"{label} has dtype {s.dtype}; {need}. Text labels have no order: declare it with an ordered "
+                               "Categorical")
+        v = s.to_numpy(dtype=float)
+        if np.isnan(v).any():
+            raise FormulaError(f"{label} has missing values; drop or impute them explicitly before fitting.")
+        bad = v[~np.isfinite(v) | (v != np.floor(v)) | (v < 1)]
+        if bad.size:
+            raise FormulaError(f"{label} has the value {bad[0]:g}; {need} (brms: 'requires either positive integers or "
+                               "ordered factors as responses')")
+        if v.max() > COUNT_CAP:
+            raise FormulaError(f"{label} has the value {v.max():.0f}, which would make {v.max():.0f} categories; an ordinal "
+                               f"response above {COUNT_CAP} is refused")
+        categories = tuple(str(k) for k in range(1, int(v.max()) + 1))
+        codes = v.astype(np.int64)
+    if len(categories) < 2:
+        raise FormulaError(f"{label} has one category ({categories[0]!r}); at least two response categories are required")
+    unobserved = [c for k, c in enumerate(categories, start=1) if not (codes == k).any()]
+    notes = [f"categories {unobserved} of the ordinal response {name!r} have no fitted rows: the thresholds next to them "
+             "are informed by the ordering and the prior alone (brms keeps them too)"] if unobserved else []
+    return categories, codes, notes
+
+
+def categorical_categories(name: str, s: pd.Series) -> tuple[tuple[str, ...], np.ndarray, list[str]]:
+    """brms's categorical response (the categorical family, B05): labels (text, or integer codes) checked as the library
+    checks every categorical value (``categorical_labels``). The categories are the distinct labels in the order brms's
+    ``as.factor`` gives them (text in C-locale order, which is Python's ``sorted``; integer codes numerically), the first
+    the reference; a pandas Categorical's declared order is not used and its unused categories are not categories
+    (brms drops them too). Returns the categories, each row's 1-based category (brms's ``Y``) and a warning naming the
+    declared categories no fitted row takes."""
+    label = f"response {name!r}"
+    labels, unused = categorical_labels(label, s)
+    numeric = all(_kind(v) == "number" for v in s.astype(object).tolist())
+    categories = tuple(sorted(set(labels.tolist()), key=(lambda l: int(l)) if numeric else None))
+    if len(categories) < 2:
+        raise FormulaError(f"{label} has one category ({categories[0]!r}); at least two response categories are required")
+    position = {c: k for k, c in enumerate(categories, start=1)}
+    codes = np.array([position[l] for l in labels], dtype=np.int64)
+    notes = [f"declared categories {list(unused)} of the categorical response {name!r} do not occur in the fitted rows: "
+             "they are not categories of the model (brms drops them too)"] if unused else []
+    return categories, codes, notes
 
 
 def check_counts(label: str, s: pd.Series, *, cap: int = COUNT_CAP, domain: str = "binomial") -> np.ndarray:
