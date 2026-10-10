@@ -797,18 +797,44 @@
    "depends_on": [
     "A12_links"
    ],
-   "status": "implementing",
+   "status": "gates_green",
    "summary": "cumulative, sratio, cratio, acat and categorical families",
    "pr": null,
    "attempts": 1,
-   "gates": {},
-   "divergences": [],
-   "next_action": "rebased onto main (B02) at 03b7d47; full gate running",
+   "gates": {
+    "sha": "03b7d4735df0",
+    "dirty_tree": false,
+    "base": "origin/main",
+    "when": "2026-10-10T21:45Z",
+    "results": {
+     "immutability": {
+      "status": "pass",
+      "seconds": 0.0
+     },
+     "oracle": {
+      "status": "pass",
+      "seconds": 117.1
+     },
+     "suite": {
+      "status": "pass",
+      "seconds": 1148.2
+     }
+    },
+    "note": "full gate on the code rebased onto main with B02 (oracle 117 s, non-sampling suite 1148 s); rebased once more onto a ledger-only commit"
+   },
+   "divergences": [
+    "D36",
+    "D37",
+    "D38",
+    "D39"
+   ],
+   "next_action": "merge; cumulative probit and sratio/cratio/acat parked (D38)",
    "fixtures": {
-    "pr": 33,
     "cases": [
      "cumulative_varint",
-     "categorical_poponly"
+     "categorical_poponly",
+     "cumulative_poponly_categorical",
+     "categorical_poponly_categorical"
     ]
    }
   },
