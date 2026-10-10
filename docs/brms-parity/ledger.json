@@ -755,13 +755,13 @@
    "depends_on": [
     "A04_general_interactions"
    ],
-   "status": "fixtures_frozen",
+   "status": "implementing",
    "summary": "mo() monotonic effects with the simplex prior",
    "pr": null,
-   "attempts": 0,
+   "attempts": 1,
    "gates": {},
    "divergences": [],
-   "next_action": "implement after the Tier A boundary review",
+   "next_action": "agent (opus) in worktree parity-b03 (stacked on B01)",
    "fixtures": {
     "pr": 33,
     "cases": [
@@ -797,9 +797,9 @@
    "depends_on": [
     "A12_links"
    ],
-   "status": "gates_green",
+   "status": "merged",
    "summary": "cumulative, sratio, cratio, acat and categorical families",
-   "pr": null,
+   "pr": 41,
    "attempts": 1,
    "gates": {
     "sha": "03b7d4735df0",
@@ -828,7 +828,7 @@
     "D38",
     "D39"
    ],
-   "next_action": "merge; cumulative probit and sratio/cratio/acat parked (D38)",
+   "next_action": "cumulative probit and sratio/cratio/acat parked (D38)",
    "fixtures": {
     "cases": [
      "cumulative_varint",
