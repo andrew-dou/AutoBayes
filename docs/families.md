@@ -56,6 +56,25 @@ bound and renormalised there (`Prior.to_bambi_truncated`, PyMC's `Truncated`, sa
 and the paths for fixed values (the prior dict, `family_parameters` in the target identity and the fit record) skip it,
 while its prior is recorded only when present (docs/student-learned-nu.md).
 
+The zero-inflated and hurdle families (B06, docs/zero-inflated-hurdle.md) have a second kind of auxiliary parameter,
+`zero_parameter`: the probability of the zero part, brms's `zi` (zero-inflation) or `hu` (hurdle),
+`real<lower=0,upper=1>` with its own prior on (0, 1) (`Priors(zi=...)` / `Priors(hu=...)`, an `ab.Beta`;
+`priors.AUXILIARY` lists both). Exactly the family's own must be given to `Priors` and to `Model.value_point`;
+`model.names[zero_parameter]` is its PyMC variable, which keeps brms's name and is sampled as `zi_logodds__` (Stan's
+logit); `default_zero_prior` is brms's `beta(1, 1)`, written with `lb` 0 and `ub` 1. It sits beside `scale_parameter`,
+so that the zero-inflated or hurdle form of a family with its own auxiliary parameter (the negative binomial's `shape`)
+would keep both; every other family has `zero_parameter=None`. Their mean needs the `zi` / `hu` draws, so they set
+`expected_response`, as the lognormal does for `sigma`.
+
+| Group | zero-inflated Poisson | hurdle Poisson |
+| --- | --- | --- |
+| Names | `log_mu` / log (log scale) / `mean` | `log_mu` / log (log scale) / `mean` |
+| Response | count, int64, counts in [0, 1e6], all-zero warning | count, int64, counts in [0, 1e6], all-zero warning |
+| Parameters | `scale_parameter` none; `zero_parameter` zi | `scale_parameter` none; `zero_parameter` hu |
+| Graph | `likelihoods.zero_inflated_poisson_family` (the linear predictor as the parent `log_mu` under the identity link; `zi` by brms's name, not PyMC's `psi = 1 - zi`) | `likelihoods.hurdle_poisson_family` (the same, with `hu`) |
+| Prediction | `inverse_link` exp with overflow check (the Poisson part's mean); `expected_response` `(1 - zi) mu`; a structural zero below `zi`, else Poisson; by hand | `expected_response` `(1 - hu) mu / (1 - exp(-mu))`; zero below `hu`, else a zero-truncated Poisson; by hand |
+| Default priors | log (zeros read as 0.1); zi `Beta(1, 1)` | log (zeros read as 0.1); hu `Beta(1, 1)` |
+
 ## Adding a family
 
 1. Write `autobayes/families/<name>.py` building one `FamilySpec`; keep the response validation primitives in
@@ -63,7 +82,7 @@ while its prior is recorded only when present (docs/student-learned-nu.md).
    from the spec (import the likelihood lazily inside `bambi_family`, as the Bernoulli and binomial modules do).
 2. Register it in `FAMILIES` in `autobayes/families/__init__.py`; add its constructor to `autobayes/model.py`
    and `autobayes/__init__.py` with the same signature pattern as the existing ones. Record brms's default priors for
-   it (`default_prior_link`, `default_scale_prior`, `default_learned_priors`; docs/default-priors.md), read from
+   it (`default_prior_link`, `default_scale_prior`, `default_learned_priors`, `default_zero_prior`; docs/default-priors.md), read from
    brms's `def_dpar_prior` and the family's own `prior` function; gate G6 checks them against the new fixture. A new fixed parameter
    needs a keyword on `Model.__init__`; a new auxiliary parameter needs a `Priors` field, an entry in
    `priors.AUXILIARY` and a keyword on `Model.value_point`.

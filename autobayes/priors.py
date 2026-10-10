@@ -6,7 +6,8 @@ LKJ prior on the correlation matrix of the coefficients of ``(1 + x | g)``, brms
 family's auxiliary parameter: ``sigma`` for Gaussian/Student-t (residual SD/scale respectively) and for the
 lognormal (the SD of ``log y``), ``shape`` for the negative binomial and Gamma families, ``phi`` for the Beta family
 (the precision), and ``nu`` for a Student-t model that learns its degrees of freedom (``nu=None``; brms class ``nu``,
-truncated to ``nu > 1``). Every class the model has must be given, and a class the model does
+truncated to ``nu > 1``); ``zi`` or ``hu``, the zero-inflation or hurdle probability (B06, a ``Beta`` prior).
+Every class the model has must be given, and a class the model does
 not have is refused (M3c-1: ``sd`` without a group term; ``shape`` for a Gaussian model); there are no silent
 defaults here (Bambi would supply some, and that is exactly what this layer refuses to let happen). brms's own
 defaults are available on request, explicitly: ``ab.default_priors(formula, data, ...)`` returns them as a ``Priors``
@@ -18,7 +19,8 @@ The parameterisation follows PyMC/Bambi: ``Normal(mu, sigma)`` is mean and stand
 deviation, ``StudentT(nu, mu, sigma)`` has a scale ``sigma``, ``Exponential(lam)`` is a
 rate, ``HalfCauchy(beta)`` a scale, ``Gamma(alpha, beta)`` is shape and rate, ``InverseGamma(alpha, beta)`` shape
 and scale. This is also brms's (Stan's) convention. ``Flat()`` is brms's flat prior (its default for ``b``): improper,
-it adds nothing to the log density. ``brms_prior`` writes any of them in brms's syntax.
+it adds nothing to the log density. ``brms_prior`` writes any of them in brms's syntax. ``Beta(alpha, beta)`` (B06) has
+the two shapes of Stan's ``beta(alpha, beta)``, on (0, 1).
 """
 from __future__ import annotations
 
@@ -29,7 +31,10 @@ from dataclasses import dataclass, field
 _LOCATION = {"Normal", "StudentT", "Flat"}       # Flat: brms's improper flat prior, its default for b (A07)
 _SCALE = {"HalfNormal", "HalfStudentT", "Exponential", "HalfCauchy", "Gamma", "InverseGamma"}
 _CORRELATION = {"LKJ"}
-AUXILIARY = {"sigma": "residual SD", "shape": "shape parameter", "phi": "precision parameter"}   # the Priors fields a family's scale_parameter can name
+_UNIT = {"Beta"}                                 # priors on (0, 1): the zero-inflation and hurdle probabilities (B06)
+# The Priors fields a family's scale_parameter can name, and (B06) the probabilities a family's zero_parameter can name
+AUXILIARY = {"sigma": "residual SD", "shape": "shape parameter", "phi": "precision parameter",
+             "zi": "zero-inflation probability", "hu": "hurdle probability"}
 # The priors of a learned parameter with a lower bound (the Student-t nu, A13): the positive-support priors whose
 # truncation at the bound PyMC can renormalise (it needs their CDF; PyMC has none for HalfStudentT).
 TRUNCATABLE = frozenset({"Gamma", "Exponential", "HalfNormal", "HalfCauchy"})
@@ -55,7 +60,12 @@ class Prior:
 
     def to_bambi(self):
         import bambi as bmb
+        import numpy as np
 
+        if self.name in _UNIT:
+            # B06: float64 parameters. PyTensor makes a Python 2.0 a float32 constant, and the Beta's normalising constant
+            # lgamma(a) + lgamma(b) - lgamma(a + b) would then lose 2e-8 at Beta(2, 2).
+            return bmb.Prior(self.name, **{k: np.float64(v) for k, v in self.params.items()})
         return bmb.Prior(self.name, **dict(self.params))
 
     def to_bambi_truncated(self, lower: float):
@@ -124,11 +134,19 @@ def Flat() -> Prior:
     return Prior("Flat", {})
 
 
+def Beta(alpha: float, beta: float) -> Prior:
+    """A prior on (0, 1) with shapes ``alpha`` and ``beta`` (mean ``alpha / (alpha + beta)``), as Stan's ``beta(alpha,
+    beta)`` and PyMC's ``Beta``: the prior of a zero-inflation or hurdle probability (``Priors(zi=...)``, ``Priors(hu=...)``;
+    B06), whose brms default is ``beta(1, 1)``, the uniform. Not accepted for any other class."""
+    return Prior("Beta", {"alpha": _positive("alpha", alpha), "beta": _positive("beta", beta)})
+
+
 _BRMS = {   # prior name -> (brms's distribution, its arguments in Stan's order: a parameter name, or a literal number)
     "Normal": ("normal", ("mu", "sigma")), "StudentT": ("student_t", ("nu", "mu", "sigma")),
     "HalfNormal": ("normal", (0, "sigma")), "HalfStudentT": ("student_t", ("nu", 0, "sigma")),
     "HalfCauchy": ("cauchy", (0, "beta")), "Exponential": ("exponential", ("lam",)),
     "Gamma": ("gamma", ("alpha", "beta")), "InverseGamma": ("inv_gamma", ("alpha", "beta")), "LKJ": ("lkj", ("eta",)),
+    "Beta": ("beta", ("alpha", "beta")),
 }
 
 
@@ -147,9 +165,9 @@ def brms_prior(prior: Prior) -> str:
     return f"{fn}({', '.join(r_number(float(prior.params[a] if isinstance(a, str) else a)) for a in args)})"
 
 
-def describe_prior(prior: Prior, lb: float | None = None) -> str:
+def describe_prior(prior: Prior, lb: float | None = None, ub: float | None = None) -> str:
     """How ``describe()`` prints a prior: ``str(prior)``, followed for a brms default (``ab.default_priors``) by brms's
-    spelling and bound, ``HalfStudentT(nu=3, sigma=2.5)   (brms default student_t(3, 0, 2.5), lb 0)``. A user's prior
+    spelling and bounds, ``HalfStudentT(nu=3, sigma=2.5)   (brms default student_t(3, 0, 2.5), lb 0)``. A user's prior
     prints as it always has."""
     if getattr(prior, "source", "user") != "default":
         return str(prior)
@@ -158,7 +176,7 @@ def describe_prior(prior: Prior, lb: float | None = None) -> str:
         return f"{prior}   (brms default: flat, improper)"
     from autobayes.default_priors import r_number
 
-    return f"{prior}   (brms default {text}{'' if lb is None else ', lb ' + r_number(lb)})"
+    return f"{prior}   (brms default {text}{'' if lb is None else ', lb ' + r_number(lb)}{'' if ub is None else ', ub ' + r_number(ub)})"
 
 
 def LKJ(eta: float) -> Prior:
@@ -190,6 +208,8 @@ class Priors:
     ``phi`` are the auxiliary parameters: exactly the one the family has (``FamilySpec.scale_parameter``) must be given.
     ``nu`` is the prior of a Student-t model's learned degrees of freedom (``ab.student(..., nu=None)``): one of
     ``TRUNCATABLE``, truncated to ``nu > 1`` and renormalised there (brms-parity A13); refused for every other model.
+    ``zi`` and ``hu`` are the zero-inflation and hurdle probabilities (B06): exactly the one the family has
+    (``FamilySpec.zero_parameter``) must be given, a prior on (0, 1) (``Beta``), and is refused for every other family.
     """
 
     intercept: Prior | None = None
@@ -202,6 +222,8 @@ class Priors:
     # ``Priors(intercept, b, sd, sigma)`` existing callers use is unchanged
     cor: Prior | Mapping[str, Prior] | None = None
     nu: Prior | None = None          # Student-t with nu=None: the learned degrees of freedom (brms class ``nu``)
+    zi: Prior | None = None          # zero-inflated families: the zero-inflation probability (brms class ``zi``; B06)
+    hu: Prior | None = None          # hurdle families: the hurdle probability (brms class ``hu``; B06)
 
     # -- coefficient priors -----------------------------------------------------------------
     def coefficient_priors(self, spec) -> dict[str, Prior]:
@@ -447,14 +469,19 @@ class Priors:
         sd_priors = self.sd_priors(spec)
         self.cor_priors(spec)                                         # exact coverage of the correlated terms (A02)
         scale = fam.scale_parameter                                   # "sigma", "shape", "phi" or None
+        zero = fam.zero_parameter                                     # "zi", "hu" or None (B06)
         auxiliary = {name: getattr(self, name) for name in AUXILIARY}
         if scale is not None and auxiliary[scale] is None:
             raise PriorError(fam.scale_missing_error)
+        if zero is not None and auxiliary[zero] is None:
+            raise PriorError(f"the {fam.name} family needs a prior on the {AUXILIARY[zero]} {zero}: pass {zero}=..., "
+                             "a prior on (0, 1) such as ab.Beta(1, 1)")
         for name, prior in auxiliary.items():
-            if prior is not None and name != scale:
+            if prior is not None and name not in (scale, zero):
                 raise PriorError(
                     f"the {fam.name} family has no {AUXILIARY[name]}; do not pass {name}."
                     + (f" Its auxiliary parameter is {scale}: pass {scale}=..." if scale is not None else "")
+                    + (f" Its {AUXILIARY[zero]} is {zero}: pass {zero}=..." if zero is not None else "")
                     + (f" Its intercept and slope priors are on the {fam.link_scale} scale." if fam.link_scale is not None else "")
                 )
         if self.nu is not None:                                       # the learned Student-t degrees of freedom (A13)
@@ -492,6 +519,13 @@ class Priors:
                 raise PriorError(
                     f"prior for {label!r} must be a positive-support prior ({sorted(_SCALE)}), got {prior}"
                 )
+        if zero is not None:                                          # the zero-inflation / hurdle probability (B06)
+            prior = auxiliary[zero]
+            if not isinstance(prior, Prior):
+                raise PriorError(f"prior for {zero!r} must be a Prior, got {type(prior).__name__}")
+            if prior.name not in _UNIT:
+                raise PriorError(f"prior for {zero!r} must be a prior on (0, 1) ({sorted(_UNIT)}; the {AUXILIARY[zero]} "
+                                 f"is brms's real<lower=0,upper=1> {zero}), got {prior}")
 
     def to_bambi(self, spec, family="gaussian") -> dict:
         """Bambi's prior dict: one prior per term (array-valued parameters for the levels of a
@@ -511,6 +545,8 @@ class Priors:
         out = {"Intercept": self.intercept.to_bambi()} if spec.intercept else {}
         if fam.scale_parameter is not None:                 # under Bambi's name: "sigma", or "alpha" for brms's "shape"
             out[fam.bambi_scale_parameter] = getattr(self, fam.scale_parameter).to_bambi()
+        if fam.zero_parameter is not None:                  # the zero-inflation / hurdle probability, under brms's name (B06)
+            out[fam.zero_parameter] = getattr(self, fam.zero_parameter).to_bambi()
         if self.nu is not None:                             # a learned Student-t nu (A13): its prior truncated at the bound
             out["nu"] = self.nu.to_bambi_truncated(fam.learnable_parameters["nu"])
         for term in spec.pop_terms:

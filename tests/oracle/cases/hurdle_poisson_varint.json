@@ -5,10 +5,6 @@
  "note": "brms: hu in (0, 1); zero-truncated Poisson for the positive counts",
  "seed": 170,
  "n_points": 8,
- "gate": {
-  "expect": "fail",
-  "reason": "B06_zero_inflated_hurdle not implemented; remove this field when it lands"
- },
  "data": {
   "generator": "tier_b",
   "seed": 70,

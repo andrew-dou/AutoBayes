@@ -53,10 +53,11 @@ def _prior(v):
 
 def priors_from_spec(spec: dict) -> ab.Priors:
     """``{"intercept": ["Normal", 0, 5], "b": ["Normal", 0, 2] | {term: ...}, "sd": [...] | {factor: ...}, "cor": {factor: ["LKJ", eta]},
-    "sigma": [...], "shape": [...], "phi": [...], "nu": [...]}``."""
+    "sigma": [...], "shape": [...], "phi": [...], "nu": [...], "zi": ["Beta", a, b], "hu": ["Beta", a, b]}``."""
     return ab.Priors(intercept=_prior(spec.get("intercept")), b=_prior(spec.get("b")),
                      sd=_prior(spec.get("sd")), cor=_prior(spec.get("cor")), sigma=_prior(spec.get("sigma")),
-                     shape=_prior(spec.get("shape")), phi=_prior(spec.get("phi")), nu=_prior(spec.get("nu")))
+                     shape=_prior(spec.get("shape")), phi=_prior(spec.get("phi")), nu=_prior(spec.get("nu")),
+                     zi=_prior(spec.get("zi")), hu=_prior(spec.get("hu")))
 
 
 def build_model(case: dict, data: pd.DataFrame) -> ab.Model:
@@ -234,7 +235,7 @@ def natural_point(model: ab.Model, point: Point, cmap: ColumnMap, gmap: GroupMap
     brms's ``L_m`` (A02). ``sigma``, ``shape`` and
     ``phi`` are brms's parameters of those names (the Gaussian/Student-t/lognormal scale; the negative binomial/Gamma
     shape; the Beta precision); ``nu`` is brms's ``nu`` when the model learns it (a fixed nu is no value variable here,
-    though brms reports it among its parameters)."""
+    though brms reports it among its parameters); ``zi`` and ``hu`` are brms's zero-inflation and hurdle probabilities (B06)."""
     pars = point.pars
     bb = coefficients(pars)
     b = np.array([bb[cmap.b_index(k)] for k in cmap.x_column], dtype=float)
@@ -261,7 +262,10 @@ def natural_point(model: ab.Model, point: Point, cmap: ColumnMap, gmap: GroupMap
     shape = float(pars["shape"]) if "shape" in pars else None
     phi = float(pars["phi"]) if "phi" in pars else None
     nu = float(pars["nu"]) if "nu" in model.names else None
-    return dict(intercept=intercept, b=b, sd=sd or None, z=z or None, L=L or None, sigma=sigma, shape=shape, phi=phi, nu=nu)
+    zi = float(pars["zi"]) if "zi" in pars else None
+    hu = float(pars["hu"]) if "hu" in pars else None
+    return dict(intercept=intercept, b=b, sd=sd or None, z=z or None, L=L or None, sigma=sigma, shape=shape, phi=phi, nu=nu,
+                zi=zi, hu=hu)
 
 
 def value_point(model: ab.Model, point: Point, cmap: ColumnMap, gmap: GroupMap) -> dict:
@@ -282,6 +286,9 @@ def value_layout(model: ab.Model, point: dict) -> dict[str, slice]:
 # times its value there; for real<lower=1> nu sampled as log(nu - 1), the probed step du is therefore this number exactly.
 _NU0 = 1.0 + math.exp(0.3)
 LOG_NU_MINUS_ONE_STEP = math.log(1.5 * _NU0 - 1.0) - 0.3
+# For real<lower=0,upper=1> zi or hu (B06) sampled as logit(zi), from zi = inv_logit(0.3) to 1.5 times that.
+_P0 = 1.0 / (1.0 + math.exp(-0.3))
+LOGIT_STEP = math.log(1.5 * _P0 / (1.0 - 1.5 * _P0)) - 0.3
 
 
 def coordinate_map(fixture: Fixture, model: ab.Model, cmap: ColumnMap, gmap: GroupMap) -> list[tuple[int, str, int]]:
@@ -317,6 +324,16 @@ def coordinate_map(fixture: Fixture, model: ab.Model, cmap: ColumnMap, gmap: Gro
             if abs(float(e["du"]) - LOG_NU_MINUS_ONE_STEP) > 1e-9:
                 raise OracleMismatch(f"brms's probe moved the coordinate of nu by {e['du']!r}; log(nu - 1) moves it by {LOG_NU_MINUS_ONE_STEP!r}")
             target, expect = (f"{names['nu']}_interval__", 0), "other"
+        elif par in ("zi", "hu"):                              # the zero-inflation / hurdle probability (B06), brms
+            if par not in names:                               # real<lower=0,upper=1>: Stan's logit, PyMC's log-odds
+                raise OracleMismatch(f"brms samples {par} but the AutoBayes model has no {par}")
+            if abs(float(e["du"]) - LOGIT_STEP) > 1e-9:
+                raise OracleMismatch(f"brms's probe moved the coordinate of {par} by {e['du']!r}; logit({par}) moves it by {LOGIT_STEP!r}")
+            for q, pt_ in enumerate(fixture.points):          # and at every point, brms's coordinate is logit of its value
+                p = float(pt_.pars[par])
+                if abs(math.log(p / (1.0 - p)) - pt_.u[idx]) > 1e-10:
+                    raise OracleMismatch(f"point {q}: logit({par}) is {math.log(p / (1.0 - p))!r}; brms's unconstrained value is {pt_.u[idx]!r}")
+            target, expect = (f"{names[par]}_logodds__", 0), "other"
         elif par.startswith("sd_") and int(par[3:]) in by_id:
             g = by_id[int(par[3:])]
             if (g, elem + 1) not in by_cn:
@@ -363,7 +380,8 @@ def draws(fixture: Fixture, model: ab.Model, cmap: ColumnMap, gmap: GroupMap) ->
     """The fixture's points as one chain of posterior draws under AutoBayes's names: the raw-scale intercept
     (brms ``b_Intercept``), coefficients by term, group SDs and effects by level for every group-level
     coefficient (``1|g`` from ``r_m_1``, ``x|g`` from the slope's ``r_m_c``), the Cholesky factor and correlation
-    matrix of a correlated factor (``L|g`` from ``L_m``, ``cor|g`` from ``L_m L_m^T``), sigma, shape or phi, and a learned nu."""
+    matrix of a correlated factor (``L|g`` from ``L_m``, ``cor|g`` from ``L_m L_m^T``), sigma, shape or phi, a learned nu,
+    and zi or hu (B06)."""
     pts = fixture.points
     names = model.names
     data, coords = {}, {"chain": [0], "draw": np.arange(len(pts))}
@@ -405,4 +423,7 @@ def draws(fixture: Fixture, model: ab.Model, cmap: ColumnMap, gmap: GroupMap) ->
         data[names["phi"]] = (("chain", "draw"), np.array([float(p.pars["phi"]) for p in pts])[None, :])
     if "nu" in names and "nu" in pts[0].pars:
         data[names["nu"]] = (("chain", "draw"), np.array([float(p.pars["nu"]) for p in pts])[None, :])
+    for par in ("zi", "hu"):                                    # the zero-inflation / hurdle probability (B06)
+        if par in names and par in pts[0].pars:
+            data[names[par]] = (("chain", "draw"), np.array([float(p.pars[par]) for p in pts])[None, :])
     return az.InferenceData(posterior=xr.Dataset(data, coords=coords))

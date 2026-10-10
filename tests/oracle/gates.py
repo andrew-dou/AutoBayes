@@ -28,7 +28,7 @@ from tests.oracle.tolerances import DESIGN_ABS, GRAD_REL, LOGP_REL, PRED_REL, ab
 
 def prior_names(model) -> list[str]:
     """The free variables whose densities brms sums into ``lprior``: intercept, coefficients, sigma, shape or phi, a learned nu,
-    the SD of every group-level coefficient (not the standardised offsets, which brms adds in the model block) and the
+    zi or hu (B06), the SD of every group-level coefficient (not the standardised offsets, which brms adds in the model block) and the
     correlation Cholesky factor of every correlated group term (``lkj_corr_cholesky_lpdf(L_m | eta)``)."""
     names = model.names
     out = [names["intercept"]] if model.spec.intercept else []
@@ -41,6 +41,7 @@ def prior_names(model) -> list[str]:
         out.append(names["phi"])
     if "nu" in names:                                      # a learned Student-t nu, its prior truncated to nu > 1 (A13)
         out.append(names["nu"])
+    out += [names[par] for par in ("zi", "hu") if par in names]   # the zero-inflation / hurdle probability (B06)
     out += [roles["sd"] for roles in model.group_coefficient_names.values()]
     out += [roles["L"] for roles in model.correlation_names.values()]
     return out
@@ -159,7 +160,11 @@ def check_derived(b: Bundle) -> None:
     cors = list(b.model.correlation_names.items())                  # the correlation matrix of every correlated term (A02)
     dets = [pmm[names["linpred"]]] + [pmm[roles["group_effect"]] for _, roles in groups] + [pmm[roles["cor"]] for _, roles in cors]
     fn = pmm.compile_fn(pmm.replace_rvs_by_values(dets), inputs=pmm.value_vars, point_fn=True, on_unused_input="ignore")
-    ref = b.fixture.prediction("fitted", "epred" if b.model.link == "log" else "linpred")
+    # Under a log link Bambi's parent deterministic holds the mean exp(eta), which is brms's epred when the parent is the
+    # expected response (Poisson, negative binomial, Gamma: names["linpred"] == names["mean"] == "mu"); the zero-inflated
+    # and hurdle families (B06) keep eta itself as their parent log_mu, whose brms counterpart is posterior_linpred.
+    holds_mean = b.model.link == "log" and names["linpred"] == names["mean"]
+    ref = b.fixture.prediction("fitted", "epred" if holds_mean else "linpred")
     for k, p, vp in b.points():
         out = fn(vp)
         lin = np.asarray(out[0], dtype=float).ravel()
@@ -266,6 +271,7 @@ def check_default_prior(b: Bundle) -> None:
         expected.add("phi")
     if "nu" in b.model.names:
         expected.add("nu")
+    expected |= {par for par in ("zi", "hu") if par in b.model.names}     # B06
     if not expected <= classes:
         raise OracleMismatch(f"brms default_prior classes {sorted(classes)} lack {sorted(expected - classes)}")
     if not b.fixture.prior_summary:

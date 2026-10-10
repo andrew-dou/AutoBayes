@@ -30,7 +30,7 @@ from autobayes.correlation import check_correlation_cholesky, cholesky_corr_free
 from autobayes.families import FAMILIES, FamilySpec, get_family
 from autobayes.formula import (Categorical, FormulaError, ModelSpec, bambi_group_name, binomial_counts, categorical_labels,
                                factor_column, group_labels, interaction_cells, parse_formula, pop_term_design, sd_tag)
-from autobayes.priors import PriorError, Priors, describe_prior
+from autobayes.priors import AUXILIARY, PriorError, Priors, describe_prior
 
 _bambi_group_name = bambi_group_name          # ``1|g`` for the varying intercept of ``g``, ``x|g`` for the slope of ``x``
 
@@ -115,7 +115,8 @@ class Model:
 
     Attributes
     ----------
-    family : str               a registered family name: "gaussian", "student", "poisson", "negbinomial", "gamma", "lognormal", "beta", "bernoulli", "binomial"
+    family : str               a registered family name: "gaussian", "student", "poisson", "negbinomial", "gamma", "lognormal", "beta", "bernoulli", "binomial",
+                               "zero_inflated_poisson", "hurdle_poisson"
     family_spec : FamilySpec   the specification of that family under the model's link (autobayes/families/; the registered spec unless ``link`` names another of the family's links)
     link : str                 the link: the family's own, or the ``link`` given ("probit" for the Bernoulli and binomial families)
     spec : ModelSpec
@@ -266,6 +267,8 @@ class Model:
         variable_names += [self.names["y"], self.names["linpred"]]
         if self.family_spec.scale_parameter is not None:
             variable_names += [self.family_spec.bambi_scale_parameter]   # the PyMC variable: "sigma", or "alpha" for "shape"
+        if self.family_spec.zero_parameter is not None:
+            variable_names += [self.family_spec.zero_parameter]          # the zero-inflation / hurdle probability, "zi" or "hu" (B06)
         variable_names += list(self.family_spec.fixed_parameters)   # Bambi uses "nu" as an auxiliary-prior key even when fixed.
         for roles in self.group_coefficient_names.values():
             variable_names.extend(roles[k] for k in ("sd", "offset", "group_effect"))
@@ -518,7 +521,8 @@ class Model:
         or ``p``; ``mean`` for the lognormal, whose ``mu`` is the log-scale location). ``"sigma"`` exists for the
         Gaussian, Student-t and lognormal families, ``"shape"`` for the negative binomial and Gamma families (its
         value is Bambi's variable name, ``alpha``) and ``"phi"`` for the Beta family (the precision); ``"nu"`` for a Student-t
-        model that learns its degrees of freedom (``learned_parameters``). ``"b:<term>"`` is the
+        model that learns its degrees of freedom (``learned_parameters``); ``"zi"`` or ``"hu"`` for the zero-inflated and
+        hurdle families (B06), whose linear predictor is ``"log_mu"`` and whose ``"mean"`` is the expected count. ``"b:<term>"`` is the
         coefficient variable of each population-level term (scalar for a numeric term, a vector
         over the coefficient levels otherwise); with exactly one group-level term its ``sd``,
         ``offset`` and ``group_effect`` roles are included here as well, and ``sd:x``, ``offset:x``,
@@ -535,6 +539,8 @@ class Model:
         }
         if fam.scale_parameter is not None:
             out[fam.scale_parameter] = fam.bambi_scale_parameter
+        if fam.zero_parameter is not None:                    # "zi" or "hu" (B06): the PyMC variable keeps brms's name
+            out[fam.zero_parameter] = fam.zero_parameter
         for name in self.learned_parameters:                  # a learned nu (A13): the PyMC variable of that name
             out[name] = name
         if fam.continuous and fam.parent == "mu":
@@ -594,7 +600,8 @@ class Model:
         return self.spec.column_terms
 
     def value_point(self, *, intercept: float | None = None, b, sd=None, z=None, L=None, sigma: float | None = None,
-                    shape: float | None = None, phi: float | None = None, nu: float | None = None) -> dict[str, np.ndarray]:
+                    shape: float | None = None, phi: float | None = None, nu: float | None = None,
+                    zi: float | None = None, hu: float | None = None) -> dict[str, np.ndarray]:
         """A point in PyMC's sampled (value) space, from natural-scale quantities.
 
         ``intercept`` is the *model* intercept (at the predictor means when centred),
@@ -611,7 +618,9 @@ class Model:
         SD (Gaussian and Student-t; the SD of ``log y`` for the lognormal), ``shape`` the negative binomial / Gamma
         shape, ``phi`` the Beta precision; exactly the family's own is given. Scales are stored on the log scale because that is what PyMC samples.
         ``nu`` is the degrees of freedom of a Student-t model that learns them (``learned_parameters``), given exactly then
-        and stored as ``log(nu - 1)``, PyMC's interval coordinate.
+        and stored as ``log(nu - 1)``, PyMC's interval coordinate. ``zi`` / ``hu`` is the zero-inflation / hurdle probability
+        of the zero-inflated / hurdle families (B06), given exactly for them, in (0, 1), and stored as ``logit(zi)``, PyMC's
+        log-odds coordinate (Stan's for ``real<lower=0,upper=1>``).
         """
         b = np.atleast_1d(np.asarray(b, dtype=float))
         if b.shape != (len(self.spec.columns),):
@@ -683,6 +692,13 @@ class Model:
         auxiliary = {"sigma": sigma, "shape": shape, "phi": phi}
         if {k for k, v in auxiliary.items() if v is not None} != ({scale} if scale is not None else set()):
             raise ValueError(self.family_spec.scale_rule)
+        zero = self.family_spec.zero_parameter                   # "zi", "hu" or None (B06)
+        probabilities = {"zi": zi, "hu": hu}
+        if {k for k, v in probabilities.items() if v is not None} != ({zero} if zero is not None else set()):
+            if zero is None:
+                raise ValueError(f"the {self.family} family has no zero-inflation or hurdle probability; omit zi and hu")
+            raise ValueError(f"{zero} (the {AUXILIARY[zero]}) is required for the {self.family} family; "
+                             f"{' and '.join(k for k in probabilities if k != zero)} does not apply")
         n = self.names
         if self.spec.intercept and intercept is None:
             raise ValueError("intercept is required for a model with a population intercept")
@@ -702,6 +718,11 @@ class Model:
             point[f"{roles['L']}_cholesky_corr__"] = cholesky_corr_free(L_by_group[g])
         if scale is not None:
             point[f"{n[scale]}_log__"] = log_scale(auxiliary[scale], scale)
+        if zero is not None:                                   # B06: a probability, sampled as its log-odds
+            p = np.asarray(probabilities[zero], dtype=float)
+            if p.shape != () or not np.isfinite(p) or not 0 < p < 1:
+                raise ValueError(f"{zero} must be a finite scalar strictly between 0 and 1")
+            point[f"{n[zero]}_logodds__"] = np.asarray(np.log(p) - np.log1p(-p))
         learned = self.learned_parameters
         if "nu" in learned:                                    # learned (A13): sampled as log(nu - lower), the interval coordinate
             if nu is None:
@@ -996,6 +1017,8 @@ class Model:
             roles[f"{names['L']}_cholesky_corr__"] = f"L_{g} on Stan's cholesky_corr coordinates (canonical partial correlations, arctanh scale)"
         if fam.scale_parameter is not None:
             roles[f"{n[fam.scale_parameter]}_log__"] = f"log({fam.scale_parameter})"
+        if fam.zero_parameter is not None:
+            roles[f"{n[fam.zero_parameter]}_logodds__"] = f"logit({fam.zero_parameter})"
         for name, lower in self.learned_parameters.items():
             roles[f"{n[name]}_interval__"] = f"log({name} - {lower:g})"
         for t in s.pop_terms:
@@ -1015,13 +1038,16 @@ class Model:
     def default_prior_labels(self) -> list[str]:
         """The parameters whose prior came from ``ab.default_priors`` (brms's defaults; A07), labelled as the prior
         messages label them (``intercept``, ``b:x``, ``sd:g``, ``sd:x|g``, ``cor:g``, ``sigma``, ``nu``), in that order; empty
-        when the user gave every prior. ``fit_record`` stores them under ``"default_priors"``."""
+        when the user gave every prior (``zi`` or ``hu`` after the auxiliary parameter, B06). ``fit_record`` stores them
+        under ``"default_priors"``."""
         s, pr, fam = self.spec, self.priors, self.family_spec
         found = ([("intercept", pr.intercept)] if s.intercept else []) + [(f"b:{k}", v) for k, v in pr.coefficient_priors(s).items()]
         found += [(f"sd:{sd_tag(g, c)}", v) for (g, c), v in pr.sd_priors(s).items()]
         found += [(f"cor:{g}", v) for g, v in pr.cor_priors(s).items()]
         if fam.scale_parameter is not None:
             found.append((fam.scale_parameter, getattr(pr, fam.scale_parameter)))
+        if fam.zero_parameter is not None:
+            found.append((fam.zero_parameter, getattr(pr, fam.zero_parameter)))
         if pr.nu is not None:
             found.append(("nu", pr.nu))
         return [label for label, prior in found if getattr(prior, "source", "user") == "default"]
@@ -1149,4 +1175,34 @@ def beta(formula: str, data: pd.DataFrame, priors: Priors, *,
     shape, nu, other link, zero/one inflation or distributional (``phi ~ ...``) formula.
     """
     return Model(formula, data, priors, family="beta",
+                 center_predictors=center_predictors, categorical=categorical)
+
+
+def zero_inflated_poisson(formula: str, data: pd.DataFrame, priors: Priors, *,
+                          center_predictors: bool = True, categorical: Mapping[str, object] | None = None) -> Model:
+    """Zero-inflated Poisson counts (brms ``zero_inflated_poisson``): a structural zero with probability ``zi``, a
+    ``Poisson(mu)`` count otherwise, ``mu = exp(eta)``; ``E[y] = (1 - zi) mu``.
+
+    Counts as for Poisson (integers in [0, 1e6], zero rows retained). The zero-inflation probability takes its own prior on
+    (0, 1), ``Priors(zi=ab.Beta(1, 1))`` (brms class ``zi``; brms's default ``beta(1, 1)`` is not filled in silently,
+    ``ab.default_priors(..., family="zero_inflated_poisson")`` returns it); the intercept and slope priors act on the
+    log of the Poisson part's mean. ``predict(kind="mean")`` returns ``(1 - zi) mu`` as ``mean``; ``kind="linear"``
+    returns ``eta``. No overdispersion or distributional (``zi ~ ...``) formula (docs/zero-inflated-hurdle.md).
+    """
+    return Model(formula, data, priors, family="zero_inflated_poisson",
+                 center_predictors=center_predictors, categorical=categorical)
+
+
+def hurdle_poisson(formula: str, data: pd.DataFrame, priors: Priors, *,
+                   center_predictors: bool = True, categorical: Mapping[str, object] | None = None) -> Model:
+    """Hurdle Poisson counts (brms ``hurdle_poisson``): zero with probability ``hu``, a zero-truncated ``Poisson(mu)``
+    count otherwise, ``mu = exp(eta)``; ``E[y] = (1 - hu) mu / (1 - exp(-mu))``.
+
+    Counts as for Poisson. The hurdle probability takes its own prior on (0, 1), ``Priors(hu=ab.Beta(1, 1))`` (brms class
+    ``hu``, brms's default ``beta(1, 1)`` on request through ``ab.default_priors``); the intercept and slope priors act on
+    the log of the untruncated Poisson part's mean. ``predict(kind="mean")`` returns brms's expected count as ``mean``;
+    ``kind="linear"`` returns ``eta``. No overdispersion or distributional (``hu ~ ...``) formula
+    (docs/zero-inflated-hurdle.md).
+    """
+    return Model(formula, data, priors, family="hurdle_poisson",
                  center_predictors=center_predictors, categorical=categorical)

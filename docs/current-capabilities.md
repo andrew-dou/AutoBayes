@@ -91,3 +91,11 @@ and family as a `Priors` to pass to a constructor, with brms's data-dependent In
 marked as defaults in `describe()` and fit records; nothing is filled in unasked (D1). Gate G6 now compares them with
 the `default_prior()` table of every fixture, and five fixtures frozen without priors check the densities under them;
 an intercept-only model needs no `b` prior (D2); see [default priors](default-priors.md).
+Zero-inflated and hurdle Poisson counts (B06, `ab.zero_inflated_poisson` and `ab.hurdle_poisson`, brms's
+`zero_inflated_poisson()` and `hurdle_poisson()`: the zero-inflation or hurdle probability `zi` / `hu` under
+`Priors(zi=ab.Beta(a, b))`, named and parameterised as brms's, the linear predictor kept in the graph as `log_mu`, the
+densities in a stable form, never NaN and finite wherever the true value is a double, where brms's are NaN or
+infinite at some extreme linear predictors, D28; `predict(kind="mean")` returning brms's `posterior_epred` as `mean`)
+followed, verified against `zero_inflated_poisson_varint` and `hurdle_poisson_varint`; only Beta priors on `zi` / `hu`
+(D29), and brms's other zero-inflated and hurdle families and formulas on `zi` / `hu` are not offered (D30); see
+[zero-inflated and hurdle counts](zero-inflated-hurdle.md).

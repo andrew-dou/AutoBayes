@@ -73,6 +73,8 @@ def _summary_rows(model, idata) -> dict:
     scale = family_of(model).scale_parameter                    # "sigma", "shape", "phi" or None
     names = ([n["intercept"]] if model.spec.intercept else []) + list(model.spec.terms) + [roles["sd"] for roles in model.group_coefficient_names.values()] + ([n[scale]] if scale is not None else [])
     names += [n[name] for name in model.learned_parameters]     # a learned Student-t nu (A13)
+    zero = family_of(model).zero_parameter                      # the zero-inflation / hurdle probability (B06)
+    names += [n[zero]] if zero is not None else []
     s = az.summary(idata, var_names=names, hdi_prob=0.94, round_to="none")
     rows = {}
     for name, r in s.iterrows():
@@ -132,6 +134,7 @@ def fit_record(model, fit, *, panel: dict | None = None, max_treedepth: int = 10
                        **{f"sd:{sd_tag(g, c)}": str(prior) for (g, c), prior in sd_priors.items() if c != "Intercept"},
                        **{f"cor:{g}": str(prior) for g, prior in cor_priors.items()},
                        **({fam.scale_parameter: str(getattr(pr, fam.scale_parameter))} if fam.scale_parameter is not None else {}),
+                       **({fam.zero_parameter: str(getattr(pr, fam.zero_parameter))} if fam.zero_parameter is not None else {}),
                        **({"nu": str(pr.nu)} if pr.nu is not None else {})},
             # which of those priors ab.default_priors() filled in (brms's defaults, A07); absent when the user gave them all
             **({"default_priors": {"brms": BRMS_VERSION, "parameters": list(defaults)}} if defaults else {}),

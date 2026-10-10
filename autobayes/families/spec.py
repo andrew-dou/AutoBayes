@@ -3,7 +3,7 @@
 Everything the library once decided by comparing a family name against a string is a field of
 the spec. A family is one module in this package that builds its spec (``gaussian.py``,
 ``student.py``, ``poisson.py``, ``negbinomial.py``, ``gamma.py``, ``lognormal.py``, ``beta.py``, ``bernoulli.py``,
-``binomial.py``);
+``binomial.py``, ``zero_inflated_poisson.py``, ``hurdle_poisson.py``);
 ``autobayes.families.FAMILIES`` is the registry and ``get_family(name)`` the lookup. Callable fields
 take the built ``Model`` (or the frame being validated) because that is what the call sites have in
 hand; none of them is called before ``Model.__init__`` has resolved the spec.
@@ -74,6 +74,14 @@ class FamilySpec:
     parked_links: Mapping[str, str] = field(default_factory=lambda: NO_PARKED_LINKS)   # links brms offers for this family that this library withholds, each with the reason ``with_link`` reports (Bernoulli, binomial: cloglog; docs/links.md)
     learnable_parameters: Mapping[str, float] = field(default_factory=lambda: NO_LEARNABLE_PARAMETERS)   # fixed parameters a model learns instead when none is given, each under its own prior truncated at the lower bound given here (Student-t: nu > 1, brms's real<lower=1> nu; docs/student-learned-nu.md)
     default_learned_priors: Mapping[str, Callable[[], object]] = field(default_factory=lambda: NO_LEARNED_DEFAULTS)   # brms's default prior of each learnable parameter (Student-t nu: gamma(2, 0.1), Gamma(2, 0.1)); A07
+    # The probability of the zero part (B06, docs/zero-inflated-hurdle.md): brms's "zi" (zero-inflation: a structural
+    # zero with probability zi, the count part otherwise) or "hu" (a hurdle: zero with probability hu, the zero-truncated
+    # count part otherwise), real<lower=0,upper=1> with its own prior on (0, 1) (``Priors(zi=...)``, ``Priors(hu=...)``),
+    # sampled as logit(zi) (PyMC's ``zi_logodds__``); the PyMC variable keeps brms's name. It sits beside
+    # ``scale_parameter``, which the zero-inflated or hurdle form of a count family with its own auxiliary parameter (the
+    # negative binomial's shape) would keep. None for every other family.
+    zero_parameter: str | None = None
+    default_zero_prior: Callable[[], object] | None = None   # brms's default prior of the zero_parameter: beta(1, 1), ``Beta(1, 1)`` (A07)
 
     def with_link(self, link: str | None) -> "FamilySpec":
         """This family's spec under ``link``: this spec for ``None`` or its own link, the one a ``links`` entry builds
