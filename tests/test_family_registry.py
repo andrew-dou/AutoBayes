@@ -78,11 +78,13 @@ EXPECTED = {                               # family -> (Bambi parent, link, pred
     "beta": ("logit_mu", "logit", "mu"),
     "bernoulli": ("logit_p", "logit", "p"),
     "binomial": ("logit_p", "logit", "p"),
+    "zero_inflated_poisson": ("log_mu", "log", "mean"),
+    "hurdle_poisson": ("log_mu", "log", "mean"),
 }
 
 
 def test_registry_lists_exactly_the_registered_families():
-    assert set(FAMILIES) == set(EXPECTED) and len(FAMILIES) == 9
+    assert set(FAMILIES) == set(EXPECTED) and len(FAMILIES) == 11
     for name, (parent, link, mean) in EXPECTED.items():
         spec = get_family(name)
         assert isinstance(spec, FamilySpec) and spec is FAMILIES[name]
@@ -97,8 +99,9 @@ def test_registry_lists_exactly_the_registered_families():
     assert {name for name, spec in FAMILIES.items() if spec.fixed_parameters} == {"student"}
     assert {name for name, spec in FAMILIES.items() if spec.has_trials} == {"binomial"}
     assert {name for name, spec in FAMILIES.items() if "probability" in spec.prediction_kinds} == {"binomial"}
-    assert {name for name, spec in FAMILIES.items() if spec.expected_response is not None} == {"lognormal"}
-    with pytest.raises(ValueError, match=r"family must be one of \['bernoulli', 'beta', 'binomial', 'gamma', 'gaussian', 'lognormal', 'negbinomial', 'poisson', 'student'\], got 'weibull'"):
+    assert {name for name, spec in FAMILIES.items() if spec.expected_response is not None} == {"lognormal", "zero_inflated_poisson", "hurdle_poisson"}
+    assert {name: spec.zero_parameter for name, spec in FAMILIES.items() if spec.zero_parameter} == {"zero_inflated_poisson": "zi", "hurdle_poisson": "hu"}
+    with pytest.raises(ValueError, match=r"family must be one of \['bernoulli', 'beta', 'binomial', 'gamma', 'gaussian', 'hurdle_poisson', 'lognormal', 'negbinomial', 'poisson', 'student', 'zero_inflated_poisson'\], got 'weibull'"):
         get_family("weibull")
     with pytest.raises(TypeError):
         FAMILIES["weibull"] = None
@@ -123,6 +126,8 @@ EXAMPLES = {                               # family -> (formula, extra prior cla
     "beta": ("prop ~ x", {"phi": ab.Gamma(2, 0.5)}, {}),
     "bernoulli": ("yb ~ x", {}, {}),
     "binomial": ("k | trials(n) ~ x", {}, {}),
+    "zero_inflated_poisson": ("cnt ~ x", {"zi": ab.Beta(2, 2)}, {}),
+    "hurdle_poisson": ("cnt ~ x", {"hu": ab.Beta(2, 2)}, {}),
 }
 
 
@@ -140,6 +145,9 @@ def test_constructors_agree_with_the_registry(family):
     if spec.scale_parameter is not None:                   # the auxiliary parameter is exposed under its brms name, valued by Bambi's
         assert model.names[spec.scale_parameter] == spec.bambi_scale_parameter
         assert f"{spec.bambi_scale_parameter}_log__" in {v.name for v in model.pymc_model.value_vars}
+    if spec.zero_parameter is not None:                    # zi / hu keeps brms's name and is sampled on the log-odds scale
+        assert model.names[spec.zero_parameter] == spec.zero_parameter
+        assert f"{spec.zero_parameter}_logodds__" in {v.name for v in model.pymc_model.value_vars}
     assert all(getattr(model, name) == kwargs[name] for name in spec.fixed_parameters)
     same = ab.Model(formula, frame(), priors, family=family, **kwargs)
     assert same.target_identity == model.target_identity and same.describe() == model.describe()

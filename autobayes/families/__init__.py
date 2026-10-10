@@ -14,13 +14,16 @@ from autobayes.families.beta import BETA
 from autobayes.families.binomial import BINOMIAL
 from autobayes.families.gamma import GAMMA
 from autobayes.families.gaussian import GAUSSIAN
+from autobayes.families.hurdle_poisson import HURDLE_POISSON
 from autobayes.families.lognormal import LOGNORMAL
 from autobayes.families.negbinomial import NEGBINOMIAL
 from autobayes.families.poisson import POISSON
 from autobayes.families.spec import FamilySpec
 from autobayes.families.student import STUDENT
+from autobayes.families.zero_inflated_poisson import ZERO_INFLATED_POISSON
 
-FAMILIES = MappingProxyType({spec.name: spec for spec in (GAUSSIAN, STUDENT, POISSON, NEGBINOMIAL, GAMMA, LOGNORMAL, BETA, BERNOULLI, BINOMIAL)})
+FAMILIES = MappingProxyType({spec.name: spec for spec in (GAUSSIAN, STUDENT, POISSON, NEGBINOMIAL, GAMMA, LOGNORMAL, BETA, BERNOULLI, BINOMIAL,
+                                                          ZERO_INFLATED_POISSON, HURDLE_POISSON)})
 
 
 def get_family(name: str, link: str | None = None) -> FamilySpec:

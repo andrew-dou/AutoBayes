@@ -247,7 +247,8 @@ def beta_logit_family():
 # Only the probit link is offered (families/links.py): the cloglog forms below are exact where brms's own
 # gradient is not (Stan forms 1 - theta by subtraction, losing eps * exp(exp(eta)) relative for a y = 0 row at
 # eta above about 2.7), so the frozen brms fixture cannot certify the link to the oracle's tolerance; they are
-# kept, tested and reached only from the tests until a fixture can (docs/links.md, divergence D18).
+# kept, tested and reached only from the tests until a fixture can (docs/links.md, divergence D18). The hurdle Poisson
+# (B06, below) uses cloglog_log_p1 for what it also is, log P(count > 0) = log(1 - exp(-exp(eta))) of a Poisson count.
 
 _SQRT2 = math.sqrt(2.0)
 _LOG_PHI_LOWER, _LOG_PHI_UPPER = -20.0, -1.0
@@ -398,3 +399,131 @@ def binomial_link_family(link: str):
     parent = f"{link}_p"
     likelihood = bmb.Likelihood(f"Binomial{link.capitalize()}", params=[parent], parent=parent, dist=_binomial_link_dist(link))
     return BinomialLinkFamily(f"binomial_{link}", likelihood, link="identity")
+
+
+# ---- zero-inflated and hurdle Poisson (brms-parity B06) ---------------------------------------------------------------
+# brms 2.23, with eta the linear predictor of the Poisson part (log link, mu = exp(eta)) and zi, hu in (0, 1):
+#   zero_inflated_poisson_log_lpmf(y | eta, zi) = log_sum_exp(log(zi), log1m(zi) + poisson_log_lpmf(0 | eta))   y = 0
+#                                                 log1m(zi) + poisson_log_lpmf(y | eta)                          y > 0
+#   hurdle_poisson_log_lpmf(y | eta, hu)        = log(hu)                                                         y = 0
+#                                                 log1m(hu) + poisson_log_lpmf(y | eta) - log1m_exp(-exp(eta))   y > 0
+# with poisson_log_lpmf(y | eta) = y eta - exp(eta) - lgamma(y + 1). The families keep the linear predictor as the parent
+# ``log_mu`` under the identity link (as the Beta keeps ``logit_mu``), so the likelihood sees eta itself, never
+# log(exp(eta)); and they are parameterised by brms's zi and hu, not by PyMC's psi = 1 - zi (``ZeroInflatedPoisson``,
+# ``HurdlePoisson``), so that the prior, the sampled coordinate logit(zi) and its gradient are brms's. The forms:
+# - the y = 0 row of the zero-inflated Poisson is a two-term log_sum_exp written as hi + softplus(lo - hi), the larger term
+#   chosen by a switch (at a tie each term gets half the gradient on both paths) and the softplus the stable one above
+#   (PyTensor's own Softplus lowers to JAX as a where whose untaken branch overflows); log P_Poisson(0 | eta) = -exp(eta)
+#   is evaluated at eta capped at 700, beyond which exp(-mu) is exactly 0 and the row is log(zi) exactly, where brms's
+#   -exp(eta) overflows to -inf above eta = 709.78: the row keeps its value but its gradient is NaN (0 * inf);
+# - the hurdle's zero truncation log(1 - exp(-mu)) is ``cloglog_log_p1(eta)`` above (the same function: the cloglog link's
+#   log P(y = 1)), log(-expm1(-mu)) where that is exact and eta + log1p(-mu / 2) below eta = -20, where brms's
+#   log1m_exp(-exp(eta)) has an infinite gradient once exp(eta) is subnormal (below eta = -709.78) and is -inf, the
+#   row's log density +inf with a NaN gradient, below eta of about -745 (both seen with rstan::log_prob);
+# - the y > 0 terms are evaluated at eta on y > 0 rows only (at 0 on the others), so that a branch the switch does not
+#   take is finite with a finite gradient and never turns a zero adjoint into 0 * inf = NaN, on either path.
+# A row's value is then finite with a finite gradient for every finite eta, except a y > 0 row beyond eta = 709.78, where
+# the true log density, about -exp(eta), is below the most negative double and is -inf with gradient -inf, as brms's
+# is; never NaN. Measured in tests/test_zero_inflated_hurdle.py against a 50-digit reference on both paths.
+
+_POISSON_ZERO_CAP = 700.0     # exp(700) = 1.0e304: exp(-mu) is exactly 0 from here on (it underflows at mu = 745)
+
+
+def _log_sum_exp2(a, b):
+    """``log(exp(a) + exp(b))`` as ``hi + softplus(lo - hi)``, exact for every finite ``a`` and ``b``."""
+    hi = pt.switch(a > b, a, b)
+    lo = pt.switch(a > b, b, a)
+    return hi + stable_softplus(lo - hi)
+
+
+def poisson_log_lpmf(value, eta):
+    """``log Poisson(value | exp(eta))`` = ``value * eta - exp(eta) - lgamma(value + 1)`` (Stan's ``poisson_log_lpmf``)."""
+    y = pt.cast(value, "float64")
+    return y * eta - pt.exp(eta) - pt.gammaln(y + 1.0)
+
+
+def zero_inflated_poisson_logp(value, log_mu, zi):
+    """brms's ``zero_inflated_poisson_log_lpmf(value | log_mu, zi)`` in the stable form described above; ``-inf`` for a
+    negative value."""
+    is_zero = pt.eq(value, 0)
+    capped = pt.switch(log_mu > _POISSON_ZERO_CAP, _POISSON_ZERO_CAP, log_mu)
+    zero = _log_sum_exp2(pt.log(zi), pt.log1p(-zi) - pt.exp(capped))
+    positive = pt.log1p(-zi) + poisson_log_lpmf(value, pt.switch(is_zero, 0.0, log_mu))
+    return pt.switch(pt.lt(value, 0), -np.inf, pt.switch(is_zero, zero, positive))
+
+
+def hurdle_poisson_logp(value, log_mu, hu):
+    """brms's ``hurdle_poisson_log_lpmf(value | log_mu, hu)`` in the stable form described above; ``-inf`` for a negative
+    value."""
+    is_zero = pt.eq(value, 0)
+    eta = pt.switch(is_zero, 0.0, log_mu)
+    positive = pt.log1p(-hu) + poisson_log_lpmf(value, eta) - cloglog_log_p1(eta)
+    return pt.switch(pt.lt(value, 0), -np.inf, pt.switch(is_zero, pt.log(hu), positive))
+
+
+def zero_truncated_poisson_draws(mu, rng):
+    """Draws of a Poisson(mu) count conditioned on being positive, one per entry of ``mu``, as brms's
+    ``posterior_predict_hurdle_poisson`` makes them: the first point of a unit-rate Poisson process on [0, mu], given that
+    there is one, sits at ``t = -log(1 - U (1 - exp(-mu)))`` (here ``-log1p(U expm1(-mu))``, exact for small mu), and the
+    count is 1 plus the Poisson(mu - t) points after it."""
+    mu = np.asarray(mu, dtype=float)
+    t = -np.log1p(rng.uniform(size=mu.shape) * np.expm1(-mu))
+    return 1 + rng.poisson(np.clip(mu - t, 0.0, None))
+
+
+def zero_inflated_poisson_random(log_mu, zi, rng=None, size=None):
+    """brms's ``posterior_predict_zero_inflated_poisson``: a structural zero where a uniform draw falls below zi, a
+    Poisson(exp(log_mu)) draw otherwise."""
+    shape = size if size is not None else np.broadcast_shapes(np.shape(log_mu), np.shape(zi))
+    zero = rng.uniform(size=shape) < zi
+    return np.where(zero, 0, rng.poisson(np.exp(log_mu), size=shape)).astype(np.int64)
+
+
+def hurdle_poisson_random(log_mu, hu, rng=None, size=None):
+    """brms's ``posterior_predict_hurdle_poisson``: zero where a uniform draw falls below hu, a zero-truncated
+    Poisson(exp(log_mu)) draw otherwise."""
+    shape = size if size is not None else np.broadcast_shapes(np.shape(log_mu), np.shape(hu))
+    zero = rng.uniform(size=shape) < hu
+    return np.where(zero, 0, zero_truncated_poisson_draws(np.broadcast_to(np.exp(log_mu), shape), rng)).astype(np.int64)
+
+
+class ZeroInflatedPoissonLog:
+    """``y ~ ZeroInflatedPoisson(exp(log_mu), zi)``: zero with probability zi, Poisson(exp(log_mu)) otherwise."""
+
+    def __new__(cls, name, log_mu, zi, **kwargs):
+        return pm.CustomDist(name, log_mu, zi, logp=zero_inflated_poisson_logp, random=zero_inflated_poisson_random,
+                             dtype="int64", **kwargs)
+
+    @staticmethod
+    def dist(log_mu, zi, **kwargs):
+        return pm.CustomDist.dist(log_mu, zi, logp=zero_inflated_poisson_logp, random=zero_inflated_poisson_random,
+                                  dtype="int64", **kwargs)
+
+
+class HurdlePoissonLog:
+    """``y ~ HurdlePoisson(exp(log_mu), hu)``: zero with probability hu, a zero-truncated Poisson(exp(log_mu)) otherwise."""
+
+    def __new__(cls, name, log_mu, hu, **kwargs):
+        return pm.CustomDist(name, log_mu, hu, logp=hurdle_poisson_logp, random=hurdle_poisson_random, dtype="int64", **kwargs)
+
+    @staticmethod
+    def dist(log_mu, hu, **kwargs):
+        return pm.CustomDist.dist(log_mu, hu, logp=hurdle_poisson_logp, random=hurdle_poisson_random, dtype="int64", **kwargs)
+
+
+def zero_inflated_poisson_family():
+    """Bambi family: identity link on ``log_mu`` (the linear predictor), the zero-inflation probability ``zi`` with its own
+    prior, the likelihood ``zero_inflated_poisson_logp``."""
+    import bambi as bmb
+
+    likelihood = bmb.Likelihood("ZeroInflatedPoissonLog", params=["log_mu", "zi"], parent="log_mu", dist=ZeroInflatedPoissonLog)
+    return bmb.Family("zero_inflated_poisson_log", likelihood, link={"log_mu": "identity", "zi": "logit"})
+
+
+def hurdle_poisson_family():
+    """Bambi family: identity link on ``log_mu`` (the linear predictor), the hurdle probability ``hu`` with its own prior,
+    the likelihood ``hurdle_poisson_logp``."""
+    import bambi as bmb
+
+    likelihood = bmb.Likelihood("HurdlePoissonLog", params=["log_mu", "hu"], parent="log_mu", dist=HurdlePoissonLog)
+    return bmb.Family("hurdle_poisson_log", likelihood, link={"log_mu": "identity", "hu": "logit"})

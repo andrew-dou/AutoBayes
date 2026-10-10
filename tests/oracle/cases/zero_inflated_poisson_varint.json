@@ -5,10 +5,6 @@
  "note": "brms: zi in (0, 1) with a beta prior (logit transform, probed as other)",
  "seed": 169,
  "n_points": 8,
- "gate": {
-  "expect": "fail",
-  "reason": "B06_zero_inflated_hurdle not implemented; remove this field when it lands"
- },
  "data": {
   "generator": "tier_b",
   "seed": 69,

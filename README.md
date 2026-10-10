@@ -46,6 +46,8 @@ Tier A is complete (October 2026):
 - **Families**: Gaussian; Student-t with a fixed or learned `nu`; Poisson; negative binomial; Gamma (log link);
   lognormal; Beta; Bernoulli and binomial with a logit or probit link (brms's cloglog link is parked, see
   [links](docs/links.md)).
+- **Zero-inflated and hurdle counts** (Tier B, B06): `ab.zero_inflated_poisson` and `ab.hurdle_poisson`, with brms's
+  `zi` / `hu` under a `Beta` prior ([zero-inflated and hurdle counts](docs/zero-inflated-hurdle.md)).
 - **Population-level terms**: numeric and declared categorical predictors; two-way interactions `x:w`, `x:z`, `z:h`
   with their main effects ([interactions](docs/interactions.md)); `log()`, `exp()`, `sqrt()`, `I(x^k)`, `I(x * k)`,
   `I(x + k)`, `I(x - k)` ([transforms](docs/transforms.md)); `offset(col)` and `offset(log(col))` ([offset](docs/offset.md)).

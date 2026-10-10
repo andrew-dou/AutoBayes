@@ -25,6 +25,7 @@ model only when `ab.default_priors()` is called and its result passed in.
 | `shape` (negative binomial) | `inv_gamma(0.4, 0.3)`, lower bound 0 | `InverseGamma(0.4, 0.3)` (shape and scale, as Stan's `inv_gamma`) |
 | `shape` (Gamma), `phi` (Beta) | `gamma(0.01, 0.01)`, lower bound 0 | `Gamma(0.01, 0.01)` |
 | `nu` (Student-t, learned) | `gamma(2, 0.1)`, lower bound 1 | `Gamma(2, 0.1)`, truncated at 1 as in A13 |
+| `zi`, `hu` (zero-inflated, hurdle; B06) | `beta(1, 1)`, lower bound 0, upper bound 1 | `Beta(1, 1)` |
 
 The location and scale are brms's `def_scale_prior` arithmetic on the response read through the family's link
 (`FamilySpec.default_prior_link`): the response itself for the Gaussian and Student-t families; `log(y)`, zeros read as

@@ -70,7 +70,10 @@ def freeze_target(model):
                    # the Beta precision prior (A11) likewise
                    **({'phi': prior(pr.phi)} if pr.phi is not None else {}),
                    # the prior of a learned Student-t nu (A13) likewise
-                   **({'nu': prior(pr.nu)} if pr.nu is not None else {})},
+                   **({'nu': prior(pr.nu)} if pr.nu is not None else {}),
+                   # the zero-inflation / hurdle probability's prior (B06) likewise
+                   **({'zi': prior(pr.zi)} if pr.zi is not None else {}),
+                   **({'hu': prior(pr.hu)} if pr.hu is not None else {})},
     }
     encoded = json.dumps(_canonical(payload), sort_keys=True, separators=(',', ':'),
                          ensure_ascii=False, allow_nan=False).encode('utf-8')

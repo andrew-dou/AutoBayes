@@ -18,6 +18,8 @@ brms's rules (``default_prior()``, ``def_dpar_prior``, ``def_scale_prior``, ``pr
 - ``cor``: ``lkj(1)``. The family's auxiliary parameter and a learned ``nu``: the family's own default
   (``FamilySpec.default_scale_prior``, ``FamilySpec.default_learned_priors``): negative binomial ``shape``
   ``inv_gamma(0.4, 0.3)``, Gamma ``shape`` and Beta ``phi`` ``gamma(0.01, 0.01)``, Student-t ``nu`` ``gamma(2, 0.1)``.
+  The zero-inflation or hurdle probability of the zero-inflated and hurdle families (B06): ``beta(1, 1)`` with bounds 0
+  and 1 (``FamilySpec.default_zero_prior``).
 
 The data-dependent numbers are R's arithmetic, transcribed here and checked against R itself: ``median``, ``mad``
 (constant 1.4826) and ``mean`` (R's two-pass mean on doubles), ``round(x, 1)`` (R 4's algorithm, which picks the
@@ -256,6 +258,11 @@ def default_priors(formula: str, data: pd.DataFrame, *, family: str = "gaussian"
             raise PriorError(f"no brms default prior is recorded for the {fam.name} family's {fam.scale_parameter}; "
                              f"give the priors explicitly (ab.Priors(..., {fam.scale_parameter}=...))")
         auxiliary[fam.scale_parameter] = fam.default_scale_prior(scale)
+    if fam.zero_parameter is not None:                                # zi or hu (B06): beta(1, 1)
+        if fam.default_zero_prior is None:
+            raise PriorError(f"no brms default prior is recorded for the {fam.name} family's {fam.zero_parameter}; "
+                             f"give the priors explicitly (ab.Priors(..., {fam.zero_parameter}=...))")
+        auxiliary[fam.zero_parameter] = fam.default_zero_prior()
     for name, make in learned.items():
         if make is None:
             raise PriorError(f"no brms default prior is recorded for the {fam.name} family's learned {name}; "
@@ -346,10 +353,10 @@ def prior_table(priors: Priors, spec, family="gaussian", *, center_predictors: b
     priors.validate(spec, fam)
     rows: list[dict[str, str]] = []
 
-    def add(prior, cls, *, coef="", group="", lb="", source=None):
+    def add(prior, cls, *, coef="", group="", lb="", ub="", source=None):
         text = brms_prior(prior) if isinstance(prior, Prior) else ""
         src = source if source is not None else (prior.source if isinstance(prior, Prior) else "default")
-        rows.append(dict(zip(COLUMNS, (text, cls, coef, group, "", "", "", lb, "", "", src))))
+        rows.append(dict(zip(COLUMNS, (text, cls, coef, group, "", "", "", lb, ub, "", src))))
 
     def same(ps):
         return all(p == ps[0] for p in ps)
@@ -372,6 +379,8 @@ def prior_table(priors: Priors, spec, family="gaussian", *, center_predictors: b
                 add(p, "b", coef=name)
     if fam.scale_parameter is not None:
         add(getattr(priors, fam.scale_parameter), fam.scale_parameter, lb="0")
+    if fam.zero_parameter is not None:                                # brms's real<lower=0,upper=1> zi / hu (B06)
+        add(getattr(priors, fam.zero_parameter), fam.zero_parameter, lb="0", ub="1")
     if priors.nu is not None:
         add(priors.nu, "nu", lb=r_number(fam.learnable_parameters["nu"]))
     sd = priors.sd_priors(spec)
