@@ -26,6 +26,7 @@ model only when `ab.default_priors()` is called and its result passed in.
 | `shape` (Gamma), `phi` (Beta) | `gamma(0.01, 0.01)`, lower bound 0 | `Gamma(0.01, 0.01)` |
 | `nu` (Student-t, learned) | `gamma(2, 0.1)`, lower bound 1 | `Gamma(2, 0.1)`, truncated at 1 as in A13 |
 | `zi`, `hu` (zero-inflated, hurdle; B06) | `beta(1, 1)`, lower bound 0, upper bound 1 | `Beta(1, 1)` |
+| `Intercept` of the cumulative thresholds, and of each category of a categorical model (B05) | `student_t(3, 0, 2.5)` on the class row, one row per threshold (`coef` `1`, ...) or per category (`dpar` `muc2`, ...); the thresholds keep the class `Intercept` when not centred | `StudentT(3, 0, 2.5)`, one prior for all thresholds or categories (`Model.prior_table()` writes the rows) |
 
 The location and scale are brms's `def_scale_prior` arithmetic on the response read through the family's link
 (`FamilySpec.default_prior_link`): the response itself for the Gaussian and Student-t families; `log(y)`, zeros read as
@@ -62,7 +63,7 @@ parameters take the family's own defaults (`FamilySpec.default_scale_prior`, `de
 - An intercept-only model has no coefficient and now needs no `b` prior (D2); one given anyway changes nothing.
 - `ab.Flat()` is accepted for the intercept and `b` only; `ab.InverseGamma(alpha, beta)` for `sd`, `sigma`, `shape` and
   `phi`, not for `nu` (its truncation at 1 is not one this library renormalises, D22).
-- Refused, with the constructors' messages: a family or link the library lacks (`cumulative`, the withheld `cloglog`),
+- Refused, with the constructors' messages: a family or link the library lacks (`sratio`, the withheld `cloglog`),
   a formula outside the supported subset, data the constructors refuse, `nu=` for a family without it; and a family
   whose parameter has no recorded brms default.
 

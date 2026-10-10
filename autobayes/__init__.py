@@ -4,7 +4,9 @@ Response families: Gaussian and Student-t (nu fixed or learned) with identity li
 Bernoulli and grouped binomial with a logit or probit link, Poisson and negative binomial
 counts and Gamma responses with a log link, lognormal responses with the identity
 link on the log-scale location, Beta proportions with a logit link and precision ``phi``, and zero-inflated and hurdle
-Poisson counts with the zero-inflation or hurdle probability ``zi`` / ``hu`` under a ``Beta`` prior. Supported formulas combine numeric and declared categorical predictors,
+Poisson counts with the zero-inflation or hurdle probability ``zi`` / ``hu`` under a ``Beta`` prior, ordinal responses with
+brms's cumulative logit model and unordered categorical responses with one linear predictor per non-reference category.
+Supported formulas combine numeric and declared categorical predictors,
 numeric-by-categorical interactions, intercept controls, and optional multiple
 independent varying-intercept factors with independent or correlated varying slopes. Explicit priors are required;
 brms's own defaults are available explicitly with ``default_priors(formula, data, ...)``.
@@ -51,8 +53,8 @@ from autobayes.priors import (
     StudentT,
 )
 from autobayes.default_priors import default_priors
-from autobayes.model import (Model, bernoulli, beta, binomial, gamma, gaussian, hurdle_poisson, lognormal, negbinomial, student, poisson,
-                             zero_inflated_poisson)
+from autobayes.model import (Model, bernoulli, beta, binomial, categorical, cumulative, gamma, gaussian, hurdle_poisson, lognormal,
+                             negbinomial, student, poisson, zero_inflated_poisson)
 from autobayes.inference import DeviceError, FitResult, fit
 from autobayes.predict import predict
 from autobayes.prior_predictive import prior_predictive
@@ -64,6 +66,6 @@ __all__ = [
     "HalfNormal", "HalfStudentT", "InverseGamma", "LKJ", "Model", "ModelSpec", "Normal", "PopTerm", "Prior",
     "PriorError", "Priors", "StudentT", "bernoulli", "beta", "binomial", "compare_records", "default_priors", "environment", "fit", "fit_record",
     "gamma", "lognormal", "negbinomial", "student", "poisson", "format_comparison", "format_environment", "gaussian", "panel",
-    "parse_formula", "predict", "prior_predictive", "zero_inflated_poisson", "hurdle_poisson",
+    "parse_formula", "predict", "prior_predictive", "zero_inflated_poisson", "hurdle_poisson", "cumulative", "categorical",
 ]
 __version__ = "0.8.0"

@@ -263,3 +263,86 @@ def test_independent_model_does_not_match_a_correlated_fixture(correlated_bundle
         correlated = ab.gaussian("y ~ x + (1 + x | g)", data, dataclasses.replace(pr, cor=ab.LKJ(2)))
         with pytest.raises(OracleMismatch, match="AutoBayes's term '\\(1 \\+ x \\| g\\)' is correlated"):
             gates.Bundle("gauss_slope_independent", model=correlated)
+
+
+# -- the ordinal and categorical cases (B05): the ordered thresholds and the per-category parameters ---------------------
+@pytest.fixture(scope="module")
+def cumulative_bundle():
+    if not fx.has_fixture("cumulative_varint") or fx.load_case("cumulative_varint").get("gate"):
+        pytest.skip("cumulative case not frozen or still gated")
+    return gates.Bundle("cumulative_varint")
+
+
+@pytest.fixture(scope="module")
+def categorical_bundle():
+    if not fx.has_fixture("categorical_poponly") or fx.load_case("categorical_poponly").get("gate"):
+        pytest.skip("categorical case not frozen or still gated")
+    return gates.Bundle("categorical_poponly")
+
+
+def _coordinates(raw, par) -> list[int]:
+    return [int(e["index"]) - 1 for e in raw["upars"] if e["par"] == par]
+
+
+def test_corrupted_threshold_coordinate_fails(cumulative_bundle):
+    """brms's unconstrained Intercept values must be Stan's ordered coordinates of Intercept at every point, so a fixture
+    whose u disagrees (as if brms sampled the thresholds through another transform) stops the gradient gate."""
+    def mutate(raw):
+        raw["points"][2]["u"]["values"][_coordinates(raw, "Intercept")[1]] += 1e-6
+    with pytest.raises(OracleMismatch, match="point 2: Stan's ordered coordinate 1 of Intercept"):
+        gates.check_gradient(_corrupted(cumulative_bundle, mutate))
+
+
+def test_corrupted_threshold_gradient_fails(cumulative_bundle):
+    def mutate(raw):
+        raw["points"][0]["grad"]["values"][_coordinates(raw, "Intercept")[2]] *= 1 + 1e-6
+    with pytest.raises(OracleMismatch, match=r"point 0: gradient of Intercept_ordered__\[2\]"):
+        gates.check_gradient(_corrupted(cumulative_bundle, mutate))
+
+
+def test_corrupted_raw_thresholds_fail(cumulative_bundle):
+    def mutate(raw):
+        raw["points"][1]["pars"]["b_Intercept"]["values"][2] += 1e-8
+    with pytest.raises(OracleMismatch, match="point 1: raw-scale thresholds .* vs brms b_Intercept"):
+        gates.check_derived(_corrupted(cumulative_bundle, mutate))
+
+
+def test_corrupted_category_probability_fails(cumulative_bundle, categorical_bundle):
+    for bundle in (cumulative_bundle, categorical_bundle):
+        def mutate(raw):
+            raw["predictions"]["newdata"]["epred"]["values"][7] += 1e-8
+        with pytest.raises(OracleMismatch, match="newdata: 'p' differs from brms posterior_epred"):
+            gates.check_predictions(_corrupted(bundle, mutate))
+
+
+def test_corrupted_category_parameters_fail(categorical_bundle):
+    def gradient(raw):
+        raw["points"][3]["grad"]["values"][_coordinates(raw, "b_muc3")[0]] += 1e-6     # it is 0.067: 1e-7 is the floor
+    with pytest.raises(OracleMismatch, match=r"point 3: gradient of x\[1\]"):                 # muc3 is the second category
+        gates.check_gradient(_corrupted(categorical_bundle, gradient))
+    def linpred(raw):
+        raw["predictions"]["fitted"]["linpred"]["values"][40] += 1e-8                        # row 4 of muc3 (column-major)
+    with pytest.raises(OracleMismatch, match="fitted: linear predictor differs"):
+        gates.check_predictions(_corrupted(categorical_bundle, linpred))
+    def raw_intercept(raw):
+        raw["points"][5]["pars"]["b_muc2_Intercept"]["values"][0] += 1e-8
+    with pytest.raises(OracleMismatch, match="point 5: raw-scale intercept of muc2"):
+        gates.check_derived(_corrupted(categorical_bundle, raw_intercept))
+    def design(raw):
+        raw["standata"]["X_muc3"]["values"][-1] += 1e-11                                      # the last x of the muc3 design
+    with pytest.raises(OracleMismatch, match="matches 0 brms columns"):
+        _corrupted(categorical_bundle, design)
+
+
+def test_a_model_of_the_other_kind_does_not_match(cumulative_bundle, categorical_bundle):
+    """The adapter refuses to put a model without thresholds against brms's ordered thresholds, or a model without
+    category designs against brms's X_mu<k>."""
+    import autobayes as ab
+
+    data = cumulative_bundle.data
+    pri = ab.Priors(intercept=ab.Normal(0, 3), b=ab.Normal(0, 1.5), sd=ab.HalfNormal(1))
+    with pytest.raises(OracleMismatch, match="expected one brms intercept column"):
+        gates.Bundle("cumulative_varint", model=ab.poisson("ord ~ x + (1 | g)", data, pri))
+    with pytest.raises(KeyError):
+        gates.Bundle("categorical_poponly", model=ab.cumulative("ord ~ x", categorical_bundle.data,
+                                                              ab.Priors(intercept=ab.Normal(0, 3), b=ab.Normal(0, 1.5))))

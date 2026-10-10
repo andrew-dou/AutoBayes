@@ -712,3 +712,235 @@ def addition_family(base, family_spec, data: Mapping[str, np.ndarray]):
     family.likelihood = bmb.Likelihood(lk.name, params=lk.params, parent=lk.parent,
                                        dist=_addition_dist(get_distribution_from_likelihood(lk), data, tails))
     return family
+
+
+# ---- ordinal (cumulative) and categorical responses (brms-parity B05) --------------------------------------------------
+# brms 2.23, with eta (brms's mu) the linear predictor and the response coded 1..K (brms's Y):
+#   cumulative("logit"), disc = 1, no category-specific effects: ordered_logistic_lpmf(y | eta, tau), Stan's ordered
+#   logistic with P(y <= k) = expit(tau_k - eta) for the K - 1 thresholds tau (brms's b_Intercept on the raw design):
+#     y = 1         log expit(tau_1 - eta)                   = -softplus(eta - tau_1)
+#     y = K         log expit(eta - tau_{K-1})               = -softplus(tau_{K-1} - eta)
+#     1 < y < K     log(expit(tau_y - eta) - expit(tau_{y-1} - eta))
+#                   = -softplus(eta - tau_y) - softplus(tau_{y-1} - eta) + log1mexp(tau_{y-1} - tau_y)
+#   which is Stan's log_inv_logit_diff written out (expit(a) - expit(b) = (e^a - e^b) / ((1 + e^a)(1 + e^b))): two stable
+#   softplus terms and the log of one minus the exponential of minus the gap between the two thresholds, never a
+#   difference of probabilities, so a row is finite with a finite gradient for every finite eta;
+#   categorical(), reference category 1: categorical_logit_lpmf(y | (0, eta_2, ..., eta_K)) = eta_y - log_sum_exp(0, eta).
+# Each row reads its own thresholds (or category) through a one-hot selection on an index clipped into range, so the
+# branch a switch does not take is evaluated at a valid index and stays finite (its zero adjoint never becomes 0 * inf).
+# The positions along the last axis are a cumulative sum of ones, not an arange: JAX's arange lowering takes only
+# constant or bare-shape endpoints (a model's category axis is neither once Bambi has built it), and the int8 endpoints
+# of PyTensor's own take_along_axis overflow under NumPy 2's promotion rules once a run-time length exceeds 127. The
+# thresholds reach the likelihood as brms's b_Intercept: the sampled Intercept (brms's thresholds of the centred design,
+# on Stan's ordered coordinates) plus sum_p mean(x_p) b_p, a deterministic of the graph.
+
+def _select(x, index):
+    """``x[..., index]`` row by row: the entry of the last axis of ``x`` at ``index`` (``x``'s leading shape), by a one-hot
+    switch on the positions ``0, 1, ...`` of that axis."""
+    positions = pt.cumsum(pt.ones_like(x), axis=-1) - 1.0
+    return pt.sum(pt.switch(pt.eq(index[..., None], positions), x, 0.0), axis=-1)
+
+
+def ordered_logistic_logp(value, eta, thresholds):
+    """``log P(y = value | eta, thresholds)`` of brms's ``cumulative("logit")`` (Stan's ``ordered_logistic_lpmf``) in the
+    stable form above, for a 1-based category ``value``; ``-inf`` outside ``1..K``."""
+    y = pt.cast(value, "int64")
+    k = thresholds.shape[-1]
+    thr = thresholds + pt.zeros_like(eta)[..., None]                   # one row of thresholds per observation
+    upper = _select(thr, pt.clip(y - 1, 0, k - 1))
+    lower = _select(thr, pt.clip(y - 2, 0, k - 1))
+    has_upper, has_lower = pt.le(y, k), pt.ge(y, 2)
+    both = pt.and_(has_upper, has_lower)
+    out = (pt.switch(has_upper, -stable_softplus(eta - upper), 0.0)
+           + pt.switch(has_lower, -stable_softplus(lower - eta), 0.0)
+           + pt.switch(both, pt.log1mexp(pt.switch(both, lower - upper, -1.0)), 0.0))
+    return pt.switch(pt.and_(pt.ge(y, 1), pt.le(y, k + 1)), out, -np.inf)
+
+
+def cumulative_probabilities(eta, thresholds):
+    """``P(y = k)``, ``k = 1..K``, under the cumulative logit model (brms's ``posterior_epred``): the differences of
+    ``P(y <= k) = expit(tau_k - eta)`` with ``P(y <= 0) = 0`` and ``P(y <= K) = 1``, each evaluated as the exponential of
+    the likelihood's stable log form, ``log expit(tau_k - eta) + log expit(eta - tau_{k-1}) + log(1 - exp(tau_{k-1} -
+    tau_k))``, so that a category between two close thresholds keeps its relative precision (brms subtracts the
+    cumulative probabilities, which loses it there; the two agree to rounding elsewhere). ``eta`` is ``(...)``,
+    ``thresholds`` ``(..., K - 1)`` broadcastable against it; the result is ``(..., K)``."""
+    d = np.asarray(thresholds, dtype=float) - np.asarray(eta, dtype=float)[..., None]        # tau_k - eta
+    end = np.ones(d.shape[:-1] + (1,))
+    hi = np.concatenate([d, np.inf * end], axis=-1)                                           # tau_k - eta, tau_K = inf
+    lo = np.concatenate([-np.inf * end, d], axis=-1)                                          # tau_{k-1} - eta, tau_0 = -inf
+    gap = lo - hi                                                                             # minus the gap, <= 0
+    with np.errstate(divide="ignore", invalid="ignore"):
+        log1mexp = np.where(gap > -math.log(2.0), np.log(-np.expm1(gap)), np.log1p(-np.exp(gap)))
+    return np.exp(-np.logaddexp(0.0, -hi) - np.logaddexp(0.0, lo) + log1mexp)
+
+
+def _log_sum_exp(x):
+    """``log(sum(exp(x)))`` over the last axis as ``max + log(sum(exp(x - max)))``: exact for every finite ``x``, with a
+    finite gradient on both paths. (PyTensor rewrites its own ``logsumexp`` into ``max + log(sum(switch(isinf(max),
+    exp(max), exp(x - max))))``, whose untaken branch overflows once the maximum exceeds 709.78, and JAX's gradient of that
+    switch is then NaN; here the rewrite, if it fires, sees a maximum of exactly 0.)"""
+    m = pt.max(x, axis=-1, keepdims=True)
+    return m[..., 0] + pt.log(pt.sum(pt.exp(x - m), axis=-1))
+
+
+def categorical_logit_logp(value, eta):
+    """``log P(y = value | eta)`` of brms's ``categorical()`` (Stan's ``categorical_logit_lpmf`` on ``(0, eta)``): ``eta``
+    holds the linear predictors of categories ``2..K``, the reference category's is 0; ``-inf`` outside ``1..K``."""
+    y = pt.cast(value, "int64")
+    full = pt.concatenate([pt.zeros_like(eta[..., :1]), eta], axis=-1)
+    k = eta.shape[-1]                                                  # K - 1: the reference category's predictor is 0
+    picked = pt.switch(pt.eq(y, 1), 0.0, _select(eta, pt.clip(y - 2, 0, k - 1)))
+    return pt.switch(pt.and_(pt.ge(y, 1), pt.le(y, k + 1)), picked - _log_sum_exp(full), -np.inf)
+
+
+def categorical_probabilities(eta):
+    """``P(y = k)``, ``k = 1..K``: the softmax of ``(0, eta_2, ..., eta_K)`` (brms's ``posterior_epred``); ``eta`` is
+    ``(..., K - 1)`` and the result ``(..., K)``."""
+    eta = np.asarray(eta, dtype=float)
+    full = np.concatenate([np.zeros(eta.shape[:-1] + (1,)), eta], axis=-1)
+    full = full - full.max(axis=-1, keepdims=True)
+    e = np.exp(full)
+    return e / e.sum(axis=-1, keepdims=True)
+
+
+def draw_categories(probabilities, rng, size=None):
+    """1-based category draws from ``probabilities`` ``(..., K)`` (rows summing to one): the number of cumulative
+    probabilities a uniform draw exceeds, plus one, as brms's ``posterior_predict`` for these families draws them."""
+    p = np.asarray(probabilities, dtype=float)
+    shape = tuple(size) if size is not None else p.shape[:-1]
+    cum = np.cumsum(np.broadcast_to(p, shape + p.shape[-1:]), axis=-1)[..., :-1]
+    u = rng.uniform(size=shape)
+    return (1 + (u[..., None] > cum).sum(axis=-1)).astype(np.int64)
+
+
+def ordered_logistic_random(eta, thresholds, rng=None, size=None):
+    return draw_categories(cumulative_probabilities(eta, thresholds), rng, size)
+
+
+def categorical_logit_random(eta, rng=None, size=None):
+    return draw_categories(categorical_probabilities(eta), rng, size)
+
+
+_LOCATION_DRAWS = {                                   # location prior -> NumPy draws (the thresholds' forward sampler)
+    "Normal": lambda rng, shape, mu, sigma: rng.normal(mu, sigma, size=shape),
+    "StudentT": lambda rng, shape, nu, mu, sigma: mu + sigma * rng.standard_t(nu, size=shape),
+}
+
+
+def ordered_thresholds(name, prior_name: str, params: dict, labels, dim: str):
+    """brms's ``ordered[nthres] Intercept`` with the same prior on every threshold (``Priors(intercept=...)``, brms's
+    class ``Intercept``), as a PyMC variable named ``name`` with dims ``dim`` (coordinates ``labels``) sampled on Stan's
+    ``ordered`` coordinates (PyMC's ``ordered`` transform: ``(tau_1, log(tau_2 - tau_1), ...)``, log Jacobian the sum of
+    the log gaps). Its density is the prior's density summed over the thresholds as brms adds it (``lprior +=
+    normal_lpdf(Intercept | ...)``), not renormalised to the ordered region; its forward draws are the prior's independent
+    draws sorted, which is that density's distribution (the order statistics), so prior-predictive thresholds are
+    ordered. Must be called inside a PyMC model context."""
+    n = len(labels)
+    names = list(params)
+    # The first input only carries the number of thresholds (a flat prior has no parameter to carry it); then the prior's
+    # parameters, one entry per threshold, in float64 (a Python 3.0 would otherwise become a float32 constant).
+    values = [np.zeros(n)] + [np.full(n, np.float64(params[k])) for k in names]
+    base = getattr(pm, prior_name)
+
+    def logp(value, anchor, *ps):
+        return pt.sum(pm.logp(base.dist(**dict(zip(names, ps))), value), axis=-1)
+
+    def random(anchor, *ps, rng=None, size=None):
+        if prior_name not in _LOCATION_DRAWS:
+            raise NotImplementedError(f"a {prior_name} prior on the thresholds has no forward draws")
+        core = np.broadcast_shapes(np.shape(anchor), *(np.shape(p) for p in ps))
+        shape = (tuple(size) + core[-1:]) if size is not None else core
+        return np.sort(_LOCATION_DRAWS[prior_name](rng, shape, *ps), axis=-1)
+
+    start = float(params.get("mu", 0.0)) + np.arange(n) - (n - 1) / 2.0         # an ordered starting point at the location
+
+    def support_point(rv, size, anchor, *ps):
+        # the default initial point (not an initval, which pymc.model.fgraph refuses: A02's correlated terms edit the graph)
+        return pt.broadcast_to(pt.as_tensor(start), rv.shape)
+
+    model = pm.modelcontext(None)
+    if dim not in model.coords:
+        model.add_coord(dim, list(labels))
+    return pm.CustomDist(name, *values, logp=logp, random=random, support_point=support_point,
+                         signature=",".join(["(k)"] * len(values)) + "->(k)", transform=pm.distributions.transforms.ordered,
+                         dims=dim)
+
+
+def cumulative_logit_family(terms, means, dim: str):
+    """Bambi family for brms's ``cumulative("logit")``: the linear predictor ``mu`` (brms's ``mu``, without thresholds) as
+    the parent under the identity link and the thresholds ``Intercept`` (built by ``ordered_thresholds`` from the prior
+    dict) as an auxiliary parameter. The likelihood adds ``sum_p means[p] b_p`` to the sampled thresholds, ``terms`` being
+    the population-level terms in design order (PyMC variables of those names, scalar or one entry per column), and
+    registers the result as the deterministic ``b_Intercept`` (brms's thresholds of the raw design), which is what
+    ``ordered_logistic_logp`` reads with ``mu`` on the raw design: brms's likelihood with its centred thresholds."""
+    import bambi as bmb
+
+    means = np.asarray(means, dtype=np.float64)
+    names = tuple(terms)
+
+    class CumulativeLogit:
+        """``y ~ OrderedLogistic(mu, b_Intercept)``, ``b_Intercept = Intercept + sum_p mean(x_p) b_p``."""
+
+        def __new__(cls, name, mu, Intercept, **kwargs):
+            model = pm.modelcontext(None)
+            thresholds = Intercept
+            if names:
+                b = pt.concatenate([pt.atleast_1d(model[term]) for term in names])
+                thresholds = Intercept + pt.dot(means, b)
+            thresholds = pm.Deterministic("b_Intercept", thresholds, dims=dim)
+            return pm.CustomDist(name, mu, thresholds, logp=ordered_logistic_logp, random=ordered_logistic_random,
+                                 signature="(),(k)->()", dtype="int64", **kwargs)
+
+    class CumulativeLogitFamily(bmb.Family):
+        SUPPORTED_LINKS = {"mu": ["identity"], "Intercept": ["identity"]}
+
+    likelihood = bmb.Likelihood("CumulativeLogit", params=["mu", "Intercept"], parent="mu", dist=CumulativeLogit)
+    return CumulativeLogitFamily("cumulative_logit", likelihood, link={"mu": "identity", "Intercept": "identity"})
+
+
+def no_intercept(name, **kwargs):
+    """A Bambi intercept prior that adds nothing (and no variable) to the linear predictor: the cumulative family's
+    formula keeps formulae's intercept, so that categorical predictors are treatment coded as brms codes them, while
+    the thresholds take the intercept's place."""
+    return pt.constant(np.float64(0.0))
+
+
+def categorical_logit_family(categories, reduced_dim: str):
+    """Bambi family for brms's ``categorical()``: Bambi's categorical family (one coefficient per non-reference category
+    on every term, centred design, the intercept uncentred after sampling) with the linear predictors ``mu`` of the
+    non-reference categories as the parent under the identity link (``(n, K - 1)``, brms's ``mu<k>``) and the
+    likelihood ``categorical_logit_logp`` on the 1-based categories. ``categories`` are the response's categories in
+    order, the first the reference; ``reduced_dim`` the coordinate of the non-reference ones."""
+    import bambi as bmb
+    from bambi.families.univariate import Categorical as BambiCategorical
+
+    others = list(categories[1:])
+
+    class CategoricalLogit:
+        """``y ~ Categorical(softmax(0, mu))``."""
+
+        def __new__(cls, name, mu, **kwargs):
+            return pm.CustomDist(name, mu, logp=categorical_logit_logp, random=categorical_logit_random,
+                                 signature="(k)->()", dtype="int64", **kwargs)
+
+    class CategoricalLogitFamily(BambiCategorical):
+        SUPPORTED_LINKS = {"mu": ["identity"]}
+
+        def get_data(self, response):
+            return np.asarray(response.term.data).squeeze().astype(np.int64)
+
+        def get_levels(self, response):
+            return list(others)
+
+        def get_coords(self, response):
+            return {reduced_dim: list(others)}
+
+        def get_reference(self, response):
+            return categories[0]
+
+        @staticmethod
+        def transform_backend_eta(eta, kwargs):
+            return eta
+
+    likelihood = bmb.Likelihood("CategoricalLogit", params=["mu"], parent="mu", dist=CategoricalLogit)
+    return CategoricalLogitFamily("categorical_logit", likelihood, link={"mu": "identity"})

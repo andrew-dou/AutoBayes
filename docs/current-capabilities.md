@@ -105,3 +105,13 @@ brms's response addition terms (B02): `weights(w)` multiplies each row's log lik
 case per family; brms's `cens()` and `trunc()` are parsed and implemented for the Gaussian family but withheld, because
 brms's own gradients (Stan's `normal_lcdf` derivative approximations, `normal_lccdf`'s `1 - erf`) and truncated mean
 are not exact enough at points of their frozen fixtures to certify them (D24, D25); see [addition terms](addition-terms.md).
+
+Ordinal and categorical responses (B05, `ab.cumulative` and `ab.categorical`, brms's `cumulative("logit")` and
+`categorical()`: the response fitted as its 1-based category with `model.categories` holding the labels; the cumulative
+thresholds sampled as brms samples them, for the centred design on Stan's ordered coordinates, with `b_Intercept` the
+thresholds of the raw design and the intercept prior on every threshold; one linear predictor per non-reference category
+for the categorical family, under one prior per class; `predict(kind="mean")` returning the category probabilities with a
+new `category` dimension) followed, verified against `cumulative_varint`, `categorical_poponly` and two cases with a
+categorical predictor frozen with it; a categorical model takes population-level terms only and its categories are
+sorted labels (D36, D37), and other ordinal links, `disc`, `cs()` and the `sratio` / `cratio` / `acat` families are not
+offered (D38); see [ordinal and categorical responses](ordinal-categorical.md).

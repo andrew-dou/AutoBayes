@@ -80,11 +80,13 @@ EXPECTED = {                               # family -> (Bambi parent, link, pred
     "binomial": ("logit_p", "logit", "p"),
     "zero_inflated_poisson": ("log_mu", "log", "mean"),
     "hurdle_poisson": ("log_mu", "log", "mean"),
+    "cumulative": ("mu", "logit", "p"),
+    "categorical": ("mu", "logit", "p"),
 }
 
 
 def test_registry_lists_exactly_the_registered_families():
-    assert set(FAMILIES) == set(EXPECTED) and len(FAMILIES) == 11
+    assert set(FAMILIES) == set(EXPECTED) and len(FAMILIES) == 13
     for name, (parent, link, mean) in EXPECTED.items():
         spec = get_family(name)
         assert isinstance(spec, FamilySpec) and spec is FAMILIES[name]
@@ -99,9 +101,13 @@ def test_registry_lists_exactly_the_registered_families():
     assert {name for name, spec in FAMILIES.items() if spec.fixed_parameters} == {"student"}
     assert {name for name, spec in FAMILIES.items() if spec.has_trials} == {"binomial"}
     assert {name for name, spec in FAMILIES.items() if "probability" in spec.prediction_kinds} == {"binomial"}
-    assert {name for name, spec in FAMILIES.items() if spec.expected_response is not None} == {"lognormal", "zero_inflated_poisson", "hurdle_poisson"}
+    assert {name for name, spec in FAMILIES.items() if spec.expected_response is not None} == {"lognormal", "zero_inflated_poisson", "hurdle_poisson",
+                                                                                               "cumulative"}
+    assert {name for name, spec in FAMILIES.items() if spec.response_categories is not None} == {"cumulative", "categorical"}
+    assert {name for name, spec in FAMILIES.items() if spec.thresholds} == {"cumulative"}
+    assert {name for name, spec in FAMILIES.items() if spec.per_category} == {"categorical"}
     assert {name: spec.zero_parameter for name, spec in FAMILIES.items() if spec.zero_parameter} == {"zero_inflated_poisson": "zi", "hurdle_poisson": "hu"}
-    with pytest.raises(ValueError, match=r"family must be one of \['bernoulli', 'beta', 'binomial', 'gamma', 'gaussian', 'hurdle_poisson', 'lognormal', 'negbinomial', 'poisson', 'student', 'zero_inflated_poisson'\], got 'weibull'"):
+    with pytest.raises(ValueError, match=r"family must be one of \['bernoulli', 'beta', 'binomial', 'categorical', 'cumulative', 'gamma', 'gaussian', 'hurdle_poisson', 'lognormal', 'negbinomial', 'poisson', 'student', 'zero_inflated_poisson'\], got 'weibull'"):
         get_family("weibull")
     with pytest.raises(TypeError):
         FAMILIES["weibull"] = None
@@ -113,7 +119,8 @@ def frame() -> pd.DataFrame:
     n = 12
     return pd.DataFrame({"x": rng.normal(size=n), "y": rng.normal(size=n), "yb": [0, 1] * (n // 2),
                          "cnt": rng.poisson(2.0, n), "k": rng.integers(0, 6, n), "n": np.full(n, 5),
-                         "ypos": rng.gamma(2.0, 1.0, n), "prop": rng.uniform(0.05, 0.95, n)})
+                         "ypos": rng.gamma(2.0, 1.0, n), "prop": rng.uniform(0.05, 0.95, n),
+                         "ord": [1, 2, 3, 4] * (n // 4), "cat": ["a", "b", "c"] * (n // 3)})
 
 
 EXAMPLES = {                               # family -> (formula, extra prior classes, constructor keywords)
@@ -128,6 +135,8 @@ EXAMPLES = {                               # family -> (formula, extra prior cla
     "binomial": ("k | trials(n) ~ x", {}, {}),
     "zero_inflated_poisson": ("cnt ~ x", {"zi": ab.Beta(2, 2)}, {}),
     "hurdle_poisson": ("cnt ~ x", {"hu": ab.Beta(2, 2)}, {}),
+    "cumulative": ("ord ~ x", {}, {}),
+    "categorical": ("cat ~ x", {}, {}),
 }
 
 

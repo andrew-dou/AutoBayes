@@ -6,6 +6,7 @@ G1 `check_design`        standata equals the model's design, response, trials, o
 G2 `check_logp`          log density with and without the Jacobian, and its prior part, at every point
 G2 `check_gradient`      every gradient coordinate, mapped through the probed parameter table
 G3 `check_derived`       the graph's linear predictor, group effects and correlation matrices, and the raw-scale intercept
+                         (the cumulative thresholds and a categorical model's per-category intercepts, B05)
 G4 `check_predictions`   predict() on the fixture's draws equals posterior_linpred/posterior_epred
 G5 `check_jax`           the JAX-compiled density equals the PyTensor one at every point
 G6 `check_default_prior` brms's default-prior table has the classes this model has, and `ab.default_priors()` for the
@@ -94,8 +95,17 @@ def check_design(b: Bundle) -> None:
     sd, d = b.fixture.standata, b.model.design
     if int(sd["N"]) != d.n:
         raise OracleMismatch(f"brms N = {int(sd['N'])}, AutoBayes n = {d.n}")
-    if sd["X"].shape != (d.n, d.X_raw.shape[1] + int(b.model.spec.intercept)):
-        raise OracleMismatch(f"brms X is {sd['X'].shape}; AutoBayes has {d.X_raw.shape[1]} design columns and intercept={b.model.spec.intercept}")
+    # B05: the cumulative model's X has no intercept column (its thresholds take its place); the categorical model has one
+    # design per non-reference category
+    designs = [f"X_{dp}" for dp in b.cmap.dpars] or ["X"]
+    intercept_column = int(b.model.spec.intercept and not b.cmap.thresholds)
+    for name in designs:
+        if sd[name].shape != (d.n, d.X_raw.shape[1] + intercept_column):
+            raise OracleMismatch(f"brms {name} is {sd[name].shape}; AutoBayes has {d.X_raw.shape[1]} design columns and intercept={b.model.spec.intercept}")
+    if b.cmap.thresholds and int(sd["nthres"]) != len(b.model.categories) - 1:
+        raise OracleMismatch(f"brms has nthres = {int(sd['nthres'])}; AutoBayes has {len(b.model.categories)} categories")
+    if b.cmap.dpars and int(sd["ncat"]) != len(b.model.categories):
+        raise OracleMismatch(f"brms has ncat = {int(sd['ncat'])}; AutoBayes has {len(b.model.categories)} categories")
     err = abs_err(sd["Y"], d.y)
     if err > DESIGN_ABS:
         raise OracleMismatch(f"response differs by {err}")
@@ -177,6 +187,8 @@ def check_derived(b: Bundle) -> None:
     groups = list(b.model.group_coefficient_names.items())          # every group-level coefficient: intercepts and slopes
     cors = list(b.model.correlation_names.items())                  # the correlation matrix of every correlated term (A02)
     dets = [pmm[names["linpred"]]] + [pmm[roles["group_effect"]] for _, roles in groups] + [pmm[roles["cor"]] for _, roles in cors]
+    if b.cmap.thresholds:                                           # B05: the graph's b_Intercept, brms's raw thresholds
+        dets.append(pmm[names["thresholds"]])
     fn = pmm.compile_fn(pmm.replace_rvs_by_values(dets), inputs=pmm.value_vars, point_fn=True, on_unused_input="ignore")
     # Under a log link Bambi's parent deterministic holds the mean exp(eta), which is brms's epred when the parent is the
     # expected response (Poisson, negative binomial, Gamma: names["linpred"] == names["mean"] == "mu"); the zero-inflated
@@ -185,7 +197,8 @@ def check_derived(b: Bundle) -> None:
     ref = b.fixture.prediction("fitted", "epred" if holds_mean else "linpred")
     for k, p, vp in b.points():
         out = fn(vp)
-        lin = np.asarray(out[0], dtype=float).ravel()
+        # B05: a categorical model's linear predictor has one column per non-reference category, brms's (rows, categories)
+        lin = np.asarray(out[0], dtype=float) if b.cmap.dpars else np.asarray(out[0], dtype=float).ravel()
         err = rel_err(lin, ref[k])
         if err > PRED_REL:
             raise OracleMismatch(f"point {k}: the graph's {names['linpred']!r} differs from brms by {err}")
@@ -195,13 +208,30 @@ def check_derived(b: Bundle) -> None:
             err = rel_err(r, np.atleast_1d(p.pars[f"r_{m}_{cn}"]))
             if err > PRED_REL:
                 raise OracleMismatch(f"point {k}: group effects of {coef!r} of {g!r} differ from brms r_{m}_{cn} by {err}")
-        for (g, _), cor in zip(cors, out[1 + len(groups):]):
+        for (g, _), cor in zip(cors, out[1 + len(groups):1 + len(groups) + len(cors)]):
             m, perm = b.gmap.brms_id[g], adapter.correlation_order(b.model, b.gmap, g)
             ref_cor = np.atleast_2d(p.pars[f"Cor_{m}"])[np.ix_(perm, perm)]
             err = rel_err(np.asarray(cor, dtype=float), ref_cor)
             if err > PRED_REL:
                 raise OracleMismatch(f"point {k}: the correlation matrix of {g!r} differs from brms Cor_{m} by {err}")
-        if "b_Intercept" in p.pars:
+        if b.cmap.thresholds:                                        # B05: b_Intercept = Intercept + sum_p mean(x_p) b_p
+            nat = adapter.natural_point(b.model, p, b.cmap, b.gmap)
+            brms = np.atleast_1d(p.pars["b_Intercept"])
+            for what, raw in (("raw-scale thresholds", nat["intercept"] + float(d.x_means @ nat["b"])),
+                              (f"the graph's {names['thresholds']!r}", np.asarray(out[-1], dtype=float))):
+                err = rel_err(raw, brms)
+                if err > PRED_REL:
+                    raise OracleMismatch(f"point {k}: {what} {raw!r} vs brms b_Intercept {brms!r}")
+        elif b.cmap.dpars:                                           # B05: each category's raw-scale intercept
+            nat = adapter.natural_point(b.model, p, b.cmap, b.gmap)
+            for c, dp in enumerate(b.cmap.dpars):
+                if f"b_{dp}_Intercept" in p.pars:
+                    raw = nat["intercept"][c] - float(d.x_means @ nat["b"][:, c])
+                    err = rel_err(raw, float(p.pars[f"b_{dp}_Intercept"]))
+                    if err > PRED_REL:
+                        raise OracleMismatch(f"point {k}: raw-scale intercept of {dp} {raw!r} vs brms b_{dp}_Intercept "
+                                             f"{float(p.pars[f'b_{dp}_Intercept'])!r}")
+        elif "b_Intercept" in p.pars:
             nat = adapter.natural_point(b.model, p, b.cmap, b.gmap)
             raw = nat["intercept"] - float(d.x_means @ nat["b"])
             err = rel_err(raw, float(p.pars["b_Intercept"]))
@@ -267,7 +297,8 @@ def default_prior_table(b: Bundle) -> list[dict[str, str]]:
     if "nu" in b.model.family_spec.learnable_parameters:
         kwargs["nu"] = None
     priors = ab.default_priors(spec["formula"], b.data, family=b.model.family, **kwargs)
-    return priors.table(b.model.spec, b.model.family_spec, center_predictors=b.model.effective_center_predictors)
+    return priors.table(b.model.spec, b.model.family_spec, center_predictors=b.model.effective_center_predictors,
+                        categories=getattr(b.model, "categories", ()) or None)   # the ordinal and categorical tables need them (B05)
 
 
 def check_default_prior(b: Bundle) -> None:

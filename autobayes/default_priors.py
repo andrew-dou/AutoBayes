@@ -243,11 +243,13 @@ def default_priors(formula: str, data: pd.DataFrame, *, family: str = "gaussian"
         accepting = [name for name, other in FAMILIES.items() if "nu" in other.fixed_parameters]
         raise ValueError(f"nu applies only to the {' or '.join(accepting)} family")
     spec = parse_formula(formula, data, family, categorical)
-    y = np.asarray(data[spec.response], dtype=float)
+    # B05: brms never reads an ordinal or categorical response for its defaults (no identity or log link: 0 and 2.5), and
+    # its labels need not be numbers
+    y = np.asarray(data[spec.response], dtype=float) if fam.response_categories is None else np.zeros(len(data))
     location, scale = location_scale(y, fam.default_prior_link, _offset_values(spec, data))
     intercept = None
-    if spec.intercept:
-        intercept = StudentT(DF, location, scale) if center_predictors else Flat()
+    if spec.intercept:                                                # the cumulative thresholds keep brms's Intercept class (B05)
+        intercept = StudentT(DF, location, scale) if center_predictors or fam.thresholds else Flat()
     sd = {}
     for t in spec.group_terms:
         sd[t.factor] = HalfStudentT(DF, scale) if not t.slopes else {c: HalfStudentT(DF, scale) for c in t.coefs}
@@ -337,7 +339,24 @@ def brms_coefficient_names(spec) -> dict[str, str]:
     return out
 
 
-def prior_table(priors: Priors, spec, family="gaussian", *, center_predictors: bool = True) -> list[dict[str, str]]:
+def brms_dpar_names(categories) -> list[str]:
+    """brms's names of the linear predictors of the categorical family's categories (B05): ``mu`` followed by the
+    category's label with every character but letters and digits removed (brms's ``make_stan_names(paste0("mu", cats))``:
+    R's ``make.names``, then its dots and underscores dropped), so ``c2`` is ``muc2`` and ``a b`` is ``muab``. Two categories
+    that would get the same name are refused (brms makes the names unique first and refuses only what still collides)."""
+    from autobayes.formula import FormulaError
+
+    out = ["mu" + "".join(ch for ch in str(c) if ch.isalnum()) for c in categories]
+    clash = sorted({n for n in out if out.count(n) > 1})
+    if clash:
+        which = [str(c) for c, n in zip(categories, out) if n in clash]
+        raise FormulaError(f"the response categories {which} would share brms's parameter name {clash[0]!r} (brms keeps only the "
+                           "letters and digits of a category in the name of its linear predictor); relabel them")
+    return out
+
+
+def prior_table(priors: Priors, spec, family="gaussian", *, center_predictors: bool = True,
+                categories=None) -> list[dict[str, str]]:
     """``priors`` in brms's table form: one row per class, group and coefficient as brms's ``default_prior()`` lists
     them, with the columns ``COLUMNS`` (all strings), sorted as brms sorts them (by resp, dpar, nlpar, class, group, coef;
     C-locale order). A prior shared by every member of a class sits on the class row and the member rows are empty
@@ -346,37 +365,47 @@ def prior_table(priors: Priors, spec, family="gaussian", *, center_predictors: b
     syntax (``brms_prior``: ``HalfStudentT(3, 2.5)`` on ``sd`` is ``student_t(3, 0, 2.5)`` with ``lb`` 0; ``Flat()`` is
     the empty string); ``source`` is ``default`` for a prior from ``default_priors`` and ``user`` otherwise.
     ``spec`` is the model's parsed formula with its data seen (``model.spec``); without centring the intercept is
-    brms's ``b`` coefficient ``Intercept``."""
+    brms's ``b`` coefficient ``Intercept``. The ordinal and categorical families (B05) need the response's ``categories``
+    (``Model.prior_table()`` passes them): the cumulative thresholds are brms's class ``Intercept`` with one row per
+    threshold (coef ``1``, ..., ``K - 1``), centred or not; the categorical family repeats the ``Intercept`` and ``b`` rows
+    for each non-reference category under its ``dpar`` (``muc2``, ...), with the one prior the categories share."""
     from autobayes.families import FamilySpec, get_family
 
     fam = family if isinstance(family, FamilySpec) else get_family(family)
     priors.validate(spec, fam)
+    if (fam.thresholds or fam.per_category) and not categories:
+        raise PriorError(f"the {fam.name} family's prior table needs the response categories (Model.prior_table() passes them)")
     rows: list[dict[str, str]] = []
 
-    def add(prior, cls, *, coef="", group="", lb="", ub="", source=None):
+    def add(prior, cls, *, coef="", group="", lb="", ub="", source=None, dpar=""):
         text = brms_prior(prior) if isinstance(prior, Prior) else ""
         src = source if source is not None else (prior.source if isinstance(prior, Prior) else "default")
-        rows.append(dict(zip(COLUMNS, (text, cls, coef, group, "", "", "", lb, ub, "", src))))
+        rows.append(dict(zip(COLUMNS, (text, cls, coef, group, "", dpar, "", lb, ub, "", src))))
 
     def same(ps):
         return all(p == ps[0] for p in ps)
 
     names = brms_coefficient_names(spec)
-    coefs = [(names[col], p) for col, p in priors.coefficient_priors(spec).items()]
-    if spec.intercept and center_predictors:
-        add(priors.intercept, "Intercept")
-    elif spec.intercept:
-        coefs.insert(0, ("Intercept", priors.intercept))              # brms's uncentred intercept is a b coefficient
-    if coefs:
-        ps = [p for _, p in coefs]
-        if same(ps):
-            add(ps[0], "b")
-            for name, p in coefs:
-                add(None, "b", coef=name, source=p.source)
-        else:
-            add(None, "b")
-            for name, p in coefs:
-                add(p, "b", coef=name)
+    coefficient_priors = priors.coefficient_priors(spec)
+    for dpar in (brms_dpar_names(categories[1:]) if fam.per_category else [""]):   # brms's mu<k>: one block per category (B05)
+        coefs = [(names[col], p) for col, p in coefficient_priors.items()]
+        if spec.intercept and (center_predictors or fam.thresholds):
+            add(priors.intercept, "Intercept", dpar=dpar)
+            if fam.thresholds:                                        # brms lists every threshold under the class row (B05)
+                for k in range(1, len(categories)):
+                    add(None, "Intercept", coef=str(k), source=priors.intercept.source)
+        elif spec.intercept:
+            coefs.insert(0, ("Intercept", priors.intercept))          # brms's uncentred intercept is a b coefficient
+        if coefs:
+            ps = [p for _, p in coefs]
+            if same(ps):
+                add(ps[0], "b", dpar=dpar)
+                for name, p in coefs:
+                    add(None, "b", coef=name, source=p.source, dpar=dpar)
+            else:
+                add(None, "b", dpar=dpar)
+                for name, p in coefs:
+                    add(p, "b", coef=name, dpar=dpar)
     if fam.scale_parameter is not None:
         add(getattr(priors, fam.scale_parameter), fam.scale_parameter, lb="0")
     if fam.zero_parameter is not None:                                # brms's real<lower=0,upper=1> zi / hu (B06)

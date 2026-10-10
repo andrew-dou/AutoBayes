@@ -66,6 +66,8 @@ def freeze_target(model):
         **({'additions': {'terms': [a.term for a in s.additions],
                           **({'weights': d.weights} if d.weights is not None else {}),
                           **({'cens': d.cens} if d.cens is not None else {})}} if s.additions else {}),
+        # The response's categories (B05: cumulative, categorical), whose 1-based codes are y, likewise
+        **({'categories': list(model.categories)} if getattr(model, 'categories', ()) else {}),
         'priors': {'intercept': prior(pr.intercept), 'sigma': prior(pr.sigma),
                    'coefficients': {k: prior(v) for k,v in pr.coefficient_priors(s).items()},
                    'groups': {k: prior(v) for k,v in pr.group_priors(s).items()},

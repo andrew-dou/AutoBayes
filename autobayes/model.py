@@ -124,7 +124,8 @@ class Model:
     Attributes
     ----------
     family : str               a registered family name: "gaussian", "student", "poisson", "negbinomial", "gamma", "lognormal", "beta", "bernoulli", "binomial",
-                               "zero_inflated_poisson", "hurdle_poisson"
+                               "zero_inflated_poisson", "hurdle_poisson", "cumulative", "categorical"
+    categories : tuple[str]    the response's categories in order (the cumulative and categorical families, B05); () otherwise
     family_spec : FamilySpec   the specification of that family under the model's link (autobayes/families/; the registered spec unless ``link`` names another of the family's links)
     link : str                 the link: the family's own, or the ``link`` given ("probit" for the Bernoulli and binomial families)
     spec : ModelSpec
@@ -217,6 +218,11 @@ class Model:
             df[t.column] = group_labels(t.factor, df)
         for t in self.spec.transform_terms:                  # the evaluated column Bambi is handed, under the term's own name (A05)
             df[t.name] = t.transform.values(df)
+        self.categories: tuple[str, ...] = ()               # the response's categories, in order (B05: cumulative, categorical)
+        if fam.response_categories is not None:              # the response is fitted as its 1-based category, brms's Y
+            self.categories, codes, notes = fam.response_categories(self.spec, df[self.spec.response])
+            df[self.spec.response] = codes
+            self.warnings.extend(notes)
         if fam.response_dtype is not None:
             df[self.spec.response] = df[self.spec.response].astype(fam.response_dtype)
         self.warnings.extend(fam.response_warnings(self.spec, df))   # separation, all-zero counts
@@ -244,10 +250,13 @@ class Model:
         for name in fam.fixed_parameters:                    # Bambi takes a fixed nu through the prior dict; a learned
             if name not in self.learned_parameters:          # one's truncated prior came from Priors.to_bambi (A13)
                 bambi_priors[name] = getattr(self, name)
+        bambi_center = self.effective_center_predictors
+        if fam.bambi_setup is not None:                      # B05: the family builds what Bambi is handed from the model
+            bambi_family, bambi_priors, bambi_center = fam.bambi_setup(self, bambi_priors)
         self.bambi_model = bmb.Model(
             self.spec.bambi_formula, self.data, family=bambi_family,
             priors=bambi_priors,
-            noncentered=True, center_predictors=self.effective_center_predictors,
+            noncentered=True, center_predictors=bambi_center,
         )
         self.bambi_model.build()
         self.pymc_model = self.bambi_model.backend.model
@@ -282,6 +291,10 @@ class Model:
         if self.family_spec.zero_parameter is not None:
             variable_names += [self.family_spec.zero_parameter]          # the zero-inflation / hurdle probability, "zi" or "hu" (B06)
         variable_names += list(self.family_spec.fixed_parameters)   # Bambi uses "nu" as an auxiliary-prior key even when fixed.
+        if self.family_spec.thresholds:                     # B05: the raw thresholds' deterministic and their coordinate
+            variable_names += [self.names["thresholds"], self.names["threshold_dim"]]
+        if self.family_spec.per_category:                   # B05: the category coordinates Bambi adds
+            variable_names += [self.names["category_dim"], f"{self.spec.response}_dim"]
         for roles in self.group_coefficient_names.values():
             variable_names.extend(roles[k] for k in ("sd", "offset", "group_effect"))
         for roles in self.correlation_names.values():
@@ -557,6 +570,11 @@ class Model:
             out[fam.zero_parameter] = fam.zero_parameter
         for name in self.learned_parameters:                  # a learned nu (A13): the PyMC variable of that name
             out[name] = name
+        if fam.thresholds:                                    # B05: brms's b_Intercept, the thresholds of the raw design, and
+            out["thresholds"] = "b_Intercept"                 # the coordinate of the thresholds ("1", ..., "K - 1")
+            out["threshold_dim"] = "Intercept_dim"
+        if fam.per_category:                                  # B05: the coordinate of the non-reference categories
+            out["category_dim"] = f"{self.spec.response}_reduced_dim"
         if fam.continuous and fam.parent == "mu":
             out["mu"] = "mu"                                  # the continuous families whose parent is the location mu expose it by name (the Beta's parent is logit_mu)
         return out
@@ -634,10 +652,18 @@ class Model:
         ``nu`` is the degrees of freedom of a Student-t model that learns them (``learned_parameters``), given exactly then
         and stored as ``log(nu - 1)``, PyMC's interval coordinate. ``zi`` / ``hu`` is the zero-inflation / hurdle probability
         of the zero-inflated / hurdle families (B06), given exactly for them, in (0, 1), and stored as ``logit(zi)``, PyMC's
-        log-odds coordinate (Stan's for ``real<lower=0,upper=1>``).
+        log-odds coordinate (Stan's for ``real<lower=0,upper=1>``). For the cumulative family (B05) ``intercept`` is the
+        K - 1 thresholds (brms's ``Intercept``: of the centred design when centred), strictly increasing, stored on Stan's
+        ordered coordinates ``(tau_1, log(tau_2 - tau_1), ...)``; for the categorical family it has one entry per
+        non-reference category and ``b`` is ``(columns, K - 1)``, one column per non-reference category.
         """
         b = np.atleast_1d(np.asarray(b, dtype=float))
-        if b.shape != (len(self.spec.columns),):
+        if self.family_spec.per_category:                     # B05: one coefficient per design column and non-reference category
+            others = len(self.categories) - 1
+            if b.shape != (len(self.spec.columns), others):
+                raise ValueError(f"b must be an array of shape ({len(self.spec.columns)}, {others}): one row per design column "
+                                 f"{list(self.spec.columns)}, one column per non-reference category {list(self.categories[1:])}")
+        elif b.shape != (len(self.spec.columns),):
             raise ValueError(f"b must have {len(self.spec.columns)} entries, one per design column {list(self.spec.columns)}")
         def keyed(value, label):
             if isinstance(value, Mapping):
@@ -718,7 +744,19 @@ class Model:
             raise ValueError("intercept is required for a model with a population intercept")
         if not self.spec.intercept and intercept is not None:
             raise ValueError("no population intercept exists; omit intercept (or pass None)")
-        point = {n["intercept"]: np.asarray(float(intercept))} if self.spec.intercept else {}
+        point = {n["intercept"]: np.asarray(float(intercept))} if self.spec.intercept and not self.categories else {}
+        if self.spec.intercept and self.categories:          # B05: K - 1 thresholds, or one intercept per non-reference category
+            arr = np.atleast_1d(np.asarray(intercept, dtype=float))
+            K = len(self.categories)
+            if self.family_spec.thresholds:
+                if arr.shape != (K - 1,) or not np.isfinite(arr).all() or not (np.diff(arr) > 0).all():
+                    raise ValueError(f"intercept must be the {K - 1} thresholds, finite and strictly increasing (brms's Intercept)")
+                point[f"{n['intercept']}_ordered__"] = np.r_[arr[0], np.log(np.diff(arr))]     # Stan's ordered coordinates
+            else:
+                if arr.shape != (K - 1,) or not np.isfinite(arr).all():
+                    raise ValueError(f"intercept must have {K - 1} finite entries, one per non-reference category "
+                                     f"{list(self.categories[1:])}")
+                point[n["intercept"]] = arr
         def log_scale(value, label):
             arr = np.asarray(value, dtype=float)
             if arr.shape != () or not np.isfinite(arr) or arr <= 0:
@@ -774,35 +812,36 @@ class Model:
         pairs = [t.operands for t in num_cat]
         def cells(t):                                        # (cell label, level of the first operand, level of the second)
             return [(lvl, *pair) for lvl, pair in zip(t.levels, interaction_cells(*(s.categorical(c) for c in t.categorical)))]
+        fam = self.family_spec
+        centred_x = d.centered and not fam.thresholds        # B05: the cumulative mu is on the raw design
         parts = []
         for t in s.pop_terms:
             term = t.name
             if t.kind == "categorical":
                 for lvl in t.levels:
                     ind = f"1[{term}_i = {lvl}]"
-                    parts.append(f"({ind} - p_{term}[{lvl}]) * b_{term}[{lvl}]" if d.centered else f"{ind} * b_{term}[{lvl}]")
+                    parts.append(f"({ind} - p_{term}[{lvl}]) * b_{term}[{lvl}]" if centred_x else f"{ind} * b_{term}[{lvl}]")
             elif t.kind == "interaction" and len(t.categorical) == 1:
                 zn = t.categorical[0]
                 xn = next(c for c in t.operands if c != zn)
                 for lvl in t.levels:
                     prod = f"x_{xn} * 1[{zn}_i = {lvl}]"
-                    parts.append(f"({prod} - q_{term}[{lvl}]) * b_{term}[{lvl}]" if d.centered else f"{prod} * b_{term}[{lvl}]")
+                    parts.append(f"({prod} - q_{term}[{lvl}]) * b_{term}[{lvl}]" if centred_x else f"{prod} * b_{term}[{lvl}]")
             elif t.kind == "interaction" and not t.categorical:
                 xn, wn = t.operands
                 prod = f"x_{xn} * x_{wn}"
-                parts.append(f"({prod} - q_{term}) * b_{term}" if d.centered else f"{prod} * b_{term}")
+                parts.append(f"({prod} - q_{term}) * b_{term}" if centred_x else f"{prod} * b_{term}")
             elif t.kind == "interaction":
                 zn, hn = t.operands
                 for lvl, lz, lh in cells(t):
                     prod = f"1[{zn}_i = {lz}] * 1[{hn}_i = {lh}]"
-                    parts.append(f"({prod} - p_{term}[{lvl}]) * b_{term}[{lvl}]" if d.centered else f"{prod} * b_{term}[{lvl}]")
+                    parts.append(f"({prod} - p_{term}[{lvl}]) * b_{term}[{lvl}]" if centred_x else f"{prod} * b_{term}[{lvl}]")
             elif t.kind == "transform":
                 value = t.transform.expression(f"{t.transform.column}_i")
-                parts.append(f"({value} - mean({term})) * b_{term}" if d.centered else f"{value} * b_{term}")
+                parts.append(f"({value} - mean({term})) * b_{term}" if centred_x else f"{value} * b_{term}")
             else:
-                parts.append(f"(x_{term} - mean(x_{term})) * b_{term}" if d.centered else f"x_{term} * b_{term}")
+                parts.append(f"(x_{term} - mean(x_{term})) * b_{term}" if centred_x else f"x_{term} * b_{term}")
         xs = " + ".join(parts)
-        fam = self.family_spec
         lp = fam.linpred_symbol
         a = f"a{'_c' if d.centered else ''}" if s.intercept else "0"
         grouping = ("; ".join(f"J = {block.J} levels of {g}" for g, block in d.group_designs.items())
@@ -827,6 +866,10 @@ class Model:
         if s.canonical_formula != s.formula:
             lines += [f"  expanded  : {s.canonical_formula}   (canonical form handed to Bambi)"]
         lines += [f"  family    : {self.family}, {self.link} link", data_line]
+        if self.categories:                                   # B05: the response's categories, fitted as brms's 1-based Y
+            lines += [f"  {s.response:<10}: response categories " + ", ".join(f"{k}={c}" for k, c in enumerate(self.categories, start=1))
+                      + (" (ordered)" if fam.thresholds else f" (the reference is {self.categories[0]!r})")
+                      + "; fitted as the 1-based category (brms's Y)"]
         if s.offset is not None:
             lines += [f"  offset    : {s.offset.expression}, added to the linear predictor as written (no coefficient, no prior, "
                       f"never centred; brms offset()); range {d.offset.min():.4f} to {d.offset.max():.4f} over the fitted rows"]
@@ -854,12 +897,17 @@ class Model:
                 + (f"; unused declared categories {list(cat.unused)}" if cat.unused else ""),
                 f"              proportions among fitted rows: {props}",
             ]
+        rest = (" + offset_i" if s.offset is not None else "") + "".join(
+            f" + {effect(t.factor)}[{t.factor}_i]" + "".join(f" + x_{c},i * {slope_effect(t.factor, c)}[{t.factor}_i]" for c in t.slopes)
+            for t in s.group_terms)
+        if fam.thresholds:                                    # B05: no intercept in mu, the thresholds take its place
+            body = (xs + rest) if xs else (rest[3:] or "0")
+        else:
+            body = a + (f" + {xs}" if xs else "") + rest
         lines += [
             "",
             "Linear predictor",
-            f"  {lp}_i = {a}" + (f" + {xs}" if xs else "") + (" + offset_i" if s.offset is not None else "")
-            + "".join(f" + {effect(t.factor)}[{t.factor}_i]" + "".join(f" + x_{c},i * {slope_effect(t.factor, c)}[{t.factor}_i]" for c in t.slopes)
-                      for t in s.group_terms),
+            f"  {lp}_i = {body}",
         ]
         if s.offset is not None:
             per_row = f"log({s.offset.column}_i)" if s.offset.log else f"{s.offset.column}_i"
@@ -921,7 +969,9 @@ class Model:
                       "factor's reference, and the cell coefficient is how much that difference changes in cell (l, m). Cells with no "
                       "fitted rows keep only their prior."]
         lines += fam.mean_lines(self)
-        if d.centered:
+        if fam.intercept_lines is not None:                   # B05: the cumulative thresholds
+            lines += fam.intercept_lines(self)
+        elif d.centered:
             what = fam.intercept_meaning
             where = "at the predictor means" if not s.categoricals else \
                 "at the numeric predictor means and at the sample proportions of the categorical levels"
@@ -1004,9 +1054,15 @@ class Model:
         else:
             lines += ["", "Group effects", "  none: a population-only model (no '(1 | group)' term)"]
         lines += ["", "Priors" + ("" if fam.link_scale is None else f" (location coefficients on the {fam.link_scale} scale)")]
-        if s.intercept:
-            lines += [f"  {a} ~ {describe_prior(pr.intercept)}"]
-        lines += [f"  b_{col} ~ {describe_prior(coef[col])}" for col in s.columns]
+        each = "[k]" if fam.per_category else ""              # B05: the categorical family's priors hold for every category k
+        if s.intercept and fam.thresholds:
+            lines += [f"  Intercept[k] ~ {describe_prior(pr.intercept)}, for each of the {len(self.categories) - 1} thresholds "
+                      "k (brms's class Intercept)"]
+        elif s.intercept:
+            lines += [f"  {a}{each} ~ {describe_prior(pr.intercept)}"]
+        lines += [f"  b_{col}{each} ~ {describe_prior(coef[col])}" for col in s.columns]
+        if fam.per_category:
+            lines += [f"  (one prior per class, the same for every non-reference category k = {', '.join(self.categories[1:])})"]
         for (g, c), prior in pr.sd_priors(s).items():
             lines += [f"  sd_{sd_tag(g, c)} ~ {describe_prior(prior, lb=0)}"]
         for g, prior in pr.cor_priors(s).items():
@@ -1027,6 +1083,14 @@ class Model:
         lines += ["", "PyMC variables sampled (value space)"]
         n = self.names
         roles = {n["intercept"]: "a_c" if d.centered else "a"} if s.intercept else {}
+        if s.intercept and fam.thresholds:                    # B05: Stan's ordered coordinates of the thresholds
+            roles = {f"{n['intercept']}_ordered__": f"Intercept[1..{len(self.categories) - 1}], the thresholds"
+                     + (" of the centred design" if d.centered else "") + ", on Stan's ordered coordinates "
+                     "(Intercept[1], log(Intercept[k] - Intercept[k - 1]))"}
+        if fam.per_category:                                  # B05: one entry per non-reference category
+            others = ", ".join(self.categories[1:])
+            roles = {n["intercept"]: f"{'a_c' if d.centered else 'a'}[{others}] (vector; dims {n['category_dim']})"} if s.intercept else {}
+            roles.update({t.name: f"b_{t.name}[{others}] (vector; dims {n['category_dim']})" for t in s.pop_terms if not t.is_vector})
         for (g, c), names in self.group_coefficient_names.items():
             roles[f"{names['sd']}_log__"] = f"log(sd_{sd_tag(g, c)})"
             roles[names["offset"]] = ("z" if len(s.groups) == 1 else f"z_{g}") if c == "Intercept" else f"z_{c}|{g}"
@@ -1043,6 +1107,8 @@ class Model:
                 shown = ", ".join(f"({l})" for l in t.levels) if len(t.categorical) == 2 else ", ".join(t.levels)   # cells read (l, m)
                 rows = ", ".join(f"{t.name}[{l}]" for l in t.levels)      # ArviZ names a row variable[coordinate]
                 roles[t.name] = f"b_{t.name}[{shown}] (vector; dims {t.name}_dim, posterior rows {rows})"
+                if fam.per_category:                          # B05: and one column per non-reference category
+                    roles[t.name] = f"b_{t.name}[{shown}] (matrix; dims {t.name}_dim x {n['category_dim']})"
         for v in self.pymc_model.value_vars:
             lines.append(f"  {v.name:<24} {roles.get(v.name, f'b_{v.name}')}")
         lines.append("Deterministic: " + "".join(f"{names['group_effect']} = {effect(g) if c == 'Intercept' else slope_effect(g, c)}, "
@@ -1105,7 +1171,8 @@ class Model:
     def prior_table(self) -> list[dict[str, str]]:
         """This model's priors in brms's table form (``Priors.table``): the rows brms's ``default_prior()`` prints for the
         same model, with this model's priors in brms's syntax."""
-        return self.priors.table(self.spec, self.family_spec, center_predictors=self.effective_center_predictors)
+        return self.priors.table(self.spec, self.family_spec, center_predictors=self.effective_center_predictors,
+                                 categories=self.categories or None)
 
     # -- convenience -------------------------------------------------------------------
     def prior_predictive(self, *, draws=500, seed=None):
@@ -1256,3 +1323,35 @@ def hurdle_poisson(formula: str, data: pd.DataFrame, priors: Priors, *,
     """
     return Model(formula, data, priors, family="hurdle_poisson",
                  center_predictors=center_predictors, categorical=categorical)
+
+
+def cumulative(formula: str, data: pd.DataFrame, priors: Priors, *,
+               center_predictors: bool = True, categorical: Mapping[str, object] | None = None) -> Model:
+    """Ordinal response (brms ``cumulative("logit")``): K ordered categories, ``P(y <= k) = expit(tau_k - mu)`` with K - 1
+    increasing thresholds ``tau`` and the linear predictor ``mu`` without an intercept (docs/ordinal-categorical.md).
+
+    The response is positive integers ``1..K`` (K = the largest; brms's rule) or an ordered pandas Categorical (its declared
+    categories, in order); it is fitted as its 1-based category, ``model.categories`` holding the labels. The intercept prior
+    ``Priors(intercept=...)`` applies to every threshold, as brms's class ``Intercept`` does; the thresholds are sampled for
+    the centred design (brms's ``Intercept``), on Stan's ordered coordinates, and the graph's ``b_Intercept`` holds them for
+    the raw design. The intercept cannot be removed (brms refuses it too). ``predict(kind="mean")`` returns the category
+    probabilities ``p`` with a ``category`` dimension, ``kind="linear"`` returns ``mu``, ``kind="response"`` 1-based
+    categories. No other link, no ``disc``, category-specific effects or threshold structures (divergence D38).
+    """
+    return Model(formula, data, priors, family="cumulative", center_predictors=center_predictors, categorical=categorical)
+
+
+def categorical(formula: str, data: pd.DataFrame, priors: Priors, *,
+                center_predictors: bool = True, categorical: Mapping[str, object] | None = None) -> Model:
+    """Unordered categorical response (brms ``categorical()``): one linear predictor ``mu_k`` per non-reference category,
+    ``P(y = k) = softmax(0, mu_2, ..., mu_K)_k`` (docs/ordinal-categorical.md).
+
+    The categories are the response's distinct labels sorted as brms's ``as.factor`` sorts them (text in C-locale order,
+    integer codes numerically); the first is the reference and ``model.categories`` holds them all. Each non-reference
+    category has its own intercept and coefficients on the same design, all under the one ``Priors(intercept=...)`` and
+    ``b`` (one prior per class shared by the categories, divergence D37). ``predict(kind="linear")`` returns ``mu`` with a
+    ``category`` dimension over the non-reference categories, ``kind="mean"`` the probabilities ``p`` over all categories,
+    ``kind="response"`` 1-based categories. Population-level terms only: group-level terms and the offset are refused in
+    this slice (D37). ``categorical={column: reference}`` declares categorical predictors as for every family.
+    """
+    return Model(formula, data, priors, family="categorical", center_predictors=center_predictors, categorical=categorical)

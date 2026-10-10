@@ -5,10 +5,6 @@
  "note": "brms: one linear predictor per non-reference category (muc2, muc3); epred is draws x N x 3",
  "seed": 168,
  "n_points": 8,
- "gate": {
-  "expect": "fail",
-  "reason": "B05_ordinal_categorical not implemented; remove this field when it lands"
- },
  "data": {
   "generator": "tier_b",
   "seed": 68,

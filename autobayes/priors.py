@@ -434,15 +434,16 @@ class Priors:
                 raise PriorError(f"prior for 'cor:{g}' must be a correlation prior ({sorted(_CORRELATION)}, brms's lkj(eta)), got {prior}")
         return by_factor
 
-    def table(self, spec, family="gaussian", *, center_predictors: bool = True) -> list[dict[str, str]]:
+    def table(self, spec, family="gaussian", *, center_predictors: bool = True, categories=None) -> list[dict[str, str]]:
         """These priors in brms's table form, the rows of brms's ``default_prior()`` (prior, class, coef, group, resp,
         dpar, nlpar, lb, ub, tag, source; all strings), sorted as brms sorts them: ``autobayes.default_priors.prior_table``.
         ``spec`` is the parsed formula with its data seen (``model.spec``; ``Model.prior_table()`` passes the model's own),
         ``family`` a family name or the model's ``FamilySpec``, ``center_predictors`` whether the intercept is centred
-        (otherwise it is brms's ``b`` coefficient ``Intercept``)."""
+        (otherwise it is brms's ``b`` coefficient ``Intercept``); ``categories`` the response's categories, which the
+        ordinal and categorical families' tables need (``model.categories``; B05)."""
         from autobayes.default_priors import prior_table
 
-        return prior_table(self, spec, family, center_predictors=center_predictors)
+        return prior_table(self, spec, family, center_predictors=center_predictors, categories=categories)
 
     def improper(self, spec) -> list[str]:
         """The parameters under a flat prior (``Flat()``, brms's default for ``b``), labelled as fit records label them

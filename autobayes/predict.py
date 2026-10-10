@@ -71,12 +71,18 @@ def expected_response(fam, model, post, eta):
 
 
 def _coefficient_draws(post, model):
-    """(chain, draw, P) posterior draws of the coefficients in design-column order."""
+    """(chain, draw, P) posterior draws of the coefficients in design-column order; (chain, draw, P, K - 1) for the
+    categorical family (B05), whose every coefficient has the non-reference categories as its last axis."""
+    category = model.names.get("category_dim")
     parts = []
     for term in model.spec.pop_terms:
-        arr = post[term.name].to_numpy()
-        parts.append(arr if term.levels else arr[..., None])
-    return np.concatenate(parts, axis=-1) if parts else None
+        if category is None:
+            arr = post[term.name].to_numpy()
+            parts.append(arr if term.levels else arr[..., None])
+        else:
+            arr = post[term.name].transpose("chain", "draw", ..., category).to_numpy()
+            parts.append(arr if term.levels else arr[..., None, :])
+    return np.concatenate(parts, axis=-1 if category is None else -2) if parts else None
 
 
 def _check_newdata(model, newdata: pd.DataFrame, *, need_trials: bool = False, include_group_effects: bool = True) -> pd.DataFrame:
@@ -144,14 +150,22 @@ def _predict_by_hand(model, idata, df: pd.DataFrame | None, kind: str, seed, pol
         df = model.data
     post = idata.posterior
     n = model.names
+    fam = family_of(model)
     rng = np.random.default_rng(seed)
-    a = (post[n["intercept"]].to_numpy() if model.spec.intercept else
-         np.zeros((post.sizes["chain"], post.sizes["draw"])))                         # (chain, draw) raw-scale intercept
     b = _coefficient_draws(post, model)                         # (chain, draw, P) or None
     X = raw_design(model, df)                                   # raw scale: a is raw-scale intercept
-    mu = np.repeat(a[..., None], len(df), axis=-1)
-    if b is not None:
-        mu = mu + np.einsum("cdp,np->cdn", b, X)
+    if fam.per_category:                                        # B05: (chain, draw, n, K - 1), one predictor per non-reference category
+        a = (post[n["intercept"]].transpose("chain", "draw", n["category_dim"]).to_numpy() if model.spec.intercept else
+             np.zeros((post.sizes["chain"], post.sizes["draw"], len(model.categories) - 1)))
+        mu = np.repeat(a[..., None, :], len(df), axis=-2)
+        if b is not None:
+            mu = mu + np.einsum("cdpk,np->cdnk", b, X)
+    else:                                                       # the cumulative thresholds are not part of mu (B05)
+        a = (post[n["intercept"]].to_numpy() if model.spec.intercept and not fam.thresholds else
+             np.zeros((post.sizes["chain"], post.sizes["draw"])))                     # (chain, draw) raw-scale intercept
+        mu = np.repeat(a[..., None], len(df), axis=-1)
+        if b is not None:
+            mu = mu + np.einsum("cdp,np->cdn", b, X)
     if model.spec.offset is not None:                           # the offset enters as written, with or without group effects
         mu = mu + model.spec.offset.values(df)
     new_levels = {}
@@ -188,25 +202,35 @@ def _predict_by_hand(model, idata, df: pd.DataFrame | None, kind: str, seed, pol
             for k, (_, u, covariate) in enumerate(coefs):
                 mu[..., i] += (new_effects[lvl][k] if lvl in new_effects else u[..., levels.index(lvl)]) * covariate[i]
     dims = ("chain", "draw", "__obs__")
+    coords = {"chain": post["chain"], "draw": post["draw"], "__obs__": np.arange(len(df))}
     if kind == "linear":
         if not np.isfinite(mu).all():
             raise ValueError("linear predictor contains nonfinite draws")
-        out = {"eta": (dims, mu)}
+        if fam.per_category:                                     # B05: brms's mu<k> of the non-reference categories
+            out = {"eta": (dims + ("category",), mu)}
+            coords["category"] = list(model.categories[1:])
+        else:
+            out = {"eta": (dims, mu)}
     else:                                                        # mu held the linear predictor eta
-        fam = family_of(model)
         trunc = model.spec.addition("trunc")
         if trunc is None:
             mean = expected_response(fam, model, post, mu)
         else:                                                    # brms's posterior_epred of a truncated model: the truncated mean (B02)
             lb, ub = (-np.inf if trunc.lb is None else trunc.lb), (np.inf if trunc.ub is None else trunc.ub)
             mean = fam.tails().truncated_mean(model, post, mu, lb, ub)
-        out = {fam.mean_name: (dims, mean)}
+        if model.categories:                                     # B05: the probability of every category
+            out = {fam.mean_name: (dims + ("category",), mean)}
+            coords["category"] = list(model.categories)
+        else:
+            out = {fam.mean_name: (dims, mean)}
         if fam.has_trials and kind in ("mean", "response"):      # binomial: expected = n p beside p
             out["expected"] = (dims, mean * df[model.spec.trials].to_numpy(dtype=np.int64))
         if kind == "response":                                   # brms's posterior_predict ignores weights and censoring
             out["y"] = (dims, fam.draw_response(model, post, mu, mean, df, rng) if trunc is None
                         else fam.tails().draw_truncated(model, post, mu, lb, ub, rng))   # and draws from the truncated distribution
-    ds = xr.Dataset(out, coords={"chain": post["chain"], "draw": post["draw"], "__obs__": np.arange(len(df))})
+    ds = xr.Dataset(out, coords=coords)
+    if model.categories:                                         # what the 1-based categories of y are (B05)
+        ds.attrs["categories_json"] = json.dumps(list(model.categories))
     _prediction_attrs(model, ds, policies, new_levels, in_sample=False, manual=True, include_group_effects=include_group_effects)
     return ds
 
