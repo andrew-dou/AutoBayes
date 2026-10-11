@@ -1,0 +1,76 @@
+{
+ "id": "gauss_me",
+ "tier": "C",
+ "feature": "C06_missing_and_measurement_error",
+ "note": "brms me(): latent Xme_1 = meanme_1 + sdme_1 * zme_1 (zme_1[36] standard normal), Xn_1 = xobs ~ normal(Xme_1, noise_1 = sdx); bsp the coefficient of me(xobs, sdx) (prior class b, coef mexobssdx); priors on meanme and sdme; no newdata: brms draws the latent values on new rows",
+ "seed": 310,
+ "n_points": 8,
+ "gate": {
+  "expect": "fail",
+  "reason": "C06_missing_and_measurement_error not implemented; remove this field when it lands"
+ },
+ "data": {
+  "generator": "tier_c",
+  "seed": 210,
+  "n": 36
+ },
+ "brms": {
+  "formula": "y ~ me(xobs, sdx)",
+  "family": {
+   "family": "gaussian"
+  },
+  "factors": {},
+  "priors": [
+   {
+    "prior": "normal(0, 5)",
+    "class": "Intercept"
+   },
+   {
+    "prior": "normal(0, 2)",
+    "class": "b"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "sigma"
+   },
+   {
+    "prior": "normal(0, 2)",
+    "class": "meanme"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "sdme"
+   }
+  ]
+ },
+ "autobayes": {
+  "constructor": "gaussian",
+  "formula": "y ~ me(xobs, sdx)",
+  "kwargs": {},
+  "priors": {
+   "intercept": [
+    "Normal",
+    0,
+    5
+   ],
+   "b": [
+    "Normal",
+    0,
+    2
+   ],
+   "sigma": [
+    "HalfNormal",
+    1
+   ],
+   "meanme": [
+    "Normal",
+    0,
+    2
+   ],
+   "sdme": [
+    "HalfNormal",
+    1
+   ]
+  }
+ }
+}

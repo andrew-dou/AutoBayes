@@ -5,7 +5,9 @@ in Python.
 
 Every frame has the same columns: numeric `x`, `w`; categorical `z` (p, q, r); grouping factors `g` (six
 levels) and `h` (four); responses `y` (Gaussian), `yb` (0/1), `k` successes out of `size` trials (never
-zero trials), and `cnt` (Poisson counts). A case uses the columns its formula names.
+zero trials), and `cnt` (Poisson counts). A case uses the columns its formula names. The tier generators add
+columns after these; only `tier_c`'s `xm` has missing values (`NA_COLUMNS`): empty fields in the CSV, NaN in
+Python, and NA in R for a case that declares the column in `brms.na_columns`.
 """
 from __future__ import annotations
 
@@ -49,7 +51,7 @@ def baseline(seed: int, n: int = 36) -> pd.DataFrame:
 
 
 def newdata(seed: int, n: int = 5, *, tier_a: bool = False, pairs_from: pd.DataFrame | None = None,
-            tier_b: bool = False) -> pd.DataFrame:
+            tier_b: bool = False, tier_c: bool = False) -> pd.DataFrame:
     """Rows to predict on, with fitted levels only (unseen levels need stochastic policies on both sides).
     ``pairs_from`` copies (g, h) from random rows of the fitted frame, so a nested factor ``g:h`` sees only fitted
     combinations (brms refuses new levels of a grouping factor by default)."""
@@ -70,6 +72,10 @@ def newdata(seed: int, n: int = 5, *, tier_a: bool = False, pairs_from: pd.DataF
         rows = rng.integers(0, len(pairs_from), n)
         df["g"] = pairs_from["g"].to_numpy(dtype=object)[rows]
         df["h"] = pairs_from["h"].to_numpy(dtype=object)[rows]
+    if tier_c:                                                  # mi() and me() predictors on new rows (xm observed), drawn
+        df["xm"] = np.round(rng.normal(0.6, 0.7, n), 4)         # last so that every column above stays as it was
+        df["xobs"] = np.round(rng.normal(0.0, 1.0, n), 4)
+        df["sdx"] = np.round(rng.uniform(0.2, 0.6, n), 4)
     return df
 
 
@@ -114,7 +120,33 @@ def tier_b(seed: int, n: int = 36) -> pd.DataFrame:
     return df
 
 
-GENERATORS = {"baseline": baseline, "tier_a": tier_a, "tier_b": tier_b}
+def tier_c(seed: int, n: int = 36) -> pd.DataFrame:
+    """`tier_b` plus the columns Tier C features need: a time index `t` (1, 2, ... in row order within each level of
+    `g`) for autocorrelation terms, a second Gaussian response `y2` that shares part of `y`'s noise (multivariate
+    models), `xm`, related to `x` and `w`, with a fifth of its values missing (mi()), and `xobs`, `x` observed with
+    known noise standard deviations `sdx` (me()). Drawn after `tier_b`'s so the shared columns equal `tier_b(seed, n)`
+    exactly."""
+    df = tier_b(seed, n)
+    rng = np.random.default_rng(seed + 1299709)
+    g = df["g"].to_numpy(dtype=object)
+    t = np.zeros(n, dtype=np.int64)
+    for lvl in LEVELS["g"]:
+        rows = np.flatnonzero(g == lvl)
+        t[rows] = np.arange(1, rows.size + 1)
+    df["t"] = t
+    x, w, y = (df[c].to_numpy(dtype=float) for c in ("x", "w", "y"))
+    df["y2"] = np.round(0.2 - 0.5 * x + 0.5 * (y - y.mean()) + rng.normal(0.0, 0.6, n), 4)
+    xm = np.round(0.5 * x + 0.4 * w + rng.normal(0.0, 0.5, n), 4)
+    xm[rng.permutation(n)[: max(2, n // 5)]] = np.nan
+    df["xm"] = xm
+    sdx = np.round(rng.uniform(0.2, 0.6, n), 4)
+    df["xobs"] = np.round(x + rng.normal(0.0, 1.0, n) * sdx, 4)
+    df["sdx"] = sdx
+    return df
+
+
+GENERATORS = {"baseline": baseline, "tier_a": tier_a, "tier_b": tier_b, "tier_c": tier_c}
+NA_COLUMNS = {"tier_c": ("xm",)}                                # the only columns with missing values, by design
 
 
 def make(spec: dict) -> tuple[pd.DataFrame, pd.DataFrame | None]:
@@ -124,8 +156,10 @@ def make(spec: dict) -> tuple[pd.DataFrame, pd.DataFrame | None]:
     nd = spec.get("newdata")
     if not nd:
         return data, None
-    return data, newdata(int(nd["seed"]), int(nd.get("n", 5)), tier_a=spec["generator"] in ("tier_a", "tier_b"),
-                         pairs_from=data if nd.get("pairs_from_data") else None, tier_b=spec["generator"] == "tier_b")
+    tier = spec["generator"]
+    return data, newdata(int(nd["seed"]), int(nd.get("n", 5)), tier_a=tier in ("tier_a", "tier_b", "tier_c"),
+                         pairs_from=data if nd.get("pairs_from_data") else None, tier_b=tier in ("tier_b", "tier_c"),
+                         tier_c=tier == "tier_c")
 
 
 def write_csv(frame: pd.DataFrame, path) -> None:

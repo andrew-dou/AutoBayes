@@ -61,6 +61,10 @@ class Bundle:
         self.data = fx.read_frame(self.case, d / "data.csv")
         self.newdata = fx.read_frame(self.case, d / "newdata.csv") if (d / "newdata.csv").exists() else None
         self.model = model or adapter.build_model(self.case, self.data)
+        # C07: the post-processing functions a case names (``"post": ["log_lik", "bayes_R2", "loo"]`` in its autobayes
+        # section, each proposed as ``ab.<name>(model, idata)``) must exist, so that such a case fails until they do; the
+        # gate that compares them with the fixture's ``post`` block (brms's log_lik(), bayes_R2(), loo()) lands with them
+        self.post = {name: getattr(ab, name) for name in self.case.get("autobayes", {}).get("post", ())}
         self.cmap = adapter.match_columns(self.fixture, self.model)
         self.gmap = adapter.match_groups(self.fixture, self.model)
 

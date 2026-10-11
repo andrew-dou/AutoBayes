@@ -1,0 +1,29 @@
+{
+ "factors": {},
+ "family": {
+  "family": "gaussian"
+ },
+ "formula": "y ~ gp(x, k = 10, c = 5/4)",
+ "id": "gauss_gp_approx",
+ "n_points": 8,
+ "priors": [
+  {
+   "class": "Intercept",
+   "prior": "normal(0, 5)"
+  },
+  {
+   "class": "sdgp",
+   "prior": "normal(0, 1)"
+  },
+  {
+   "class": "lscale",
+   "coef": "gpx",
+   "prior": "inv_gamma(3, 1)"
+  },
+  {
+   "class": "sigma",
+   "prior": "normal(0, 1)"
+  }
+ ],
+ "seed": 305
+}

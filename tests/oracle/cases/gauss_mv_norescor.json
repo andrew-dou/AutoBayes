@@ -1,0 +1,137 @@
+{
+ "id": "gauss_mv_norescor",
+ "tier": "C",
+ "feature": "C01_multivariate",
+ "note": "brms: as gauss_mv_rescor without Lrescor (set_rescor(FALSE)): two independent normal likelihoods; standata has no nresp/nrescor; predictions draws x rows x responses (y, y2)",
+ "seed": 302,
+ "n_points": 8,
+ "gate": {
+  "expect": "fail",
+  "reason": "C01_multivariate not implemented; remove this field when it lands"
+ },
+ "data": {
+  "generator": "tier_c",
+  "seed": 202,
+  "n": 36,
+  "newdata": {
+   "seed": 302,
+   "n": 5
+  }
+ },
+ "brms": {
+  "formula": "mvbind(y, y2) ~ x + (1 | g)",
+  "rescor": false,
+  "family": {
+   "family": "gaussian"
+  },
+  "factors": {
+   "g": [
+    "a",
+    "b",
+    "c",
+    "d",
+    "e",
+    "f"
+   ]
+  },
+  "priors": [
+   {
+    "prior": "normal(0, 5)",
+    "class": "Intercept",
+    "resp": "y"
+   },
+   {
+    "prior": "normal(0, 5)",
+    "class": "Intercept",
+    "resp": "y2"
+   },
+   {
+    "prior": "normal(0, 2)",
+    "class": "b",
+    "resp": "y"
+   },
+   {
+    "prior": "normal(0, 2)",
+    "class": "b",
+    "resp": "y2"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "sd",
+    "group": "g",
+    "resp": "y"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "sd",
+    "group": "g",
+    "resp": "y2"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "sigma",
+    "resp": "y"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "sigma",
+    "resp": "y2"
+   }
+  ],
+  "extras": [
+   "group_scope",
+   "responses"
+  ]
+ },
+ "autobayes": {
+  "constructor": "gaussian",
+  "formula": "mvbind(y, y2) ~ x + (1 | g)",
+  "kwargs": {
+   "rescor": false
+  },
+  "priors": {
+   "resp": {
+    "y": {
+     "intercept": [
+      "Normal",
+      0,
+      5
+     ],
+     "b": [
+      "Normal",
+      0,
+      2
+     ],
+     "sd": [
+      "HalfNormal",
+      1
+     ],
+     "sigma": [
+      "HalfNormal",
+      1
+     ]
+    },
+    "y2": {
+     "intercept": [
+      "Normal",
+      0,
+      5
+     ],
+     "b": [
+      "Normal",
+      0,
+      2
+     ],
+     "sd": [
+      "HalfNormal",
+      1
+     ],
+     "sigma": [
+      "HalfNormal",
+      1
+     ]
+    }
+   }
+  }
+ }
+}
