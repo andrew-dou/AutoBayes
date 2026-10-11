@@ -104,6 +104,24 @@ family, whose every coefficient has a trailing axis over the non-reference categ
 | Default priors | none (logit): `student_t(3, 0, 2.5)` on the thresholds, also uncentred | none (logit): `student_t(3, 0, 2.5)` on each category's intercept |
 | Monotonic effects (B03) | yes (in `mu`, outside the thresholds' centring) | no: refused (D42) |
 
+A finite mixture (C05, docs/mixtures.md) is the registered family `mixture`, whose spec sets `mixture`: the model holds its
+component families (`model.components`, Gaussian in this slice) and its own names (`model.mixture_names`), the parent `mu`
+is the components' linear predictors side by side (B05's per-category design over the components), the expected response
+`mean` is `sum_k theta_k mu_k` (`expected_response`) and the draws pick a component by theta (`draw_response`). `Model`
+(`value_point`, `describe()`, `default_prior_labels`), `Priors` (`validate`, `to_bambi`, `improper`, `table`),
+`ab.default_priors`, `predict()`, the target identity and the fit record take the paths of `autobayes/families/mixture.py`
+when `mixture` is set; every other family has `mixture=False`.
+
+| Group | mixture |
+| --- | --- |
+| Names | `mu` (rows x K) / identity / `mean` |
+| Response | continuous, numeric (the Gaussian components') |
+| Parameters | no `scale_parameter`: `sigma1`..`sigmaK` per component and `theta`, under `Priors(components=[...], theta=...)` |
+| Graph | `likelihoods.gaussian_mixture_family` (Bambi's categorical family over the components; `ordered_thresholds` intercepts; B03's simplex for theta), built per model by `bambi_setup` |
+| Prediction | `expected_response` `sum_k theta_k mu_k`; a component by theta, then its Normal; by hand, `eta` with a `component` dimension |
+| Default priors | each component the Gaussian family's; theta `dirichlet(1)` |
+| Monotonic effects (B03) | no: refused (D55) |
+
 ## Adding a family
 
 1. Write `autobayes/families/<name>.py` building one `FamilySpec`; keep the response validation primitives in

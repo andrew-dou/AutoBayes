@@ -20,7 +20,9 @@ row's log density is multiplied by its weight (``likelihoods.addition_family``);
 offered for the Gaussian family (accepted against two references since P6). The family's auxiliary parameter
 (``sigma``, ``shape``, ``phi``) may have its own formula (B01, docs/distributional.md): ``formula`` is then a list,
 ``["y ~ x + (1 | g)", "sigma ~ z"]``, and Bambi builds the parameter as a distributional component under a log link
-(``Design.dpars`` holds its design, ``Model.dpar_names`` its PyMC names).
+(``Design.dpars`` holds its design, ``Model.dpar_names`` its PyMC names). A finite mixture of Gaussian components (C05,
+docs/mixtures.md; ``ab.mixture(..., families=[...])``) has one linear predictor per component with ordered intercepts, a
+``sigma<k>`` per component and the mixing proportions ``theta`` (``autobayes/families/mixture.py``).
 """
 from __future__ import annotations
 
@@ -216,7 +218,8 @@ class Model:
 
     def __init__(self, formula: str | list[str], data: pd.DataFrame, priors: Priors, *,
                  family: str = "gaussian", center_predictors: bool = True,
-                 categorical: Mapping[str, object] | None = None, nu: float | None = None, link: str | None = None):
+                 categorical: Mapping[str, object] | None = None, nu: float | None = None, link: str | None = None,
+                 families: list[str] | None = None, order: str | bool | None = None):
         import bambi as bmb
 
         fam = get_family(family)
@@ -248,6 +251,12 @@ class Model:
         self.center_predictors = bool(center_predictors)
         self.dropped_rows: tuple[int, ...] = ()     # binomial: positional indices of zero-trial rows
         self.warnings: list[str] = []
+        self.components: tuple[str, ...] = ()       # a mixture's component families, in order (C05, docs/mixtures.md)
+        if fam.mixture:
+            from autobayes.families.mixture import check_mixture
+            self.components = check_mixture(formula, families, order, priors, self.center_predictors)
+        elif families is not None or order is not None:
+            raise ValueError(f"families= and order= are a mixture's (ab.mixture, docs/mixtures.md); the {family} family takes neither")
 
         spec0 = parse_formula(formula, None, family, categorical)
         self.effective_center_predictors = self.center_predictors and spec0.intercept
@@ -366,6 +375,9 @@ class Model:
             self.pymc_model = self._correlate_group_effects(self.pymc_model)
             self.bambi_model.backend.model = self.pymc_model  # what Bambi's fit() samples and cleans
         self.design = self._extract_design()
+        if fam.mixture:                                      # C05: the graph built beside Bambi's components, checked
+            from autobayes.families.mixture import check_graph
+            check_graph(self)
         if fam.discrete:
             rv = self.pymc_model[self.names["y"]]
             obs = np.asarray(self.pymc_model.rvs_to_values[rv].eval())
@@ -397,6 +409,9 @@ class Model:
             variable_names += [self.names["thresholds"], self.names["threshold_dim"]]
         if self.family_spec.per_category:                   # B05: the category coordinates Bambi adds
             variable_names += [self.names["category_dim"], f"{self.spec.response}_dim"]
+        if self.family_spec.mixture:                        # C05: each component's sigma, theta and the component coordinates
+            roles = self.mixture_names
+            variable_names += [*roles["sigma"], roles["theta"], roles["coordinate"], f"{self.spec.response}_dim"]
         for roles in self.group_coefficient_names.values():
             variable_names.extend(roles[k] for k in ("sd", "offset", "group_effect"))
         for roles in self.correlation_names.values():
@@ -805,9 +820,23 @@ class Model:
             out["threshold_dim"] = "Intercept_dim"
         if fam.per_category:                                  # B05: the coordinate of the non-reference categories
             out["category_dim"] = f"{self.spec.response}_reduced_dim"
+        if fam.mixture:                                       # C05: each component's sigma<k>, theta and the component coordinate
+            roles = self.mixture_names
+            out.update({name: name for name in roles["sigma"]}, theta=roles["theta"], component_dim=roles["coordinate"])
         if fam.continuous and fam.parent == "mu":
             out["mu"] = "mu"                                  # the continuous families whose parent is the location mu expose it by name (the Beta's parent is logit_mu)
         return out
+
+    @property
+    def mixture_names(self) -> dict:
+        """PyMC names of a mixture's own parameters (C05, docs/mixtures.md; ``families.mixture.roles``): ``"dpars"`` brms's
+        names of the components' linear predictors (``mu1``, ...), ``"sigma"`` each component's residual SD (``sigma1``, ...),
+        ``"theta"`` the mixing proportions, ``"coordinate"`` the component dimension (``mixture_dim``) of the intercepts,
+        coefficients and ``theta``, and ``"labels"`` its coordinates ``"1"``..``"K"``. Empty for any other model."""
+        from autobayes.families.mixture import roles
+
+        components = getattr(self, "components", ())
+        return roles(len(components)) if components else {}
 
     @property
     def mo_names(self) -> dict[str, dict[str, str]]:
@@ -889,7 +918,7 @@ class Model:
 
     def value_point(self, *, intercept: float | None = None, b, sd=None, z=None, L=None, sigma=None,
                     shape=None, phi=None, nu: float | None = None,
-                    zi: float | None = None, hu: float | None = None, bsp=None, simo=None) -> dict[str, np.ndarray]:
+                    zi: float | None = None, hu: float | None = None, bsp=None, simo=None, theta=None) -> dict[str, np.ndarray]:
         """A point in PyMC's sampled (value) space, from natural-scale quantities.
 
         ``intercept`` is the *model* intercept (at the predictor means when centred),
@@ -918,8 +947,17 @@ class Model:
         A monotonic term ``mo(x)`` (B03) has no entry in ``b``: ``bsp`` is its coefficient (brms's ``bsp``) and ``simo`` its
         simplex (brms's ``simo``: ``D`` positive shares summing to 1, stored on Stan's stick-breaking coordinates), each keyed
         by the term's column, ``bsp={"x": 0.3}``, ``simo={"x": [0.2, 0.5, 0.3]}`` (a single monotonic term also accepts the
-        bare value), required exactly when the model has one.
+        bare value), required exactly when the model has one. A mixture (C05, docs/mixtures.md) takes ``intercept`` (the K
+        components' centred intercepts, strictly increasing, on Stan's ordered coordinates), ``b`` of shape ``(columns, K)``,
+        ``sigma`` (K residual SDs) and ``theta`` (the mixing proportions, a simplex of K, on Stan's stick-breaking
+        coordinates); ``theta`` applies to a mixture only.
         """
+        if self.family_spec.mixture:                          # C05: the components' parameters and theta
+            from autobayes.families.mixture import value_point
+            return value_point(self, intercept=intercept, b=b, sigma=sigma, theta=theta, sd=sd, z=z, L=L, shape=shape, phi=phi,
+                               nu=nu, zi=zi, hu=hu, bsp=bsp, simo=simo)
+        if theta is not None:
+            raise ValueError("theta (the mixing proportions) is a mixture's (ab.mixture); this model has none")
         b = np.atleast_1d(np.asarray(b, dtype=float))
         if self.family_spec.per_category:                     # B05: one coefficient per design column and non-reference category
             others = len(self.categories) - 1
@@ -1126,6 +1164,9 @@ class Model:
 
     # -- description -------------------------------------------------------------------
     def describe(self) -> str:
+        if self.family_spec.mixture:                          # C05: the components, theta and their priors
+            from autobayes.families.mixture import describe
+            return describe(self)
         s, d, pr = self.spec, self.design, self.priors
         def effect(g):
             return "u" if len(s.groups) == 1 else f"u_{g}"
@@ -1538,7 +1579,11 @@ class Model:
         """The parameters whose prior came from ``ab.default_priors`` (brms's defaults; A07), labelled as the prior
         messages label them (``intercept``, ``b:x``, ``sd:g``, ``sd:x|g``, ``cor:g``, ``simo:x``, ``sigma``, ``nu``), in that order; empty
         when the user gave every prior (``zi`` or ``hu`` after the auxiliary parameter, B06; a distributional formula's
-        ``sigma:intercept``, ``sigma:b:z[q]`` in place of ``sigma``, B01). ``fit_record`` stores them under ``"default_priors"``."""
+        ``sigma:intercept``, ``sigma:b:z[q]`` in place of ``sigma``, B01; a mixture's ``mu1:intercept``, ``mu1:b:x``, ``sigma1``,
+        ..., ``theta``, C05). ``fit_record`` stores them under ``"default_priors"``."""
+        if self.family_spec.mixture:
+            from autobayes.families.mixture import default_prior_labels
+            return default_prior_labels(self)
         s, pr, fam = self.spec, self.priors, self.family_spec
         found = ([("intercept", pr.intercept)] if s.intercept else []) + [(f"b:{k}", v) for k, v in pr.coefficient_priors(s).items()]
         found += [(f"sd:{sd_tag(g, c)}", v) for (g, c), v in pr.sd_priors(s).items()]
@@ -1748,3 +1793,25 @@ def categorical(formula: str, data: pd.DataFrame, priors: Priors, *,
     this slice (D37). ``categorical={column: reference}`` declares categorical predictors as for every family.
     """
     return Model(formula, data, priors, family="categorical", center_predictors=center_predictors, categorical=categorical)
+
+
+def mixture(formula: str, data: pd.DataFrame, priors: Priors, *, families: list[str], order: str | bool | None = None,
+            center_predictors: bool = True, categorical: Mapping[str, object] | None = None) -> Model:
+    """A finite mixture (brms ``mixture(gaussian, gaussian)``, C05, docs/mixtures.md): ``y_i ~ sum_k theta_k
+    Normal(mu_k,i, sigma_k)`` with one linear predictor per component on the formula's design (brms's ``mu<k>``, each with
+    its own centred intercept and coefficients), one residual SD per component (``sigma<k>``) and the mixing proportions
+    ``theta``.
+
+    ``families`` names the components, one entry each: Gaussian components, at least two (``["gaussian", "gaussian"]``).
+    ``order`` is brms's identification, ``"mu"`` (its default for components of one family; ``None`` means it): the
+    components' centred intercepts are ordered, ``a_c[1] < ... < a_c[K]`` (brms's ``ordered_Intercept``). ``priors`` is
+    ``ab.Priors(components=[ab.Priors(intercept=..., b=..., sigma=...), ...], theta=ab.Dirichlet(...))``, one Priors per
+    component in the order of ``families`` (brms's ``dpar = mu<k>`` and ``class = sigma<k>``) and the Dirichlet of the
+    mixing proportions; ``ab.default_priors(formula, data, family="mixture", families=...)`` returns brms's defaults.
+    ``predict(kind="linear")`` returns every component's ``mu`` with a ``component`` dimension (brms's
+    ``posterior_linpred``), ``kind="mean"`` the mixture's expected response ``sum_k theta_k mu_k`` as ``mean`` and
+    ``kind="response"`` draws a component by theta, then its Normal. Population-level terms only; one formula for every
+    component; other component families, ``order="none"``, group-level terms and offsets are refused (D52-D55).
+    """
+    return Model(formula, data, priors, family="mixture", families=families, order=order, center_predictors=center_predictors,
+                 categorical=categorical)

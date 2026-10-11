@@ -2,8 +2,9 @@
 Each raises `OracleMismatch` naming the point and the quantities that differ; a passing gate returns None.
 
 G1 `check_design`        standata equals the model's design, response, trials, offsets, group coding and addition-term
-                         data (weights, cens, lb, ub; B02), each distributional formula's X_<dpar> (B01), and each
-                         monotonic term's codes, number of steps and Dirichlet concentrations (Xmo_k, Jmo, con_simo_k; B03)
+                         data (weights, cens, lb, ub; B02), each distributional formula's X_<dpar> (B01), each
+                         monotonic term's codes, number of steps and Dirichlet concentrations (Xmo_k, Jmo, con_simo_k; B03),
+                         and a mixture's component designs X_mu<k> and theta's concentrations (con_theta; C05)
 G2 `check_logp`          log density with and without the Jacobian, and its prior part, at every point
 G2 `check_gradient`      every gradient coordinate, mapped through the probed parameter table
 G3 `check_derived`       the graph's linear predictor, group effects and correlation matrices, and the raw-scale intercept
@@ -41,7 +42,9 @@ def prior_names(model) -> list[str]:
     zi or hu (B06), the SD of every group-level coefficient (not the standardised offsets, which brms adds in the model block) and the
     correlation Cholesky factor of every correlated group term (``lkj_corr_cholesky_lpdf(L_m | eta)``); for an auxiliary
     parameter with its own formula (B01), that formula's intercept and coefficients (brms's ``Intercept_sigma``, ``b_sigma``);
-    the simplex of every monotonic term (``dirichlet_lpdf(simo_k | con_simo_k)``; its coefficient is among the terms, B03)."""
+    the simplex of every monotonic term (``dirichlet_lpdf(simo_k | con_simo_k)``; its coefficient is among the terms, B03);
+    a mixture's ``sigma<k>`` and its mixing proportions (``dirichlet_lpdf(theta | con_theta)``; its ordered intercepts are the
+    intercept, each component's density as brms adds it, C05)."""
     names = model.names
     out = [names["intercept"]] if model.spec.intercept else []
     out += list(model.spec.terms)
@@ -59,6 +62,8 @@ def prior_names(model) -> list[str]:
     out += [roles["sd"] for roles in model.group_coefficient_names.values()]
     out += [roles["L"] for roles in model.correlation_names.values()]
     out += [roles["simplex"] for roles in model.mo_names.values()]
+    mixture = getattr(model, "mixture_names", {})          # C05: each component's sigma<k> and theta
+    out += [*mixture["sigma"], mixture["theta"]] if mixture else []
     return out
 
 
@@ -127,8 +132,16 @@ def check_design(b: Bundle) -> None:
             raise OracleMismatch(f"brms {name} is {sd[name].shape}; AutoBayes has {d.X_raw.shape[1]} design columns and intercept={b.model.spec.intercept}")
     if b.cmap.thresholds and int(sd["nthres"]) != len(b.model.categories) - 1:
         raise OracleMismatch(f"brms has nthres = {int(sd['nthres'])}; AutoBayes has {len(b.model.categories)} categories")
-    if b.cmap.dpars and int(sd["ncat"]) != len(b.model.categories):
+    if b.cmap.dpars and not b.cmap.mixture and int(sd["ncat"]) != len(b.model.categories):   # a mixture's dpars are components
         raise OracleMismatch(f"brms has ncat = {int(sd['ncat'])}; AutoBayes has {len(b.model.categories)} categories")
+    if b.cmap.mixture:                                           # C05: K component designs (matched by content) and con_theta
+        K = len(b.model.components)
+        if len(b.cmap.dpars) != K:
+            raise OracleMismatch(f"brms has {len(b.cmap.dpars)} component designs; the AutoBayes mixture has {K} components")
+        con = dirichlet_concentration(b.model.priors.theta, K)
+        theirs = np.atleast_1d(sd["con_theta"])
+        if theirs.shape != con.shape or abs_err(theirs, con) > DESIGN_ABS:
+            raise OracleMismatch(f"brms con_theta is {theirs!r}; the prior of theta gives {con!r}")
     err = abs_err(sd["Y"], d.y)
     if err > DESIGN_ABS:
         raise OracleMismatch(f"response differs by {err}")
@@ -393,6 +406,8 @@ def check_default_prior(b: Bundle) -> None:
     if "nu" in b.model.names:
         expected.add("nu")
     expected |= {par for par in ("zi", "hu") if par in b.model.names}     # B06
+    mixture = getattr(b.model, "mixture_names", {})        # C05: each component's sigma<k> and theta (Intercept, b above)
+    expected |= {*mixture["sigma"], "theta"} if mixture else set()
     if not expected <= classes:
         raise OracleMismatch(f"brms default_prior classes {sorted(classes)} lack {sorted(expected - classes)}")
     if not b.fixture.prior_summary:

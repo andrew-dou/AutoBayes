@@ -62,9 +62,23 @@ def _monotonic_payload(model):
     return out
 
 
+def _mixture_payload(model):
+    """The target identity's entry of a mixture (C05): its component families and identification, each component's
+    priors (intercept, coefficients and sigma) and theta's prior with the concentrations it gives."""
+    from autobayes.families.mixture import ORDER
+    from autobayes.priors import dirichlet_concentration
+
+    s, pr = model.spec, model.priors
+    return {'families': list(model.components), 'order': ORDER,
+            'components': [{'intercept': _prior(c.intercept), 'sigma': _prior(c.sigma),
+                            'coefficients': {k: _prior(v) for k, v in c.coefficient_priors(s).items()}} for c in pr.components],
+            'theta': _prior(pr.theta), 'concentration': dirichlet_concentration(pr.theta, len(model.components))}
+
+
 def freeze_target(model):
     """Call once immediately after construction; only the digest is retained."""
     s, d, pr = model.spec, model.design, model.priors
+    mixture = bool(getattr(model, 'components', ()))      # C05: a mixture's priors are its components' (its own entry below)
     prior = _prior
     sd_priors = pr.sd_priors(s)
     cor_priors = pr.cor_priors(s)
@@ -105,8 +119,10 @@ def freeze_target(model):
         **({'distributional': [_dpar_payload(model, ds) for ds in s.dpars]} if s.dpars else {}),
         # So do monotonic terms (B03): their coding, codes and simplex priors (each coefficient's prior is a coefficient's).
         **({'monotonic': _monotonic_payload(model)} if s.mo_terms else {}),
+        # So does a mixture (C05): its components, their priors and theta's; its own entries under 'priors' are then empty.
+        **({'mixture': _mixture_payload(model)} if mixture else {}),
         'priors': {'intercept': prior(pr.intercept), 'sigma': prior(pr.sigma),
-                   'coefficients': {k: prior(v) for k,v in pr.coefficient_priors(s).items()},
+                   'coefficients': {} if mixture else {k: prior(v) for k,v in pr.coefficient_priors(s).items()},
                    'groups': {k: prior(v) for k,v in pr.group_priors(s).items()},
                    # the shape prior (A08/A09) enters only for the families that have one, so every other model
                    # keeps the identity it had under this schema version

@@ -65,6 +65,9 @@ Tiers A and B are complete (October 2026), except smooth terms `s()`, which are 
   ([distributional formulas](docs/distributional.md)).
 - **Monotonic effects** (Tier B, B03): `mo(x)` of an ordinal predictor with a Dirichlet prior on its simplex
   (`Priors(simo={"x": ab.Dirichlet(...)})`), for every family but the categorical one ([monotonic effects](docs/monotonic.md)).
+- **Finite mixtures** (Tier C, C05): `ab.mixture(formula, data, priors, families=["gaussian", "gaussian"])`, brms's
+  `mixture()` of Gaussian components with ordered intercepts and Dirichlet mixing proportions, one `Priors` per component
+  ([mixtures](docs/mixtures.md)).
 
 Every known difference from brms is listed in [divergences](docs/brms-parity/divergences.md), and the feature ledger
 is [ledger.json](docs/brms-parity/ledger.json) (`python tools/parity_status.py`). The tier reviews are

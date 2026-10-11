@@ -257,6 +257,12 @@ class Priors:
     a ``Dirichlet`` keyed by the term's column, ``simo={"x": Dirichlet(2, 2, 2)}`` (brms ``class = simo, coef = mox1``; a
     single monotonic term also accepts the bare prior), with one concentration per step of the term or one number for all;
     refused without a monotonic term.
+    A mixture (C05, ``ab.mixture``, docs/mixtures.md) takes ``components``, one ``Priors`` per component in the order of
+    ``families``, each the component family's own (a Gaussian component's ``intercept``, ``b`` and ``sigma``: brms's
+    ``class = Intercept`` and ``b`` with ``dpar = mu<k>``, and ``class = sigma<k>``), and ``theta``, the ``Dirichlet`` prior of
+    the mixing proportions (brms class ``theta``; one concentration per component or one number for all); nothing else at
+    the top level. Per class, the components' priors share one distribution family (the intercepts are one ordered vector
+    and each term one variable with a component axis), each with its own parameters.
     """
 
     intercept: Prior | None = None
@@ -273,6 +279,14 @@ class Priors:
     zi: Prior | None = None          # zero-inflated families: the zero-inflation probability (brms class ``zi``; B06)
     hu: Prior | None = None          # hurdle families: the hurdle probability (brms class ``hu``; B06)
     simo: Prior | Mapping[str, Prior] | None = None   # the simplex of each monotonic term mo(x), by column (brms class ``simo``; B03)
+    # A mixture (C05, docs/mixtures.md): one Priors per component, the component family's own (intercept, b, sigma: brms's
+    # dpar = mu<k> and class sigma<k>), and the mixing proportions' Dirichlet (brms class ``theta``); refused otherwise
+    components: tuple | list | None = None
+    theta: Prior | None = None
+
+    def __post_init__(self):
+        if isinstance(self.components, list):                         # one value for equal component lists (C05)
+            object.__setattr__(self, "components", tuple(self.components))
 
     # -- coefficient priors -----------------------------------------------------------------
     def coefficient_priors(self, spec) -> dict[str, Prior]:
@@ -571,7 +585,10 @@ class Priors:
 
     def improper(self, spec) -> list[str]:
         """The parameters under a flat prior (``Flat()``, brms's default for ``b``), labelled as fit records label them
-        (``intercept``, ``b:x``); such a model has no prior predictive distribution."""
+        (``intercept``, ``b:x``); such a model has no prior predictive distribution. A mixture's (C05) carry their component's
+        brms name, ``mu1:b:x``."""
+        if self.components is not None:
+            return [f"mu{k}:{label}" for k, c in enumerate(self.components, start=1) for label in c.improper(spec)]
         out = ["intercept"] if getattr(spec, "intercept", True) and isinstance(self.intercept, Prior) and self.intercept.name == "Flat" else []
         out += [f"b:{col}" for col, p in self.coefficient_priors(spec).items() if p.name == "Flat"]
         for name in getattr(spec, "dpar_names", ()):                  # a distributional parameter's formula (B01): sigma:b:zq
@@ -589,6 +606,11 @@ class Priors:
         from autobayes.families import FamilySpec, get_family
 
         fam = family if isinstance(family, FamilySpec) else get_family(family)
+        if fam.mixture:                                               # C05: the components' priors and theta's
+            return self._validate_mixture(spec)
+        if self.components is not None or self.theta is not None:
+            raise PriorError("components and theta are the priors of a mixture (ab.mixture, docs/mixtures.md); the "
+                             f"{fam.name} family takes neither")
         has_intercept = getattr(spec, "intercept", True)
         if has_intercept and self.intercept is None:
             raise PriorError("the formula has a population intercept; an intercept prior is required")
@@ -679,6 +701,8 @@ class Priors:
 
         self.validate(spec, family)
         fam = family if isinstance(family, FamilySpec) else get_family(family)
+        if fam.mixture:                                    # C05: each term's priors with one value per component (the
+            return self._mixture_bambi(spec)               # intercepts, sigmas and theta are built by the family)
         if not isinstance(spec, ModelSpec):
             spec = ModelSpec(formula="", response="", predictors=tuple(spec), group=None)
         out = {"Intercept": self.intercept.to_bambi()} if spec.intercept else {}
@@ -713,4 +737,66 @@ class Priors:
             name = priors[0].name
             params = {k: np.array([float(pr.params[k]) for pr in priors]) for k in priors[0].params}
             out[term.name] = bmb.Prior(name, **params)
+        return out
+
+    # -- a mixture (C05, docs/mixtures.md) ---------------------------------------------------------------------------------
+    def _validate_mixture(self, spec) -> None:
+        """A mixture's priors: nothing at the top level but ``components`` (at least two ``Priors``, each valid for the
+        component family: a Gaussian component's intercept, coefficients and ``sigma``, read as a Gaussian model's are) and
+        ``theta`` (a ``Dirichlet`` with one concentration per component or one for all). Per class, the components share one
+        distribution family: the intercepts are one ordered vector (brms's ``ordered_Intercept``) and each term's coefficients
+        one variable with a component axis, so only their parameters differ by component."""
+        from autobayes.families import get_family
+        from autobayes.families.mixture import COMPONENT_FAMILIES
+
+        form = ("Priors(components=[ab.Priors(intercept=..., b=..., sigma=...), ...], theta=ab.Dirichlet(...)), one Priors per "
+                "component (brms's dpar = mu<k> and class sigma<k>; docs/mixtures.md)")
+        top = [name for name in ("intercept", "b", "sd", "sigma", "shape", "phi", "cor", "nu", "zi", "hu", "simo")
+               if getattr(self, name) is not None]
+        if top:
+            raise PriorError(f"a mixture's priors are per component, {form}; {top} at the top level do not apply")
+        comps = self.components
+        if comps is None:
+            raise PriorError(f"a mixture needs the priors of each component: {form}")
+        if not isinstance(comps, (list, tuple)) or len(comps) < 2 or not all(isinstance(c, Priors) for c in comps):
+            raise PriorError(f"components must be a list of at least two Priors, one per component: {form}")
+        component = get_family(COMPONENT_FAMILIES[0])
+        for k, c in enumerate(comps, start=1):
+            if c.components is not None or c.theta is not None:
+                raise PriorError(f"component {k}'s priors cannot hold components or theta of their own")
+            try:
+                c.validate(spec, component)
+            except PriorError as e:
+                raise PriorError(f"component {k} (brms's mu{k} and sigma{k}): {e}") from None
+        intercepts = {c.intercept.name for c in comps} if getattr(spec, "intercept", True) else set()
+        if len(intercepts) > 1:
+            raise PriorError(f"the components' intercept priors must share one distribution family, each with its own parameters "
+                             f"(they are brms's ordered_Intercept, one vector); got {sorted(intercepts)}")
+        per = [c.coefficient_priors(spec) for c in comps]
+        for col in spec.columns:
+            names = {p[col].name for p in per if col in p}             # per-level priors are known once the data are seen
+            if len(names) > 1:
+                raise PriorError(f"the components' priors of {col!r} must share one distribution family, each with its own "
+                                 f"parameters (a term's coefficients are one variable with a component axis); got {sorted(names)}")
+        if self.theta is None:
+            raise PriorError(f"a mixture needs a prior on its mixing proportions: theta=ab.Dirichlet(...) (brms class theta; its "
+                             "default is dirichlet(1), ab.Dirichlet(1))")
+        if not isinstance(self.theta, Prior) or self.theta.name not in _SIMPLEX:
+            raise PriorError(f"prior for 'theta' must be a prior on a simplex ({sorted(_SIMPLEX)}, brms's dirichlet()), got {self.theta}")
+        try:
+            dirichlet_concentration(self.theta, len(comps))
+        except PriorError as e:
+            raise PriorError(f"prior for 'theta' ({len(comps)} components): {e}") from None
+
+    def _mixture_bambi(self, spec) -> dict:
+        """Bambi's prior of each population-level term of a mixture: one distribution per term with one value of each
+        parameter per (coefficient, component) (``likelihoods.component_prior``)."""
+        from autobayes.likelihoods import component_prior
+
+        per = [c.coefficient_priors(spec) for c in self.components]
+        out = {}
+        for term in spec.bambi_terms:
+            grid = [[p[col] for p in per] for col in term.columns]            # (columns of the term, components)
+            params = {k: np.array([[float(pr.params[k]) for pr in row] for row in grid]) for k in grid[0][0].params}
+            out[term.name] = component_prior(grid[0][0].name, params if term.levels else {k: v[0] for k, v in params.items()})
         return out

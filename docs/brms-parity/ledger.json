@@ -1067,11 +1067,26 @@
    "depends_on": [
     "B06_zero_inflated_hurdle"
    ],
-   "status": "implementing",
+   "status": "gates_green",
    "summary": "mixture() families",
    "pr": null,
    "attempts": 1,
-   "gates": {},
+   "gates": {
+    "sha": "d5d52881dd3d",
+    "dirty_tree": false,
+    "base": "origin/main",
+    "when": "2026-10-11T20:17Z",
+    "results": {
+     "immutability": {
+      "status": "pass",
+      "seconds": 0.0
+     },
+     "oracle": {
+      "status": "pass",
+      "seconds": 158.9
+     }
+    }
+   },
    "divergences": [],
    "next_action": "agent (opus) in worktree parity-c05",
    "fixtures": {

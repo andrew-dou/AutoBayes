@@ -82,11 +82,12 @@ EXPECTED = {                               # family -> (Bambi parent, link, pred
     "hurdle_poisson": ("log_mu", "log", "mean"),
     "cumulative": ("mu", "logit", "p"),
     "categorical": ("mu", "logit", "p"),
+    "mixture": ("mu", "identity", "mean"),
 }
 
 
 def test_registry_lists_exactly_the_registered_families():
-    assert set(FAMILIES) == set(EXPECTED) and len(FAMILIES) == 13
+    assert set(FAMILIES) == set(EXPECTED) and len(FAMILIES) == 14
     for name, (parent, link, mean) in EXPECTED.items():
         spec = get_family(name)
         assert isinstance(spec, FamilySpec) and spec is FAMILIES[name]
@@ -94,7 +95,7 @@ def test_registry_lists_exactly_the_registered_families():
     assert {name for name, spec in FAMILIES.items() if spec.scale_parameter == "sigma"} == {"gaussian", "student", "lognormal"}
     assert {name for name, spec in FAMILIES.items() if spec.scale_parameter == "shape"} == {"negbinomial", "gamma"}
     assert {name for name, spec in FAMILIES.items() if spec.scale_parameter == "phi"} == {"beta"}
-    assert {name for name, spec in FAMILIES.items() if spec.continuous} == {"gaussian", "student", "gamma", "lognormal", "beta"}
+    assert {name for name, spec in FAMILIES.items() if spec.continuous} == {"gaussian", "student", "gamma", "lognormal", "beta", "mixture"}
     assert {spec.bambi_scale_parameter for spec in FAMILIES.values() if spec.scale_parameter == "shape"} == {"alpha"}
     assert {spec.bambi_scale_parameter for spec in FAMILIES.values() if spec.scale_parameter == "phi"} == {"phi"}
     assert all((spec.scale_parameter is None) == (spec.bambi_scale_parameter is None) for spec in FAMILIES.values())
@@ -102,12 +103,13 @@ def test_registry_lists_exactly_the_registered_families():
     assert {name for name, spec in FAMILIES.items() if spec.has_trials} == {"binomial"}
     assert {name for name, spec in FAMILIES.items() if "probability" in spec.prediction_kinds} == {"binomial"}
     assert {name for name, spec in FAMILIES.items() if spec.expected_response is not None} == {"lognormal", "zero_inflated_poisson", "hurdle_poisson",
-                                                                                               "cumulative"}
+                                                                                               "cumulative", "mixture"}
+    assert {name for name, spec in FAMILIES.items() if spec.mixture} == {"mixture"}
     assert {name for name, spec in FAMILIES.items() if spec.response_categories is not None} == {"cumulative", "categorical"}
     assert {name for name, spec in FAMILIES.items() if spec.thresholds} == {"cumulative"}
     assert {name for name, spec in FAMILIES.items() if spec.per_category} == {"categorical"}
     assert {name: spec.zero_parameter for name, spec in FAMILIES.items() if spec.zero_parameter} == {"zero_inflated_poisson": "zi", "hurdle_poisson": "hu"}
-    with pytest.raises(ValueError, match=r"family must be one of \['bernoulli', 'beta', 'binomial', 'categorical', 'cumulative', 'gamma', 'gaussian', 'hurdle_poisson', 'lognormal', 'negbinomial', 'poisson', 'student', 'zero_inflated_poisson'\], got 'weibull'"):
+    with pytest.raises(ValueError, match=r"family must be one of \['bernoulli', 'beta', 'binomial', 'categorical', 'cumulative', 'gamma', 'gaussian', 'hurdle_poisson', 'lognormal', 'mixture', 'negbinomial', 'poisson', 'student', 'zero_inflated_poisson'\], got 'weibull'"):
         get_family("weibull")
     with pytest.raises(TypeError):
         FAMILIES["weibull"] = None
@@ -137,13 +139,17 @@ EXAMPLES = {                               # family -> (formula, extra prior cla
     "hurdle_poisson": ("cnt ~ x", {"hu": ab.Beta(2, 2)}, {}),
     "cumulative": ("ord ~ x", {}, {}),
     "categorical": ("cat ~ x", {}, {}),
+    "mixture": ("y ~ x", {"components": [ab.Priors(intercept=ab.Normal(-1, 1), b=ab.Normal(0, 1), sigma=ab.HalfNormal(1)),
+                                         ab.Priors(intercept=ab.Normal(1, 1), b=ab.Normal(0, 1), sigma=ab.HalfNormal(1))],
+                          "theta": ab.Dirichlet(2)}, {"families": ["gaussian", "gaussian"]}),
 }
 
 
 @pytest.mark.parametrize("family", sorted(FAMILIES))
 def test_constructors_agree_with_the_registry(family):
     formula, extra, kwargs = EXAMPLES[family]
-    priors = ab.Priors(intercept=ab.Normal(0, 1), b=ab.Normal(0, 1), **extra)
+    shared = {} if "components" in extra else {"intercept": ab.Normal(0, 1), "b": ab.Normal(0, 1)}   # a mixture's are its components' (C05)
+    priors = ab.Priors(**shared, **extra)
     model = getattr(ab, family)(formula, frame(), priors, **kwargs)
     spec = get_family(family)
     assert model.family == family and model.family_spec is spec
@@ -158,5 +164,6 @@ def test_constructors_agree_with_the_registry(family):
         assert model.names[spec.zero_parameter] == spec.zero_parameter
         assert f"{spec.zero_parameter}_logodds__" in {v.name for v in model.pymc_model.value_vars}
     assert all(getattr(model, name) == kwargs[name] for name in spec.fixed_parameters)
+    assert model.components == tuple(kwargs.get("families", ()))
     same = ab.Model(formula, frame(), priors, family=family, **kwargs)
     assert same.target_identity == model.target_identity and same.describe() == model.describe()

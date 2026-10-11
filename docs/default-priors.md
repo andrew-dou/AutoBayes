@@ -30,6 +30,7 @@ model only when `ab.default_priors()` is called and its result passed in.
 | `Intercept` of a distributional formula (`dpar = sigma`, B01) | `student_t(3, 0, scale)` with the scale of `log y` (zeros read as 0.1; 2.5 when a response is negative) | `StudentT(3, 0, scale)` in `Priors(sigma={"intercept": ...})` |
 | `Intercept` of `shape ~ ...`, `phi ~ ...` (B01) | `student_t(3, 0, 2.5)` | `StudentT(3, 0, 2.5)` |
 | `b` of a distributional formula (B01) | flat | `Flat()` |
+| a mixture's `Intercept` and `b` (`dpar = mu<k>`), `sigma<k>`, `theta` (C05) | each Gaussian component the Gaussian family's defaults (its own rows under `dpar = mu<k>` and class `sigma<k>`); `dirichlet(1)` on `theta` | one `Priors` per component from the Gaussian family's defaults, `theta=Dirichlet(1)` (`family="mixture"`, `families=[...]`; docs/mixtures.md) |
 
 The location and scale are brms's `def_scale_prior` arithmetic on the response read through the family's link
 (`FamilySpec.default_prior_link`): the response itself for the Gaussian and Student-t families; `log(y)`, zeros read as

@@ -78,6 +78,8 @@ def _summary_rows(model, idata) -> dict:
     names = ([n["intercept"]] if model.spec.intercept else []) + list(model.spec.terms) + [roles["sd"] for roles in model.group_coefficient_names.values()] + scale_names
     names += [n[name] for name in model.learned_parameters]     # a learned Student-t nu (A13)
     names += [roles["simplex"] for roles in getattr(model, "mo_names", {}).values()]   # each monotonic term's simplex (B03)
+    mixture = getattr(model, "mixture_names", {})               # a mixture's sigma<k> and theta (C05)
+    names += [*mixture["sigma"], mixture["theta"]] if mixture else []
     zero = family_of(model).zero_parameter                      # the zero-inflation / hurdle probability (B06)
     names += [n[zero]] if zero is not None else []
     s = az.summary(idata, var_names=names, hdi_prob=0.94, round_to="none")
@@ -107,6 +109,7 @@ def fit_record(model, fit, *, panel: dict | None = None, max_treedepth: int = 10
     from autobayes.diagnostics import panel as _panel
     from autobayes.families import family_of
 
+    from autobayes.families.mixture import ORDER, prior_labels
     from autobayes.formula import sd_tag
     from autobayes.identity import check_fit_binding
     binding = check_fit_binding(model, fit, allow_unverified=allow_unverified)
@@ -114,7 +117,8 @@ def fit_record(model, fit, *, panel: dict | None = None, max_treedepth: int = 10
     p = panel if panel is not None else _panel(fit.idata, max_treedepth=max_treedepth)
     fam = family_of(model)                                     # the family under the model's link
     s, d, pr = model.spec, model.design, model.priors
-    coef = pr.coefficient_priors(s)
+    mixture = fam.mixture                                      # C05: a mixture's priors are its components' and theta's
+    coef = {} if mixture else pr.coefficient_priors(s)
     group_priors = pr.group_priors(s)
     sd_priors = pr.sd_priors(s)
     fixed = {name: getattr(model, name) for name in fam.fixed_parameters if getattr(model, name) is not None}   # not a learned nu (A13)
@@ -147,14 +151,19 @@ def fit_record(model, fit, *, panel: dict | None = None, max_treedepth: int = 10
             "center_predictors": bool(d.centered),
             "center_predictors_requested": model.center_predictors,
             "noncentered": True if s.has_group else None,
-            "priors": {**({"intercept": str(pr.intercept)} if s.intercept else {}), **{f"b:{k}": str(v) for k, v in coef.items()},
+            "priors": {**({"intercept": str(pr.intercept)} if s.intercept and not mixture else {}), **{f"b:{k}": str(v) for k, v in coef.items()},
                        **{("sd" if len(s.groups) == 1 else f"sd:{g}"): str(prior) for g, prior in group_priors.items()},
                        **{f"sd:{sd_tag(g, c)}": str(prior) for (g, c), prior in sd_priors.items() if c != "Intercept"},
                        **{f"cor:{g}": str(prior) for g, prior in cor_priors.items()},
                        **{f"simo:{c}": str(prior) for c, prior in pr.simo_priors(s).items()},
                        **(_scale_priors(model) if fam.scale_parameter is not None else {}),
                        **({fam.zero_parameter: str(getattr(pr, fam.zero_parameter))} if fam.zero_parameter is not None else {}),
-                       **({"nu": str(pr.nu)} if pr.nu is not None else {})},
+                       **({"nu": str(pr.nu)} if pr.nu is not None else {}),
+                       **({label: str(prior) for label, prior in prior_labels(model).items()} if mixture else {})},
+            # a mixture (C05): its component families, identification and PyMC names
+            **({"mixture": {"families": list(model.components), "order": ORDER,
+                            "names": {k: list(v) if isinstance(v, tuple) else v for k, v in model.mixture_names.items()}}}
+               if mixture else {}),
             # which of those priors ab.default_priors() filled in (brms's defaults, A07); absent when the user gave them all
             **({"default_priors": {"brms": BRMS_VERSION, "parameters": list(defaults)}} if defaults else {}),
             "terms": list(s.terms),
@@ -206,7 +215,7 @@ def compare_records(a: dict, b: dict, *, k: float = 4.0, allow_legacy: bool = Fa
     from autobayes.identity import comparison_identity
 
     identity_status = comparison_identity(a, b, allow_legacy=allow_legacy)
-    same = all(a["model"].get(k) == b["model"].get(k) for k in ("formula", "priors", "family", "distributional"))
+    same = all(a["model"].get(k) == b["model"].get(k) for k in ("formula", "priors", "family", "distributional", "mixture"))
     same = same and a["model"].get("family_parameters", {}) == b["model"].get("family_parameters", {})
     if not same:
         raise ValueError("records fit different models; agreement is only defined for the same family, family parameters, formula "

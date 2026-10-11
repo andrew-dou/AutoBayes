@@ -3,7 +3,7 @@
 Everything the library once decided by comparing a family name against a string is a field of
 the spec. A family is one module in this package that builds its spec (``gaussian.py``,
 ``student.py``, ``poisson.py``, ``negbinomial.py``, ``gamma.py``, ``lognormal.py``, ``beta.py``, ``bernoulli.py``,
-``binomial.py``, ``zero_inflated_poisson.py``, ``hurdle_poisson.py``, ``cumulative.py``, ``categorical.py``);
+``binomial.py``, ``zero_inflated_poisson.py``, ``hurdle_poisson.py``, ``cumulative.py``, ``categorical.py``, ``mixture.py``);
 ``autobayes.families.FAMILIES`` is the registry and ``get_family(name)`` the lookup. Callable fields
 take the built ``Model`` (or the frame being validated) because that is what the call sites have in
 hand; none of them is called before ``Model.__init__`` has resolved the spec.
@@ -157,6 +157,11 @@ class FamilySpec:
     # brms's monotonic effects mo(x) (B03, docs/monotonic.md): whether the family's linear predictor takes them, set where a
     # frozen brms case verifies it. The term is added to the parent's linear predictor before the link (it is not centred).
     monotonic: bool = False
+    # brms's finite mixtures (C05, docs/mixtures.md): the model is ``mixture()`` of the component families the model holds
+    # (``model.components``), one linear predictor per component (brms's ``mu<k>``) with ordered intercepts, a scale per
+    # component (``sigma<k>``) and the mixing proportions ``theta``; ``Model``, ``Priors``, ``predict()``, the target identity
+    # and the fit record take the paths of ``autobayes/families/mixture.py``. False for every other family.
+    mixture: bool = False
 
     def with_link(self, link: str | None) -> "FamilySpec":
         """This family's spec under ``link``: this spec for ``None`` or its own link, the one a ``links`` entry builds

@@ -30,6 +30,11 @@ its linear predictor under ``kind="linear"`` (brms ``posterior_linpred(dpar = "s
 under ``kind="mean"`` (brms ``posterior_epred(dpar = "sigma")``, named ``sigma``). Its intercept draws are on the raw scale,
 as Bambi reports them after sampling.
 
+A finite mixture (C05, docs/mixtures.md) is predicted in this layer, population-level only: ``kind="linear"`` returns every
+component's linear predictor as ``eta`` with a ``component`` dimension (brms's ``posterior_linpred``), ``kind="mean"`` the
+mixture's expected response ``sum_k theta_k mu_k`` as ``mean`` (brms's ``posterior_epred``) and ``kind="response"`` draws, per
+draw and row, a component by theta and then its Normal (brms's ``posterior_predict``), seeded.
+
 ``new_groups`` decides what happens when ``newdata`` contains a level of the grouping
 factor that was not in the training data (a population-only model has no grouping factor: it
 needs no such column, its result carries ``new_groups = "not_applicable"``, and any value other
@@ -83,10 +88,11 @@ def expected_response(fam, model, post, eta):
     return fam.inverse_link(eta) if fam.expected_response is None else fam.expected_response(model, post, eta)
 
 
-def _coefficient_draws(post, model):
+def _coefficient_draws(post, model, axis: str | None = None):
     """(chain, draw, P) posterior draws of the coefficients in design-column order; (chain, draw, P, K - 1) for the
-    categorical family (B05), whose every coefficient has the non-reference categories as its last axis."""
-    category = model.names.get("category_dim")
+    categorical family (B05), whose every coefficient has the non-reference categories as its last axis, and (chain, draw,
+    P, K) for a mixture (C05), whose coefficients have the component dimension ``axis`` last."""
+    category = axis or model.names.get("category_dim")
     parts = []
     for term in model.spec.bambi_terms:                         # a monotonic term has no design column (B03)
         if category is None:
@@ -319,6 +325,36 @@ def _predict_by_hand(model, idata, df: pd.DataFrame | None, kind: str, seed, pol
     return ds
 
 
+def _predict_mixture(model, idata, df: pd.DataFrame | None, kind: str, seed) -> xr.Dataset:
+    """A mixture's predictions (C05, docs/mixtures.md), population-level only: each component's linear predictor from the
+    raw-scale intercept draws (as Bambi reports them after sampling) and the raw design, ``(chain, draw, row, K)``;
+    ``kind="linear"`` returns it as ``eta`` with a ``component`` dimension (brms's ``posterior_linpred``), ``kind="mean"`` the
+    mixture's expected response ``sum_k theta_k mu_k`` under the family's mean name (brms's ``posterior_epred``) and
+    ``kind="response"`` adds ``y``, a component by theta per draw and row, then its Normal (brms's ``posterior_predict``),
+    seeded."""
+    if df is None:
+        df = model.data
+    post, n, fam, r = idata.posterior, model.names, family_of(model), model.mixture_names
+    a = post[n["intercept"]].transpose("chain", "draw", r["coordinate"]).to_numpy()            # (chain, draw, K)
+    eta = np.repeat(a[..., None, :], len(df), axis=-2)
+    b = _coefficient_draws(post, model, axis=r["coordinate"])                                  # (chain, draw, P, K) or None
+    if b is not None:
+        eta = eta + np.einsum("cdpk,np->cdnk", b, raw_design(model, df))
+    dims = ("chain", "draw", "__obs__")
+    coords = {"chain": post["chain"], "draw": post["draw"], "__obs__": np.arange(len(df))}
+    if kind == "linear":
+        if not np.isfinite(eta).all():
+            raise ValueError("linear predictor contains nonfinite draws")
+        out = {"eta": (dims + ("component",), eta)}
+        coords["component"] = list(r["labels"])
+    else:
+        mean = expected_response(fam, model, post, eta)
+        out = {fam.mean_name: (dims, mean)}
+        if kind == "response":
+            out["y"] = (dims, fam.draw_response(model, post, eta, mean, df, np.random.default_rng(seed)))
+    return xr.Dataset(out, coords=coords)
+
+
 def _group_policies(model, new_groups):
     groups = model.spec.groups
     if not groups and new_groups != "error":
@@ -398,6 +434,8 @@ def predict(model, fit_result, *, newdata: pd.DataFrame | None = None, kind: str
               or bool(model.spec.mo_terms))                    # monotonic terms (B03): Bambi's predictions do not know them
     if dpar is not None:
         ds = _predict_dpar(model, idata, df, kind, dpar)
+    elif fam.mixture:                                           # C05: every component's linear predictor, theta's mean and draws
+        ds = _predict_mixture(model, idata, df, kind, seed)
     elif manual:
         ds = _predict_by_hand(model, idata, df, kind, seed, policies, include_group_effects=include_group_effects)
     else:

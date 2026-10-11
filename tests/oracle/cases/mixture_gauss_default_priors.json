@@ -1,0 +1,43 @@
+{
+ "id": "mixture_gauss_default_priors",
+ "tier": "C",
+ "feature": "C05_mixtures",
+ "note": "no priors on the brms side: brms's defaults are the model (each component's Intercept student_t(3, round(median(y), 1), max(2.5, round(mad(y), 1))), flat b, sigma1 and sigma2 student_t(3, 0, 2.5) with lower bound 0, theta dirichlet(1)); AutoBayes builds it with ab.default_priors(family='mixture', families=[...]), whose intercept priors are one prior for every component (the sorted-draws path of the ordered intercepts)",
+ "seed": 310,
+ "n_points": 8,
+ "data": {
+  "generator": "tier_c",
+  "seed": 210,
+  "n": 36,
+  "newdata": {
+   "seed": 310,
+   "n": 5
+  }
+ },
+ "brms": {
+  "formula": "y ~ x + w",
+  "family": {
+   "mixture": [
+    {
+     "family": "gaussian"
+    },
+    {
+     "family": "gaussian"
+    }
+   ]
+  },
+  "factors": {},
+  "priors": []
+ },
+ "autobayes": {
+  "constructor": "mixture",
+  "formula": "y ~ x + w",
+  "kwargs": {
+   "families": [
+    "gaussian",
+    "gaussian"
+   ]
+  },
+  "priors": "default"
+ }
+}
