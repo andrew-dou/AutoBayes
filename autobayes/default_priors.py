@@ -23,6 +23,9 @@ brms's rules (``default_prior()``, ``def_dpar_prior``, ``def_scale_prior``, ``pr
 - A monotonic term ``mo(x)`` (B03): its coefficient is flat like every ``b``; its simplex ``dirichlet(1)`` (brms's
   ``eval_dirichlet`` default, the uniform distribution on the simplex), ``Dirichlet(1)``, on the class ``simo`` row of
   coefficient ``mox1``.
+- A Gaussian process ``gp(x)`` (C03): its marginal SD ``sdgp`` takes the default of a group-level SD (brms's documentation
+  says so), ``student_t(3, 0, scale)`` with ``lb`` 0 on the class row; its length-scale ``lscale`` an inverse gamma tuned to
+  the process's inputs on its coefficient row (``gpx``), the class row empty with ``lb`` 0: ``default_lscale``.
 - An auxiliary parameter with its own formula (B01, ``sigma ~ z``; brms's ``def_dpar_prior`` under the formula's log link):
   its intercept ``student_t(3, 0, scale)`` with brms's scale of the response read on the log scale for ``sigma``
   (``max(2.5, round(mad(log y), 1))``, zeros read as 0.1, 2.5 when a response is negative) and ``student_t(3, 0, 2.5)``
@@ -48,7 +51,8 @@ from dataclasses import replace
 import numpy as np
 import pandas as pd
 
-from autobayes.priors import LKJ, Dirichlet, Flat, HalfStudentT, Prior, PriorError, Priors, StudentT, brms_prior
+from autobayes.priors import (LKJ, Dirichlet, Flat, HalfNormal, HalfStudentT, InverseGamma, Prior, PriorError, Priors, StudentT,
+                              brms_prior)
 
 BRMS_VERSION = "2.23.0"          # the brms whose default_prior() this reproduces (the oracle fixtures' meta.brms)
 DF = 3.0                         # the degrees of freedom of brms's student_t(3, ., .) defaults
@@ -226,6 +230,23 @@ def _default(prior: Prior) -> Prior:
     return replace(prior, source="default")
 
 
+def default_lscale(gp) -> Prior:
+    """brms's default prior of a Gaussian process's length-scale (C03, docs/gaussian-processes.md), on its scaled inputs
+    (``gp`` a ``formula.GaussianProcess`` with its data seen): the inverse gamma with 1% of its mass below the smallest
+    distance between distinct scaled inputs, floored at 0.01, and 1% above the largest (1), solved exactly
+    (``gaussian_process.inverse_gamma_tails``) and each parameter rounded to 6 decimals as brms prints it; with two distinct
+    inputs the two distances coincide, no inverse gamma has those tails, and brms's documented fallback, the half-normal
+    ``normal(0, 0.5)``, is returned. Where brms's own iterative solution sits just below a rounding boundary that the exact
+    one crosses, the sixth decimal differs by one (divergence D67)."""
+    from autobayes.gaussian_process import DIGITS, FALLBACK_SCALE, FLOOR, TAIL, inverse_gamma_tails, smallest_distance
+
+    x = gp.scaled_inputs
+    if x.size == 2:
+        return HalfNormal(FALLBACK_SCALE)
+    a, b = inverse_gamma_tails(max(smallest_distance(x), FLOOR), float(x.max() - x.min()), TAIL)
+    return InverseGamma(r_round(a, DIGITS), r_round(b, DIGITS))
+
+
 def default_priors(formula: str | list[str], data: pd.DataFrame, *, family: str = "gaussian", categorical: Mapping[str, object] | None = None,
                    nu: float | None = None, link: str | None = None, center_predictors: bool = True,
                    families: list[str] | None = None, order: str | bool | None = None,
@@ -324,8 +345,11 @@ def default_priors(formula: str | list[str], data: pd.DataFrame, *, family: str 
         return _default(value)
 
     simo = {t.operands[0]: Dirichlet(1) for t in spec.mo_terms}         # B03: brms's dirichlet(1) on each monotonic simplex
+    sdgp = {g.column: HalfStudentT(DF, scale) for g in spec.gp_terms}   # C03: a group-level SD's default
+    lscale = {g.column: default_lscale(g) for g in spec.gp_terms}      # C03: tuned to the process's inputs
     priors = Priors(intercept=mark(intercept), b=mark(Flat()) if spec.pop_terms else None, sd=mark(sd) or None,
                     cor=mark(cor) or None, nu=mark(learned.get("nu")), simo=mark(simo) or None,
+                    sdgp=mark(sdgp) or None, lscale=mark(lscale) or None,
                     **{k: mark(v) for k, v in auxiliary.items()})
     priors.validate(spec, fam)
     return priors
@@ -478,6 +502,16 @@ def prior_table(priors: Priors, spec, family="gaussian", *, center_predictors: b
         add_coefficients([(dnames[col], p) for col, p in sub.coefficient_priors(ds).items()], dpar=ds.response)
     for column, prior in priors.simo_priors(spec).items():           # a monotonic term's simplex (B03): brms's class simo,
         add(prior, "simo", coef=f"{brms_rename(spec.monotonic(column).term)}1")   # coefficient mox1, no class row
+    for cls, by_column in (("sdgp", priors.sdgp_priors(spec)), ("lscale", priors.lscale_priors(spec))):   # C03, coefficient gpx
+        ps = list(by_column.values())
+        if ps and cls == "sdgp" and same(ps):                         # one prior for every process: the class row carries it
+            add(ps[0], cls, lb="0")
+            for column, p in by_column.items():
+                add(None, cls, coef=brms_rename(f"gp({column})"), source=p.source)
+        elif ps:                                                      # lscale's default is tuned per process: its coefficient
+            add(None, cls, lb="0")                                    # rows carry the priors, the class row is empty
+            for column, p in by_column.items():
+                add(p, cls, coef=brms_rename(f"gp({column})"))
     if fam.scale_parameter is not None and fam.scale_parameter not in spec.dpar_names:
         add(getattr(priors, fam.scale_parameter), fam.scale_parameter, lb="0")
     if fam.zero_parameter is not None:                                # brms's real<lower=0,upper=1> zi / hu (B06)

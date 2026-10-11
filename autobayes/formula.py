@@ -48,6 +48,13 @@ x_i} simo[k]``, the share of the simplex ``simo`` up to row ``i``'s value coded 
 that the fitted rows take); ``ModelSpec.monotonics`` keeps that coding once the data are seen. Interactions with a
 ``mo()`` term, ``mo()`` in a group-level or distributional formula and ``mo()``'s ``id`` argument are refused.
 
+``gp(col)`` and ``gp(col, k = K, c = C)`` are brms's Gaussian process of one numeric column, exact or Hilbert-space
+approximate (C03, docs/gaussian-processes.md), with the squared-exponential kernel and brms's scaling of the input: terms of
+the linear predictor without a coefficient of class ``b``, held in ``ModelSpec.gp_terms`` (``GaussianProcess``, whose
+inputs and scaling are known once the data are seen). Several covariates in one ``gp()``, ``by``, other kernels, ``iso``,
+``gr = FALSE``, ``cmc``, ``scale = FALSE``, interactions with ``gp()``, and ``gp()`` in a group-level or distributional
+formula are refused.
+
 Group-level terms are optional and additive across distinct factors (M3c-3): a formula without them is a population-only
 model, as in brms ``brmsformula`` where group-level terms are optional; ``y ~ 1`` is intercept-only. ``(1 + x || g)``
 is brms's independent varying intercept and slope (A01): each numeric population-level term named varies by level
@@ -87,6 +94,7 @@ _TRANSFORM_OP_FIRST_RE = re.compile(rf"^I\s*\(\s*({_NUMBER})\s*([*+])\s*({_IDENT
 _MO_RE = re.compile(r"^mo\s*\((.*)\)$", re.S)                                                        # mo(<inside>), brms's monotonic effect (B03)
 _MO_TERM_RE = re.compile(rf"^mo\(({_IDENT})\)$")                                                    # the canonical spelling mo(col)
 MVBIND_RE = re.compile(r"^\s*mvbind\s*\(", re.S)                                                       # brms's multivariate mvbind(y, y2) ~ ... (C01)
+_GP_RE = re.compile(r"^gp\s*\((.*)\)$", re.S)                                                        # gp(<inside>), brms's Gaussian process (C03)
 SUPPORTED_TRANSFORMS = ("only log(col), exp(col), sqrt(col), I(col^k) with integer k, and I(col * k), I(col + k), I(col - k) with a "
                         "numeric constant k are supported as in-formula transforms of one numeric column (A05, docs/transforms.md); "
                         "other function calls and transformations inside the formula are not supported: compute the column in the "
@@ -299,6 +307,241 @@ def monotonic_coding(column: str, s: pd.Series) -> Monotonic:
         raise FormulaError(f"{label} spans {lo} to {hi}, {hi - lo} steps, each with its own simplex entry; more than {COUNT_CAP} "
                            "steps is refused")
     return Monotonic(column, minimum=lo, maximum=hi)
+
+
+@dataclass(frozen=True)
+class GaussianProcess:
+    """brms's Gaussian process term of one numeric column (C03, docs/gaussian-processes.md): ``gp(x)``, the exact GP, or
+    ``gp(x, k = K, c = C)``, its Hilbert-space approximation with ``K`` basis functions on ``[-L, L]``, ``L = C`` times the
+    largest distance between scaled inputs, which is 1 (brms's ``c`` defaults to 5/4); the squared-exponential kernel and
+    brms's ``scale = TRUE``. It is a term of the linear predictor without a coefficient of class ``b``, held in
+    ``ModelSpec.gp_terms`` rather than among the population-level terms; its parameters are brms's ``sdgp``, ``lscale`` and
+    ``zgp`` (``autobayes.gaussian_process`` has the mathematics).
+
+    Nothing but ``column``, ``k`` and ``c`` is known until the data are seen. Then ``inputs`` holds the distinct fitted
+    values in the order they first appear (brms's grouping of equal inputs, ``gr = TRUE``: one latent value per distinct
+    input, in brms's order, which is also the order of the exact GP's ``zgp`` and fixes its Cholesky factor), ``dmax`` the
+    largest distance between them (brms's ``dmax``: the inputs are scaled by it, so that the largest distance is 1) and
+    ``cmean`` the mean of the distinct scaled inputs (brms's ``cmeans``, at which the approximate GP's basis is centred)."""
+
+    column: str
+    k: int | None = None
+    c: float | None = None
+    inputs: tuple[float, ...] = ()
+    dmax: float | None = None
+    cmean: float | None = None
+
+    def __post_init__(self):
+        object.__setattr__(self, "inputs", tuple(float(v) for v in self.inputs))
+        if (self.k is None) != (self.c is None):
+            raise ValueError(f"a Gaussian process of {self.column!r} is exact (no k, no c) or approximate (k and c), got k = "
+                             f"{self.k!r}, c = {self.c!r}")
+
+    @property
+    def term(self) -> str:
+        """The term as the canonical formula writes it: ``gp(x)``, or ``gp(x, k = 10, c = 1.25)`` with brms's default ``c``
+        written out."""
+        return f"gp({self.column})" if self.k is None else f"gp({self.column}, k = {self.k}, c = {_number_text(self.c)})"
+
+    @property
+    def approximate(self) -> bool:
+        """Whether this is the Hilbert-space approximation (``k`` given) rather than the exact GP."""
+        return self.k is not None
+
+    @property
+    def known(self) -> bool:
+        """Whether the inputs and their scaling have been read from the data."""
+        return self.dmax is not None
+
+    def _need_data(self):
+        if not self.known:
+            raise ValueError(f"the inputs of {self.term!r} are known once the data are seen")
+
+    @property
+    def size(self) -> int:
+        """The length of ``zgp``: the number of distinct inputs (exact) or of basis functions (approximate)."""
+        if self.approximate:
+            return int(self.k)
+        self._need_data()
+        return len(self.inputs)
+
+    @property
+    def L(self) -> float:
+        """The approximate GP's boundary: ``c`` times the largest distance between scaled inputs, which is 1 (brms's ``Lgp``)."""
+        if not self.approximate:
+            raise ValueError(f"{self.term!r} is an exact Gaussian process; L belongs to the approximate one, gp(x, k = ...)")
+        return float(self.c)
+
+    @property
+    def slambda(self) -> np.ndarray:
+        """The approximate GP's frequencies ``sqrt(lambda_j) = pi j / (2 L)`` (brms's ``slambda``)."""
+        from autobayes.gaussian_process import sqrt_eigenvalues
+
+        return sqrt_eigenvalues(self.L, self.k)
+
+    @property
+    def scaled_inputs(self) -> np.ndarray:
+        """The distinct inputs divided by ``dmax`` (brms's ``Xgp_prior``, and the exact GP's ``Xgp``), in order."""
+        self._need_data()
+        return np.asarray(self.inputs, dtype=float) / self.dmax
+
+    def values(self, s: pd.Series, *, where: str = "column") -> np.ndarray:
+        """The column ``s`` as the GP's inputs, a float array: refuses a non-numeric, boolean, complex, missing or infinite
+        column; ``where`` names the frame in messages."""
+        label = f"{where} {self.column!r} of the Gaussian process {self.term!r}"
+        reject_complex(label, s)
+        if not _is_numeric(s):
+            raise FormulaError(f"{label} has dtype {s.dtype}; the input of a Gaussian process is a numeric column")
+        v = s.to_numpy(dtype=float)
+        if not np.all(np.isfinite(v)):
+            raise FormulaError(f"{label} has missing or non-finite values")
+        return v
+
+    def index(self, s: pd.Series, *, where: str = "column") -> np.ndarray:
+        """Each row's 0-based position among the distinct fitted inputs (brms's ``Jgp`` less 1). A value that is not a
+        fitted input is refused: the exact GP has no value there (brms draws one from the conditional normal; divergence
+        D65)."""
+        self._need_data()
+        v = self.values(s, where=where)
+        position = {x: j for j, x in enumerate(self.inputs)}
+        unknown = sorted({float(x) for x in v if float(x) not in position})
+        if unknown:
+            shown = unknown[:5] + (["..."] if len(unknown) > 5 else [])
+            raise FormulaError(
+                f"{where} {self.column!r} has the values {shown}, which are not inputs of the exact Gaussian process "
+                f"{self.term!r}: it has values at its {len(self.inputs)} fitted inputs only (brms draws a value at a new input "
+                "from the conditional normal, which is not offered here); predict at fitted inputs, or fit the approximate GP "
+                f"gp({self.column}, k = ...), whose basis is evaluated at any input inside its boundary (docs/gaussian-processes.md, "
+                "divergence D65)")
+        return np.array([position[float(x)] for x in v], dtype=np.int64)
+
+    def centred(self, values) -> np.ndarray:
+        """Inputs as the approximate GP's basis reads them: divided by ``dmax`` and less ``cmean``."""
+        self._need_data()
+        return np.asarray(values, dtype=float) / self.dmax - self.cmean
+
+    def basis(self, s: pd.Series, *, where: str = "column") -> np.ndarray:
+        """``(rows, k)``: the approximate GP's basis functions at the rows of ``s`` (brms's ``Xgp`` at those inputs). An input
+        outside ``(-L, L)`` is refused: the Hilbert-space approximation holds inside its boundary only (divergence D66)."""
+        from autobayes.gaussian_process import basis
+
+        x = self.centred(self.values(s, where=where))
+        outside = np.flatnonzero(np.abs(x) >= self.L)
+        if outside.size:
+            i = int(outside[0])
+            raise FormulaError(
+                f"{where} {self.column!r} has the value {float(s.iloc[i])!r} (row {i}), outside the boundary of the approximate "
+                f"Gaussian process {self.term!r}: its basis lives on [-L, L] = [-{_number_text(self.L)}, {_number_text(self.L)}] "
+                f"of the scaled, centred input ({self.column} / {self.dmax!r} - {self.cmean!r}), that is {self.column} in "
+                f"({(self.cmean - self.L) * self.dmax!r}, {(self.cmean + self.L) * self.dmax!r}); beyond it the basis repeats "
+                "itself and approximates nothing (brms evaluates it anyway; divergence D66): refit with a larger c")
+        return basis(x, self.L, self.k)
+
+
+def gaussian_process_coding(gp: GaussianProcess, s: pd.Series) -> GaussianProcess:
+    """``gp`` with its inputs read from the fitted column ``s``: the distinct values in the order they first appear (equal
+    values, ``0.0`` and ``-0.0`` included, are one input, as R's ``unique`` takes them), ``dmax`` the largest distance between
+    them and ``cmean`` the mean of the distinct scaled inputs. Refused: a column that is not numeric or has missing or
+    infinite values, fewer than two distinct values (brms divides by their largest distance, which is then zero), and an
+    approximate GP whose ``c`` leaves a fitted input outside its boundary (with ``c >= 1`` none is: the centred, scaled
+    inputs lie strictly inside ``(-1, 1)``)."""
+    v = gp.values(s)
+    inputs = tuple(dict.fromkeys(float(x) for x in v))           # first appearance; 0.0 == -0.0 is one key
+    if len(inputs) < 2:
+        raise FormulaError(f"column {gp.column!r} of the Gaussian process {gp.term!r} takes the single value {inputs[0]!r} in the "
+                           "fitted rows; a Gaussian process needs at least two distinct inputs (brms scales the inputs by the largest "
+                           "distance between them, which is zero here)")
+    dmax = max(inputs) - min(inputs)
+    scaled = np.asarray(inputs) / dmax
+    coded = replace(gp, inputs=inputs, dmax=float(dmax), cmean=math.fsum(scaled.tolist()) / len(inputs))
+    if gp.approximate:
+        centred = coded.centred(inputs)
+        if np.max(np.abs(centred)) >= coded.L:
+            raise FormulaError(
+                f"{gp.term!r}: c = {_number_text(gp.c)} puts fitted inputs outside the approximate Gaussian process's boundary "
+                f"[-L, L] = [-{_number_text(coded.L)}, {_number_text(coded.L)}] of the scaled, centred input (the largest is "
+                f"{float(np.max(np.abs(centred)))!r}), where the approximation does not hold (brms fits it anyway; divergence D66); "
+                "use c >= 1 (brms's default is 5/4)")
+    return coded
+
+
+_GP_ARGUMENTS = "by, k, cov, iso, gr, cmc, scale and c"
+_TRUE, _FALSE = ("TRUE", "T"), ("FALSE", "F")
+
+
+def _parse_gp(piece: str, inner: str, response: str, trials: str | None) -> GaussianProcess:
+    """The ``GaussianProcess`` of ``gp(<inner>)`` (C03): one column, then brms's named arguments. Accepted: ``k`` (a positive
+    whole number: the approximate GP), ``c`` (a positive number or a ratio of two, ``5/4``; with ``k`` only, brms's default
+    5/4), and the defaults written out, ``cov = "exp_quad"``, ``gr = TRUE``, ``scale = TRUE``. Refused, naming the construct
+    (divergence D64): an expression, several covariates, ``by``, another kernel, ``iso``, ``gr = FALSE``, ``cmc``,
+    ``scale = FALSE``, ``c`` without ``k``, the response or the trials column."""
+    hint = "(docs/gaussian-processes.md, divergence D64)"
+    args = [a.strip() for a in _split_top_level(inner, ",")] if inner.strip() else []
+    if not args or not args[0] or re.fullmatch(rf"{_IDENT}\s*=.*", args[0], re.S):
+        raise FormulaError(f"{piece!r}: gp() takes the column of its input first, gp(x)")
+    column, rest = args[0], args[1:]
+    if not re.fullmatch(_IDENT, column):
+        raise FormulaError(f"{piece!r}: gp() takes a column name here, not an expression ({column!r}; brms evaluates one): compute "
+                           f"the column in the data frame and write gp(<column>) {hint}")
+    named: dict[str, str] = {}
+    for arg in rest:
+        km = re.fullmatch(rf"({_IDENT})\s*=\s*(.+)", arg, re.S)
+        if km is None:
+            raise FormulaError(
+                f"{piece!r}: one covariate per gp() here; brms's gp({column}, {arg}, ...) is one Gaussian process of several "
+                f"covariates (one kernel over their joint distance, or one length-scale each with iso = FALSE), which is not part "
+                f"of this slice; add a separate gp() per covariate if that is the model meant {hint}")
+        name, value = km.group(1), km.group(2).strip()
+        if name in named:
+            raise FormulaError(f"{piece!r}: gp()'s argument {name!r} is given twice")
+        named[name] = value
+    k = c = None
+    for name, value in named.items():
+        if name == "k":
+            if value == "NA":
+                raise FormulaError(f"{piece!r}: k = NA is brms's exact Gaussian process: drop k, gp({column})")
+            if not re.fullmatch(r"\d+", value) or int(value) < 1:
+                raise FormulaError(f"{piece!r}: k is the number of basis functions of the approximate Gaussian process, a positive "
+                                   f"whole number, got {value!r}")
+            k = int(value)
+        elif name == "c":
+            m = re.fullmatch(rf"({_NUMBER})(?:\s*/\s*({_NUMBER}))?", value)
+            c = None if m is None else float(m.group(1)) / (float(m.group(2)) if m.group(2) is not None else 1.0)
+            if c is None or not math.isfinite(c) or c <= 0:
+                raise FormulaError(f"{piece!r}: c is the approximate Gaussian process's boundary factor, a positive number such "
+                                   f"as 1.25 or 5/4, got {value!r}")
+        elif name == "cov":
+            kernel = value.strip("'\"")
+            if value[:1] not in "'\"" or value[-1:] != value[:1] or kernel != "exp_quad":
+                raise FormulaError(f"{piece!r}: cov = {value} is not offered here; only brms's default squared-exponential kernel "
+                                   f"cov = \"exp_quad\" is part of this slice (brms's matern32, matern52 and exponential kernels "
+                                   f"are not) {hint}")
+        elif name in ("gr", "scale"):
+            if value in _FALSE:
+                why = ("gives every row its own latent value even where inputs repeat; here rows with equal inputs share one, "
+                       "brms's default gr = TRUE, which is the same model" if name == "gr" else
+                       "keeps the inputs unscaled, which changes what lscale measures and the default lscale prior; here the "
+                       "inputs are scaled so that their largest distance is 1, brms's default scale = TRUE")
+                raise FormulaError(f"{piece!r}: {name} = FALSE {why} {hint}")
+            if value not in _TRUE:
+                raise FormulaError(f"{piece!r}: {name} takes TRUE or FALSE, got {value!r}")
+        elif name == "by":
+            raise FormulaError(f"{piece!r}: brms's by = {value} (a Gaussian process scaled by a numeric column, or one per level "
+                               f"of a factor) is not part of this slice {hint}")
+        elif name in ("iso", "cmc"):
+            why = ("decides whether several covariates share one length-scale, and with one covariate brms ignores it"
+                   if name == "iso" else "only matters with a factor by =, which is not part of this slice")
+            raise FormulaError(f"{piece!r}: gp()'s {name} {why}: drop it {hint}")
+        else:
+            raise FormulaError(f"{piece!r}: gp() has no argument {name!r}; brms's gp() takes {_GP_ARGUMENTS}")
+    if c is not None and k is None:
+        raise FormulaError(f"{piece!r}: c is the boundary factor of the approximate Gaussian process, which k = <number of basis "
+                           f"functions> asks for; give k as well, or drop c for the exact Gaussian process (brms ignores c there)")
+    if column == response:
+        raise FormulaError(f"{piece!r}: the response {response!r} cannot be the input of a Gaussian process")
+    if trials is not None and column == trials:
+        raise FormulaError(f"{piece!r}: the trials column {trials!r} cannot be the input of a Gaussian process")
+    return GaussianProcess(column, k=k, c=(1.25 if c is None else c) if k is not None else None)
 
 
 @dataclass(frozen=True)
@@ -934,7 +1177,9 @@ class ModelSpec:
     each a ``ModelSpec`` of its own whose ``response`` is the parameter's brms name (``sigma``, ``shape``, ``phi``) and
     whose population-level terms make that parameter's linear predictor; empty for a single formula. ``monotonics`` holds
     the coding of each monotonic term's column (B03, ``mo(col)``; ``Monotonic``), in term order, known once the data are
-    seen, as ``categoricals`` does for the categorical terms."""
+    seen, as ``categoricals`` does for the categorical terms. ``gp_terms`` are the formula's Gaussian processes (C03,
+    ``gp(x)``, ``gp(x, k = 10, c = 5/4)``; ``GaussianProcess``), in formula order, their inputs known once the data are seen:
+    terms of the linear predictor that are not population-level terms (no coefficient of class ``b``, no design column)."""
 
     formula: str
     response: str
@@ -949,11 +1194,12 @@ class ModelSpec:
     additions: tuple[AdditionTerm, ...]
     dpars: tuple["ModelSpec", ...]
     monotonics: tuple[Monotonic, ...]
+    gp_terms: tuple[GaussianProcess, ...]
 
     def __init__(self, formula, response, predictors=(), group=None, intercept=True,
                  levels=(), trials=None, rhs="", terms=(), categoricals=(), interactions=(),
                  *, groups=None, levels_by_group=None, pop_terms=None, group_terms=None, offset=None, additions=(), dpars=(),
-                 monotonics=None):
+                 monotonics=None, gp_terms=()):
         """Keep the original positional constructor: without ``pop_terms`` / ``group_terms`` the term model is
         built from the flat ``predictors``, ``terms``, ``categoricals``, ``interactions`` and ``group(s)``.
         Terms given as mappings (``dataclasses.asdict`` output) are rebuilt, the distributional formulas and the
@@ -995,11 +1241,14 @@ class ModelSpec:
         monotonics = tuple(m if isinstance(m, Monotonic) else Monotonic(**m) for m in monotonics)
         if tuple(m.column for m in monotonics) != mo_columns:
             raise ValueError(f"monotonics must give the coding of exactly the monotonic terms' columns {list(mo_columns)}, in order")
+        gp_terms = tuple(g if isinstance(g, GaussianProcess) else GaussianProcess(**g) for g in gp_terms)   # C03
+        if len({g.column for g in gp_terms}) != len(gp_terms):
+            raise ValueError("gp_terms must name each column once")
         values = dict(formula=formula, response=response, intercept=intercept,
                       levels_by_group=_GroupLevels((g, level_map[g]) for g in factors),
                       trials=trials, rhs=rhs, categoricals=categoricals,
                       pop_terms=pop_terms, group_terms=group_terms, offset=offset, additions=additions, dpars=dpars,
-                      monotonics=monotonics)
+                      monotonics=monotonics, gp_terms=gp_terms)
         for key, value in values.items():
             object.__setattr__(self, key, value)
 
@@ -1008,7 +1257,8 @@ class ModelSpec:
         return hash((self.formula, self.response, self.intercept,
                      tuple(self.levels_by_group[g] for g in self.groups), self.trials, self.rhs,
                      self.categoricals, self.pop_terms, self.group_terms, self.offset, self.additions)
-                    + ((self.dpars,) if self.dpars else ()) + ((self.monotonics,) if self.monotonics else ()))
+                    + ((self.dpars,) if self.dpars else ()) + ((self.monotonics,) if self.monotonics else ())
+                    + ((self.gp_terms,) if self.gp_terms else ()))
 
     def addition(self, kind: str) -> AdditionTerm | None:
         """The addition term of ``kind`` (``"weights"``, ``"cens"``, ``"trunc"``), or None when the formula has none."""
@@ -1068,8 +1318,15 @@ class ModelSpec:
     def pop_columns(self) -> tuple[str, ...]:
         """The data columns the population-level terms read, in formula order without repeats: the numeric and
         categorical main effects and the raw columns inside transforms (an interaction reads its main effects'
-        columns)."""
-        return tuple(dict.fromkeys(c for t in self.pop_terms for c in t.operands))
+        columns), then the inputs of the Gaussian processes (C03)."""
+        return tuple(dict.fromkeys([*(c for t in self.pop_terms for c in t.operands), *(g.column for g in self.gp_terms)]))
+
+    def gp(self, column: str) -> GaussianProcess:
+        """The Gaussian process of ``column`` (C03; ``KeyError`` when the formula has no ``gp(column)``)."""
+        for g in self.gp_terms:
+            if g.column == column:
+                return g
+        raise KeyError(column)
 
     @property
     def transform_terms(self) -> tuple[PopTerm, ...]:
@@ -1572,6 +1829,12 @@ def _parse_formulas(formulas, data: pd.DataFrame | None, family: str, categorica
                 f"in this slice: brms would give {name} a monotonic coefficient and simplex of its own; mo() belongs to the response "
                 "formula here (docs/monotonic.md, divergence D42)"
             )
+        if d.gp_terms:
+            raise FormulaError(
+                f"{text!r}: a Gaussian process in a distributional formula ({', '.join(g.term for g in d.gp_terms)}) is not supported "
+                f"in this slice: brms would give {name} a Gaussian process of its own; gp() belongs to the response formula here "
+                "(docs/gaussian-processes.md, divergence D64)"
+            )
         for col in d.pop_columns:
             role = ("the response" if col == spec.response else "the trials column" if col == spec.trials
                     else "a grouping factor of the response formula" if col in operands else None)
@@ -1672,6 +1935,7 @@ def parse_formula(formula: str | list[str], data: pd.DataFrame | None = None, fa
     groups: list[str] = []                                 # the factors of group_terms, for the checks below
     raw_interactions: list[tuple[str, str, str]] = []      # (left, right, piece as written)
     offsets: list[tuple[Offset, str]] = []                 # (offset term, piece as written); at most one
+    gps: list[tuple[GaussianProcess, str]] = []            # the Gaussian processes (C03): (term, piece as written)
     saw_intercept_token = False
     remove_intercept = False
 
@@ -1759,6 +2023,12 @@ def parse_formula(formula: str | list[str], data: pd.DataFrame | None = None, fa
                         "mo(x):z gives each interaction its own coefficient (and mo(x):mo(w) a simplex per factor), which is not "
                         "verified here (docs/monotonic.md, divergence D40)"
                     )
+                if _GP_RE.match(side):
+                    raise FormulaError(
+                        f"{piece!r}: an interaction with a Gaussian process ({side!r}) is not supported in this slice; a Gaussian "
+                        "process that changes with another variable is brms's gp(x, by = z), which is not offered either "
+                        "(docs/gaussian-processes.md, divergence D64)"
+                    )
                 if "(" in side or ")" in side:
                     if parse_transform(side) is None:
                         raise FormulaError(f"{side!r}: {SUPPORTED_TRANSFORMS}")
@@ -1772,6 +2042,14 @@ def parse_formula(formula: str | list[str], data: pd.DataFrame | None = None, fa
                 _main(left, piece)
                 _main(right, piece)
             raw_interactions.append((left, right, piece))
+            continue
+        gpm = _GP_RE.match(piece)
+        if gpm:                                                 # brms's Gaussian process gp(x), gp(x, k = 10, c = 5/4) (C03)
+            gp = _parse_gp(piece, gpm.group(1), response, trials)
+            twin = next((p for g, p in gps if g.column == gp.column), None)
+            if twin is not None:
+                raise FormulaError(f"{piece!r}: a second Gaussian process of {gp.column!r} (after {twin!r}); one gp() per column here")
+            gps.append((gp, piece))
             continue
         mm = _MO_RE.match(piece)
         if mm:                                                  # brms's monotonic effect mo(col) (B03)
@@ -1828,7 +2106,7 @@ def parse_formula(formula: str | list[str], data: pd.DataFrame | None = None, fa
                     "model (the level intercepts or the reference slope are forced to zero and formulae changes the "
                     "interaction's coding) and is not part of the verified subset (docs/m3a2-decision.md)."
                 )
-    if remove_intercept and not predictors:
+    if remove_intercept and not predictors and not gps:     # 'y ~ 0 + gp(x)' leaves the Gaussian process (C03)
         raise FormulaError(f"{formula!r}: no intercept requires at least one population-level predictor")
     seen_partition: dict[frozenset, int] = {}                # a factor, or the same pair of columns in either order, once
     for i, (term, piece) in enumerate(zip(group_terms, group_pieces)):
@@ -1851,21 +2129,22 @@ def parse_formula(formula: str | list[str], data: pd.DataFrame | None = None, fa
             f"{formula!r}: '{piece}' groups by the same columns as '{other_piece}' ({term.factor!r} and {other.factor!r} "
             "induce the same partition of the rows); keep one of them"
         )
-    if len(predictors) == 0 and not saw_intercept_token:
+    if len(predictors) == 0 and not saw_intercept_token and not gps:
         raise FormulaError(
             f"{formula!r}: no population-level predictor; write 'y ~ 1 + (1 | group)' "
             "for an intercept-only model."
         )
     transform_columns = [tr.column for tr in transforms.values()]   # the raw columns the transform terms read
     mo_columns = list(monotonics.values())                           # and the monotonic terms (B03)
+    gp_columns = [g.column for g, _ in gps]                          # and the Gaussian processes (C03)
     for col in operands_all:
-        if col in predictors or col in transform_columns or col in mo_columns or col == response:
+        if col in predictors or col in transform_columns or col in mo_columns or col in gp_columns or col == response:
             raise FormulaError(f"{col!r}: the grouping factor cannot also be a predictor or the response")
     if trials is not None and (trials in predictors or trials in operands_all):
         raise FormulaError(f"{trials!r}: the trials column cannot also be a predictor or the grouping factor")
     offset = offsets[0][0] if offsets else None
     # A derived factor's column (g_h) is added to the fitted frame: it must not shadow a column the formula uses.
-    in_use = {response, *predictors, *transform_columns, *mo_columns, *operands_all, *([trials] if trials is not None else []),
+    in_use = {response, *predictors, *transform_columns, *mo_columns, *gp_columns, *operands_all, *([trials] if trials is not None else []),
               *([offset.column] if offset is not None else []), *(c for a in additions for c in a.columns)}
     derived_columns: dict[str, GroupTerm] = {}
     for term in group_terms:
@@ -1896,6 +2175,10 @@ def parse_formula(formula: str | list[str], data: pd.DataFrame | None = None, fa
             if col in categorical:
                 raise FormulaError(f"{name!r}: {col!r} is declared categorical; mo() reads it as an ordinal predictor (whole numbers "
                                    "or an ordered pandas Categorical), and one column cannot be both")
+        for g, piece in gps:                                 # nor does gp(), whose input is a number (C03)
+            if g.column in categorical:
+                raise FormulaError(f"{piece!r}: {g.column!r} is declared categorical; the input of a Gaussian process is a numeric "
+                                   "column, and one column cannot be both")
     categoricals = _normalise_categorical(categorical, predictors, response, operands_all, trials, formula)
     if offset is not None and any(c.name == offset.column for c in categoricals):
         raise FormulaError(
@@ -1930,7 +2213,8 @@ def parse_formula(formula: str | list[str], data: pd.DataFrame | None = None, fa
         if name in interactions:
             raise FormulaError(f"{piece!r}: the interaction {name!r} appears more than once after expansion")
         interactions.append(name)
-    parts = [*predictors, *interactions] + ([offset.term] if offset is not None else []) + [t.canonical for t in group_terms]
+    parts = ([*predictors, *interactions] + [g.term for g, _ in gps] + ([offset.term] if offset is not None else [])
+             + [t.canonical for t in group_terms])
     canonical_rhs = " + ".join(parts) if parts else "1"           # intercept-only population model: 'y ~ 1'
     if remove_intercept:
         canonical_rhs = "0 + " + canonical_rhs
@@ -1940,8 +2224,14 @@ def parse_formula(formula: str | list[str], data: pd.DataFrame | None = None, fa
     spec = ModelSpec(
         formula=formula.strip(), response=response, intercept=not remove_intercept, trials=trials,
         rhs=canonical_rhs, categoricals=categoricals, pop_terms=pop_terms, group_terms=tuple(group_terms),
-        offset=offset, additions=additions,
+        offset=offset, additions=additions, gp_terms=tuple(g for g, _ in gps),
     )
+    if spec.gp_terms and fam.per_category:                   # one linear predictor per category (C03)
+        raise FormulaError(
+            f"{formula!r}: a Gaussian process ({spec.gp_terms[0].term}) is not available for the {fam.name} family: brms would give "
+            "each non-reference category its own Gaussian process, which is not part of this slice (docs/gaussian-processes.md, "
+            "divergence D64)"
+        )
     if spec.mo_terms and not fam.monotonic:                  # mo() where a frozen brms case verifies it (B03)
         from autobayes.families import FAMILIES
 
@@ -2231,9 +2521,11 @@ def validate_data(spec: ModelSpec, data: pd.DataFrame, family: str = "gaussian",
         if np.isclose(np.std(pop_term_design(t, data)), 0.0):
             raise FormulaError(f"term {t.name!r} is constant in the fitted rows")
     monotonics = tuple(monotonic_coding(m.column, data[m.column]) for m in spec.monotonics)   # brms's Xmo coding (B03)
+    gp_terms = tuple(gaussian_process_coding(g, data[g.column]) for g in spec.gp_terms)      # the GPs' inputs and scaling (C03)
     return ModelSpec(
         formula=spec.formula, response=spec.response, intercept=spec.intercept, levels_by_group=levels_by_group,
         trials=spec.trials, rhs=spec.rhs, categoricals=tuple(categoricals),
         pop_terms=tuple(pop_term(t.name, t.kind, categoricals) for t in spec.pop_terms),   # levels now known
         group_terms=spec.group_terms, offset=spec.offset, additions=spec.additions, dpars=spec.dpars, monotonics=monotonics,
+        gp_terms=gp_terms,
     )

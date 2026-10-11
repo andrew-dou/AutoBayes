@@ -269,6 +269,12 @@ class Priors:
     of the fields above, or a ``Priors``), ``rescor`` the LKJ prior of the residual correlation (brms ``class = rescor``,
     ``rescor=True`` only), and ``cor`` stays at the top level, keyed by factor and shared by the responses' correlated terms
     on that factor (brms's ``cor`` has no ``resp``). Both are refused for a model with one response.
+
+    A Gaussian process ``gp(x)`` (C03, docs/gaussian-processes.md) has a marginal SD and a length-scale, each with its own
+    positive-support prior: ``sdgp`` (brms class ``sdgp``) and ``lscale`` (brms class ``lscale``, on the scaled input), keyed
+    by the process's column, ``sdgp={"x": HalfNormal(1)}, lscale={"x": InverseGamma(3, 1)}`` (brms ``coef = gpx``); a single
+    Gaussian process also accepts the bare priors, several need exact-key mappings (nothing is broadcast, as for ``sd``);
+    both are required with a Gaussian process and refused without one.
     """
 
     intercept: Prior | None = None
@@ -291,6 +297,8 @@ class Priors:
     theta: Prior | None = None
     resp: Mapping[str, object] | None = None   # C01: a multivariate model's priors by response (brms ``resp =``), each a mapping or Priors
     rescor: Prior | None = None               # C01: LKJ(eta) on the residual correlation of a multivariate model (brms class ``rescor``)
+    sdgp: Prior | Mapping[str, Prior] | None = None   # each Gaussian process's marginal SD, by column (brms class ``sdgp``; C03)
+    lscale: Prior | Mapping[str, Prior] | None = None  # each Gaussian process's length-scale, by column (brms class ``lscale``; C03)
 
     def __post_init__(self):
         if isinstance(self.components, list):                         # one value for equal component lists (C05)
@@ -615,6 +623,48 @@ class Priors:
                                      f"{coding.highest}): {e}") from None
         return by_column
 
+    def sdgp_priors(self, spec) -> dict[str, Prior]:
+        """The prior of each Gaussian process's marginal SD (C03, brms class ``sdgp``), keyed by its column in formula order."""
+        return self._gp_priors(spec, "sdgp", "marginal SD", "student_t(3, 0, scale) as for sd")
+
+    def lscale_priors(self, spec) -> dict[str, Prior]:
+        """The prior of each Gaussian process's length-scale (C03, brms class ``lscale``), keyed by its column in formula order."""
+        return self._gp_priors(spec, "lscale", "length-scale", "an inverse gamma tuned to the inputs")
+
+    def _gp_priors(self, spec, cls: str, what: str, default: str) -> dict[str, Prior]:
+        """``sdgp_priors`` / ``lscale_priors``: exact coverage of the Gaussian processes' columns (a single one also takes the
+        bare prior), positive-support priors only; refused when the formula has no Gaussian process."""
+        terms = tuple(getattr(spec, "gp_terms", ()))
+        columns = [g.column for g in terms]
+        given = getattr(self, cls)
+        if not terms:
+            if given is not None:
+                raise PriorError(f"the formula has no Gaussian process gp(x); do not pass {cls} (the prior of a Gaussian process's {what})")
+            return {}
+        if given is None:
+            raise PriorError(f"the Gaussian process(es) {[g.term for g in terms]} need a prior on their {what}: pass "
+                             f"{cls}={{{', '.join(f'{c!r}: ...' for c in columns)}}} (brms class {cls}; brms's default is {default}, "
+                             "which ab.default_priors() returns)")
+        if isinstance(given, Mapping):
+            if set(given) != set(columns):
+                extra = [k for k in given if k not in columns]
+                hint = next((f"; key the prior by the column, {cls}={{{c!r}: ...}}" for k in extra for g, c in zip(terms, columns)
+                             if k in (g.term, f"gp({c})", f"gp{c}")), "")
+                raise PriorError(f"{cls} must cover exactly the columns of the Gaussian processes {columns}; got {list(given)}{hint}")
+            by_column = {c: given[c] for c in columns}
+        else:
+            if len(columns) != 1:
+                raise PriorError(f"several Gaussian processes {[g.term for g in terms]} need an exact-key {cls} mapping over "
+                                 f"{columns}; a bare prior is not broadcast")
+            by_column = {columns[0]: given}
+        for c, prior in by_column.items():
+            if not isinstance(prior, Prior):
+                raise PriorError(f"prior for '{cls}:{c}' must be a Prior, got {type(prior).__name__}")
+            if prior.name not in _SCALE:
+                raise PriorError(f"prior for '{cls}:{c}' must be a positive-support prior ({sorted(_SCALE)}; brms's {cls} is "
+                                 f"bounded below by 0), got {prior}")
+        return by_column
+
     def dpar_priors(self, spec, name: str) -> "Priors":
         """The priors of distributional parameter ``name``'s own formula (B01, ``spec.dpar(name)``) as a ``Priors`` with
         ``intercept`` and ``b`` only, read from ``Priors(<name>={"intercept": ..., "b": ...})``, so that the response
@@ -695,6 +745,8 @@ class Priors:
         sd_priors = self.sd_priors(spec)
         self.cor_priors(spec)                                         # exact coverage of the correlated terms (A02)
         self.simo_priors(spec)                                        # and of the monotonic terms' simplexes (B03)
+        self.sdgp_priors(spec)                                        # and of the Gaussian processes' SDs and length-scales (C03)
+        self.lscale_priors(spec)
         scale = fam.scale_parameter                                   # "sigma", "shape", "phi" or None
         zero = fam.zero_parameter                                     # "zi", "hu" or None (B06)
         auxiliary = {name: getattr(self, name) for name in AUXILIARY}

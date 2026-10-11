@@ -22,6 +22,11 @@ A model with a monotonic term ``mo(x)`` (B03, docs/monotonic.md) is predicted in
 times ``D * sum(simplex[:Xmo_i])`` per draw and row, with every row's value coded as the fitted rows were (a value outside
 the fitted coding is refused, as brms refuses it).
 
+A model with a Gaussian process ``gp(x)`` (C03, docs/gaussian-processes.md) is predicted in this layer: per draw, the exact
+GP's values at its distinct fitted inputs, taken at each row's input (a new row must take a fitted input: brms draws a value
+at any other input from the conditional normal, which is not offered here, divergence D65), or the approximate GP's basis at
+each row's input times ``sqrt(S) * zgp`` (deterministic, as brms's; an input outside the basis's boundary is refused, D66).
+
 A model whose auxiliary parameter has its own formula (B01, docs/distributional.md: ``["y ~ x", "sigma ~ z"]``) is
 predicted in this layer too: ``kind="linear"`` and ``kind="mean"`` keep their meaning (the linear predictor of ``mu`` and
 the expected response, brms's ``posterior_linpred`` and ``posterior_epred``), with each row's own ``sigma`` wherever the
@@ -115,6 +120,25 @@ def monotonic_contribution(model, post, df: pd.DataFrame) -> np.ndarray | float:
         codes = model.spec.monotonic(column).codes(df[column], where="newdata column")
         simplex = post[roles["simplex"]].transpose("chain", "draw", roles["coordinate"]).to_numpy()
         out = out + post[roles["b"]].to_numpy()[..., None] * monotonic_values(simplex, codes)
+    return out
+
+
+def gp_contribution(model, post, df: pd.DataFrame) -> np.ndarray | float:
+    """(chain, draw, row) draws of the Gaussian processes' part of the linear predictor (C03) on the rows of ``df`` (the fitted
+    frame, or checked new rows): an exact GP's values at its distinct fitted inputs from each draw's ``sdgp``, ``lscale`` and
+    ``zgp``, taken at each row's input, which must be a fitted input (divergence D65); an approximate GP's basis at each row's
+    input, which must lie inside its boundary (D66), times ``sqrt(S) * zgp``. 0 without a Gaussian process."""
+    from autobayes.gaussian_process import approximate_values, exact_values
+
+    out = 0.0
+    for column, roles in model.gp_names.items():
+        g = model.spec.gp(column)
+        sdgp, lscale = post[roles["sdgp"]].to_numpy(), post[roles["lscale"]].to_numpy()
+        z = post[roles["zgp"]].transpose("chain", "draw", roles["coordinate"]).to_numpy()
+        if g.approximate:
+            out = out + approximate_values(g.basis(df[column], where="newdata column"), g.slambda, sdgp, lscale, z)
+        else:
+            out = out + exact_values(g.scaled_inputs, sdgp, lscale, z)[..., g.index(df[column], where="newdata column")]
     return out
 
 
@@ -256,6 +280,7 @@ def _predict_by_hand(model, idata, df: pd.DataFrame | None, kind: str, seed, pol
     if model.spec.offset is not None:                           # the offset enters as written, with or without group effects
         mu = mu + model.spec.offset.values(df)
     mu = mu + monotonic_contribution(model, post, df)           # the monotonic terms (B03), population-level as well
+    mu = mu + gp_contribution(model, post, df)                  # the Gaussian processes (C03), population-level as well
     new_levels = {}
     for term in (model.spec.group_terms if include_group_effects else ()):
         g = term.factor
@@ -436,7 +461,8 @@ def predict(model, fit_result, *, newdata: pd.DataFrame | None = None, kind: str
     manual = (not include_group_effects or kind == "linear" or fam.manual_prediction or any(new_levels.values())
               or bool(model.spec.additions)                    # addition terms (B02): the truncated mean and draws are this layer's
               or bool(model.spec.dpars)                        # distributional formulas (B01): each row's own sigma is this layer's
-              or bool(model.spec.mo_terms))                    # monotonic terms (B03): Bambi's predictions do not know them
+              or bool(model.spec.mo_terms)                     # monotonic terms (B03): Bambi's predictions do not know them
+              or bool(model.spec.gp_terms))                    # nor the Gaussian processes (C03)
     if dpar is not None:
         ds = _predict_dpar(model, idata, df, kind, dpar)
     elif fam.mixture:                                           # C05: every component's linear predictor, theta's mean and draws

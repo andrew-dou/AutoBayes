@@ -5,10 +5,6 @@
  "note": "brms Hilbert-space approximate GP (k = 10, c = 5/4): standata Xgp_1 (36 x 10 basis), slambda_1 (10 x 1), Lgp_1 = 1.25, NBgp_1 = 10; parameters sdgp_1, lscale_1, zgp_1[10]; mu = Intercept + Xgp_1 (sqrt(spd_gp_exp_quad(slambda_1, sdgp_1, lscale_1)) .* zgp_1); newdata predictions are deterministic",
  "seed": 305,
  "n_points": 8,
- "gate": {
-  "expect": "fail",
-  "reason": "C03_gaussian_process not implemented; remove this field when it lands"
- },
  "data": {
   "generator": "tier_c",
   "seed": 205,

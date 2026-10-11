@@ -5,10 +5,6 @@
  "note": "brms exact GP on the four distinct values of ord (Nsubgp_1 = 4, Jgp_1 maps rows to them, Xgp_1 = ord / dmax_1 with dmax_1 = 3): gp_exp_quad(Xgp_1, sdgp_1, lscale_1, zgp_1) = cholesky(sdgp^2 exp(-d^2 / (2 lscale^2)) + 1e-12 I) zgp; parameters sdgp_1, lscale_1 (array[1] vector<lower=0>[1]), zgp_1[4]; lscale prior set on coef gpord (brms's default is a data-dependent inv_gamma). gp(x) on 36 distinct inputs was left out: cond(K) is 1e13-1e14 at the seeded points and a NumPy Cholesky differs from Stan's by 4.5e-6 in mu (1.6e-7 relative in the log density). No newdata: brms draws an exact GP at new inputs from its conditional normal",
  "seed": 304,
  "n_points": 8,
- "gate": {
-  "expect": "fail",
-  "reason": "C03_gaussian_process not implemented; remove this field when it lands"
- },
  "data": {
   "generator": "tier_c",
   "seed": 204,

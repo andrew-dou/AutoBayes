@@ -64,6 +64,19 @@ The parameters of coefficient `c` are brms's `sd_m[c]` (`1|g_sigma`, `x|g_sigma`
 `Model.group_names[factor]` keeps the varying intercept's roles with each slope's as `sd:x`, `offset:x`,
 `group_effect:x` (docs/varying-slopes.md).
 
+## Gaussian processes: `ModelSpec.gp_terms`
+
+brms's `gp(x)` and `gp(x, k = 10, c = 5/4)` (C03, docs/gaussian-processes.md) add a function of one numeric column to the linear
+predictor but have no coefficient of class `b` and no design column, so, like the offset below, they are not population-level
+terms: `ModelSpec.gp_terms` holds one `GaussianProcess(column, k, c, inputs, dmax, cmean)` per process, in formula order (`k`
+and `c` for the approximate form; the distinct inputs in first-appearance order, their largest distance and the mean of the
+scaled distinct inputs once the data are seen; `spec.gp(column)` finds one). `spec.terms`, `spec.columns` and the coefficient
+priors never see them; `spec.pop_columns` lists their columns after the population-level terms', and the canonical formula
+writes them after the population-level terms (`gp(x, k = 10, c = 1.25)`, brms's default `c` written out). `Design.gp[column]`
+(`GPBlock`) holds each process's row index, scaled inputs and, for the approximate form, basis and frequencies;
+`Model.gp_names[column]` its PyMC variables `sdgp_x`, `lscale_x`, `zgp_x`. The model adds the processes to the parent's linear
+predictor while Bambi builds it, as it adds the monotonic terms.
+
 ## The offset term: `ModelSpec.offset`
 
 brms's `offset(col)` / `offset(log(col))` (A06) is not a population-level term: it has no coefficient, no

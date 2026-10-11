@@ -75,6 +75,21 @@ def _mixture_payload(model):
             'theta': _prior(pr.theta), 'concentration': dirichlet_concentration(pr.theta, len(model.components))}
 
 
+def _gp_payload(model):
+    """The target identity's entries of the Gaussian processes (C03): each process's term, distinct inputs, scaling and row
+    index, an approximate process's basis and frequencies, and its sdgp and lscale priors."""
+    s, pr = model.spec, model.priors
+    sdgp, lscale = pr.sdgp_priors(s), pr.lscale_priors(s)
+    out = []
+    for column, block in model.design.gp.items():
+        g = s.gp(column)
+        out.append({'term': g.term, 'column': column, 'k': g.k, 'c': g.c, 'inputs': list(g.inputs), 'dmax': g.dmax,
+                    'cmean': g.cmean, 'index': block.index,
+                    **({'basis': block.basis, 'slambda': block.slambda} if g.approximate else {}),
+                    'priors': {'sdgp': _prior(sdgp[column]), 'lscale': _prior(lscale[column])}})
+    return out
+
+
 def freeze_target(model):
     """Call once immediately after construction; only the digest is retained."""
     s, d, pr = model.spec, model.design, model.priors
@@ -121,6 +136,8 @@ def freeze_target(model):
         **({'monotonic': _monotonic_payload(model)} if s.mo_terms else {}),
         # So does a mixture (C05): its components, their priors and theta's; its own entries under 'priors' are then empty.
         **({'mixture': _mixture_payload(model)} if mixture else {}),
+        # So do Gaussian processes (C03): their inputs, scaling, row index, basis and priors.
+        **({'gaussian_processes': _gp_payload(model)} if getattr(s, 'gp_terms', ()) else {}),
         'priors': {'intercept': prior(pr.intercept), 'sigma': prior(pr.sigma),
                    'coefficients': {} if mixture else {k: prior(v) for k,v in pr.coefficient_priors(s).items()},
                    'groups': {k: prior(v) for k,v in pr.group_priors(s).items()},
