@@ -780,9 +780,9 @@
    "depends_on": [
     "A04_general_interactions"
    ],
-   "status": "gates_green",
+   "status": "merged",
    "summary": "mo() monotonic effects with the simplex prior",
-   "pr": null,
+   "pr": 44,
    "attempts": 1,
    "gates": {
     "sha": "3f4fa82e25fc",
@@ -798,14 +798,32 @@
       "status": "pass",
       "seconds": 548.5
      }
-    }
+    },
+    "note": "rebased onto main after #43 merged; feature commit 304cc2e has the tree of the gated 3f4fa82 (agent suite 1934 passed, oracle 571 passed)"
    },
-   "divergences": [],
-   "next_action": "agent (opus) in worktree parity-b03 (stacked on B01)",
+   "divergences": [
+    "D40",
+    "D41",
+    "D42",
+    "D43"
+   ],
+   "next_action": "interactions with mo(), mo() in group-level terms, id/expressions/distributional mo() not offered (D40-D42); probit mo() unfrozen",
    "fixtures": {
     "pr": 33,
     "cases": [
-     "gauss_monotonic"
+     "gauss_monotonic",
+     "gauss_monotonic_two",
+     "student_monotonic",
+     "poisson_monotonic",
+     "negbinomial_monotonic",
+     "gamma_monotonic",
+     "lognormal_monotonic",
+     "beta_monotonic",
+     "bernoulli_monotonic",
+     "binomial_monotonic",
+     "zero_inflated_poisson_monotonic",
+     "hurdle_poisson_monotonic",
+     "cumulative_monotonic"
     ]
    }
   },
@@ -822,7 +840,7 @@
    "attempts": 1,
    "gates": {},
    "divergences": [],
-   "next_action": "phase 1 (standalone mgcv basis port, verified against R) by an agent in worktree parity-b04; phase 2 integration after B01 merges; may park",
+   "next_action": "phase 1 done at 0e4cfa1 on parity/b04-splines (mgcv tp basis port, Xs 1.2e-13, Zs 2.5e-13 up to an orthogonal R; not merged); phase 2 (integration) held for Andrew at the Tier B boundary",
    "fixtures": {
     "pr": 33,
     "cases": [
@@ -927,13 +945,20 @@
    "depends_on": [
     "B01_distributional"
    ],
-   "status": "queued",
+   "status": "fixtures_frozen",
    "summary": "mvbind() multivariate responses with residual correlations",
    "pr": null,
    "attempts": 0,
    "gates": {},
    "divergences": [],
-   "next_action": ""
+   "next_action": "implementation awaits Andrew's Tier C go-ahead at the Tier B boundary",
+   "fixtures": {
+    "pr": 43,
+    "cases": [
+     "gauss_mv_rescor",
+     "gauss_mv_norescor"
+    ]
+   }
   },
   {
    "id": "C02_nonlinear",
@@ -942,13 +967,19 @@
    "depends_on": [
     "B01_distributional"
    ],
-   "status": "queued",
+   "status": "fixtures_frozen",
    "summary": "bf(nl = TRUE) non-linear formulas",
    "pr": null,
    "attempts": 0,
    "gates": {},
    "divergences": [],
-   "next_action": ""
+   "next_action": "implementation awaits Andrew's Tier C go-ahead at the Tier B boundary",
+   "fixtures": {
+    "pr": 43,
+    "cases": [
+     "gauss_nonlinear_exp"
+    ]
+   }
   },
   {
    "id": "C03_gaussian_process",
@@ -957,13 +988,20 @@
    "depends_on": [
     "B04_splines"
    ],
-   "status": "queued",
+   "status": "fixtures_frozen",
    "summary": "gp() terms",
    "pr": null,
    "attempts": 0,
    "gates": {},
    "divergences": [],
-   "next_action": ""
+   "next_action": "implementation awaits Andrew's Tier C go-ahead at the Tier B boundary",
+   "fixtures": {
+    "pr": 43,
+    "cases": [
+     "gauss_gp_exact",
+     "gauss_gp_approx"
+    ]
+   }
   },
   {
    "id": "C04_autocor",
@@ -972,13 +1010,20 @@
    "depends_on": [
     "C01_multivariate"
    ],
-   "status": "queued",
+   "status": "fixtures_frozen",
    "summary": "ar(), ma(), arma(), car(), sar() autocorrelation",
    "pr": null,
    "attempts": 0,
    "gates": {},
    "divergences": [],
-   "next_action": ""
+   "next_action": "implementation awaits Andrew's Tier C go-ahead at the Tier B boundary",
+   "fixtures": {
+    "pr": 43,
+    "cases": [
+     "gauss_ar1",
+     "gauss_arma11"
+    ]
+   }
   },
   {
    "id": "C05_mixtures",
@@ -987,13 +1032,19 @@
    "depends_on": [
     "B06_zero_inflated_hurdle"
    ],
-   "status": "queued",
+   "status": "fixtures_frozen",
    "summary": "mixture() families",
    "pr": null,
    "attempts": 0,
    "gates": {},
    "divergences": [],
-   "next_action": ""
+   "next_action": "implementation awaits Andrew's Tier C go-ahead at the Tier B boundary",
+   "fixtures": {
+    "pr": 43,
+    "cases": [
+     "mixture_gauss_gauss"
+    ]
+   }
   },
   {
    "id": "C06_missing_and_measurement_error",
@@ -1002,13 +1053,20 @@
    "depends_on": [
     "C01_multivariate"
    ],
-   "status": "queued",
+   "status": "fixtures_frozen",
    "summary": "mi() and me() terms",
    "pr": null,
    "attempts": 0,
    "gates": {},
    "divergences": [],
-   "next_action": ""
+   "next_action": "implementation awaits Andrew's Tier C go-ahead at the Tier B boundary",
+   "fixtures": {
+    "pr": 43,
+    "cases": [
+     "gauss_mi",
+     "gauss_me"
+    ]
+   }
   },
   {
    "id": "C07_post_processing",
@@ -1017,13 +1075,21 @@
    "depends_on": [
     "A07_default_priors"
    ],
-   "status": "queued",
+   "status": "fixtures_frozen",
    "summary": "loo, bayes_R2, hypothesis, conditional effects through ArviZ where it exists",
    "pr": null,
    "attempts": 0,
    "gates": {},
    "divergences": [],
-   "next_action": ""
+   "next_action": "implementation awaits Andrew's Tier C go-ahead at the Tier B boundary",
+   "fixtures": {
+    "pr": 43,
+    "cases": [
+     "gauss_varint_post",
+     "poisson_varint_post",
+     "gauss_varint_post_psis"
+    ]
+   }
   }
  ]
 }
