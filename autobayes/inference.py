@@ -119,6 +119,12 @@ def resolve_jax_device(device: str, chains: int, notes: list[str]):
     raise DeviceError(f"unknown device {device!r}; use 'cpu' or 'gpu'")
 
 
+def _posterior_sampler(model):
+    """What draws a model's posterior: Bambi's ``fit()``, or the model's own ``sample_posterior`` with the same keywords where
+    no single Bambi model holds the graph (a multivariate model, C01, docs/multivariate.md)."""
+    return getattr(model, "sample_posterior", None) or model.bambi_model.fit
+
+
 def fit(model, *, backend: str = "pymc", device: str = "cpu", chains: int = 4,
         draws: int = 1000, tune: int = 1000, seed: int | None = None,
         target_accept: float = 0.9, cores: int | None = None,
@@ -144,7 +150,7 @@ def fit(model, *, backend: str = "pymc", device: str = "cpu", chains: int = 4,
         t0 = time.perf_counter()
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
-            idata = model.bambi_model.fit(inference_method="pymc", cores=cores, **common)
+            idata = _posterior_sampler(model)(inference_method="pymc", cores=cores, **common)
         wall = time.perf_counter() - t0
         import pytensor
 
@@ -167,7 +173,7 @@ def fit(model, *, backend: str = "pymc", device: str = "cpu", chains: int = 4,
         dtype = str(probe.dtype)
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
-            idata = model.bambi_model.fit(
+            idata = _posterior_sampler(model)(
                 inference_method="numpyro",
                 nuts_sampler_kwargs={"chain_method": method},
                 **common,

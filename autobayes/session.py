@@ -112,6 +112,9 @@ def fit_record(model, fit, *, panel: dict | None = None, max_treedepth: int = 10
     from autobayes.families.mixture import ORDER, prior_labels
     from autobayes.formula import sd_tag
     from autobayes.identity import check_fit_binding
+    if getattr(model, "responses", None):                       # C01: not part of the multivariate slice
+        raise ValueError("fit_record() of a multivariate model is not part of this slice (docs/multivariate.md); record each "
+                         "response's parameters from fit.idata by their names, model.response_names")
     binding = check_fit_binding(model, fit, allow_unverified=allow_unverified)
 
     p = panel if panel is not None else _panel(fit.idata, max_treedepth=max_treedepth)

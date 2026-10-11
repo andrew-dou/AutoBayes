@@ -5,10 +5,6 @@
  "note": "brms: as gauss_mv_rescor without Lrescor (set_rescor(FALSE)): two independent normal likelihoods; standata has no nresp/nrescor; predictions draws x rows x responses (y, y2)",
  "seed": 302,
  "n_points": 8,
- "gate": {
-  "expect": "fail",
-  "reason": "C01_multivariate not implemented; remove this field when it lands"
- },
  "data": {
   "generator": "tier_c",
   "seed": 202,

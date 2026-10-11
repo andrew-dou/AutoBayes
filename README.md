@@ -71,6 +71,9 @@ Tiers A and B are complete (October 2026), except smooth terms `s()`, which are 
 - **Post-processing** (Tier C, C07): `ab.log_lik` (pointwise log-likelihood) and `ab.loo` (PSIS-LOO with loo 2.9.0's
   tables) for every family, and `ab.bayes_R2` for all but the categorical one, as in brms, from a fit's draws
   ([post-processing](docs/post-processing.md)).
+- **Multivariate Gaussian models** (Tier C, C01): `ab.gaussian("mvbind(y, y2) ~ ...", data, priors, rescor=True)` with
+  priors by response, `Priors(resp={...}, rescor=ab.LKJ(eta))`, and brms's residual correlation, or `rescor=False`
+  ([multivariate models](docs/multivariate.md)).
 
 Every known difference from brms is listed in [divergences](docs/brms-parity/divergences.md), and the feature ledger
 is [ledger.json](docs/brms-parity/ledger.json) (`python tools/parity_status.py`). The tier reviews are

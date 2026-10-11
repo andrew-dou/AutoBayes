@@ -398,6 +398,11 @@ def predict(model, fit_result, *, newdata: pd.DataFrame | None = None, kind: str
     ``dpar`` names a distributional parameter with its own formula (B01): ``kind="linear"`` then returns its linear
     predictor and ``kind="mean"`` its values (brms's ``dpar =``); ``kind="response"`` does not apply.
     """
+    if getattr(model, "responses", None):                       # C01: a multivariate model predicts response by response
+        from autobayes.multivariate import predict_multivariate
+
+        return predict_multivariate(model, fit_result, newdata=newdata, kind=kind, new_groups=new_groups, seed=seed,
+                                    include_group_effects=include_group_effects, dpar=dpar)
     fam = family_of(model)                                      # the family under the model's link
     if kind not in fam.prediction_kinds:
         raise ValueError(fam.kind_error)

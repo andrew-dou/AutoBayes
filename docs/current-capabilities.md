@@ -161,3 +161,13 @@ degenerate-tail rules were settled against loo's outputs on recorded probe input
 and `categorical_poponly_post` (gate `check_post`); brms's further options are not offered (D48), and brms's `log_lik` at
 extreme linear predictors, loo's MCSE of an observation with `elpd_loo` below about -372 and loo's relative efficiencies
 of very short chains differ (D49-D51); see [post-processing](post-processing.md).
+
+Multivariate Gaussian models (C01, brms's `bf(mvbind(y, y2) ~ ...) + set_rescor()`): `ab.gaussian("mvbind(y, y2) ~ x + (1 | g)",
+data, ab.Priors(resp={"y": {...}, "y2": {...}}, rescor=ab.LKJ(eta)), rescor=True)` builds one univariate model per response
+on the same rows and right-hand side and assembles their graphs into one, with `rescor=True` the responses' likelihoods
+replaced by brms's `multi_normal_cholesky` through the residual correlation's Cholesky factor `Lrescor` (LKJ prior, Stan's
+`cholesky_corr` coordinates) and with `rescor=False` independent; `predict()` adds a `response` dimension and draws each row's
+responses jointly. Verified against `gauss_mv_rescor`, `gauss_mv_norescor` and `gauss_mv_slopes` (categorical, interaction,
+offset, correlated slopes per response under brms's shared `cor` prior); a formula per response, `mi()`, `mo()`, `(1 |ID| g)`
+across responses, other families and a missing `rescor` are refused (D56-D58; names D59); see
+[multivariate models](multivariate.md).

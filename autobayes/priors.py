@@ -28,7 +28,7 @@ from __future__ import annotations
 
 import re
 from collections.abc import Mapping
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 
 import numpy as np
 
@@ -263,6 +263,12 @@ class Priors:
     the mixing proportions (brms class ``theta``; one concentration per component or one number for all); nothing else at
     the top level. Per class, the components' priors share one distribution family (the intercepts are one ordered vector
     and each term one variable with a component axis), each with its own parameters.
+
+    A multivariate model (C01, docs/multivariate.md, ``ab.gaussian("mvbind(y, y2) ~ ...", ..., rescor=...)``) takes its
+    priors by response, as brms's ``resp =``: ``resp={"y": {...}, "y2": {...}}`` holds each response's classes (a mapping
+    of the fields above, or a ``Priors``), ``rescor`` the LKJ prior of the residual correlation (brms ``class = rescor``,
+    ``rescor=True`` only), and ``cor`` stays at the top level, keyed by factor and shared by the responses' correlated terms
+    on that factor (brms's ``cor`` has no ``resp``). Both are refused for a model with one response.
     """
 
     intercept: Prior | None = None
@@ -283,10 +289,77 @@ class Priors:
     # dpar = mu<k> and class sigma<k>), and the mixing proportions' Dirichlet (brms class ``theta``); refused otherwise
     components: tuple | list | None = None
     theta: Prior | None = None
+    resp: Mapping[str, object] | None = None   # C01: a multivariate model's priors by response (brms ``resp =``), each a mapping or Priors
+    rescor: Prior | None = None               # C01: LKJ(eta) on the residual correlation of a multivariate model (brms class ``rescor``)
 
     def __post_init__(self):
         if isinstance(self.components, list):                         # one value for equal component lists (C05)
             object.__setattr__(self, "components", tuple(self.components))
+
+    # -- multivariate models (C01, docs/multivariate.md) ---------------------------------------------
+    _RESPONSE_CLASSES = ("intercept", "b", "sd", "sigma", "shape", "phi", "nu", "zi", "hu", "simo")
+
+    def response_priors(self, response: str) -> "Priors":
+        """The priors of one response of a multivariate model (C01): its entry of ``resp`` as a ``Priors`` (a mapping of
+        the response classes is converted), with the top-level ``cor`` (brms's ``cor`` has no ``resp``: one prior per
+        factor, shared by every response's correlated term on it). Refused when ``resp`` has no entry for ``response``."""
+        if not isinstance(self.resp, Mapping) or response not in self.resp:
+            raise PriorError(f"no priors for the response {response!r}: pass resp={{{response!r}: {{...}}, ...}}")
+        entry = self.resp[response]
+        if isinstance(entry, Priors):
+            if entry.resp is not None or entry.rescor is not None:
+                raise PriorError(f"the priors of the response {response!r} cannot hold resp or rescor themselves")
+            if entry.cor is not None:
+                raise PriorError(f"the priors of the response {response!r} set cor: brms's correlation prior (class cor) has no "
+                                 "resp; pass it once at the top level, Priors(resp={...}, cor={'g': ab.LKJ(eta)}), for every response")
+            sub = entry
+        elif isinstance(entry, Mapping):
+            keys = [k for k in entry if not isinstance(k, str) or k not in self._RESPONSE_CLASSES]
+            if keys:
+                hint = (" (brms's correlation prior, class cor, has no resp: pass it once at the top level, "
+                        "Priors(resp={...}, cor={'g': ab.LKJ(eta)}))" if "cor" in keys else "")
+                raise PriorError(f"the priors of the response {response!r} take the classes {list(self._RESPONSE_CLASSES)}; "
+                                 f"unexpected {keys}{hint}")
+            sub = Priors(**dict(entry))
+        else:
+            raise PriorError(f"the priors of the response {response!r} must be a mapping of its classes "
+                             f"({{'intercept': ..., 'b': ..., 'sd': ..., 'sigma': ...}}) or a Priors, got {type(entry).__name__}")
+        return replace(sub, cor=self.cor)
+
+    def validate_multivariate(self, spec, family="gaussian") -> None:
+        """A multivariate model's priors (C01): ``resp`` covers exactly the responses ``spec.responses``, each response's
+        priors are valid for its own formula (``response_priors``, then ``validate`` against ``spec.specs[response]``),
+        ``rescor`` is an ``LKJ`` exactly when the model has a residual correlation (``spec.rescor``), and nothing else is
+        given at the top level but ``cor``, which the responses share."""
+        from autobayes.families import FamilySpec, get_family
+
+        fam = family if isinstance(family, FamilySpec) else get_family(family)
+        responses = list(spec.responses)
+        if self.components is not None or self.theta is not None:
+            raise PriorError("components and theta are the priors of a mixture (ab.mixture, docs/mixtures.md); "
+                             "a multivariate model takes neither")
+        top = [name for name in self._RESPONSE_CLASSES if getattr(self, name) is not None]
+        if top:
+            raise PriorError(
+                f"a multivariate model takes its priors by response, as brms's resp: Priors(resp={{{', '.join(f'{r!r}: {{...}}' for r in responses)}}}"
+                + (", rescor=ab.LKJ(eta)" if spec.rescor else "") + f"); got {top} at the top level (docs/multivariate.md)")
+        if not isinstance(self.resp, Mapping):
+            raise PriorError(f"a multivariate model needs the priors of each response: pass resp={{{', '.join(f'{r!r}: {{...}}' for r in responses)}}}")
+        if set(self.resp) != set(responses):
+            raise PriorError(f"resp must cover exactly the responses {responses}; got {list(self.resp)}")
+        for r in responses:
+            try:
+                self.response_priors(r).validate(spec.specs[r], fam)
+            except PriorError as e:
+                raise PriorError(f"response {r!r}: {e}") from None
+        if spec.rescor:
+            if self.rescor is None:
+                raise PriorError("rescor=True gives the responses a residual correlation matrix, which needs an LKJ prior: pass "
+                                 "Priors(..., rescor=ab.LKJ(eta)) (brms class rescor; its default is lkj(1))")
+            if not isinstance(self.rescor, Prior) or self.rescor.name not in _CORRELATION:
+                raise PriorError(f"prior for 'rescor' must be a correlation prior ({sorted(_CORRELATION)}, brms's lkj(eta)), got {self.rescor}")
+        elif self.rescor is not None:
+            raise PriorError("this model has no residual correlation (rescor=False): do not pass a rescor prior")
 
     # -- coefficient priors -----------------------------------------------------------------
     def coefficient_priors(self, spec) -> dict[str, Prior]:
@@ -606,6 +679,9 @@ class Priors:
         from autobayes.families import FamilySpec, get_family
 
         fam = family if isinstance(family, FamilySpec) else get_family(family)
+        if self.resp is not None or self.rescor is not None:          # C01: the priors of a multivariate model
+            raise PriorError("resp and rescor are the priors of a multivariate model, 'mvbind(y, y2) ~ ...' built with "
+                             "ab.gaussian(..., rescor=True | False) (docs/multivariate.md); this formula has one response")
         if fam.mixture:                                               # C05: the components' priors and theta's
             return self._validate_mixture(spec)
         if self.components is not None or self.theta is not None:

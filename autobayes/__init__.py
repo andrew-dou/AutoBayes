@@ -59,6 +59,7 @@ from autobayes.priors import (
 from autobayes.default_priors import default_priors
 from autobayes.model import (Model, bernoulli, beta, binomial, categorical, cumulative, gamma, gaussian, hurdle_poisson, lognormal,
                              mixture, negbinomial, student, poisson, zero_inflated_poisson)
+from autobayes.multivariate import MultivariateModel
 from autobayes.inference import DeviceError, FitResult, fit
 from autobayes.predict import predict
 from autobayes.prior_predictive import prior_predictive
@@ -68,7 +69,7 @@ from autobayes.session import compare_records, environment, fit_record, format_c
 
 __all__ = [
     "Beta", "Categorical", "DeviceError", "Dirichlet", "Exponential", "FitResult", "Flat", "FormulaError", "Gamma", "GroupTerm", "HalfCauchy",
-    "HalfNormal", "HalfStudentT", "InverseGamma", "LKJ", "Model", "ModelSpec", "Normal", "PopTerm", "Prior",
+    "HalfNormal", "HalfStudentT", "InverseGamma", "LKJ", "Model", "ModelSpec", "MultivariateModel", "Normal", "PopTerm", "Prior",
     "PriorError", "Priors", "StudentT", "bernoulli", "beta", "binomial", "compare_records", "default_priors", "environment", "fit", "fit_record",
     "gamma", "lognormal", "negbinomial", "student", "poisson", "format_comparison", "format_environment", "gaussian", "panel",
     "parse_formula", "predict", "prior_predictive", "zero_inflated_poisson", "hurdle_poisson", "cumulative", "categorical",

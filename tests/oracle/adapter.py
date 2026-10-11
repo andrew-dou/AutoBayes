@@ -42,11 +42,18 @@ recomputed at every point and checked against the fixture's `u` (as for the cumu
 `Intercept_ordered__`; each `sigma<k>` is the PyMC variable of that name on the log scale; and `theta`, brms's `simplex[K]`,
 takes the unreached coordinates as a monotonic term's simplex does, its stick-breaking coordinates recomputed and checked
 the same way before they are mapped to `theta_stickbreaking__`.
+
+A multivariate model (C01, brms's `mvbind(y, y2) ~ ...`) is put in correspondence response by response: `ResponseView` shows
+the fixture as brms's univariate model of one response (`X_y` as `X`, `b_y` as `b`, `r_1_y_1` as `r_1_1`, its group terms by
+`groups[*].resp`), which the matching above applies to with that response's own model (`MultivariateModel.submodels`); the
+names it maps to are the response's in the multivariate graph (`y_Intercept`). The residual correlation `Lrescor` is mapped
+as `L_m` is: Stan's `cholesky_corr` coordinates recomputed from `Lrescor` at every point and checked against `u`.
 """
 from __future__ import annotations
 
 import math
 from dataclasses import dataclass, replace
+from functools import cached_property
 
 import arviz as az
 import numpy as np
@@ -86,6 +93,10 @@ def priors_from_spec(spec: dict) -> ab.Priors:
     "simo": {column: ["Dirichlet", a, ...]}}``; an auxiliary parameter with its own formula (B01) takes ``{"intercept": [...],
     "b": [...]}``; ``simo`` is the simplex prior of each monotonic term (B03); a mixture (C05) takes ``{"components": [spec, ...],
     "theta": ["Dirichlet", a, ...]}``, each component's spec of this same form."""
+    # C01, a multivariate model: {"resp": {response: {<the classes above>}}, "cor": {factor: ["LKJ", eta]}, "rescor": ["LKJ", eta]}
+    if "resp" in spec:
+        return ab.Priors(resp={r: priors_from_spec(sub) for r, sub in spec["resp"].items()}, cor=_prior(spec.get("cor")),
+                         rescor=_prior(spec.get("rescor")))
     return ab.Priors(intercept=_prior(spec.get("intercept")), b=_prior(spec.get("b")),
                      sd=_prior(spec.get("sd")), cor=_prior(spec.get("cor")), sigma=_prior(spec.get("sigma")),
                      shape=_prior(spec.get("shape")), phi=_prior(spec.get("phi")), nu=_prior(spec.get("nu")),
@@ -191,6 +202,8 @@ def _match_design(fixture: Fixture, model: ab.Model, X_name: str = "X", b_name: 
 
 
 def match_columns(fixture: Fixture, model: ab.Model) -> ColumnMap:
+    if is_multivariate(model):                                 # C01: each response's design, by its view of the fixture
+        return match_response_columns(fixture, model)
     fam = model.family_spec
     if fam.mixture:                                            # C05: one brms design per component, matched as B05's categories'
         return match_mixture(fixture, model)
@@ -333,6 +346,8 @@ def match_groups(fixture: Fixture, model: ab.Model) -> GroupMap:
     column (ones for the varying intercept, the slope's column otherwise); then check the coefficient's brms
     label, the level order, that every brms coefficient was used, and that each group is correlated on both
     sides or on neither."""
+    if is_multivariate(model):                                 # C01: each response's group terms, by its view of the fixture
+        return match_response_groups(fixture, model)
     ids, cns, levels_of, coef_cn, used = {}, {}, {}, {}, set()
     n = model.design.n
     for (g, coef), block in model.design.group_blocks.items():
@@ -425,6 +440,9 @@ def natural_point(model: ab.Model, point: Point, cmap: ColumnMap, gmap: GroupMap
     shape; the Beta precision); ``nu`` is brms's ``nu`` when the model learns it (a fixed nu is no value variable here,
     though brms reports it among its parameters); ``zi`` and ``hu`` are brms's zero-inflation and hurdle probabilities (B06);
     ``bsp`` and ``simo`` each monotonic term's coefficient and simplex, by column (B03)."""
+    if is_multivariate(model):                                 # C01: each response's arguments from its view of the point, and Lrescor
+        return {"resp": {r: natural_point(sub, cmap.views[r].point(point), cmap.maps[r], gmap.maps[r]) for r, sub in model.submodels.items()},
+                **({"Lrescor": np.atleast_2d(point.pars["Lrescor"])} if model.rescor else {})}
     pars = point.pars
     intercept = None
     if cmap.dpars:                                             # B05, categorical: one column of b and one intercept per category
@@ -509,6 +527,8 @@ LOGIT_STEP = math.log(1.5 * _P0 / (1.0 - 1.5 * _P0)) - 0.3
 def coordinate_map(fixture: Fixture, model: ab.Model, cmap: ColumnMap, gmap: GroupMap) -> list[tuple[int, str, int]]:
     """For each brms unconstrained coordinate: (its 0-based index, the AutoBayes value variable, the flat
     index within that variable), with the transform checked on both sides."""
+    if is_multivariate(model):                                 # C01: each response's coordinates, then Lrescor's
+        return response_coordinate_map(fixture, model, cmap, gmap)
     names = model.names
     by_id = {m: g for g, m in gmap.brms_id.items()}
     by_cn = {(g, cn): coef for (g, coef), cn in gmap.coef_cn.items()}     # (factor, brms coefficient number) -> coefficient
@@ -709,6 +729,8 @@ def draws(fixture: Fixture, model: ab.Model, cmap: ColumnMap, gmap: GroupMap) ->
     and zi or hu (B06); the cumulative thresholds as brms's ``Intercept`` and ``b_Intercept``, which a fit's posterior
     keeps under those names, and a categorical model's intercepts and coefficients per category (B05); each monotonic term's
     coefficient and simplex (B03)."""
+    if is_multivariate(model):                                 # C01: each response's draws under its names, Lrescor and rescor
+        return response_draws(fixture, model, cmap, gmap)
     pts = fixture.points
     names = model.names
     data, coords = {}, {"chain": [0], "draw": np.arange(len(pts))}
@@ -812,3 +834,150 @@ def _category_draws(fixture: Fixture, model: ab.Model, cmap: ColumnMap, data: di
         else:
             data[term] = (("chain", "draw", category), vals[None, :, 0, :])
     return az.InferenceData(posterior=xr.Dataset(data, coords=coords))
+
+
+# -- multivariate models (C01) ------------------------------------------------------------------------------
+def is_multivariate(model) -> bool:
+    """Whether ``model`` is a multivariate model (``ab.MultivariateModel``, brms's ``mvbind(y, y2) ~ ...``)."""
+    return bool(getattr(model, "responses", ()))
+
+
+class ResponseView(Fixture):
+    """A multivariate fixture seen as brms's univariate model of one of its responses (C01), so that the univariate matching
+    above applies to each response unchanged. brms names a response's data and parameters after it (``N_y``, ``Y_y``, ``K_y``,
+    ``Kc_y``, ``X_y``, ``offsets_y``, ``J_1_y``, ``Z_1_y_1``; ``b_y``, ``Intercept_y``, ``sigma_y``, ``b_y_Intercept``,
+    ``r_1_y_1``) and gives its group terms (``groups[*].resp``) global ids ``m``, whose ``N_m``, ``M_m``, ``NC_m``, ``sd_m``,
+    ``z_m``, ``L_m`` and ``Cor_m`` the view keeps. ``data_names`` and ``par_names`` map brms's names to the univariate ones; the
+    unconstrained coordinates keep their indices into the joint model, and a prediction is the response's slice of the last
+    axis (``responses``)."""
+
+    def __init__(self, parent: Fixture, response: str):
+        super().__init__(parent.raw)
+        self.parent, self.response = parent, response
+        r, groups = response, [g for g in parent.groups if g.get("resp") == response]
+        self.data_names = {f"{base}_{r}": base for base in ("N", "Y", "K", "Kc", "X", "offsets")}
+        self.par_names = {f"b_{r}": "b", f"Intercept_{r}": "Intercept", f"sigma_{r}": "sigma", f"b_{r}_Intercept": "b_Intercept"}
+        for g in groups:
+            m, cn = int(g["id"]), int(g["cn"])
+            self.data_names.update({f"J_{m}_{r}": f"J_{m}", f"Z_{m}_{r}_{cn}": f"Z_{m}_{cn}", **{f"{k}_{m}": f"{k}_{m}" for k in ("N", "M", "NC")}})
+            self.par_names.update({f"r_{m}_{r}_{cn}": f"r_{m}_{cn}", **{f"{k}_{m}": f"{k}_{m}" for k in ("sd", "z", "L", "Cor", "cor")}})
+
+    @cached_property
+    def standata(self) -> dict[str, np.ndarray]:
+        sd = self.parent.standata
+        return {new: sd[old] for old, new in self.data_names.items() if old in sd}
+
+    def colnames(self, name: str) -> list[str] | None:
+        old = next((o for o, n in self.data_names.items() if n == name and o in self.parent.raw["standata"]), None)
+        return None if old is None else self.parent.colnames(old)
+
+    def point(self, p: Point) -> Point:
+        """The response's view of a point: its parameters under the univariate names; ``u``, the log density and gradient are
+        the joint model's."""
+        return replace(p, pars={new: p.pars[old] for old, new in self.par_names.items() if old in p.pars})
+
+    @cached_property
+    def points(self) -> list[Point]:
+        return [self.point(p) for p in self.parent.points]
+
+    @property
+    def upars(self) -> list[dict]:
+        return [{**e, "par": self.par_names[e["par"]]} for e in self.parent.upars if e["par"] in self.par_names]
+
+    @property
+    def groups(self) -> list[dict]:
+        return [g for g in self.parent.groups if g.get("resp") == self.response]
+
+    @property
+    def declarations(self) -> dict[str, str]:
+        return {self.par_names[k]: v for k, v in self.parent.declarations.items() if k in self.par_names}
+
+    def prediction(self, block: str, kind: str) -> np.ndarray | None:
+        full = self.parent.prediction(block, kind)
+        return None if full is None else full[..., list(self.parent.raw["responses"]).index(self.response)]
+
+
+@dataclass(frozen=True)
+class ResponseMaps:
+    """A multivariate model's correspondence (C01): each response's view of the fixture (``views``) and its univariate map
+    (``maps``: a ``ColumnMap`` from ``match_columns``, a ``GroupMap`` from ``match_groups``)."""
+    views: dict
+    maps: dict
+
+
+_GLOBAL_DATA = ("N", "nresp", "nrescor", "prior_only")        # a multivariate model's data that no single response owns
+
+
+def _response_views(fixture: Fixture, model) -> dict[str, ResponseView]:
+    """Each response's view, after checking that brms's responses are the model's, in order (the last axis of the predictions),
+    that every group term belongs to a response, and that every entry of brms's data is a response's or ``_GLOBAL_DATA``."""
+    responses = list(fixture.raw.get("responses") or [])
+    if responses != list(model.responses):
+        raise OracleMismatch(f"brms's responses are {responses}; the AutoBayes model's {list(model.responses)}")
+    stray = [(g["group"], g["coef"]) for g in fixture.groups if g.get("resp") not in responses]
+    if stray:
+        raise OracleMismatch(f"brms group-level terms of no response (groups[*].resp): {stray}")
+    views = {r: ResponseView(fixture, r) for r in responses}
+    claimed = {old for v in views.values() for old in v.data_names}
+    unclaimed = sorted(k for k in fixture.standata if k not in claimed and k not in _GLOBAL_DATA)
+    if unclaimed:
+        raise OracleMismatch(f"brms data without an AutoBayes counterpart in the multivariate model: {unclaimed}")
+    return views
+
+
+def match_response_columns(fixture: Fixture, model) -> ResponseMaps:
+    views = _response_views(fixture, model)
+    return ResponseMaps(views, {r: match_columns(views[r], sub) for r, sub in model.submodels.items()})
+
+
+def match_response_groups(fixture: Fixture, model) -> ResponseMaps:
+    views = _response_views(fixture, model)
+    return ResponseMaps(views, {r: match_groups(views[r], sub) for r, sub in model.submodels.items()})
+
+
+def response_coordinate_map(fixture: Fixture, model, cmap: ResponseMaps, gmap: ResponseMaps) -> list[tuple[int, str, int]]:
+    """``coordinate_map`` of a multivariate model (C01): each response's coordinates from its view, renamed to the multivariate
+    graph's variables, and those of ``Lrescor``, brms's ``cholesky_factor_corr[nresp]``, which are Stan's ``cholesky_corr``
+    coordinates recomputed from ``Lrescor`` at every point and checked against the fixture's ``u`` (as ``L_m``'s)."""
+    out = []
+    for r, sub in model.submodels.items():
+        out += [(idx, model.variable(r, var), j) for idx, var, j in coordinate_map(cmap.views[r], sub, cmap.maps[r], gmap.maps[r])]
+    k = 0
+    for e in fixture.upars:
+        if e["par"] != "Lrescor":
+            continue
+        if not model.rescor:
+            raise OracleMismatch("brms samples Lrescor (a residual correlation) but the AutoBayes model has rescor=False")
+        idx = int(e["index"]) - 1
+        if e["transform"] != "other":
+            raise OracleMismatch(f"brms transform of Lrescor[{e['elem']}] is {e['transform']!r}; AutoBayes uses 'other' (cholesky_corr)")
+        for q, pt_ in enumerate(fixture.points):
+            u = cholesky_corr_free(np.atleast_2d(pt_.pars["Lrescor"]))
+            if k >= u.size or abs(u[k] - pt_.u[idx]) > 1e-10:
+                raise OracleMismatch(f"point {q}: Stan's cholesky_corr coordinate {k} of Lrescor is {u[k] if k < u.size else 'absent'!r}; "
+                                     f"brms's unconstrained value is {pt_.u[idx]!r}")
+        out.append((idx, "Lrescor_cholesky_corr__", k))
+        k += 1
+    mapped = {idx for idx, _, _ in out}
+    missing = [(e["par"], e["elem"]) for e in fixture.upars if int(e["index"]) - 1 not in mapped]
+    if missing:
+        raise OracleMismatch(f"brms's unconstrained coordinates without an AutoBayes counterpart: {missing}")
+    return sorted(out)
+
+
+def response_draws(fixture: Fixture, model, cmap: ResponseMaps, gmap: ResponseMaps) -> az.InferenceData:
+    """``draws`` of a multivariate model (C01): each response's draws from its view under its names in the multivariate graph,
+    and ``Lrescor`` with ``rescor = Lrescor Lrescor^T`` on the response coordinates."""
+    from autobayes.multivariate import RESPONSE_DIM, RESPONSE_DIM_T
+
+    parts = []
+    for r, sub in model.submodels.items():
+        post = draws(cmap.views[r], sub, cmap.maps[r], gmap.maps[r]).posterior
+        parts.append(post.rename({v: model.variable(r, v) for v in post.data_vars}))
+    post = xr.merge(parts)
+    if model.rescor:
+        L = np.stack([np.atleast_2d(p.pars["Lrescor"]) for p in fixture.points])
+        dims = ("chain", "draw", RESPONSE_DIM, RESPONSE_DIM_T)
+        post = post.assign({"Lrescor": (dims, L[None]), "rescor": (dims, (L @ np.swapaxes(L, -1, -2))[None])})
+        post = post.assign_coords({RESPONSE_DIM: list(model.responses), RESPONSE_DIM_T: list(model.responses)})
+    return az.InferenceData(posterior=post)

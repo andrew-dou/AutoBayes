@@ -1,0 +1,202 @@
+{
+ "id": "gauss_mv_slopes",
+ "tier": "C",
+ "feature": "C01_multivariate",
+ "note": "brms: mvbind(y, y2) with a categorical predictor, its interaction, an offset, correlated varying slopes and a second grouping factor, rescor TRUE: per response X_y/X_y2 with zq, zr, x:zq, x:zr, offsets_y/offsets_y2, (1 + x | g) as group 1 for y and 3 for y2 (L_1, L_3; brms's cor prior has no resp: one lkj per factor shared by the responses), (1 | h) as groups 2 and 4; different Intercept, b, sd and sigma priors per response; Lrescor under lkj(3)",
+ "seed": 321,
+ "n_points": 8,
+ "data": {
+  "generator": "tier_c",
+  "seed": 221,
+  "n": 36,
+  "newdata": {
+   "seed": 321,
+   "n": 5
+  }
+ },
+ "brms": {
+  "formula": "mvbind(y, y2) ~ x + z + x:z + offset(log(xpos)) + (1 + x | g) + (1 | h)",
+  "rescor": true,
+  "family": {
+   "family": "gaussian"
+  },
+  "factors": {
+   "z": [
+    "p",
+    "q",
+    "r"
+   ],
+   "g": [
+    "a",
+    "b",
+    "c",
+    "d",
+    "e",
+    "f"
+   ],
+   "h": [
+    "h1",
+    "h2",
+    "h3",
+    "h4"
+   ]
+  },
+  "priors": [
+   {
+    "prior": "normal(0, 5)",
+    "class": "Intercept",
+    "resp": "y"
+   },
+   {
+    "prior": "normal(0.5, 3)",
+    "class": "Intercept",
+    "resp": "y2"
+   },
+   {
+    "prior": "normal(0, 2)",
+    "class": "b",
+    "resp": "y"
+   },
+   {
+    "prior": "normal(0, 1.5)",
+    "class": "b",
+    "resp": "y2"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "sd",
+    "group": "g",
+    "resp": "y"
+   },
+   {
+    "prior": "normal(0, 0.5)",
+    "class": "sd",
+    "group": "h",
+    "resp": "y"
+   },
+   {
+    "prior": "normal(0, 0.8)",
+    "class": "sd",
+    "group": "g",
+    "resp": "y2"
+   },
+   {
+    "prior": "normal(0, 0.6)",
+    "class": "sd",
+    "group": "h",
+    "resp": "y2"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "sigma",
+    "resp": "y"
+   },
+   {
+    "prior": "normal(0, 2)",
+    "class": "sigma",
+    "resp": "y2"
+   },
+   {
+    "prior": "lkj(2)",
+    "class": "cor",
+    "group": "g"
+   },
+   {
+    "prior": "lkj(3)",
+    "class": "rescor"
+   }
+  ],
+  "extras": [
+   "group_scope",
+   "responses"
+  ]
+ },
+ "autobayes": {
+  "constructor": "gaussian",
+  "formula": "mvbind(y, y2) ~ x + z + x:z + offset(log(xpos)) + (1 + x | g) + (1 | h)",
+  "kwargs": {
+   "rescor": true,
+   "categorical": {
+    "z": "p"
+   }
+  },
+  "priors": {
+   "resp": {
+    "y": {
+     "intercept": [
+      "Normal",
+      0,
+      5
+     ],
+     "b": [
+      "Normal",
+      0,
+      2
+     ],
+     "sd": {
+      "g": {
+       "Intercept": [
+        "HalfNormal",
+        1
+       ],
+       "x": [
+        "HalfNormal",
+        1
+       ]
+      },
+      "h": [
+       "HalfNormal",
+       0.5
+      ]
+     },
+     "sigma": [
+      "HalfNormal",
+      1
+     ]
+    },
+    "y2": {
+     "intercept": [
+      "Normal",
+      0.5,
+      3
+     ],
+     "b": [
+      "Normal",
+      0,
+      1.5
+     ],
+     "sd": {
+      "g": {
+       "Intercept": [
+        "HalfNormal",
+        0.8
+       ],
+       "x": [
+        "HalfNormal",
+        0.8
+       ]
+      },
+      "h": [
+       "HalfNormal",
+       0.6
+      ]
+     },
+     "sigma": [
+      "HalfNormal",
+      2
+     ]
+    }
+   },
+   "cor": {
+    "g": [
+     "LKJ",
+     2
+    ]
+   },
+   "rescor": [
+    "LKJ",
+    3
+   ]
+  }
+ }
+}

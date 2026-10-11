@@ -65,6 +65,10 @@ parameters take the family's own defaults (`FamilySpec.default_scale_prior`, `de
 - A flat prior is improper, so `prior_predictive()` is refused for a model with one (brms likewise refuses to sample
   from improper priors); sampling the posterior is unaffected.
 - An intercept-only model has no coefficient and now needs no `b` prior (D2); one given anyway changes nothing.
+- A multivariate formula (C01, docs/multivariate.md) takes `rescor=True` or `rescor=False`:
+  `ab.default_priors("mvbind(y, y2) ~ x + (1 | g)", data, rescor=True)` gives each response its own defaults under `resp`
+  (its Intercept location and scale read from that response), `lkj(1)` on a correlated term's `cor` once for every
+  response (brms's `cor` has no `resp`) and `lkj(1)` on `rescor`; the table has each response's rows under its `resp`.
 - `ab.Flat()` is accepted for the intercept and `b` only; `ab.InverseGamma(alpha, beta)` for `sd`, `sigma`, `shape` and
   `phi`, not for `nu` (its truncation at 1 is not one this library renormalises, D22).
 - Refused, with the constructors' messages: a family or link the library lacks (`sratio`, brms's `cauchit` link),
