@@ -1130,10 +1130,10 @@
    "pr": null,
    "attempts": 1,
    "gates": {
-    "sha": "fdfe85d82ea1",
+    "sha": "fb14b0ae4e37",
     "dirty_tree": false,
-    "base": "origin/main",
-    "when": "2026-10-11T20:22Z",
+    "base": "parity/c05-mixtures",
+    "when": "2026-10-11T20:50Z",
     "results": {
      "immutability": {
       "status": "pass",
@@ -1141,7 +1141,7 @@
      },
      "oracle": {
       "status": "pass",
-      "seconds": 144.3
+      "seconds": 442.8
      }
     }
    },
