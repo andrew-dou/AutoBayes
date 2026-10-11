@@ -91,4 +91,5 @@ ZERO_INFLATED_POISSON = FamilySpec(
     default_scale_prior=None,
     zero_parameter="zi",
     default_zero_prior=lambda: Beta(1, 1),                          # brms zi: beta(1, 1), lb 0, ub 1
+    monotonic=True,                                                 # B03: mo(x), verified against zero_inflated_poisson_monotonic
 )

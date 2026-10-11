@@ -41,6 +41,13 @@ formula per distributional parameter, ``["y ~ x + (1 | g)", "sigma ~ z"]`` (brms
 Each distributional formula is parsed as a formula of its own (population-level terms only, its own intercept) into
 ``ModelSpec.dpars``; which parameters take one is the family's (``FamilySpec.distributional_link``).
 
+``mo(col)`` is brms's monotonic effect of an ordinal predictor (B03, docs/monotonic.md): a population-level term of kind
+``"monotonic"`` with no column in the design ``X``; its coefficient (brms's ``bsp``) multiplies ``mo(col)_i = D * sum_{k <=
+x_i} simo[k]``, the share of the simplex ``simo`` up to row ``i``'s value coded ``0..D``. The column holds whole numbers
+(coded as the value minus the smallest fitted value) or an ordered pandas Categorical (coded by its declared categories
+that the fitted rows take); ``ModelSpec.monotonics`` keeps that coding once the data are seen. Interactions with a
+``mo()`` term, ``mo()`` in a group-level or distributional formula and ``mo()``'s ``id`` argument are refused.
+
 Group-level terms are optional and additive across distinct factors (M3c-3): a formula without them is a population-only
 model, as in brms ``brmsformula`` where group-level terms are optional; ``y ~ 1`` is intercept-only. ``(1 + x || g)``
 is brms's independent varying intercept and slope (A01): each numeric population-level term named varies by level
@@ -77,6 +84,8 @@ _TRANSFORM_FN_RE = re.compile(rf"^(log|exp|sqrt)\s*\(\s*({_IDENT})\s*\)$", re.S)
 _TRANSFORM_POW_RE = re.compile(rf"^I\s*\(\s*({_IDENT})\s*\^\s*([+-]?\d+)\s*\)$", re.S)               # I(col^k), integer k
 _TRANSFORM_OP_RE = re.compile(rf"^I\s*\(\s*({_IDENT})\s*([*+-])\s*({_NUMBER})\s*\)$", re.S)          # I(col * k), I(col + k), I(col - k)
 _TRANSFORM_OP_FIRST_RE = re.compile(rf"^I\s*\(\s*({_NUMBER})\s*([*+])\s*({_IDENT})\s*\)$", re.S)     # I(k * col), I(k + col)
+_MO_RE = re.compile(r"^mo\s*\((.*)\)$", re.S)                                                        # mo(<inside>), brms's monotonic effect (B03)
+_MO_TERM_RE = re.compile(rf"^mo\(({_IDENT})\)$")                                                    # the canonical spelling mo(col)
 SUPPORTED_TRANSFORMS = ("only log(col), exp(col), sqrt(col), I(col^k) with integer k, and I(col * k), I(col + k), I(col - k) with a "
                         "numeric constant k are supported as in-formula transforms of one numeric column (A05, docs/transforms.md); "
                         "other function calls and transformations inside the formula are not supported: compute the column in the "
@@ -127,7 +136,168 @@ class Categorical:
         return tuple(f"{self.name}[{l}]" for l in self.coefficients)
 
 
-POP_TERM_KINDS = ("numeric", "categorical", "interaction", "transform")
+POP_TERM_KINDS = ("numeric", "categorical", "interaction", "transform", "monotonic")
+
+
+def monotonic_column(name: str) -> str | None:
+    """The column of a monotonic term spelled ``mo(col)`` (B03), or None for any other term name."""
+    m = _MO_TERM_RE.match(name)
+    return m.group(1) if m else None
+
+
+@dataclass(frozen=True)
+class Monotonic:
+    """How a monotonic predictor ``mo(col)`` (B03, docs/monotonic.md) is coded, brms's ``get_mo_values``: each row's value
+    becomes an integer ``0..D`` (brms's ``Xmo``), ``D`` (brms's ``Jmo``) the number of steps between the lowest and the
+    highest value, each step with its share of the simplex. Whole numbers are coded as the value minus ``minimum``, the
+    smallest fitted value, so every integer up to ``maximum`` is a value whether or not a fitted row takes it (brms's rule);
+    an ordered pandas Categorical (brms's ordered factor) by the position among ``categories``, its declared categories that
+    occur in the fitted rows, lowest first (brms drops a factor's unused levels before coding it). Nothing but the column is
+    known until the data are seen; new rows are coded the same way and a value outside the fitted coding is refused (brms
+    refuses it too)."""
+
+    column: str
+    minimum: int | None = None
+    maximum: int | None = None
+    categories: tuple[str, ...] = ()
+
+    def __post_init__(self):
+        object.__setattr__(self, "categories", tuple(self.categories))
+
+    @property
+    def term(self) -> str:
+        """The term as the canonical formula writes it: ``mo(col)``."""
+        return f"mo({self.column})"
+
+    @property
+    def ordered(self) -> bool:
+        """Whether the column is an ordered Categorical (rather than whole numbers)."""
+        return bool(self.categories)
+
+    @property
+    def known(self) -> bool:
+        """Whether the coding has been read from the data."""
+        return self.ordered or self.minimum is not None
+
+    @property
+    def D(self) -> int:
+        """brms's ``Jmo``: the number of steps, which is the length of the simplex."""
+        if not self.known:
+            raise ValueError(f"the coding of {self.term!r} is known once the data are seen")
+        return len(self.categories) - 1 if self.ordered else int(self.maximum) - int(self.minimum)
+
+    @property
+    def lowest(self) -> str:
+        """The lowest value, as text (coded 0)."""
+        return self.categories[0] if self.ordered else str(self.minimum)
+
+    @property
+    def highest(self) -> str:
+        """The highest value, as text (coded D)."""
+        return self.categories[-1] if self.ordered else str(self.maximum)
+
+    def values(self) -> tuple[str, ...]:
+        """Every value of the coding as text, lowest first: the value coded ``k`` is ``values()[k]``."""
+        return self.categories if self.ordered else tuple(str(v) for v in range(int(self.minimum), int(self.maximum) + 1))
+
+    def step_labels(self) -> tuple[str, ...]:
+        """The steps the simplex splits the effect over, ``"1 -> 2"``, ..., in order (simplex entry ``k``, 1-based, is the
+        share of the step from the value coded ``k - 1`` to the value coded ``k``)."""
+        values = self.values()
+        return tuple(f"{a} -> {b}" for a, b in zip(values[:-1], values[1:]))
+
+    def notes(self, s: pd.Series) -> list[str]:
+        """The fitted column ``s``'s warnings: whole numbers in ``minimum..maximum`` that no row takes (brms keeps them as
+        values), or an ordered Categorical's declared categories that no row takes (brms drops them)."""
+        if self.ordered:
+            declared = [_scalar(self.term, c, where="declared category") for c in s.cat.categories]
+            dropped = [c for c in declared if c not in self.categories]
+            return [f"declared categories {dropped} of the monotonic predictor {self.column!r} do not occur in the fitted rows: they are "
+                    f"not values of {self.term} (brms drops them too), and new rows taking them are refused"] if dropped else []
+        unseen = np.setdiff1d(np.arange(self.D + 1), self.codes(s))
+        shown = [str(int(self.minimum) + int(k)) for k in unseen[:10]] + (["..."] if unseen.size > 10 else [])
+        return [f"values {shown} of the monotonic predictor {self.column!r} have no fitted rows: they are still values of "
+                f"{self.term} (brms keeps them), and the data inform only the sum of the two steps next to each, which the prior "
+                "on the simplex splits"] if unseen.size else []
+
+    def codes(self, s: pd.Series, *, where: str = "column") -> np.ndarray:
+        """brms's ``Xmo`` of ``s`` under this coding: an int64 array of codes ``0..D``. Refuses a value that is not one of
+        the coding's (a non-whole number, a value outside ``minimum..maximum``, a label outside ``categories``), a missing
+        value, and a boolean or complex column."""
+        if not self.known:
+            raise ValueError(f"the coding of {self.term!r} is known once the data are seen")
+        label = f"{where} {self.column!r} of the monotonic term {self.term!r}"
+        reject_complex(label, s)
+        if pd.api.types.is_bool_dtype(s):
+            raise FormulaError(f"{label} is boolean; a monotonic predictor holds whole numbers or ordered categories")
+        if s.isna().any():
+            raise FormulaError(f"{label} has missing values; drop or impute them explicitly")
+        if self.ordered:
+            position = {c: k for k, c in enumerate(self.categories)}
+            labels = [_scalar(label, v) for v in s.astype(object).tolist()]
+            unknown = sorted({l for l in labels if l not in position})
+            if unknown:
+                raise FormulaError(f"{label} has values {unknown} that are not among its ordered categories {list(self.categories)}; "
+                                   "a monotonic predictor takes only the categories it was fitted with (brms refuses others too)")
+            return np.array([position[l] for l in labels], dtype=np.int64)
+        if not _is_numeric(s):
+            raise FormulaError(f"{label} has dtype {s.dtype}; it was fitted as whole numbers {self.minimum}..{self.maximum}")
+        v = s.to_numpy(dtype=float)
+        bad = v[~np.isfinite(v) | (v != np.floor(v)) | (v < self.minimum) | (v > self.maximum)]
+        if bad.size:
+            raise FormulaError(f"{label} has the value {float(bad[0])!r}, which is not a whole number from {self.minimum} to {self.maximum} "
+                               "(the fitted values; brms refuses such values on new rows too)")
+        return (v - self.minimum).astype(np.int64)
+
+
+_TWO_VALUES = ("with two values a monotonic effect has a single step and no simplex to estimate (brms's simplex[1] is the "
+               "constant 1, and mo() is then the predictor coded 0/1 times its coefficient): write that 0/1 column as a numeric "
+               "term instead (docs/monotonic.md, divergence D42)")
+
+
+def monotonic_coding(column: str, s: pd.Series) -> Monotonic:
+    """The coding of the fitted column ``s`` of ``mo(column)`` (brms's ``get_mo_values``): an ordered pandas Categorical by
+    its declared categories that occur in the fitted rows (brms drops the unused levels of a factor), whole numbers (of any
+    numeric dtype) from their smallest to their largest value, every integer in between included; anything else is refused
+    as brms refuses it ("Monotonic predictors must be integers or ordered factors"), as is a predictor with fewer than three
+    values (one step has no simplex to estimate) or one spanning more than ``COUNT_CAP`` steps."""
+    term = f"mo({column})"
+    label = f"column {column!r} of the monotonic term {term!r}"
+    reject_complex(label, s)
+    need = ("a monotonic predictor holds whole numbers or an ordered pandas Categorical (pd.Categorical(values, categories=[lowest, "
+            "..., highest], ordered=True), brms's ordered factor)")
+    if pd.api.types.is_bool_dtype(s):
+        raise FormulaError(f"{label} is boolean; {need}")
+    if s.isna().any():
+        raise FormulaError(f"{label} has missing values; drop or impute them explicitly before fitting.")
+    if isinstance(s.dtype, pd.CategoricalDtype):
+        if not s.cat.ordered:
+            raise FormulaError(f"{label} is an unordered pandas Categorical, whose category order means nothing; {need}")
+        categories = tuple(_scalar(label, c, where="declared category") for c in s.cat.categories)
+        if len(set(categories)) != len(categories):
+            raise FormulaError(f"{label} has declared categories that collide after normalisation: {list(categories)}")
+        if len({_kind(c) for c in s.cat.categories}) > 1:
+            raise FormulaError(f"{label} mixes text labels and numeric codes in its declared categories; recode it explicitly")
+        observed = set(_scalar(label, v) for v in s.astype(object).tolist())
+        categories = tuple(c for c in categories if c in observed)       # brms codes the factor after dropping unused levels
+        if len(categories) < 3:
+            raise FormulaError(f"{label} has the categories {list(categories)} in the fitted rows; "
+                               + (_TWO_VALUES if len(categories) == 2 else "a monotonic effect needs at least three"))
+        return Monotonic(column, categories=categories)
+    if not _is_numeric(s):
+        raise FormulaError(f"{label} has dtype {s.dtype}; {need}. Text labels have no order: declare it with an ordered Categorical")
+    v = s.to_numpy(dtype=float)
+    bad = v[~np.isfinite(v) | (v != np.floor(v))]
+    if bad.size:
+        raise FormulaError(f"{label} has the value {float(bad[0])!r}; {need} (brms: 'Monotonic predictors must be integers or ordered factors')")
+    lo, hi = int(v.min()), int(v.max())
+    if hi - lo < 2:
+        raise FormulaError(f"{label} takes the values {sorted({lo, hi})} in the fitted rows; "
+                           + (_TWO_VALUES if hi > lo else "a monotonic effect needs at least three values"))
+    if hi - lo > COUNT_CAP:
+        raise FormulaError(f"{label} spans {lo} to {hi}, {hi - lo} steps, each with its own simplex entry; more than {COUNT_CAP} "
+                           "steps is refused")
+    return Monotonic(column, minimum=lo, maximum=hi)
 
 
 @dataclass(frozen=True)
@@ -215,7 +385,9 @@ class PopTerm:
     declared with its reference level), a two-way ``"interaction"``: ``x:z`` (numeric by categorical), ``x:w``
     (numeric by numeric) or ``z:h`` (categorical by categorical; A04, docs/interactions.md), or an in-formula
     ``"transform"`` of one numeric column, ``log(xpos)``, ``I(x^2)`` (A05, docs/transforms.md), whose single column
-    is the evaluated transform and whose ``transform`` says how to evaluate it.
+    is the evaluated transform and whose ``transform`` says how to evaluate it, or brms's ``"monotonic"`` effect
+    ``mo(col)`` of an ordinal predictor (B03, docs/monotonic.md), which has no design column (``columns`` is empty): its
+    coefficient (brms's ``bsp``) and simplex act through its own block, ``ModelSpec.monotonic(col)`` its coding.
 
     ``columns`` are the design-column labels the term expands to, Bambi/formulae's own, in design order:
     ``x``; ``z[l]`` per coefficient level ``l``; ``x:z[l]``; ``x:w``; ``z[l]:h[m]`` per cell, the first operand's
@@ -242,8 +414,10 @@ class PopTerm:
         object.__setattr__(self, "levels", tuple(self.levels))
         if self.kind == "transform" and parse_transform(self.name) is None:
             raise ValueError(f"PopTerm: {self.name!r} is not a supported in-formula transform")
+        if self.kind == "monotonic" and (monotonic_column(self.name) is None or self.columns or self.levels):
+            raise ValueError(f"PopTerm: a monotonic term is spelled 'mo(col)' and has no design column or level, got {self.name!r}")
         if self.categorical is None:
-            default = {"numeric": (), "categorical": (self.name,), "interaction": (self.operands[-1],), "transform": ()}
+            default = {"numeric": (), "categorical": (self.name,), "interaction": (self.operands[-1],), "transform": (), "monotonic": ()}
             object.__setattr__(self, "categorical", default[self.kind])
         else:
             object.__setattr__(self, "categorical", tuple(self.categorical))
@@ -253,10 +427,18 @@ class PopTerm:
     @property
     def operands(self) -> tuple[str, ...]:
         """The data columns the term is built from: ``(x,)``, ``(z,)``, ``(x, z)`` (numeric first), ``(x, w)`` or
-        ``(z, h)`` (main-effect order), ``(xpos,)`` for the transform ``log(xpos)``."""
+        ``(z, h)`` (main-effect order), ``(xpos,)`` for the transform ``log(xpos)``, ``(ord,)`` for ``mo(ord)``."""
         if self.kind == "transform":
             return (self.transform.column,)
+        if self.kind == "monotonic":
+            return (monotonic_column(self.name),)
         return tuple(self.name.split(":"))
+
+    @property
+    def is_monotonic(self) -> bool:
+        """A monotonic term ``mo(col)`` (B03): no design column; its own coefficient and simplex, built by this library (Bambi
+        never sees it)."""
+        return self.kind == "monotonic"
 
     @property
     def transform(self) -> Transform:
@@ -642,9 +824,11 @@ def pop_term(name: str, kind: str, categoricals=()) -> PopTerm:
     read from the declared categorical terms: a categorical term's coefficient levels; for an interaction, the
     non-reference levels of its one categorical operand (``x:z[l]``), the cells of its two categorical operands
     (``z[l]:h[m]``, levels ``"l, m"``), or no levels at all when both operands are numeric (``x:w``); none for a
-    numeric term."""
+    numeric term; a monotonic term ``mo(col)`` has neither (B03)."""
     if kind in ("numeric", "transform"):
         return PopTerm(name, kind, (name,), (), ())
+    if kind == "monotonic":
+        return PopTerm(name, kind, (), (), ())
     if kind == "categorical":
         levels = _find_categorical(categoricals, name).coefficients
         return PopTerm(name, kind, tuple(f"{name}[{l}]" for l in levels) if levels else (name,), levels, (name,))
@@ -676,10 +860,13 @@ def pop_term_design(term: PopTerm, df: pd.DataFrame, categoricals=()) -> np.ndar
     per coefficient level (reference rows all zero); an interaction ``x:z`` the numeric column times each
     indicator, ``x:w`` the elementwise product of the two columns, ``z:h`` the product of the two indicators
     of each cell, which needs the declared ``Categorical`` terms for the operands' non-reference levels.
-    Categorical columns are read as string labels (a fitted frame holds them recoded)."""
+    Categorical columns are read as string labels (a fitted frame holds them recoded). A monotonic term ``mo(col)`` has no
+    column in the design (``(n, 0)``): its block is its codes, ``Monotonic.codes`` (B03)."""
     n = len(df)
     if term.kind == "numeric":
         return df[term.name].to_numpy(dtype=float)[:, None]
+    if term.kind == "monotonic":
+        return np.zeros((n, 0))
     if term.kind == "transform":                                 # evaluated from the raw column, never read from a column of its name
         return term.transform.values(df)[:, None]
     if term.kind == "interaction" and not term.categorical:
@@ -758,7 +945,9 @@ class ModelSpec:
     terms after ``|`` other than ``trials()`` (``weights()``, ``cens()``, ``trunc()``; B02, docs/addition-terms.md).
     ``dpars`` are the formulas of distributional parameters (B01, docs/distributional.md: brms's ``bf(y ~ x, sigma ~ z)``),
     each a ``ModelSpec`` of its own whose ``response`` is the parameter's brms name (``sigma``, ``shape``, ``phi``) and
-    whose population-level terms make that parameter's linear predictor; empty for a single formula."""
+    whose population-level terms make that parameter's linear predictor; empty for a single formula. ``monotonics`` holds
+    the coding of each monotonic term's column (B03, ``mo(col)``; ``Monotonic``), in term order, known once the data are
+    seen, as ``categoricals`` does for the categorical terms."""
 
     formula: str
     response: str
@@ -772,13 +961,16 @@ class ModelSpec:
     offset: Offset | None
     additions: tuple[AdditionTerm, ...]
     dpars: tuple["ModelSpec", ...]
+    monotonics: tuple[Monotonic, ...]
 
     def __init__(self, formula, response, predictors=(), group=None, intercept=True,
                  levels=(), trials=None, rhs="", terms=(), categoricals=(), interactions=(),
-                 *, groups=None, levels_by_group=None, pop_terms=None, group_terms=None, offset=None, additions=(), dpars=()):
+                 *, groups=None, levels_by_group=None, pop_terms=None, group_terms=None, offset=None, additions=(), dpars=(),
+                 monotonics=None):
         """Keep the original positional constructor: without ``pop_terms`` / ``group_terms`` the term model is
         built from the flat ``predictors``, ``terms``, ``categoricals``, ``interactions`` and ``group(s)``.
-        Terms given as mappings (``dataclasses.asdict`` output) are rebuilt, the distributional formulas too."""
+        Terms given as mappings (``dataclasses.asdict`` output) are rebuilt, the distributional formulas and the
+        monotonic codings too; without ``monotonics`` each monotonic term's coding is its column alone (not yet seen)."""
         categoricals = tuple(c if isinstance(c, Categorical) else Categorical(**c) for c in categoricals)
         if offset is not None and not isinstance(offset, Offset):
             offset = Offset(**offset)
@@ -810,10 +1002,17 @@ class ModelSpec:
                      else {g: tuple(v) for g, v in levels_by_group.items()})
         if set(level_map) != set(factors):
             raise ValueError("levels_by_group must cover exactly the grouping factors")
+        mo_columns = tuple(t.operands[0] for t in pop_terms if t.is_monotonic)
+        if monotonics is None:
+            monotonics = tuple(Monotonic(c) for c in mo_columns)
+        monotonics = tuple(m if isinstance(m, Monotonic) else Monotonic(**m) for m in monotonics)
+        if tuple(m.column for m in monotonics) != mo_columns:
+            raise ValueError(f"monotonics must give the coding of exactly the monotonic terms' columns {list(mo_columns)}, in order")
         values = dict(formula=formula, response=response, intercept=intercept,
                       levels_by_group=_GroupLevels((g, level_map[g]) for g in factors),
                       trials=trials, rhs=rhs, categoricals=categoricals,
-                      pop_terms=pop_terms, group_terms=group_terms, offset=offset, additions=additions, dpars=dpars)
+                      pop_terms=pop_terms, group_terms=group_terms, offset=offset, additions=additions, dpars=dpars,
+                      monotonics=monotonics)
         for key, value in values.items():
             object.__setattr__(self, key, value)
 
@@ -822,7 +1021,7 @@ class ModelSpec:
         return hash((self.formula, self.response, self.intercept,
                      tuple(self.levels_by_group[g] for g in self.groups), self.trials, self.rhs,
                      self.categoricals, self.pop_terms, self.group_terms, self.offset, self.additions)
-                    + ((self.dpars,) if self.dpars else ()))
+                    + ((self.dpars,) if self.dpars else ()) + ((self.monotonics,) if self.monotonics else ()))
 
     def addition(self, kind: str) -> AdditionTerm | None:
         """The addition term of ``kind`` (``"weights"``, ``"cens"``, ``"trunc"``), or None when the formula has none."""
@@ -889,6 +1088,30 @@ class ModelSpec:
     def transform_terms(self) -> tuple[PopTerm, ...]:
         """The in-formula transform terms (A05), in formula order."""
         return tuple(t for t in self.pop_terms if t.kind == "transform")
+
+    # -- monotonic terms (B03) -------------------------------------------------------------
+    @property
+    def mo_terms(self) -> tuple[PopTerm, ...]:
+        """The monotonic terms ``mo(col)`` (B03), in formula order: population-level terms with no design column."""
+        return tuple(t for t in self.pop_terms if t.is_monotonic)
+
+    def monotonic(self, column: str) -> Monotonic:
+        """The coding of the monotonic term of ``column`` (``KeyError`` when the formula has no ``mo(column)``)."""
+        for m in self.monotonics:
+            if m.column == column:
+                return m
+        raise KeyError(column)
+
+    @property
+    def bambi_terms(self) -> tuple[PopTerm, ...]:
+        """The population-level terms Bambi builds: all but the monotonic ones, which this library adds to the graph (B03)."""
+        return tuple(t for t in self.pop_terms if not t.is_monotonic)
+
+    @property
+    def coefficient_labels(self) -> tuple[str, ...]:
+        """brms's class ``b`` of this formula, one label per coefficient in term order: each design column (``columns``) and
+        each monotonic term by its name (``mo(ord)``, brms's ``bsp``), which has a coefficient but no design column."""
+        return tuple(label for t in self.pop_terms for label in (t.columns if not t.is_monotonic else (t.name,)))
 
     @property
     def groups(self) -> tuple[str, ...]:
@@ -987,9 +1210,12 @@ class ModelSpec:
 
     @property
     def column_terms(self) -> tuple[tuple[str, str, int | None], ...]:
-        """``(column label, term, index within the term or None for a numeric term)`` per column."""
+        """``(column label, term, index within the term or None for a numeric term)`` per column (a monotonic term has
+        none)."""
         out: list[tuple[str, str, int | None]] = []
         for t in self.pop_terms:
+            if t.is_monotonic:
+                continue
             if t.levels:
                 out.extend((col, t.name, j) for j, col in enumerate(t.columns))
             else:
@@ -1020,8 +1246,9 @@ class ModelSpec:
     @property
     def bambi_rhs(self) -> str:
         """The right-hand side of ``bambi_formula``, rebuilt term by term; a distributional formula (B01) is handed to Bambi
-        as ``<parameter> ~ <bambi_rhs>`` under Bambi's name for the parameter (``alpha`` for brms's ``shape``)."""
-        parts = ([] if self.intercept else ["0"]) + [t.bambi_name for t in self.pop_terms]
+        as ``<parameter> ~ <bambi_rhs>`` under Bambi's name for the parameter (``alpha`` for brms's ``shape``). A monotonic
+        term (B03) is not handed to Bambi: the model adds it to the linear predictor Bambi builds."""
+        parts = ([] if self.intercept else ["0"]) + [t.bambi_name for t in self.bambi_terms]
         parts += ([self.offset.term] if self.offset is not None else []) + [t.bambi_canonical for t in self.group_terms]
         return " + ".join(parts) if parts else "1"
 
@@ -1095,6 +1322,12 @@ def _parse_group_term(inner: str, bars: str, factor: str, piece: str, response: 
             raise FormulaError(
                 f"{piece!r}: offset() cannot be placed inside a group term; write it as a population-level term, "
                 f"'{response} ~ ... + {s} + (1 {bars} {factor})'"
+            )
+        if _MO_RE.match(s):
+            raise FormulaError(
+                f"{piece!r}: a monotonic effect cannot vary by {factor!r} in this slice: brms's '(1 + {s} {bars} {factor})' gives "
+                "every level its own coefficient of the monotonic term, which is not verified here (docs/monotonic.md, "
+                f"divergence D41); keep {s} as a population-level term, '{response} ~ ... + {s} + (1 | {factor})'"
             )
         if "(" in s or ")" in s:
             raise FormulaError(
@@ -1339,6 +1572,12 @@ def _parse_formulas(formulas, data: pd.DataFrame | None, family: str, categorica
                 f"{text!r}: {d.offset.term!r} in a distributional formula is not supported in this slice; an offset belongs "
                 "to the response formula here (docs/distributional.md, divergence D32)"
             )
+        if d.mo_terms:
+            raise FormulaError(
+                f"{text!r}: a monotonic term in a distributional formula ({', '.join(t.name for t in d.mo_terms)}) is not supported "
+                f"in this slice: brms would give {name} a monotonic coefficient and simplex of its own; mo() belongs to the response "
+                "formula here (docs/monotonic.md, divergence D42)"
+            )
         for col in d.pop_columns:
             role = ("the response" if col == spec.response else "the trials column" if col == spec.trials
                     else "a grouping factor of the response formula" if col in operands else None)
@@ -1420,8 +1659,9 @@ def parse_formula(formula: str | list[str], data: pd.DataFrame | None = None, fa
             pieces.append(re.sub(r"^1", "0", part, count=1))
         rhs = " + ".join(pieces)
 
-    predictors: list[str] = []                             # main effects as written: numeric, categorical and transform terms
+    predictors: list[str] = []                             # main effects as written: numeric, categorical, transform and monotonic terms
     transforms: dict[str, Transform] = {}                  # the transform terms among them, by canonical name
+    monotonics: dict[str, str] = {}                        # the monotonic terms among them (B03): canonical name -> column
     group_terms: list[GroupTerm] = []
     group_pieces: list[str] = []                           # each group term as written, for the messages below
     groups: list[str] = []                                 # the factors of group_terms, for the checks below
@@ -1430,13 +1670,13 @@ def parse_formula(formula: str | list[str], data: pd.DataFrame | None = None, fa
     saw_intercept_token = False
     remove_intercept = False
 
-    def _main(name: str, piece: str, *, transform: Transform | None = None) -> None:
-        if transform is None and not re.fullmatch(_IDENT, name):
+    def _main(name: str, piece: str, *, transform: Transform | None = None, call: bool = False) -> None:
+        if transform is None and not call and not re.fullmatch(_IDENT, name):
             raise FormulaError(f"{piece!r}: {name!r} is not a column name")
         if name == response:
             raise FormulaError(f"{name!r}: the response cannot also be a predictor")
         if name in predictors:
-            if transform is not None:
+            if transform is not None or call:
                 hint = f" ({piece!r} spells {name!r} again)" if piece != name else ""
             else:
                 hint = f" after expanding {piece!r} (a*b means a + b + a:b; write 'a + b + a:b' or 'a*b', not both)" if piece != name else ""
@@ -1508,6 +1748,12 @@ def parse_formula(formula: str | list[str], data: pd.DataFrame | None = None, fa
                         f"{piece!r}: offset() cannot enter an interaction; an offset is a known column added to the linear "
                         "predictor with no coefficient"
                     )
+                if _MO_RE.match(side):
+                    raise FormulaError(
+                        f"{piece!r}: an interaction with a monotonic term ({side!r}) is not supported in this slice: brms's "
+                        "mo(x):z gives each interaction its own coefficient (and mo(x):mo(w) a simplex per factor), which is not "
+                        "verified here (docs/monotonic.md, divergence D40)"
+                    )
                 if "(" in side or ")" in side:
                     if parse_transform(side) is None:
                         raise FormulaError(f"{side!r}: {SUPPORTED_TRANSFORMS}")
@@ -1521,6 +1767,26 @@ def parse_formula(formula: str | list[str], data: pd.DataFrame | None = None, fa
                 _main(left, piece)
                 _main(right, piece)
             raw_interactions.append((left, right, piece))
+            continue
+        mm = _MO_RE.match(piece)
+        if mm:                                                  # brms's monotonic effect mo(col) (B03)
+            inner = mm.group(1).strip()
+            if len(_split_top_level(inner, ",")) > 1:
+                raise FormulaError(
+                    f"{piece!r}: mo() takes one column here; brms's id argument (mo(x, id = 'a'), one simplex shared by the "
+                    "terms with the same id) is not supported in this slice (docs/monotonic.md, divergence D42)"
+                )
+            if not re.fullmatch(_IDENT, inner):
+                raise FormulaError(
+                    f"{piece!r}: mo() takes a column name here, not an expression ({inner!r}; brms evaluates one): compute the "
+                    "column in the data frame and write mo(<column>) (docs/monotonic.md, divergence D42)"
+                )
+            if inner == response:
+                raise FormulaError(f"{piece!r}: the response {response!r} cannot be a monotonic predictor")
+            if trials is not None and inner == trials:
+                raise FormulaError(f"{piece!r}: the trials column {trials!r} cannot be a monotonic predictor")
+            _main(f"mo({inner})", piece, call=True)                # under its canonical spelling, so 'mo( x )' duplicates 'mo(x)'
+            monotonics[f"mo({inner})"] = inner
             continue
         if "(" in piece or ")" in piece:                       # an in-formula transform, log(col), I(col^2), ... (A05)
             tr = parse_transform(piece)
@@ -1586,14 +1852,15 @@ def parse_formula(formula: str | list[str], data: pd.DataFrame | None = None, fa
             "for an intercept-only model."
         )
     transform_columns = [tr.column for tr in transforms.values()]   # the raw columns the transform terms read
+    mo_columns = list(monotonics.values())                           # and the monotonic terms (B03)
     for col in operands_all:
-        if col in predictors or col in transform_columns or col == response:
+        if col in predictors or col in transform_columns or col in mo_columns or col == response:
             raise FormulaError(f"{col!r}: the grouping factor cannot also be a predictor or the response")
     if trials is not None and (trials in predictors or trials in operands_all):
         raise FormulaError(f"{trials!r}: the trials column cannot also be a predictor or the grouping factor")
     offset = offsets[0][0] if offsets else None
     # A derived factor's column (g_h) is added to the fitted frame: it must not shadow a column the formula uses.
-    in_use = {response, *predictors, *transform_columns, *operands_all, *([trials] if trials is not None else []),
+    in_use = {response, *predictors, *transform_columns, *mo_columns, *operands_all, *([trials] if trials is not None else []),
               *([offset.column] if offset is not None else []), *(c for a in additions for c in a.columns)}
     derived_columns: dict[str, GroupTerm] = {}
     for term in group_terms:
@@ -1620,6 +1887,10 @@ def parse_formula(formula: str | list[str], data: pd.DataFrame | None = None, fa
         for name, tr in transforms.items():
             if tr.column in categorical:
                 raise FormulaError(f"{name!r}: {tr.column!r} is declared categorical; an in-formula transform applies to a numeric column")
+        for name, col in monotonics.items():                 # nor does mo(), which reads the column's own values (B03)
+            if col in categorical:
+                raise FormulaError(f"{name!r}: {col!r} is declared categorical; mo() reads it as an ordinal predictor (whole numbers "
+                                   "or an ordered pandas Categorical), and one column cannot be both")
     categoricals = _normalise_categorical(categorical, predictors, response, operands_all, trials, formula)
     if offset is not None and any(c.name == offset.column for c in categoricals):
         raise FormulaError(
@@ -1658,13 +1929,23 @@ def parse_formula(formula: str | list[str], data: pd.DataFrame | None = None, fa
     canonical_rhs = " + ".join(parts) if parts else "1"           # intercept-only population model: 'y ~ 1'
     if remove_intercept:
         canonical_rhs = "0 + " + canonical_rhs
-    pop_terms = (*(pop_term(p, "categorical" if p in cat_names else "transform" if p in transforms else "numeric", categoricals) for p in predictors),
+    kinds = {**{p: "transform" for p in transforms}, **{p: "monotonic" for p in monotonics}, **{p: "categorical" for p in cat_names}}
+    pop_terms = (*(pop_term(p, kinds.get(p, "numeric"), categoricals) for p in predictors),
                  *(pop_term(name, "interaction", categoricals) for name in interactions))
     spec = ModelSpec(
         formula=formula.strip(), response=response, intercept=not remove_intercept, trials=trials,
         rhs=canonical_rhs, categoricals=categoricals, pop_terms=pop_terms, group_terms=tuple(group_terms),
         offset=offset, additions=additions,
     )
+    if spec.mo_terms and not fam.monotonic:                  # mo() where a frozen brms case verifies it (B03)
+        from autobayes.families import FAMILIES
+
+        offering = [name for name, other in FAMILIES.items() if other.monotonic]
+        raise FormulaError(
+            f"{formula!r}: the monotonic term {spec.mo_terms[0].name!r} is not available for the {fam.name} family; brms's mo() is "
+            f"verified here for the {', '.join(offering) or 'no'} famil{'y' if len(offering) == 1 else 'ies'} "
+            "(docs/monotonic.md, divergence D42)"
+        )
     if fam.check_formula is not None:                        # a family that does not take every formula (B05)
         fam.check_formula(spec)
     if data is not None:
@@ -1944,9 +2225,10 @@ def validate_data(spec: ModelSpec, data: pd.DataFrame, family: str = "gaussian",
     for t in spec.transform_terms:                                # and so is a transformed column
         if np.isclose(np.std(pop_term_design(t, data)), 0.0):
             raise FormulaError(f"term {t.name!r} is constant in the fitted rows")
+    monotonics = tuple(monotonic_coding(m.column, data[m.column]) for m in spec.monotonics)   # brms's Xmo coding (B03)
     return ModelSpec(
         formula=spec.formula, response=spec.response, intercept=spec.intercept, levels_by_group=levels_by_group,
         trials=spec.trials, rhs=spec.rhs, categoricals=tuple(categoricals),
         pop_terms=tuple(pop_term(t.name, t.kind, categoricals) for t in spec.pop_terms),   # levels now known
-        group_terms=spec.group_terms, offset=spec.offset, additions=spec.additions, dpars=spec.dpars,
+        group_terms=spec.group_terms, offset=spec.offset, additions=spec.additions, dpars=spec.dpars, monotonics=monotonics,
     )

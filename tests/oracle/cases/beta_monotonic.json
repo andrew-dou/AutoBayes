@@ -1,0 +1,72 @@
+{
+ "id": "beta_monotonic",
+ "tier": "B",
+ "feature": "B03_monotonic",
+ "note": "B03 for the Beta family (logit link, this library's own likelihood); population-only",
+ "seed": 407,
+ "n_points": 8,
+ "data": {
+  "generator": "tier_b",
+  "seed": 307,
+  "n": 36,
+  "newdata": {
+   "seed": 407,
+   "n": 5
+  }
+ },
+ "brms": {
+  "formula": "prop ~ x + mo(ord)",
+  "family": {
+   "family": "Beta"
+  },
+  "priors": [
+   {
+    "prior": "normal(0, 2)",
+    "class": "Intercept"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "b"
+   },
+   {
+    "prior": "gamma(0.01, 0.01)",
+    "class": "phi"
+   },
+   {
+    "prior": "dirichlet(2, 1, 3)",
+    "class": "simo",
+    "coef": "moord1"
+   }
+  ]
+ },
+ "autobayes": {
+  "constructor": "beta",
+  "formula": "prop ~ x + mo(ord)",
+  "kwargs": {},
+  "priors": {
+   "intercept": [
+    "Normal",
+    0,
+    2
+   ],
+   "b": [
+    "Normal",
+    0,
+    1
+   ],
+   "phi": [
+    "Gamma",
+    0.01,
+    0.01
+   ],
+   "simo": {
+    "ord": [
+     "Dirichlet",
+     2,
+     1,
+     3
+    ]
+   }
+  }
+ }
+}

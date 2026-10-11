@@ -1,0 +1,28 @@
+{
+ "family": {
+  "family": "hurdle_poisson"
+ },
+ "formula": "zcnt ~ x + mo(ord)",
+ "id": "hurdle_poisson_monotonic",
+ "n_points": 8,
+ "priors": [
+  {
+   "class": "Intercept",
+   "prior": "normal(0, 2)"
+  },
+  {
+   "class": "b",
+   "prior": "normal(0, 1)"
+  },
+  {
+   "class": "hu",
+   "prior": "beta(2, 2)"
+  },
+  {
+   "class": "simo",
+   "coef": "moord1",
+   "prior": "dirichlet(2, 2, 2)"
+  }
+ ],
+ "seed": 412
+}

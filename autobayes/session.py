@@ -77,6 +77,7 @@ def _summary_rows(model, idata) -> dict:
         scale_names = [n[scale]] if scale is not None else []
     names = ([n["intercept"]] if model.spec.intercept else []) + list(model.spec.terms) + [roles["sd"] for roles in model.group_coefficient_names.values()] + scale_names
     names += [n[name] for name in model.learned_parameters]     # a learned Student-t nu (A13)
+    names += [roles["simplex"] for roles in getattr(model, "mo_names", {}).values()]   # each monotonic term's simplex (B03)
     zero = family_of(model).zero_parameter                      # the zero-inflation / hurdle probability (B06)
     names += [n[zero]] if zero is not None else []
     s = az.summary(idata, var_names=names, hdi_prob=0.94, round_to="none")
@@ -150,6 +151,7 @@ def fit_record(model, fit, *, panel: dict | None = None, max_treedepth: int = 10
                        **{("sd" if len(s.groups) == 1 else f"sd:{g}"): str(prior) for g, prior in group_priors.items()},
                        **{f"sd:{sd_tag(g, c)}": str(prior) for (g, c), prior in sd_priors.items() if c != "Intercept"},
                        **{f"cor:{g}": str(prior) for g, prior in cor_priors.items()},
+                       **{f"simo:{c}": str(prior) for c, prior in pr.simo_priors(s).items()},
                        **(_scale_priors(model) if fam.scale_parameter is not None else {}),
                        **({fam.zero_parameter: str(getattr(pr, fam.zero_parameter))} if fam.zero_parameter is not None else {}),
                        **({"nu": str(pr.nu)} if pr.nu is not None else {})},
@@ -166,6 +168,11 @@ def fit_record(model, fit, *, panel: dict | None = None, max_treedepth: int = 10
                                                  "design_columns": list(ds.columns), "names": model.dpar_names[ds.response]}
                                    for ds in s.dpars}} if s.dpars else {}),
             **({"transforms": [t.name for t in s.transform_terms]} if s.transform_terms else {}),
+            # each monotonic term (B03): its column's coding, number of steps and PyMC names
+            **({"monotonic": {t.name: {"column": t.operands[0], "coding": "ordered" if s.monotonic(t.operands[0]).ordered else "integer",
+                                       "values": [s.monotonic(t.operands[0]).lowest, s.monotonic(t.operands[0]).highest],
+                                       "D": s.monotonic(t.operands[0]).D, "names": model.mo_names[t.operands[0]]}
+                               for t in s.mo_terms}} if s.mo_terms else {}),
             "interactions": [list(pair) for pair in s.interactions],
             "canonical_formula": s.canonical_formula,
             "categorical": {c.name: {"reference": c.reference, "levels": list(c.levels),

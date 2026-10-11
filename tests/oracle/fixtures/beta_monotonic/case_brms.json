@@ -1,0 +1,28 @@
+{
+ "family": {
+  "family": "Beta"
+ },
+ "formula": "prop ~ x + mo(ord)",
+ "id": "beta_monotonic",
+ "n_points": 8,
+ "priors": [
+  {
+   "class": "Intercept",
+   "prior": "normal(0, 2)"
+  },
+  {
+   "class": "b",
+   "prior": "normal(0, 1)"
+  },
+  {
+   "class": "phi",
+   "prior": "gamma(0.01, 0.01)"
+  },
+  {
+   "class": "simo",
+   "coef": "moord1",
+   "prior": "dirichlet(2, 1, 3)"
+  }
+ ],
+ "seed": 407
+}

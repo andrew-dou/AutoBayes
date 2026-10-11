@@ -718,6 +718,27 @@ def addition_family(base, family_spec, data: Mapping[str, np.ndarray]):
     return family
 
 
+def monotonic_family(base, add_effects: Callable):
+    """The Bambi family ``base`` (a built-in family's name or a family object) whose parent linear predictor gains brms's
+    monotonic effects (B03, docs/monotonic.md): Bambi passes the parent's linear predictor through the family's
+    ``transform_backend_eta`` inside the model it builds, before the link, and ``add_effects(eta)`` creates the terms'
+    variables there and returns ``eta`` plus their contribution. A family's own ``transform_backend_eta`` runs after it;
+    everything else about the family is the base family's."""
+    import copy
+
+    from bambi.defaults import get_builtin_family
+
+    family = get_builtin_family(base) if isinstance(base, str) else copy.copy(base)
+    own = getattr(family, "transform_backend_eta", None)
+
+    def transform_backend_eta(eta, kwargs):
+        eta = add_effects(eta)
+        return eta if own is None else own(eta, kwargs)
+
+    family.transform_backend_eta = transform_backend_eta
+    return family
+
+
 # ---- ordinal (cumulative) and categorical responses (brms-parity B05) --------------------------------------------------
 # brms 2.23, with eta (brms's mu) the linear predictor and the response coded 1..K (brms's Y):
 #   cumulative("logit"), disc = 1, no category-specific effects: ordered_logistic_lpmf(y | eta, tau), Stan's ordered

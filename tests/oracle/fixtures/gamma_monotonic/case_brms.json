@@ -1,0 +1,29 @@
+{
+ "family": {
+  "family": "Gamma",
+  "link": "log"
+ },
+ "formula": "ypos ~ x + mo(cens_ind)",
+ "id": "gamma_monotonic",
+ "n_points": 8,
+ "priors": [
+  {
+   "class": "Intercept",
+   "prior": "normal(0, 2)"
+  },
+  {
+   "class": "b",
+   "prior": "normal(0, 1)"
+  },
+  {
+   "class": "shape",
+   "prior": "gamma(0.01, 0.01)"
+  },
+  {
+   "class": "simo",
+   "coef": "mocens_ind1",
+   "prior": "dirichlet(2, 3)"
+  }
+ ],
+ "seed": 404
+}

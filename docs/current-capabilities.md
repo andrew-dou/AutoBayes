@@ -123,3 +123,10 @@ binomial, Gamma) and `phi` (Beta); `predict()` uses each row's parameter and ret
 against `gauss_distributional_sigma` and one frozen case per further family; group-level terms in such a formula,
 formulas on `nu`, `zi` or `hu`, and other links are refused (D32-D35); see
 [distributional formulas](distributional.md).
+
+Monotonic effects (B03, brms's `mo(x)`): an ordinal predictor (whole numbers, or an ordered pandas Categorical) coded as
+brms codes it adds its coefficient (class `b`) times `D` times the share of a simplex up to each row's value, the simplex
+under `Priors(simo={"x": ab.Dirichlet(...)})` and sampled on Stan's stick-breaking coordinates; for every family but the
+categorical one, verified against `gauss_monotonic` and one frozen case per further family; interactions with `mo()`,
+`mo()` in group-level or distributional formulas, `mo(x, id = ...)` and two-valued predictors are refused (D40-D42; names D43); see
+[monotonic effects](monotonic.md).

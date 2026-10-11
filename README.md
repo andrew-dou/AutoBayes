@@ -63,6 +63,8 @@ Tier A is complete (October 2026):
 - **Distributional formulas** (Tier B, B01): `["y ~ x", "sigma ~ z"]` gives `sigma` (Gaussian, Student-t, lognormal),
   `shape` (negative binomial, Gamma) or `phi` (Beta) its own linear predictor under a log link
   ([distributional formulas](docs/distributional.md)).
+- **Monotonic effects** (Tier B, B03): `mo(x)` of an ordinal predictor with a Dirichlet prior on its simplex
+  (`Priors(simo={"x": ab.Dirichlet(...)})`), for every family but the categorical one ([monotonic effects](docs/monotonic.md)).
 
 Every known difference from brms is listed in [divergences](docs/brms-parity/divergences.md), and the feature ledger
 is [ledger.json](docs/brms-parity/ledger.json) (`python tools/parity_status.py`). The Tier A review is

@@ -9,7 +9,8 @@ brms's cumulative logit model and unordered categorical responses with one linea
 Supported formulas combine numeric and declared categorical predictors,
 numeric-by-categorical interactions, intercept controls, and optional multiple
 independent varying-intercept factors with independent or correlated varying slopes, and a formula of its own for the
-auxiliary parameter (``["y ~ x", "sigma ~ z"]``: sigma, shape or phi under a log link). Explicit priors are required;
+auxiliary parameter (``["y ~ x", "sigma ~ z"]``: sigma, shape or phi under a log link), and brms's monotonic effects
+``mo(x)`` of ordinal predictors with a Dirichlet prior on their simplex. Explicit priors are required;
 brms's own defaults are available explicitly with ``default_priors(formula, data, ...)``.
 
 See docs/current-capabilities.md for supported composition, test entry points,
@@ -39,6 +40,7 @@ except ImportError:
 from autobayes.formula import Categorical, FormulaError, GroupTerm, ModelSpec, PopTerm, parse_formula
 from autobayes.priors import (
     Beta,
+    Dirichlet,
     Exponential,
     Flat,
     Gamma,
@@ -63,7 +65,7 @@ from autobayes.diagnostics import panel
 from autobayes.session import compare_records, environment, fit_record, format_comparison, format_environment
 
 __all__ = [
-    "Beta", "Categorical", "DeviceError", "Exponential", "FitResult", "Flat", "FormulaError", "Gamma", "GroupTerm", "HalfCauchy",
+    "Beta", "Categorical", "DeviceError", "Dirichlet", "Exponential", "FitResult", "Flat", "FormulaError", "Gamma", "GroupTerm", "HalfCauchy",
     "HalfNormal", "HalfStudentT", "InverseGamma", "LKJ", "Model", "ModelSpec", "Normal", "PopTerm", "Prior",
     "PriorError", "Priors", "StudentT", "bernoulli", "beta", "binomial", "compare_records", "default_priors", "environment", "fit", "fit_record",
     "gamma", "lognormal", "negbinomial", "student", "poisson", "format_comparison", "format_environment", "gaussian", "panel",

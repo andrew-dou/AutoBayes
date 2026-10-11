@@ -50,4 +50,5 @@ GAUSSIAN = FamilySpec(
     tails=_tails,
     distributional_link="log",                                      # B01: sigma ~ z, brms's log link
     default_distributional_intercept=lambda scale: StudentT(3, 0, scale),   # brms Intercept_sigma: student_t(3, 0, scale of log y)
+    monotonic=True,                                                 # B03: mo(x), verified against gauss_monotonic
 )

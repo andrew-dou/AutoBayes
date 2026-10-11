@@ -81,6 +81,17 @@ class DparDesign:
 
 
 @dataclass(frozen=True)
+class MonotonicBlock:
+    """The block of one monotonic term ``mo(col)`` (B03, docs/monotonic.md): ``codes`` are brms's ``Xmo``, each fitted row's
+    value coded ``0..D`` (``formula.Monotonic.codes``), ``D`` brms's ``Jmo``, the number of steps and the length of the
+    simplex; the term adds ``b * D * sum(simplex[:codes_i])`` to row ``i``'s linear predictor."""
+    term: str
+    column: str
+    codes: np.ndarray
+    D: int
+
+
+@dataclass(frozen=True)
 class Design:
     """What the model was actually fit to. All arrays are dense NumPy."""
 
@@ -101,6 +112,7 @@ class Design:
     lb: np.ndarray | None = None       # (n,) brms ``lb`` and ``ub`` of a ``trunc()`` term, -inf / inf on an open side (B02, parked)
     ub: np.ndarray | None = None
     dpars: Mapping[str, DparDesign] = field(default_factory=lambda: MappingProxyType({}))   # each distributional parameter's own design, by brms name (B01)
+    monotonic: Mapping[str, MonotonicBlock] = field(default_factory=lambda: MappingProxyType({}))   # each monotonic term's block, by column (B03)
 
     def __post_init__(self):
         if not self.columns:
@@ -174,6 +186,8 @@ def _linear_terms(spec: ModelSpec, centered: bool, b: str = "b") -> list[str]:
         elif t.kind == "transform":
             value = t.transform.expression(f"{t.transform.column}_i")
             parts.append(f"({value} - mean({term})) * {b}_{term}" if centered else f"{value} * {b}_{term}")
+        elif t.is_monotonic:                                 # B03: never centred, brms's bsp * mo(simo, Xmo)
+            parts.append(f"{b}_{term} * {term}_i")
         else:
             parts.append(f"(x_{term} - mean(x_{term})) * {b}_{term}" if centered else f"x_{term} * {b}_{term}")
     return parts
@@ -289,6 +303,8 @@ class Model:
                             f"cell(s) {empty} of {t.name!r}{'' if s is self.spec else ' in the formula of ' + s.response} have no "
                             "fitted rows: their coefficients are informed by the prior alone (the design column is zero, as in brms)."
                         )
+        for m in self.spec.monotonics:                       # a monotonic predictor's values no fitted row takes (B03)
+            self.warnings.extend(m.notes(df[m.column]))
         for t in self.spec.group_terms:                      # labels as text; a derived factor g:h gets its own column g_h
             df[t.column] = group_labels(t.factor, df)
         for t in (*self.spec.transform_terms, *(t for d in self.spec.dpars for t in d.transform_terms)):
@@ -336,6 +352,9 @@ class Model:
             self._bambi_centring = self.center_predictors
         if fam.bambi_setup is not None:                      # B05: the family builds what Bambi is handed from the model
             bambi_family, bambi_priors, self._bambi_centring = fam.bambi_setup(self, bambi_priors)
+        if self.spec.mo_terms:                               # brms's mo() (B03): added to the parent's linear predictor at build
+            from autobayes.likelihoods import monotonic_family
+            bambi_family = monotonic_family(bambi_family, self._add_monotonic_effects)
         self.bambi_model = bmb.Model(
             bambi_formula, self.data, family=bambi_family,
             priors=bambi_priors,
@@ -384,6 +403,7 @@ class Model:
             variable_names.extend(roles[k] for k in ("L", "cor"))
         dpar_coefficients = [v for roles in self.dpar_names.values() for k, v in roles.items() if k != "value"]   # B01
         variable_names += dpar_coefficients
+        variable_names += [roles["simplex"] for roles in self.mo_names.values()]   # each monotonic term's simplex (B03)
         # Bambi's default result cleaning drops every posterior variable ending in _offset.
         retained = list(self.spec.terms) + [roles["group_effect"] for roles in self.group_coefficient_names.values()] + dpar_coefficients
         if any(name.endswith("_offset") for name in retained):
@@ -392,6 +412,7 @@ class Model:
         coords += [roles[k] for roles in self.correlation_names.values() for k in ("coordinate", "coordinate_T")]
         coords += [f"{t.name}_dim" for t in self.spec.pop_terms if t.is_vector]
         coords += [f"{self.dpar_names[d.response][f'b:{t.name}']}_dim" for d in self.spec.dpars for t in d.pop_terms if t.is_vector]
+        coords += [roles["coordinate"] for roles in self.mo_names.values()]
         coords += ["__obs__"]
         names = variable_names + coords
         duplicates = sorted({n for n in names if names.count(n) > 1})
@@ -451,15 +472,16 @@ class Model:
         whose PyMC names carry the component's ``prefix``, ``sigma_``), without an offset column, checked term by term
         against the data; returns the columns the coefficients multiply (``X_raw``)."""
         common = comp.design.common
-        if list(comp.common_terms) != list(spec.terms):
-            raise RuntimeError(f"Bambi's coefficient terms {list(comp.common_terms)} differ from the formula's {list(spec.terms)}")
+        bambi_terms = [t.name for t in spec.bambi_terms]                # a monotonic term is not Bambi's (B03)
+        if list(comp.common_terms) != bambi_terms:
+            raise RuntimeError(f"Bambi's coefficient terms {list(comp.common_terms)} differ from the formula's {bambi_terms}")
         if spec.intercept and not np.allclose(Xfull[:, 0], 1.0):
             raise RuntimeError("Bambi's first common column is not an intercept column")
         # Verify Bambi's columns term by term against each term's own design block on the data
         # (``pop_term_design``): a numeric column as given, a numeric-by-numeric product as one column, a
         # categorical or other interaction term as one column per coefficient level in the recorded order.
         col = int(spec.intercept)
-        for term in spec.pop_terms:
+        for term in spec.bambi_terms:
             expected = pop_term_design(term, self.data, spec.categoricals)
             bterm = common.terms[term.name]
             is_inter = term.kind == "interaction"
@@ -509,11 +531,11 @@ class Model:
         comp = self.bambi_model.components[self.family_spec.parent]
         common = comp.design.common
         group = comp.design.group
-        names = list(common.terms)
+        names = list(common.terms) if common is not None else []    # none at all: '0 +' and only monotonic terms (B03)
         offset_terms = [self.spec.offset.term] if self.spec.offset is not None else []
-        if names != (["Intercept"] if self.spec.intercept else []) + list(self.spec.terms) + offset_terms:
+        if names != (["Intercept"] if self.spec.intercept else []) + [t.name for t in self.spec.bambi_terms] + offset_terms:
             raise RuntimeError(f"unexpected common terms from Bambi: {names}")
-        Xfull = np.asarray(common.design_matrix, dtype=float)
+        Xfull = np.asarray(common.design_matrix, dtype=float) if common is not None else np.zeros((len(self.data), 0))
         # The offset term (brms offset(), formulae's kind "offset"): Bambi adds its column to the linear predictor as
         # given, outside the coefficient design and never centred. Its values are recomputed here from the data and
         # must equal what Bambi evaluated; the column is then removed from the design that the coefficients multiply.
@@ -618,7 +640,8 @@ class Model:
                       centered=self.effective_center_predictors, trials=trials,
                       columns=self.spec.columns, categoricals=self.spec.categoricals, offset=offset,
                       weights=additions.get("weights"), cens=additions.get("cens"), lb=additions.get("lb"), ub=additions.get("ub"),
-                      dpars=MappingProxyType({d.response: self._dpar_design(d) for d in self.spec.dpars}))
+                      dpars=MappingProxyType({d.response: self._dpar_design(d) for d in self.spec.dpars}),
+                      monotonic=MappingProxyType(self._monotonic_design()))
 
     def _dpar_design(self, d: ModelSpec) -> DparDesign:
         """The design of distributional parameter ``d.response``'s formula (B01), as Bambi built its distributional
@@ -655,6 +678,81 @@ class Model:
         """Bambi's (and so PyMC's) name of distributional parameter ``name`` (B01): the family's ``bambi_scale_parameter``
         (``alpha`` for brms's ``shape``), the only parameter that takes a formula here."""
         return self.family_spec.bambi_scale_parameter if name == self.family_spec.scale_parameter else name
+
+    # -- monotonic effects (B03) ---------------------------------------------------------
+    def _add_monotonic_effects(self, eta):
+        """brms's monotonic terms, built inside the model Bambi is building (``likelihoods.monotonic_family``, which Bambi
+        calls on the parent's linear predictor before the link): for each term its simplex (brms's ``simo``, a Dirichlet
+        under its ``simo`` prior on Stan's stick-breaking coordinates) and its coefficient (brms's ``bsp``, under its ``b``
+        prior), and ``eta`` plus ``bsp * mo(simo, Xmo_i)`` per row, ``mo`` the term's share of the simplex times ``D``."""
+        import pymc as pm
+
+        from autobayes.monotonic import coefficient_rv, monotonic_effect, simplex_rv
+        from autobayes.priors import dirichlet_concentration
+
+        model = pm.modelcontext(None)
+        coefficients, simplexes = self.priors.coefficient_priors(self.spec), self.priors.simo_priors(self.spec)
+        for t in self.spec.mo_terms:
+            m, roles = self.spec.monotonic(t.operands[0]), self.mo_names[t.operands[0]]
+            model.add_coord(roles["coordinate"], [str(k) for k in range(1, m.D + 1)])
+            simplex = simplex_rv(roles["simplex"], dirichlet_concentration(simplexes[m.column], m.D), roles["coordinate"])
+            coefficient = coefficient_rv(roles["b"], coefficients[t.name])
+            eta = eta + coefficient * monotonic_effect(simplex, m.codes(self.data[m.column]), m.D)
+        return eta
+
+    def _monotonic_design(self) -> dict[str, MonotonicBlock]:
+        """The block of each monotonic term (B03), checked against the graph: the simplex a free Dirichlet of ``D`` entries
+        with the coordinate ``"1"``..``"D"``, sampled on its ``D - 1`` stick-breaking coordinates; the coefficient a free
+        scalar; and the term's contribution to the parent's linear predictor recomputed from the data
+        (``_check_monotonic_effects``). Empty without a monotonic term."""
+        from autobayes.monotonic import StickBreakingTransform
+
+        pmm, blocks = self.pymc_model, {}
+        for t in self.spec.mo_terms:
+            m, roles = self.spec.monotonic(t.operands[0]), self.mo_names[t.operands[0]]
+            simplex, coefficient = pmm[roles["simplex"]], pmm[roles["b"]]
+            if simplex not in pmm.free_RVs or tuple(simplex.type.shape) != (m.D,):
+                raise RuntimeError(f"{roles['simplex']!r} is not a free simplex of {m.D} entries in the graph")
+            value = pmm.rvs_to_values[simplex]
+            if (value.name != f"{roles['simplex']}_stickbreaking__" or tuple(value.type.shape) != (m.D - 1,)
+                    or not isinstance(pmm.rvs_to_transforms[simplex], StickBreakingTransform)):
+                raise RuntimeError(f"{roles['simplex']!r} is not sampled on Stan's {m.D - 1} stick-breaking coordinates")
+            if (tuple(pmm.named_vars_to_dims.get(roles["simplex"], ())) != (roles["coordinate"],)
+                    or tuple(str(v) for v in pmm.coords[roles["coordinate"]]) != tuple(str(k) for k in range(1, m.D + 1))):
+                raise RuntimeError(f"PyMC dims of {roles['simplex']!r} are not ({roles['coordinate']!r},) with coordinates 1..{m.D}")
+            if coefficient not in pmm.free_RVs or coefficient.type.ndim != 0:
+                raise RuntimeError(f"{roles['b']!r} is not a free scalar of the graph")
+            blocks[m.column] = MonotonicBlock(t.name, m.column, m.codes(self.data[m.column]), m.D)
+        if blocks:
+            self._check_monotonic_effects(blocks)
+        return blocks
+
+    def _check_monotonic_effects(self, blocks) -> None:
+        """Each monotonic term's contribution, read off the graph: at a simplex with unequal steps and every other variable at
+        the graph's initial point, the parent's linear predictor (on Bambi's link scale: the parent itself, or the log of
+        ``mu`` under a log link) must move, row by row, by exactly ``c * D * sum(simplex[:Xmo_i])`` (recomputed from the data's
+        codes, ``monotonic.monotonic_values``) when the term's coefficient goes from 0 to ``c = 1 / D`` (a move of at most 1,
+        which no link overflows)."""
+        from autobayes.monotonic import monotonic_values, stick_breaking_free
+
+        pmm, parent = self.pymc_model, self.family_spec.parent
+        link = self.bambi_model.family.link[parent].name
+        if link not in ("identity", "log"):
+            raise RuntimeError(f"Bambi's link of {parent!r} is {link}; the monotonic terms are checked under the identity and log links")
+        fn = pmm.compile_fn(pmm.replace_rvs_by_values([pmm[parent]]), inputs=pmm.value_vars, point_fn=True,
+                            on_unused_input="ignore", mode="FAST_COMPILE")
+        point = pmm.initial_point()
+        point.update({roles["b"]: np.asarray(0.0) for roles in self.mo_names.values()})
+        for column, block in blocks.items():
+            roles = self.mo_names[column]
+            test, c = np.arange(1.0, block.D + 1.0) / (block.D * (block.D + 1) / 2.0), 1.0 / block.D
+            at0 = {**point, f"{roles['simplex']}_stickbreaking__": stick_breaking_free(test)}
+            lo, hi = (np.asarray(fn(p)[0], dtype=float).ravel() for p in (at0, {**at0, roles["b"]: np.asarray(c)}))
+            moved = hi - lo if link == "identity" else np.log(hi) - np.log(lo)
+            expected = c * monotonic_values(test, block.codes)
+            if moved.shape != expected.shape or not np.allclose(moved, expected, rtol=1e-10, atol=1e-10):
+                raise RuntimeError(f"the graph's {parent!r} does not move by D * sum(simplex[:Xmo]) per row with the coefficient of "
+                                   f"{block.term!r}; largest difference {np.max(np.abs(moved - expected)) if moved.shape == expected.shape else moved.shape}")
 
     # -- naming ------------------------------------------------------------------------
     @property
@@ -694,6 +792,7 @@ class Model:
             "mean": fam.mean_name,
             "y": self.spec.response if self.spec.trials is None else f"p({self.spec.response}, {self.spec.trials})",
             **{f"b:{t.name}": t.name for t in self.spec.pop_terms},
+            **{f"simo:{column}": roles["simplex"] for column, roles in self.mo_names.items()},   # B03
         }
         if fam.scale_parameter is not None:
             out[fam.scale_parameter] = fam.bambi_scale_parameter
@@ -709,6 +808,16 @@ class Model:
         if fam.continuous and fam.parent == "mu":
             out["mu"] = "mu"                                  # the continuous families whose parent is the location mu expose it by name (the Beta's parent is logit_mu)
         return out
+
+    @property
+    def mo_names(self) -> dict[str, dict[str, str]]:
+        """PyMC names of each monotonic term ``mo(x)`` (B03), by its column in formula order: ``"b"`` its coefficient (brms's
+        ``bsp``; the term's own name, ``mo(x)``, so ``names["b:mo(x)"]`` too), ``"simplex"`` its simplex (brms's ``simo``,
+        ``simo_x``, sampled on Stan's stick-breaking coordinates ``simo_x_stickbreaking__``; ``names["simo:x"]``) and
+        ``"coordinate"`` the simplex's dimension (``simo_x_dim``, coordinates ``"1"``..``"D"``, one per step). Empty without
+        a monotonic term."""
+        return {t.operands[0]: {"b": t.name, "simplex": f"simo_{t.operands[0]}", "coordinate": f"simo_{t.operands[0]}_dim"}
+                for t in self.spec.mo_terms}
 
     @property
     def dpar_names(self) -> dict[str, dict[str, str]]:
@@ -780,7 +889,7 @@ class Model:
 
     def value_point(self, *, intercept: float | None = None, b, sd=None, z=None, L=None, sigma=None,
                     shape=None, phi=None, nu: float | None = None,
-                    zi: float | None = None, hu: float | None = None) -> dict[str, np.ndarray]:
+                    zi: float | None = None, hu: float | None = None, bsp=None, simo=None) -> dict[str, np.ndarray]:
         """A point in PyMC's sampled (value) space, from natural-scale quantities.
 
         ``intercept`` is the *model* intercept (at the predictor means when centred),
@@ -806,6 +915,10 @@ class Model:
         parameter with its own formula (B01) is given as that formula's ``{"intercept": ..., "b": ...}`` instead: the
         intercept as sampled (centred when the formula is, brms's ``Intercept_sigma``) and the coefficients in its
         design-column order (brms's ``b_sigma``), each stored under its own variable (``Model.dpar_names``), unconstrained.
+        A monotonic term ``mo(x)`` (B03) has no entry in ``b``: ``bsp`` is its coefficient (brms's ``bsp``) and ``simo`` its
+        simplex (brms's ``simo``: ``D`` positive shares summing to 1, stored on Stan's stick-breaking coordinates), each keyed
+        by the term's column, ``bsp={"x": 0.3}``, ``simo={"x": [0.2, 0.5, 0.3]}`` (a single monotonic term also accepts the
+        bare value), required exactly when the model has one.
         """
         b = np.atleast_1d(np.asarray(b, dtype=float))
         if self.family_spec.per_category:                     # B05: one coefficient per design column and non-reference category
@@ -939,13 +1052,48 @@ class Model:
             raise ValueError(f"nu is fixed at {self.nu:g} in this model, not sampled; omit it" if getattr(self, "nu", None) is not None
                              else f"the {self.family} family has no nu; omit it")
         i = 0
-        for term in self.spec.pop_terms:                      # b in design-column order: one entry per term column
+        for term in self.spec.bambi_terms:                    # b in design-column order: one entry per term column
             k = len(term.columns)
             point[term.name] = np.array(b[i:i + k]) if term.levels else np.asarray(b[i])
             i += k
+        point.update(self._monotonic_point(bsp, simo))       # B03: each monotonic term's coefficient and simplex
         expected = {v.name for v in self.pymc_model.value_vars}
         if set(point) != expected:
             raise RuntimeError(f"value names {sorted(point)} do not match PyMC's {sorted(expected)}")
+        return point
+
+    def _monotonic_point(self, bsp, simo) -> dict[str, np.ndarray]:
+        """``value_point``'s entries of the monotonic terms (B03): each coefficient as given and each simplex on Stan's
+        stick-breaking coordinates, from ``bsp`` and ``simo`` keyed by column (a single term also takes bare values)."""
+        from autobayes.monotonic import check_simplex, stick_breaking_free
+
+        roles_by = self.mo_names
+        if not roles_by:
+            if bsp is not None or simo is not None:
+                raise ValueError("this model has no monotonic term mo(x); bsp and simo do not apply")
+            return {}
+        columns = list(roles_by)
+        if bsp is None or simo is None:
+            raise ValueError(f"bsp (the coefficient) and simo (the simplex) are required for the monotonic terms "
+                             f"{[r['b'] for r in roles_by.values()]}, keyed by column {columns}")
+
+        def by_column(value, label):
+            if isinstance(value, Mapping):
+                if set(value) != set(columns):
+                    raise ValueError(f"{label} must cover exactly the columns of the monotonic terms {columns}; got {list(value)}")
+                return {c: value[c] for c in columns}
+            if len(columns) != 1:
+                raise ValueError(f"{label} requires an exact-key mapping over the monotonic terms' columns {columns}")
+            return {columns[0]: value}
+
+        coefficients, simplexes, point = by_column(bsp, "bsp"), by_column(simo, "simo"), {}
+        for c, roles in roles_by.items():
+            m = self.spec.monotonic(c)
+            value = np.asarray(coefficients[c], dtype=float)
+            if value.shape != () or not np.isfinite(value):
+                raise ValueError(f"bsp for {m.term!r} must be a finite scalar")
+            point[roles["b"]] = value
+            point[f"{roles['simplex']}_stickbreaking__"] = stick_breaking_free(check_simplex(simplexes[c], m.D, f"simo for {m.term!r}"))
         return point
 
     def _dpar_point(self, name: str, value) -> dict[str, np.ndarray]:
@@ -1006,7 +1154,7 @@ class Model:
                          + (f" (positions {list(self.dropped_rows)[:10]}{'...' if len(self.dropped_rows) > 10 else ''})"
                             if self.dropped_rows else ""))
         features = ((["categorical predictor(s)"] if s.categoricals else []) + (["interaction(s)"] if s.interactions else [])
-                    + (["in-formula transform(s)"] if s.transform_terms else [])
+                    + (["in-formula transform(s)"] if s.transform_terms else []) + (["monotonic effect(s)"] if s.mo_terms else [])
                     + (["independent varying slope(s)"] if any(t.slopes and not t.has_correlation for t in s.group_terms) else [])
                     + (["correlated varying slope(s)"] if s.correlated_terms else []) + (["offset"] if s.offset is not None else [])
                     + (["derived grouping factor(s)"] if any(t.derived for t in s.group_terms) else [])
@@ -1038,6 +1186,12 @@ class Model:
             lines += [f"  {t.name:<10}: in-formula transform of {tr.column!r}, {tr.expression(f'{tr.column}_i')}, range {col.min():.4f} to "
                       f"{col.max():.4f} over the fitted rows; recomputed from {tr.column!r} on new rows; centred like any column; "
                       f"brms names its coefficient {tr.brms_name}"]
+        for t in s.mo_terms:                                 # B03: the coding of each monotonic predictor
+            m = s.monotonic(t.operands[0])
+            coding = (f"ordered categories {' < '.join(m.categories)} coded 0..{m.D}" if m.ordered else
+                      f"whole numbers {m.minimum}..{m.maximum} coded as the value minus {m.minimum}, 0..{m.D}")
+            lines += [f"  {t.name:<10}: monotonic effect of {m.column!r} (brms mo()): {coding} (brms's Xmo), D = {m.D} steps (brms's "
+                      f"Jmo); recomputed from {m.column!r} on new rows, where a value outside the fitted coding is refused"]
         for g, block in d.group_designs.items():
             lines += [f"  {'levels    ' if len(s.groups) == 1 else 'levels ' + g}: {', '.join(f'{j}={l}' for j, l in enumerate(block.levels))}"]
         for t in s.group_terms:
@@ -1074,6 +1228,7 @@ class Model:
             per_row = f"log({s.offset.column}_i)" if s.offset.log else f"{s.offset.column}_i"
             lines += [f"  offset_i = {per_row}: the offset term, a known quantity added to every row's {lp}_i; "
                       "it has no coefficient and no prior and is not centred."]
+        lines += self._monotonic_lines(lp)
         scale = fam.scale_phrase
         same_group = " (same group)" if len(s.groups) == 1 else (" (same group effects)" if s.groups else "")
         for cat in s.categoricals:
@@ -1224,6 +1379,17 @@ class Model:
         elif s.intercept:
             lines += [f"  {a}{each} ~ {describe_prior(pr.intercept)}"]
         lines += [f"  b_{col}{each} ~ {describe_prior(coef[col])}" for col in s.columns]
+        if s.mo_terms:                                       # a monotonic term's coefficient (brms bsp, class b) and simplex (B03)
+            from autobayes.default_priors import brms_rename
+            from autobayes.priors import dirichlet_concentration
+
+            simplexes = pr.simo_priors(s)
+            for t in s.mo_terms:
+                m, brms = s.monotonic(t.operands[0]), brms_rename(t.name)
+                con = ", ".join(f"{v:g}" for v in dirichlet_concentration(simplexes[m.column], m.D))
+                lines += [f"  b_{t.name} ~ {describe_prior(coef[t.name])}   (brms's bsp_{brms}: class b, coefficient {brms})",
+                          f"  {self.mo_names[m.column]['simplex']} ~ {describe_prior(simplexes[m.column])}   (brms class simo, "
+                          f"coefficient {brms}1; concentrations {con})"]
         if fam.per_category:
             lines += [f"  (one prior per class, the same for every non-reference category k = {', '.join(self.categories[1:])})"]
         for (g, c), prior in pr.sd_priors(s).items():
@@ -1279,6 +1445,11 @@ class Model:
             roles[f"{n[fam.zero_parameter]}_logodds__"] = f"logit({fam.zero_parameter})"
         for name, lower in self.learned_parameters.items():
             roles[f"{n[name]}_interval__"] = f"log({name} - {lower:g})"
+        for t in s.mo_terms:                                 # B03: the coefficient and the simplex of each monotonic term
+            mo, D = self.mo_names[t.operands[0]], s.monotonic(t.operands[0]).D
+            roles[mo["b"]] = f"b_{t.name}, the monotonic term's coefficient (brms's bsp)"
+            roles[f"{mo['simplex']}_stickbreaking__"] = (f"{mo['simplex']}[1..{D}] on Stan's stick-breaking simplex coordinates ({D - 1} "
+                                                         f"entries; brms's simo); dims {mo['coordinate']}")
         for t in s.pop_terms:
             if t.is_vector:
                 shown = ", ".join(f"({l})" for l in t.levels) if len(t.categorical) == 2 else ", ".join(t.levels)   # cells read (l, m)
@@ -1293,6 +1464,23 @@ class Model:
                      + "".join(f"{names['cor']} = Cor_{g} = L_{g} L_{g}^T, " for g, names in self.correlation_names.items()) + fam.deterministic_note
                      + "".join(f"; {dn['value']} = exp(eta_{name}), one {name} per row (B01)" for name, dn in self.dpar_names.items()))
         return "\n".join(lines)
+
+    def _monotonic_lines(self, lp: str) -> list[str]:
+        """``describe()``'s paragraph of the monotonic terms (B03): ``mo()`` written out, what the coefficient and the simplex
+        mean, and where the term is zero."""
+        out = []
+        for t in self.spec.mo_terms:
+            m, roles = self.spec.monotonic(t.operands[0]), self.mo_names[t.operands[0]]
+            D, c, simplex, steps = m.D, m.column, roles["simplex"], m.step_labels()
+            shown = ", ".join(steps) if D <= 6 else f"{', '.join(steps[:2])}, ..., {steps[-1]}"
+            code = f"the position of {c}_i among the ordered categories" if m.ordered else f"{c}_i - {m.minimum}"
+            out += [f"  {t.name}_i = {D} * ({simplex}[1] + ... + {simplex}[Xmo_i]) with Xmo_i = {code} in 0..{D} ({t.name}_i = 0 "
+                    f"at {m.lowest}, {D} at {m.highest}): brms's mo(simo, Xmo).",
+                    f"  {simplex} (brms's simo) is a simplex of {D} shares summing to 1, one per step {shown}: b_{t.name} (brms's bsp) "
+                    f"is the average change of {lp} per step, {D} * b_{t.name} the change from {m.lowest} to {m.highest}, and {lp} is "
+                    f"monotonic in {c} whatever the sign of b_{t.name}.",
+                    f"  {t.name} is not centred (brms does not centre it either): the intercept refers to rows at {c} = {m.lowest}."]
+        return out
 
     def _dpar_lines(self, ds: ModelSpec) -> list[str]:
         """``describe()``'s paragraph of distributional parameter ``ds.response``'s own formula (B01): its linear
@@ -1348,13 +1536,14 @@ class Model:
     @property
     def default_prior_labels(self) -> list[str]:
         """The parameters whose prior came from ``ab.default_priors`` (brms's defaults; A07), labelled as the prior
-        messages label them (``intercept``, ``b:x``, ``sd:g``, ``sd:x|g``, ``cor:g``, ``sigma``, ``nu``), in that order; empty
+        messages label them (``intercept``, ``b:x``, ``sd:g``, ``sd:x|g``, ``cor:g``, ``simo:x``, ``sigma``, ``nu``), in that order; empty
         when the user gave every prior (``zi`` or ``hu`` after the auxiliary parameter, B06; a distributional formula's
         ``sigma:intercept``, ``sigma:b:z[q]`` in place of ``sigma``, B01). ``fit_record`` stores them under ``"default_priors"``."""
         s, pr, fam = self.spec, self.priors, self.family_spec
         found = ([("intercept", pr.intercept)] if s.intercept else []) + [(f"b:{k}", v) for k, v in pr.coefficient_priors(s).items()]
         found += [(f"sd:{sd_tag(g, c)}", v) for (g, c), v in pr.sd_priors(s).items()]
         found += [(f"cor:{g}", v) for g, v in pr.cor_priors(s).items()]
+        found += [(f"simo:{c}", v) for c, v in pr.simo_priors(s).items()]          # a monotonic term's simplex (B03)
         if fam.scale_parameter in s.dpar_names:              # its own formula's priors (B01)
             ds, sub = s.dpar(fam.scale_parameter), pr.dpar_priors(s, fam.scale_parameter)
             found += [(f"{ds.response}:intercept", sub.intercept)] if ds.intercept else []

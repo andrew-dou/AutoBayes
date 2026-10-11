@@ -80,4 +80,5 @@ BETA = FamilySpec(
     addition_terms=frozenset({"weights"}),                      # B02: weights(), verified against the frozen case beta_weighted
     distributional_link="log",                                      # B01: phi ~ z, brms's log link (beta_distributional_phi)
     default_distributional_intercept=lambda scale: StudentT(3, 0, 2.5),   # brms Intercept_phi: student_t(3, 0, 2.5) under the log link
+    monotonic=True,                                                 # B03: mo(x), verified against beta_monotonic
 )

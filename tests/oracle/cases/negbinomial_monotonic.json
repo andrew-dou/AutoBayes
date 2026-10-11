@@ -1,0 +1,70 @@
+{
+ "id": "negbinomial_monotonic",
+ "tier": "B",
+ "feature": "B03_monotonic",
+ "note": "B03: a simplex of 11 steps (size 1..12) with the value 5 unobserved in the fitted rows; population-only",
+ "seed": 403,
+ "n_points": 8,
+ "data": {
+  "generator": "tier_b",
+  "seed": 303,
+  "n": 36,
+  "newdata": {
+   "seed": 403,
+   "n": 5
+  }
+ },
+ "brms": {
+  "formula": "ynb ~ mo(size)",
+  "family": {
+   "family": "negbinomial"
+  },
+  "priors": [
+   {
+    "prior": "normal(0, 2)",
+    "class": "Intercept"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "b"
+   },
+   {
+    "prior": "gamma(0.01, 0.01)",
+    "class": "shape"
+   },
+   {
+    "prior": "dirichlet(2)",
+    "class": "simo",
+    "coef": "mosize1"
+   }
+  ]
+ },
+ "autobayes": {
+  "constructor": "negbinomial",
+  "formula": "ynb ~ mo(size)",
+  "kwargs": {},
+  "priors": {
+   "intercept": [
+    "Normal",
+    0,
+    2
+   ],
+   "b": [
+    "Normal",
+    0,
+    1
+   ],
+   "shape": [
+    "Gamma",
+    0.01,
+    0.01
+   ],
+   "simo": {
+    "size": [
+     "Dirichlet",
+     2
+    ]
+   }
+  }
+ }
+}

@@ -1,0 +1,81 @@
+{
+ "id": "cumulative_monotonic",
+ "tier": "B",
+ "feature": "B03_monotonic",
+ "note": "B03 for the cumulative family: the monotonic term in mu, outside the thresholds' centring (brms's b_Intercept = Intercept + means_X b)",
+ "seed": 413,
+ "n_points": 8,
+ "data": {
+  "generator": "tier_b",
+  "seed": 313,
+  "n": 36,
+  "newdata": {
+   "seed": 413,
+   "n": 5
+  }
+ },
+ "brms": {
+  "formula": "ord ~ x + mo(size) + (1 | g)",
+  "family": {
+   "family": "cumulative",
+   "link": "logit"
+  },
+  "factors": {
+   "g": [
+    "a",
+    "b",
+    "c",
+    "d",
+    "e",
+    "f"
+   ]
+  },
+  "priors": [
+   {
+    "prior": "normal(0, 3)",
+    "class": "Intercept"
+   },
+   {
+    "prior": "normal(0, 1.5)",
+    "class": "b"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "sd",
+    "group": "g"
+   },
+   {
+    "prior": "dirichlet(1.5)",
+    "class": "simo",
+    "coef": "mosize1"
+   }
+  ]
+ },
+ "autobayes": {
+  "constructor": "cumulative",
+  "formula": "ord ~ x + mo(size) + (1 | g)",
+  "kwargs": {},
+  "priors": {
+   "intercept": [
+    "Normal",
+    0,
+    3
+   ],
+   "b": [
+    "Normal",
+    0,
+    1.5
+   ],
+   "sd": [
+    "HalfNormal",
+    1
+   ],
+   "simo": {
+    "size": [
+     "Dirichlet",
+     1.5
+    ]
+   }
+  }
+ }
+}

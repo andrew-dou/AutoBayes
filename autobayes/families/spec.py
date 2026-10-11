@@ -154,6 +154,9 @@ class FamilySpec:
     # ``bambi_scale_parameter``.
     distributional_link: str | None = None
     default_distributional_intercept: Callable[[float], object] | None = None   # (brms's scale of the response read on the log scale) -> brms's default prior on that formula's intercept (def_dpar_prior: sigma student_t(3, 0, scale); shape and phi student_t(3, 0, 2.5)); A07
+    # brms's monotonic effects mo(x) (B03, docs/monotonic.md): whether the family's linear predictor takes them, set where a
+    # frozen brms case verifies it. The term is added to the parent's linear predictor before the link (it is not centred).
+    monotonic: bool = False
 
     def with_link(self, link: str | None) -> "FamilySpec":
         """This family's spec under ``link``: this spec for ``None`` or its own link, the one a ``links`` entry builds

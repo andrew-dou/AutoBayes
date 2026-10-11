@@ -76,4 +76,5 @@ NEGBINOMIAL = FamilySpec(
     addition_terms=frozenset({"weights"}),                      # B02: weights(), verified against the frozen case negbinomial_weighted
     distributional_link="log",                                      # B01: shape ~ z, brms's log link (negbinomial_distributional_shape)
     default_distributional_intercept=lambda scale: StudentT(3, 0, 2.5),   # brms Intercept_shape: student_t(3, 0, 2.5) under the log link
+    monotonic=True,                                                 # B03: mo(x), verified against negbinomial_monotonic
 )

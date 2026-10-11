@@ -30,10 +30,13 @@ import re
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 
+import numpy as np
+
 _LOCATION = {"Normal", "StudentT", "Flat"}       # Flat: brms's improper flat prior, its default for b (A07)
 _SCALE = {"HalfNormal", "HalfStudentT", "Exponential", "HalfCauchy", "Gamma", "InverseGamma"}
 _CORRELATION = {"LKJ"}
 _UNIT = {"Beta"}                                 # priors on (0, 1): the zero-inflation and hurdle probabilities (B06)
+_SIMPLEX = {"Dirichlet"}                         # priors on a simplex: a monotonic term's simo (B03)
 # The Priors fields a family's scale_parameter can name, and (B06) the probabilities a family's zero_parameter can name
 AUXILIARY = {"sigma": "residual SD", "shape": "shape parameter", "phi": "precision parameter",
              "zi": "zero-inflation probability", "hu": "hurdle probability"}
@@ -143,6 +146,36 @@ def Beta(alpha: float, beta: float) -> Prior:
     return Prior("Beta", {"alpha": _positive("alpha", alpha), "beta": _positive("beta", beta)})
 
 
+def Dirichlet(*alpha) -> Prior:
+    """brms's ``dirichlet(...)`` on the simplex of a monotonic term ``mo(x)`` (B03, ``Priors(simo={"x": ...})``, brms class
+    ``simo``): ``Dirichlet(2, 2, 2)`` or ``Dirichlet([2, 2, 2])`` gives one positive concentration per step of the term,
+    and one number, ``Dirichlet(1)``, is brms's shorthand for the same concentration on every step (brms's default
+    ``dirichlet(1)``, the uniform distribution on the simplex). Its density is Stan's ``dirichlet_lpdf`` with its
+    normalising constant. Not accepted for any other class."""
+    values = alpha[0] if len(alpha) == 1 and isinstance(alpha[0], (list, tuple, np.ndarray)) else alpha
+    values = [float(v) for v in np.asarray(values, dtype=float).reshape(-1)]
+    if not values:
+        raise PriorError("Dirichlet needs at least one concentration")
+    if not all(np.isfinite(v) and v > 0 for v in values):
+        raise PriorError(f"Dirichlet concentrations must be positive finite numbers, got {values}")
+    if len(values) == 1:                                       # brms's shorthand: the same concentration on every step
+        return Prior("Dirichlet", {"a": values[0]})
+    return Prior("Dirichlet", {f"a[{k}]": v for k, v in enumerate(values, start=1)})
+
+
+def dirichlet_concentration(prior: Prior, D: int) -> np.ndarray:
+    """The ``D`` concentrations of a ``Dirichlet`` prior on a simplex of ``D`` entries (brms's ``con_simo``): one number
+    repeated, or the vector given, which must have ``D`` entries (brms's ``eval_dirichlet``)."""
+    values = list(prior.params.values())
+    if len(values) == 1 and "a" in prior.params:
+        return np.full(int(D), float(values[0]))
+    if len(values) != int(D):
+        raise PriorError(f"{prior} gives {len(values)} concentrations for a simplex of {D} steps; give {D}, or one number for "
+                         "the same concentration on every step (brms: 'Invalid Dirichlet prior. Expected input of length "
+                         f"{D}.')")
+    return np.asarray(values, dtype=float)
+
+
 _BRMS = {   # prior name -> (brms's distribution, its arguments in Stan's order: a parameter name, or a literal number)
     "Normal": ("normal", ("mu", "sigma")), "StudentT": ("student_t", ("nu", "mu", "sigma")),
     "HalfNormal": ("normal", (0, "sigma")), "HalfStudentT": ("student_t", ("nu", 0, "sigma")),
@@ -156,13 +189,16 @@ def brms_prior(prior: Prior) -> str:
     """The prior in brms's syntax with its numbers as R prints them: ``normal(0, 5)``, ``student_t(3, 0.9, 2.5)``,
     ``gamma(2, 0.1)``, ``inv_gamma(0.4, 0.3)``, ``lkj(1)``; a half prior is the full distribution at location 0, as brms
     writes it on a class bounded below by 0 (``HalfStudentT(3, 2.5)`` is ``student_t(3, 0, 2.5)``, ``HalfNormal(1)``
-    ``normal(0, 1)``); ``Flat()`` is the empty string, brms's flat prior."""
+    ``normal(0, 1)``); ``Flat()`` is the empty string, brms's flat prior; ``Dirichlet(2, 2, 2)`` is ``dirichlet(2, 2, 2)``
+    and ``Dirichlet(1)`` brms's ``dirichlet(1)`` (B03)."""
     if prior.name == "Flat":
         return ""
-    if prior.name not in _BRMS:
-        raise PriorError(f"{prior} has no brms spelling")
     from autobayes.default_priors import r_number
 
+    if prior.name == "Dirichlet":                         # its concentrations in order, or brms's one-number shorthand
+        return f"dirichlet({', '.join(r_number(float(v)) for v in prior.params.values())})"
+    if prior.name not in _BRMS:
+        raise PriorError(f"{prior} has no brms spelling")
     fn, args = _BRMS[prior.name]
     return f"{fn}({', '.join(r_number(float(prior.params[a] if isinstance(a, str) else a)) for a in args)})"
 
@@ -216,6 +252,11 @@ class Priors:
     ``TRUNCATABLE``, truncated to ``nu > 1`` and renormalised there (brms-parity A13); refused for every other model.
     ``zi`` and ``hu`` are the zero-inflation and hurdle probabilities (B06): exactly the one the family has
     (``FamilySpec.zero_parameter``) must be given, a prior on (0, 1) (``Beta``), and is refused for every other family.
+    A monotonic term ``mo(x)`` (B03, docs/monotonic.md) has a coefficient of class ``b`` (brms's ``bsp``, coefficient
+    ``mox``), which ``b`` covers under the term's name, ``b={"mo(x)": Normal(0, 2)}``, and a simplex whose prior is ``simo``,
+    a ``Dirichlet`` keyed by the term's column, ``simo={"x": Dirichlet(2, 2, 2)}`` (brms ``class = simo, coef = mox1``; a
+    single monotonic term also accepts the bare prior), with one concentration per step of the term or one number for all;
+    refused without a monotonic term.
     """
 
     intercept: Prior | None = None
@@ -231,10 +272,12 @@ class Priors:
     nu: Prior | None = None          # Student-t with nu=None: the learned degrees of freedom (brms class ``nu``)
     zi: Prior | None = None          # zero-inflated families: the zero-inflation probability (brms class ``zi``; B06)
     hu: Prior | None = None          # hurdle families: the hurdle probability (brms class ``hu``; B06)
+    simo: Prior | Mapping[str, Prior] | None = None   # the simplex of each monotonic term mo(x), by column (brms class ``simo``; B03)
 
     # -- coefficient priors -----------------------------------------------------------------
     def coefficient_priors(self, spec) -> dict[str, Prior]:
-        """One prior per design column, keyed by column label, in design order. ``spec`` is a
+        """One prior per coefficient of brms's class ``b`` (``spec.coefficient_labels``): per design column, keyed by column
+        label, and per monotonic term, keyed by its name (``mo(x)``, brms's ``bsp``; B03), in term order. ``spec`` is a
         ``ModelSpec`` (or a tuple of numeric predictor names); categorical levels must be
         known (data seen) for per-level mappings to be checked."""
         from autobayes.formula import ModelSpec
@@ -242,7 +285,7 @@ class Priors:
         if not isinstance(spec, ModelSpec):
             spec = ModelSpec(formula="", response="", predictors=tuple(spec), group=None)
         if isinstance(self.b, Prior):
-            return {col: self.b for col in spec.columns}
+            return {col: self.b for col in spec.coefficient_labels}
         if self.b is None and not spec.pop_terms:             # an intercept-only model: no coefficient, so no b prior (D2)
             return {}
         if not isinstance(self.b, Mapping):
@@ -262,6 +305,10 @@ class Priors:
                     canonical = spec.pop_term(":".join(reversed(k.split(":", 1))))
                     order = "numeric first" if len(canonical.categorical) == 1 else "the main effects' order"
                     hint = f"; write the interaction key in its canonical spelling {canonical.name!r} ({order})"
+                    break
+                mo = next((t for t in spec.mo_terms if k in (t.operands[0], f"mo{t.operands[0]}")), None)
+                if mo is not None:                          # the column, or brms's coefficient name 'moord' (B03)
+                    hint = f"; the monotonic term's coefficient is keyed by the term, b={{{mo.name!r}: prior}}"
                     break
             raise PriorError(
                 f"coefficient priors must cover exactly the predictor terms {list(spec.terms)}; "
@@ -441,6 +488,46 @@ class Priors:
                 raise PriorError(f"prior for 'cor:{g}' must be a correlation prior ({sorted(_CORRELATION)}, brms's lkj(eta)), got {prior}")
         return by_factor
 
+    def simo_priors(self, spec) -> dict[str, Prior]:
+        """The ``Dirichlet`` prior of each monotonic term's simplex (B03, brms class ``simo``), keyed by the term's column in
+        formula order. Coverage is exact; a single monotonic term also accepts the bare prior; refused when the formula has
+        none. Once the data are seen (the term's coding known), a vector of concentrations must have one entry per step."""
+        terms = tuple(getattr(spec, "mo_terms", ()))
+        columns = [t.operands[0] for t in terms]
+        if not terms:
+            if self.simo is not None:
+                raise PriorError("the formula has no monotonic term mo(x); do not pass simo (the prior of a monotonic term's simplex)")
+            return {}
+        if self.simo is None:
+            raise PriorError(f"the monotonic term(s) {[t.name for t in terms]} need a prior on their simplex: pass "
+                             f"simo={{{', '.join(f'{c!r}: ab.Dirichlet(...)' for c in columns)}}} (brms class simo; brms's default "
+                             "is dirichlet(1), ab.Dirichlet(1))")
+        if isinstance(self.simo, Mapping):
+            if set(self.simo) != set(columns):
+                extra = [k for k in self.simo if k not in columns]
+                hint = next((f"; key the prior by the column, simo={{{c!r}: ...}}" for k in extra for t, c in zip(terms, columns)
+                             if k in (t.name, f"mo{c}", f"mo{c}1")), "")
+                raise PriorError(f"simo must cover exactly the columns of the monotonic terms {columns}; got {list(self.simo)}{hint}")
+            by_column = {c: self.simo[c] for c in columns}
+        else:
+            if len(columns) != 1:
+                raise PriorError(f"several monotonic terms {[t.name for t in terms]} need an exact-key simo mapping over {columns}; "
+                                 "a bare prior is not broadcast")
+            by_column = {columns[0]: self.simo}
+        for c, prior in by_column.items():
+            if not isinstance(prior, Prior):
+                raise PriorError(f"prior for 'simo:{c}' must be a Prior, got {type(prior).__name__}")
+            if prior.name not in _SIMPLEX:
+                raise PriorError(f"prior for 'simo:{c}' must be a prior on a simplex ({sorted(_SIMPLEX)}, brms's dirichlet()), got {prior}")
+            coding = spec.monotonic(c)
+            if coding.known:                                                 # one concentration per step, or one for all
+                try:
+                    dirichlet_concentration(prior, coding.D)
+                except PriorError as e:
+                    raise PriorError(f"prior for 'simo:{c}' ({coding.term}, {coding.D} steps from {coding.lowest} to "
+                                     f"{coding.highest}): {e}") from None
+        return by_column
+
     def dpar_priors(self, spec, name: str) -> "Priors":
         """The priors of distributional parameter ``name``'s own formula (B01, ``spec.dpar(name)``) as a ``Priors`` with
         ``intercept`` and ``b`` only, read from ``Priors(<name>={"intercept": ..., "b": ...})``, so that the response
@@ -509,6 +596,7 @@ class Priors:
             raise PriorError("the formula has no population intercept; omit the intercept prior (or pass None)")
         sd_priors = self.sd_priors(spec)
         self.cor_priors(spec)                                         # exact coverage of the correlated terms (A02)
+        self.simo_priors(spec)                                        # and of the monotonic terms' simplexes (B03)
         scale = fam.scale_parameter                                   # "sigma", "shape", "phi" or None
         zero = fam.zero_parameter                                     # "zi", "hu" or None (B06)
         auxiliary = {name: getattr(self, name) for name in AUXILIARY}
@@ -617,7 +705,7 @@ class Priors:
 
         per_column = self.coefficient_priors(spec)
         out = {}
-        for term in spec.pop_terms:
+        for term in spec.bambi_terms:                         # a monotonic term's coefficient is built by the model (B03)
             if not term.is_vector:
                 out[term.name] = per_column[term.name].to_bambi()
                 continue
