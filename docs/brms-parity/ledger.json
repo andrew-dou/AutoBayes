@@ -965,13 +965,13 @@
    "depends_on": [
     "B01_distributional"
    ],
-   "status": "fixtures_frozen",
+   "status": "implementing",
    "summary": "mvbind() multivariate responses with residual correlations",
    "pr": null,
-   "attempts": 0,
+   "attempts": 1,
    "gates": {},
    "divergences": [],
-   "next_action": "implementation awaits Andrew's Tier C go-ahead at the Tier B boundary",
+   "next_action": "agent (opus) in worktree parity-c01",
    "fixtures": {
     "pr": 43,
     "cases": [
