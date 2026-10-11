@@ -1,0 +1,72 @@
+{
+ "id": "gauss_gp_approx",
+ "tier": "C",
+ "feature": "C03_gaussian_process",
+ "note": "brms Hilbert-space approximate GP (k = 10, c = 5/4): standata Xgp_1 (36 x 10 basis), slambda_1 (10 x 1), Lgp_1 = 1.25, NBgp_1 = 10; parameters sdgp_1, lscale_1, zgp_1[10]; mu = Intercept + Xgp_1 (sqrt(spd_gp_exp_quad(slambda_1, sdgp_1, lscale_1)) .* zgp_1); newdata predictions are deterministic",
+ "seed": 305,
+ "n_points": 8,
+ "gate": {
+  "expect": "fail",
+  "reason": "C03_gaussian_process not implemented; remove this field when it lands"
+ },
+ "data": {
+  "generator": "tier_c",
+  "seed": 205,
+  "n": 36,
+  "newdata": {
+   "seed": 305,
+   "n": 5
+  }
+ },
+ "brms": {
+  "formula": "y ~ gp(x, k = 10, c = 5/4)",
+  "family": {
+   "family": "gaussian"
+  },
+  "factors": {},
+  "priors": [
+   {
+    "prior": "normal(0, 5)",
+    "class": "Intercept"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "sdgp"
+   },
+   {
+    "prior": "inv_gamma(3, 1)",
+    "class": "lscale",
+    "coef": "gpx"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "sigma"
+   }
+  ]
+ },
+ "autobayes": {
+  "constructor": "gaussian",
+  "formula": "y ~ gp(x, k = 10, c = 5/4)",
+  "kwargs": {},
+  "priors": {
+   "intercept": [
+    "Normal",
+    0,
+    5
+   ],
+   "sigma": [
+    "HalfNormal",
+    1
+   ],
+   "sdgp": [
+    "HalfNormal",
+    1
+   ],
+   "lscale": [
+    "InverseGamma",
+    3,
+    1
+   ]
+  }
+ }
+}

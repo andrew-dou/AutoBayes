@@ -1,0 +1,86 @@
+{
+ "id": "gauss_arma11",
+ "tier": "C",
+ "feature": "C04_autocor",
+ "note": "brms arma(p = 1, q = 1), regression formulation: ar and ma unbounded; mu[n] += Err[n, 1] * ma, then err[n] = Y[n] - mu[n], then mu[n] += Err[n, 1] * ar; standata rows sorted by (g, t), predictions in data order; no newdata",
+ "seed": 307,
+ "n_points": 8,
+ "gate": {
+  "expect": "fail",
+  "reason": "C04_autocor not implemented; remove this field when it lands"
+ },
+ "data": {
+  "generator": "tier_c",
+  "seed": 207,
+  "n": 36
+ },
+ "brms": {
+  "formula": "y ~ x + arma(time = t, gr = g, p = 1, q = 1)",
+  "family": {
+   "family": "gaussian"
+  },
+  "factors": {
+   "g": [
+    "a",
+    "b",
+    "c",
+    "d",
+    "e",
+    "f"
+   ]
+  },
+  "priors": [
+   {
+    "prior": "normal(0, 5)",
+    "class": "Intercept"
+   },
+   {
+    "prior": "normal(0, 2)",
+    "class": "b"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "sigma"
+   },
+   {
+    "prior": "normal(0, 0.5)",
+    "class": "ar"
+   },
+   {
+    "prior": "normal(0, 0.5)",
+    "class": "ma"
+   }
+  ]
+ },
+ "autobayes": {
+  "constructor": "gaussian",
+  "formula": "y ~ x + arma(time = t, gr = g, p = 1, q = 1)",
+  "kwargs": {},
+  "priors": {
+   "intercept": [
+    "Normal",
+    0,
+    5
+   ],
+   "b": [
+    "Normal",
+    0,
+    2
+   ],
+   "sigma": [
+    "HalfNormal",
+    1
+   ],
+   "ar": [
+    "Normal",
+    0,
+    0.5
+   ],
+   "ma": [
+    "Normal",
+    0,
+    0.5
+   ]
+  }
+ }
+}

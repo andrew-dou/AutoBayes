@@ -1,0 +1,83 @@
+{
+ "id": "poisson_varint_post",
+ "tier": "C",
+ "feature": "C07_post_processing",
+ "note": "post block as gauss_varint_post (8 draws, k-hat Inf, raw importance weights)",
+ "seed": 312,
+ "n_points": 8,
+ "gate": {
+  "expect": "fail",
+  "reason": "C07_post_processing not implemented; remove this field when it lands"
+ },
+ "data": {
+  "generator": "baseline",
+  "seed": 212,
+  "n": 36,
+  "newdata": {
+   "seed": 312,
+   "n": 5
+  }
+ },
+ "brms": {
+  "formula": "cnt ~ x + (1 | g)",
+  "family": {
+   "family": "poisson"
+  },
+  "factors": {
+   "g": [
+    "a",
+    "b",
+    "c",
+    "d",
+    "e",
+    "f"
+   ]
+  },
+  "priors": [
+   {
+    "prior": "normal(0, 2)",
+    "class": "Intercept"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "b"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "sd",
+    "group": "g"
+   }
+  ],
+  "extras": [
+   "log_lik",
+   "bayes_R2",
+   "loo"
+  ]
+ },
+ "autobayes": {
+  "constructor": "poisson",
+  "formula": "cnt ~ x + (1 | g)",
+  "kwargs": {},
+  "priors": {
+   "intercept": [
+    "Normal",
+    0,
+    2
+   ],
+   "b": [
+    "Normal",
+    0,
+    1
+   ],
+   "sd": [
+    "HalfNormal",
+    1
+   ]
+  },
+  "post": [
+   "log_lik",
+   "bayes_R2",
+   "loo"
+  ]
+ }
+}

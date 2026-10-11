@@ -1,0 +1,91 @@
+{
+ "id": "gauss_varint_post",
+ "tier": "C",
+ "feature": "C07_post_processing",
+ "note": "post: log_lik (draws x rows), bayes_R2 (draws x 1, summary = FALSE), loo pointwise (elpd_loo, mcse_elpd_loo, p_loo, looic, influence_pareto_k), estimates, pareto_k, n_eff. With 8 draws loo's Pareto tail (2 draws) is too short to fit: k-hat Inf and raw importance weights, elpd_loo_i = -log mean_s exp(-log_lik_si); r_eff of one-draw chains is NA, which loo replaces by 1",
+ "seed": 311,
+ "n_points": 8,
+ "gate": {
+  "expect": "fail",
+  "reason": "C07_post_processing not implemented; remove this field when it lands"
+ },
+ "data": {
+  "generator": "baseline",
+  "seed": 211,
+  "n": 36,
+  "newdata": {
+   "seed": 311,
+   "n": 5
+  }
+ },
+ "brms": {
+  "formula": "y ~ x + (1 | g)",
+  "family": {
+   "family": "gaussian"
+  },
+  "factors": {
+   "g": [
+    "a",
+    "b",
+    "c",
+    "d",
+    "e",
+    "f"
+   ]
+  },
+  "priors": [
+   {
+    "prior": "normal(0, 5)",
+    "class": "Intercept"
+   },
+   {
+    "prior": "normal(0, 2)",
+    "class": "b"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "sd",
+    "group": "g"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "sigma"
+   }
+  ],
+  "extras": [
+   "log_lik",
+   "bayes_R2",
+   "loo"
+  ]
+ },
+ "autobayes": {
+  "constructor": "gaussian",
+  "formula": "y ~ x + (1 | g)",
+  "kwargs": {},
+  "priors": {
+   "intercept": [
+    "Normal",
+    0,
+    5
+   ],
+   "b": [
+    "Normal",
+    0,
+    2
+   ],
+   "sd": [
+    "HalfNormal",
+    1
+   ],
+   "sigma": [
+    "HalfNormal",
+    1
+   ]
+  },
+  "post": [
+   "log_lik",
+   "bayes_R2",
+   "loo"
+  ]
+ }
+}

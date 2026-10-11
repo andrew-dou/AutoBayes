@@ -1,0 +1,51 @@
+{
+ "bf_args": {
+  "nl": true
+ },
+ "extras": [
+  "group_scope"
+ ],
+ "factors": {
+  "g": [
+   "a",
+   "b",
+   "c",
+   "d",
+   "e",
+   "f"
+  ]
+ },
+ "family": {
+  "family": "gaussian"
+ },
+ "formula": [
+  "ypos ~ a * exp(b * x)",
+  "a ~ 1 + (1 | g)",
+  "b ~ 1"
+ ],
+ "id": "gauss_nonlinear_exp",
+ "n_points": 8,
+ "priors": [
+  {
+   "class": "b",
+   "nlpar": "a",
+   "prior": "normal(1, 1)"
+  },
+  {
+   "class": "b",
+   "nlpar": "b",
+   "prior": "normal(0, 1)"
+  },
+  {
+   "class": "sd",
+   "group": "g",
+   "nlpar": "a",
+   "prior": "normal(0, 1)"
+  },
+  {
+   "class": "sigma",
+   "prior": "normal(0, 1)"
+  }
+ ],
+ "seed": 303
+}

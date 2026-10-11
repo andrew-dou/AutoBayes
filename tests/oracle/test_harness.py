@@ -43,9 +43,13 @@ def test_frozen_data_regenerates_byte_for_byte(case_id, tmp_path):
     if nd is not None:
         datasets.write_csv(nd, tmp_path / "newdata.csv")
         assert (tmp_path / "newdata.csv").read_bytes() == (fx.fixture_dir(case_id) / "newdata.csv").read_bytes()
-    for frame in (data, nd):
-        if frame is not None:
-            assert not frame.isna().any().any()
+    missing = list(datasets.NA_COLUMNS.get(case["data"]["generator"], ()))   # missing by design only (tier_c's xm, for mi())
+    assert not data.drop(columns=missing).isna().any().any()
+    assert nd is None or not nd.isna().any().any()
+    na_columns = case["brms"].get("na_columns", [])                  # a case that reads them as missing (NA in R)
+    assert set(na_columns) <= set(missing)
+    for col in na_columns:
+        assert fx.read_frame(case, fx.fixture_dir(case_id) / "data.csv")[col].isna().sum() == data[col].isna().sum() > 0
     assert (data["size"] >= 1).all()
 
 

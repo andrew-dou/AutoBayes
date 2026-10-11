@@ -1,0 +1,106 @@
+{
+ "id": "gauss_nonlinear_exp",
+ "tier": "C",
+ "feature": "C02_nonlinear",
+ "note": "brms nl: mu = nlp_a * exp(nlp_b * C_1) with standata C_1 = x; nlp_a = X_a b_a + r_1_a_1[J_1] (intercept-only X_a, not centred), nlp_b = X_b b_b; parameters b_a, b_b, sigma, sd_1, z_1 (the group term has nlpar a); priors class b with nlpar a / b; response ypos (positive, about exp(0.3 + 0.4 x)) so the model is identifiable",
+ "seed": 303,
+ "n_points": 8,
+ "gate": {
+  "expect": "fail",
+  "reason": "C02_nonlinear not implemented; remove this field when it lands"
+ },
+ "data": {
+  "generator": "tier_c",
+  "seed": 203,
+  "n": 36,
+  "newdata": {
+   "seed": 303,
+   "n": 5
+  }
+ },
+ "brms": {
+  "formula": [
+   "ypos ~ a * exp(b * x)",
+   "a ~ 1 + (1 | g)",
+   "b ~ 1"
+  ],
+  "bf_args": {
+   "nl": true
+  },
+  "family": {
+   "family": "gaussian"
+  },
+  "factors": {
+   "g": [
+    "a",
+    "b",
+    "c",
+    "d",
+    "e",
+    "f"
+   ]
+  },
+  "priors": [
+   {
+    "prior": "normal(1, 1)",
+    "class": "b",
+    "nlpar": "a"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "b",
+    "nlpar": "b"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "sd",
+    "group": "g",
+    "nlpar": "a"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "sigma"
+   }
+  ],
+  "extras": [
+   "group_scope"
+  ]
+ },
+ "autobayes": {
+  "constructor": "gaussian",
+  "formula": [
+   "ypos ~ a * exp(b * x)",
+   "a ~ 1 + (1 | g)",
+   "b ~ 1"
+  ],
+  "kwargs": {
+   "nl": true
+  },
+  "priors": {
+   "nlpars": {
+    "a": {
+     "b": [
+      "Normal",
+      1,
+      1
+     ],
+     "sd": [
+      "HalfNormal",
+      1
+     ]
+    },
+    "b": {
+     "b": [
+      "Normal",
+      0,
+      1
+     ]
+    }
+   },
+   "sigma": [
+    "HalfNormal",
+    1
+   ]
+  }
+ }
+}

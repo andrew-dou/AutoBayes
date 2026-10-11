@@ -1,0 +1,118 @@
+{
+ "id": "mixture_gauss_gauss",
+ "tier": "C",
+ "feature": "C05_mixtures",
+ "note": "brms mixture(gaussian, gaussian) orders the intercepts by default (order = 'mu'): ordered[2] ordered_Intercept with Intercept_mu1 < Intercept_mu2; b_mu1, b_mu2 (X_mu1, X_mu2), sigma1, sigma2, theta (simplex[2], dirichlet with con_theta in standata; its coordinate is unreached by probing); likelihood log_sum_exp(log theta_k + normal_lpdf); linpred is draws x rows x 2 (mu1, mu2), epred draws x rows (theta1 mu1 + theta2 mu2)",
+ "seed": 308,
+ "n_points": 8,
+ "gate": {
+  "expect": "fail",
+  "reason": "C05_mixtures not implemented; remove this field when it lands"
+ },
+ "data": {
+  "generator": "tier_c",
+  "seed": 208,
+  "n": 36,
+  "newdata": {
+   "seed": 308,
+   "n": 5
+  }
+ },
+ "brms": {
+  "formula": "y ~ x",
+  "family": {
+   "mixture": [
+    {
+     "family": "gaussian"
+    },
+    {
+     "family": "gaussian"
+    }
+   ]
+  },
+  "factors": {},
+  "priors": [
+   {
+    "prior": "normal(-1, 2)",
+    "class": "Intercept",
+    "dpar": "mu1"
+   },
+   {
+    "prior": "normal(1, 2)",
+    "class": "Intercept",
+    "dpar": "mu2"
+   },
+   {
+    "prior": "normal(0, 2)",
+    "class": "b",
+    "dpar": "mu1"
+   },
+   {
+    "prior": "normal(0, 2)",
+    "class": "b",
+    "dpar": "mu2"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "sigma1"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "sigma2"
+   },
+   {
+    "prior": "dirichlet(2)",
+    "class": "theta"
+   }
+  ]
+ },
+ "autobayes": {
+  "constructor": "mixture",
+  "formula": "y ~ x",
+  "kwargs": {
+   "families": [
+    "gaussian",
+    "gaussian"
+   ]
+  },
+  "priors": {
+   "mu1": {
+    "intercept": [
+     "Normal",
+     -1,
+     2
+    ],
+    "b": [
+     "Normal",
+     0,
+     2
+    ]
+   },
+   "mu2": {
+    "intercept": [
+     "Normal",
+     1,
+     2
+    ],
+    "b": [
+     "Normal",
+     0,
+     2
+    ]
+   },
+   "sigma1": [
+    "HalfNormal",
+    1
+   ],
+   "sigma2": [
+    "HalfNormal",
+    1
+   ],
+   "theta": [
+    "Dirichlet",
+    2,
+    2
+   ]
+  }
+ }
+}

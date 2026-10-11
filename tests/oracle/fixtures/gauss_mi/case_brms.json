@@ -1,0 +1,52 @@
+{
+ "extras": [
+  "responses"
+ ],
+ "factors": {},
+ "family": {
+  "family": "gaussian"
+ },
+ "id": "gauss_mi",
+ "mvbf": [
+  "y ~ mi(xm) + w",
+  "xm | mi() ~ w"
+ ],
+ "n_points": 8,
+ "na_columns": [
+  "xm"
+ ],
+ "priors": [
+  {
+   "class": "Intercept",
+   "prior": "normal(0, 5)",
+   "resp": "y"
+  },
+  {
+   "class": "b",
+   "prior": "normal(0, 2)",
+   "resp": "y"
+  },
+  {
+   "class": "sigma",
+   "prior": "normal(0, 1)",
+   "resp": "y"
+  },
+  {
+   "class": "Intercept",
+   "prior": "normal(0, 5)",
+   "resp": "xm"
+  },
+  {
+   "class": "b",
+   "prior": "normal(0, 2)",
+   "resp": "xm"
+  },
+  {
+   "class": "sigma",
+   "prior": "normal(0, 1)",
+   "resp": "xm"
+  }
+ ],
+ "rescor": false,
+ "seed": 309
+}

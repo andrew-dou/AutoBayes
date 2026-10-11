@@ -6,6 +6,12 @@ that is expected to build the same model). `oracle/regen.py new <id>` freezes th
 `tests/oracle/fixtures/<id>/`: `case_brms.json` (the canonical brms section, which `gen_fixture.R` reads),
 `data.csv`, `newdata.csv` and `fixture.json`. Fixtures are immutable once committed; a changed case gets a
 new id. Arrays in `fixture.json` are `{"dims": [...], "values": [...]}` with column-major values.
+
+Tier C cases may add opt-in keys to the brms section (documented in `oracle/R/gen_fixture.R`): `na_columns`
+(columns with missing values, read here as NaN), `mvbf` and `rescor` (multivariate models), a `family` with a
+`mixture` list, `point_halfwidth` (the box the seeded points are drawn from), and `extras`, which add
+`groups[*].resp/dpar/nlpar`, a top-level `responses` list (the last axis of a multivariate model's predictions)
+and a `post` block (brms's `log_lik`, `bayes_R2` and `loo` of the fixed-parameter fit) to `fixture.json`.
 """
 from __future__ import annotations
 
@@ -64,9 +70,14 @@ def sha256(path) -> str:
 
 
 def read_frame(case: dict, path) -> pd.DataFrame:
-    """The committed CSV, factor columns as strings (a label like "1" must stay a label)."""
+    """The committed CSV, factor columns as strings (a label like "1" must stay a label). A case that declares
+    columns with missing values (``brms.na_columns``, for mi()) reads an empty field of those columns as NaN and
+    nothing else as missing, as ``gen_fixture.R`` reads them as NA."""
     factors = list(case["brms"].get("factors", {}))
-    return pd.read_csv(path, dtype={c: str for c in factors})
+    na_columns = list(case["brms"].get("na_columns", []))
+    if not na_columns:
+        return pd.read_csv(path, dtype={c: str for c in factors})
+    return pd.read_csv(path, dtype={c: str for c in factors}, keep_default_na=False, na_values={c: [""] for c in na_columns})
 
 
 @dataclass(frozen=True)

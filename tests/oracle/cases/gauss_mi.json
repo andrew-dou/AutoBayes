@@ -1,0 +1,116 @@
+{
+ "id": "gauss_mi",
+ "tier": "C",
+ "feature": "C06_missing_and_measurement_error",
+ "note": "brms mi(): bf(y ~ mi(xm) + w) + bf(xm | mi() ~ w) + set_rescor(FALSE); 7 xm values missing: Y_xm holds Inf there, Jmi_xm their rows, Nmi_xm = 7, imputed as parameters Ymi_xm; bsp_y is the coefficient of mi(xm) (prior class b, coef mixm); the y likelihood uses observed plus imputed xm; predictions draws x rows x 2 (responses y, xm); newdata has xm observed",
+ "seed": 309,
+ "n_points": 8,
+ "gate": {
+  "expect": "fail",
+  "reason": "C06_missing_and_measurement_error not implemented; remove this field when it lands"
+ },
+ "data": {
+  "generator": "tier_c",
+  "seed": 209,
+  "n": 36,
+  "newdata": {
+   "seed": 309,
+   "n": 5
+  }
+ },
+ "brms": {
+  "mvbf": [
+   "y ~ mi(xm) + w",
+   "xm | mi() ~ w"
+  ],
+  "rescor": false,
+  "na_columns": [
+   "xm"
+  ],
+  "family": {
+   "family": "gaussian"
+  },
+  "factors": {},
+  "priors": [
+   {
+    "prior": "normal(0, 5)",
+    "class": "Intercept",
+    "resp": "y"
+   },
+   {
+    "prior": "normal(0, 2)",
+    "class": "b",
+    "resp": "y"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "sigma",
+    "resp": "y"
+   },
+   {
+    "prior": "normal(0, 5)",
+    "class": "Intercept",
+    "resp": "xm"
+   },
+   {
+    "prior": "normal(0, 2)",
+    "class": "b",
+    "resp": "xm"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "sigma",
+    "resp": "xm"
+   }
+  ],
+  "extras": [
+   "responses"
+  ]
+ },
+ "autobayes": {
+  "constructor": "gaussian",
+  "formula": [
+   "y ~ mi(xm) + w",
+   "xm | mi() ~ w"
+  ],
+  "kwargs": {
+   "rescor": false
+  },
+  "priors": {
+   "resp": {
+    "y": {
+     "intercept": [
+      "Normal",
+      0,
+      5
+     ],
+     "b": [
+      "Normal",
+      0,
+      2
+     ],
+     "sigma": [
+      "HalfNormal",
+      1
+     ]
+    },
+    "xm": {
+     "intercept": [
+      "Normal",
+      0,
+      5
+     ],
+     "b": [
+      "Normal",
+      0,
+      2
+     ],
+     "sigma": [
+      "HalfNormal",
+      1
+     ]
+    }
+   }
+  }
+ }
+}
