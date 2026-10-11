@@ -636,3 +636,18 @@ def test_the_gates_see_a_corrupted_gp_fixture(case):
         raw["points"][3]["pars"]["zgp_1"]["values"][1] += 1e-3
     with pytest.raises(OracleMismatch, match=r"point 3: log density"):
         gates.check_logp(_corrupted(b, latent))
+
+
+
+def test_gp_is_refused_in_mixtures_and_multivariate_formulas():
+    """Neither combination is verified against brms (each mixture component, or each response, would have its own
+    process), so both are refused naming the term, not built with the process silently dropped or unverified."""
+    rng = np.random.default_rng(1)
+    df = pd.DataFrame({"x": rng.normal(size=30), "y": rng.normal(size=30), "y2": rng.normal(size=30)})
+    gp_priors = dict(sdgp=ab.HalfNormal(1), lscale=ab.InverseGamma(3, 1))
+    comp = ab.Priors(intercept=ab.Normal(0, 2), b=ab.Normal(0, 1), sigma=ab.HalfNormal(1), **gp_priors)
+    with pytest.raises(ab.FormulaError, match="mixture takes no Gaussian process"):
+        ab.mixture("y ~ gp(x)", df, ab.Priors(components=[comp, comp], theta=ab.Dirichlet(2)), families=["gaussian", "gaussian"])
+    resp = ab.Priors(intercept=ab.Normal(0, 2), sigma=ab.HalfNormal(1), **gp_priors)
+    with pytest.raises(ab.FormulaError, match="Gaussian process in a multivariate formula"):
+        ab.gaussian("mvbind(y, y2) ~ gp(x)", df, ab.Priors(resp={"y": resp, "y2": resp}), rescor=False)

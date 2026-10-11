@@ -101,6 +101,10 @@ def _check_formula(spec) -> None:
     if spec.offset is not None:
         raise FormulaError(f"{spec.formula!r}: a mixture takes no offset term in this slice (brms adds it to every component's "
                            f"linear predictor; {DOC}, divergence D55)")
+    if getattr(spec, "gp_terms", ()):
+        raise FormulaError(f"{spec.formula!r}: a mixture takes no Gaussian process in this slice ('{spec.gp_terms[0].term}' would "
+                           f"give every component its own process, brms's gp() in each mu<k>, which is not verified here; {DOC}, "
+                           "divergence D55)")
 
 
 def _validate_response(spec, data) -> None:
