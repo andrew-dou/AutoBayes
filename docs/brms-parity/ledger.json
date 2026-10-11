@@ -146,6 +146,26 @@
    "next_action": ""
   },
   {
+   "id": "P6_two_reference",
+   "tier": "P",
+   "lane": "harness",
+   "depends_on": [
+    "A12_links",
+    "B02_cens_trunc_weights"
+   ],
+   "status": "implementing",
+   "summary": "two-reference acceptance (brms where accurate, a committed 50-digit reference where not); lifts the cloglog, cens() and trunc() parks",
+   "pr": null,
+   "attempts": 1,
+   "gates": {},
+   "divergences": [
+    "D18",
+    "D24",
+    "D25"
+   ],
+   "next_action": "agent (opus) in worktree parity-p6 (Andrew's decision 2026-10-11)"
+  },
+  {
    "id": "A01_independent_slopes",
    "tier": "A",
    "lane": "formula",
@@ -840,7 +860,7 @@
    "attempts": 1,
    "gates": {},
    "divergences": [],
-   "next_action": "phase 1 done at 0e4cfa1 on parity/b04-splines (mgcv tp basis port, Xs 1.2e-13, Zs 2.5e-13 up to an orthogonal R; not merged); phase 2 (integration) held for Andrew at the Tier B boundary",
+   "next_action": "phase 1 done at 0e4cfa1 (parity/b04-splines, not merged); phase 2 held: the port follows mgcv's (GPL) R functions step by step and AutoBayes is MIT, so Andrew decides the licensing first",
    "fixtures": {
     "pr": 33,
     "cases": [
@@ -1032,13 +1052,13 @@
    "depends_on": [
     "B06_zero_inflated_hurdle"
    ],
-   "status": "fixtures_frozen",
+   "status": "implementing",
    "summary": "mixture() families",
    "pr": null,
-   "attempts": 0,
+   "attempts": 1,
    "gates": {},
    "divergences": [],
-   "next_action": "implementation awaits Andrew's Tier C go-ahead at the Tier B boundary",
+   "next_action": "agent (opus) in worktree parity-c05",
    "fixtures": {
     "pr": 43,
     "cases": [
@@ -1075,13 +1095,13 @@
    "depends_on": [
     "A07_default_priors"
    ],
-   "status": "fixtures_frozen",
+   "status": "implementing",
    "summary": "loo, bayes_R2, hypothesis, conditional effects through ArviZ where it exists",
    "pr": null,
-   "attempts": 0,
+   "attempts": 1,
    "gates": {},
    "divergences": [],
-   "next_action": "implementation awaits Andrew's Tier C go-ahead at the Tier B boundary",
+   "next_action": "agent (opus) in worktree parity-c07",
    "fixtures": {
     "pr": 43,
     "cases": [
