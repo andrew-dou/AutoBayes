@@ -980,11 +980,26 @@
    "depends_on": [
     "B01_distributional"
    ],
-   "status": "implementing",
+   "status": "gates_green",
    "summary": "mvbind() multivariate responses with residual correlations",
    "pr": null,
    "attempts": 1,
-   "gates": {},
+   "gates": {
+    "sha": "4a9c7ba99df4",
+    "dirty_tree": false,
+    "base": "parity/c07-post-processing",
+    "when": "2026-10-11T21:46Z",
+    "results": {
+     "immutability": {
+      "status": "pass",
+      "seconds": 0.0
+     },
+     "oracle": {
+      "status": "pass",
+      "seconds": 678.9
+     }
+    }
+   },
    "divergences": [],
    "next_action": "agent (opus) in worktree parity-c01",
    "fixtures": {
