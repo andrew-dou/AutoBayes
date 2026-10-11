@@ -5,10 +5,6 @@
  "note": "brms mixture(gaussian, gaussian) orders the intercepts by default (order = 'mu'): ordered[2] ordered_Intercept with Intercept_mu1 < Intercept_mu2; b_mu1, b_mu2 (X_mu1, X_mu2), sigma1, sigma2, theta (simplex[2], dirichlet with con_theta in standata; its coordinate is unreached by probing); likelihood log_sum_exp(log theta_k + normal_lpdf); linpred is draws x rows x 2 (mu1, mu2), epred draws x rows (theta1 mu1 + theta2 mu2)",
  "seed": 308,
  "n_points": 8,
- "gate": {
-  "expect": "fail",
-  "reason": "C05_mixtures not implemented; remove this field when it lands"
- },
  "data": {
   "generator": "tier_c",
   "seed": 208,
@@ -76,41 +72,42 @@
    ]
   },
   "priors": {
-   "mu1": {
-    "intercept": [
-     "Normal",
-     -1,
-     2
-    ],
-    "b": [
-     "Normal",
-     0,
-     2
-    ]
-   },
-   "mu2": {
-    "intercept": [
-     "Normal",
-     1,
-     2
-    ],
-    "b": [
-     "Normal",
-     0,
-     2
-    ]
-   },
-   "sigma1": [
-    "HalfNormal",
-    1
-   ],
-   "sigma2": [
-    "HalfNormal",
-    1
+   "components": [
+    {
+     "intercept": [
+      "Normal",
+      -1,
+      2
+     ],
+     "b": [
+      "Normal",
+      0,
+      2
+     ],
+     "sigma": [
+      "HalfNormal",
+      1
+     ]
+    },
+    {
+     "intercept": [
+      "Normal",
+      1,
+      2
+     ],
+     "b": [
+      "Normal",
+      0,
+      2
+     ],
+     "sigma": [
+      "HalfNormal",
+      1
+     ]
+    }
    ],
    "theta": [
     "Dirichlet",
-    2,
     2
    ]
   }

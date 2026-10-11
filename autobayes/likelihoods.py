@@ -853,6 +853,9 @@ _LOCATION_DRAWS = {                                   # location prior -> NumPy 
 }
 
 
+_ORDERED_REJECTION_ROUNDS = 1000          # forward draws of ordered entries under different priors: rounds of rejection (C05)
+
+
 def ordered_thresholds(name, prior_name: str, params: dict, labels, dim: str):
     """brms's ``ordered[nthres] Intercept`` with the same prior on every threshold (``Priors(intercept=...)``, brms's
     class ``Intercept``), as a PyMC variable named ``name`` with dims ``dim`` (coordinates ``labels``) sampled on Stan's
@@ -860,13 +863,20 @@ def ordered_thresholds(name, prior_name: str, params: dict, labels, dim: str):
     the log gaps). Its density is the prior's density summed over the thresholds as brms adds it (``lprior +=
     normal_lpdf(Intercept | ...)``), not renormalised to the ordered region; its forward draws are the prior's independent
     draws sorted, which is that density's distribution (the order statistics), so prior-predictive thresholds are
-    ordered. Must be called inside a PyMC model context."""
+    ordered. Must be called inside a PyMC model context.
+
+    A parameter may also be given one value per entry (C05, a mixture's ``ordered_Intercept``: brms's ``Intercept_mu<k>``
+    each under its own prior of one distribution family, ``normal(-1, 2)`` and ``normal(1, 2)``): the density is then each
+    entry's own prior summed, and the forward draws are the entries' independent draws kept where they come out
+    strictly increasing (rejection, the product density restricted to the ordered region; sorting would be another
+    distribution once the priors differ), refused after ``_ORDERED_REJECTION_ROUNDS`` rounds."""
     n = len(labels)
     names = list(params)
     # The first input only carries the number of thresholds (a flat prior has no parameter to carry it); then the prior's
     # parameters, one entry per threshold, in float64 (a Python 3.0 would otherwise become a float32 constant).
-    values = [np.zeros(n)] + [np.full(n, np.float64(params[k])) for k in names]
+    values = [np.zeros(n)] + [np.broadcast_to(np.asarray(params[k], dtype=np.float64), (n,)).copy() for k in names]
     base = getattr(pm, prior_name)
+    same = all(np.all(v == v[0]) for v in values[1:])        # one prior for every entry: the sorted draws are exact
 
     def logp(value, anchor, *ps):
         return pt.sum(pm.logp(base.dist(**dict(zip(names, ps))), value), axis=-1)
@@ -876,9 +886,19 @@ def ordered_thresholds(name, prior_name: str, params: dict, labels, dim: str):
             raise NotImplementedError(f"a {prior_name} prior on the thresholds has no forward draws")
         core = np.broadcast_shapes(np.shape(anchor), *(np.shape(p) for p in ps))
         shape = (tuple(size) + core[-1:]) if size is not None else core
-        return np.sort(_LOCATION_DRAWS[prior_name](rng, shape, *ps), axis=-1)
+        if same:
+            return np.sort(_LOCATION_DRAWS[prior_name](rng, shape, *ps), axis=-1)
+        out = _LOCATION_DRAWS[prior_name](rng, shape, *ps)
+        for _ in range(_ORDERED_REJECTION_ROUNDS):
+            bad = ~(np.diff(out, axis=-1) > 0).all(axis=-1)
+            if not bad.any():
+                return out
+            out = np.where(bad[..., None], _LOCATION_DRAWS[prior_name](rng, shape, *ps), out)
+        raise ValueError(f"forward draws of {name}: after {_ORDERED_REJECTION_ROUNDS} rounds the entries' priors still give "
+                         "unordered draws; they put almost no mass on the ordered region (inspect the priors)")
 
-    start = float(params.get("mu", 0.0)) + np.arange(n) - (n - 1) / 2.0         # an ordered starting point at the location
+    mu = params.get("mu", 0.0)                                                   # one location, or one per entry (C05)
+    start = (float(mu) if np.ndim(mu) == 0 else float(np.mean(mu))) + np.arange(n) - (n - 1) / 2.0   # ordered, at the location
 
     def support_point(rv, size, anchor, *ps):
         # the default initial point (not an initval, which pymc.model.fgraph refuses: A02's correlated terms edit the graph)
@@ -970,3 +990,113 @@ def categorical_logit_family(categories, reduced_dim: str):
 
     likelihood = bmb.Likelihood("CategoricalLogit", params=["mu"], parent="mu", dist=CategoricalLogit)
     return CategoricalLogitFamily("categorical_logit", likelihood, link={"mu": "identity"})
+
+
+# ---- finite mixtures of Gaussian components (brms-parity C05, docs/mixtures.md) ----------------------------------------------
+# brms 2.23, mixture(gaussian, ..., gaussian) under its default order = "mu": component k has its own linear predictor
+# mu_k = Intercept_mu<k> + Xc b_mu<k> (the intercepts are brms's ordered[K] ordered_Intercept, Intercept_mu1 < ... <
+# Intercept_muK, on Stan's ordered coordinates; Xc the design centred on its means) and its own sigma<k>, and the mixing
+# proportions are brms's simplex[K] theta with a Dirichlet prior (con_theta). Each row's log density is
+#   log_mix(theta, normal_lpdf(y | mu_1, sigma1), ..., normal_lpdf(y | mu_K, sigmaK))
+#     = log_sum_exp_k(log(theta_k) + normal_lpdf(y | mu_k, sigma_k)),
+# the sum written as _log_sum_exp above (the maximum subtracted inside), finite with a finite gradient for every finite
+# argument on both paths. The graph is Bambi's categorical family's per-category design (B05: every coefficient, the
+# intercept included, with a trailing axis, here over the components, and the design centred), the intercept B05's
+# ordered vector (ordered_thresholds, one prior per component) and theta B03's stick-breaking simplex.
+
+def gaussian_mixture_logp(value, mu, sigma, theta):
+    """``log sum_k theta_k Normal(value | mu_k, sigma_k)`` per row (brms's ``log_mix`` of ``normal_lpdf``): ``mu`` is
+    ``(..., K)``, ``sigma`` and ``theta`` ``(K,)`` (or broadcastable against ``mu``)."""
+    z = (value[..., None] - mu) / sigma
+    return _log_sum_exp(pt.log(theta) - np.float64(0.5) * z * z - pt.log(sigma) - np.float64(_HALF_LOG_2PI))
+
+
+def gaussian_mixture_random(mu, sigma, theta, rng=None, size=None):
+    """Draws as brms's ``posterior_predict`` makes them for a mixture: per draw and row a component by ``theta`` (brms's
+    ``sample_mixture_ids``), then that component's ``Normal(mu_k, sigma_k)``. ``mu`` is ``(..., K)``; ``sigma`` and ``theta``
+    broadcast against it."""
+    mu, sigma, theta = (np.asarray(v, dtype=float) for v in (mu, sigma, theta))
+    K = mu.shape[-1]
+    shape = tuple(size) if size is not None else np.broadcast_shapes(mu.shape[:-1], sigma.shape[:-1], theta.shape[:-1])
+    k = draw_categories(np.broadcast_to(theta, shape + (K,)), rng) - 1
+
+    def pick(a):
+        return np.take_along_axis(np.broadcast_to(a, shape + (K,)), k[..., None], axis=-1)[..., 0]
+
+    return rng.normal(pick(mu), pick(sigma))
+
+
+def mixture_mean(mu, theta):
+    """brms's ``posterior_epred`` of a Gaussian mixture: ``sum_k theta_k mu_k``, accumulated in component order as brms's
+    ``posterior_epred_mixture`` adds it. ``mu`` is ``(..., K)`` and ``theta`` broadcasts against it."""
+    mu = np.asarray(mu, dtype=float)
+    theta = np.broadcast_to(np.asarray(theta, dtype=float), mu.shape)
+    out = np.zeros(mu.shape[:-1])
+    for k in range(mu.shape[-1]):
+        out = out + theta[..., k] * mu[..., k]
+    return out
+
+
+def component_prior(name: str, params: Mapping[str, np.ndarray]):
+    """Bambi's prior of one population-level term of a mixture (C05): the PyMC distribution ``name`` with one value of each
+    parameter per (coefficient, component), ``params`` arrays of the term's coefficient shape (``(K,)`` for a scalar term,
+    ``(levels, K)`` for a vector term), built under the dims Bambi gives the term (its levels, then the components). Bambi's
+    own array-valued priors cannot carry this: it repeats a one-dimensional parameter over the components."""
+    import bambi as bmb
+
+    arrays = {k: np.asarray(v, dtype=np.float64) for k, v in params.items()}
+
+    def dist(label, dims=None, **kwargs):
+        return getattr(pm, name)(label, dims=dims, **arrays)
+
+    return bmb.Prior(name, dist=dist)
+
+
+def gaussian_mixture_family(labels, dim: str, scales, theta_name: str, concentration):
+    """Bambi family for brms's ``mixture(gaussian, ..., gaussian)`` (C05): Bambi's categorical family, whose every coefficient
+    has a trailing axis over the response's levels, here the components (coordinate ``dim``, ``labels`` "1".."K"; B05's
+    per-category design, the design centred, the intercept uncentred after sampling), with the components' linear
+    predictors ``mu`` (``(n, K)``, brms's ``mu<k>``) as the parent under the identity link. The likelihood creates each
+    component's scale under its prior (``scales``: ``(name, Prior)`` in component order, brms's ``sigma<k>``, a positive
+    variable on the log scale as Stan's ``real<lower=0>``) and the mixing proportions ``theta_name`` (brms's ``theta``), a
+    Dirichlet of ``concentration`` on Stan's stick-breaking coordinates (B03's ``simplex_rv``), in that order, then
+    ``gaussian_mixture_logp`` on the response as a number."""
+    import bambi as bmb
+    from bambi.families.univariate import Categorical as BambiCategorical
+
+    from autobayes.monotonic import simplex_rv
+
+    labels, scales = list(labels), list(scales)
+
+    class GaussianMixture:
+        """``y ~ sum_k theta_k Normal(mu_k, sigma_k)``."""
+
+        def __new__(cls, name, mu, **kwargs):
+            sigmas = [getattr(pm, prior.name)(scale, **{k: np.float64(v) for k, v in prior.params.items()}) for scale, prior in scales]
+            theta = simplex_rv(theta_name, concentration, dim)
+            return pm.CustomDist(name, mu, pt.stack(sigmas), theta, logp=gaussian_mixture_logp, random=gaussian_mixture_random,
+                                 signature="(k),(k),(k)->()", **kwargs)
+
+    class GaussianMixtureFamily(BambiCategorical):
+        SUPPORTED_LINKS = {"mu": ["identity"]}
+
+        def get_data(self, response):
+            return np.asarray(response.term.data, dtype=float).squeeze()
+
+        def get_levels(self, response):
+            return list(labels)
+
+        def get_coords(self, response):
+            return {dim: list(labels)}
+
+        def get_reference(self, response):
+            return None
+
+        @staticmethod
+        def transform_backend_eta(eta, kwargs):
+            # one row per observation even for 'y ~ 1', whose linear predictors are the intercepts alone, (1, K), as Bambi's
+            # categorical family makes them (multiplying by ones changes no value)
+            return np.ones((np.shape(kwargs["observed"])[0], 1)) * eta
+
+    likelihood = bmb.Likelihood("GaussianMixture", params=["mu"], parent="mu", dist=GaussianMixture)
+    return GaussianMixtureFamily("gaussian_mixture", likelihood, link={"mu": "identity"})

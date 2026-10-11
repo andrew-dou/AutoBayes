@@ -1,0 +1,18 @@
+{
+ "factors": {},
+ "family": {
+  "mixture": [
+   {
+    "family": "gaussian"
+   },
+   {
+    "family": "gaussian"
+   }
+  ]
+ },
+ "formula": "y ~ x + w",
+ "id": "mixture_gauss_default_priors",
+ "n_points": 8,
+ "priors": [],
+ "seed": 310
+}

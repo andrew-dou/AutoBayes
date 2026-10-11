@@ -140,3 +140,12 @@ families (`link="cloglog"`, verified against `bernoulli_cloglog`, 2 of 144 gradi
 `binomial_cloglog`, frozen with it, against brms alone; D18), and `cens()` and `trunc()` for the Gaussian family
 (verified against `gauss_censored`, 32 of 160 gradient entries on the reference, and `gauss_truncated`, 2 of 160 gradient
 entries and 6 of 656 expected values; D24, D25); see [links](links.md) and [addition terms](addition-terms.md).
+
+Finite mixtures (C05, brms's `mixture(gaussian, gaussian)`): `ab.mixture(formula, data, priors, families=["gaussian"] * K)`
+fits K Gaussian components with one formula, each with its own centred intercept, coefficients and `sigma<k>`, identified
+by ordering the intercepts (brms's default `order = "mu"`, Stan's ordered coordinates) and weighed by `theta` (a Dirichlet
+on Stan's stick-breaking simplex), under `Priors(components=[...one Priors per component...], theta=ab.Dirichlet(...))`;
+`predict()` returns each component's linear predictor with a `component` dimension, the mixture's mean and draws by
+component. Verified against `mixture_gauss_gauss` and two cases frozen with it (three components with a categorical
+predictor and a prior per component; brms's default priors); other component families, `order = "none"`, formulas per
+component or on `theta`, group-level terms and offsets are refused (D52-D55); see [mixtures](mixtures.md).

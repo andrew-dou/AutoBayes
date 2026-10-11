@@ -168,7 +168,7 @@ def test_other_refusals_name_the_construct():
 
 
 def test_the_families_that_take_monotonic_terms():
-    assert {name for name, spec in FAMILIES.items() if spec.monotonic} == set(FAMILIES) - {"categorical"}
+    assert {name for name, spec in FAMILIES.items() if spec.monotonic} == set(FAMILIES) - {"categorical", "mixture"}   # C05: refused
     probit = ab.bernoulli("cnt ~ mo(ord)", FRAME.assign(cnt=[0, 1] * 6), ab.Priors(intercept=ab.Normal(0, 1), b=ab.Normal(0, 1),
                           simo=ab.Dirichlet(1)), link="probit")           # the probit link takes it as the logit does
     assert set(probit.design.monotonic) == {"ord"}

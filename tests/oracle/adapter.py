@@ -34,6 +34,14 @@ content to the model's `Design.monotonic` (`match_monotonic`, on `ColumnMap.mono
 simplex `simo_k`. The probe cannot move one entry of a simplex alone (`unreached`): those coordinates are given to the declared
 simplexes in declaration order and Stan's stick-breaking coordinates are recomputed from `simo_k` at every point and checked
 against the fixture's `u` before they are mapped to `simo_x_stickbreaking__`, as for `cholesky_corr`.
+
+A finite mixture (C05, brms's `mixture(gaussian, gaussian)`) has one design `X_mu<k>`, `b_mu<k>` and `Intercept_mu<k>` per
+component, matched like the categorical model's per-category designs (`ColumnMap.dpars` holds brms's `mu1`, ..., with
+`ColumnMap.mixture`); its intercepts are brms's `ordered[K] ordered_Intercept`, whose Stan `ordered` coordinates are
+recomputed at every point and checked against the fixture's `u` (as for the cumulative thresholds) before they are mapped to
+`Intercept_ordered__`; each `sigma<k>` is the PyMC variable of that name on the log scale; and `theta`, brms's `simplex[K]`,
+takes the unreached coordinates as a monotonic term's simplex does, its stick-breaking coordinates recomputed and checked
+the same way before they are mapped to `theta_stickbreaking__`.
 """
 from __future__ import annotations
 
@@ -76,11 +84,15 @@ def priors_from_spec(spec: dict) -> ab.Priors:
     """``{"intercept": ["Normal", 0, 5], "b": ["Normal", 0, 2] | {term: ...}, "sd": [...] | {factor: ...}, "cor": {factor: ["LKJ", eta]},
     "sigma": [...], "shape": [...], "phi": [...], "nu": [...], "zi": ["Beta", a, b], "hu": ["Beta", a, b],
     "simo": {column: ["Dirichlet", a, ...]}}``; an auxiliary parameter with its own formula (B01) takes ``{"intercept": [...],
-    "b": [...]}``; ``simo`` is the simplex prior of each monotonic term (B03)."""
+    "b": [...]}``; ``simo`` is the simplex prior of each monotonic term (B03); a mixture (C05) takes ``{"components": [spec, ...],
+    "theta": ["Dirichlet", a, ...]}``, each component's spec of this same form."""
     return ab.Priors(intercept=_prior(spec.get("intercept")), b=_prior(spec.get("b")),
                      sd=_prior(spec.get("sd")), cor=_prior(spec.get("cor")), sigma=_prior(spec.get("sigma")),
                      shape=_prior(spec.get("shape")), phi=_prior(spec.get("phi")), nu=_prior(spec.get("nu")),
-                     zi=_prior(spec.get("zi")), hu=_prior(spec.get("hu")), simo=_prior(spec.get("simo")))
+                     zi=_prior(spec.get("zi")), hu=_prior(spec.get("hu")), simo=_prior(spec.get("simo")),
+                     # C05: a mixture's priors, one spec of this form per component, and theta's Dirichlet
+                     components=[priors_from_spec(c) for c in spec["components"]] if "components" in spec else None,
+                     theta=_prior(spec.get("theta")))
 
 
 def build_model(case: dict, data: pd.DataFrame) -> ab.Model:
@@ -115,6 +127,7 @@ class ColumnMap:
     dpars: tuple[str, ...] = ()
     distributional: dict = None           # B01: the column map of each auxiliary parameter's own formula (X_sigma), by name
     monotonic: dict = None                # B03: brms's special-term number k (Xmo_k, bsp[k], simo_k) of each monotonic term, by column
+    mixture: bool = False                 # C05: dpars are a mixture's components (brms's mu<k>), not a categorical model's categories
 
     def b_index(self, x_col: int) -> int:
         """Index into brms's ``b`` of design column ``x_col``."""
@@ -179,6 +192,8 @@ def _match_design(fixture: Fixture, model: ab.Model, X_name: str = "X", b_name: 
 
 def match_columns(fixture: Fixture, model: ab.Model) -> ColumnMap:
     fam = model.family_spec
+    if fam.mixture:                                            # C05: one brms design per component, matched as B05's categories'
+        return match_mixture(fixture, model)
     if not fam.per_category:
         cmap = _with_distributional(fixture, model, _match_design(fixture, model, thresholds=fam.thresholds))
         return replace(cmap, monotonic=match_monotonic(fixture, model))
@@ -195,6 +210,29 @@ def match_columns(fixture: Fixture, model: ab.Model) -> ColumnMap:
         raise OracleMismatch(f"brms's category designs {list(dpars)} do not map alike onto the AutoBayes design")
     return ColumnMap(maps[0].x_column, maps[0].intercept_column, maps[0].centred_intercept, dpars=dpars,
                      monotonic=match_monotonic(fixture, model))
+
+
+def match_mixture(fixture: Fixture, model: ab.Model) -> ColumnMap:
+    """A mixture's column map (C05): brms's ``X_mu<k>`` of every component, each matched by content like the categorical
+    model's per-category designs (``_match_design`` with ``b_mu<k>``, ``Intercept_mu<k>``, ``Kc_mu<k>``), all mapping alike;
+    brms must have exactly the model's components, ordered intercepts ``ordered[K] ordered_Intercept`` (``order = "mu"``)
+    and the mixing proportions ``simplex[K] theta`` with ``con_theta``, and no other design."""
+    dpars, K = tuple(model.mixture_names["dpars"]), len(model.components)
+    designs = sorted(k[2:] for k in fixture.standata if k.startswith("X_"))
+    if sorted(dpars) != designs:
+        raise OracleMismatch(f"brms has the designs {designs}; the AutoBayes mixture's {K} components are brms's {sorted(dpars)}")
+    for name, declared in (("ordered_Intercept", f"ordered[{K}]"), ("theta", f"simplex[{K}]")):
+        if not fixture.declarations.get(name, "").startswith(declared):
+            raise OracleMismatch(f"brms declares {name!r} as {fixture.declarations.get(name)!r}; the AutoBayes mixture of {K} "
+                                 f"components has {declared} {name}")
+    if "con_theta" not in fixture.standata or np.atleast_1d(fixture.standata["con_theta"]).shape != (K,):
+        raise OracleMismatch(f"brms's con_theta is not the {K} concentrations of the mixing proportions")
+    maps = [_match_design(fixture, model, f"X_{dp}", f"b_{dp}", f"Intercept_{dp}", f"Kc_{dp}") for dp in dpars]
+    if any(m != maps[0] for m in maps):
+        raise OracleMismatch(f"brms's component designs {list(dpars)} do not map alike onto the AutoBayes design")
+    if not maps[0].centred_intercept:
+        raise OracleMismatch("brms's mixture components have no centred Intercept_mu<k>; AutoBayes orders the centred intercepts")
+    return ColumnMap(maps[0].x_column, maps[0].intercept_column, True, dpars=dpars, mixture=True)
 
 
 def match_monotonic(fixture: Fixture, model: ab.Model) -> dict[str, int]:
@@ -437,8 +475,12 @@ def natural_point(model: ab.Model, point: Point, cmap: ColumnMap, gmap: GroupMap
     if cmap.monotonic:                                     # B03: brms's bsp[k] and simo_k of each monotonic term
         bsp = {c: float(np.atleast_1d(pars["bsp"])[k - 1]) for c, k in cmap.monotonic.items()}
         simo = {c: np.atleast_1d(pars[f"simo_{k}"]).astype(float) for c, k in cmap.monotonic.items()}
+    theta = None
+    if cmap.mixture:                                       # C05: brms's sigma<k> and the mixing proportions theta
+        sigma = np.array([float(pars[name]) for name in model.mixture_names["sigma"]])
+        theta = np.atleast_1d(pars["theta"]).astype(float)
     return dict(intercept=intercept, b=b, sd=sd or None, z=z or None, L=L or None, sigma=sigma, shape=shape, phi=phi, nu=nu,
-                zi=zi, hu=hu, bsp=bsp, simo=simo)
+                zi=zi, hu=hu, bsp=bsp, simo=simo, theta=theta)
 
 
 def value_point(model: ab.Model, point: Point, cmap: ColumnMap, gmap: GroupMap) -> dict:
@@ -497,6 +539,20 @@ def coordinate_map(fixture: Fixture, model: ab.Model, cmap: ColumnMap, gmap: Gro
                 target, expect = (term, (0 if j is None else j) * others + k), "identity"   # (levels, categories), C order
         elif cmap.dpars and par.startswith("Intercept_") and par[len("Intercept_"):] in cmap.dpars:   # B05: its intercept
             target, expect = (names["intercept"], cmap.dpars.index(par[len("Intercept_"):])), "identity"
+        elif par == "ordered_Intercept" and cmap.mixture:     # C05: a mixture's intercepts, brms's ordered[K] ordered_Intercept
+            k = seen_thresholds
+            seen_thresholds += 1
+            # sampled on Stan's ordered coordinates, as the cumulative thresholds are (below): recompute coordinate k from
+            # ordered_Intercept at every point and require it to be the fixture's u before the gradient is compared
+            for q, pt_ in enumerate(fixture.points):
+                tau = np.atleast_1d(pt_.pars["ordered_Intercept"]).astype(float)
+                u = np.r_[tau[0], np.log(np.diff(tau))]
+                if k >= u.size or abs(u[k] - pt_.u[idx]) > 1e-10:
+                    raise OracleMismatch(f"point {q}: Stan's ordered coordinate {k} of ordered_Intercept is "
+                                         f"{u[k] if k < u.size else 'absent'!r}; brms's unconstrained value is {pt_.u[idx]!r}")
+            target, expect = (f"{names['intercept']}_ordered__", k), "joint"
+        elif cmap.mixture and par in model.mixture_names["sigma"]:   # C05: brms's real<lower=0> sigma<k>, on the log scale
+            target, expect = (f"{names[par]}_log__", 0), "log"
         elif par == "Intercept" and cmap.thresholds:          # B05: the cumulative thresholds, brms's ordered[nthres]
             k = seen_thresholds
             seen_thresholds += 1
@@ -609,6 +665,20 @@ def _simplex_coordinates(fixture: Fixture, model: ab.Model, cmap: ColumnMap) -> 
     for name, declaration in fixture.declarations.items():
         if not declaration.startswith("simplex["):
             continue
+        if cmap.mixture and name == "theta":                  # C05: a mixture's mixing proportions, simplex[K] theta
+            size = len(model.components) - 1
+            index = unreached[pos:pos + size]
+            pos += size
+            if len(index) != size:
+                raise OracleMismatch(f"brms's simplex {name!r} needs {size} unreached coordinates; {len(index)} are left")
+            for q, pt_ in enumerate(fixture.points):
+                u = stick_breaking_free(np.atleast_1d(pt_.pars[name]))
+                if np.max(np.abs(u - pt_.u[index])) > 1e-10:
+                    raise OracleMismatch(f"point {q}: Stan's stick-breaking coordinates of {name} are {u!r}; brms's unconstrained "
+                                         f"values at {[i + 1 for i in index]} are {pt_.u[index]!r}")
+            for j, i in enumerate(index):
+                out[i] = (f"{model.mixture_names['theta']}_stickbreaking__", j)
+            continue
         k = int(name[len("simo_"):]) if name.startswith("simo_") and name[len("simo_"):].isdigit() else None
         if k not in by_k:
             raise OracleMismatch(f"brms's simplex {name!r} ({declaration}) is not the simplex of a monotonic term of the AutoBayes model")
@@ -642,6 +712,12 @@ def draws(fixture: Fixture, model: ab.Model, cmap: ColumnMap, gmap: GroupMap) ->
     pts = fixture.points
     names = model.names
     data, coords = {}, {"chain": [0], "draw": np.arange(len(pts))}
+    if cmap.mixture:                                           # C05: the components' intercepts and coefficients as categories',
+        roles = model.mixture_names                            # each sigma<k> and theta
+        for s in roles["sigma"]:
+            data[names[s]] = (("chain", "draw"), np.array([float(p.pars[s]) for p in pts])[None, :])
+        data[roles["theta"]] = (("chain", "draw", roles["coordinate"]), np.stack([np.atleast_1d(p.pars["theta"]) for p in pts])[None])
+        return _category_draws(fixture, model, cmap, data, coords, axis=roles["coordinate"], labels=roles["labels"])
     if cmap.dpars:                                             # B05: the categorical family, one column per category
         return _category_draws(fixture, model, cmap, data, coords)
     if model.spec.intercept and cmap.thresholds:               # B05: the thresholds, centred (Intercept) and raw (b_Intercept)
@@ -713,12 +789,14 @@ def draws(fixture: Fixture, model: ab.Model, cmap: ColumnMap, gmap: GroupMap) ->
     return az.InferenceData(posterior=xr.Dataset(data, coords=coords))
 
 
-def _category_draws(fixture: Fixture, model: ab.Model, cmap: ColumnMap, data: dict, coords: dict) -> az.InferenceData:
+def _category_draws(fixture: Fixture, model: ab.Model, cmap: ColumnMap, data: dict, coords: dict, axis: str | None = None,
+                    labels=None) -> az.InferenceData:
     """``draws`` for the categorical family (B05): the raw-scale intercept of every non-reference category (brms
     ``b_mu<k>_Intercept``, as Bambi's posterior holds it after uncentring) and every coefficient with the categories as its
-    last axis, brms's ``b_mu<k>`` in column k; the family takes population-level terms only."""
-    pts, names, category = fixture.points, model.names, model.names["category_dim"]
-    coords[category] = list(model.categories[1:])
+    last axis, brms's ``b_mu<k>`` in column k; the family takes population-level terms only. A mixture's components (C05)
+    take the same layout over the dimension ``axis`` with coordinates ``labels``."""
+    pts, names, category = fixture.points, model.names, axis or model.names["category_dim"]
+    coords[category] = list(labels) if labels is not None else list(model.categories[1:])
     if model.spec.intercept:
         a = np.array([[float(p.pars[f"b_{dp}_Intercept"]) if cmap.centred_intercept
                        else float(coefficients(p.pars, f"b_{dp}")[cmap.b_index(cmap.intercept_column)]) for dp in cmap.dpars]

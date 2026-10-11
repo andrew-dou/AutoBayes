@@ -227,7 +227,8 @@ def _default(prior: Prior) -> Prior:
 
 
 def default_priors(formula: str | list[str], data: pd.DataFrame, *, family: str = "gaussian", categorical: Mapping[str, object] | None = None,
-                   nu: float | None = None, link: str | None = None, center_predictors: bool = True) -> Priors:
+                   nu: float | None = None, link: str | None = None, center_predictors: bool = True,
+                   families: list[str] | None = None, order: str | bool | None = None) -> Priors:
     """brms's default priors for ``formula`` on ``data`` under ``family`` (brms 2.23's ``default_prior()``), as a
     ``Priors`` the constructors accept: ``ab.gaussian(f, df, ab.default_priors(f, df))``. ``formula`` may be a list with a
     distributional formula (B01, ``["y ~ x", "sigma ~ z"]``), whose priors are its intercept's and coefficients'.
@@ -237,7 +238,13 @@ def default_priors(formula: str | list[str], data: pd.DataFrame, *, family: str 
     ``None`` the model learns them and they get brms's ``gamma(2, 0.1)``; a fixed value gets no prior. The data-dependent
     location and scale are computed from the response as brms computes them (module docstring). Every prior is marked
     ``source="default"``. Refused: a family or link the library does not have, a formula outside the supported subset
-    (the same errors as the constructors), and a family whose parameter has no recorded brms default."""
+    (the same errors as the constructors), and a family whose parameter has no recorded brms default.
+
+    A mixture (C05, ``family="mixture"`` with ``families=[...]`` and ``order`` as ``ab.mixture`` takes them): one ``Priors``
+    per component, the component family's own defaults for the same formula and data (brms's ``def_dpar_prior`` of
+    ``mu<k>`` and ``sigma<k>`` reads the response through the component's link: a Gaussian component's Intercept
+    ``student_t(3, location, scale)``, flat ``b`` and ``sigma<k>`` ``student_t(3, 0, scale)``), and ``dirichlet(1)`` on
+    ``theta``."""
     from autobayes.families import FAMILIES, get_family
     from autobayes.formula import parse_formula
 
@@ -251,6 +258,17 @@ def default_priors(formula: str | list[str], data: pd.DataFrame, *, family: str 
     elif nu is not None:
         accepting = [name for name, other in FAMILIES.items() if "nu" in other.fixed_parameters]
         raise ValueError(f"nu applies only to the {' or '.join(accepting)} family")
+    if fam.mixture:                                                   # C05: each component's defaults, and dirichlet(1) on theta
+        from autobayes.families.mixture import check_mixture
+
+        components = check_mixture(formula, families, order, None, center_predictors)
+        spec = parse_formula(formula, data, family, categorical)      # the mixture's own refusals (group terms, offsets, ...)
+        priors = Priors(components=[default_priors(formula, data, family=name, categorical=categorical) for name in components],
+                        theta=_default(Dirichlet(1)))
+        priors.validate(spec, fam)
+        return priors
+    if families is not None or order is not None:
+        raise ValueError(f"families= and order= are a mixture's (family='mixture'); the {fam.name} family takes neither")
     spec = parse_formula(formula, data, family, categorical)
     # B05: brms never reads an ordinal or categorical response for its defaults (no identity or log link: 0 and 2.5), and
     # its labels need not be numbers
@@ -420,6 +438,14 @@ def prior_table(priors: Priors, spec, family="gaussian", *, center_predictors: b
                     add(p, "b", coef=name, dpar=dpar)
 
     names = brms_coefficient_names(spec)
+    if fam.mixture:                                                   # C05: each component's dpar mu<k> rows and class sigma<k>,
+        for k, c in enumerate(priors.components, start=1):            # then theta's row (brms's default_prior() of a mixture)
+            add(c.intercept, "Intercept", dpar=f"mu{k}")
+            add_coefficients([(names[col], p) for col, p in c.coefficient_priors(spec).items()], dpar=f"mu{k}")
+            add(c.sigma, f"sigma{k}", lb="0")
+        add(priors.theta, "theta")
+        rows.sort(key=lambda r: (r["resp"], r["dpar"], r["nlpar"], r["class"], r["group"], r["coef"], r["tag"]))
+        return rows
     coefficient_priors = priors.coefficient_priors(spec)
     for dpar in (brms_dpar_names(categories[1:]) if fam.per_category else [""]):   # brms's mu<k>: one block per category (B05)
         coefs = [(names[col], p) for col, p in coefficient_priors.items()]

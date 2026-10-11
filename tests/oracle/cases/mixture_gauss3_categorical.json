@@ -1,0 +1,181 @@
+{
+ "id": "mixture_gauss3_categorical",
+ "tier": "C",
+ "feature": "C05_mixtures",
+ "note": "three Gaussian components with a treatment-coded z in every component's design (X_mu1..X_mu3 with zq, zr): ordered[3] ordered_Intercept (two log-gap coordinates), simplex[3] theta (two unreached stick-breaking coordinates); a different prior per component on every class (Intercept and b by dpar, a coefficient prior on zq of mu2, sigma1..sigma3 of three distributions) and dirichlet(2, 3, 4) on theta, so that the per-component and per-level layout of the priors meets brms's lprior and gradient",
+ "seed": 309,
+ "n_points": 8,
+ "data": {
+  "generator": "tier_c",
+  "seed": 209,
+  "n": 36,
+  "newdata": {
+   "seed": 309,
+   "n": 5
+  }
+ },
+ "brms": {
+  "formula": "y ~ x + z",
+  "family": {
+   "mixture": [
+    {
+     "family": "gaussian"
+    },
+    {
+     "family": "gaussian"
+    },
+    {
+     "family": "gaussian"
+    }
+   ]
+  },
+  "factors": {
+   "z": [
+    "p",
+    "q",
+    "r"
+   ]
+  },
+  "priors": [
+   {
+    "prior": "normal(-1, 2)",
+    "class": "Intercept",
+    "dpar": "mu1"
+   },
+   {
+    "prior": "normal(0.5, 2)",
+    "class": "Intercept",
+    "dpar": "mu2"
+   },
+   {
+    "prior": "normal(2, 2)",
+    "class": "Intercept",
+    "dpar": "mu3"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "b",
+    "dpar": "mu1"
+   },
+   {
+    "prior": "normal(0, 2)",
+    "class": "b",
+    "dpar": "mu2"
+   },
+   {
+    "prior": "normal(0.5, 1)",
+    "class": "b",
+    "coef": "zq",
+    "dpar": "mu2"
+   },
+   {
+    "prior": "normal(0, 1.5)",
+    "class": "b",
+    "dpar": "mu3"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "sigma1"
+   },
+   {
+    "prior": "student_t(3, 0, 2)",
+    "class": "sigma2"
+   },
+   {
+    "prior": "exponential(1)",
+    "class": "sigma3"
+   },
+   {
+    "prior": "dirichlet(2, 3, 4)",
+    "class": "theta"
+   }
+  ]
+ },
+ "autobayes": {
+  "constructor": "mixture",
+  "formula": "y ~ x + z",
+  "kwargs": {
+   "families": [
+    "gaussian",
+    "gaussian",
+    "gaussian"
+   ],
+   "categorical": {
+    "z": "p"
+   }
+  },
+  "priors": {
+   "components": [
+    {
+     "intercept": [
+      "Normal",
+      -1,
+      2
+     ],
+     "b": [
+      "Normal",
+      0,
+      1
+     ],
+     "sigma": [
+      "HalfNormal",
+      1
+     ]
+    },
+    {
+     "intercept": [
+      "Normal",
+      0.5,
+      2
+     ],
+     "b": {
+      "x": [
+       "Normal",
+       0,
+       2
+      ],
+      "z": {
+       "q": [
+        "Normal",
+        0.5,
+        1
+       ],
+       "r": [
+        "Normal",
+        0,
+        2
+       ]
+      }
+     },
+     "sigma": [
+      "HalfStudentT",
+      3,
+      2
+     ]
+    },
+    {
+     "intercept": [
+      "Normal",
+      2,
+      2
+     ],
+     "b": [
+      "Normal",
+      0,
+      1.5
+     ],
+     "sigma": [
+      "Exponential",
+      1
+     ]
+    }
+   ],
+   "theta": [
+    "Dirichlet",
+    2,
+    3,
+    4
+   ]
+  }
+ }
+}

@@ -1,0 +1,80 @@
+{
+ "factors": {
+  "z": [
+   "p",
+   "q",
+   "r"
+  ]
+ },
+ "family": {
+  "mixture": [
+   {
+    "family": "gaussian"
+   },
+   {
+    "family": "gaussian"
+   },
+   {
+    "family": "gaussian"
+   }
+  ]
+ },
+ "formula": "y ~ x + z",
+ "id": "mixture_gauss3_categorical",
+ "n_points": 8,
+ "priors": [
+  {
+   "class": "Intercept",
+   "dpar": "mu1",
+   "prior": "normal(-1, 2)"
+  },
+  {
+   "class": "Intercept",
+   "dpar": "mu2",
+   "prior": "normal(0.5, 2)"
+  },
+  {
+   "class": "Intercept",
+   "dpar": "mu3",
+   "prior": "normal(2, 2)"
+  },
+  {
+   "class": "b",
+   "dpar": "mu1",
+   "prior": "normal(0, 1)"
+  },
+  {
+   "class": "b",
+   "dpar": "mu2",
+   "prior": "normal(0, 2)"
+  },
+  {
+   "class": "b",
+   "coef": "zq",
+   "dpar": "mu2",
+   "prior": "normal(0.5, 1)"
+  },
+  {
+   "class": "b",
+   "dpar": "mu3",
+   "prior": "normal(0, 1.5)"
+  },
+  {
+   "class": "sigma1",
+   "prior": "normal(0, 1)"
+  },
+  {
+   "class": "sigma2",
+   "prior": "student_t(3, 0, 2)"
+  },
+  {
+   "class": "sigma3",
+   "prior": "exponential(1)"
+  },
+  {
+   "class": "theta",
+   "prior": "dirichlet(2, 3, 4)"
+  }
+ ],
+ "seed": 309
+}
