@@ -1,22 +1,21 @@
-"""brms's response addition terms (brms-parity feature B02; docs/addition-terms.md): ``weights()``, and the withheld
-``cens()`` and ``trunc()``.
+"""brms's response addition terms (brms-parity feature B02; docs/addition-terms.md): ``weights()``, ``cens()`` and
+``trunc()`` (the last two parked until P6 accepted them against two references).
 
 The grammar and every refusal by message; the term model (``AdditionTerm`` in ``ModelSpec.additions``, the canonical
 formula, Bambi's formula without them); data validation; the weighted likelihood equal to the unweighted one plus
 ``sum((w - 1) * log p(y_i))`` for every family (with correlated slopes, an offset and the probit link too); predictions
 that ignore the weights; the target identity, the fit record, ``describe()`` and prior-predictive draws; the oracle's G1
-and G2 failing when the weights are dropped or misread. ``cens()`` and ``trunc()`` are parked (``formula.PARKED_ADDITIONS``):
-their refusal, and, with the park lifted under monkeypatch, their numerics against a 200-digit Decimal reference on both
-paths, models that build, describe and draw, and the frozen fixtures ``gauss_censored`` and ``gauss_truncated``, which pass
-every gate except where brms's own numbers are measurably off the exact ones. Nothing samples; the numbers against brms
-for ``weights()`` are the oracle's (tests/oracle: ``gauss_weighted`` and one ``<family>_weighted`` case per family)."""
+and G2 failing when the weights are dropped or misread. ``cens()`` and ``trunc()``: their numerics against a 200-digit
+Decimal reference on both paths, models that build, describe and draw, and the frozen fixtures ``gauss_censored`` and
+``gauss_truncated``, which fail the brms-only gates exactly where brms's own numbers are measurably off the exact ones and
+pass every gate with their two-reference opt-in. Nothing samples; the numbers against brms are the oracle's (tests/oracle:
+``gauss_weighted`` and one ``<family>_weighted`` case per family, ``gauss_censored``, ``gauss_truncated``)."""
 import copy
 import json
 import re
 from dataclasses import asdict
 from decimal import Decimal, localcontext
 from functools import lru_cache
-from types import MappingProxyType
 
 import numpy as np
 import pytensor
@@ -27,7 +26,7 @@ import autobayes as ab
 import autobayes.formula as F
 import autobayes.likelihoods as lk
 from autobayes.formula import AdditionTerm
-from tests.oracle import adapter, datasets, gates
+from tests.oracle import adapter, datasets, gates, two_reference
 from tests.oracle.adapter import OracleMismatch
 from tests.test_population_only import PANEL_STUB
 
@@ -51,19 +50,13 @@ def weighted_lhs(lhs: str) -> str:
     return f"{lhs} + weights(w)" if "|" in lhs else f"{lhs} | weights(w)"
 
 
-@pytest.fixture
-def unparked(monkeypatch):
-    """``cens()`` and ``trunc()`` un-parked for the test: the withheld implementation, reached only from the tests."""
-    monkeypatch.setattr(F, "PARKED_ADDITIONS", MappingProxyType({}))
-
-
 @pytest.fixture(scope="module")
 def weighted():
     return ab.gaussian("y | weights(w) ~ x + (1 | g)", DATA, GAUSS)
 
 
 # -- 1. the grammar and the term model ------------------------------------------------------------------------
-def test_grammar_term_model_and_canonical_forms(unparked):
+def test_grammar_term_model_and_canonical_forms():
     s = ab.parse_formula("y | weights(w) ~ x + (1 | g)")
     assert s.additions == (AdditionTerm("weights", column="w"),) and s.trials is None and s.response == "y"
     assert s.addition("weights").term == "weights(w)" and s.addition("weights").columns == ("w",) and s.addition("cens") is None
@@ -86,9 +79,6 @@ def test_grammar_term_model_and_canonical_forms(unparked):
 
 
 REFUSALS = [
-    ("y | cens(c) ~ x", "gaussian", r"'cens\(c\)': brms's cens\(\) is withheld: brms's own gradient of a censored Gaussian model .*divergence D24\)"),
-    ("y | trunc(lb = 0) ~ x", "gaussian", r"'trunc\(lb = 0\)': brms's trunc\(\) is withheld: .*divergence D25\)"),
-    ("cnt | cens(c) ~ x", "poisson", r"brms's cens\(\) is withheld"),                       # the park is named before the family
     ("y | se(s) ~ x", "gaussian", r"'se\(s\)' is not a supported response addition term.*exactly 'successes \| trials\(n\)'"),
     ("y | w ~ x", "gaussian", r"'w' is not a supported response addition term"),
     ("y | weights(w) + weights(v) ~ x", "gaussian", r"weights\(\) appears more than once on the left-hand side"),
@@ -108,7 +98,7 @@ def test_refusals(formula, family, needle):
         ab.parse_formula(formula, family=family)
 
 
-UNPARKED_REFUSALS = [
+CENS_TRUNC_REFUSALS = [
     ("y | cens(c, y2) ~ x", "gaussian", r"cens\(\) takes one column name; interval censoring, cens\(col, y2\), is not part of this slice"),
     ("y | trunc(lb = x) ~ x", "gaussian", r"a truncation bound must be a number; per-row bounds read from a column \('x'\)"),
     ("y | trunc(lb = 2, ub = 1) ~ x", "gaussian", r"the truncation bounds must satisfy lb < ub"),
@@ -124,16 +114,16 @@ UNPARKED_REFUSALS = [
 ]
 
 
-@pytest.mark.parametrize("formula,family,needle", UNPARKED_REFUSALS)
-def test_refusals_of_the_withheld_terms(unparked, formula, family, needle):
+@pytest.mark.parametrize("formula,family,needle", CENS_TRUNC_REFUSALS)
+def test_refusals_of_cens_and_trunc(formula, family, needle):
     with pytest.raises(ab.FormulaError, match=needle):
         ab.parse_formula(formula, family=family)
 
 
-def test_the_park_and_the_family_registry():
-    assert set(F.PARKED_ADDITIONS) == {"cens", "trunc"}
-    assert "D24" in F.PARKED_ADDITIONS["cens"] and "2.5e-6" in F.PARKED_ADDITIONS["cens"]
-    assert "D25" in F.PARKED_ADDITIONS["trunc"] and "4.2e-7" in F.PARKED_ADDITIONS["trunc"]
+def test_no_park_and_the_family_registry():
+    assert not F.PARKED_ADDITIONS                           # P6 lifted the parks of cens() and trunc() (D24, D25)
+    for formula in ("y | cens(c) ~ x", "y | trunc(lb = 0) ~ x", "y | cens(c) + weights(w) ~ x + (1 | g)"):
+        assert ab.parse_formula(formula, family="gaussian").additions
     from autobayes.families import FAMILIES, get_family
     verified = {"gaussian", "student", "poisson", "negbinomial", "gamma", "lognormal", "beta", "bernoulli", "binomial"}
     for name, spec in FAMILIES.items():                     # weights() only where a frozen weighted brms case verifies it
@@ -166,7 +156,7 @@ def test_weights_column_must_exist_and_may_be_any_numeric_column():
     assert m.design.cens is None and m.design.lb is None and m.design.ub is None
 
 
-def test_censoring_codes_and_truncation_bounds_are_validated(unparked):
+def test_censoring_codes_and_truncation_bounds_are_validated():
     for codes, needle in [([2] + [0] * 39, r"code 2 \(interval censoring\) needs brms's cens\(c, y2\)"),
                           ([0.5] + [0] * 39, r"censoring codes must be -1 \(left\), 0 \(none\) or 1 \(right\); found 0.5"),
                           (["left"] * 40, r"must be numeric, -1 \(left\), 0 \(none\) or 1 \(right\); recode brms's labels"),
@@ -321,7 +311,7 @@ def test_weights_gate_discriminates(fixture_draws):
         gates.check_design(wrong)
 
 
-# -- 5. the withheld cens() and trunc(): numerics on both paths against 200 digits ------------------------------------
+# -- 5. cens() and trunc(): numerics on both paths against 200 digits --------------------------------------------------------
 # A reference for |z| <= 15: erf's Taylor series summed at 200 digits (its largest term there is about 1e49, so the sum
 # keeps 150 digits, and Phi(-15) = 3.7e-51 keeps 99). Every function below runs inside a local 200-digit context: other
 # modules set the global Decimal context at import (tests/test_links.py sets 50 digits).
@@ -374,7 +364,7 @@ INTERVALS = [(-15.0, -12.0), (-8.0, -7.999), (-6.0, -1.0), (-2.0, 0.0), (-1.0, 1
 
 
 @pytest.mark.parametrize("mode", ["FAST_RUN", "JAX"])
-def test_withheld_normal_tails_are_exact_on_both_paths(mode):
+def test_normal_tails_are_exact_on_both_paths(mode):
     if mode == "JAX":
         pytest.importorskip("jax")
     v, mu, s, lo, hi = (pt.dvector(n) for n in ("v", "mu", "s", "lo", "hi"))
@@ -407,7 +397,7 @@ def test_withheld_normal_tails_are_exact_on_both_paths(mode):
                 assert np.isfinite(got_m[k][i]) and abs(got_m[k][i] - float(w)) <= 1e-11 * max(1.0, abs(float(w))), (mode, ai, bi, k, got_m[k][i], float(w))
 
 
-def test_withheld_truncated_mean_is_exact_where_brms_formula_is_not():
+def test_truncated_mean_is_exact_where_brms_formula_is_not():
     from scipy.special import ndtr
     from scipy.stats import norm
 
@@ -428,8 +418,8 @@ def test_withheld_truncated_mean_is_exact_where_brms_formula_is_not():
     assert np.all(np.isfinite(lk.standard_truncated_mean(np.array([-40.0, 40.0]), np.array([np.inf, np.inf]))))
 
 
-# -- 6. the withheld terms in models: they build, describe, draw, and meet the fixtures where brms is exact ------------
-def test_withheld_terms_build_describe_and_draw(unparked):
+# -- 6. cens() and trunc() in models: they build, describe, draw, and meet brms where brms is exact, the reference elsewhere --
+def test_cens_and_trunc_build_describe_and_draw():
     for formula in ["y | cens(cens_ind) + weights(w) ~ x + (1 | g)", "ypos | trunc(lb = 0) ~ x + (1 | g)",
                     "y | trunc(lb = -5, ub = 5) ~ x", "y | trunc(ub = 6) + weights(w) ~ x"]:
         m = ab.gaussian(formula, DATA, GAUSS if "(1 | g)" in formula else NOPOOL)
@@ -448,9 +438,17 @@ def test_withheld_terms_build_describe_and_draw(unparked):
             f"{(codes == 1).sum()} right-censored (1: a lower bound, log P(Y_i > y_i)), {(codes == 0).sum()} observed (0)") in m.describe()
 
 
-@pytest.fixture
-def parked_bundles(unparked):
+@pytest.fixture(scope="module")
+def frozen_bundles():
     return {cid: gates.Bundle(cid) for cid in ("gauss_censored", "gauss_truncated")}
+
+
+def _brms_only(b):
+    """``b`` without its two-reference opt-in (P6): its gates compare with brms alone, as before."""
+    other = copy.copy(b)
+    other.case = {k: v for k, v in b.case.items() if k != "gate"}
+    other.__dict__.pop("reference", None)
+    return other
 
 
 def _gradient(b, k):
@@ -465,20 +463,25 @@ def _rel(u, v):
     return float(np.max(np.abs(u - v) / np.maximum(1.0, np.maximum(np.abs(u), np.abs(v)))))
 
 
-def test_parked_fixtures_fail_only_where_brms_is_inexact(parked_bundles):
-    """With the park lifted both frozen cases pass G1, the G2 density, G3, G5 and G6, the censored one G4 too; the
-    gradient gate fails exactly at the seeded points where brms's gradient is off the exact one, and G4 where brms's
-    truncated mean is (the 50-digit comparison is the next test's)."""
-    for cid, b in parked_bundles.items():
+def test_fixtures_fail_against_brms_alone_only_where_brms_is_inexact(frozen_bundles):
+    """Both frozen cases pass G1, the G2 density, G3, G5 and G6, the censored one G4 too, against brms alone; against brms
+    alone the gradient gate fails exactly at the seeded points where brms's gradient is off the exact one, and G4 where
+    brms's truncated mean is (the 50-digit comparison is the next test's). With their two-reference opt-in (P6) the
+    committed reference stands in there, and both gates pass."""
+    for cid, b in frozen_bundles.items():
         for check in (gates.check_design, gates.check_logp, gates.check_derived, gates.check_jax, gates.check_default_prior):
             check(b)
         with pytest.raises(OracleMismatch, match="gradient"):
-            gates.check_gradient(b)
+            gates.check_gradient(_brms_only(b))
         over = [k for k, p in enumerate(b.fixture.points) if _rel(_gradient(b, k), p.grad_nojac) > 1e-7]
         assert over == {"gauss_censored": [0, 4, 5, 6, 7], "gauss_truncated": [4]}[cid], (cid, over)
-    gates.check_predictions(parked_bundles["gauss_censored"])                  # epred = linpred: censoring changes no prediction
+        with pytest.warns(two_reference.ReferenceFallback, match=rf"{cid} G2 gradient: "):
+            gates.check_gradient(b)
+    gates.check_predictions(frozen_bundles["gauss_censored"])                  # epred = linpred: censoring changes no prediction
     with pytest.raises(OracleMismatch, match=r"fitted: 'mu' differs from brms posterior_epred by 4\.1"):
-        gates.check_predictions(parked_bundles["gauss_truncated"])
+        gates.check_predictions(_brms_only(frozen_bundles["gauss_truncated"]))
+    with pytest.warns(two_reference.ReferenceFallback, match="gauss_truncated G4 epred: 6 of 656 entries"):
+        gates.check_predictions(frozen_bundles["gauss_truncated"])
 
 
 def _exact_gradient(b, k):
@@ -518,8 +521,8 @@ def _exact_gradient(b, k):
 
 
 @pytest.mark.parametrize("cid,k,brms_off", [("gauss_censored", 4, 2.4e-6), ("gauss_censored", 0, 2.2e-7), ("gauss_truncated", 4, 4.1e-7)])
-def test_autobayes_gradient_is_exact_where_brms_is_not(parked_bundles, cid, k, brms_off):
-    b = parked_bundles[cid]
+def test_autobayes_gradient_is_exact_where_brms_is_not(frozen_bundles, cid, k, brms_off):
+    b = frozen_bundles[cid]
     assert [e["par"] for e in b.fixture.upars] == ["b", "Intercept", "sigma", "sd_1"] + ["z_1"] * 6
     exact = _exact_gradient(b, k)
     ours, theirs = _gradient(b, k), b.fixture.points[k].grad_nojac

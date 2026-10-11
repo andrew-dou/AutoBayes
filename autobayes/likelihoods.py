@@ -228,7 +228,7 @@ def beta_logit_family():
     return bmb.Family("beta_logit", likelihood, link={"logit_mu": "identity", "phi": "log"})
 
 
-# ---- the probit link for the Bernoulli and binomial families (brms-parity A12), and the withheld cloglog ------
+# ---- the probit (brms-parity A12) and cloglog (P6) links for the Bernoulli and binomial families --------------
 # brms: bernoulli_lpmf(Y | Phi(eta)) for link = "probit" and bernoulli_lpmf(Y | inv_cloglog(eta)) with
 # inv_cloglog(eta) = 1 - exp(-exp(eta)) for link = "cloglog" (binomial_lpmf likewise). Stan's Phi(eta) is
 # exactly 0 below eta = -37.5 and exactly 1 above 8.25, and 1 - exp(-exp(eta)) is exactly 0 below eta of
@@ -246,11 +246,11 @@ def beta_logit_family():
 # tests/test_links.py against scipy's log_ndtr (probit, |eta| <= 300) and a 50-digit Decimal reference (cloglog,
 # |eta| <= 40) on both paths.
 #
-# Only the probit link is offered (families/links.py): the cloglog forms below are exact where brms's own
-# gradient is not (Stan forms 1 - theta by subtraction, losing eps * exp(exp(eta)) relative for a y = 0 row at
-# eta above about 2.7), so the frozen brms fixture cannot certify the link to the oracle's tolerance; they are
-# kept, tested and reached only from the tests until a fixture can (docs/links.md, divergence D18). The hurdle Poisson
-# (B06, below) uses cloglog_log_p1 for what it also is, log P(count > 0) = log(1 - exp(-exp(eta))) of a Poisson count.
+# The cloglog forms below are exact where brms's own gradient is not (Stan forms 1 - theta by subtraction, losing
+# eps * exp(exp(eta)) relative for a y = 0 row at eta above about 2.7), so the link was parked until P6 accepted it
+# against two references: brms where brms is accurate, a committed 50-digit reference where it is not (docs/links.md,
+# divergence D18). The hurdle Poisson (B06, below) uses cloglog_log_p1 for what it also is, log P(count > 0) =
+# log(1 - exp(-exp(eta))) of a Poisson count.
 
 _SQRT2 = math.sqrt(2.0)
 _LOG_PHI_LOWER, _LOG_PHI_UPPER = -20.0, -1.0
@@ -342,9 +342,9 @@ def _bernoulli_link_dist(link: str):
 
 
 def bernoulli_link_family(link: str):
-    """Bambi family for the Bernoulli response under the probit link (or the withheld cloglog link, reached only from
-    the tests): the identity link on the parent ``<link>_p``, which is the linear predictor (as
-    ``bernoulli_logit_family`` keeps ``logit_p``), and the likelihood of ``LINK_LOG_PROBABILITIES[link]``."""
+    """Bambi family for the Bernoulli response under the probit or the cloglog link: the identity link on the parent
+    ``<link>_p``, which is the linear predictor (as ``bernoulli_logit_family`` keeps ``logit_p``), and the likelihood of
+    ``LINK_LOG_PROBABILITIES[link]``."""
     import bambi as bmb
 
     parent = f"{link}_p"
@@ -386,8 +386,8 @@ def _binomial_link_dist(link: str):
 
 
 def binomial_link_family(link: str):
-    """Bambi family for the binomial response ``p(k, n)`` under the probit link (or the withheld cloglog link), built
-    as ``binomial_logit_family`` is (the two-column response split in ``transform_backend_kwargs``)."""
+    """Bambi family for the binomial response ``p(k, n)`` under the probit or the cloglog link, built as
+    ``binomial_logit_family`` is (the two-column response split in ``transform_backend_kwargs``)."""
     import bambi as bmb
 
     class BinomialLinkFamily(bmb.Family):
@@ -538,10 +538,11 @@ def hurdle_poisson_family():
 # density by log P(Y <= y) or log P(Y > y), and trunc(lb, ub) subtracts the log mass between the bounds from every row,
 # both through the family's Tails (Gaussian: NORMAL_TAILS); with weights, a row's whole log likelihood is weighted, as
 # brms writes it for every combination accepted here (brms leaves the truncation mass unweighted only for cens() with
-# trunc(), which is refused). Both are withheld (formula.PARKED_ADDITIONS): brms's own gradients of the frozen
-# fixtures are not exact enough to certify them. PyMC's Normal log-CDF goes through erfcx, which has no JAX lowering on
-# this stack, so the Gaussian's tails are built from log_normal_cdf above and erf, finite with a finite gradient on both
-# paths for every finite argument, every piecewise branch evaluated on arguments clipped into its own domain.
+# trunc(), which is refused). Both were withheld until P6 (brms's own gradients of their frozen fixtures, and its
+# truncated mean, are not exact everywhere; they are accepted against two references, D24, D25). PyMC's Normal log-CDF
+# goes through erfcx, which has no JAX lowering on this stack, so the Gaussian's tails are built from log_normal_cdf above
+# and erf, finite with a finite gradient on both paths for every finite argument, every piecewise branch evaluated on
+# arguments clipped into its own domain.
 #
 # The likelihood is a pm.CustomDist whose draws are the family's own distribution (the truncated one under trunc(): brms's
 # posterior_predict draws from the truncated distribution and ignores censoring and weights) and whose log density is the

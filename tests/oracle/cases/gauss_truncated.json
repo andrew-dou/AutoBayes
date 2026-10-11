@@ -6,8 +6,13 @@
  "seed": 163,
  "n_points": 8,
  "gate": {
-  "expect": "fail",
-  "reason": "B02_cens_trunc_weights: trunc() is withheld (docs/addition-terms.md, divergence D25). At seeded point 4 a row's location sits 6.17 SD below the bound lb = 0, where Stan's normal_lccdf forms 1 - erf(z / sqrt(2)) by subtraction: brms's gradient with respect to b[1] (the slope of x) is -1.5193463027823753 where the exact 50-digit value is -1.5193469340177965, a relative error of 4.2e-7 against the oracle's GRAD_REL of 1e-7; and brms's posterior_epred, which forms 1 - pnorm(z) by subtraction, is off by up to 1.05e-3 relative (point 4, fitted row 28 without group effects, 7.34 SD below the bound; PRED_REL 1e-9) at 6 of its 656 entries. Every log density agrees with the exact one to 7e-11; with the park lifted AutoBayes passes G1, the G2 density, G3, G5 and G6 and agrees with the exact gradient to 4e-14 and the exact truncated mean to 9e-15. Remove this field when Andrew decides how truncation is certified (a fixture whose seeded points keep (lb - mu) / sigma below about 4 on every row would be exact on the brms side)."
+  "expect": "pass",
+  "reference": "gauss_truncated.json",
+  "divergence": "D25",
+  "fallback": [
+   "gradient",
+   "epred"
+  ]
  },
  "data": {
   "generator": "tier_b",

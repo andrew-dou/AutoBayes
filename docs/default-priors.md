@@ -66,7 +66,7 @@ parameters take the family's own defaults (`FamilySpec.default_scale_prior`, `de
 - An intercept-only model has no coefficient and now needs no `b` prior (D2); one given anyway changes nothing.
 - `ab.Flat()` is accepted for the intercept and `b` only; `ab.InverseGamma(alpha, beta)` for `sd`, `sigma`, `shape` and
   `phi`, not for `nu` (its truncation at 1 is not one this library renormalises, D22).
-- Refused, with the constructors' messages: a family or link the library lacks (`sratio`, the withheld `cloglog`),
+- Refused, with the constructors' messages: a family or link the library lacks (`sratio`, brms's `cauchit` link),
   a formula outside the supported subset, data the constructors refuse, `nu=` for a family without it; and a family
   whose parameter has no recorded brms default.
 

@@ -46,7 +46,7 @@ GAUSSIAN = FamilySpec(
     deterministic_note="mu = linear predictor",
     default_prior_link="identity",                                  # brms reads y as given: student_t(3, round(median(y), 1), max(2.5, round(mad(y), 1)))
     default_scale_prior=lambda scale: HalfStudentT(3, scale),       # brms sigma: student_t(3, 0, scale), lb 0
-    addition_terms=frozenset({"weights", "cens", "trunc"}),         # B02: weights(); cens() and trunc() are parked (formula.PARKED_ADDITIONS)
+    addition_terms=frozenset({"weights", "cens", "trunc"}),         # B02: weights(); cens() and trunc() since P6 (two references, D24, D25)
     tails=_tails,
     distributional_link="log",                                      # B01: sigma ~ z, brms's log link
     default_distributional_intercept=lambda scale: StudentT(3, 0, scale),   # brms Intercept_sigma: student_t(3, 0, scale of log y)

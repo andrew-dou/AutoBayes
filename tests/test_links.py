@@ -1,9 +1,10 @@
-"""brms-parity A12: the probit link of the Bernoulli and binomial families (docs/links.md).
+"""brms-parity A12: the probit link of the Bernoulli and binomial families, and P6: their cloglog link (docs/links.md).
 
 Refusals and the registry; the log density and gradient on both paths at linear predictors up to |eta| = 300 against
 scipy's log_ndtr and the analytic Mills ratios; value_point; predictions on fitted and new rows under both unseen-group
 policies; describe(); the fit record and the target identity; prior-predictive support; and the numerics of the
-withheld cloglog link against a 50-digit Decimal reference on |eta| <= 40. Nothing samples.
+cloglog link against a 50-digit Decimal reference on |eta| <= 40, its models, describe() and predictions (the oracle
+cases bernoulli_cloglog and binomial_cloglog compare them with brms). Nothing samples.
 """
 import json
 from decimal import Decimal, getcontext
@@ -129,29 +130,32 @@ def _gvec(model, nat, names):
 
 # -- refusals and the registry ----------------------------------------------------------------------------------
 def test_links_offered_parked_and_refused(df):
-    assert set(LINKS) == {"logit", "probit"} and set(PARKED_LINKS) == {"cloglog"}
+    assert set(LINKS) == {"logit", "probit", "cloglog"} and not PARKED_LINKS          # P6 lifted the cloglog link's park
     assert set(INVERSE_LINKS) == {"logit", "probit", "cloglog"} and INVERSE_LINKS["probit"] is ndtr
     for family in ("bernoulli", "binomial"):
         spec = FAMILIES[family]
-        assert spec.link == "logit" and set(spec.links) == {"probit"} and set(spec.parked_links) == {"cloglog"}
+        assert spec.link == "logit" and set(spec.links) == {"probit", "cloglog"} and not spec.parked_links
         probit = get_family(family, "probit")
         assert probit.name == family and probit.parent == "probit_p" and probit.link == probit.link_scale == "probit"
-        assert set(probit.links) == {"logit"} and probit.parked_links is spec.parked_links
+        assert set(probit.links) == {"logit", "cloglog"} and probit.parked_links is spec.parked_links
+        cloglog = get_family(family, "cloglog")
+        assert cloglog.name == family and cloglog.parent == "cloglog_p" and cloglog.link == cloglog.link_scale == "cloglog"
+        assert set(cloglog.links) == {"logit", "probit"} and get_family(family, "cloglog") is cloglog
+        assert cloglog.inverse_link is inverse_cloglog and cloglog.with_link("probit") is probit
         assert get_family(family, "probit") is probit and probit.with_link("logit") is spec     # one spec per link
         assert get_family(family, None) is spec and get_family(family, "logit") is spec and probit.with_link("probit") is probit
     for name, spec in FAMILIES.items():
         if name not in ("bernoulli", "binomial"):
             assert not spec.links and not spec.parked_links and spec.with_link(spec.link) is spec
-    with pytest.raises(ValueError, match=r"link must be one of \['logit', 'probit'\] for the bernoulli family, got 'cauchit'"):
+    with pytest.raises(ValueError, match=r"link must be one of \['cloglog', 'logit', 'probit'\] for the bernoulli family, got 'cauchit'"):
         ab.bernoulli(BERNOULLI, df, PRIORS, link="cauchit")
     with pytest.raises(ValueError, match=r"for the binomial family, got 1$"):
         ab.binomial(BINOMIAL, df, PRIORS, link=1)
-    for ctor, formula in ((ab.bernoulli, BERNOULLI), (ab.binomial, BINOMIAL)):
-        with pytest.raises(ValueError, match=r"the cloglog link of the \w+ family is withheld: brms's own gradient .* divergence D18"):
-            ctor(formula, df, PRIORS, link="cloglog")
+    for ctor, formula in ((ab.bernoulli, BERNOULLI), (ab.binomial, BINOMIAL)):     # P6: built, no longer refused (D18)
+        assert ctor(formula, df, PRIORS, link="cloglog").link == "cloglog"
     gpriors = ab.Priors(intercept=ab.Normal(0, 2.5), b=ab.Normal(0, 1.5), sd=ab.HalfNormal(1), sigma=ab.HalfNormal(1))
     with pytest.raises(ValueError, match=r"the gaussian family has the identity link only; link='probit' is not available "
-                                         r"\(link= applies to the bernoulli and binomial families, which take \['logit', 'probit'\]\)"):
+                                         r"\(link= applies to the bernoulli and binomial families, which take \['cloglog', 'logit', 'probit'\]\)"):
         ab.Model(BERNOULLI, df, gpriors, family="gaussian", link="probit")
     with pytest.raises(ValueError, match="the poisson family has the log link only; link='identity' is not available"):
         ab.Model("k ~ x + (1 | g)", df, PRIORS, family="poisson", link="identity")
@@ -380,7 +384,7 @@ def test_log_normal_cdf_matches_scipy_on_both_paths(mode):
 
 
 @pytest.mark.parametrize("mode", ["FAST_RUN", "JAX"])
-def test_withheld_cloglog_numerics_are_exact_on_both_paths(mode):
+def test_cloglog_numerics_are_exact_on_both_paths(mode):
     if mode == "JAX":
         pytest.importorskip("jax")
     eta = pt.dvector("eta")
@@ -394,7 +398,7 @@ def test_withheld_cloglog_numerics_are_exact_on_both_paths(mode):
             assert np.isfinite(got) and abs(got - want) <= 1e-13 * max(1.0, abs(want)), (mode, e, got, want)
 
 
-def test_withheld_cloglog_likelihood_object_and_inverse_link():
+def test_cloglog_likelihood_object_and_inverse_link():
     import pymc as pm
 
     eta = np.array([-3.0, -0.5, 0.0, 1.0, 2.5])
@@ -409,3 +413,74 @@ def test_withheld_cloglog_likelihood_object_and_inverse_link():
     exact = [float(1 - (-Decimal(e).exp()).exp()) for e in (-40.0, 0.0, 3.0)]
     np.testing.assert_allclose(inverse_cloglog(np.array([-40.0, 0.0, 3.0])), exact, rtol=1e-14)
     assert INVERSE_LINKS["cloglog"] is inverse_cloglog
+
+
+# -- the cloglog link in models (P6; the oracle cases bernoulli_cloglog and binomial_cloglog compare them with brms) --------
+def _cloglog_reference(model, nat, *, jacobian=True):
+    """The target and its gradient in PyMC's value space under the cloglog link: the row terms and their eta-derivatives
+    from the 50-digit ``_cloglog_exact`` (log C(n, k) from the 60-digit binomial reference), the priors of PRIORS,
+    z ~ Normal(0, 1), plus log(sd) with the Jacobian."""
+    d = model.design
+    eta, y = _eta(model, nat), d.y
+    n = np.ones_like(y) if d.trials is None else d.trials
+    rows = [_cloglog_exact(e) for e in eta]                  # log P(y = 1), log P(y = 0) and their eta-derivatives
+    value = sum(yi * r[0] + (ni - yi) * r[1] for yi, ni, r in zip(y, n, rows))
+    if d.trials is not None:
+        value += sum(float(log_binom_dec(int(ni), int(yi))) for ni, yi in zip(n, y))
+    value += (norm.logpdf(nat["intercept"], 0, 2.5) + norm.logpdf(nat["b"], 0, 1.5).sum() + halfnorm.logpdf(nat["sd"], scale=1)
+              + norm.logpdf(nat["z"]).sum() + (np.log(nat["sd"]) if jacobian else 0.0))
+    dl = np.array([yi * r[2] + (ni - yi) * r[3] for yi, ni, r in zip(y, n, rows)])
+    a, sd, z = nat["intercept"], nat["sd"], nat["z"]
+    grad = {"Intercept": dl.sum() - a / 2.5 ** 2, "x": (dl * d.X_model[:, 0]).sum() - nat["b"][0] / 1.5 ** 2,
+            "1|g_sigma_log__": (dl * z[d.group_index]).sum() * sd - sd ** 2 + 1.0,
+            "1|g_offset": np.array([dl[d.group_index == j].sum() * sd - z[j] for j in range(d.J)])}
+    return value, grad
+
+
+@pytest.mark.parametrize("which", ["bernoulli", "binomial"])
+def test_cloglog_models_density_describe_and_predictions(which, df):
+    """``link="cloglog"`` builds the model (P6 lifted the park, D18): its density and gradient on both paths equal the
+    50-digit reference up to linear predictors of about 6, where brms's 1 - inv_cloglog(eta) has lost every digit;
+    ``describe()`` writes the link; ``predict()`` applies ``1 - exp(-exp(eta))``; prior-predictive draws are counts."""
+    pytest.importorskip("jax")
+    ctor, formula = (ab.bernoulli, BERNOULLI) if which == "bernoulli" else (ab.binomial, BINOMIAL)
+    m = ctor(formula, df, PRIORS, link="cloglog")
+    assert m.link == "cloglog" and m.family_spec is get_family(m.family, "cloglog")
+    assert m.names["linpred"] == "cloglog_p" and m.names["mean"] == "p" and "sigma" not in m.names
+    assert {v.name for v in m.pymc_model.deterministics} == {"1|g", "cloglog_p"}
+    assert m.target_identity != ctor(formula, df, PRIORS, link="probit").target_identity
+    names, logp, dlogp, jax_value, jax_grad = _both_paths(m)
+    rng = np.random.default_rng(11)
+    for a in (-4.0, -1.0, 0.0, 1.5, 3.0):
+        nat = dict(intercept=a, b=np.array([0.6]), sd=0.7, z=rng.normal(size=m.design.J))
+        point = m.value_point(**nat)
+        ref, g = _cloglog_reference(m, nat)
+        gvec = np.concatenate([np.atleast_1d(g[n]) for n in names])
+        tol = 1e-8 * max(1.0, abs(ref))
+        assert abs(float(logp(point)) - ref) < tol and abs(jax_value(point) - ref) < tol, (a, float(logp(point)), ref)
+        np.testing.assert_allclose(np.asarray(dlogp(point), dtype=float), gvec, rtol=1e-9, atol=1e-9, err_msg=f"intercept {a}")
+        np.testing.assert_allclose(jax_grad(point), gvec, rtol=1e-9, atol=1e-9, err_msg=f"JAX, intercept {a}")
+    text = m.describe()
+    assert f"family    : {which}, cloglog link" in text and "Priors (location coefficients on the cloglog scale)" in text
+    assert "eta is on the complementary log-log scale." in text and "log-odds" not in text and "Phi" not in text
+    if which == "bernoulli":
+        assert "P(y_i = 1) = p_i = 1 - exp(-exp(eta_i)), the inverse complementary log-log; eta" in text
+        assert "a_c is the complementary log-log (log(-log(1 - p))) of the probability of y = 1 at the predictor means" in text
+        assert "log p(y_i | eta_i) = y_i log(1 - exp(-exp(eta_i))) - (1 - y_i) exp(eta_i)" in text
+        assert text.endswith("Deterministic: 1|g = u, cloglog_p = linear predictor; p = 1 - exp(-exp(cloglog_p)) are computed by predict()")
+    else:
+        assert "P(success) = p_i = 1 - exp(-exp(eta_i)); k_i ~ Binomial(n_i, p_i)" in text
+        assert "log p(k_i | n_i, eta_i) = log C(n_i, k_i) + k_i log(1 - exp(-exp(eta_i))) - (n_i - k_i) exp(eta_i)" in text
+    idata = _posterior(m)
+    post = idata.posterior
+    a, b, u = (post[k].to_numpy() for k in ("Intercept", "x", "1|g"))
+    eta = a[..., None] + b[..., None] * df.x.to_numpy() + u[..., m.design.group_index]
+    lin = m.predict(idata, kind="linear")
+    assert np.allclose(lin["eta"].to_numpy(), eta, atol=1e-12) and lin.attrs["link"] == "cloglog"
+    mean = m.predict(idata, kind="mean")
+    assert np.allclose(mean["p"].to_numpy(), -np.expm1(-np.exp(eta)), atol=1e-12)
+    if which == "binomial":
+        assert np.allclose(mean["expected"].to_numpy(), -np.expm1(-np.exp(eta)) * df.n.to_numpy(), atol=1e-10)
+    y = m.prior_predictive(draws=25, seed=3).prior_predictive[m.names["y"]].values
+    upper = 1 if which == "bernoulli" else df.n.to_numpy()
+    assert y.shape == (1, 25, len(df)) and np.all(y >= 0) and np.all(y <= upper)

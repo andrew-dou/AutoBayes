@@ -1,10 +1,9 @@
-"""Binomial response (M2): ``successes | trials(n)`` under the logit link, or the probit link on request (brms-parity
-A12, docs/links.md), each with a stable likelihood from ``autobayes.likelihoods``. Zero-trial rows are dropped by the
-model before the design is built.
+"""Binomial response (M2): ``successes | trials(n)`` under the logit link, or the probit or cloglog link on request
+(brms-parity A12 and P6, docs/links.md), each with a stable likelihood from ``autobayes.likelihoods``. Zero-trial rows
+are dropped by the model before the design is built.
 
 One spec per link, as for the Bernoulli family: ``_spec(link)`` builds it, the registry holds the logit spec
-``BINOMIAL``, the probit spec is reached through ``FamilySpec.links``; brms's cloglog link is withheld
-(``links.PARKED_LINKS``) and its cauchit link is not offered."""
+``BINOMIAL``, the other links' specs are reached through ``FamilySpec.links``; brms's cauchit link is not offered."""
 from __future__ import annotations
 
 from functools import lru_cache, partial
@@ -65,11 +64,12 @@ def _likelihood_lines(link: str, model) -> list[str]:
             "  up to 1e6 per row at logits to 1e6 against a 60-digit reference; larger counts are refused.",
             "  Zero-trial rows are dropped before design construction; centering, when effective, uses only fitted rows.",
         ]
-    log_p1, log_p0 = {"probit": ("log Phi(eta_i)", "log Phi(-eta_i)")}[link]
+    k, n = s.response, s.trials
+    counts = {"probit": f" + {k}_i log Phi(eta_i) + ({n}_i - {k}_i) log Phi(-eta_i)",
+              "cloglog": f" + {k}_i log(1 - exp(-exp(eta_i))) - ({n}_i - {k}_i) exp(eta_i)"}[link]
     return [
         "", "Likelihood",
-        f"  log p({s.response}_i | {s.trials}_i, eta_i) = log C({s.trials}_i, {s.response}_i)"
-        f" + {s.response}_i {log_p1} + ({s.trials}_i - {s.response}_i) {log_p0}",
+        f"  log p({k}_i | {n}_i, eta_i) = log C({n}_i, {k}_i)" + counts,
         "  with log C computed inside the graph from the evaluated value (as for the logit link) and log probabilities",
         "  whose value and gradient are finite for every finite eta on both the PyTensor and the JAX path",
         "  (autobayes/likelihoods.py); counts above 1e6 per row are refused as for the logit link.",
@@ -100,7 +100,7 @@ def _spec(link: str) -> FamilySpec:
         likelihood_lines=partial(_likelihood_lines, link),
         centred_intercept_note=L.centred_intercept_note,
         deterministic_note=f"{L.parent} = linear predictor; p = {L.probability.replace('eta_i', L.parent)}, expected = n p and count draws are computed by predict()",
-        default_prior_link=None,                                    # logit and probit: brms's defaults are student_t(3, 0, 2.5)
+        default_prior_link=None,                                    # logit, probit and cloglog: brms's defaults are student_t(3, 0, 2.5)
         default_scale_prior=None,
         links=MappingProxyType({other: partial(_spec, other) for other in LINKS if other != link}),
         parked_links=PARKED_LINKS,

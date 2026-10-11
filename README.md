@@ -44,8 +44,8 @@ fixtures frozen from brms 2.23.0 with rstan ([loop rules](docs/brms-parity/LOOP.
 Tiers A and B are complete (October 2026), except smooth terms `s()`, which are not offered yet (see the Tier B review):
 
 - **Families**: Gaussian; Student-t with a fixed or learned `nu`; Poisson; negative binomial; Gamma (log link);
-  lognormal; Beta; Bernoulli and binomial with a logit or probit link (brms's cloglog link is parked, see
-  [links](docs/links.md)).
+  lognormal; Beta; Bernoulli and binomial with a logit, probit or cloglog link (the cloglog link accepted against two
+  references since P6, see [links](docs/links.md)).
 - **Zero-inflated and hurdle counts** (Tier B, B06): `ab.zero_inflated_poisson` and `ab.hurdle_poisson`, with brms's
   `zi` / `hu` under a `Beta` prior ([zero-inflated and hurdle counts](docs/zero-inflated-hurdle.md)).
 - **Ordinal and categorical responses** (Tier B, B05): `ab.cumulative` (brms's `cumulative("logit")`, ordered thresholds)
@@ -57,9 +57,9 @@ Tiers A and B are complete (October 2026), except smooth terms `s()`, which are 
   ([varying slopes](docs/varying-slopes.md)); correlated slopes `(1 + x | g)` with an LKJ prior
   ([correlated slopes](docs/correlated-slopes.md)); grouping by `g:h` and `g/h` ([grouping syntax](docs/grouping-syntax.md)).
 - **Priors**: explicit by default; brms's defaults on request with `ab.default_priors()` ([default priors](docs/default-priors.md)).
-- **Response addition terms** (Tier B, B02): `weights()` for the nine Tier A families; brms's `cens()` and `trunc()` are implemented
-  for the Gaussian family and parked, because brms's own gradients of their fixtures are not exact enough to certify
-  them ([addition terms](docs/addition-terms.md)).
+- **Response addition terms** (Tier B, B02): `weights()` for the nine Tier A families; brms's `cens()` and `trunc()` for the
+  Gaussian family, accepted since P6 against two references because brms's own gradients of their fixtures are not
+  exact everywhere ([addition terms](docs/addition-terms.md)).
 - **Distributional formulas** (Tier B, B01): `["y ~ x", "sigma ~ z"]` gives `sigma` (Gaussian, Student-t, lognormal),
   `shape` (negative binomial, Gamma) or `phi` (Beta) its own linear predictor under a log link
   ([distributional formulas](docs/distributional.md)).

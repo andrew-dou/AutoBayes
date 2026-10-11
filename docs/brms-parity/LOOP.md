@@ -32,9 +32,45 @@ feature), `divergences.md` (where AutoBayes knowingly differs from brms) and the
 | G7 | the non-sampling suite locally (`-m "not slow and not sampling"`); the full fast suite in hosted CI | `tests` |
 | G8 | advisory only: one 120-second sampling smoke, zero retries | `--smoke` |
 
-Immutable under a feature branch: `tests/oracle/fixtures/**` (additions only), `tests/oracle/tolerances.py`.
-Changes to `tests/oracle/gates.py` or `tests/oracle/adapter.py` are allowed only to extend them to new
-parameter kinds and are called out in the PR; the gate tool flags them.
+Immutable under a feature branch: `tests/oracle/fixtures/**` and `tests/oracle/references/**` (additions only),
+`tests/oracle/tolerances.py`. Changes to `tests/oracle/gates.py`, `tests/oracle/adapter.py` or
+`tests/oracle/two_reference.py` are allowed only to extend them to new parameter kinds and are called out in the PR;
+the gate tool flags them.
+
+### Two references (P6; Andrew's decision of 2026-10-11, a change of the gate contract)
+
+Some features are exact in AutoBayes while brms's own arithmetic is off the exact value by more than the tolerance at
+some frozen points (the cloglog link, D18; `cens()`, D24; `trunc()`, D25). Such a feature may be accepted against two
+references: brms wherever brms is accurate, and a committed high-precision reference where it is not. Nothing looser.
+
+- **Opt-in.** The case's editable `gate` field names the reference, the divergence row that says why brms is inexact,
+  and the quantity kinds that may fall back: `{"expect": "pass", "reference": "gauss_censored.json", "divergence":
+  "D24", "fallback": ["gradient"]}`. The kinds are `"gradient"` (every G2 gradient coordinate, with and without the
+  Jacobian) and `"epred"` (G4's expected values). Log densities (`lp`, `lp_nojac`, `lprior`) never fall back: a gate
+  field that lists one is refused.
+- **The rule**, for each frozen point and each entry of a listed kind, with the usual tolerance (`tolerances.py`,
+  unchanged): (1) the entry passes if AutoBayes agrees with brms within it; (2) otherwise it passes only if brms
+  differs from the reference by more than the tolerance **and** AutoBayes agrees with the reference within it; (3)
+  wherever AutoBayes and brms agree within the tolerance, the reference must agree with brms within it too, or the
+  reference is wrong and the gate fails, whatever AutoBayes does.
+- **Everything else is unchanged** and compares with brms only: G1, G3, G5, G6, the log densities of G2, G4's linear
+  predictor, and G4's expected values unless `"epred"` is listed. A case without the opt-in runs exactly as before.
+- **Report.** The gate returns, and emits as a `ReferenceFallback` warning that pytest's summary shows, how many entries
+  passed on the reference and where (`tests/oracle/two_reference.py`; `gates.check_gradient` and
+  `gates.check_predictions` hand an opted-in case to it).
+- **The reference** is `tests/oracle/references/<case>.json`, written by `python oracle/reference.py <case>`, an
+  independent third implementation (the standard library only, nothing from `autobayes`) that reads the fixture's
+  `case_brms.json`, `data.csv`, `newdata.csv` and the points' unconstrained values, applies brms's transforms and their
+  Jacobians itself, and evaluates the model in Python's `decimal` at 50 significant digits: the log density with and
+  without the Jacobian, every gradient coordinate in brms's order (a fourth-order central difference of the 50-digit
+  density with step 1e-10, error below 1e-35), and the expected values G4 compares where `"epred"` may fall back, each
+  written with 30 significant digits, with the sha256 of every file read. Re-running the script reproduces the file
+  byte for byte (`python oracle/reference.py --check --all`, also a harness test), the harness checks the hashes and
+  that the reference's log densities equal brms's (exact to `LOGP_REL` on these cases), and a reference is frozen with
+  the fixture it certifies: the gate tool refuses a changed one, as it refuses a changed fixture.
+- **In use** (P6): `bernoulli_cloglog` (gradient; 2 of 144 entries on the reference), `gauss_censored` (gradient; 32 of
+  160) and `gauss_truncated` (gradient, 2 of 160; expected values, 6 of 656). `binomial_cloglog`, frozen with P6, needs
+  no opt-in: brms is within the tolerance at every entry there.
 
 ## Park and stop rules
 

@@ -16,9 +16,9 @@ no prior, as brms's ``offset()`` does; one offset term per formula, held in ``Mo
 
 brms's response addition terms other than ``trials()`` (B02, docs/addition-terms.md) are ``AdditionTerm`` entries of
 ``ModelSpec.additions``, joined with ``+`` after the ``|`` as brms writes them: ``weights(col)`` multiplies each row's
-log likelihood by its weight. ``cens(col)`` and ``trunc(lb = a, ub = b)`` are parsed, represented and implemented
-(Gaussian) but withheld (``PARKED_ADDITIONS``): brms's own gradients of their frozen fixtures are not exact enough to
-certify them.
+log likelihood by its weight. ``cens(col)`` gives each row a censoring code and ``trunc(lb = a, ub = b)`` truncates the
+response (Gaussian); both were withheld (``PARKED_ADDITIONS``) until P6 accepted them against two references, brms where
+brms's own numbers are exact and a committed 50-digit reference where they are not (divergences D24, D25).
 
 An interaction ``a:b`` (or ``a*b`` = ``a + b + a:b``) is two-way between any two main effects of the formula (A04,
 docs/interactions.md): numeric by declared categorical (``x:z``, the numeric column times each non-reference
@@ -595,23 +595,9 @@ class Offset:
 
 ADDITION_KINDS = ("weights", "cens", "trunc")    # brms's response addition terms besides trials() that are parsed (B02)
 
-# Addition terms that are parsed, represented and implemented (Gaussian family) but withheld, each with the reason its
-# refusal carries (docs/addition-terms.md, divergences D24 and D25). Removing an entry un-parks the term;
-# tests/test_addition_terms.py does that under monkeypatch to check the withheld forms against the frozen fixtures.
-PARKED_ADDITIONS = MappingProxyType({
-    "cens": ("brms's own gradient of a censored Gaussian model is not exact enough to certify it: for a left-censored row "
-             "Stan's normal_lcdf differentiates through piecewise polynomial approximations (Abramowitz and Stegun 7.1.26 "
-             "and Taylor fits), off by up to 4e-4 absolute, so the frozen fixture gauss_censored records gradients that "
-             "differ from the exact ones by up to 2.5e-6 relative at 5 of its 8 points (the oracle's GRAD_REL is 1e-7), "
-             "while its log densities agree to 3e-16; AutoBayes's censored likelihood is exact on both paths and is "
-             "withheld until Andrew decides how such a feature is certified (docs/addition-terms.md, divergence D24)"),
-    "trunc": ("brms's own gradient and expected value of a truncated Gaussian model are not exact enough to certify it far "
-              "in the tail: Stan's normal_lccdf forms 1 - erf(z / sqrt(2)) by subtraction and brms's posterior_epred "
-              "1 - pnorm(z), so at point 4 of the frozen fixture gauss_truncated, where a row's location sits 6.17 SD below "
-              "the bound, brms's gradient is 4.2e-7 relative off the exact one (GRAD_REL 1e-7) and its posterior_epred up "
-              "to 1.0e-3 (PRED_REL 1e-9), while its log densities agree to 7e-11; AutoBayes's truncated likelihood and mean "
-              "are exact and are withheld until a decision (docs/addition-terms.md, divergence D25)"),
-})
+# Addition terms that are parsed, represented and implemented but withheld, each with the reason its refusal carries
+# (docs/addition-terms.md): none since P6, which lifted the parks of cens() and trunc() (divergences D24 and D25).
+PARKED_ADDITIONS = MappingProxyType({})
 
 
 def _number_text(v: float) -> str:
