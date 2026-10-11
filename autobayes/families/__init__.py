@@ -1,8 +1,8 @@
 """The family registry: one ``FamilySpec`` per response family, looked up by name (and link).
 
 Adding a family is one module in this package that builds its spec, plus its entry in ``FAMILIES``;
-see docs/families.md. A family with several links (Bernoulli, binomial: logit and probit; brms's cloglog is
-withheld) registers its default link's spec and reaches the others through ``FamilySpec.links`` (docs/links.md).
+see docs/families.md. A family with several links (Bernoulli, binomial: logit, probit and cloglog) registers its
+default link's spec and reaches the others through ``FamilySpec.links`` (docs/links.md).
 Nothing outside this package compares a family name against a string (``tests/test_family_registry.py`` enforces that).
 """
 from __future__ import annotations

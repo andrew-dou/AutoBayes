@@ -1,8 +1,12 @@
 """The harness itself: frozen fixtures are what their cases say, the brms side agrees with the hand-written
 reference densities of tests/reference_logp.py and tests/reference_binomial.py (so the oracle is calibrated
-independently of autobayes), and a corrupted fixture fails every gate it touches."""
+independently of autobayes), and a corrupted fixture fails every gate it touches. Two-reference acceptance (P6): the
+committed 50-digit references regenerate byte for byte from the fixtures they name, and the three rules hold."""
 import copy
 import json
+import subprocess
+import sys
+import warnings
 
 import numpy as np
 import pytest
@@ -10,6 +14,7 @@ import pytest
 from tests.oracle import datasets
 from tests.oracle import fixture as fx
 from tests.oracle import gates
+from tests.oracle import adapter, two_reference
 from tests.oracle.adapter import OracleMismatch
 from tests.oracle.tolerances import GRAD_REL, LOGP_REL, rel_err
 from tests.reference_binomial import reference_grad_binomial, reference_logp_binomial
@@ -350,3 +355,214 @@ def test_a_model_of_the_other_kind_does_not_match(cumulative_bundle, categorical
     with pytest.raises(KeyError):
         gates.Bundle("categorical_poponly", model=ab.cumulative("ord ~ x", categorical_bundle.data,
                                                               ab.Priors(intercept=ab.Normal(0, 3), b=ab.Normal(0, 1.5))))
+
+
+# -- two-reference acceptance (P6): brms where it is accurate, the committed 50-digit reference where it is not -----------
+REFERENCE_FILES = sorted(two_reference.REFERENCES.glob("*.json"))
+OPTED_IN = sorted(cid for cid in fx.case_ids() if "reference" in (fx.load_case(cid).get("gate") or {}))
+
+
+def test_every_opted_in_case_has_its_reference_and_every_reference_a_case():
+    assert OPTED_IN == ["bernoulli_cloglog", "gauss_censored", "gauss_truncated"]
+    assert [p.stem for p in REFERENCE_FILES] == OPTED_IN
+    for cid in OPTED_IN:
+        assert fx.load_case(cid)["gate"]["reference"] == f"{cid}.json"
+
+
+@pytest.mark.parametrize("path", REFERENCE_FILES, ids=lambda p: p.stem)
+def test_reference_was_computed_from_the_frozen_fixture(path):
+    """The sha256 of every file a reference was computed from is that of the committed file: the reference certifies
+    exactly the frozen fixture."""
+    raw = json.loads(path.read_text(encoding="utf-8"))
+    d = fx.fixture_dir(path.stem)
+    assert raw["case"] == path.stem and raw["generator"] == "oracle/reference.py"
+    read = [d / name for name in ("case_brms.json", "data.csv", "newdata.csv", "fixture.json") if (d / name).exists()]
+    assert list(raw["sources"]) == [str(f.relative_to(two_reference.REPO)) for f in read]
+    for name, digest in raw["sources"].items():
+        assert fx.sha256(two_reference.REPO / name) == digest, name
+
+
+def test_references_regenerate_byte_for_byte():
+    """oracle/reference.py, an independent implementation (the standard library only, nothing from autobayes), recomputes
+    every committed reference from its fixture and reproduces the file exactly."""
+    proc = subprocess.run([sys.executable, "oracle/reference.py", "--check", "--all"], cwd=two_reference.REPO,
+                          capture_output=True, text=True, timeout=600)
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    assert proc.stdout.splitlines() == [f"{p.stem}: identical" for p in REFERENCE_FILES]
+
+
+@pytest.mark.parametrize("path", REFERENCE_FILES, ids=lambda p: p.stem)
+def test_reference_log_densities_agree_with_brms(path):
+    """brms's log densities of these cases are exact to LOGP_REL at every frozen point (log densities never fall back), so
+    the reference's equal them: its 50-digit model is brms's, normalising constants included. Every value is written with
+    30 significant digits."""
+    raw = json.loads(path.read_text(encoding="utf-8"))
+    f = fx.Fixture.load(path.stem)
+    assert raw["upars"] == [f"{e['par']}[{e['elem']}]" for e in f.upars] and len(raw["points"]) == len(f.points)
+    for k, (r, p) in enumerate(zip(raw["points"], f.points)):
+        assert rel_err(float(r["lp"]), p.lp) <= LOGP_REL and rel_err(float(r["lp_nojac"]), p.lp_nojac) <= LOGP_REL, k
+        for value in [r["lp"], r["lp_nojac"], *r["grad"], *r["grad_nojac"]]:
+            assert len(value.split("E")[0].lstrip("-").replace(".", "")) == 30, value
+
+
+@pytest.fixture(scope="module")
+def opted_in_bundles():
+    return {cid: gates.Bundle(cid) for cid in OPTED_IN}
+
+
+def _with(bundle, case=None, **cached):
+    """A shallow copy of ``bundle``, with another case (its reference then read afresh) or other cached values."""
+    other = copy.copy(bundle)
+    if case is not None:
+        other.case = case
+        other.__dict__.pop("reference", None)
+    other.__dict__.update(cached)
+    return other
+
+
+def _gate(bundle, **gate):
+    return _with(bundle, case={**bundle.case, "gate": {**bundle.case["gate"], **gate}})
+
+
+def _no_gate(bundle):
+    return _with(bundle, case={k: v for k, v in bundle.case.items() if k != "gate"})
+
+
+def test_fallback_is_reported_with_its_count_and_place(opted_in_bundles):
+    """Each opted-in case passes G2's gradient (and gauss_truncated G4) with exactly these entries on the reference: the
+    points where brms's own arithmetic is off the exact value (divergences D18, D24, D25). The report is a
+    ReferenceFallback warning, which pytest's summary shows, and the gate's return value."""
+    censored = ["point 0 z_1[1]"] + [f"point 4 {c}" for c in ("b[1]", "Intercept[1]", "sigma[1]", "sd_1[1]", "z_1[1]", "z_1[2]", "z_1[4]")] \
+        + [f"point 5 {c}" for c in ("b[1]", "Intercept[1]", "sigma[1]", "sd_1[1]", "z_1[1]", "z_1[2]")] + ["point 6 z_1[4]", "point 7 Intercept[1]"]
+    expected = {("bernoulli_cloglog", "G2 gradient"): (144, ["point 5 b[1]"]),
+                ("gauss_censored", "G2 gradient"): (160, censored),
+                ("gauss_truncated", "G2 gradient"): (160, ["point 4 b[1]"])}
+    for (cid, gate), (entries, coordinates) in expected.items():
+        with pytest.warns(two_reference.ReferenceFallback, match=rf"{cid} {gate}: {2 * len(coordinates)} of {entries} entries passed on the reference"):
+            report = gates.check_gradient(opted_in_bundles[cid])
+        assert (report.case, report.gate, report.entries) == (cid, gate, entries)
+        assert list(report.where) == [f"{c} ({j} the Jacobian)" for c in coordinates for j in ("with", "without")]
+    epred = ["fitted epred point 4 row 28"] + [f"fitted epred_nogroup point 4 row {r}" for r in (4, 13, 28, 32)] + ["newdata epred_nogroup point 3 row 3"]
+    with pytest.warns(two_reference.ReferenceFallback, match=r"gauss_truncated G4 epred: 6 of 656 entries passed on the reference, where "
+                                                              r"brms is off it by more than the tolerance: fitted epred point 4 row 28; "):
+        report = gates.check_predictions(opted_in_bundles["gauss_truncated"])
+    assert report.entries == 656 and list(report.where) == epred
+    assert "point 4 b[1] (with and without the Jacobian)" in str(gates.check_gradient(opted_in_bundles["gauss_truncated"]))
+
+
+def _corrupt_autobayes_gradient(b, k, i, factor):
+    """``b`` with AutoBayes's gradient at seeded point k, with and without the Jacobian, scaled by ``factor`` in brms's
+    unconstrained coordinate i."""
+    ((var, idx),) = [(v, j) for c, v, j in adapter.coordinate_map(b.fixture, b.model, b.cmap, b.gmap) if c == i]
+    target = adapter.value_point(b.model, b.fixture.points[k], b.cmap, b.gmap)
+    pos = adapter.value_layout(b.model, target)[var].start + idx
+
+    def corrupt(f):
+        def g(vp):
+            out = np.array(f(vp), dtype=float)
+            if all(np.array_equal(np.asarray(vp[n]), np.asarray(target[n])) for n in target):
+                out[pos] *= factor
+            return out
+        return g
+    return _with(b, dlogp=corrupt(b.dlogp), dlogp_nojac=corrupt(b.dlogp_nojac))
+
+
+def test_corrupted_autobayes_gradient_off_both_brms_and_the_reference_fails(opted_in_bundles):
+    """At point 5 of bernoulli_cloglog brms's gradient in b[1] is 3.8e-7 off the reference and AutoBayes passes on the
+    reference; AutoBayes moved 1e-6 off is off both and fails (rule 2). Moved off where brms is accurate, it fails too:
+    the reference agrees with brms there, so nothing falls back."""
+    b = opted_in_bundles["bernoulli_cloglog"]
+    with pytest.raises(OracleMismatch, match=r"point 5: gradient of x\[0\] \(brms b\[1\]\) with the Jacobian: AutoBayes .* is off both "
+                                             r"brms -1\.00559172179031\d* \(1\.\d+e-06\) and the reference -1\.0055921064960\d* \(1\.00e-06\)"):
+        gates.check_gradient(_corrupt_autobayes_gradient(b, 5, 0, 1 + 1e-6))
+    with pytest.raises(OracleMismatch, match=r"point 0: gradient of x\[0\] \(brms b\[1\]\) with the Jacobian: AutoBayes .* off brms .*, "
+                                             r"which agrees with the reference .* so nothing falls back"):
+        gates.check_gradient(_corrupt_autobayes_gradient(b, 0, 0, 1 + 1e-6))
+
+
+def _corrupt_reference(b, mutate):
+    ref = b.reference
+    raw = copy.deepcopy(ref.raw)
+    mutate(raw)
+    return _with(b, reference=two_reference.Reference(ref.case_id, ref.file, ref.divergence, ref.fallback, raw))
+
+
+def test_corrupted_reference_where_autobayes_and_brms_agree_fails(opted_in_bundles):
+    """Rule 3: wherever AutoBayes and brms agree, the reference must agree with brms; one entry 1e-6 off fails the gate,
+    whatever AutoBayes does (here AutoBayes and brms agree at point 1 of gauss_censored and at every expected value of
+    point 0 of gauss_truncated)."""
+    def gradient(raw):
+        g = raw["points"][1]["grad_nojac"]
+        g[3] = repr(float(g[3]) * (1 + 1e-6))                                    # sd_1, without the Jacobian
+    with pytest.raises(OracleMismatch, match=r"point 1: gradient of 1\|g_sigma_log__\[0\] \(brms sd_1\[1\]\) without the Jacobian: "
+                                             r"the reference is wrong: AutoBayes .* and brms .* agree"):
+        gates.check_gradient(_corrupt_reference(opted_in_bundles["gauss_censored"], gradient))
+
+    def epred(raw):
+        row = raw["predictions"]["fitted"]["epred"][0]
+        row[0] = repr(float(row[0]) * (1 + 1e-6))
+    with pytest.raises(OracleMismatch, match=r"fitted: point 0, row 0: 'mu' vs brms posterior_epred: the reference is wrong"):
+        gates.check_predictions(_corrupt_reference(opted_in_bundles["gauss_truncated"], epred))
+
+
+@pytest.mark.parametrize("kind", two_reference.LOG_DENSITIES)
+def test_fallback_on_a_log_density_is_refused(opted_in_bundles, kind):
+    """A gate field that lets a log density fall back is refused; and an opted-in case's log densities compare with brms
+    only (a fixture whose lp is moved fails G2 although the reference holds the exact value)."""
+    b = opted_in_bundles["gauss_censored"]
+    with pytest.raises(OracleMismatch, match=rf"gauss_censored: log densities never fall back on a reference \(\['{kind}'\] in the gate's fallback\)"):
+        gates.check_gradient(_gate(b, fallback=["gradient", kind]))
+    with pytest.raises(OracleMismatch, match="log densities never fall back"):
+        two_reference.load({**b.case, "gate": {**b.case["gate"], "fallback": [kind]}})
+
+    def moved(raw):
+        raw["points"][2]["lp"] += 1e-5
+    with pytest.raises(OracleMismatch, match="point 2: log density"):
+        gates.check_logp(_corrupted(b, moved))
+
+
+@pytest.mark.parametrize("gate,needle", [
+    ({"fallback": ["gradient", "linpred"]}, r"\['linpred'\] is not a quantity kind that may fall back"),
+    ({"fallback": []}, "must be a non-empty list"),
+    ({"fallback": "gradient"}, "must be a non-empty list"),
+    ({"expect": "fail"}, "a gate field that names a reference expects 'pass'"),
+    ({"divergence": None}, "the gate names no divergence"),
+    ({"reference": "gauss_truncated.json"}, "gauss_truncated.json is the reference of 'gauss_truncated'"),
+    ({"reference": "../fixtures/gauss_censored/fixture.json"}, "no reference file"),
+])
+def test_malformed_opt_in_is_refused(opted_in_bundles, gate, needle):
+    with pytest.raises(OracleMismatch, match=needle):
+        gates.check_gradient(_gate(opted_in_bundles["gauss_censored"], **gate))
+
+
+def test_a_case_without_the_opt_in_behaves_as_before(gauss_bundle, opted_in_bundles):
+    """Without a gate field nothing is read and nothing falls back: the gates return None, warn nothing and fail as
+    before. An opted-in case with its opt-in removed fails the brms-only gates exactly where brms is inexact (its reference
+    file is not used), and a kind not listed in the fallback compares with brms only."""
+    assert gauss_bundle.reference is None
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", two_reference.ReferenceFallback)
+        assert gates.check_gradient(gauss_bundle) is None and gates.check_predictions(gauss_bundle) is None
+
+    def mutate(raw):
+        raw["points"][0]["grad"]["values"][2] *= 1 + 1e-6
+    with pytest.raises(OracleMismatch, match=r"^point 0: gradient of sigma_log__\[0\] AutoBayes .* vs brms "):
+        gates.check_gradient(_corrupted(gauss_bundle, mutate))
+    for cid, gate, needle in [
+            ("bernoulli_cloglog", gates.check_gradient, r"^point 5: gradient of x\[0\] AutoBayes np\.float64\(-1\.0055921064960\d*\) vs brms "
+                                                        r"np\.float64\(-1\.00559172179031"),
+            ("gauss_censored", gates.check_gradient, r"^point 0: gradient of 1\|g_offset\[0\] AutoBayes"),
+            ("gauss_truncated", gates.check_gradient, r"^point 4: gradient of x\[0\] AutoBayes np\.float64\(-1\.519346934017\d*\) vs brms "
+                                                      r"np\.float64\(-1\.5193463027823"),
+            ("gauss_truncated", gates.check_predictions, r"^fitted: 'mu' differs from brms posterior_epred by 4\.1")]:
+        b = _no_gate(opted_in_bundles[cid])
+        assert b.reference is None and (two_reference.REFERENCES / f"{cid}.json").exists()
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", two_reference.ReferenceFallback)
+            with pytest.raises(OracleMismatch, match=needle):
+                gate(b)
+    truncated = opted_in_bundles["gauss_truncated"]
+    with pytest.raises(OracleMismatch, match=r"^fitted: 'mu' differs from brms posterior_epred by 4\.1"):
+        gates.check_predictions(_gate(truncated, fallback=["gradient"]))
+    with pytest.raises(OracleMismatch, match=r"^point 4: gradient of x\[0\] AutoBayes"):
+        gates.check_gradient(_gate(truncated, fallback=["epred"]))

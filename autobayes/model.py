@@ -3,8 +3,8 @@
 The families of ``autobayes.families``, including Poisson and negative binomial counts, Gamma, lognormal, Beta and
 Student-t responses (``nu`` fixed or learned). ``"gaussian"`` (M0): identity link, residual SD ``sigma``. ``"bernoulli"``
 (M1): logit link, ``p = expit(eta)``, no residual scale. ``"binomial"`` (M2): logit link on
-``successes | trials(n)``, counts. The Bernoulli and binomial families also take ``link="probit"`` (A12,
-docs/links.md; brms's cloglog link is withheld there). All share the right-hand side ``[1 +] x1 [+ x2 ...] [+ offset(log(col))]
+``successes | trials(n)``, counts. The Bernoulli and binomial families also take ``link="probit"`` (A12) and
+``link="cloglog"`` (P6; docs/links.md). All share the right-hand side ``[1 +] x1 [+ x2 ...] [+ offset(log(col))]
 [+ (1 | factor) | (1 + x || factor) | (1 + x | factor) ...]`` with numeric terms and, since M3a-1, treatment-coded categorical
 terms declared with ``categorical={column: reference}``; an optional offset term (A06, docs/offset.md), added to
 the linear predictor with no coefficient; centring; non-centred group effects (varying
@@ -16,8 +16,8 @@ group-level coefficient as an independent non-centred term; for a correlated ter
 slopes' deterministics in the PyMC graph to brms's ``r = (diag(sd) L z)^T`` with a Cholesky factor ``L`` sampled on
 Stan's ``cholesky_corr`` coordinates (``autobayes.correlation``). The left-hand side may carry brms's ``weights(col)``
 next to the binomial's ``trials(n)`` (B02, docs/addition-terms.md): the family's likelihood is then wrapped so that each
-row's log density is multiplied by its weight (``likelihoods.addition_family``); ``cens()`` and ``trunc()`` are parsed
-and implemented for the Gaussian family but withheld (``formula.PARKED_ADDITIONS``). The family's auxiliary parameter
+row's log density is multiplied by its weight (``likelihoods.addition_family``); ``cens()`` and ``trunc()`` are
+offered for the Gaussian family (accepted against two references since P6). The family's auxiliary parameter
 (``sigma``, ``shape``, ``phi``) may have its own formula (B01, docs/distributional.md): ``formula`` is then a list,
 ``["y ~ x + (1 | g)", "sigma ~ z"]``, and Bambi builds the parameter as a distributional component under a log link
 (``Design.dpars`` holds its design, ``Model.dpar_names`` its PyMC names).
@@ -1593,9 +1593,9 @@ def bernoulli(formula: str, data: pd.DataFrame, priors: Priors, *, link: str = "
               categorical: Mapping[str, object] | None = None) -> Model:
     """Build the Bernoulli model (response strictly 0/1), with or without a varying intercept.
 
-    ``link`` is ``"logit"`` (``p = expit(eta)``, the default) or ``"probit"`` (``p = Phi(eta)``), brms's
-    ``bernoulli(link = ...)``; the intercept and slope priors are on that link's scale. brms's ``cloglog`` link is
-    withheld and its ``cauchit`` link is not offered (docs/links.md).
+    ``link`` is ``"logit"`` (``p = expit(eta)``, the default), ``"probit"`` (``p = Phi(eta)``) or ``"cloglog"``
+    (``p = 1 - exp(-exp(eta))``), brms's ``bernoulli(link = ...)``; the intercept and slope priors are on that link's
+    scale. brms's ``cauchit`` link is not offered (docs/links.md).
     """
     return Model(formula, data, priors, family="bernoulli", link=link, center_predictors=center_predictors, categorical=categorical)
 
@@ -1603,7 +1603,7 @@ def bernoulli(formula: str, data: pd.DataFrame, priors: Priors, *, link: str = "
 def binomial(formula: str, data: pd.DataFrame, priors: Priors, *, link: str = "logit", center_predictors: bool = True,
              categorical: Mapping[str, object] | None = None) -> Model:
     """Build the binomial model ``successes | trials(n) ~ x [+ (1 | group)]``, with or without a varying intercept;
-    ``link`` as for ``bernoulli`` (``"logit"`` or ``"probit"``)."""
+    ``link`` as for ``bernoulli`` (``"logit"``, ``"probit"`` or ``"cloglog"``)."""
     return Model(formula, data, priors, family="binomial", link=link, center_predictors=center_predictors, categorical=categorical)
 
 

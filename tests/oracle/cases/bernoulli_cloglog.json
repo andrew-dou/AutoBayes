@@ -6,8 +6,12 @@
  "seed": 153,
  "n_points": 8,
  "gate": {
-  "expect": "fail",
-  "reason": "A12_links: the cloglog link is withheld (docs/links.md, divergence D18). At seeded point 5 brms's gradient with respect to b[1] (the slope of x) is -1.00559172179031 where the exact 50-digit value is -1.00559210649608, a relative error of 3.8e-7 against the oracle's GRAD_REL of 1e-7: rows 29 and 34 have y = 0 at eta = 2.71 and 3.01, where Stan forms 1 - theta by subtraction and loses eps * exp(exp(eta)); AutoBayes's stable form agrees with the exact gradient to 5e-15 at every point. Remove this field when a fixture whose seeded points keep every y = 0 row below eta of about 2.5 certifies the link."
+  "expect": "pass",
+  "reference": "bernoulli_cloglog.json",
+  "divergence": "D18",
+  "fallback": [
+   "gradient"
+  ]
  },
  "data": {
   "generator": "tier_a",

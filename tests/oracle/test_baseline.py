@@ -7,7 +7,9 @@ from tests.oracle import gates
 def _cases():
     """Every frozen case with an AutoBayes call. A case whose feature has not landed carries
     ``"gate": {"expect": "fail", "reason": ...}`` and runs as a strict expected failure: the fixture is frozen
-    first, the tests go red for the right reason, and the implementing branch removes the field."""
+    first, the tests go red for the right reason, and the implementing branch removes the field. A case that opts in to
+    two-reference acceptance (P6) carries ``"gate": {"expect": "pass", "reference": ..., "fallback": [...]}`` and runs
+    as every other case; the kinds it lists (G2's gradient, G4's expected values) follow ``two_reference``'s rule."""
     out = []
     for cid in fx.case_ids():
         case = fx.load_case(cid)

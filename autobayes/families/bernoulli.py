@@ -1,10 +1,10 @@
-"""Bernoulli response (M1): a strictly 0/1 outcome under the logit link, or the probit link on request (brms-parity
-A12, docs/links.md), each with a stable hand-written likelihood from ``autobayes.likelihoods``.
+"""Bernoulli response (M1): a strictly 0/1 outcome under the logit link, or the probit or cloglog link on request
+(brms-parity A12 and P6, docs/links.md), each with a stable hand-written likelihood from ``autobayes.likelihoods``.
 
-One spec per link: ``_spec(link)`` builds it, the registry holds the logit spec ``BERNOULLI``, and the probit spec is
-reached through ``FamilySpec.links`` (``get_family("bernoulli", "probit")``, ``ab.bernoulli(..., link="probit")``).
-The linear predictor is the parent ``logit_p`` / ``probit_p``; ``p`` is its inverse link. brms's cloglog link is
-withheld (``links.PARKED_LINKS``, the reason the refusal carries) and its cauchit link is not offered.
+One spec per link: ``_spec(link)`` builds it, the registry holds the logit spec ``BERNOULLI``, and the other links' specs
+are reached through ``FamilySpec.links`` (``get_family("bernoulli", "probit")``, ``ab.bernoulli(..., link="cloglog")``).
+The linear predictor is the parent ``logit_p`` / ``probit_p`` / ``cloglog_p``; ``p`` is its inverse link. brms's cauchit
+link is not offered.
 """
 from __future__ import annotations
 
@@ -45,6 +45,12 @@ _LIKELIHOOD_LINES = {
         "  PyTensor and the JAX path (autobayes/likelihoods.py; Stan's Phi(eta) is exactly 0 below",
         "  eta = -37.5 and exactly 1 above 8.25, where brms's bernoulli_lpmf(y | Phi(eta)) is -inf).",
     ],
+    "cloglog": [
+        "", "Likelihood", "  y_i ~ Bernoulli(p_i), sampled as log p(y_i | eta_i) = y_i log(1 - exp(-exp(eta_i))) - (1 - y_i) exp(eta_i)",
+        "  with log(1 - exp(-exp(eta))) as log1mexp(-exp(eta)), finite with a finite gradient for every finite eta on both",
+        "  the PyTensor and the JAX path (autobayes/likelihoods.py; brms's bernoulli_lpmf(y | inv_cloglog(eta)) forms",
+        "  1 - inv_cloglog(eta) by subtraction, which loses eps * exp(exp(eta)) relative and is 0 above eta = 3.6).",
+    ],
 }
 
 
@@ -71,7 +77,7 @@ def _spec(link: str) -> FamilySpec:
         likelihood_lines=lambda model: list(_LIKELIHOOD_LINES[link]),
         centred_intercept_note=L.centred_intercept_note,
         deterministic_note=f"{L.parent} = linear predictor; p = {L.probability.replace('eta_i', L.parent)} are computed by predict()",
-        default_prior_link=None,                                    # logit and probit: brms's defaults are student_t(3, 0, 2.5)
+        default_prior_link=None,                                    # logit, probit and cloglog: brms's defaults are student_t(3, 0, 2.5)
         default_scale_prior=None,
         links=MappingProxyType({other: partial(_spec, other) for other in LINKS if other != link}),
         parked_links=PARKED_LINKS,

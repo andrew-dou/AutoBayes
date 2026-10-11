@@ -5,7 +5,7 @@ This is a capability map, not a percentage of brms implemented.
 
 | Surface | Merged behavior | Tests / documentation |
 | --- | --- | --- |
-| Families | Gaussian, Bernoulli and grouped binomial with a logit or probit link (brms's cloglog link withheld, D18), Student-t with a fixed finite nu > 1 or nu learned under its own prior truncated to nu > 1, Poisson-log, negative binomial-log and Gamma-log with a `shape` prior, lognormal (identity link on the log-scale location, `sigma` the SD of `log y`), Beta-logit proportions with a precision `phi` prior | test_logp.py, test_bernoulli.py, test_binomial.py, test_links.py, test_student.py, test_student_learned_nu.py, test_poisson.py, test_negbinomial.py, test_gamma.py, test_lognormal.py, test_beta.py; [negative binomial](negbinomial.md), [Gamma](gamma.md), [lognormal](lognormal.md), [Beta](beta.md), [links](links.md), [Student-t learned nu](student-learned-nu.md) |
+| Families | Gaussian, Bernoulli and grouped binomial with a logit, probit or cloglog link (the cloglog accepted against two references, D18), Student-t with a fixed finite nu > 1 or nu learned under its own prior truncated to nu > 1, Poisson-log, negative binomial-log and Gamma-log with a `shape` prior, lognormal (identity link on the log-scale location, `sigma` the SD of `log y`), Beta-logit proportions with a precision `phi` prior | test_logp.py, test_bernoulli.py, test_binomial.py, test_links.py, test_student.py, test_student_learned_nu.py, test_poisson.py, test_negbinomial.py, test_gamma.py, test_lognormal.py, test_beta.py; [negative binomial](negbinomial.md), [Gamma](gamma.md), [lognormal](lognormal.md), [Beta](beta.md), [links](links.md), [Student-t learned nu](student-learned-nu.md) |
 | Formula composition | Numeric and declared categorical predictors; multiple numeric-by-categorical interactions with required main effects; optional intercept; one offset term `offset(col)` or `offset(log(col))` added to the linear predictor without a coefficient | test_intercept_controls.py, test_multiple_interactions.py, test_offset.py; [offset](offset.md) |
 | Hierarchy | Population-only models or multiple independent varying-intercept factors; independent varying slopes `(1 + x || g)` on numeric population-level terms, and brms's correlated form `(1 + x \| g)` with an LKJ prior `cor={"g": ab.LKJ(eta)}` on the correlation of the intercept and slope(s) (Stan's `cholesky_corr` coordinates); grouping by the observed combinations of two columns, `(1 \| g:h)`, and brms's nesting shorthand `(1 \| g/h)` = `(1 \| g) + (1 \| g:h)`, with brms's `g_h` level labels | test_population_only.py, test_multiple_groups.py, test_varying_slope.py, test_correlated_slopes.py, test_grouping_syntax.py; [varying slopes](varying-slopes.md), [correlated slopes](correlated-slopes.md), [grouping syntax](grouping-syntax.md) |
 | Execution | Inspectable PyMC graph; PyMC NUTS or JAX/NumPyro sampling with explicit device selection | inference.py, test_device.py and test_sampling.py; availability does not establish GPU validation |
@@ -79,9 +79,9 @@ location `mu`, `sigma` the SD of `log y` under `Priors(sigma=...)`, `predict(kin
 `logit_mu` and brms's name `phi`; `1 - mu` as `expit(-eta)`, divergence D13) followed, verified against `beta_varint`;
 see [Beta](beta.md). The probit link for the Bernoulli and binomial families (A12, `link="probit"`: `p = Phi(eta)`
 through a stable `log Phi`, the graph keeping `eta` as `probit_p`) followed, verified against `bernoulli_probit` and
-`binomial_probit`; brms's cloglog link is withheld because its frozen fixture records a brms gradient off by 3.8e-7
-relative where AutoBayes's form is exact (D18), and its cauchit link and the other families' non-default links are not
-offered (D19); see [links](links.md). Student-t with learned degrees of freedom (A13, `ab.student(..., nu=None)` with
+`binomial_probit`; brms's cloglog link was withheld because its frozen fixture records a brms gradient off by 3.8e-7
+relative where AutoBayes's form is exact (D18), until P6 (below), and its cauchit link and the other families'
+non-default links are not offered (D19); see [links](links.md). Student-t with learned degrees of freedom (A13, `ab.student(..., nu=None)` with
 `Priors(nu=...)`: the prior truncated to `nu > 1` and renormalised there as brms's `real<lower=1> nu`, sampled as
 `log(nu - 1)`; Gamma, Exponential, HalfNormal and HalfCauchy priors, D22) followed, verified against
 `student_learned_nu`; see [Student-t learned nu](student-learned-nu.md).
@@ -102,9 +102,10 @@ followed, verified against `zero_inflated_poisson_varint` and `hurdle_poisson_va
 
 brms's response addition terms (B02): `weights(w)` multiplies each row's log likelihood by its weight for every Tier A family (not yet the zero-inflated and hurdle families)
 (`y | weights(w) ~ ...`, `k | trials(n) + weights(w) ~ ...`), verified against `gauss_weighted` and one frozen weighted
-case per family; brms's `cens()` and `trunc()` are parsed and implemented for the Gaussian family but withheld, because
+case per family; brms's `cens()` and `trunc()` were parsed and implemented for the Gaussian family but withheld, because
 brms's own gradients (Stan's `normal_lcdf` derivative approximations, `normal_lccdf`'s `1 - erf`) and truncated mean
-are not exact enough at points of their frozen fixtures to certify them (D24, D25); see [addition terms](addition-terms.md).
+are not exact enough at points of their frozen fixtures to certify them (D24, D25), until P6 (below); see
+[addition terms](addition-terms.md).
 
 Ordinal and categorical responses (B05, `ab.cumulative` and `ab.categorical`, brms's `cumulative("logit")` and
 `categorical()`: the response fitted as its 1-based category with `model.categories` holding the labels; the cumulative
@@ -130,3 +131,12 @@ under `Priors(simo={"x": ab.Dirichlet(...)})` and sampled on Stan's stick-breaki
 categorical one, verified against `gauss_monotonic` and one frozen case per further family; interactions with `mo()`,
 `mo()` in group-level or distributional formulas, `mo(x, id = ...)` and two-valued predictors are refused (D40-D42; names D43); see
 [monotonic effects](monotonic.md).
+
+Two-reference acceptance (P6, Andrew's decision of 2026-10-11; docs/brms-parity/LOOP.md, "Two references"): a case whose
+brms side is inexact at some frozen points may opt in to have its gradient and/or expected values compared with brms
+where brms is accurate and with a committed 50-digit reference (`oracle/reference.py`, `tests/oracle/references/`)
+where it is not; log densities never fall back. It lifted three parks: the cloglog link of the Bernoulli and binomial
+families (`link="cloglog"`, verified against `bernoulli_cloglog`, 2 of 144 gradient entries on the reference, and
+`binomial_cloglog`, frozen with it, against brms alone; D18), and `cens()` and `trunc()` for the Gaussian family
+(verified against `gauss_censored`, 32 of 160 gradient entries on the reference, and `gauss_truncated`, 2 of 160 gradient
+entries and 6 of 656 expected values; D24, D25); see [links](links.md) and [addition terms](addition-terms.md).

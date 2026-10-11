@@ -4,8 +4,8 @@
     python tools/parity_gate.py [--feature ID] [--base origin/main] [--smoke] [--skip-suite]
 
 Checks, in order (cheapest first), stopping at the first failure unless --keep-going:
-  immutability  tests/oracle/fixtures/** only added since --base; tests/oracle/tolerances.py unchanged;
-                changes to tests/oracle/{gates,adapter}.py reported
+  immutability  tests/oracle/fixtures/** and tests/oracle/references/** (P6) only added since --base;
+                tests/oracle/tolerances.py unchanged; changes to tests/oracle/{gates,adapter,two_reference}.py reported
   oracle        pytest tests/oracle  (G1-G6)
   suite         pytest tests -m "not slow and not sampling"  (G7, local part; hosted CI runs "not slow")
   smoke         with --smoke only: one 120-second sampling smoke, advisory, zero retries (G8)
@@ -48,9 +48,11 @@ def check_immutability(base: str) -> tuple[bool, str]:
             continue                                       # new fixtures and new harness files are what a branch may add
         if path.startswith("tests/oracle/fixtures/"):
             problems.append(f"{code} {path} (fixtures are frozen: a changed case needs a new id)")
+        if path.startswith("tests/oracle/references/"):
+            problems.append(f"{code} {path} (a high-precision reference is frozen with the fixture it certifies)")
         if path == "tests/oracle/tolerances.py":
             problems.append(f"{code} {path} (tolerances are a contract)")
-        if path in ("tests/oracle/gates.py", "tests/oracle/adapter.py"):
+        if path in ("tests/oracle/gates.py", "tests/oracle/adapter.py", "tests/oracle/two_reference.py"):
             notes.append(f"{code} {path} changed: the verifier must confirm this only extends the harness")
     text = "\n".join(problems + notes) or "no fixture, tolerance, gate or adapter changes"
     return not problems, text

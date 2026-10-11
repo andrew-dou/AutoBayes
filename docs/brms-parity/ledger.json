@@ -153,11 +153,26 @@
     "A12_links",
     "B02_cens_trunc_weights"
    ],
-   "status": "implementing",
+   "status": "gates_green",
    "summary": "two-reference acceptance (brms where accurate, a committed 50-digit reference where not); lifts the cloglog, cens() and trunc() parks",
    "pr": null,
    "attempts": 1,
-   "gates": {},
+   "gates": {
+    "sha": "59210b6d3998",
+    "dirty_tree": false,
+    "base": "origin/main",
+    "when": "2026-10-11T20:18Z",
+    "results": {
+     "immutability": {
+      "status": "pass",
+      "seconds": 0.0
+     },
+     "oracle": {
+      "status": "pass",
+      "seconds": 157.2
+     }
+    }
+   },
    "divergences": [
     "D18",
     "D24",

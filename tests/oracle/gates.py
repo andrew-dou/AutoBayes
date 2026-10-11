@@ -13,6 +13,10 @@ G4 `check_predictions`   predict() on the fixture's draws equals posterior_linpr
 G5 `check_jax`           the JAX-compiled density equals the PyTensor one at every point
 G6 `check_default_prior` brms's default-prior table has the classes this model has, and `ab.default_priors()` for the
                          same formula, data and family, written as brms's table, equals it row by row (A07)
+
+A case that opts in to two-reference acceptance (P6, its gate field names a committed high-precision reference and the
+quantity kinds that may fall back on it: "gradient", "epred") has G2's gradient and G4's expected values checked by
+`two_reference`: brms where brms is accurate, the reference where it is not; every other check is unchanged.
 """
 from __future__ import annotations
 
@@ -27,6 +31,7 @@ from autobayes.priors import dirichlet_concentration
 
 from tests.oracle import adapter
 from tests.oracle import fixture as fx
+from tests.oracle import two_reference
 from tests.oracle.adapter import OracleMismatch
 from tests.oracle.tolerances import DESIGN_ABS, GRAD_REL, LOGP_REL, PRED_REL, abs_err, rel_err
 
@@ -100,6 +105,12 @@ class Bundle:
     def lprior(self):
         rvs = [self.model.pymc_model[name] for name in prior_names(self.model)]
         return self.model.pymc_model.compile_logp(vars=rvs, jacobian=False)
+
+    @cached_property
+    def reference(self):
+        """P6: the committed high-precision reference of a case that opts in to two-reference acceptance (its gate field
+        names one, ``two_reference.load`` validates the opt-in), else None."""
+        return two_reference.load(self.case)
 
 
 # -- G1 -----------------------------------------------------------------------------------------------------
@@ -187,6 +198,8 @@ def check_logp(b: Bundle) -> None:
 
 
 def check_gradient(b: Bundle) -> None:
+    if b.reference is not None and "gradient" in b.reference.fallback:      # P6: brms where it is accurate, the reference where not
+        return two_reference.check_gradient(b)
     coords = adapter.coordinate_map(b.fixture, b.model, b.cmap, b.gmap)
     for k, p, vp in b.points():
         layout = adapter.value_layout(b.model, vp)
@@ -289,6 +302,8 @@ def check_derived(b: Bundle) -> None:
 
 # -- G4 -----------------------------------------------------------------------------------------------------
 def check_predictions(b: Bundle) -> None:
+    if b.reference is not None and "epred" in b.reference.fallback:         # P6: brms where it is accurate, the reference where not
+        return two_reference.check_predictions(b)
     idata = adapter.draws(b.fixture, b.model, b.cmap, b.gmap)
     mean_var = "expected" if b.model.family == "binomial" else b.model.names["mean"]
     for block, nd in (("fitted", None), ("newdata", b.newdata)):

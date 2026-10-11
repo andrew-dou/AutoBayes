@@ -1,0 +1,73 @@
+{
+ "id": "binomial_cloglog",
+ "tier": "A",
+ "feature": "A12_links",
+ "note": "complementary log-log link on grouped binomial counts. The seeded points are drawn from the box (-1, 1) (point_halfwidth), not the default (-1.2, 1.2): there brms's log density is -inf at a seeded point (a k < size row at eta = 3.95, where Stan's 1 - inv_cloglog(eta) is exactly 0), and at (-1.1, 1.1) brms's log likelihood is 3.7e-6 relative off the exact value; (-1, 1) is the largest box on a 0.1 grid where it is finite and within LOGP_REL of the exact value (8.6e-11), and log densities never fall back on a reference (P6)",
+ "seed": 156,
+ "n_points": 8,
+ "data": {
+  "generator": "tier_a",
+  "seed": 56,
+  "n": 36,
+  "newdata": {
+   "seed": 156,
+   "n": 5
+  }
+ },
+ "brms": {
+  "formula": "k | trials(size) ~ x + (1 | g)",
+  "family": {
+   "family": "binomial",
+   "link": "cloglog"
+  },
+  "factors": {
+   "g": [
+    "a",
+    "b",
+    "c",
+    "d",
+    "e",
+    "f"
+   ]
+  },
+  "priors": [
+   {
+    "prior": "normal(0, 2.5)",
+    "class": "Intercept"
+   },
+   {
+    "prior": "normal(0, 1.5)",
+    "class": "b"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "sd",
+    "group": "g"
+   }
+  ],
+  "point_halfwidth": 1.0
+ },
+ "autobayes": {
+  "constructor": "binomial",
+  "formula": "k | trials(size) ~ x + (1 | g)",
+  "kwargs": {
+   "link": "cloglog"
+  },
+  "priors": {
+   "intercept": [
+    "Normal",
+    0,
+    2.5
+   ],
+   "b": [
+    "Normal",
+    0,
+    1.5
+   ],
+   "sd": [
+    "HalfNormal",
+    1
+   ]
+  }
+ }
+}

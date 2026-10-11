@@ -1,12 +1,15 @@
 """The links of the Bernoulli and binomial families (brms-parity A12): what each link contributes to a spec.
 
 brms offers ``bernoulli(link = "logit" | "probit" | "cloglog" | "cauchit")`` and the same for ``binomial``; this
-library builds models with the first two (``LINKS``) and withholds the cloglog link (``PARKED_LINKS``, with the
-reason ``FamilySpec.with_link`` reports; docs/links.md). The likelihoods live in ``autobayes.likelihoods`` (the
-logit's softplus form, the probit's log-CDF, each finite with a finite gradient for every finite ``eta`` on both the
-PyTensor and the JAX path); here are the inverse links ``predict()`` applies and the words ``describe()`` uses. Under
-every link the graph keeps the linear predictor as the parent ``<link>_p`` (``logit_p``, ``probit_p``) under Bambi's
-identity link, so the deterministic the oracle compares with brms's ``posterior_linpred`` is ``eta`` itself.
+library builds models with the first three (``LINKS``; the cloglog link since P6, accepted against two references where
+brms's own gradient is inexact, divergence D18) and does not offer the cauchit link. ``PARKED_LINKS`` is the place for a
+link brms offers that this library withholds, with the reason ``FamilySpec.with_link`` reports (none at present;
+docs/links.md). The likelihoods live in ``autobayes.likelihoods`` (the logit's softplus form, the probit's log-CDF, the
+cloglog's ``log1mexp(-exp(eta))`` and ``-exp(eta)``, each finite with a finite gradient for every finite ``eta`` on both
+the PyTensor and the JAX path); here are the inverse links ``predict()`` applies and the words ``describe()`` uses.
+Under every link the graph keeps the linear predictor as the parent ``<link>_p`` (``logit_p``, ``probit_p``,
+``cloglog_p``) under Bambi's identity link, so the deterministic the oracle compares with brms's ``posterior_linpred`` is
+``eta`` itself.
 """
 from __future__ import annotations
 
@@ -20,7 +23,7 @@ from scipy.special import expit, ndtr
 
 def inverse_cloglog(eta):
     """``1 - exp(-exp(eta))`` as ``-expm1(-exp(eta))``: exact where the subtraction returns 0 (``eta`` below about -37).
-    The NumPy inverse of the withheld cloglog link, kept with its likelihood (``likelihoods.cloglog_log_p1``)."""
+    The NumPy inverse of the cloglog link (its likelihood is ``likelihoods.cloglog_log_p1`` / ``cloglog_log_p0``)."""
     return -np.expm1(-np.exp(eta))
 
 
@@ -54,13 +57,11 @@ LINKS = MappingProxyType({link.name: link for link in (
          "per-trial success log-odds", "expit(a_c)"),
     Link("probit", "probit_p", ndtr, "Phi(eta_i)", ", the standard Normal CDF", "probit",
          "probit (Phi^-1) of the probability of", "per-trial success probability on the probit scale", "Phi(a_c)"),
+    Link("cloglog", "cloglog_p", inverse_cloglog, "1 - exp(-exp(eta_i))", ", the inverse complementary log-log",
+         "complementary log-log", "complementary log-log (log(-log(1 - p))) of the probability of",
+         "per-trial success probability on the complementary log-log scale", "1 - exp(-exp(a_c))"),
 )})
 
-# Links brms offers for these families that this library does not build a model with, and why (docs/links.md).
-PARKED_LINKS = MappingProxyType({
-    "cloglog": ("brms's own gradient of bernoulli_lpmf(y | inv_cloglog(eta)) is inaccurate where a y = 0 row has eta above "
-                "about 2.7 (Stan forms 1 - theta by subtraction, losing eps * exp(exp(eta)) relative), so the frozen brms "
-                "fixture cannot certify the link to the oracle's tolerance; the stable likelihood "
-                "(autobayes.likelihoods.cloglog_log_p1 / cloglog_log_p0) is kept, tested and withheld until a fixture "
-                "can (docs/links.md, divergence D18)"),
-})
+# Links brms offers for these families that this library does not build a model with, and why (docs/links.md): none since
+# P6, which lifted the cloglog link's park (divergence D18).
+PARKED_LINKS = MappingProxyType({})

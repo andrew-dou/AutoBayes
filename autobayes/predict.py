@@ -16,7 +16,7 @@ with zero trials gives ``expected = 0`` and ``y = 0``.
 A model with response addition terms (B02, docs/addition-terms.md) is predicted in this layer: ``weights()`` and
 ``cens()`` change nothing here (brms's ``posterior_epred`` and ``posterior_predict`` ignore them, and new rows need
 neither column), while under ``trunc()`` the mean is the truncated distribution's mean and ``y`` is drawn from the
-truncated distribution, as brms does (``cens()`` and ``trunc()`` are withheld; see ``formula.PARKED_ADDITIONS``).
+truncated distribution, as brms does.
 
 A model with a monotonic term ``mo(x)`` (B03, docs/monotonic.md) is predicted in this layer: each term adds its coefficient
 times ``D * sum(simplex[:Xmo_i])`` per draw and row, with every row's value coded as the fitted rows were (a value outside
