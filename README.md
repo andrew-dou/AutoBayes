@@ -29,19 +29,19 @@ Three parts:
   GPU execution are not yet validated;
   anything else is refused with an error naming the construct. See
   [Library](#library-milestones-m0-m1-and-m2) below. (Superseded since Tier A of the brms-parity loop: see
-  [Current status](#current-status-brms-parity-after-tier-a).)
+  [Current status](#current-status-brms-parity-after-tier-b).)
 
 It came out of a multi-month hierarchical-modelling program that fit roughly sixty
 successive model versions on GPU, each conditional on the last. The modelling was the
 research; this is what made the modelling survivable once an agent was doing most of
 the typing.
 
-## Current status: brms parity after Tier A
+## Current status: brms parity after Tier B
 
 AutoBayes is being built out as brms in Python by an oracle-gated loop: a feature merges only when the model it
 builds reproduces brms's own Stan data, log density and gradient (with and without the Jacobian) and predictions on
 fixtures frozen from brms 2.23.0 with rstan ([loop rules](docs/brms-parity/LOOP.md), [oracle](oracle/README.md)).
-Tier A is complete (October 2026):
+Tiers A and B are complete (October 2026), except smooth terms `s()`, which are not offered yet (see the Tier B review):
 
 - **Families**: Gaussian; Student-t with a fixed or learned `nu`; Poisson; negative binomial; Gamma (log link);
   lognormal; Beta; Bernoulli and binomial with a logit or probit link (brms's cloglog link is parked, see
@@ -67,8 +67,9 @@ Tier A is complete (October 2026):
   (`Priors(simo={"x": ab.Dirichlet(...)})`), for every family but the categorical one ([monotonic effects](docs/monotonic.md)).
 
 Every known difference from brms is listed in [divergences](docs/brms-parity/divergences.md), and the feature ledger
-is [ledger.json](docs/brms-parity/ledger.json) (`python tools/parity_status.py`). The Tier A review is
-[docs/brms-parity/reports/tier-a-review.pdf](docs/brms-parity/reports/tier-a-review.pdf). The sections below are the
+is [ledger.json](docs/brms-parity/ledger.json) (`python tools/parity_status.py`). The tier reviews are
+[tier-a-review.pdf](docs/brms-parity/reports/tier-a-review.pdf) and
+[tier-b-review.pdf](docs/brms-parity/reports/tier-b-review.pdf). The sections below are the
 earlier milestone record and are kept as written; where they call one of the constructs above unsupported, this
 section supersedes them.
 
