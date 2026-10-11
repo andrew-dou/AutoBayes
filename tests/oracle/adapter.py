@@ -28,6 +28,12 @@ formula's `ColumnMap.distributional`, which is not B05's `ColumnMap.dpars`: brms
 dpars, but a categorical model's `mu<k>` share the response formula's design while `sigma`'s formula has its own), and
 its own `Intercept_sigma` (centred when brms centres) and `b_sigma`, mapped to the formula's PyMC variables
 (`Model.dpar_names`); brms reports the raw-scale intercept as `b_sigma_Intercept`.
+
+A monotonic term `mo(x)` (B03) is brms's special term `k`: its codes `Xmo_k` and number of steps `Jmo[k]` are matched by
+content to the model's `Design.monotonic` (`match_monotonic`, on `ColumnMap.monotonic`), its coefficient is `bsp[k]` and its
+simplex `simo_k`. The probe cannot move one entry of a simplex alone (`unreached`): those coordinates are given to the declared
+simplexes in declaration order and Stan's stick-breaking coordinates are recomputed from `simo_k` at every point and checked
+against the fixture's `u` before they are mapped to `simo_x_stickbreaking__`, as for `cholesky_corr`.
 """
 from __future__ import annotations
 
@@ -41,8 +47,9 @@ import xarray as xr
 
 import autobayes as ab
 from autobayes.correlation import cholesky_corr_free
+from autobayes.monotonic import stick_breaking_free
 from tests.oracle.fixture import Fixture, Point
-from tests.oracle.tolerances import DESIGN_ABS
+from tests.oracle.tolerances import DESIGN_ABS, abs_err
 
 
 class OracleMismatch(AssertionError):
@@ -67,12 +74,13 @@ def _prior(v):
 
 def priors_from_spec(spec: dict) -> ab.Priors:
     """``{"intercept": ["Normal", 0, 5], "b": ["Normal", 0, 2] | {term: ...}, "sd": [...] | {factor: ...}, "cor": {factor: ["LKJ", eta]},
-    "sigma": [...], "shape": [...], "phi": [...], "nu": [...], "zi": ["Beta", a, b], "hu": ["Beta", a, b]}``; an auxiliary
-    parameter with its own formula (B01) takes ``{"intercept": [...], "b": [...]}``."""
+    "sigma": [...], "shape": [...], "phi": [...], "nu": [...], "zi": ["Beta", a, b], "hu": ["Beta", a, b],
+    "simo": {column: ["Dirichlet", a, ...]}}``; an auxiliary parameter with its own formula (B01) takes ``{"intercept": [...],
+    "b": [...]}``; ``simo`` is the simplex prior of each monotonic term (B03)."""
     return ab.Priors(intercept=_prior(spec.get("intercept")), b=_prior(spec.get("b")),
                      sd=_prior(spec.get("sd")), cor=_prior(spec.get("cor")), sigma=_prior(spec.get("sigma")),
                      shape=_prior(spec.get("shape")), phi=_prior(spec.get("phi")), nu=_prior(spec.get("nu")),
-                     zi=_prior(spec.get("zi")), hu=_prior(spec.get("hu")))
+                     zi=_prior(spec.get("zi")), hu=_prior(spec.get("hu")), simo=_prior(spec.get("simo")))
 
 
 def build_model(case: dict, data: pd.DataFrame) -> ab.Model:
@@ -106,6 +114,7 @@ class ColumnMap:
     thresholds: bool = False
     dpars: tuple[str, ...] = ()
     distributional: dict = None           # B01: the column map of each auxiliary parameter's own formula (X_sigma), by name
+    monotonic: dict = None                # B03: brms's special-term number k (Xmo_k, bsp[k], simo_k) of each monotonic term, by column
 
     def b_index(self, x_col: int) -> int:
         """Index into brms's ``b`` of design column ``x_col``."""
@@ -171,7 +180,8 @@ def _match_design(fixture: Fixture, model: ab.Model, X_name: str = "X", b_name: 
 def match_columns(fixture: Fixture, model: ab.Model) -> ColumnMap:
     fam = model.family_spec
     if not fam.per_category:
-        return _with_distributional(fixture, model, _match_design(fixture, model, thresholds=fam.thresholds))
+        cmap = _with_distributional(fixture, model, _match_design(fixture, model, thresholds=fam.thresholds))
+        return replace(cmap, monotonic=match_monotonic(fixture, model))
     # B05, the categorical family: one brms design per non-reference category, each matched like X; all must map alike
     from autobayes.default_priors import brms_dpar_names
 
@@ -183,7 +193,36 @@ def match_columns(fixture: Fixture, model: ab.Model) -> ColumnMap:
     maps = [_match_design(fixture, model, f"X_{dp}", f"b_{dp}", f"Intercept_{dp}", f"Kc_{dp}") for dp in dpars]
     if any(m != maps[0] for m in maps):
         raise OracleMismatch(f"brms's category designs {list(dpars)} do not map alike onto the AutoBayes design")
-    return ColumnMap(maps[0].x_column, maps[0].intercept_column, maps[0].centred_intercept, dpars=dpars)
+    return ColumnMap(maps[0].x_column, maps[0].intercept_column, maps[0].centred_intercept, dpars=dpars,
+                     monotonic=match_monotonic(fixture, model))
+
+
+def match_monotonic(fixture: Fixture, model: ab.Model) -> dict[str, int]:
+    """brms's special-term number ``k`` of each monotonic term ``mo(x)`` (B03), by the term's column: the one whose ``Xmo_k``
+    equals the term's codes row by row (within ``DESIGN_ABS``) and whose ``Jmo[k]`` is its number of steps. Every brms
+    monotonic variable must be matched, and ``Ksp`` and ``Imo`` must both be the number of terms (each special term is then
+    one ``mo()`` variable, so ``bsp[k]`` and ``simo_k`` belong to the term of ``Xmo_k``); brms's special terms without an
+    AutoBayes monotonic term, and the reverse, are a mismatch."""
+    sd, blocks = fixture.standata, model.design.monotonic
+    brms = sorted(int(key[len("Xmo_"):]) for key in sd if key.startswith("Xmo_"))
+    if not blocks:
+        if brms or "Ksp" in sd:
+            raise OracleMismatch(f"brms has special terms (Ksp, Xmo_{brms}); the AutoBayes model has no monotonic term")
+        return {}
+    counts = {"Ksp": int(sd["Ksp"]) if "Ksp" in sd else None, "Imo": int(sd["Imo"]) if "Imo" in sd else None, "Xmo_k": len(brms)}
+    if any(v != len(blocks) for v in counts.values()):
+        raise OracleMismatch(f"brms has {counts} special and monotonic terms; AutoBayes has {len(blocks)} monotonic terms")
+    Jmo = np.atleast_1d(sd["Jmo"]).astype(int)
+    out, used = {}, set()
+    for column, block in blocks.items():
+        hits = [k for k in brms if k not in used and sd[f"Xmo_{k}"].shape == block.codes.shape
+                and abs_err(sd[f"Xmo_{k}"], block.codes) <= DESIGN_ABS and int(Jmo[k - 1]) == block.D]
+        if len(hits) != 1:
+            raise OracleMismatch(f"monotonic term {block.term!r}: {len(hits)} brms monotonic variables carry its codes and its "
+                                 f"{block.D} steps (Xmo_k, Jmo[k])")
+        out[column] = hits[0]
+        used.add(hits[0])
+    return out
 
 
 def _with_distributional(fixture: Fixture, model: ab.Model, cmap: ColumnMap) -> ColumnMap:
@@ -346,7 +385,8 @@ def natural_point(model: ab.Model, point: Point, cmap: ColumnMap, gmap: GroupMap
     brms's ``L_m`` (A02). ``sigma``, ``shape`` and
     ``phi`` are brms's parameters of those names (the Gaussian/Student-t/lognormal scale; the negative binomial/Gamma
     shape; the Beta precision); ``nu`` is brms's ``nu`` when the model learns it (a fixed nu is no value variable here,
-    though brms reports it among its parameters); ``zi`` and ``hu`` are brms's zero-inflation and hurdle probabilities (B06)."""
+    though brms reports it among its parameters); ``zi`` and ``hu`` are brms's zero-inflation and hurdle probabilities (B06);
+    ``bsp`` and ``simo`` each monotonic term's coefficient and simplex, by column (B03)."""
     pars = point.pars
     intercept = None
     if cmap.dpars:                                             # B05, categorical: one column of b and one intercept per category
@@ -393,8 +433,12 @@ def natural_point(model: ab.Model, point: Point, cmap: ColumnMap, gmap: GroupMap
     nu = float(pars["nu"]) if "nu" in model.names else None
     zi = float(pars["zi"]) if "zi" in pars else None
     hu = float(pars["hu"]) if "hu" in pars else None
+    bsp = simo = None
+    if cmap.monotonic:                                     # B03: brms's bsp[k] and simo_k of each monotonic term
+        bsp = {c: float(np.atleast_1d(pars["bsp"])[k - 1]) for c, k in cmap.monotonic.items()}
+        simo = {c: np.atleast_1d(pars[f"simo_{k}"]).astype(float) for c, k in cmap.monotonic.items()}
     return dict(intercept=intercept, b=b, sd=sd or None, z=z or None, L=L or None, sigma=sigma, shape=shape, phi=phi, nu=nu,
-                zi=zi, hu=hu)
+                zi=zi, hu=hu, bsp=bsp, simo=simo)
 
 
 def value_point(model: ab.Model, point: Point, cmap: ColumnMap, gmap: GroupMap) -> dict:
@@ -431,9 +475,18 @@ def coordinate_map(fixture: Fixture, model: ab.Model, cmap: ColumnMap, gmap: Gro
     seen_L: dict[str, int] = {}                                            # L_m coordinates met so far, in index order
     seen_thresholds = 0                                                    # Intercept coordinates met so far (B05)
     others = len(cmap.dpars)
+    simplex_coordinates = _simplex_coordinates(fixture, model, cmap)       # B03: the coordinates the probe could not reach
+    by_k = {k: c for c, k in (cmap.monotonic or {}).items()}               # B03: brms's special-term number -> column
     out = []
     for e in fixture.upars:
-        par, elem, transform, idx = e["par"], int(e["elem"]) - 1, e["transform"], int(e["index"]) - 1
+        idx, transform = int(e["index"]) - 1, e["transform"]
+        if transform == "unreached":                                        # B03: a simplex coordinate of a monotonic term
+            if idx not in simplex_coordinates:
+                raise OracleMismatch(f"brms's unconstrained coordinate {idx + 1} was not reached by the probe and is no simplex "
+                                     "coordinate of a monotonic term")
+            out.append((idx, *simplex_coordinates[idx]))
+            continue
+        par, elem = e["par"], int(e["elem"]) - 1
         if cmap.dpars and par.startswith("b_") and par[2:] in cmap.dpars:          # B05: a coefficient of category k
             k = cmap.dpars.index(par[2:])
             col = cmap.x_of_b(elem)
@@ -466,6 +519,10 @@ def coordinate_map(fixture: Fixture, model: ab.Model, cmap: ColumnMap, gmap: Gro
                 target, expect = (term, 0 if j is None else j), "identity"
         elif par == "Intercept":
             target, expect = (names["intercept"], 0), "identity"
+        elif par == "bsp":                                     # B03: the coefficient of brms's special term elem + 1, a monotonic term
+            if elem + 1 not in by_k:
+                raise OracleMismatch(f"bsp[{elem + 1}] is not the coefficient of a monotonic term of the AutoBayes model")
+            target, expect = (model.mo_names[by_k[elem + 1]]["b"], 0), "identity"
         elif par == "sigma":
             target, expect = (f"{names['sigma']}_log__", 0), "log"
         elif par == "shape":                                   # negative binomial / Gamma: PyMC's alpha, sampled on the log scale
@@ -540,6 +597,39 @@ def coordinate_map(fixture: Fixture, model: ab.Model, cmap: ColumnMap, gmap: Gro
     return out
 
 
+def _simplex_coordinates(fixture: Fixture, model: ab.Model, cmap: ColumnMap) -> dict[int, tuple[str, int]]:
+    """B03: brms's simplex ``simo_k`` (``simplex[Jmo[k]]``) has ``Jmo[k] - 1`` unconstrained coordinates, none of which the
+    probe can move alone (changing one entry leaves the simplex: ``unreached``). Give each declared simplex, in declaration
+    order, the next ``Jmo[k] - 1`` unreached coordinates, then recompute Stan's stick-breaking coordinates from ``simo_k`` at
+    every point and require them to be the fixture's ``u`` there, so that the AutoBayes transform is Stan's coordinate by
+    coordinate before the gradient is compared. Returns (value variable, index) by brms's 0-based coordinate."""
+    unreached = [int(e["index"]) - 1 for e in fixture.upars if e["transform"] == "unreached"]
+    by_k = {k: c for c, k in (cmap.monotonic or {}).items()}
+    out, pos = {}, 0
+    for name, declaration in fixture.declarations.items():
+        if not declaration.startswith("simplex["):
+            continue
+        k = int(name[len("simo_"):]) if name.startswith("simo_") and name[len("simo_"):].isdigit() else None
+        if k not in by_k:
+            raise OracleMismatch(f"brms's simplex {name!r} ({declaration}) is not the simplex of a monotonic term of the AutoBayes model")
+        column = by_k[k]
+        size = model.design.monotonic[column].D - 1
+        index = unreached[pos:pos + size]
+        pos += size
+        if len(index) != size:
+            raise OracleMismatch(f"brms's simplex {name!r} needs {size} unreached coordinates; {len(index)} are left")
+        for q, pt_ in enumerate(fixture.points):
+            u = stick_breaking_free(np.atleast_1d(pt_.pars[name]))
+            if np.max(np.abs(u - pt_.u[index])) > 1e-10:
+                raise OracleMismatch(f"point {q}: Stan's stick-breaking coordinates of {name} are {u!r}; brms's unconstrained values "
+                                     f"at {[i + 1 for i in index]} are {pt_.u[index]!r}")
+        for j, i in enumerate(index):
+            out[i] = (f"{model.mo_names[column]['simplex']}_stickbreaking__", j)
+    if pos != len(unreached):
+        raise OracleMismatch(f"brms has {len(unreached) - pos} unreached unconstrained coordinates that belong to no simplex")
+    return out
+
+
 # -- draws --------------------------------------------------------------------------------------------------
 def draws(fixture: Fixture, model: ab.Model, cmap: ColumnMap, gmap: GroupMap) -> az.InferenceData:
     """The fixture's points as one chain of posterior draws under AutoBayes's names: the raw-scale intercept
@@ -547,7 +637,8 @@ def draws(fixture: Fixture, model: ab.Model, cmap: ColumnMap, gmap: GroupMap) ->
     coefficient (``1|g`` from ``r_m_1``, ``x|g`` from the slope's ``r_m_c``), the Cholesky factor and correlation
     matrix of a correlated factor (``L|g`` from ``L_m``, ``cor|g`` from ``L_m L_m^T``), sigma, shape or phi, a learned nu,
     and zi or hu (B06); the cumulative thresholds as brms's ``Intercept`` and ``b_Intercept``, which a fit's posterior
-    keeps under those names, and a categorical model's intercepts and coefficients per category (B05)."""
+    keeps under those names, and a categorical model's intercepts and coefficients per category (B05); each monotonic term's
+    coefficient and simplex (B03)."""
     pts = fixture.points
     names = model.names
     data, coords = {}, {"chain": [0], "draw": np.arange(len(pts))}
@@ -561,7 +652,12 @@ def draws(fixture: Fixture, model: ab.Model, cmap: ColumnMap, gmap: GroupMap) ->
     elif model.spec.intercept:
         a = [float(p.pars["b_Intercept"]) if cmap.centred_intercept else float(coefficients(p.pars)[cmap.b_index(cmap.intercept_column)]) for p in pts]
         data[names["intercept"]] = (("chain", "draw"), np.array(a)[None, :])
-    for term in model.spec.terms:
+    for column, k in (cmap.monotonic or {}).items():            # B03: each monotonic term's coefficient bsp[k] and simplex simo_k
+        roles = model.mo_names[column]
+        data[roles["b"]] = (("chain", "draw"), np.array([float(np.atleast_1d(p.pars["bsp"])[k - 1]) for p in pts])[None, :])
+        data[roles["simplex"]] = (("chain", "draw", roles["coordinate"]), np.stack([np.atleast_1d(p.pars[f"simo_{k}"]) for p in pts])[None])
+        coords[roles["coordinate"]] = [str(j) for j in range(1, model.design.monotonic[column].D + 1)]
+    for term in (t.name for t in model.spec.bambi_terms):       # the terms with design columns (a monotonic term has none)
         positions = [(c, j) for c, (_, t, j) in enumerate(model.coefficients) if t == term]
         if model.spec.is_vector_term(term):
             vals = np.empty((len(pts), len(positions)))

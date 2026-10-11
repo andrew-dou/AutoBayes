@@ -47,6 +47,21 @@ def _dpar_payload(model, ds):
                        'coefficients': {k: _prior(v) for k, v in sub.coefficient_priors(ds).items()}}}
 
 
+def _monotonic_payload(model):
+    """The target identity's entries of the monotonic terms (B03): each term's coding, codes and number of steps, and its
+    simplex prior with the concentrations it gives (its coefficient's prior is among the coefficients)."""
+    from autobayes.priors import dirichlet_concentration
+
+    s, simplexes = model.spec, model.priors.simo_priors(model.spec)
+    out = []
+    for column, block in model.design.monotonic.items():
+        m = s.monotonic(column)
+        out.append({'term': block.term, 'column': column, 'minimum': m.minimum, 'maximum': m.maximum, 'categories': list(m.categories),
+                    'codes': block.codes, 'D': block.D, 'prior': _prior(simplexes[column]),
+                    'concentration': dirichlet_concentration(simplexes[column], block.D)})
+    return out
+
+
 def freeze_target(model):
     """Call once immediately after construction; only the digest is retained."""
     s, d, pr = model.spec, model.design, model.priors
@@ -88,6 +103,8 @@ def freeze_target(model):
         # So do distributional formulas (B01): each parameter's canonical formula, link, design and priors; its own
         # entry under 'priors' is then None.
         **({'distributional': [_dpar_payload(model, ds) for ds in s.dpars]} if s.dpars else {}),
+        # So do monotonic terms (B03): their coding, codes and simplex priors (each coefficient's prior is a coefficient's).
+        **({'monotonic': _monotonic_payload(model)} if s.mo_terms else {}),
         'priors': {'intercept': prior(pr.intercept), 'sigma': prior(pr.sigma),
                    'coefficients': {k: prior(v) for k,v in pr.coefficient_priors(s).items()},
                    'groups': {k: prior(v) for k,v in pr.group_priors(s).items()},

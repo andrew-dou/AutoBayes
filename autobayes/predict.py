@@ -18,6 +18,10 @@ A model with response addition terms (B02, docs/addition-terms.md) is predicted 
 neither column), while under ``trunc()`` the mean is the truncated distribution's mean and ``y`` is drawn from the
 truncated distribution, as brms does (``cens()`` and ``trunc()`` are withheld; see ``formula.PARKED_ADDITIONS``).
 
+A model with a monotonic term ``mo(x)`` (B03, docs/monotonic.md) is predicted in this layer: each term adds its coefficient
+times ``D * sum(simplex[:Xmo_i])`` per draw and row, with every row's value coded as the fitted rows were (a value outside
+the fitted coding is refused, as brms refuses it).
+
 A model whose auxiliary parameter has its own formula (B01, docs/distributional.md: ``["y ~ x", "sigma ~ z"]``) is
 predicted in this layer too: ``kind="linear"`` and ``kind="mean"`` keep their meaning (the linear predictor of ``mu`` and
 the expected response, brms's ``posterior_linpred`` and ``posterior_epred``), with each row's own ``sigma`` wherever the
@@ -84,7 +88,7 @@ def _coefficient_draws(post, model):
     categorical family (B05), whose every coefficient has the non-reference categories as its last axis."""
     category = model.names.get("category_dim")
     parts = []
-    for term in model.spec.pop_terms:
+    for term in model.spec.bambi_terms:                         # a monotonic term has no design column (B03)
         if category is None:
             arr = post[term.name].to_numpy()
             parts.append(arr if term.levels else arr[..., None])
@@ -92,6 +96,20 @@ def _coefficient_draws(post, model):
             arr = post[term.name].transpose("chain", "draw", ..., category).to_numpy()
             parts.append(arr if term.levels else arr[..., None, :])
     return np.concatenate(parts, axis=-1 if category is None else -2) if parts else None
+
+
+def monotonic_contribution(model, post, df: pd.DataFrame) -> np.ndarray | float:
+    """(chain, draw, row) draws of the monotonic terms' part of the linear predictor (B03) on the rows of ``df`` (the fitted
+    frame, or checked new rows): each term's coefficient times ``mo()`` of its simplex draws at the rows' codes, which
+    ``formula.Monotonic.codes`` reads with the fitted coding and refuses outside it. 0 without a monotonic term."""
+    from autobayes.monotonic import monotonic_values
+
+    out = 0.0
+    for column, roles in model.mo_names.items():
+        codes = model.spec.monotonic(column).codes(df[column], where="newdata column")
+        simplex = post[roles["simplex"]].transpose("chain", "draw", roles["coordinate"]).to_numpy()
+        out = out + post[roles["b"]].to_numpy()[..., None] * monotonic_values(simplex, codes)
+    return out
 
 
 def dpar_linear_predictor(model, post, df: pd.DataFrame, name: str) -> np.ndarray:
@@ -144,9 +162,10 @@ def _check_newdata(model, newdata: pd.DataFrame, *, need_trials: bool = False, i
     if df.isna().any().any():
         raise FormulaError("newdata contains missing values")
     categorical_names = {c.name for c in s.all_categoricals}
+    monotonic_columns = {m.column for m in s.monotonics}
     for c in s.model_columns:                                    # numeric predictors and the raw columns of transforms
-        if c in categorical_names:
-            continue
+        if c in categorical_names or (c in monotonic_columns and c not in s.predictors):
+            continue                                             # a monotonic predictor's values are checked by its coding (B03)
         reject_complex(f"newdata column {c!r}", df[c])
         if not pd.api.types.is_numeric_dtype(df[c]):
             raise FormulaError(f"newdata column {c!r} must be numeric")
@@ -154,6 +173,8 @@ def _check_newdata(model, newdata: pd.DataFrame, *, need_trials: bool = False, i
         s.offset.values(df, where="newdata column")               # numeric, finite and (for log) positive, or refused
     for t in (*s.transform_terms, *(t for d in s.dpars for t in d.transform_terms)):   # the evaluated columns, recomputed from the raw ones
         df[t.name] = t.transform.values(df, where="newdata column")
+    for m in s.monotonics:                                       # whole numbers in the fitted range, or a fitted category (B03)
+        m.codes(df[m.column], where="newdata column")
     for cat in s.all_categoricals:
         labels, _ = categorical_labels(f"newdata column {cat.name!r}", df[cat.name])
         unseen = sorted(set(labels.tolist()) - set(cat.levels))
@@ -228,6 +249,7 @@ def _predict_by_hand(model, idata, df: pd.DataFrame | None, kind: str, seed, pol
             mu = mu + np.einsum("cdp,np->cdn", b, X)
     if model.spec.offset is not None:                           # the offset enters as written, with or without group effects
         mu = mu + model.spec.offset.values(df)
+    mu = mu + monotonic_contribution(model, post, df)           # the monotonic terms (B03), population-level as well
     new_levels = {}
     for term in (model.spec.group_terms if include_group_effects else ()):
         g = term.factor
@@ -372,7 +394,8 @@ def predict(model, fit_result, *, newdata: pd.DataFrame | None = None, kind: str
                 "an exact-key mapping can set the policy separately for each factor.")
     manual = (not include_group_effects or kind == "linear" or fam.manual_prediction or any(new_levels.values())
               or bool(model.spec.additions)                    # addition terms (B02): the truncated mean and draws are this layer's
-              or bool(model.spec.dpars))                       # distributional formulas (B01): each row's own sigma is this layer's
+              or bool(model.spec.dpars)                        # distributional formulas (B01): each row's own sigma is this layer's
+              or bool(model.spec.mo_terms))                    # monotonic terms (B03): Bambi's predictions do not know them
     if dpar is not None:
         ds = _predict_dpar(model, idata, df, kind, dpar)
     elif manual:

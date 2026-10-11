@@ -1,0 +1,63 @@
+{
+ "id": "binomial_monotonic",
+ "tier": "B",
+ "feature": "B03_monotonic",
+ "note": "B03 for the binomial logit family (trials); population-only",
+ "seed": 410,
+ "n_points": 8,
+ "data": {
+  "generator": "tier_b",
+  "seed": 310,
+  "n": 36,
+  "newdata": {
+   "seed": 410,
+   "n": 5
+  }
+ },
+ "brms": {
+  "formula": "k | trials(size) ~ x + mo(ord)",
+  "family": {
+   "family": "binomial"
+  },
+  "priors": [
+   {
+    "prior": "normal(0, 2.5)",
+    "class": "Intercept"
+   },
+   {
+    "prior": "normal(0, 1.5)",
+    "class": "b"
+   },
+   {
+    "prior": "dirichlet(2, 2, 2)",
+    "class": "simo",
+    "coef": "moord1"
+   }
+  ]
+ },
+ "autobayes": {
+  "constructor": "binomial",
+  "formula": "k | trials(size) ~ x + mo(ord)",
+  "kwargs": {},
+  "priors": {
+   "intercept": [
+    "Normal",
+    0,
+    2.5
+   ],
+   "b": [
+    "Normal",
+    0,
+    1.5
+   ],
+   "simo": {
+    "ord": [
+     "Dirichlet",
+     2,
+     2,
+     2
+    ]
+   }
+  }
+ }
+}

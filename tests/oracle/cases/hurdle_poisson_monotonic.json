@@ -1,0 +1,72 @@
+{
+ "id": "hurdle_poisson_monotonic",
+ "tier": "B",
+ "feature": "B03_monotonic",
+ "note": "B03 for the hurdle Poisson family; population-only",
+ "seed": 412,
+ "n_points": 8,
+ "data": {
+  "generator": "tier_b",
+  "seed": 312,
+  "n": 36,
+  "newdata": {
+   "seed": 412,
+   "n": 5
+  }
+ },
+ "brms": {
+  "formula": "zcnt ~ x + mo(ord)",
+  "family": {
+   "family": "hurdle_poisson"
+  },
+  "priors": [
+   {
+    "prior": "normal(0, 2)",
+    "class": "Intercept"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "b"
+   },
+   {
+    "prior": "beta(2, 2)",
+    "class": "hu"
+   },
+   {
+    "prior": "dirichlet(2, 2, 2)",
+    "class": "simo",
+    "coef": "moord1"
+   }
+  ]
+ },
+ "autobayes": {
+  "constructor": "hurdle_poisson",
+  "formula": "zcnt ~ x + mo(ord)",
+  "kwargs": {},
+  "priors": {
+   "intercept": [
+    "Normal",
+    0,
+    2
+   ],
+   "b": [
+    "Normal",
+    0,
+    1
+   ],
+   "hu": [
+    "Beta",
+    2,
+    2
+   ],
+   "simo": {
+    "ord": [
+     "Dirichlet",
+     2,
+     2,
+     2
+    ]
+   }
+  }
+ }
+}

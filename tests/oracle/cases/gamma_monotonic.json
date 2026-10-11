@@ -1,0 +1,72 @@
+{
+ "id": "gamma_monotonic",
+ "tier": "B",
+ "feature": "B03_monotonic",
+ "note": "B03: a predictor with a negative minimum (cens_ind -1, 0, 1 coded 0, 1, 2) and unequal concentrations",
+ "seed": 404,
+ "n_points": 8,
+ "data": {
+  "generator": "tier_b",
+  "seed": 304,
+  "n": 36,
+  "newdata": {
+   "seed": 404,
+   "n": 5
+  }
+ },
+ "brms": {
+  "formula": "ypos ~ x + mo(cens_ind)",
+  "family": {
+   "family": "Gamma",
+   "link": "log"
+  },
+  "priors": [
+   {
+    "prior": "normal(0, 2)",
+    "class": "Intercept"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "b"
+   },
+   {
+    "prior": "gamma(0.01, 0.01)",
+    "class": "shape"
+   },
+   {
+    "prior": "dirichlet(2, 3)",
+    "class": "simo",
+    "coef": "mocens_ind1"
+   }
+  ]
+ },
+ "autobayes": {
+  "constructor": "gamma",
+  "formula": "ypos ~ x + mo(cens_ind)",
+  "kwargs": {},
+  "priors": {
+   "intercept": [
+    "Normal",
+    0,
+    2
+   ],
+   "b": [
+    "Normal",
+    0,
+    1
+   ],
+   "shape": [
+    "Gamma",
+    0.01,
+    0.01
+   ],
+   "simo": {
+    "cens_ind": [
+     "Dirichlet",
+     2,
+     3
+    ]
+   }
+  }
+ }
+}

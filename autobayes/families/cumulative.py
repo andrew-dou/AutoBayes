@@ -50,7 +50,7 @@ def _bambi_setup(model, bambi_priors):
     from autobayes.likelihoods import cumulative_logit_family, no_intercept, ordered_thresholds
 
     spec = model.spec
-    columns = [pop_term_design(t, model.data, spec.categoricals) for t in spec.pop_terms]
+    columns = [pop_term_design(t, model.data, spec.categoricals) for t in spec.bambi_terms]   # a mo() term is not centred (B03)
     X = np.concatenate(columns, axis=1) if columns else np.zeros((len(model.data), 0))
     means = X.mean(0) if model.effective_center_predictors else np.zeros(X.shape[1])
     prior = model.priors.intercept
@@ -63,7 +63,7 @@ def _bambi_setup(model, bambi_priors):
     terms = {k: v for k, v in bambi_priors.items() if k != "Intercept"}
     priors = {"mu": {**terms, "Intercept": bmb.Prior("NoIntercept", dist=no_intercept)},
               "Intercept": bmb.Prior("OrderedThresholds", dist=thresholds)}
-    return cumulative_logit_family([t.name for t in spec.pop_terms], means, dim), priors, False
+    return cumulative_logit_family([t.name for t in spec.bambi_terms], means, dim), priors, False
 
 
 def _expected_response(model, post, eta):
@@ -142,4 +142,5 @@ CUMULATIVE = FamilySpec(
     bambi_setup=_bambi_setup,
     check_formula=_check_formula,
     intercept_lines=_intercept_lines,
+    monotonic=True,                                                 # B03: mo(x), verified against cumulative_monotonic
 )

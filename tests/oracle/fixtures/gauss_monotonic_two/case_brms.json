@@ -1,0 +1,53 @@
+{
+ "factors": {
+  "g": [
+   "a",
+   "b",
+   "c",
+   "d",
+   "e",
+   "f"
+  ]
+ },
+ "family": {
+  "family": "gaussian"
+ },
+ "formula": "y ~ x + mo(ord) + mo(size) + (1 | g)",
+ "id": "gauss_monotonic_two",
+ "n_points": 8,
+ "priors": [
+  {
+   "class": "Intercept",
+   "prior": "normal(0, 5)"
+  },
+  {
+   "class": "b",
+   "prior": "normal(0, 2)"
+  },
+  {
+   "class": "b",
+   "coef": "moord",
+   "prior": "normal(0, 0.5)"
+  },
+  {
+   "class": "sd",
+   "group": "g",
+   "prior": "normal(0, 1)"
+  },
+  {
+   "class": "sigma",
+   "prior": "normal(0, 1)"
+  },
+  {
+   "class": "simo",
+   "coef": "moord1",
+   "prior": "dirichlet(2, 2, 2)"
+  },
+  {
+   "class": "simo",
+   "coef": "mosize1",
+   "prior": "dirichlet(1.5)"
+  }
+ ],
+ "seed": 414
+}

@@ -5,10 +5,6 @@
  "note": "brms: bsp coefficient, simplex simo_1 (transform non-elementwise), standata Xmo_1, Jmo, con_simo_1",
  "seed": 165,
  "n_points": 8,
- "gate": {
-  "expect": "fail",
-  "reason": "B03_monotonic not implemented; remove this field when it lands"
- },
  "data": {
   "generator": "tier_b",
   "seed": 65,

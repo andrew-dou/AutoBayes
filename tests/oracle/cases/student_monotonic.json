@@ -1,0 +1,96 @@
+{
+ "id": "student_monotonic",
+ "tier": "B",
+ "feature": "B03_monotonic",
+ "note": "B03 for the Student-t family (nu fixed at 4): mo(ord) next to a centred numeric term and a varying intercept",
+ "seed": 401,
+ "n_points": 8,
+ "data": {
+  "generator": "tier_b",
+  "seed": 301,
+  "n": 36,
+  "newdata": {
+   "seed": 401,
+   "n": 5
+  }
+ },
+ "brms": {
+  "formula": "y ~ x + mo(ord) + (1 | g)",
+  "family": {
+   "family": "student"
+  },
+  "factors": {
+   "g": [
+    "a",
+    "b",
+    "c",
+    "d",
+    "e",
+    "f"
+   ]
+  },
+  "priors": [
+   {
+    "prior": "normal(0, 5)",
+    "class": "Intercept"
+   },
+   {
+    "prior": "normal(0, 2)",
+    "class": "b"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "sd",
+    "group": "g"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "sigma"
+   },
+   {
+    "prior": "constant(4)",
+    "class": "nu"
+   },
+   {
+    "prior": "dirichlet(2, 2, 2)",
+    "class": "simo",
+    "coef": "moord1"
+   }
+  ]
+ },
+ "autobayes": {
+  "constructor": "student",
+  "formula": "y ~ x + mo(ord) + (1 | g)",
+  "kwargs": {
+   "nu": 4
+  },
+  "priors": {
+   "intercept": [
+    "Normal",
+    0,
+    5
+   ],
+   "b": [
+    "Normal",
+    0,
+    2
+   ],
+   "sd": [
+    "HalfNormal",
+    1
+   ],
+   "sigma": [
+    "HalfNormal",
+    1
+   ],
+   "simo": {
+    "ord": [
+     "Dirichlet",
+     2,
+     2,
+     2
+    ]
+   }
+  }
+ }
+}

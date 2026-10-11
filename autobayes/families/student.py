@@ -76,4 +76,5 @@ STUDENT = FamilySpec(
     addition_terms=frozenset({"weights"}),                      # B02: weights(), verified against the frozen case student_weighted
     distributional_link="log",                                      # B01: sigma ~ z, brms's log link (student_distributional_sigma)
     default_distributional_intercept=lambda scale: StudentT(3, 0, scale),   # brms Intercept_sigma: student_t(3, 0, scale of log y)
+    monotonic=True,                                                 # B03: mo(x), verified against student_monotonic
 )

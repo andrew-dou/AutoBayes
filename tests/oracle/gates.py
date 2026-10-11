@@ -2,7 +2,8 @@
 Each raises `OracleMismatch` naming the point and the quantities that differ; a passing gate returns None.
 
 G1 `check_design`        standata equals the model's design, response, trials, offsets, group coding and addition-term
-                         data (weights, cens, lb, ub; B02), and each distributional formula's X_<dpar> (B01)
+                         data (weights, cens, lb, ub; B02), each distributional formula's X_<dpar> (B01), and each
+                         monotonic term's codes, number of steps and Dirichlet concentrations (Xmo_k, Jmo, con_simo_k; B03)
 G2 `check_logp`          log density with and without the Jacobian, and its prior part, at every point
 G2 `check_gradient`      every gradient coordinate, mapped through the probed parameter table
 G3 `check_derived`       the graph's linear predictor, group effects and correlation matrices, and the raw-scale intercept
@@ -22,6 +23,7 @@ from itertools import zip_longest
 import numpy as np
 
 import autobayes as ab
+from autobayes.priors import dirichlet_concentration
 
 from tests.oracle import adapter
 from tests.oracle import fixture as fx
@@ -33,7 +35,8 @@ def prior_names(model) -> list[str]:
     """The free variables whose densities brms sums into ``lprior``: intercept, coefficients, sigma, shape or phi, a learned nu,
     zi or hu (B06), the SD of every group-level coefficient (not the standardised offsets, which brms adds in the model block) and the
     correlation Cholesky factor of every correlated group term (``lkj_corr_cholesky_lpdf(L_m | eta)``); for an auxiliary
-    parameter with its own formula (B01), that formula's intercept and coefficients (brms's ``Intercept_sigma``, ``b_sigma``)."""
+    parameter with its own formula (B01), that formula's intercept and coefficients (brms's ``Intercept_sigma``, ``b_sigma``);
+    the simplex of every monotonic term (``dirichlet_lpdf(simo_k | con_simo_k)``; its coefficient is among the terms, B03)."""
     names = model.names
     out = [names["intercept"]] if model.spec.intercept else []
     out += list(model.spec.terms)
@@ -50,6 +53,7 @@ def prior_names(model) -> list[str]:
     out += [names[par] for par in ("zi", "hu") if par in names]   # the zero-inflation / hurdle probability (B06)
     out += [roles["sd"] for roles in model.group_coefficient_names.values()]
     out += [roles["L"] for roles in model.correlation_names.values()]
+    out += [roles["simplex"] for roles in model.mo_names.values()]
     return out
 
 
@@ -157,7 +161,14 @@ def check_design(b: Bundle) -> None:
         if sd[key].shape != (d.n, dd.X_raw.shape[1] + int(b.model.spec.dpar(name).intercept)):
             raise OracleMismatch(f"brms {key} is {sd[key].shape}; AutoBayes has {dd.X_raw.shape[1]} design columns for {name} "
                                  f"and intercept={b.model.spec.dpar(name).intercept}")
-    # the design columns (every formula's) and the group partitions were matched by content when the maps were built
+    for column, k in (b.cmap.monotonic or {}).items():          # B03: Xmo_k and Jmo[k] were matched by content; the prior's
+        block = d.monotonic[column]                              # concentrations are brms's con_simo_k
+        con = dirichlet_concentration(b.model.priors.simo_priors(b.model.spec)[column], block.D)
+        theirs = np.atleast_1d(sd[f"con_simo_{k}"])
+        if theirs.shape != con.shape or abs_err(theirs, con) > DESIGN_ABS:
+            raise OracleMismatch(f"brms con_simo_{k} is {theirs!r}; the prior of {block.term!r} gives {con!r}")
+    # the design columns (every formula's), the group partitions and the monotonic codes were matched by content when the
+    # maps were built
     adapter.match_columns(b.fixture, b.model)
     adapter.match_groups(b.fixture, b.model)
 
@@ -343,8 +354,10 @@ def check_default_prior(b: Bundle) -> None:
     expected = set()
     if b.model.spec.intercept and b.cmap.centred_intercept:
         expected.add("Intercept")
-    if b.model.spec.columns or (b.model.spec.intercept and not b.cmap.centred_intercept):
-        expected.add("b")
+    if b.model.spec.coefficient_labels or (b.model.spec.intercept and not b.cmap.centred_intercept):
+        expected.add("b")                                  # a design column or a monotonic term's coefficient (B03)
+    if b.model.spec.mo_terms:                              # a monotonic term's simplex (B03)
+        expected.add("simo")
     if b.model.spec.groups:
         expected.add("sd")
     if b.model.correlation_names:                          # a correlated group term's LKJ prior (A02)

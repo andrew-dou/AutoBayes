@@ -1,0 +1,116 @@
+{
+ "id": "gauss_monotonic_two",
+ "tier": "B",
+ "feature": "B03_monotonic",
+ "note": "B03: two monotonic terms (simo_1, simo_2, bsp[1..2]) next to a centred numeric term, a coefficient prior by term",
+ "seed": 414,
+ "n_points": 8,
+ "data": {
+  "generator": "tier_b",
+  "seed": 314,
+  "n": 36,
+  "newdata": {
+   "seed": 414,
+   "n": 5
+  }
+ },
+ "brms": {
+  "formula": "y ~ x + mo(ord) + mo(size) + (1 | g)",
+  "family": {
+   "family": "gaussian"
+  },
+  "factors": {
+   "g": [
+    "a",
+    "b",
+    "c",
+    "d",
+    "e",
+    "f"
+   ]
+  },
+  "priors": [
+   {
+    "prior": "normal(0, 5)",
+    "class": "Intercept"
+   },
+   {
+    "prior": "normal(0, 2)",
+    "class": "b"
+   },
+   {
+    "prior": "normal(0, 0.5)",
+    "class": "b",
+    "coef": "moord"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "sd",
+    "group": "g"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "sigma"
+   },
+   {
+    "prior": "dirichlet(2, 2, 2)",
+    "class": "simo",
+    "coef": "moord1"
+   },
+   {
+    "prior": "dirichlet(1.5)",
+    "class": "simo",
+    "coef": "mosize1"
+   }
+  ]
+ },
+ "autobayes": {
+  "constructor": "gaussian",
+  "formula": "y ~ x + mo(ord) + mo(size) + (1 | g)",
+  "kwargs": {},
+  "priors": {
+   "intercept": [
+    "Normal",
+    0,
+    5
+   ],
+   "b": {
+    "x": [
+     "Normal",
+     0,
+     2
+    ],
+    "mo(ord)": [
+     "Normal",
+     0,
+     0.5
+    ],
+    "mo(size)": [
+     "Normal",
+     0,
+     2
+    ]
+   },
+   "sd": [
+    "HalfNormal",
+    1
+   ],
+   "sigma": [
+    "HalfNormal",
+    1
+   ],
+   "simo": {
+    "ord": [
+     "Dirichlet",
+     2,
+     2,
+     2
+    ],
+    "size": [
+     "Dirichlet",
+     1.5
+    ]
+   }
+  }
+ }
+}

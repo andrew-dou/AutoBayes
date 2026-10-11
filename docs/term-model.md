@@ -18,6 +18,7 @@ One entry per term as written, in design order (main effects, then interactions)
 | `x:w` (A04, docs/interactions.md) | `interaction` | `("x:w",)` | `()` | `()` |
 | `z:h` (A04) | `interaction` | `("z[q]:h[h2]", "z[q]:h[h3]", ...)`, first operand slowest | the cells `("q, h2", "q, h3", ...)`, Bambi's labels | `("z", "h")` |
 | `log(xpos)`, `I(x^2)` (A05, docs/transforms.md) | `transform` | `("log(xpos)",)`, the evaluated column named as written | `()` | `()` |
+| `mo(ord)` (B03, docs/monotonic.md) | `monotonic` | `()`: no column in `X`; its coefficient (brms's `bsp`) and simplex act through its own block | `()` | `()` |
 
 `term.operands` are the data columns the term is built from (`(x,)`, `(z,)`, `(x, z)`, `(x, w)`, `(z, h)`, and
 `(xpos,)` for `log(xpos)`); `term.categorical` names the operands declared categorical and `term.is_vector` (one
@@ -33,6 +34,12 @@ its `(n, len(columns))` raw design block on any frame (the `Categorical`s are ne
 `z:h`), which both the Bambi verification in `Model._extract_design` and `predict.raw_design` use. The
 coefficients of a term are brms's `b` entries for its columns; `Model.coefficients` lists `(column, term, index)`
 per column. `ModelSpec.pop_columns` lists the data columns the population-level terms read.
+A monotonic term `mo(ord)` (B03) is a population-level term with a coefficient but no design column: `spec.terms` and
+`spec.coefficient_labels` (brms's class `b`: the design columns and the monotonic terms, in term order) list it,
+`spec.columns` and `Model.coefficients` do not, and `spec.bambi_terms` are the terms without it, which Bambi builds;
+`ModelSpec.monotonics` holds each one's coding (`Monotonic`: the column, its fitted range or ordered categories) once
+the data are seen, `Design.monotonic[ord]` its codes per fitted row and number of steps, and the model adds the term to
+the parent's linear predictor while Bambi builds it (docs/monotonic.md).
 
 ## Group-level terms: `GroupTerm(factor, coefs, correlated)`
 

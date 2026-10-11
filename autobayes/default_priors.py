@@ -20,6 +20,9 @@ brms's rules (``default_prior()``, ``def_dpar_prior``, ``def_scale_prior``, ``pr
   ``inv_gamma(0.4, 0.3)``, Gamma ``shape`` and Beta ``phi`` ``gamma(0.01, 0.01)``, Student-t ``nu`` ``gamma(2, 0.1)``.
   The zero-inflation or hurdle probability of the zero-inflated and hurdle families (B06): ``beta(1, 1)`` with bounds 0
   and 1 (``FamilySpec.default_zero_prior``).
+- A monotonic term ``mo(x)`` (B03): its coefficient is flat like every ``b``; its simplex ``dirichlet(1)`` (brms's
+  ``eval_dirichlet`` default, the uniform distribution on the simplex), ``Dirichlet(1)``, on the class ``simo`` row of
+  coefficient ``mox1``.
 - An auxiliary parameter with its own formula (B01, ``sigma ~ z``; brms's ``def_dpar_prior`` under the formula's log link):
   its intercept ``student_t(3, 0, scale)`` with brms's scale of the response read on the log scale for ``sigma``
   (``max(2.5, round(mad(log y), 1))``, zeros read as 0.1, 2.5 when a response is negative) and ``student_t(3, 0, 2.5)``
@@ -45,7 +48,7 @@ from dataclasses import replace
 import numpy as np
 import pandas as pd
 
-from autobayes.priors import LKJ, Flat, HalfStudentT, Prior, PriorError, Priors, StudentT, brms_prior
+from autobayes.priors import LKJ, Dirichlet, Flat, HalfStudentT, Prior, PriorError, Priors, StudentT, brms_prior
 
 BRMS_VERSION = "2.23.0"          # the brms whose default_prior() this reproduces (the oracle fixtures' meta.brms)
 DF = 3.0                         # the degrees of freedom of brms's student_t(3, ., .) defaults
@@ -292,8 +295,10 @@ def default_priors(formula: str | list[str], data: pd.DataFrame, *, family: str 
             return {k: mark(v) for k, v in value.items()}
         return _default(value)
 
+    simo = {t.operands[0]: Dirichlet(1) for t in spec.mo_terms}         # B03: brms's dirichlet(1) on each monotonic simplex
     priors = Priors(intercept=mark(intercept), b=mark(Flat()) if spec.pop_terms else None, sd=mark(sd) or None,
-                    cor=mark(cor) or None, nu=mark(learned.get("nu")), **{k: mark(v) for k, v in auxiliary.items()})
+                    cor=mark(cor) or None, nu=mark(learned.get("nu")), simo=mark(simo) or None,
+                    **{k: mark(v) for k, v in auxiliary.items()})
     priors.validate(spec, fam)
     return priors
 
@@ -322,7 +327,8 @@ def _r_variable_order(spec) -> dict[str, int]:
 def brms_coefficient_names(spec) -> dict[str, str]:
     """brms's name of each design column of ``spec`` (its ``b`` coefficient labels, ``rename()`` of R's model-matrix
     column names): ``x``; ``zq`` for level ``q`` of ``z``; ``x:zq``, ``x:w`` and ``zq:hh2`` with the operands in the order
-    R writes them; ``logxpos`` and ``IxE2`` for transforms. ``spec`` must have seen the data (the levels name columns)."""
+    R writes them; ``logxpos`` and ``IxE2`` for transforms; and of each monotonic term (B03), keyed by its name, its
+    coefficient's ``moord`` (brms's ``bsp_moord``). ``spec`` must have seen the data (the levels name columns)."""
     from autobayes.formula import interaction_cells
 
     if any(not c.levels for c in spec.categoricals):
@@ -332,6 +338,8 @@ def brms_coefficient_names(spec) -> dict[str, str]:
     for t in spec.pop_terms:
         if t.kind == "numeric":
             out[t.columns[0]] = brms_rename(t.name)
+        elif t.is_monotonic:                                          # mo(ord) -> moord, a coefficient with no column
+            out[t.name] = brms_rename(t.name)
         elif t.kind == "transform":
             out[t.columns[0]] = brms_rename(t.transform.term)
         elif t.kind == "categorical":
@@ -428,6 +436,8 @@ def prior_table(priors: Priors, spec, family="gaussian", *, center_predictors: b
         if ds.intercept:                                              # brms's centred Intercept_<dpar>, class Intercept
             add(sub.intercept, "Intercept", dpar=ds.response)
         add_coefficients([(dnames[col], p) for col, p in sub.coefficient_priors(ds).items()], dpar=ds.response)
+    for column, prior in priors.simo_priors(spec).items():           # a monotonic term's simplex (B03): brms's class simo,
+        add(prior, "simo", coef=f"{brms_rename(spec.monotonic(column).term)}1")   # coefficient mox1, no class row
     if fam.scale_parameter is not None and fam.scale_parameter not in spec.dpar_names:
         add(getattr(priors, fam.scale_parameter), fam.scale_parameter, lb="0")
     if fam.zero_parameter is not None:                                # brms's real<lower=0,upper=1> zi / hu (B06)

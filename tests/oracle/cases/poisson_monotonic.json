@@ -1,0 +1,80 @@
+{
+ "id": "poisson_monotonic",
+ "tier": "B",
+ "feature": "B03_monotonic",
+ "note": "B03 under Bambi's log link (the graph's mu is exp of the linear predictor); brms's one-number dirichlet shorthand",
+ "seed": 402,
+ "n_points": 8,
+ "data": {
+  "generator": "tier_b",
+  "seed": 302,
+  "n": 36,
+  "newdata": {
+   "seed": 402,
+   "n": 5
+  }
+ },
+ "brms": {
+  "formula": "cnt ~ x + mo(ord) + (1 | g)",
+  "family": {
+   "family": "poisson"
+  },
+  "factors": {
+   "g": [
+    "a",
+    "b",
+    "c",
+    "d",
+    "e",
+    "f"
+   ]
+  },
+  "priors": [
+   {
+    "prior": "normal(0, 2)",
+    "class": "Intercept"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "b"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "sd",
+    "group": "g"
+   },
+   {
+    "prior": "dirichlet(1.5)",
+    "class": "simo",
+    "coef": "moord1"
+   }
+  ]
+ },
+ "autobayes": {
+  "constructor": "poisson",
+  "formula": "cnt ~ x + mo(ord) + (1 | g)",
+  "kwargs": {},
+  "priors": {
+   "intercept": [
+    "Normal",
+    0,
+    2
+   ],
+   "b": [
+    "Normal",
+    0,
+    1
+   ],
+   "sd": [
+    "HalfNormal",
+    1
+   ],
+   "simo": {
+    "ord": [
+     "Dirichlet",
+     1.5
+    ]
+   }
+  }
+ }
+}

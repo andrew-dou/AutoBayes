@@ -21,6 +21,7 @@ test or `match`.
 | Default priors (A07) | `default_prior_link` (how brms reads the response for its data-dependent defaults), `default_scale_prior` (brms's default of the auxiliary parameter, given brms's scale), `default_learned_priors` | identity; sigma `HalfStudentT(3, scale)` | identity; sigma `HalfStudentT(3, scale)`; nu `Gamma(2, 0.1)` | log | log; shape `InverseGamma(0.4, 0.3)` | log; shape `Gamma(0.01, 0.01)` | log (brms's log-scale family); sigma `HalfStudentT(3, scale)` | none (logit); phi `Gamma(0.01, 0.01)` | none (logit, probit) | none (logit, probit) |
 | Addition terms (B02) | `addition_terms` (the response addition terms besides `trials()` the likelihood takes), `tails` (the log-CDF, log-CCDF, log mass, truncated mean and draws that `cens()` and `trunc()` need) | weights, cens and trunc (the last two parked); `likelihoods.NORMAL_TAILS` | weights | weights | weights | weights | weights | weights | weights | weights |
 | Distributional formula (B01) | `distributional_link` (the link of a formula on `scale_parameter`, `["y ~ x", "sigma ~ z"]`; None: no formula), `default_distributional_intercept` (brms's default prior of that formula's intercept, given brms's scale of `log y`) | log; `student_t(3, 0, scale)` | log; `student_t(3, 0, scale)` | none | log (Bambi's `alpha`); `student_t(3, 0, 2.5)` | log (Bambi's `alpha`); `student_t(3, 0, 2.5)` | log; `student_t(3, 0, scale)` | log; `student_t(3, 0, 2.5)` | none | none |
+| Monotonic effects (B03) | `monotonic` (the family's linear predictor takes brms's `mo(x)` terms, docs/monotonic.md; set where a frozen case verifies it) | yes | yes | yes | yes | yes | yes | yes | yes | yes |
 
 A family with a `distributional_link` lets its auxiliary parameter have its own formula (docs/distributional.md): Bambi
 builds it as a distributional component named `bambi_scale_parameter`, `model.names[scale_parameter]` is then the per-row
@@ -81,6 +82,7 @@ would keep both; every other family has `zero_parameter=None`. Their mean needs 
 | Graph | `likelihoods.zero_inflated_poisson_family` (the linear predictor as the parent `log_mu` under the identity link; `zi` by brms's name, not PyMC's `psi = 1 - zi`) | `likelihoods.hurdle_poisson_family` (the same, with `hu`) |
 | Prediction | `inverse_link` exp with overflow check (the Poisson part's mean); `expected_response` `(1 - zi) mu`; a structural zero below `zi`, else Poisson; by hand | `expected_response` `(1 - hu) mu / (1 - exp(-mu))`; zero below `hu`, else a zero-truncated Poisson; by hand |
 | Default priors | log (zeros read as 0.1); zi `Beta(1, 1)` | log (zeros read as 0.1); hu `Beta(1, 1)` |
+| Monotonic effects (B03) | yes | yes |
 
 The ordinal and categorical families (B05, docs/ordinal-categorical.md) have a response of K categories, which
 `FamilySpec.response_categories` turns into brms's `Y`, each row's 1-based category, keeping the labels as
@@ -100,6 +102,7 @@ family, whose every coefficient has a trailing axis over the non-reference categ
 | Graph | `likelihoods.cumulative_logit_family` (built per model: `b_Intercept = Intercept + sum_p mean(x_p) b_p`), `likelihoods.ordered_thresholds`, `likelihoods.no_intercept`; Bambi's design uncentred | `likelihoods.categorical_logit_family` (Bambi's categorical family, the parent `mu` under the identity link) |
 | Prediction | `expected_response`: the category probabilities from `b_Intercept` (`likelihoods.cumulative_probabilities`); 1-based category draws; by hand | `inverse_link`: the softmax of `(0, mu)`; 1-based category draws; by hand |
 | Default priors | none (logit): `student_t(3, 0, 2.5)` on the thresholds, also uncentred | none (logit): `student_t(3, 0, 2.5)` on each category's intercept |
+| Monotonic effects (B03) | yes (in `mu`, outside the thresholds' centring) | no: refused (D42) |
 
 ## Adding a family
 
