@@ -5,10 +5,6 @@
  "note": "as gauss_varint_post with 64 draws on the box (-0.3, 0.3) (point_halfwidth), so loo fits and smooths a 13-draw generalized Pareto tail: k-hat from -0.49 to 1.74 (21 below 0.5, 8 above 0.7)",
  "seed": 313,
  "n_points": 64,
- "gate": {
-  "expect": "fail",
-  "reason": "C07_post_processing not implemented; remove this field when it lands"
- },
  "data": {
   "generator": "baseline",
   "seed": 213,

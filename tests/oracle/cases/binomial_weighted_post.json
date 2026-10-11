@@ -1,0 +1,79 @@
+{
+ "id": "binomial_weighted_post",
+ "tier": "C",
+ "feature": "C07_post_processing",
+ "note": "post block with trials and weights: log_lik is each row's binomial log mass times its weight (brms multiplies it), bayes_R2's expected response is trials * p against the successes and ignores the weights; 8 draws: k-hat Inf, raw importance weights",
+ "seed": 315,
+ "n_points": 8,
+ "data": {
+  "generator": "tier_b",
+  "seed": 215,
+  "n": 36,
+  "newdata": {
+   "seed": 315,
+   "n": 5
+  }
+ },
+ "brms": {
+  "formula": "k | trials(size) + weights(w) ~ x + (1 | g)",
+  "family": {
+   "family": "binomial"
+  },
+  "factors": {
+   "g": [
+    "a",
+    "b",
+    "c",
+    "d",
+    "e",
+    "f"
+   ]
+  },
+  "priors": [
+   {
+    "prior": "normal(0, 2.5)",
+    "class": "Intercept"
+   },
+   {
+    "prior": "normal(0, 1.5)",
+    "class": "b"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "sd",
+    "group": "g"
+   }
+  ],
+  "extras": [
+   "log_lik",
+   "bayes_R2",
+   "loo"
+  ]
+ },
+ "autobayes": {
+  "constructor": "binomial",
+  "formula": "k | trials(size) + weights(w) ~ x + (1 | g)",
+  "kwargs": {},
+  "priors": {
+   "intercept": [
+    "Normal",
+    0,
+    2.5
+   ],
+   "b": [
+    "Normal",
+    0,
+    1.5
+   ],
+   "sd": [
+    "HalfNormal",
+    1
+   ]
+  },
+  "post": [
+   "log_lik",
+   "bayes_R2",
+   "loo"
+  ]
+ }
+}

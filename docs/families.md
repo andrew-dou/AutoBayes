@@ -22,6 +22,7 @@ test or `match`.
 | Addition terms (B02) | `addition_terms` (the response addition terms besides `trials()` the likelihood takes), `tails` (the log-CDF, log-CCDF, log mass, truncated mean and draws that `cens()` and `trunc()` need) | weights, cens and trunc (the last two accepted against two references, P6); `likelihoods.NORMAL_TAILS` | weights | weights | weights | weights | weights | weights | weights | weights |
 | Distributional formula (B01) | `distributional_link` (the link of a formula on `scale_parameter`, `["y ~ x", "sigma ~ z"]`; None: no formula), `default_distributional_intercept` (brms's default prior of that formula's intercept, given brms's scale of `log y`) | log; `student_t(3, 0, scale)` | log; `student_t(3, 0, scale)` | none | log (Bambi's `alpha`); `student_t(3, 0, 2.5)` | log (Bambi's `alpha`); `student_t(3, 0, 2.5)` | log; `student_t(3, 0, scale)` | log; `student_t(3, 0, 2.5)` | none | none |
 | Monotonic effects (B03) | `monotonic` (the family's linear predictor takes brms's `mo(x)` terms, docs/monotonic.md; set where a frozen case verifies it) | yes | yes | yes | yes | yes | yes | yes | yes | yes |
+| Post-processing (C07) | `log_likelihood` (each fitted row's log density per draw, which `log_lik()` and `loo()` use; NumPy forms in `families.pointwise`, docs/post-processing.md) | Normal | Student-t | Poisson-log | NegBinomial2-log | Gamma(shape, shape / mu) | LogNormal | Beta(mu phi, (1 - mu) phi) | Bernoulli under the link's stable log probabilities | Binomial, likewise |
 
 A family with a `distributional_link` lets its auxiliary parameter have its own formula (docs/distributional.md): Bambi
 builds it as a distributional component named `bambi_scale_parameter`, `model.names[scale_parameter]` is then the per-row
@@ -83,6 +84,7 @@ would keep both; every other family has `zero_parameter=None`. Their mean needs 
 | Prediction | `inverse_link` exp with overflow check (the Poisson part's mean); `expected_response` `(1 - zi) mu`; a structural zero below `zi`, else Poisson; by hand | `expected_response` `(1 - hu) mu / (1 - exp(-mu))`; zero below `hu`, else a zero-truncated Poisson; by hand |
 | Default priors | log (zeros read as 0.1); zi `Beta(1, 1)` | log (zeros read as 0.1); hu `Beta(1, 1)` |
 | Monotonic effects (B03) | yes | yes |
+| Post-processing (C07) | `log_likelihood`: the zero-inflated Poisson log mass (D28's stable form) | `log_likelihood`: the hurdle Poisson log mass |
 
 The ordinal and categorical families (B05, docs/ordinal-categorical.md) have a response of K categories, which
 `FamilySpec.response_categories` turns into brms's `Y`, each row's 1-based category, keeping the labels as
@@ -103,6 +105,7 @@ family, whose every coefficient has a trailing axis over the non-reference categ
 | Prediction | `expected_response`: the category probabilities from `b_Intercept` (`likelihoods.cumulative_probabilities`); 1-based category draws; by hand | `inverse_link`: the softmax of `(0, mu)`; 1-based category draws; by hand |
 | Default priors | none (logit): `student_t(3, 0, 2.5)` on the thresholds, also uncentred | none (logit): `student_t(3, 0, 2.5)` on each category's intercept |
 | Monotonic effects (B03) | yes (in `mu`, outside the thresholds' centring) | no: refused (D42) |
+| Post-processing (C07) | `log_likelihood`: log P(y = k), the ordered logistic's stable form; `bayes_R2()` of the expected category `sum_k k P(y = k)` | `log_likelihood`: the log softmax of `(0, mu)` at the category; `bayes_R2()` refused, as brms refuses it |
 
 A finite mixture (C05, docs/mixtures.md) is the registered family `mixture`, whose spec sets `mixture`: the model holds its
 component families (`model.components`, Gaussian in this slice) and its own names (`model.mixture_names`), the parent `mu`
@@ -132,7 +135,8 @@ when `mixture` is set; every other family has `mixture=False`.
    it (`default_prior_link`, `default_scale_prior`, `default_learned_priors`, `default_zero_prior`; docs/default-priors.md), read from
    brms's `def_dpar_prior` and the family's own `prior` function; gate G6 checks them against the new fixture. A new fixed parameter
    needs a keyword on `Model.__init__`; a new auxiliary parameter needs a `Priors` field, an entry in
-   `priors.AUXILIARY` and a keyword on `Model.value_point`.
+   `priors.AUXILIARY` and a keyword on `Model.value_point`. Give it a `log_likelihood` (C07) and a case in
+   `tests/test_post_processing.py`'s cross-check against the model's own pointwise log density.
 3. Add its row to `EXPECTED` and `EXAMPLES` in `tests/test_family_registry.py`, its family tests, and an
    oracle case under `tests/oracle/cases/` with a frozen brms fixture (`oracle/README.md`).
 

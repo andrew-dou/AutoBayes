@@ -64,6 +64,13 @@ def _draw_response(model, post, eta, mean, df, rng):
     return np.where(zero, 0, zero_truncated_poisson_draws(mu, rng)).astype(np.int64)
 
 
+def _log_likelihood(model, post, eta):
+    """brms's log_lik (C07): ``hurdle_poisson_log_lpmf(y_i | eta_i, hu)``, hu per draw."""
+    from autobayes.families.pointwise import hurdle_poisson_log
+
+    return hurdle_poisson_log(model.design.y, eta, post[model.names["hu"]].to_numpy()[..., None])
+
+
 def _likelihood_lines(model) -> list[str]:
     return [f"  hu ~ {describe_prior(model.priors.hu, lb=0, ub=1)}", "", "Likelihood",
             "  y_i ~ HurdlePoisson(mu_i, hu); mu_i = exp(eta_i): zero with probability hu, a zero-truncated Poisson(mu_i) otherwise",
@@ -101,4 +108,5 @@ HURDLE_POISSON = FamilySpec(
     zero_parameter="hu",
     default_zero_prior=lambda: Beta(1, 1),                          # brms hu: beta(1, 1), lb 0, ub 1
     monotonic=True,                                                 # B03: mo(x), verified against hurdle_poisson_monotonic
+    log_likelihood=_log_likelihood,                                 # C07: log_lik(), checked against the model's own density (test_post_processing.py)
 )

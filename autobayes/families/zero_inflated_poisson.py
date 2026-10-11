@@ -57,6 +57,13 @@ def _draw_response(model, post, eta, mean, df, rng):
     return np.where(zero, 0, rng.poisson(mu)).astype(np.int64)
 
 
+def _log_likelihood(model, post, eta):
+    """brms's log_lik (C07): ``zero_inflated_poisson_log_lpmf(y_i | eta_i, zi)``, zi per draw."""
+    from autobayes.families.pointwise import zero_inflated_poisson_log
+
+    return zero_inflated_poisson_log(model.design.y, eta, post[model.names["zi"]].to_numpy()[..., None])
+
+
 def _likelihood_lines(model) -> list[str]:
     return [f"  zi ~ {describe_prior(model.priors.zi, lb=0, ub=1)}", "", "Likelihood",
             "  y_i ~ ZeroInflatedPoisson(mu_i, zi); mu_i = exp(eta_i): a structural zero with probability zi, Poisson(mu_i) otherwise",
@@ -92,4 +99,5 @@ ZERO_INFLATED_POISSON = FamilySpec(
     zero_parameter="zi",
     default_zero_prior=lambda: Beta(1, 1),                          # brms zi: beta(1, 1), lb 0, ub 1
     monotonic=True,                                                 # B03: mo(x), verified against zero_inflated_poisson_monotonic
+    log_likelihood=_log_likelihood,                                 # C07: log_lik(), checked against the model's own density (test_post_processing.py)
 )

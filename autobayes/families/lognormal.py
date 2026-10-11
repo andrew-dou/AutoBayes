@@ -39,6 +39,13 @@ def _draw_response(model, post, eta, mean, df, rng):
     return rng.lognormal(eta, auxiliary(model, post, "sigma"))
 
 
+def _log_likelihood(model, post, eta):
+    """brms's log_lik (C07): ``log LogNormal(y_i | mu_i, sigma)``, sigma per draw (or per draw and row, B01)."""
+    from autobayes.families.pointwise import lognormal
+
+    return lognormal(model.design.y, eta, auxiliary(model, post, "sigma"))
+
+
 def _likelihood_lines(model) -> list[str]:
     s = scale_symbol(model)                                    # "sigma", or "sigma_i" with its own formula (B01)
     return [scale_line(model), "", "Likelihood",
@@ -76,4 +83,5 @@ LOGNORMAL = FamilySpec(
     distributional_link="log",                                      # B01: sigma ~ z, brms's log link (lognormal_distributional_sigma)
     default_distributional_intercept=lambda scale: StudentT(3, 0, scale),   # brms Intercept_sigma: student_t(3, 0, scale of log y)
     monotonic=True,                                                 # B03: mo(x), verified against lognormal_monotonic
+    log_likelihood=_log_likelihood,                                 # C07: log_lik(), checked against the model's own density (test_post_processing.py)
 )

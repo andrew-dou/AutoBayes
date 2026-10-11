@@ -5,10 +5,6 @@
  "note": "post: log_lik (draws x rows), bayes_R2 (draws x 1, summary = FALSE), loo pointwise (elpd_loo, mcse_elpd_loo, p_loo, looic, influence_pareto_k), estimates, pareto_k, n_eff. With 8 draws loo's Pareto tail (2 draws) is too short to fit: k-hat Inf and raw importance weights, elpd_loo_i = -log mean_s exp(-log_lik_si); r_eff of one-draw chains is NA, which loo replaces by 1",
  "seed": 311,
  "n_points": 8,
- "gate": {
-  "expect": "fail",
-  "reason": "C07_post_processing not implemented; remove this field when it lands"
- },
  "data": {
   "generator": "baseline",
   "seed": 211,

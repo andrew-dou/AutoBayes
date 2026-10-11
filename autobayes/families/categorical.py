@@ -61,6 +61,13 @@ def _draw_response(model, post, eta, mean, df, rng):
     return draw_categories(mean, rng)
 
 
+def _log_likelihood(model, post, eta):
+    """brms's log_lik (C07): ``log softmax(0, mu_i)[y_i]``; ``eta`` has the non-reference categories as its last axis."""
+    from autobayes.families.pointwise import categorical_logit
+
+    return categorical_logit(model.design.y, eta)
+
+
 def _mean_lines(model) -> list[str]:
     ref, others = model.categories[0], model.categories[1:]
     from autobayes.default_priors import brms_dpar_names
@@ -106,4 +113,5 @@ CATEGORICAL = FamilySpec(
     per_category=True,
     bambi_setup=_bambi_setup,
     check_formula=_check_formula,
+    log_likelihood=_log_likelihood,                                 # C07: log_lik(), verified against categorical_poponly_post
 )

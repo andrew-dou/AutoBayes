@@ -28,6 +28,13 @@ def _draw_response(model, post, eta, mean, df, rng):
     return rng.poisson(mean)
 
 
+def _log_likelihood(model, post, eta):
+    """brms's log_lik (C07): ``log Poisson(y_i | exp(eta_i))``."""
+    from autobayes.families.pointwise import poisson_log
+
+    return poisson_log(model.design.y, eta)
+
+
 POISSON = FamilySpec(
     name="poisson", tag="Poisson", parent="mu", link="log", link_scale="log", mean_name="mu",
     response_kind="count", response_dtype=np.int64,
@@ -56,4 +63,5 @@ POISSON = FamilySpec(
     default_scale_prior=None,
     addition_terms=frozenset({"weights"}),                      # B02: weights(), verified against the frozen case poisson_weighted
     monotonic=True,                                                 # B03: mo(x), verified against poisson_monotonic
+    log_likelihood=_log_likelihood,                                 # C07: log_lik(), verified against poisson_varint_post
 )

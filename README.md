@@ -68,6 +68,9 @@ Tiers A and B are complete (October 2026), except smooth terms `s()`, which are 
 - **Finite mixtures** (Tier C, C05): `ab.mixture(formula, data, priors, families=["gaussian", "gaussian"])`, brms's
   `mixture()` of Gaussian components with ordered intercepts and Dirichlet mixing proportions, one `Priors` per component
   ([mixtures](docs/mixtures.md)).
+- **Post-processing** (Tier C, C07): `ab.log_lik` (pointwise log-likelihood) and `ab.loo` (PSIS-LOO with loo 2.9.0's
+  tables) for every family, and `ab.bayes_R2` for all but the categorical one, as in brms, from a fit's draws
+  ([post-processing](docs/post-processing.md)).
 
 Every known difference from brms is listed in [divergences](docs/brms-parity/divergences.md), and the feature ledger
 is [ledger.json](docs/brms-parity/ledger.json) (`python tools/parity_status.py`). The tier reviews are

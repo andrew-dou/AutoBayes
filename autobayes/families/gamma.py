@@ -38,6 +38,13 @@ def _draw_response(model, post, eta, mean, df, rng):
     return rng.gamma(shape, mean / shape)
 
 
+def _log_likelihood(model, post, eta):
+    """brms's log_lik (C07): ``log Gamma(y_i | shape, shape / exp(eta_i))``, shape per draw (or per draw and row, B01)."""
+    from autobayes.families.pointwise import gamma_log
+
+    return gamma_log(model.design.y, eta, auxiliary(model, post, "shape"))
+
+
 def _likelihood_lines(model) -> list[str]:
     s = scale_symbol(model)                                    # "shape", or "shape_i" with its own formula (B01)
     return [scale_line(model), "", "Likelihood",
@@ -74,4 +81,5 @@ GAMMA = FamilySpec(
     distributional_link="log",                                      # B01: shape ~ z, brms's log link (gamma_distributional_shape)
     default_distributional_intercept=lambda scale: StudentT(3, 0, 2.5),   # brms Intercept_shape: student_t(3, 0, 2.5) under the log link
     monotonic=True,                                                 # B03: mo(x), verified against gamma_monotonic
+    log_likelihood=_log_likelihood,                                 # C07: log_lik(), checked against the model's own density (test_post_processing.py)
 )

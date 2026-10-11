@@ -1,0 +1,80 @@
+{
+ "id": "cumulative_varint_post",
+ "tier": "C",
+ "feature": "C07_post_processing",
+ "note": "post block of an ordinal model: log_lik is log P(y = k) of the 1-based category; brms's bayes_R2 of a cumulative model is that of the expected category sum_k k P(y = k) against the category (probed on cumulative_varint's points); 8 draws: k-hat Inf and raw importance weights, r_eff of one-draw chains NA (used as 1)",
+ "seed": 314,
+ "n_points": 8,
+ "data": {
+  "generator": "tier_b",
+  "seed": 214,
+  "n": 36,
+  "newdata": {
+   "seed": 314,
+   "n": 5
+  }
+ },
+ "brms": {
+  "formula": "ord ~ x + (1 | g)",
+  "family": {
+   "family": "cumulative",
+   "link": "logit"
+  },
+  "factors": {
+   "g": [
+    "a",
+    "b",
+    "c",
+    "d",
+    "e",
+    "f"
+   ]
+  },
+  "priors": [
+   {
+    "prior": "normal(0, 3)",
+    "class": "Intercept"
+   },
+   {
+    "prior": "normal(0, 1.5)",
+    "class": "b"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "sd",
+    "group": "g"
+   }
+  ],
+  "extras": [
+   "log_lik",
+   "bayes_R2",
+   "loo"
+  ]
+ },
+ "autobayes": {
+  "constructor": "cumulative",
+  "formula": "ord ~ x + (1 | g)",
+  "kwargs": {},
+  "priors": {
+   "intercept": [
+    "Normal",
+    0,
+    3
+   ],
+   "b": [
+    "Normal",
+    0,
+    1.5
+   ],
+   "sd": [
+    "HalfNormal",
+    1
+   ]
+  },
+  "post": [
+   "log_lik",
+   "bayes_R2",
+   "loo"
+  ]
+ }
+}
