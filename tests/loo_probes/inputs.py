@@ -6,13 +6,17 @@ Regenerate the record (R with loo 2.9.0; nothing is sampled):
     python -m tests.loo_probes.inputs <scratch dir>        # writes the inputs as CSV files
     Rscript tests/loo_probes/probe.R <scratch dir> tests/loo_probes/loo-2.9.0.json
 
-``tests/test_post_processing.py`` rebuilds the inputs here, checks their SHA-256 against the record and compares
-``autobayes.post_processing`` with loo's outputs. The probes settle what neither ArviZ nor the papers fix: the tail when
+``tests/test_post_processing.py`` rebuilds the inputs here, checks their fingerprints (``input-fingerprints.json``) and
+compares ``autobayes.post_processing`` with loo's outputs. numpy's normal and Student-t draws go through ``exp``/``log``,
+whose last bit differs between platforms' builds, so the exact SHA-256 in the record (of the inputs loo was run on, on the
+recording platform) holds only there; the fingerprint, the SHA-256 of the inputs rounded to 8 decimals, holds on every
+platform and still changes if the generator does, and loo's outputs are compared to 1e-9, far above that last bit. The probes settle what neither ArviZ nor the papers fix: the tail when
 draws tie at its cutoff, a tail whose fit does not exist, log ratios beyond the double range, the relative efficiencies.
 """
 from __future__ import annotations
 
 import hashlib
+import json
 import math
 import sys
 from pathlib import Path
@@ -80,6 +84,14 @@ def sha256(a: np.ndarray) -> str:
     return hashlib.sha256(np.ascontiguousarray(a, dtype="<f8").tobytes()).hexdigest()
 
 
+FINGERPRINTS = Path(__file__).with_name("input-fingerprints.json")
+
+
+def fingerprint(a: np.ndarray) -> str:
+    """The SHA-256 of an input rounded to 8 decimals: the same on every platform (see the module docstring)."""
+    return sha256(np.round(np.asarray(a, dtype=float), 8))
+
+
 def _csv(path: Path, a: np.ndarray) -> None:
     """A matrix as CSV with 17 significant digits and ``NA`` for NaN, which R reads back exactly."""
     path.write_text("\n".join(",".join("NA" if np.isnan(v) else f"{v:.17g}" for v in row) for row in np.atleast_2d(a)) + "\n")
@@ -101,6 +113,9 @@ def write(directory: str) -> None:
         reff_lines.append(f"{k}\t{label}\t{C}\t{I}\t{sha256(lik)}")
     (d / "loo_index.tsv").write_text("\n".join(loo_lines) + "\n")
     (d / "relative_eff_index.tsv").write_text("\n".join(reff_lines) + "\n")
+    prints = {"loo": {label: [fingerprint(ll), fingerprint(r)] for label, (ll, r) in loo_inputs().items()},
+              "relative_eff": {label: fingerprint(lik) for label, lik in relative_eff_inputs().items()}}
+    FINGERPRINTS.write_text(json.dumps(prints, indent=1) + "\n")
 
 
 if __name__ == "__main__":

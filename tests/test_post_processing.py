@@ -24,7 +24,7 @@ import xarray as xr
 
 import autobayes as ab
 from autobayes.post_processing import POINTWISE_COLUMNS, gpd_fit, gpd_quantile, loo_from_log_lik, psis, relative_eff
-from tests.loo_probes.inputs import loo_inputs, relative_eff_inputs, sha256
+from tests.loo_probes.inputs import FINGERPRINTS, fingerprint, loo_inputs, relative_eff_inputs
 from tests.oracle import adapter
 from tests.oracle import fixture as fx
 from tests.oracle import gates
@@ -33,6 +33,7 @@ from tests.oracle.tolerances import PRED_REL, rel_err
 RECORD = json.loads((Path(__file__).parent / "loo_probes" / "loo-2.9.0.json").read_text())
 LOO_INPUTS = loo_inputs()
 RELATIVE_EFF_INPUTS = relative_eff_inputs()
+INPUT_PRINTS = json.loads(FINGERPRINTS.read_text())   # platform-independent: the inputs rounded to 8 decimals
 
 # One frozen case per family and per feature the log-likelihood has to carry.
 CROSS_CHECK = ["gauss_weighted", "gauss_distributional_sigma", "gauss_slope_correlated", "gauss_nested_colon", "student_learned_nu",
@@ -91,7 +92,7 @@ def test_psis_loo_equals_loo_2_9_0_on_the_probe_inputs(probe):
     """Every pointwise column, the estimates, k-hat and n_eff equal loo 2.9.0's on the recorded probe; where loo's MCSE is
     NaN because ``exp(elpd_loo_i)^2`` underflows (``elpd_loo_i`` below about -372), this one is finite (divergence D50)."""
     ll, r_eff = LOO_INPUTS[probe["label"]]
-    assert (sha256(ll), sha256(r_eff)) == (probe["sha256"], probe["r_eff_sha256"]), "the probe inputs changed: re-record them"
+    assert [fingerprint(ll), fingerprint(r_eff)] == INPUT_PRINTS["loo"][probe["label"]], "the probe inputs changed: re-record them"
     res = loo_from_log_lik(_as_log_lik(ll), r_eff=r_eff)
     assert list(res.pointwise.columns) == probe["columns"] == list(POINTWISE_COLUMNS)
     assert list(res.estimates.index) == probe["rows"]
@@ -125,7 +126,7 @@ def test_the_probes_reach_the_cases_arviz_does_not_take_like_loo():
 @pytest.mark.parametrize("probe", RECORD["relative_eff_probes"], ids=lambda p: p["label"])
 def test_relative_eff_equals_loo_2_9_0(probe):
     lik = RELATIVE_EFF_INPUTS[probe["label"]]
-    assert sha256(lik) == probe["sha256"], "the probe inputs changed: re-record them"
+    assert fingerprint(lik) == INPUT_PRINTS["relative_eff"][probe["label"]], "the probe inputs changed: re-record them"
     with np.errstate(divide="ignore"):
         log_lik = xr.DataArray(np.log(lik), dims=("chain", "draw", "__obs__"))
     _same(relative_eff(log_lik), fx.decode(probe["r_eff"]))
