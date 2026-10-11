@@ -1017,11 +1017,26 @@
    "depends_on": [
     "B01_distributional"
    ],
-   "status": "fixtures_frozen",
+   "status": "gates_green",
    "summary": "bf(nl = TRUE) non-linear formulas",
    "pr": null,
    "attempts": 0,
-   "gates": {},
+   "gates": {
+    "sha": "1fdeb8015d4d",
+    "dirty_tree": false,
+    "base": "origin/main",
+    "when": "2026-10-12T01:25Z",
+    "results": {
+     "immutability": {
+      "status": "pass",
+      "seconds": 0.0
+     },
+     "oracle": {
+      "status": "pass",
+      "seconds": 1243.3
+     }
+    }
+   },
    "divergences": [],
    "next_action": "implementation awaits Andrew's Tier C go-ahead at the Tier B boundary",
    "fixtures": {

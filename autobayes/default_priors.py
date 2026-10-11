@@ -250,7 +250,7 @@ def default_lscale(gp) -> Prior:
 def default_priors(formula: str | list[str], data: pd.DataFrame, *, family: str = "gaussian", categorical: Mapping[str, object] | None = None,
                    nu: float | None = None, link: str | None = None, center_predictors: bool = True,
                    families: list[str] | None = None, order: str | bool | None = None,
-                   rescor: bool | None = None) -> Priors:
+                   rescor: bool | None = None, nl: bool = False) -> Priors:
     """brms's default priors for ``formula`` on ``data`` under ``family`` (brms 2.23's ``default_prior()``), as a
     ``Priors`` the constructors accept: ``ab.gaussian(f, df, ab.default_priors(f, df))``. ``formula`` may be a list with a
     distributional formula (B01, ``["y ~ x", "sigma ~ z"]``), whose priors are its intercept's and coefficients'.
@@ -270,11 +270,19 @@ def default_priors(formula: str | list[str], data: pd.DataFrame, *, family: str 
 
     A multivariate formula
     (C01, ``mvbind(y, y2) ~ ...`` with ``rescor=True`` or ``False``, docs/multivariate.md) gets each response's defaults under
-    ``resp``, ``lkj(1)`` on a correlated term once for all responses and on the residual correlation (``rescor=True``)."""
+    ``resp``, ``lkj(1)`` on a correlated term once for all responses and on the residual correlation (``rescor=True``).
+
+    ``nl=True`` gives the defaults of a non-linear model (C02, ``nonlinear.nonlinear_default_priors``, docs/nonlinear.md),
+    which takes neither a mixture's ``families``/``order`` nor a multivariate formula or ``rescor`` (divergence D62)."""
     from autobayes.families import FAMILIES, get_family
     from autobayes.formula import parse_formula
     from autobayes.multivariate import is_multivariate_formula, multivariate_default_priors
 
+    if nl:                                                            # a non-linear model (C02): its parameters' defaults; it refuses
+        from autobayes.nonlinear import nonlinear_default_priors     # a mixture's and a multivariate model's arguments itself
+
+        return nonlinear_default_priors(formula, data, family=family, categorical=categorical, nu=nu, link=link,
+                                        families=families, order=order, rescor=rescor)
     if rescor is not None or is_multivariate_formula(formula):       # C01: each response's defaults, and rescor's
         return multivariate_default_priors(formula, data, family=family, categorical=categorical, nu=nu, link=link,
                                            center_predictors=center_predictors, rescor=rescor)
@@ -450,6 +458,10 @@ def prior_table(priors: Priors, spec, family="gaussian", *, center_predictors: b
 
         return multivariate_prior_table(priors, spec, family, center_predictors=center_predictors)
     fam = family if isinstance(family, FamilySpec) else get_family(family)
+    if getattr(spec, "is_nonlinear", False):                          # a non-linear model (C02): its rows carry nlpar
+        from autobayes.nonlinear import nonlinear_prior_table
+
+        return nonlinear_prior_table(priors, spec, fam)
     priors.validate(spec, fam)
     if (fam.thresholds or fam.per_category) and not categories:
         raise PriorError(f"the {fam.name} family's prior table needs the response categories (Model.prior_table() passes them)")

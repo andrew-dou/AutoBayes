@@ -24,6 +24,7 @@ test or `match`.
 | Monotonic effects (B03) | `monotonic` (the family's linear predictor takes brms's `mo(x)` terms, docs/monotonic.md; set where a frozen case verifies it) | yes | yes | yes | yes | yes | yes | yes | yes | yes |
 | Post-processing (C07) | `log_likelihood` (each fitted row's log density per draw, which `log_lik()` and `loo()` use; NumPy forms in `families.pointwise`, docs/post-processing.md) | Normal | Student-t | Poisson-log | NegBinomial2-log | Gamma(shape, shape / mu) | LogNormal | Beta(mu phi, (1 - mu) phi) | Bernoulli under the link's stable log probabilities | Binomial, likewise |
 | Multivariate (C01) | `multivariate` (brms's `mvbind(y, y2) ~ ...`: one model per response, with or without residual correlation, docs/multivariate.md; set where a frozen case verifies it) | yes | no | no | no | no | no | no | no | no |
+| Non-linear formulas (C02) | `nonlinear_likelihood` (the likelihood of a non-linear model on its predictor `mu`, `nl=True`, docs/nonlinear.md; set where a frozen case verifies it; None: refused, D62) | `Normal(mu, sigma)` | none | none | none | none | none | none | none | none |
 
 A family with a `distributional_link` lets its auxiliary parameter have its own formula (docs/distributional.md): Bambi
 builds it as a distributional component named `bambi_scale_parameter`, `model.names[scale_parameter]` is then the per-row

@@ -121,7 +121,8 @@ def resolve_jax_device(device: str, chains: int, notes: list[str]):
 
 def _posterior_sampler(model):
     """What draws a model's posterior: Bambi's ``fit()``, or the model's own ``sample_posterior`` with the same keywords where
-    no single Bambi model holds the graph (a multivariate model, C01, docs/multivariate.md)."""
+    no single Bambi model holds the graph (a multivariate model, C01, docs/multivariate.md; a non-linear model, C02,
+    docs/nonlinear.md, whose graph this library builds without Bambi)."""
     return getattr(model, "sample_posterior", None) or model.bambi_model.fit
 
 

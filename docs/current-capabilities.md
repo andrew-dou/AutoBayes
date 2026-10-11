@@ -179,3 +179,13 @@ defaults, including the inverse-gamma `lscale` tuned to the inputs, from `ab.def
 categorical one, verified against `gauss_gp_exact` and `gauss_gp_approx`; several covariates, `by`, other kernels, `iso`,
 `gr = FALSE`, `scale = FALSE` and `gp()` in interactions, group-level or distributional formulas are refused (D64), an exact GP
 predicts at fitted inputs only (D65) and an approximate one inside its boundary (D66); see [Gaussian processes](gaussian-processes.md).
+
+Non-linear formulas (C02, brms's `bf(y ~ a * exp(b * x), a ~ 1 + (1 | g), b ~ 1, nl = TRUE)`): `ab.gaussian([...], data, priors,
+nl=True)` builds an `ab.NonlinearModel` whose mean is an expression in non-linear parameters, numeric covariates and constants
+(`+ - * / ^`, unary minus, `exp`, `log`, `sqrt`, `inv_logit`/`plogis`, `pow`; parsed by the library's own parser, never
+evaluated), each parameter with its own never-centred linear formula of the term model (population-level terms and every
+group-level term the term model takes) under `Priors(nlpars={"a": {"b": ..., "sd": ...}})`; the library builds the PyMC graph
+itself, and `predict(nlpar="a")` returns a parameter's values. Verified against `gauss_nonlinear_exp` and
+`gauss_nonlinear_terms` (frozen with it) at machine precision; `nlf()`, `lf()`, nested parameters, functions outside the
+grammar, distributional or multivariate combinations, other families and `loop = FALSE` are refused (D60-D63); see
+[non-linear formulas](nonlinear.md).

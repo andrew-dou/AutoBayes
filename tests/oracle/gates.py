@@ -28,6 +28,11 @@ A multivariate model (C01) passes each gate response by response where the gate 
 linear predictor, group effects and raw-scale intercept, each response's view of the fixture, adapter.ResponseView) and as one
 model where it is about the joint density (G2, G5: one log density and gradient, the residual correlation's included; G3's
 rescor; G4: the predictions' response axis; G6: brms's table with every response's rows and rescor).
+
+A non-linear model (C02, brms's nl = TRUE) is checked by the same gates through the adapter's non-linear maps: G1 its
+covariates C_k, each parameter's X_<nlpar> (K_<nlpar>, never centred) and group designs (`check_nonlinear_design`); G2 every
+b_<nlpar> coordinate; G3 the graph's non-linear predictor, each parameter's values against brms's own X_<nlpar> b_<nlpar> plus
+its group effects, the group effects and correlation matrices (`check_nonlinear_derived`); G4 predict(); G6 the nlpar rows.
 """
 from __future__ import annotations
 
@@ -57,9 +62,16 @@ def prior_names(model) -> list[str]:
     a mixture's ``sigma<k>`` and its mixing proportions (``dirichlet_lpdf(theta | con_theta)``; its ordered intercepts are the
     intercept, each component's density as brms adds it, C05);
     the marginal SD and length-scale of every Gaussian process (not its standardised ``zgp``, which brms adds in the model
-    block, C03)."""
+    block, C03); for a non-linear model (C02), every parameter's coefficients, group SDs and correlation factors, and the
+    auxiliary parameter."""
     if adapter.is_multivariate(model):                       # C01: each response's, under its names, and the residual correlation's
         return [model.variable(r, name) for r, sub in model.submodels.items() for name in prior_names(sub)] + (["Lrescor"] if model.rescor else [])
+    if adapter.is_nonlinear(model):
+        out = [v for roles in model.nlpar_names.values() for k, v in roles.items() if k != "value"]
+        out += [roles["sd"] for roles in model.nlpar_group_names.values()]
+        out += [roles["L"] for roles in model.nlpar_correlation_names.values()]
+        scale = model.family_spec.scale_parameter
+        return out + ([model.names[scale]] if scale is not None else [])
     names = model.names
     out = [names["intercept"]] if model.spec.intercept else []
     out += list(model.spec.terms)
@@ -141,6 +153,8 @@ def check_design(b: Bundle) -> None:
     sd, d = b.fixture.standata, b.model.design
     if int(sd["N"]) != d.n:
         raise OracleMismatch(f"brms N = {int(sd['N'])}, AutoBayes n = {d.n}")
+    if adapter.is_nonlinear(b.model):                              # C02: no X; the covariates and each parameter's X_<nlpar>
+        return check_nonlinear_design(b)
     # B05: the cumulative model's X has no intercept column (its thresholds take its place); the categorical model has one
     # design per non-reference category
     designs = [f"X_{dp}" for dp in b.cmap.dpars] or ["X"]
@@ -265,6 +279,8 @@ def check_gradient(b: Bundle) -> None:
 def check_derived(b: Bundle) -> None:
     if adapter.is_multivariate(b.model):                      # C01
         return _check_derived_multivariate(b)
+    if adapter.is_nonlinear(b.model):                              # C02: mu, each parameter's values, group effects, Cor
+        return check_nonlinear_derived(b)
     pmm, names, d = b.model.pymc_model, b.model.names, b.model.design
     groups = list(b.model.group_coefficient_names.items())          # every group-level coefficient: intercepts and slopes
     cors = list(b.model.correlation_names.items())                  # the correlation matrix of every correlated term (A02)
@@ -444,6 +460,12 @@ def check_default_prior(b: Bundle) -> None:
     expected |= {*mixture["sigma"], "theta"} if mixture else set()
     if not expected <= classes:
         raise OracleMismatch(f"brms default_prior classes {sorted(classes)} lack {sorted(expected - classes)}")
+    if adapter.is_nonlinear(b.model):                              # C02: each parameter's b (and sd) rows, cor by group
+        nl_rows = {(row["class"], row.get("nlpar", "")) for row in b.fixture.default_prior}
+        wanted = {("b", d.response) for d in b.model.spec.nlpars} | {("sd", d.response) for d in b.model.spec.nlpars if d.group_terms}
+        wanted |= {("cor", "")} if b.model.spec.correlated_factors else set()
+        if not wanted <= nl_rows:
+            raise OracleMismatch(f"brms default_prior lacks the non-linear parameters' rows {sorted(wanted - nl_rows)}")
     if not b.fixture.prior_summary:
         raise OracleMismatch("fixture has no prior_summary table")
     # ab.default_priors() reproduces brms's table: every row, in brms's order, every column (A07)
@@ -459,6 +481,67 @@ def check_default_prior(b: Bundle) -> None:
     if diff:
         raise OracleMismatch(f"ab.default_priors() written as brms's table differs from brms's default_prior() "
                              f"({len(ours)} rows vs {len(theirs)}):\n" + "\n".join(diff[:12]))
+
+
+# -- non-linear models (C02) ---------------------------------------------------------------------------------------
+def check_nonlinear_design(b: Bundle) -> None:
+    """G1 of a non-linear model: the response; no linear design, trials, offsets or addition-term data on either side; brms's
+    covariates C_k, each parameter's X_<nlpar> (with K_<nlpar>; never centred) and its group designs matched by content (the
+    adapter's maps, rebuilt here) and of the shapes the model has."""
+    sd, d = b.fixture.standata, b.model.design
+    err = abs_err(sd["Y"], d.y)
+    if err > DESIGN_ABS:
+        raise OracleMismatch(f"response differs by {err}")
+    for key in ("X", "trials", "offsets", "weights", "cens", "lb", "ub"):
+        if key in sd:
+            raise OracleMismatch(f"brms has {key}, which a non-linear model of this slice has not")
+    covariates = sorted(k for k in sd if k.startswith("C_") and k[2:].isdigit())
+    if len(covariates) != len(b.model.spec.covariates):
+        raise OracleMismatch(f"brms has the covariates {covariates}; AutoBayes's non-linear formula reads {list(b.model.spec.covariates)}")
+    for name, nd in d.nlpars.items():
+        if sd[f"X_{name}"].shape != nd.X.shape or int(sd[f"K_{name}"]) != nd.X.shape[1]:
+            raise OracleMismatch(f"brms X_{name} is {sd[f'X_{name}'].shape} with K_{name} = {int(sd[f'K_{name}'])}; AutoBayes's design of "
+                                 f"{name!r} is {nd.X.shape}")
+    adapter.match_nonlinear_columns(b.fixture, b.model)
+    adapter.match_nonlinear_groups(b.fixture, b.model)
+
+
+def check_nonlinear_derived(b: Bundle) -> None:
+    """G3 of a non-linear model at every point: the graph's non-linear predictor (``mu``) against brms's posterior_linpred,
+    each parameter's values per row against brms's own linear predictor of it (``adapter.brms_nlpar_values``: X_<nlpar>
+    b_<nlpar> plus its group effects, from the fixture alone), every group-level coefficient's effects against r_<id>_<nlpar>_<k>,
+    and every correlation matrix against Cor_<id>."""
+    pmm, model = b.model.pymc_model, b.model
+    nlpars = list(model.nlpar_names.items())
+    groups = list(model.nlpar_group_names.items())
+    cors = list(model.nlpar_correlation_names.items())
+    dets = ([pmm[model.names["linpred"]]] + [pmm[roles["value"]] for _, roles in nlpars] + [pmm[roles["group_effect"]] for _, roles in groups]
+            + [pmm[roles["cor"]] for _, roles in cors])
+    fn = pmm.compile_fn(pmm.replace_rvs_by_values(dets), inputs=pmm.value_vars, point_fn=True, on_unused_input="ignore")
+    ref = b.fixture.prediction("fitted", "linpred")
+    for k, p, vp in b.points():
+        out = [np.asarray(v, dtype=float) for v in fn(vp)]
+        err = rel_err(out[0].ravel(), ref[k])
+        if err > PRED_REL:
+            raise OracleMismatch(f"point {k}: the graph's non-linear predictor {model.names['linpred']!r} differs from brms by {err}")
+        for (name, _), value in zip(nlpars, out[1:1 + len(nlpars)]):
+            err = rel_err(value.ravel(), adapter.brms_nlpar_values(b.fixture, p, name))
+            if err > PRED_REL:
+                raise OracleMismatch(f"point {k}: the graph's values of the non-linear parameter {name!r} differ from brms's linear "
+                                     f"predictor of {name} by {err}")
+        start = 1 + len(nlpars)
+        for ((name, g, coef), _), eff in zip(groups, out[start:start + len(groups)]):
+            m, cn = b.gmap.brms_id[(name, g)], b.gmap.coef_cn[(name, g, coef)]
+            err = rel_err(eff.ravel()[b.gmap.level_of[(name, g)]], np.atleast_1d(p.pars[f"r_{m}_{name}_{cn}"]))
+            if err > PRED_REL:
+                raise OracleMismatch(f"point {k}: group effects of {coef!r} of {g!r} in {name!r} differ from brms r_{m}_{name}_{cn} by {err}")
+        start += len(groups)
+        for ((name, g), _), cor in zip(cors, out[start:]):
+            m = b.gmap.brms_id[(name, g)]
+            perm = [b.gmap.coef_cn[(name, g, c)] - 1 for c in model.spec.nlpar(name).group_term_of(g).coefs]
+            err = rel_err(cor, np.atleast_2d(p.pars[f"Cor_{m}"])[np.ix_(perm, perm)])
+            if err > PRED_REL:
+                raise OracleMismatch(f"point {k}: the correlation matrix of {g!r} in {name!r} differs from brms Cor_{m} by {err}")
 
 
 ALL = (check_design, check_logp, check_gradient, check_derived, check_predictions, check_jax, check_default_prior)

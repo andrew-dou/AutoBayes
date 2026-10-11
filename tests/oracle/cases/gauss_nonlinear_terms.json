@@ -1,0 +1,192 @@
+{
+ "id": "gauss_nonlinear_terms",
+ "tier": "C",
+ "feature": "C02_nonlinear",
+ "note": "brms nl, the grammar and the nlpar formulas: mu = nlp_a * exp(-nlp_b * C_1) + inv_logit(nlp_c) * sqrt(C_2) / (1 + pow(C_3, 2)) - 0.25 * nlp_d * log(C_2)^2 with the covariates C_1 = x, C_2 = xpos (used twice), C_3 = w in order of first appearance; X_a = Intercept, zq, zr with r_1_a_1 by g; X_b = Intercept, w with its own (1 | g) (a second group id on the same factor); X_c = Intercept, w with the correlated (1 + w | h) (L, lkj(2)); X_d = zp, zq, zr (0 + z, full dummy coding); no nlpar formula is centred; w is both a covariate and an nlpar predictor",
+ "seed": 307,
+ "n_points": 8,
+ "data": {
+  "generator": "tier_c",
+  "seed": 211,
+  "n": 36,
+  "newdata": {
+   "seed": 311,
+   "n": 5
+  }
+ },
+ "brms": {
+  "formula": [
+   "ypos ~ a * exp(-b * x) + inv_logit(c) * sqrt(xpos) / (1 + pow(w, 2)) - 0.25 * d * log(xpos)^2",
+   "a ~ 1 + z + (1 | g)",
+   "b ~ 1 + w + (1 | g)",
+   "c ~ 1 + w + (1 + w | h)",
+   "d ~ 0 + z"
+  ],
+  "bf_args": {
+   "nl": true
+  },
+  "family": {
+   "family": "gaussian"
+  },
+  "factors": {
+   "g": [
+    "a",
+    "b",
+    "c",
+    "d",
+    "e",
+    "f"
+   ],
+   "h": [
+    "h1",
+    "h2",
+    "h3",
+    "h4"
+   ],
+   "z": [
+    "p",
+    "q",
+    "r"
+   ]
+  },
+  "priors": [
+   {
+    "prior": "normal(1, 0.5)",
+    "class": "b",
+    "coef": "Intercept",
+    "nlpar": "a"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "b",
+    "nlpar": "a"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "b",
+    "nlpar": "b"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "b",
+    "nlpar": "c"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "b",
+    "nlpar": "d"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "sd",
+    "nlpar": "a"
+   },
+   {
+    "prior": "normal(0, 0.5)",
+    "class": "sd",
+    "nlpar": "b"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "sd",
+    "nlpar": "c"
+   },
+   {
+    "prior": "lkj(2)",
+    "class": "cor"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "sigma"
+   }
+  ],
+  "extras": [
+   "group_scope"
+  ]
+ },
+ "autobayes": {
+  "constructor": "gaussian",
+  "formula": [
+   "ypos ~ a * exp(-b * x) + inv_logit(c) * sqrt(xpos) / (1 + pow(w, 2)) - 0.25 * d * log(xpos)^2",
+   "a ~ 1 + z + (1 | g)",
+   "b ~ 1 + w + (1 | g)",
+   "c ~ 1 + w + (1 + w | h)",
+   "d ~ 0 + z"
+  ],
+  "kwargs": {
+   "nl": true,
+   "categorical": {
+    "z": "p"
+   }
+  },
+  "priors": {
+   "nlpars": {
+    "a": {
+     "b": {
+      "Intercept": [
+       "Normal",
+       1,
+       0.5
+      ],
+      "z": [
+       "Normal",
+       0,
+       1
+      ]
+     },
+     "sd": [
+      "HalfNormal",
+      1
+     ]
+    },
+    "b": {
+     "b": [
+      "Normal",
+      0,
+      1
+     ],
+     "sd": [
+      "HalfNormal",
+      0.5
+     ]
+    },
+    "c": {
+     "b": [
+      "Normal",
+      0,
+      1
+     ],
+     "sd": {
+      "h": {
+       "Intercept": [
+        "HalfNormal",
+        1
+       ],
+       "w": [
+        "HalfNormal",
+        1
+       ]
+      }
+     }
+    },
+    "d": {
+     "b": [
+      "Normal",
+      0,
+      1
+     ]
+    }
+   },
+   "cor": {
+    "h": [
+     "LKJ",
+     2
+    ]
+   },
+   "sigma": [
+    "HalfNormal",
+    1
+   ]
+  }
+ }
+}

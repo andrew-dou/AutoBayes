@@ -172,6 +172,11 @@ class FamilySpec:
     # this family over the same data, with or without a residual correlation (brms's set_rescor()); set where a frozen case
     # verifies it.
     multivariate: bool = False
+    # brms's non-linear formulas (C02, docs/nonlinear.md): (model, mu, {auxiliary parameter: its PyMC variable}) -> the
+    # likelihood of a non-linear model, registered in the model being built, with ``mu`` the non-linear predictor on the link
+    # scale (the deterministic ``model.names["linpred"]``); set where a frozen brms case verifies it. None: the family is not
+    # offered with ``nl=True``.
+    nonlinear_likelihood: Callable[[object, object, dict], object] | None = None
 
     def with_link(self, link: str | None) -> "FamilySpec":
         """This family's spec under ``link``: this spec for ``None`` or its own link, the one a ``links`` entry builds

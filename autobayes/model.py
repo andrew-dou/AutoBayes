@@ -1841,7 +1841,8 @@ class Model:
 
 
 def gaussian(formula: str | list[str], data: pd.DataFrame, priors: Priors, *, center_predictors: bool = True,
-             categorical: Mapping[str, object] | None = None, rescor: bool | None = None) -> "Model | MultivariateModel":
+             categorical: Mapping[str, object] | None = None, rescor: bool | None = None, nl: bool = False,
+             loop: bool = True) -> "Model | MultivariateModel":
     """Build the Gaussian model (identity link, residual SD ``sigma``), with a varying intercept when the
     formula has ``(1 | group)`` and population-only otherwise (M3c-1).
     ``categorical={column: reference_level}`` declares treatment-coded categorical predictors. ``sigma`` may have its own
@@ -1849,9 +1850,23 @@ def gaussian(formula: str | list[str], data: pd.DataFrame, priors: Priors, *, ce
     ``Priors(..., sigma={"intercept": ab.Normal(0, 1), "b": ab.Normal(0, 0.5)})``, a log link, brms's ``bf(y ~ ..., sigma ~ z)``.
     A multivariate formula (C01, docs/multivariate.md), brms's ``mvbind(y, y2) ~ x + (1 | g)``, builds one model per response
     and returns a ``MultivariateModel``: ``rescor=True`` correlates the responses' residuals (``Priors(resp={"y": {...},
-    "y2": {...}}, rescor=ab.LKJ(eta))``, brms's ``set_rescor(TRUE)``), ``rescor=False`` keeps their likelihoods independent."""
+    "y2": {...}}, rescor=ab.LKJ(eta))``, brms's ``set_rescor(TRUE)``), ``rescor=False`` keeps their likelihoods independent.
+    ``nl=True`` (C02, docs/nonlinear.md) builds a non-linear model, ``ab.NonlinearModel``: ``["y ~ a * exp(b * x)",
+    "a ~ 1 + (1 | g)", "b ~ 1"]`` with ``Priors(nlpars={"a": {"b": ..., "sd": ...}, "b": {"b": ...}}, sigma=...)``, brms's
+    ``bf(y ~ a * exp(b * x), a ~ 1 + (1 | g), b ~ 1, nl = TRUE)``; ``loop`` is brms's option of that name (only its default,
+    True, is offered: divergence D63), and a non-linear model takes no multivariate formula or ``rescor`` (divergence D62)."""
     from autobayes.multivariate import MultivariateModel, is_multivariate_formula     # C01
 
+    if nl:                                                             # C02: a non-linear model
+        from autobayes.nonlinear import NonlinearModel
+
+        if rescor is not None:
+            raise FormulaError("rescor= belongs to a multivariate model, 'mvbind(y, y2) ~ ...'; a non-linear model in a multivariate "
+                               "formula is not supported (docs/nonlinear.md, divergence D62)")
+        return NonlinearModel(formula, data, priors, family="gaussian", center_predictors=center_predictors,
+                              categorical=categorical, loop=loop)
+    if loop is not True:
+        raise ValueError("loop is brms's option of a non-linear formula; it applies with nl=True only (docs/nonlinear.md)")
     if rescor is not None or is_multivariate_formula(formula):
         return MultivariateModel(formula, data, priors, family="gaussian", rescor=rescor, center_predictors=center_predictors,
                                  categorical=categorical)
