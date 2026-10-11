@@ -66,6 +66,21 @@ def test_original_input_density_gradient_and_jax(nu, center):
     assert 'log-odds' not in desc and 'logit' not in desc
 
 
+@pytest.mark.parametrize('nu', [3.7, 4, 2.3])
+def test_fixed_nu_reaches_pymc_in_float64(nu):
+    # PyTensor makes a Python float that float32 represents exactly (4.0, 7.0, 2.5) a float32 constant, and the Student-t
+    # normalising constant was then computed in float32: at nu = 4 every row's log density was 5.6e-10 off the exact
+    # value; 3.7 and 2.3 stayed float64 (kept here so that both kinds of value stay covered)
+    rng=np.random.default_rng(3); df=pd.DataFrame({'x':rng.normal(size=200)}); df['y']=.4+.7*df.x+rng.standard_t(nu,size=200)
+    m=ab.student('y ~ x',df,priors(),nu=nu)
+    import pytensor
+    obs=m.pymc_model.observed_RVs[0]; nu_in=obs.owner.inputs[2]
+    assert nu_in.dtype=='float64' and float(np.asarray(pytensor.function([],nu_in)()).ravel()[0])==float(nu)
+    p=m.value_point(intercept=.3,b=[.6],sigma=.9); x=df.x.to_numpy()-df.x.mean()
+    lik=m.pymc_model.compile_logp(vars=[obs])(p)
+    np.testing.assert_allclose(lik,t.logpdf(df.y.to_numpy(),df=nu,loc=.3+.6*x,scale=.9).sum(),rtol=1e-14)
+
+
 def draws(group=False):
     p={'Intercept':np.full((2,4),.3),'x':np.full((2,4),-.2),'sigma':np.full((2,4),.8)}
     if group:
