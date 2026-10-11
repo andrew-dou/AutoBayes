@@ -340,7 +340,7 @@ class Model:
         bambi_priors = priors.to_bambi(self.spec, fam)
         for name in fam.fixed_parameters:                    # Bambi takes a fixed nu through the prior dict; a learned
             if name not in self.learned_parameters:          # one's truncated prior came from Priors.to_bambi (A13)
-                bambi_priors[name] = getattr(self, name)
+                bambi_priors[name] = np.float64(getattr(self, name))   # PyTensor makes a Python 4.0 a float32 constant
         bambi_formula = self.spec.bambi_formula
         # Bambi centres every formula that has an intercept, or none. Without a distributional formula that is the
         # response formula's centring as it has always been; with one (B01), brms centres each formula that has an
