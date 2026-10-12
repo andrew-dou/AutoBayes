@@ -5,10 +5,6 @@
  "note": "brms mi(): bf(y ~ mi(xm) + w) + bf(xm | mi() ~ w) + set_rescor(FALSE); 7 xm values missing: Y_xm holds Inf there, Jmi_xm their rows, Nmi_xm = 7, imputed as parameters Ymi_xm; bsp_y is the coefficient of mi(xm) (prior class b, coef mixm); the y likelihood uses observed plus imputed xm; predictions draws x rows x 2 (responses y, xm); newdata has xm observed",
  "seed": 309,
  "n_points": 8,
- "gate": {
-  "expect": "fail",
-  "reason": "C06_missing_and_measurement_error not implemented; remove this field when it lands"
- },
  "data": {
   "generator": "tier_c",
   "seed": 209,

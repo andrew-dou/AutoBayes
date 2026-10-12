@@ -252,7 +252,7 @@ def default_lscale(gp) -> Prior:
 def default_priors(formula: str | list[str], data: pd.DataFrame, *, family: str = "gaussian", categorical: Mapping[str, object] | None = None,
                    nu: float | None = None, link: str | None = None, center_predictors: bool = True,
                    families: list[str] | None = None, order: str | bool | None = None,
-                   rescor: bool | None = None, nl: bool = False) -> Priors:
+                   rescor: bool | None = None, nl: bool = False, imputed: tuple[str, ...] = ()) -> Priors:
     """brms's default priors for ``formula`` on ``data`` under ``family`` (brms 2.23's ``default_prior()``), as a
     ``Priors`` the constructors accept: ``ab.gaussian(f, df, ab.default_priors(f, df))``. ``formula`` may be a list with a
     distributional formula (B01, ``["y ~ x", "sigma ~ z"]``), whose priors are its intercept's and coefficients'.
@@ -272,12 +272,17 @@ def default_priors(formula: str | list[str], data: pd.DataFrame, *, family: str 
 
     A multivariate formula
     (C01, ``mvbind(y, y2) ~ ...`` with ``rescor=True`` or ``False``, docs/multivariate.md) gets each response's defaults under
-    ``resp``, ``lkj(1)`` on a correlated term once for all responses and on the residual correlation (``rescor=True``).
+    ``resp``, ``lkj(1)`` on a correlated term once for all responses and on the residual correlation (``rescor=True``). A list of formulas
+    with ``mi()`` (C06, ``["y ~ mi(xm) + w", "xm | mi() ~ w"]`` with ``rescor=False``) is a multivariate model too: each
+    response's defaults, a response with missing values read as brms reads it (its median and MAD are NA there, so location 0 and
+    scale 2.5), and an ``mi()`` term's coefficient flat like every ``b``; ``imputed`` is set for those responses' formulas (the
+    responses with ``| mi()``, ``formula.check_imputation``). An ``me(x, sdx)`` term (C06) gets brms's flat ``meanme`` and
+    ``sdme`` (``Flat()``, on the positive half line for ``sdme``).
 
     ``nl=True`` gives the defaults of a non-linear model (C02, ``nonlinear.nonlinear_default_priors``, docs/nonlinear.md),
     which takes neither a mixture's ``families``/``order`` nor a multivariate formula or ``rescor`` (divergence D62)."""
     from autobayes.families import FAMILIES, get_family
-    from autobayes.formula import parse_formula
+    from autobayes.formula import check_imputation, parse_formula
     from autobayes.multivariate import is_multivariate_formula, multivariate_default_priors
 
     if nl:                                                            # a non-linear model (C02): its parameters' defaults; it refuses
@@ -311,6 +316,7 @@ def default_priors(formula: str | list[str], data: pd.DataFrame, *, family: str 
     if families is not None or order is not None:
         raise ValueError(f"families= and order= are a mixture's (family='mixture'); the {fam.name} family takes neither")
     spec = parse_formula(formula, data, family, categorical)
+    check_imputation(spec, imputed)                                   # C06: mi() belongs to a multivariate model
     # B05: brms never reads an ordinal or categorical response for its defaults (no identity or log link: 0 and 2.5), and
     # its labels need not be numbers
     y = np.asarray(data[spec.response], dtype=float) if fam.response_categories is None else np.zeros(len(data))
@@ -358,9 +364,10 @@ def default_priors(formula: str | list[str], data: pd.DataFrame, *, family: str 
     sdgp = {g.column: HalfStudentT(DF, scale) for g in spec.gp_terms}   # C03: a group-level SD's default
     lscale = {g.column: default_lscale(g) for g in spec.gp_terms}      # C03: tuned to the process's inputs
     autocor = {part: Flat() for part, _ in spec.autocor.parts} if spec.autocor is not None else {}   # C04: flat ar and ma
+    me = {t.operands[0]: Flat() for t in spec.me_terms}                  # C06: brms's flat meanme and sdme (sdme on (0, inf))
     priors = Priors(intercept=mark(intercept), b=mark(Flat()) if spec.pop_terms else None, sd=mark(sd) or None,
                     cor=mark(cor) or None, nu=mark(learned.get("nu")), simo=mark(simo) or None,
-                    sdgp=mark(sdgp) or None, lscale=mark(lscale) or None,
+                    sdgp=mark(sdgp) or None, lscale=mark(lscale) or None, meanme=mark(me) or None, sdme=mark(me) or None,
                     **{k: mark(v) for k, v in auxiliary.items()}, **{k: mark(v) for k, v in autocor.items()})
     priors.validate(spec, fam)
     return priors
@@ -401,7 +408,7 @@ def brms_coefficient_names(spec) -> dict[str, str]:
     for t in spec.pop_terms:
         if t.kind == "numeric":
             out[t.columns[0]] = brms_rename(t.name)
-        elif t.is_monotonic:                                          # mo(ord) -> moord, a coefficient with no column
+        elif t.is_special:                                            # mo(ord) -> moord, me(x, sdx) -> mexsdx, mi(x) -> mix (C06)
             out[t.name] = brms_rename(t.name)
         elif t.kind == "transform":
             out[t.columns[0]] = brms_rename(t.transform.term)
@@ -529,6 +536,16 @@ def prior_table(priors: Priors, spec, family="gaussian", *, center_predictors: b
                 add(p, cls, coef=brms_rename(f"gp({column})"))
     for part, prior in priors.autocor_priors(spec).items():          # an ARMA term's ar / ma (C04): a class row each, unbounded
         add(prior, part)
+    for cls, lb in (("meanme", ""), ("sdme", "0")):                    # C06: an me() term's latent values, brms's class rows
+        me = priors.me_priors(spec, cls)                               # (lb 0 on sdme's) and one coefficient row me<x> each
+        if me:
+            ps = list(me.values())
+            add(ps[0] if same(ps) else None, cls, lb=lb, source=ps[0].source if same(ps) else "default")
+            for x, p in me.items():
+                if same(ps):
+                    add(None, cls, coef=f"me{brms_rename(x)}", source=p.source)
+                else:
+                    add(p, cls, coef=f"me{brms_rename(x)}")
     if fam.scale_parameter is not None and fam.scale_parameter not in spec.dpar_names:
         add(getattr(priors, fam.scale_parameter), fam.scale_parameter, lb="0")
     if fam.zero_parameter is not None:                                # brms's real<lower=0,upper=1> zi / hu (B06)

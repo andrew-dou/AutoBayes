@@ -42,12 +42,22 @@ from collections.abc import Mapping
 from autobayes.correlation import check_correlation_cholesky, cholesky_corr_free, cholesky_corr_rv, n_free
 from autobayes.families import FAMILIES, FamilySpec, get_family
 from autobayes.formula import (Categorical, FormulaError, ModelSpec, addition_data, bambi_group_name, binomial_counts,
-                               categorical_labels, factor_column, group_labels, interaction_cells, parse_formula, pop_term_design,
-                               sd_tag)
+                               categorical_labels, check_imputation, factor_column, group_labels, interaction_cells,
+                               measurement_values, missing_values, parse_formula, pop_term_design, sd_tag)
 from autobayes.priors import AUXILIARY, PriorError, Priors, describe_prior
 
 _bambi_group_name = bambi_group_name          # ``1|g`` for the varying intercept of ``g``, ``x|g`` for the slope of ``x``
 _AUTOCOR_MEANING = {"ar": "autoregressive", "ma": "moving-average"}   # an autocorrelation term's parts (C04)
+
+
+def _prior_rv(name: str, prior, *, positive: bool = False):
+    """A scalar PyMC variable named ``name`` under ``prior`` (its parameters as float64, which PyTensor keeps; C06): a
+    location prior, a positive-support prior, or ``Flat()``, flat on the real line, or with ``positive`` on the positive half
+    line (PyMC's ``HalfFlat``, brms's flat prior on a ``real<lower=0>``). Must be called inside a PyMC model context."""
+    import pymc as pm
+
+    dist = pm.HalfFlat if positive and prior.name == "Flat" else getattr(pm, prior.name)
+    return dist(name, **{k: np.float64(v) for k, v in prior.params.items()})
 
 
 @dataclass(frozen=True)
@@ -115,6 +125,35 @@ class GPBlock:
 
 
 @dataclass(frozen=True)
+class MeasurementBlock:
+    """The block of a measurement-error term ``me(x, sdx)`` (C06, docs/missing-and-measurement-error.md): ``Xn`` the noisy
+    values of ``column`` and ``noise`` their known standard deviations (``noise_column``) on the fitted rows, brms's ``Xn_k``
+    and ``noise_k``; the term adds ``b * Xme_i`` to row ``i``'s linear predictor, ``Xme = meanme + sdme * zme`` the latent
+    values, and the model has ``Xn_i ~ Normal(Xme_i, noise_i)``."""
+    term: str
+    column: str
+    noise_column: str
+    Xn: np.ndarray
+    noise: np.ndarray
+
+
+@dataclass(frozen=True)
+class MissingBlock:
+    """A column whose missing values are parameters of the model (C06): the response of ``col | mi() ~ ...``, or the column
+    of an ``mi(col)`` term. ``values`` holds the fitted rows with NaN at the missing ones (brms's ``Y_col`` holds Inf there),
+    ``index`` the missing rows, 0-based (brms's ``Jmi_col - 1``; ``Nmi_col`` of them), whose values are the free variable
+    ``Ymi_col`` of the model."""
+    column: str
+    values: np.ndarray
+    index: np.ndarray
+
+    @property
+    def filled(self) -> np.ndarray:
+        """``values`` with 0.0 at the missing rows: the placeholder the graph replaces with the missing values."""
+        return np.where(np.isnan(self.values), 0.0, self.values)
+
+
+@dataclass(frozen=True)
 class Design:
     """What the model was actually fit to. All arrays are dense NumPy."""
 
@@ -138,6 +177,8 @@ class Design:
     monotonic: Mapping[str, MonotonicBlock] = field(default_factory=lambda: MappingProxyType({}))   # each monotonic term's block, by column (B03)
     gp: Mapping[str, GPBlock] = field(default_factory=lambda: MappingProxyType({}))   # each Gaussian process's block, by column (C03)
     autocor: object | None = None      # autocor.AutocorDesign: the series of an autocorrelation term on the fitted rows (C04), or None
+    measurement_error: Mapping[str, MeasurementBlock] = field(default_factory=lambda: MappingProxyType({}))   # each me() term's block, by noisy column (C06)
+    missing: Mapping[str, MissingBlock] = field(default_factory=lambda: MappingProxyType({}))   # each column whose missing values are parameters (C06)
 
     def __post_init__(self):
         if not self.columns:
@@ -213,6 +254,10 @@ def _linear_terms(spec: ModelSpec, centered: bool, b: str = "b") -> list[str]:
             parts.append(f"({value} - mean({term})) * {b}_{term}" if centered else f"{value} * {b}_{term}")
         elif t.is_monotonic:                                 # B03: never centred, brms's bsp * mo(simo, Xmo)
             parts.append(f"{b}_{term} * {term}_i")
+        elif t.kind == "measurement_error":                  # C06: never centred, brms's bsp * Xme
+            parts.append(f"{b}_{term} * Xme_{t.operands[0]},i")
+        elif t.kind == "missing":                            # C06: never centred, brms's bsp * Yl (observed or Ymi)
+            parts.append(f"{b}_{term} * {t.operands[0]}_i")
         else:
             parts.append(f"(x_{term} - mean(x_{term})) * {b}_{term}" if centered else f"x_{term} * {b}_{term}")
     return parts
@@ -242,7 +287,9 @@ class Model:
     def __init__(self, formula: str | list[str], data: pd.DataFrame, priors: Priors, *,
                  family: str = "gaussian", center_predictors: bool = True,
                  categorical: Mapping[str, object] | None = None, nu: float | None = None, link: str | None = None,
-                 families: list[str] | None = None, order: str | bool | None = None):
+                 families: list[str] | None = None, order: str | bool | None = None, imputed: tuple[str, ...] = ()):
+        """``imputed`` (C06) is set by ``MultivariateModel`` for the models of its responses: the responses of its
+        ``col | mi() ~ ...`` formulas, whose missing values are parameters (``formula.check_imputation``); empty otherwise."""
         import bambi as bmb
 
         fam = get_family(family)
@@ -282,6 +329,8 @@ class Model:
             raise ValueError(f"families= and order= are a mixture's (ab.mixture, docs/mixtures.md); the {family} family takes neither")
 
         spec0 = parse_formula(formula, None, family, categorical)
+        self.imputed: tuple[str, ...] = tuple(imputed)        # C06: the columns a multivariate model imputes by their own formula
+        check_imputation(spec0, self.imputed)
         self.effective_center_predictors = self.center_predictors and spec0.intercept
         centred = [d for d in spec0.dpars if d.intercept and d.pop_terms]   # a distributional formula brms centres (B01)
         if centred and not self.center_predictors:
@@ -377,9 +426,17 @@ class Model:
                 )
 
         bambi_family = fam.bambi_family()
-        if self.spec.additions:                              # brms's response addition terms act on the likelihood (B02)
+        if any(a.kind != "mi" for a in self.spec.additions):   # brms's response addition terms act on the likelihood (B02)
             from autobayes.likelihoods import addition_family
             bambi_family = addition_family(bambi_family, fam, addition_data(self.spec, self.data))
+        bambi_data = self.data
+        own = self.missing_names.get(self.spec.response)      # C06: the response's missing values are parameters (| mi())
+        if own is not None:
+            from autobayes.likelihoods import missing_response_family
+            block = self._missing_block(self.spec.response)
+            bambi_data = self.data.copy()                     # Bambi refuses a missing response: a placeholder it never reads
+            bambi_data[self.spec.response] = block.filled
+            bambi_family = missing_response_family(bambi_family, block.index, own["values"], own["coordinate"])
         self._check_generated_names()
         bambi_priors = priors.to_bambi(self.spec, fam)
         for name in fam.fixed_parameters:                    # Bambi takes a fixed nu through the prior dict; a learned
@@ -402,11 +459,14 @@ class Model:
         if self.spec.gp_terms:                               # brms's gp() (C03): added the same way, through the same hook
             from autobayes.likelihoods import monotonic_family as linear_predictor_family
             bambi_family = linear_predictor_family(bambi_family, self._add_gp_effects)
+        if self.spec.me_terms or self.spec.mi_terms:         # brms's me() and mi() (C06): added the same way
+            from autobayes.likelihoods import monotonic_family
+            bambi_family = monotonic_family(bambi_family, self._add_measurement_effects)
         if self.spec.autocor is not None:                    # brms's ar(), ma(), arma() (C04): added last, on the residuals
             from autobayes.autocor import autocor_family
             bambi_family = autocor_family(bambi_family, self._add_autocor_effects)
         self.bambi_model = bmb.Model(
-            bambi_formula, self.data, family=bambi_family,
+            bambi_formula, bambi_data, family=bambi_family,
             priors=bambi_priors,
             noncentered=True, center_predictors=self._bambi_centring,
         )
@@ -416,6 +476,8 @@ class Model:
             self.pymc_model = self._correlate_group_effects(self.pymc_model)
             self.bambi_model.backend.model = self.pymc_model  # what Bambi's fit() samples and cleans
         self.design = self._extract_design()
+        if self.spec.me_terms or self.spec.mi_terms:         # C06: each term's contribution to the linear predictor, checked
+            self._check_measurement_effects()
         if fam.mixture:                                      # C05: the graph built beside Bambi's components, checked
             from autobayes.families.mixture import check_graph
             check_graph(self)
@@ -464,6 +526,8 @@ class Model:
         variable_names += [roles["simplex"] for roles in self.mo_names.values()]   # each monotonic term's simplex (B03)
         variable_names += [roles[k] for roles in self.gp_names.values() for k in ("sdgp", "lscale", "zgp")]   # each GP's (C03)
         variable_names += [v for k, v in self.autocor_names.items() if not k.endswith("_coordinate")]   # ar and ma (C04)
+        variable_names += [roles[k] for roles in self.me_names.values() for k in ("mean", "sd", "z", "latent", "noisy")]   # C06
+        variable_names += [roles["values"] for roles in self.missing_names.values()]   # C06: the missing values Ymi_<col>
         # Bambi's default result cleaning drops every posterior variable ending in _offset.
         retained = list(self.spec.terms) + [roles["group_effect"] for roles in self.group_coefficient_names.values()] + dpar_coefficients
         if any(name.endswith("_offset") for name in retained):
@@ -475,6 +539,7 @@ class Model:
         coords += [roles["coordinate"] for roles in self.mo_names.values()]
         coords += [roles["coordinate"] for roles in self.gp_names.values()]       # C03
         coords += [v for k, v in self.autocor_names.items() if k.endswith("_coordinate")]   # ar_dim and ma_dim (C04)
+        coords += [roles["coordinate"] for roles in self.missing_names.values()]   # C06: the missing rows of each column
         coords += ["__obs__"]
         names = variable_names + coords
         duplicates = sorted({n for n in names if names.count(n) > 1})
@@ -704,7 +769,9 @@ class Model:
                       weights=additions.get("weights"), cens=additions.get("cens"), lb=additions.get("lb"), ub=additions.get("ub"),
                       dpars=MappingProxyType({d.response: self._dpar_design(d) for d in self.spec.dpars}),
                       monotonic=MappingProxyType(self._monotonic_design()), gp=MappingProxyType(self._gp_design()),
-                      autocor=self._autocor_design)
+                      autocor=self._autocor_design,
+                      measurement_error=MappingProxyType(self._measurement_design()),   # C06
+                      missing=MappingProxyType(self._missing_design()))
 
     def _dpar_design(self, d: ModelSpec) -> DparDesign:
         """The design of distributional parameter ``d.response``'s formula (B01), as Bambi built its distributional
@@ -949,6 +1016,152 @@ class Model:
             raise RuntimeError(f"the graph's {parent!r} does not add brms's ARMA term {self.spec.autocor.term!r} on the residuals; "
                                f"largest difference {np.max(np.abs(got - expected)) if got.shape == expected.shape else got.shape}")
 
+    # -- measurement-error and missing-value terms (C06) ---------------------------------
+    def _add_measurement_effects(self, eta):
+        """brms's ``me()`` and ``mi()`` terms (C06, docs/missing-and-measurement-error.md), built inside the model Bambi is
+        building (``likelihoods.monotonic_family``'s hook on the parent's linear predictor, before the link). ``me(x, sdx)``:
+        the location ``meanme_x`` and scale ``sdme_x`` of the latent values under their priors, the standardised latent values
+        ``zme_x ~ Normal(0, 1)``, one per row, the latent values ``Xme_x = meanme_x + sdme_x * zme_x`` (a deterministic, brms's
+        ``Xme``), the noisy values observed as ``Xn_x ~ Normal(Xme_x, sdx)`` (brms's ``Xn`` and ``noise``) and the coefficient
+        (brms's ``bsp``) under its ``b`` prior, adding ``coefficient * Xme_x``. ``mi(col)``: the column's missing values
+        ``Ymi_col``, a free variable under brms's flat prior on the missing rows, completing the observed ones (brms's ``Yl``),
+        and the coefficient, adding ``coefficient * Yl``. Neither term is centred, as brms centres neither."""
+        import pymc as pm
+        import pytensor.tensor as pt
+
+        from autobayes.monotonic import coefficient_rv
+
+        model = pm.modelcontext(None)
+        coefficients = self.priors.coefficient_priors(self.spec)
+        means, sds = self.priors.me_priors(self.spec, "meanme"), self.priors.me_priors(self.spec, "sdme")
+        for t in self.spec.me_terms:
+            x, sdx = t.operands
+            roles = self.me_names[x]
+            noisy, noise = measurement_values(t.name, self.data[x], self.data[sdx])
+            mean = _prior_rv(roles["mean"], means[x])
+            sd = _prior_rv(roles["sd"], sds[x], positive=True)
+            z = pm.Normal(roles["z"], mu=np.float64(0.0), sigma=np.float64(1.0), dims="__obs__")
+            latent = pm.Deterministic(roles["latent"], mean + sd * z, dims="__obs__")
+            pm.Normal(roles["noisy"], mu=latent, sigma=np.asarray(noise, dtype=np.float64), observed=noisy, dims="__obs__")
+            eta = eta + coefficient_rv(roles["b"], coefficients[t.name]) * latent
+        for t in self.spec.mi_terms:
+            col = t.operands[0]
+            block, roles = self._missing_block(col), self.missing_names.get(col)
+            values = pt.as_tensor(block.filled)
+            if roles is not None:                            # brms's Yl: the observed values, Ymi at the missing rows
+                model.add_coord(roles["coordinate"], [int(i) for i in block.index])
+                values = pt.set_subtensor(values[block.index], pm.Flat(roles["values"], dims=roles["coordinate"]))
+            eta = eta + coefficient_rv(t.name, coefficients[t.name]) * values
+        return eta
+
+    def _missing_block(self, column: str) -> MissingBlock:
+        """The fitted rows of a column whose missing values are parameters (C06), with its missing rows."""
+        values = missing_values(f"column {column!r}", self.data[column], column == self.spec.response)
+        return MissingBlock(column, values, np.flatnonzero(np.isnan(values)))
+
+    def _measurement_design(self) -> dict[str, MeasurementBlock]:
+        """The block of each ``me(x, sdx)`` term (C06), checked against the graph: the location a free scalar, the scale a
+        free scalar sampled on the log scale, the standardised latent values a free vector on ``__obs__``, the latent values a
+        deterministic on ``__obs__`` and the noisy values an observed variable holding the data's; the coefficient a free
+        scalar. Empty without an ``me()`` term."""
+        pmm, blocks = self.pymc_model, {}
+        for t in self.spec.me_terms:
+            x, sdx = t.operands
+            roles = self.me_names[x]
+            noisy, noise = measurement_values(t.name, self.data[x], self.data[sdx])
+            for key in ("mean", "sd", "b"):
+                if pmm[roles[key]] not in pmm.free_RVs or pmm[roles[key]].type.ndim != 0:
+                    raise RuntimeError(f"{roles[key]!r} is not a free scalar of the graph")
+            if pmm.rvs_to_values[pmm[roles["sd"]]].name != f"{roles['sd']}_log__":
+                raise RuntimeError(f"{roles['sd']!r} is not sampled on the log scale")
+            if pmm[roles["z"]] not in pmm.free_RVs or pmm[roles["latent"]] not in pmm.deterministics:
+                raise RuntimeError(f"{roles['z']!r} is not a free variable or {roles['latent']!r} not a deterministic of the graph")
+            for key in ("z", "latent", "noisy"):
+                if tuple(pmm.named_vars_to_dims.get(roles[key], ())) != ("__obs__",):
+                    raise RuntimeError(f"PyMC dims of {roles[key]!r} are not ('__obs__',)")
+            observed = pmm[roles["noisy"]]
+            held = np.asarray(getattr(pmm.rvs_to_values.get(observed), "data", np.nan), dtype=float)
+            if observed not in pmm.observed_RVs or held.shape != noisy.shape or not np.array_equal(held, noisy):
+                raise RuntimeError(f"{roles['noisy']!r} is not the observed noisy values of {t.name!r}")
+            blocks[x] = MeasurementBlock(t.name, x, sdx, noisy, noise)
+        return blocks
+
+    def _missing_design(self) -> dict[str, MissingBlock]:
+        """The block of each column whose missing values are parameters (C06: the response's under ``| mi()``, each ``mi()``
+        term's column), checked against the graph: the missing values a free variable with brms's flat prior on the
+        coordinate of the missing rows. Empty without one."""
+        pmm, blocks = self.pymc_model, {}
+        for col in self.spec.missing_columns:
+            block = self._missing_block(col)
+            roles = self.missing_names.get(col)
+            if roles is not None:
+                rv = pmm[roles["values"]]
+                if (rv not in pmm.free_RVs or type(rv.owner.op).__name__ != "FlatRV" or rv.type.ndim != 1
+                        or pmm.rvs_to_values[rv].name != roles["values"]):
+                    raise RuntimeError(f"{roles['values']!r} is not a free flat vector of the {block.index.size} missing values of {col!r}")
+                if (tuple(pmm.named_vars_to_dims.get(roles["values"], ())) != (roles["coordinate"],)
+                        or [int(v) for v in pmm.coords[roles["coordinate"]]] != block.index.tolist()):
+                    raise RuntimeError(f"PyMC dims of {roles['values']!r} are not the missing rows of {col!r}")
+            blocks[col] = block
+        return blocks
+
+    def _check_measurement_effects(self) -> None:
+        """Each ``me()`` and ``mi()`` term's contribution, read off the graph (C06): at the graph's initial point with test values
+        of the latent values (``meanme = 0.3``, ``sdme = 0.7``, ``zme`` from -1 to 1) and of the missing values (from -1 to 1),
+        the parent's linear predictor (on Bambi's link scale) must move, row by row, by exactly ``c`` times the term's values
+        (``Xme``, or the observed values completed by the missing ones) when the term's coefficient goes from 0 to ``c``."""
+        pmm, parent = self.pymc_model, self.family_spec.parent
+        link = self.bambi_model.family.link[parent].name
+        if link not in ("identity", "log"):
+            raise RuntimeError(f"Bambi's link of {parent!r} is {link}; the me() and mi() terms are checked under the identity and log links")
+        fn = pmm.compile_fn(pmm.replace_rvs_by_values([pmm[parent]]), inputs=pmm.value_vars, point_fn=True,
+                            on_unused_input="ignore", mode="FAST_COMPILE")
+        point, terms = pmm.initial_point(), []
+        for t in self.spec.me_terms:
+            roles = self.me_names[t.operands[0]]
+            z = np.linspace(-1.0, 1.0, self.design.n)
+            point.update({roles["mean"]: np.asarray(0.3), f"{roles['sd']}_log__": np.asarray(np.log(0.7)), roles["z"]: z})
+            terms.append((t.name, roles["b"], 0.3 + 0.7 * z))
+        for t in self.spec.mi_terms:
+            block, roles = self.design.missing[t.operands[0]], self.missing_names.get(t.operands[0])
+            values = block.filled.copy()
+            if roles is not None:
+                values[block.index] = np.linspace(-1.0, 1.0, block.index.size)
+                point[roles["values"]] = values[block.index]
+            terms.append((t.name, t.name, values))
+        point.update({b: np.asarray(0.0) for _, b, _ in terms})
+        for name, b, values in terms:
+            c = 1.0 / max(1.0, float(np.max(np.abs(values))))
+            lo, hi = (np.asarray(fn(p)[0], dtype=float).ravel() for p in (point, {**point, b: np.asarray(c)}))
+            moved = hi - lo if link == "identity" else np.log(hi) - np.log(lo)
+            if moved.shape != values.shape or not np.allclose(moved, c * values, rtol=1e-10, atol=1e-10):
+                raise RuntimeError(f"the graph's {parent!r} does not move by the values of {name!r} times its coefficient")
+
+    @property
+    def me_names(self) -> dict[str, dict[str, str]]:
+        """PyMC names of each measurement-error term ``me(x, sdx)`` (C06), by its noisy column: ``"b"`` its coefficient (brms's
+        ``bsp``; the term's own name, ``me(x, sdx)``, so ``names["b:me(x, sdx)"]`` too), ``"mean"`` and ``"sd"`` the location and
+        scale of its latent values (brms's ``meanme`` and ``sdme``; ``meanme_x``, ``sdme_x``, the latter sampled as
+        ``sdme_x_log__``), ``"z"`` the standardised latent values (brms's ``zme``, ``zme_x``, one per row), ``"latent"`` the latent
+        values (brms's ``Xme``, the deterministic ``Xme_x``) and ``"noisy"`` the observed noisy values (brms's ``Xn``, ``Xn_x``).
+        Empty without an ``me()`` term."""
+        return {t.operands[0]: {"b": t.name, "mean": f"meanme_{t.operands[0]}", "sd": f"sdme_{t.operands[0]}",
+                                "z": f"zme_{t.operands[0]}", "latent": f"Xme_{t.operands[0]}", "noisy": f"Xn_{t.operands[0]}"}
+                for t in self.spec.me_terms}
+
+    @property
+    def missing_names(self) -> dict[str, dict[str, str]]:
+        """PyMC names of the missing values this model holds as parameters (C06), by column, for each column of
+        ``spec.missing_columns`` with a missing fitted row: ``"values"`` the free variable ``Ymi_<col>`` (brms's ``Ymi_<col>``,
+        flat) and ``"coordinate"`` its dimension ``Ymi_<col>_dim``, whose coordinates are the missing rows, 0-based (brms's
+        ``Jmi`` is 1-based). In a multivariate model the response that imputes the column and every response with an
+        ``mi(col)`` term share it. Empty without one."""
+        out = {}
+        for col in self.spec.missing_columns:
+            if self.data[col].isna().any():
+                out[col] = {"values": f"Ymi_{col}", "coordinate": f"Ymi_{col}_dim"}
+        return out
+
     # -- naming ------------------------------------------------------------------------
     @property
     def link(self) -> str:
@@ -989,6 +1202,9 @@ class Model:
             **{f"b:{t.name}": t.name for t in self.spec.pop_terms},
             **{f"simo:{column}": roles["simplex"] for column, roles in self.mo_names.items()},   # B03
             **{f"{key}:{column}": roles[key] for column, roles in self.gp_names.items() for key in ("sdgp", "lscale", "zgp")},   # C03
+            **{f"{label}:{x}": roles[key] for x, roles in self.me_names.items()                   # C06: me()'s latent values
+               for key, label in (("mean", "meanme"), ("sd", "sdme"), ("z", "zme"), ("latent", "Xme"), ("noisy", "Xn"))},
+            **{f"Ymi:{col}": roles["values"] for col, roles in self.missing_names.items()},       # C06: the missing values
         }
         if fam.scale_parameter is not None:
             out[fam.scale_parameter] = fam.bambi_scale_parameter
@@ -1122,7 +1338,8 @@ class Model:
     def value_point(self, *, intercept: float | None = None, b, sd=None, z=None, L=None, sigma=None,
                     shape=None, phi=None, nu: float | None = None,
                     zi: float | None = None, hu: float | None = None, bsp=None, simo=None, theta=None,
-                    sdgp=None, lscale=None, zgp=None, ar=None, ma=None) -> dict[str, np.ndarray]:
+                    sdgp=None, lscale=None, zgp=None, ar=None, ma=None, meanme=None, sdme=None, zme=None,
+                    Ymi=None) -> dict[str, np.ndarray]:
         """A point in PyMC's sampled (value) space, from natural-scale quantities.
 
         ``intercept`` is the *model* intercept (at the predictor means when centred),
@@ -1160,7 +1377,13 @@ class Model:
         ``sdgp={"x": 0.8}``, ``lscale={"x": 0.3}``, ``zgp={"x": array(N)}`` (a single Gaussian process also accepts bare values),
         required exactly when the model has one. ``ar`` and ``ma`` are an autocorrelation term's coefficients (C04, brms's ``ar``
         and ``ma``): ``p`` and ``q`` finite numbers (a scalar for one), stored as given (unconstrained), required
-        exactly for the parts the term has.
+        exactly for the parts the term has. A measurement-error term ``me(x, sdx)`` and a missing-value term ``mi(col)`` (C06,
+        docs/missing-and-measurement-error.md) have no entry in ``b`` either: ``bsp`` is the coefficient keyed by the term's
+        first column (``bsp={"x": 0.8}``, or the bare value for the model's one such term); ``me()`` takes ``meanme`` and
+        ``sdme`` (the location and the positive scale of the latent values, ``sdme`` stored on the log scale) and ``zme`` (the
+        standardised latent values, one per fitted row), each keyed by the noisy column or bare; ``Ymi`` gives the missing
+        values of each column this model holds (``missing_names``: the response's under ``| mi()`` and each ``mi()`` term's
+        column), ``Ymi={"xm": array(Nmi)}`` in the order of the missing rows.
         """
         if self.family_spec.mixture:                          # C05: the components' parameters and theta
             if ar is not None or ma is not None:              # C04: a mixture has no autocorrelation term
@@ -1306,9 +1529,11 @@ class Model:
             k = len(term.columns)
             point[term.name] = np.array(b[i:i + k]) if term.levels else np.asarray(b[i])
             i += k
-        point.update(self._monotonic_point(bsp, simo))       # B03: each monotonic term's coefficient and simplex
+        mo = bool(self.spec.mo_terms)                        # bsp is a monotonic term's (B03) or an me() / mi() term's (C06)
+        point.update(self._monotonic_point(bsp if mo or not (self.spec.me_terms or self.spec.mi_terms) else None, simo))
         point.update(self._gp_point(sdgp, lscale, zgp))      # C03: each Gaussian process's sdgp, lscale and zgp
         point.update(self._autocor_point(ar, ma))            # C04: an autocorrelation term's ar and ma
+        point.update(self._measurement_point(None if mo else bsp, meanme, sdme, zme, Ymi))   # C06: me() and mi()
         expected = {v.name for v in self.pymc_model.value_vars}
         if set(point) != expected:
             raise RuntimeError(f"value names {sorted(point)} do not match PyMC's {sorted(expected)}")
@@ -1404,6 +1629,58 @@ class Model:
             point[roles[part]] = arr
         return point
 
+    def _measurement_point(self, bsp, meanme, sdme, zme, Ymi) -> dict[str, np.ndarray]:
+        """``value_point``'s entries of the ``me()`` and ``mi()`` terms (C06): each coefficient (``bsp``) as given, keyed by the
+        term's first column; an ``me()`` term's location (``meanme``) as given, its scale (``sdme``) on the log scale and its
+        standardised latent values (``zme``, one per fitted row); the missing values (``Ymi``) of each column of
+        ``missing_names``, one per missing row. A single term (or column) also takes bare values."""
+        terms = {t.operands[0]: t for t in (*self.spec.me_terms, *self.spec.mi_terms)}
+
+        def keyed(value, label, keys):
+            if value is None:
+                raise ValueError(f"{label} is required, keyed by {keys}")
+            if isinstance(value, Mapping):
+                if set(value) != set(keys):
+                    raise ValueError(f"{label} must cover exactly {keys}; got {list(value)}")
+                return {k: value[k] for k in keys}
+            if len(keys) != 1:
+                raise ValueError(f"{label} requires an exact-key mapping over {keys}")
+            return {keys[0]: value}
+
+        def scalar(value, label, positive=False):
+            arr = np.asarray(value, dtype=float)
+            if arr.shape != () or not np.isfinite(arr) or (positive and arr <= 0):
+                raise ValueError(f"{label} must be a finite{' positive' if positive else ''} scalar")
+            return arr
+
+        point = {}
+        if terms:                                            # (without one, a bsp was refused as a monotonic term's)
+            for col, value in keyed(bsp, "bsp (the coefficient of each me() / mi() term)", list(terms)).items():
+                point[terms[col].name] = scalar(value, f"bsp for {terms[col].name!r}")
+        me = list(self.me_names)
+        if me:
+            means, sds, zs = keyed(meanme, "meanme", me), keyed(sdme, "sdme", me), keyed(zme, "zme", me)
+            for x, roles in self.me_names.items():
+                point[roles["mean"]] = scalar(means[x], f"meanme for {x!r}")
+                point[f"{roles['sd']}_log__"] = np.asarray(np.log(scalar(sds[x], f"sdme for {x!r}", positive=True)))
+                z = np.asarray(zs[x], dtype=float)
+                if z.shape != (self.design.n,) or not np.isfinite(z).all():
+                    raise ValueError(f"zme for {x!r} must have {self.design.n} finite entries, one per fitted row")
+                point[roles["z"]] = z
+        elif any(v is not None for v in (meanme, sdme, zme)):
+            raise ValueError("this model has no measurement-error term me(x, sdx); meanme, sdme and zme do not apply")
+        missing = list(self.missing_names)
+        if missing:
+            for col, value in keyed(Ymi, "Ymi (the missing values)", missing).items():
+                block, arr = self.design.missing[col], np.asarray(value, dtype=float)
+                if arr.shape != (block.index.size,) or not np.isfinite(arr).all():
+                    raise ValueError(f"Ymi for {col!r} must have {block.index.size} finite entries, one per missing row "
+                                     f"{block.index.tolist()}")
+                point[self.missing_names[col]["values"]] = arr
+        elif Ymi is not None:
+            raise ValueError("this model holds no missing values; Ymi does not apply")
+        return point
+
     def _dpar_point(self, name: str, value) -> dict[str, np.ndarray]:
         """``value_point``'s entries of distributional parameter ``name``'s formula (B01) from ``{"intercept": float,
         "b": array}``: the intercept (as sampled) and the coefficients term by term in design-column order."""
@@ -1472,7 +1749,8 @@ class Model:
                     + (["derived grouping factor(s)"] if any(t.derived for t in s.group_terms) else [])
                     + ([f"response addition term(s) {', '.join(a.term for a in s.additions)}"] if s.additions else [])
                     + ([f"distributional formula(s) for {', '.join(s.dpar_names)}"] if s.dpars else [])
-                    + ([f"autocorrelation term {s.autocor.term}"] if s.autocor is not None else []))
+                    + ([f"autocorrelation term {s.autocor.term}"] if s.autocor is not None else [])
+                    + (["measurement-error term(s)"] if s.me_terms else []) + (["missing-value term(s)"] if s.mi_terms else []))
         lines = [
             f"AutoBayes {fam.tag} model" + (" with " + " and ".join(features) if features else "")
             + (" (population-level only)" if not s.has_group else ""),
@@ -1513,6 +1791,7 @@ class Model:
             lines += [f"  {f'gp({g.column})':<10}: {kind} of {g.column!r} (brms {g.term}), squared-exponential kernel; {len(g.inputs)} "
                       f"distinct inputs from {min(g.inputs):g} to {max(g.inputs):g}, scaled by dmax = {g.dmax:g}, their largest "
                       f"distance, so that it is 1 (brms's scale = TRUE){basis}"]
+        lines += self._measurement_data_lines()              # C06: me() and mi() terms, and the response's missing values
         for g, block in d.group_designs.items():
             lines += [f"  {'levels    ' if len(s.groups) == 1 else 'levels ' + g}: {', '.join(f'{j}={l}' for j, l in enumerate(block.levels))}"]
         for t in s.group_terms:
@@ -1553,6 +1832,7 @@ class Model:
         lines += self._monotonic_lines(lp)
         lines += self._gp_lines(lp)
         lines += self._autocor_lines(lp)                     # C04
+        lines += self._measurement_lines(lp)                 # C06
         scale = fam.scale_phrase
         same_group = " (same group)" if len(s.groups) == 1 else (" (same group effects)" if s.groups else "")
         for cat in s.categoricals:
@@ -1725,6 +2005,21 @@ class Model:
                           "on the scaled input)",
                           f"  {roles['zgp']}[j] ~ Normal(0, 1)   (brms's zgp)"]
         lines += self._autocor_prior_lines()                 # C04: ar and ma
+        if s.me_terms or s.mi_terms:                         # C06: an me() / mi() term's coefficient (brms bsp, class b)
+            from autobayes.default_priors import brms_rename
+
+            means, sds = pr.me_priors(s, "meanme"), pr.me_priors(s, "sdme")
+            for t in (*s.me_terms, *s.mi_terms):
+                lines += [f"  b_{t.name} ~ {describe_prior(coef[t.name])}   (brms's bsp_{brms_rename(t.name)}: class b, coefficient "
+                          f"{brms_rename(t.name)})"]
+            for x, roles in self.me_names.items():
+                lines += [f"  {roles['mean']} ~ {describe_prior(means[x])}   (brms class meanme, coefficient me{x})",
+                          f"  {roles['sd']} ~ {describe_prior(sds[x], lb=0)}   (brms class sdme, coefficient me{x}"
+                          + ("; Flat() is flat on the positive half line" if sds[x].name == "Flat" else "") + ")",
+                          f"  {roles['z']}_i ~ Normal(0, 1) for each row (brms's zme)"]
+            for col, roles in self.missing_names.items():
+                lines += [f"  {roles['values']}: flat, no prior of its own (brms's Ymi); informed by the formula of {col} and by every "
+                          "formula that reads it"]
         if fam.per_category:
             lines += [f"  (one prior per class, the same for every non-reference category k = {', '.join(self.categories[1:])})"]
         for (g, c), prior in pr.sd_priors(s).items():
@@ -1795,6 +2090,16 @@ class Model:
             roles[f"{gn['lscale']}_log__"] = f"log({gn['lscale']}), the length-scale of gp({g.column}) on the scaled input (brms's lscale)"
             roles[gn["zgp"]] = (f"{gn['zgp']}[1..{g.size}], the standardised values of gp({g.column}), one per "
                                 f"{'basis function' if g.approximate else 'distinct input'} (brms's zgp); dims {gn['coordinate']}")
+        for t in (*s.me_terms, *s.mi_terms):                  # C06: the coefficient of each me() / mi() term, me()'s latent values
+            roles[t.name] = f"b_{t.name}, the {'measurement-error' if t.kind == 'measurement_error' else 'missing-value'} term's coefficient (brms's bsp)"
+        for x, me in self.me_names.items():
+            roles[me["mean"]] = f"meanme_{x}, the location of the latent values of {x} (brms's meanme)"
+            roles[f"{me['sd']}_log__"] = f"log(sdme_{x}), the scale of the latent values of {x} (brms's sdme)"
+            roles[me["z"]] = f"zme_{x}[0..{d.n - 1}], the standardised latent values of {x} (brms's zme); dims __obs__"
+        for col, mi in self.missing_names.items():
+            rows = d.missing[col].index.tolist()
+            roles[mi["values"]] = (f"Ymi_{col}[{', '.join(map(str, rows[:6]))}{', ...' if len(rows) > 6 else ''}], the missing values of {col} "
+                                   f"(brms's Ymi; flat); dims {mi['coordinate']}, coordinates the missing rows (0-based)")
         for t in s.pop_terms:
             if t.is_vector:
                 shown = ", ".join(f"({l})" for l in t.levels) if len(t.categorical) == 2 else ", ".join(t.levels)   # cells read (l, m)
@@ -1811,8 +2116,46 @@ class Model:
         lines.append("Deterministic: " + "".join(f"{names['group_effect']} = {effect(g) if c == 'Intercept' else slope_effect(g, c)}, "
                                                  for (g, c), names in self.group_coefficient_names.items())
                      + "".join(f"{names['cor']} = Cor_{g} = L_{g} L_{g}^T, " for g, names in self.correlation_names.items()) + fam.deterministic_note
-                     + "".join(f"; {dn['value']} = exp(eta_{name}), one {name} per row (B01)" for name, dn in self.dpar_names.items()))
+                     + "".join(f"; {dn['value']} = exp(eta_{name}), one {name} per row (B01)" for name, dn in self.dpar_names.items())
+                     + "".join(f"; {me['latent']} = meanme_{x} + sdme_{x} * zme_{x}, one per row (brms's Xme)" for x, me in self.me_names.items()))
         return "\n".join(lines)
+
+    def _measurement_data_lines(self) -> list[str]:
+        """``describe()``'s data lines of the ``me()`` and ``mi()`` terms and of the response's own missing values (C06)."""
+        s, d, out = self.spec, self.design, []
+        for x, block in d.measurement_error.items():
+            out += [f"  {block.term:<10}: the predictor {x!r} measured with known noise (brms me()): noisy values {block.Xn.min():.4f} to "
+                    f"{block.Xn.max():.4f}, known standard deviations {block.noise_column!r} {block.noise.min():.4f} to "
+                    f"{block.noise.max():.4f} over the {d.n} fitted rows (brms's Xn and noise)"]
+        for col, block in d.missing.items():
+            rows = block.index.tolist()
+            where = (f"{len(rows)} missing row(s) (0-based {rows[:10]}{'...' if len(rows) > 10 else ''}; brms's Jmi is 1-based)"
+                     if rows else "no missing row")
+            if col == s.response:
+                out += [f"  {col} | mi() : the response's {where}: their values are the parameters Ymi_{col} (brms's Ymi), and the "
+                        f"likelihood is evaluated at the observed and imputed values together (brms's Yl_{col})"]
+            else:
+                out += [f"  mi({col})   : the column {col!r}, {where}: there its values are the parameters Ymi_{col}, which the formula "
+                        f"of {col} imputes in the same multivariate model; elsewhere its observed values"]
+        return out
+
+    def _measurement_lines(self, lp: str) -> list[str]:
+        """``describe()``'s paragraph of the ``me()`` and ``mi()`` terms (C06): the latent values and the measurement model, what
+        the coefficient means, and that neither term is centred."""
+        out = []
+        for t in self.spec.me_terms:
+            x, sdx = t.operands
+            me = self.me_names[x]
+            out += [f"  Xme_{x},i = meanme_{x} + sdme_{x} * zme_{x},i, zme_{x},i ~ Normal(0, 1): the latent (true) value of {x} in row i "
+                    f"(brms's Xme), and {x}_i ~ Normal(Xme_{x},i, {sdx}_i), the noisy value observed with the known standard deviation "
+                    f"{sdx}_i (PyMC's observed {me['noisy']}).",
+                    f"  b_{t.name} (brms's bsp) is the change of {lp} per unit of the latent {x}, not of the noisy one; {t.name} is not "
+                    f"centred (brms does not centre it either): the intercept refers to rows whose latent {x} is 0."]
+        for t in self.spec.mi_terms:
+            col = t.operands[0]
+            out += [f"  {col}_i is the observed value of {col}, or at a missing row the parameter Ymi_{col} (brms's Yl_{col}): b_{t.name} "
+                    f"(brms's bsp) is the change of {lp} per unit of {col}; {t.name} is not centred (brms does not centre it either)."]
+        return out
 
     def _monotonic_lines(self, lp: str) -> list[str]:
         """``describe()``'s paragraph of the monotonic terms (B03): ``mo()`` written out, what the coefficient and the simplex
@@ -1920,6 +2263,8 @@ class Model:
         """``describe()``'s data lines for the response addition terms (B02, docs/addition-terms.md)."""
         d, out = self.design, []
         for a in self.spec.additions:
+            if a.kind == "mi":                               # C06: the response's missing rows, _measurement_data_lines
+                continue
             if a.kind == "weights":
                 out += [f"  weights   : {a.column}, each fitted row's log likelihood multiplied by its weight (brms weights()); weights "
                         f"{d.weights.min():.4f} to {d.weights.max():.4f}, sum {d.weights.sum():.4f} over {d.n} rows; the priors are not "
@@ -1940,6 +2285,11 @@ class Model:
         """The likelihood paragraph's lines for the response addition terms (B02)."""
         out = []
         for a in self.spec.additions:
+            if a.kind == "mi":                               # C06: the likelihood at the observed and imputed values
+                out += [f"  mi(): the likelihood is evaluated at {self.spec.response}'s observed values and, at its missing rows, the parameters "
+                        f"{self.missing_names[self.spec.response]['values'] if self.spec.response in self.missing_names else '(none missing)'} "
+                        "(brms's Yl)"]
+                continue
             if a.kind == "weights":
                 out += [f"  weights(): the log likelihood is sum_i w_i log p(y_i | ...), w_i the {a.column} of row i (brms's weights[n] *)"]
             elif a.kind == "cens":
@@ -1968,6 +2318,7 @@ class Model:
         found += [(f"sdgp:{c}", v) for c, v in pr.sdgp_priors(s).items()]          # a Gaussian process's SD and length-scale (C03)
         found += [(f"lscale:{c}", v) for c, v in pr.lscale_priors(s).items()]
         found += list(pr.autocor_priors(s).items())                                  # an ARMA term's ar and ma (C04)
+        found += [(f"{cls}:{x}", v) for cls in ("meanme", "sdme") for x, v in pr.me_priors(s, cls).items()]   # me() (C06)
         if fam.scale_parameter in s.dpar_names:              # its own formula's priors (B01)
             ds, sub = s.dpar(fam.scale_parameter), pr.dpar_priors(s, fam.scale_parameter)
             found += [(f"{ds.response}:intercept", sub.intercept)] if ds.intercept else []

@@ -61,7 +61,7 @@ GAUSSIAN = FamilySpec(
     deterministic_note="mu = linear predictor",
     default_prior_link="identity",                                  # brms reads y as given: student_t(3, round(median(y), 1), max(2.5, round(mad(y), 1)))
     default_scale_prior=lambda scale: HalfStudentT(3, scale),       # brms sigma: student_t(3, 0, scale), lb 0
-    addition_terms=frozenset({"weights", "cens", "trunc"}),         # B02: weights(); cens() and trunc() since P6 (two references, D24, D25)
+    addition_terms=frozenset({"weights", "cens", "trunc", "mi"}),   # B02: weights(); cens() and trunc() since P6 (two references, D24, D25); mi() (C06)
     tails=_tails,
     distributional_link="log",                                      # B01: sigma ~ z, brms's log link
     default_distributional_intercept=lambda scale: StudentT(3, 0, scale),   # brms Intercept_sigma: student_t(3, 0, scale of log y)
@@ -70,4 +70,6 @@ GAUSSIAN = FamilySpec(
     multivariate=True,                                              # C01: mvbind(y, y2) ~ ..., verified against gauss_mv_rescor and gauss_mv_norescor
     nonlinear_likelihood=_nonlinear_likelihood,                     # C02: nl = TRUE, verified against gauss_nonlinear_exp and _terms
     autocorrelation=True,                                           # C04: ar(), ma(), arma(), verified against gauss_ar1, gauss_arma11
+    measurement_error=True,                                         # C06: me(x, sdx), verified against gauss_me
+    missing_values=True,                                            # C06: mi(col) with col | mi() ~ ..., verified against gauss_mi
 )

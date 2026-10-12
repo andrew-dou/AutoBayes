@@ -57,6 +57,15 @@ _MIN_TAIL = 5                    # a Pareto tail of fewer draws is not fitted: r
 _MIN_CHAIN_DRAWS = 4             # chains shorter than this have no relative efficiency: r_eff = 1
 
 
+def _refuse_measurement(model, what: str) -> None:
+    """C06: ``what`` is not verified for a model with ``me()``, ``mi()`` or missing response values (brms's log_lik() of such
+    a model leaves out the noisy values' and the imputed values' densities, which no frozen case checks here; divergence D74)."""
+    specs = [sub.spec for sub in model.submodels.values()] if getattr(model, "responses", None) else [model.spec]
+    if any(getattr(s, "me_terms", ()) or getattr(s, "mi_terms", ()) or getattr(s, "missing_columns", ()) for s in specs):
+        raise ValueError(f"{what} of a model with me() or mi() is not offered in this slice (docs/missing-and-measurement-error.md, "
+                         "divergence D74)")
+
+
 def log_lik(model, fit_result) -> xr.DataArray:
     """brms's ``log_lik()``: the log density of each fitted row's response at each posterior draw, ``(chain, draw,
     __obs__)``, times the row's weight under ``weights()``. ``fit_result`` is a ``FitResult`` or its ``InferenceData``
@@ -64,6 +73,7 @@ def log_lik(model, fit_result) -> xr.DataArray:
     from autobayes.families import family_of
     from autobayes.predict import _with_dpars, predict
 
+    _refuse_measurement(model, "log_lik()")
     fam = family_of(model)
     if fam.log_likelihood is None:
         raise ValueError(f"log_lik() is not offered for the {model.family} family")
@@ -94,6 +104,7 @@ def bayes_R2(model, fit_result) -> xr.DataArray:
     from autobayes.families import family_of
     from autobayes.predict import predict
 
+    _refuse_measurement(model, "bayes_R2()")
     fam = family_of(model)
     if fam.per_category:
         raise ValueError(f"bayes_R2() is not defined for the {model.family} family's unordered categories (brms: \"'bayes_R2' is "

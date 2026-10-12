@@ -285,6 +285,13 @@ class Priors:
     ``ar`` and ``ma`` are the priors of an autocorrelation term's coefficients (C04, ``ar()``, ``ma()``, ``arma()``;
     docs/autocorrelation.md): one location prior for every entry of the vector (brms's classes ``ar`` and ``ma``,
     unbounded; flat by default, ``Flat()``), required exactly for the parts the term has and refused for every other model.
+
+    A measurement-error term ``me(x, sdx)`` (C06, docs/missing-and-measurement-error.md) has a coefficient of class ``b``
+    (brms's ``bsp``, coefficient ``mexsdx``), covered by ``b`` under the term's name, and its latent values a location and a
+    scale, ``meanme`` (a location prior) and ``sdme`` (a positive-support prior, or ``Flat()``, brms's default, flat on the
+    positive half line), each keyed by the noisy column (``meanme={"x": Normal(0, 2)}``, brms ``class = meanme, coef = mex``)
+    or bare for the model's one ``me()`` term; refused without one. A missing-value term ``mi(col)`` has a coefficient of
+    class ``b`` (brms's ``bsp``, coefficient ``micol``) and nothing else: the missing values have brms's flat prior.
     """
 
     intercept: Prior | None = None
@@ -312,6 +319,10 @@ class Priors:
     nlpars: Mapping[str, Mapping[str, object]] | None = None   # each non-linear parameter's {"b": ..., "sd": ...} (brms's nlpar =; C02)
     ar: Prior | None = None          # an autocorrelation term's autoregressive coefficients (brms class ``ar``; C04)
     ma: Prior | None = None          # an autocorrelation term's moving-average coefficients (brms class ``ma``; C04)
+    # C06, a measurement-error term me(x, sdx) (docs/missing-and-measurement-error.md): the location and the scale of its latent
+    # values, by noisy column (brms classes ``meanme`` and ``sdme``, coefficient ``mex``); a single me() term takes the bare prior
+    meanme: Prior | Mapping[str, Prior] | None = None
+    sdme: Prior | Mapping[str, Prior] | None = None
 
     def __post_init__(self):
         if isinstance(self.components, list):                         # one value for equal component lists (C05)
@@ -367,7 +378,7 @@ class Priors:
             raise PriorError("ar and ma are the priors of an autocorrelation term ar(), ma(), arma() (docs/autocorrelation.md); a "
                              "multivariate model takes neither: an autocorrelation term in a multivariate formula is not supported "
                              "(divergence D70)")
-        top = [name for name in self._RESPONSE_CLASSES if getattr(self, name) is not None]
+        top = [name for name in (*self._RESPONSE_CLASSES, "meanme", "sdme") if getattr(self, name) is not None]   # me(): C06
         if top:
             raise PriorError(
                 f"a multivariate model takes its priors by response, as brms's resp: Priors(resp={{{', '.join(f'{r!r}: {{...}}' for r in responses)}}}"
@@ -709,6 +720,41 @@ class Priors:
             out[name] = prior
         return out
 
+    def me_priors(self, spec, cls: str) -> dict[str, Prior]:
+        """The prior of class ``cls`` (``"meanme"``, the location of a measurement-error term's latent values, or ``"sdme"``,
+        their scale; C06) of each ``me(x, sdx)`` term, keyed by its noisy column ``x`` in formula order: a location prior
+        (``meanme``), a positive-support prior or ``Flat()`` (``sdme``; brms's default is flat on the positive half line).
+        Coverage is exact; a single ``me()`` term also takes the bare prior; refused when the formula has none."""
+        terms = tuple(getattr(spec, "me_terms", ()))
+        columns = [t.operands[0] for t in terms]
+        given = getattr(self, cls)
+        what = "location" if cls == "meanme" else "scale"
+        if not terms:
+            if given is not None:
+                raise PriorError(f"the formula has no measurement-error term me(x, sdx); do not pass {cls} (the prior of the "
+                                 f"{what} of its latent values)")
+            return {}
+        if given is None:
+            raise PriorError(f"the measurement-error term(s) {[t.name for t in terms]} need a prior on the {what} of their latent "
+                             f"values: pass {cls}={{{', '.join(f'{c!r}: ...' for c in columns)}}} (brms class {cls}, whose default "
+                             "is flat: ab.default_priors() returns it, ab.Flat())")
+        if isinstance(given, Mapping):
+            if set(given) != set(columns):
+                raise PriorError(f"{cls} must cover exactly the noisy columns of the measurement-error terms {columns}; got {list(given)}")
+            by_column = {c: given[c] for c in columns}
+        else:
+            if len(columns) != 1:
+                raise PriorError(f"several measurement-error terms need an exact-key {cls} mapping over {columns}")
+            by_column = {columns[0]: given}
+        allowed = _LOCATION if cls == "meanme" else _SCALE | {"Flat"}
+        for c, prior in by_column.items():
+            if not isinstance(prior, Prior):
+                raise PriorError(f"prior for '{cls}:{c}' must be a Prior, got {type(prior).__name__}")
+            if prior.name not in allowed:
+                kind = "a location prior" if cls == "meanme" else "a positive-support prior or Flat() (flat on the positive half line)"
+                raise PriorError(f"prior for '{cls}:{c}' must be {kind} ({sorted(allowed)}), got {prior}")
+        return by_column
+
     def dpar_priors(self, spec, name: str) -> "Priors":
         """The priors of distributional parameter ``name``'s own formula (B01, ``spec.dpar(name)``) as a ``Priors`` with
         ``intercept`` and ``b`` only, read from ``Priors(<name>={"intercept": ..., "b": ...})``, so that the response
@@ -765,6 +811,8 @@ class Priors:
         out += [name for name, p in self.autocor_priors(spec).items() if p.name == "Flat"]   # an ARMA term's ar / ma (C04)
         for name in getattr(spec, "dpar_names", ()):                  # a distributional parameter's formula (B01): sigma:b:zq
             out += [f"{name}:{label}" for label in self.dpar_priors(spec, name).improper(spec.dpar(name))]
+        for cls in ("meanme", "sdme"):                                 # a measurement-error term's latent values (C06)
+            out += [f"{cls}:{c}" for c, p in self.me_priors(spec, cls).items() if p.name == "Flat"]
         return out
 
     def group_priors(self, spec) -> dict[str, Prior]:
@@ -803,6 +851,8 @@ class Priors:
         self.simo_priors(spec)                                        # and of the monotonic terms' simplexes (B03)
         self.sdgp_priors(spec)                                        # and of the Gaussian processes' SDs and length-scales (C03)
         self.lscale_priors(spec)
+        self.me_priors(spec, "meanme")                                # and of the measurement-error terms' latent values (C06)
+        self.me_priors(spec, "sdme")
         scale = fam.scale_parameter                                   # "sigma", "shape", "phi" or None
         zero = fam.zero_parameter                                     # "zi", "hu" or None (B06)
         auxiliary = {name: getattr(self, name) for name in AUXILIARY}
@@ -936,7 +986,7 @@ class Priors:
 
         form = ("Priors(components=[ab.Priors(intercept=..., b=..., sigma=...), ...], theta=ab.Dirichlet(...)), one Priors per "
                 "component (brms's dpar = mu<k> and class sigma<k>; docs/mixtures.md)")
-        top = [name for name in ("intercept", "b", "sd", "sigma", "shape", "phi", "cor", "nu", "zi", "hu", "simo")
+        top = [name for name in ("intercept", "b", "sd", "sigma", "shape", "phi", "cor", "nu", "zi", "hu", "simo", "meanme", "sdme")
                if getattr(self, name) is not None]
         if top:
             raise PriorError(f"a mixture's priors are per component, {form}; {top} at the top level do not apply")

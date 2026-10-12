@@ -124,6 +124,9 @@ also reads `"left"`, `"none"`, `"right"` and `TRUE` / `FALSE`); per-row truncati
 only; `Inf` / `-Inf` mark an open side); `trunc()` without a finite bound; `lb >= ub`; responses outside the bounds (as
 brms); `cens()` and `trunc()` for a family other than the Gaussian.
 
+The addition term `mi()` (C06, `x | mi() ~ ...`: the response's missing values are parameters) is parsed here too and taken
+in a multivariate list of formulas only, alone on the left-hand side (docs/missing-and-measurement-error.md, divergence D72).
+
 ## Evidence
 
 Oracle cases (gates G1-G6 against frozen brms fixtures): `gauss_weighted`, and one weighted case per family frozen for

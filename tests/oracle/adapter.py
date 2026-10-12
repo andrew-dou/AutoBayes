@@ -65,6 +65,15 @@ and time columns as R's `order()` sorts them, requires brms's `Y` to be the resp
 standata array back in data order, so that every matcher compares rows by content as for any other model; `J_lag` stays
 on brms's rows and `check_autocor_design` checks it, `Kar` and `Kma`, and each Stan row's series and position against the
 model's series. brms's `ar` and `ma` (`vector[Kar]`, `vector[Kma]`, unbounded) are the model's `ar` and `ma`.
+
+C06: an `me(x, sdx)` or `mi(col)` term is one of brms's special terms (`Ksp`); the adapter maps `bsp[1]` to the model's one such
+term (`ColumnMap.special`, `match_special`; brms's order of several is not verified here). An `me()` term is brms's
+measurement-error group 1, whose `Xn_1` and `noise_1` are matched by content to `Design.measurement_error` and whose `meanme_1`,
+`sdme_1` (log scale) and `zme_1` (one per row) map to `meanme_x`, `sdme_x_log__` and `zme_x` (`ColumnMap.measurement`). A
+response's missing values, brms's `Ymi_<col>` (`Y` holds Inf at the 1-based rows `Jmi`), map to the model's `Ymi_<col>`, one
+variable of the multivariate graph shared by the responses that hold it; `ResponseView` shows a response's `Ksp_y`, `bsp_y`,
+`Jmi_xm`, `Nmi_xm`, `lbmi_xm`, `ubmi_xm` and `Ymi_xm` under brms's univariate names, and the multivariate point and draws carry
+`Ymi_<col>` at the top level.
 """
 from __future__ import annotations
 
@@ -126,7 +135,9 @@ def priors_from_spec(spec: dict) -> ab.Priors:
                      theta=_prior(spec.get("theta")),
                      sdgp=_prior(spec.get("sdgp")), lscale=_prior(spec.get("lscale")),   # C03: {column: [...]} or one prior
                      nlpars=_prior(spec.get("nlpars")),                                 # C02: {nlpar: {"b": ..., "sd": ...}}
-                     ar=_prior(spec.get("ar")), ma=_prior(spec.get("ma")))
+                     ar=_prior(spec.get("ar")), ma=_prior(spec.get("ma")),
+                     # C06: a measurement-error term's latent values, {"meanme": [...], "sdme": [...]} (bare, or by column)
+                     meanme=_prior(spec.get("meanme")), sdme=_prior(spec.get("sdme")))
 
 
 def build_model(case: dict, data: pd.DataFrame) -> ab.Model:
@@ -165,6 +176,8 @@ class ColumnMap:
     gp: dict = None                       # C03: brms's GP number k (Xgp_k, sdgp_k, lscale_k, zgp_k) of each Gaussian process, by column
     nlpars: dict = None                   # C02: brms's X_<nlpar> column of each design column of each non-linear parameter, by name
     covariates: dict = None               # C02: brms's covariate number k (C_k) of each covariate of the non-linear formula, by name
+    special: tuple = ()                   # C06: the model's me() / mi() term, by name, as brms's bsp[1] (match_special)
+    measurement: dict = None              # C06: brms's measurement-error group k (Xn_k, meanme_k, sdme_k, zme_k) of each me() term, by noisy column
 
     def b_index(self, x_col: int) -> int:
         """Index into brms's ``b`` of design column ``x_col``."""
@@ -237,7 +250,7 @@ def match_columns(fixture: Fixture, model: ab.Model) -> ColumnMap:
         return match_mixture(fixture, model)
     if not fam.per_category:
         cmap = _with_distributional(fixture, model, _match_design(fixture, model, thresholds=fam.thresholds))
-        return replace(cmap, monotonic=match_monotonic(fixture, model), gp=match_gp(fixture, model))
+        return replace(cmap, monotonic=match_monotonic(fixture, model), gp=match_gp(fixture, model), **match_special(fixture, model))
     # B05, the categorical family: one brms design per non-reference category, each matched like X; all must map alike
     from autobayes.default_priors import brms_dpar_names
 
@@ -284,9 +297,11 @@ def match_monotonic(fixture: Fixture, model: ab.Model) -> dict[str, int]:
     AutoBayes monotonic term, and the reverse, are a mismatch."""
     sd, blocks = fixture.standata, model.design.monotonic
     brms = sorted(int(key[len("Xmo_"):]) for key in sd if key.startswith("Xmo_"))
+    special = len(getattr(model.spec, "me_terms", ())) + len(getattr(model.spec, "mi_terms", ()))   # C06: me() / mi() terms
     if not blocks:
-        if brms or "Ksp" in sd:
-            raise OracleMismatch(f"brms has special terms (Ksp, Xmo_{brms}); the AutoBayes model has no monotonic term")
+        if brms or ("Ksp" in sd and (not special or int(sd["Ksp"]) != special)) or (special and "Ksp" not in sd):
+            raise OracleMismatch(f"brms has special terms (Ksp, Xmo_{brms}); the AutoBayes model has no monotonic term"
+                                 + (f" and {special} me() / mi() term(s)" if special else ""))
         return {}
     counts = {"Ksp": int(sd["Ksp"]) if "Ksp" in sd else None, "Imo": int(sd["Imo"]) if "Imo" in sd else None, "Xmo_k": len(brms)}
     if any(v != len(blocks) for v in counts.values()):
@@ -338,6 +353,39 @@ def match_gp(fixture: Fixture, model: ab.Model) -> dict[str, int]:
         out[column] = k
         used.add(k)
     return out
+
+
+def match_special(fixture: Fixture, model: ab.Model) -> dict:
+    """C06: brms's special terms of the model's ``me()`` and ``mi()`` terms, as ``ColumnMap`` fields. brms's ``Ksp`` must be
+    their number and the adapter maps ``bsp[1]`` for one such term (brms's order of several is not verified here). An
+    ``me(x, sdx)`` term is brms's measurement-error group 1 (``Mme_1 = 1`` latent variable, ``NCme_1 = 0`` correlations),
+    whose noisy values ``Xn_1`` and known standard deviations ``noise_1`` must equal ``Design.measurement_error[x]`` row by
+    row; brms's measurement-error groups without an AutoBayes ``me()`` term, and the reverse, are a mismatch."""
+    sd, spec = fixture.standata, model.spec
+    terms = (*getattr(spec, "me_terms", ()), *getattr(spec, "mi_terms", ()))
+    groups = sorted(int(key[len("Mme_"):]) for key in sd if key.startswith("Mme_") and key[len("Mme_"):].isdigit())
+    if not terms:
+        if groups:
+            raise OracleMismatch(f"brms has measurement-error groups {groups}; the AutoBayes model has no me() term")
+        return {"special": (), "measurement": None}
+    if len(terms) != 1:
+        raise OracleMismatch(f"the AutoBayes model has the special terms {[t.name for t in terms]}; brms's order of several in bsp "
+                             "is not verified by this adapter")
+    if "Ksp" not in sd or int(sd["Ksp"]) != 1 or any(key.startswith("Xmo_") for key in sd):
+        raise OracleMismatch(f"brms has Ksp = {sd.get('Ksp')} special terms; the AutoBayes model has {terms[0].name!r} alone")
+    measurement = {}
+    for t in getattr(spec, "me_terms", ()):
+        x, block = t.operands[0], model.design.measurement_error[t.operands[0]]
+        if groups != [1] or int(sd["Mme_1"]) != 1 or int(sd.get("NCme_1", 0)) != 0:
+            raise OracleMismatch(f"brms's measurement-error groups {groups} (Mme_1 = {sd.get('Mme_1')}, NCme_1 = {sd.get('NCme_1')}) "
+                                 f"are not the one latent variable of {t.name!r}")
+        for key, mine in (("Xn_1", block.Xn), ("noise_1", block.noise)):
+            if key not in sd or sd[key].shape != mine.shape or abs_err(sd[key], mine) > DESIGN_ABS:
+                raise OracleMismatch(f"brms's {key} is not the {'noisy values' if key == 'Xn_1' else 'known noise'} of {t.name!r}")
+        measurement[x] = 1
+    if groups and not measurement:
+        raise OracleMismatch(f"brms has measurement-error groups {groups}; the AutoBayes model has no me() term")
+    return {"special": (terms[0].name,), "measurement": measurement or None}
 
 
 def _with_distributional(fixture: Fixture, model: ab.Model, cmap: ColumnMap) -> ColumnMap:
@@ -509,7 +557,10 @@ def natural_point(model: ab.Model, point: Point, cmap: ColumnMap, gmap: GroupMap
     term's coefficients, brms's vectors of those names (C04)."""
     if is_multivariate(model):                                 # C01: each response's arguments from its view of the point, and Lrescor
         return {"resp": {r: natural_point(sub, cmap.views[r].point(point), cmap.maps[r], gmap.maps[r]) for r, sub in model.submodels.items()},
-                **({"Lrescor": np.atleast_2d(point.pars["Lrescor"])} if model.rescor else {})}
+                **({"Lrescor": np.atleast_2d(point.pars["Lrescor"])} if model.rescor else {}),
+                # C06: the model's missing values, brms's Ymi_<col>, shared by the responses that hold them
+                **({"Ymi": {c: np.atleast_1d(point.pars[f"Ymi_{c}"]).astype(float) for c in model.missing_names}}
+                   if getattr(model, "missing_names", {}) else {})}
     pars = point.pars
     intercept = None
     if cmap.dpars:                                             # B05, categorical: one column of b and one intercept per category
@@ -570,8 +621,15 @@ def natural_point(model: ab.Model, point: Point, cmap: ColumnMap, gmap: GroupMap
         lscale = {c: float(np.ravel(pars[f"lscale_{k}"])[0]) for c, k in cmap.gp.items()}
         zgp = {c: np.ravel(pars[f"zgp_{k}"]).astype(float) for c, k in cmap.gp.items()}
     ar, ma = (np.atleast_1d(pars[part]).astype(float) if part in model.autocor_names else None for part in ("ar", "ma"))   # C04
+    special = {}
+    if cmap.special:                                       # C06: the me() / mi() term's coefficient, brms's bsp[1], by its column
+        terms = {t.name: t for t in model.spec.pop_terms}
+        bsp = {terms[name].operands[0]: float(np.atleast_1d(pars["bsp"])[k]) for k, name in enumerate(cmap.special)}
+    if cmap.measurement:                                   # C06: an me() term's meanme_k, sdme_k and zme_k, by noisy column
+        special = {cls: {x: (np.atleast_1d(pars[f"{cls}_{k}"]).astype(float) if cls == "zme" else float(np.atleast_1d(pars[f"{cls}_{k}"])[0]))
+                         for x, k in cmap.measurement.items()} for cls in ("meanme", "sdme", "zme")}
     return dict(intercept=intercept, b=b, sd=sd or None, z=z or None, L=L or None, sigma=sigma, shape=shape, phi=phi, nu=nu,
-                zi=zi, hu=hu, bsp=bsp, simo=simo, theta=theta, sdgp=sdgp, lscale=lscale, zgp=zgp, ar=ar, ma=ma)
+                zi=zi, hu=hu, bsp=bsp, simo=simo, theta=theta, sdgp=sdgp, lscale=lscale, zgp=zgp, ar=ar, ma=ma, **special)
 
 
 def value_point(model: ab.Model, point: Point, cmap: ColumnMap, gmap: GroupMap) -> dict:
@@ -673,6 +731,27 @@ def coordinate_map(fixture: Fixture, model: ab.Model, cmap: ColumnMap, gmap: Gro
                 target, expect = (term, 0 if j is None else j), "identity"
         elif par == "Intercept":
             target, expect = (names["intercept"], 0), "identity"
+        elif par == "bsp" and cmap.special:                    # C06: the coefficient of the model's me() / mi() term
+            if elem >= len(cmap.special):
+                raise OracleMismatch(f"bsp[{elem + 1}] is not the coefficient of an me() or mi() term of the AutoBayes model")
+            target, expect = (cmap.special[elem], 0), "identity"
+        elif par.startswith(("meanme_", "sdme_", "zme_")) and par.rsplit("_", 1)[1].isdigit():   # C06: an me() term's latent values
+            cls, k = par.rsplit("_", 1)
+            x = next((x for x, kk in (cmap.measurement or {}).items() if kk == int(k)), None)
+            if x is None:
+                raise OracleMismatch(f"{par} belongs to brms's measurement-error group {k}, which no me() term of the AutoBayes model is")
+            roles = model.me_names[x]
+            if cls == "zme":
+                target, expect = (roles["z"], elem), "identity"
+            elif elem != 0:
+                raise OracleMismatch(f"{par}[{elem + 1}]: the AutoBayes me() term has one latent variable")
+            else:
+                target, expect = ((roles["mean"], 0), "identity") if cls == "meanme" else ((f"{roles['sd']}_log__", 0), "log")
+        elif par == "Ymi":                                     # C06: the response's own missing values (brms's Ymi_<response>)
+            roles = getattr(model, "missing_names", {}).get(model.spec.response)
+            if roles is None:
+                raise OracleMismatch(f"brms samples missing values of {model.spec.response!r}; the AutoBayes model holds none")
+            target, expect = (roles["values"], elem), "identity"
         elif par == "bsp":                                     # B03: the coefficient of brms's special term elem + 1, a monotonic term
             if elem + 1 not in by_k:
                 raise OracleMismatch(f"bsp[{elem + 1}] is not the coefficient of a monotonic term of the AutoBayes model")
@@ -854,6 +933,14 @@ def draws(fixture: Fixture, model: ab.Model, cmap: ColumnMap, gmap: GroupMap) ->
         zs = np.stack([np.ravel(p.pars[f"zgp_{k}"]).astype(float) for p in pts])
         data[roles["zgp"]] = (("chain", "draw", roles["coordinate"]), zs[None])
         coords[roles["coordinate"]] = [str(j) for j in range(1, zs.shape[1] + 1)]
+    for k, name in enumerate(cmap.special or ()):               # C06: the me() / mi() term's coefficient, brms's bsp[1]
+        data[name] = (("chain", "draw"), np.array([float(np.atleast_1d(p.pars["bsp"])[k]) for p in pts])[None, :])
+    for x, k in (cmap.measurement or {}).items():               # C06: an me() term's meanme_k, sdme_k and zme_k
+        roles = model.me_names[x]
+        for cls, key in (("meanme", "mean"), ("sdme", "sd")):
+            data[roles[key]] = (("chain", "draw"), np.array([float(np.atleast_1d(p.pars[f"{cls}_{k}"])[0]) for p in pts])[None, :])
+        data[roles["z"]] = (("chain", "draw", "__obs__"), np.stack([np.atleast_1d(p.pars[f"zme_{k}"]) for p in pts])[None])
+        coords["__obs__"] = np.arange(model.design.n)
     for term in (t.name for t in model.spec.bambi_terms):       # the terms with design columns (a monotonic term has none)
         positions = [(c, j) for c, (_, t, j) in enumerate(model.coefficients) if t == term]
         if model.spec.is_vector_term(term):
@@ -958,8 +1045,11 @@ class ResponseView(Fixture):
         super().__init__(parent.raw)
         self.parent, self.response = parent, response
         r, groups = response, [g for g in parent.groups if g.get("resp") == response]
-        self.data_names = {f"{base}_{r}": base for base in ("N", "Y", "K", "Kc", "X", "offsets")}
-        self.par_names = {f"b_{r}": "b", f"Intercept_{r}": "Intercept", f"sigma_{r}": "sigma", f"b_{r}_Intercept": "b_Intercept"}
+        # C06: a response's special terms (Ksp_y, bsp_y: its mi() term) and its own missing values (Jmi_xm, Nmi_xm, lbmi_xm,
+        # ubmi_xm; Ymi_xm), under brms's univariate names
+        self.data_names = {f"{base}_{r}": base for base in ("N", "Y", "K", "Kc", "X", "offsets", "Ksp", "Jmi", "Nmi", "lbmi", "ubmi")}
+        self.par_names = {f"b_{r}": "b", f"Intercept_{r}": "Intercept", f"sigma_{r}": "sigma", f"b_{r}_Intercept": "b_Intercept",
+                          f"bsp_{r}": "bsp", f"Ymi_{r}": "Ymi"}
         for g in groups:
             m, cn = int(g["id"]), int(g["cn"])
             self.data_names.update({f"J_{m}_{r}": f"J_{m}", f"Z_{m}_{r}_{cn}": f"Z_{m}_{cn}", **{f"{k}_{m}": f"{k}_{m}" for k in ("N", "M", "NC")}})
@@ -1043,8 +1133,8 @@ def response_coordinate_map(fixture: Fixture, model, cmap: ResponseMaps, gmap: R
     graph's variables, and those of ``Lrescor``, brms's ``cholesky_factor_corr[nresp]``, which are Stan's ``cholesky_corr``
     coordinates recomputed from ``Lrescor`` at every point and checked against the fixture's ``u`` (as ``L_m``'s)."""
     out = []
-    for r, sub in model.submodels.items():
-        out += [(idx, model.variable(r, var), j) for idx, var, j in coordinate_map(cmap.views[r], sub, cmap.maps[r], gmap.maps[r])]
+    for r, sub in model.submodels.items():                     # C06: the missing values keep brms's name, Ymi_<col> (value_name)
+        out += [(idx, model.value_name(r, var), j) for idx, var, j in coordinate_map(cmap.views[r], sub, cmap.maps[r], gmap.maps[r])]
     k = 0
     for e in fixture.upars:
         if e["par"] != "Lrescor":
@@ -1078,6 +1168,11 @@ def response_draws(fixture: Fixture, model, cmap: ResponseMaps, gmap: ResponseMa
         post = draws(cmap.views[r], sub, cmap.maps[r], gmap.maps[r]).posterior
         parts.append(post.rename({v: model.variable(r, v) for v in post.data_vars}))
     post = xr.merge(parts)
+    for col, roles in getattr(model, "missing_names", {}).items():   # C06: the missing values, brms's Ymi_<col>, on their rows
+        rows = model.submodels[col].design.missing[col].index
+        post = post.assign({roles["values"]: (("chain", "draw", roles["coordinate"]),
+                                              np.stack([np.atleast_1d(p.pars[f"Ymi_{col}"]) for p in fixture.points])[None])})
+        post = post.assign_coords({roles["coordinate"]: rows})
     if model.rescor:
         L = np.stack([np.atleast_2d(p.pars["Lrescor"]) for p in fixture.points])
         dims = ("chain", "draw", RESPONSE_DIM, RESPONSE_DIM_T)

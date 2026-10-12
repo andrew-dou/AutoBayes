@@ -35,6 +35,11 @@ its linear predictor under ``kind="linear"`` (brms ``posterior_linpred(dpar = "s
 under ``kind="mean"`` (brms ``posterior_epred(dpar = "sigma")``, named ``sigma``). Its intercept draws are on the raw scale,
 as Bambi reports them after sampling.
 
+A model with an ``me(x, sdx)`` or ``mi(col)`` term (C06, docs/missing-and-measurement-error.md) is predicted in this layer: on
+the fitted rows the term adds its coefficient times the draws' latent values (brms's ``Xme``) or the column completed by the
+draws' missing values (brms's ``Yl``); on new rows an ``mi()`` column must be observed and an ``me()`` term is refused (brms draws
+the latent values of new rows; divergence D74).
+
 A finite mixture (C05, docs/mixtures.md) is predicted in this layer, population-level only: ``kind="linear"`` returns every
 component's linear predictor as ``eta`` with a ``component`` dimension (brms's ``posterior_linpred``), ``kind="mean"`` the
 mixture's expected response ``sum_k theta_k mu_k`` as ``mean`` (brms's ``posterior_epred``) and ``kind="response"`` draws, per
@@ -160,6 +165,38 @@ def autocor_predictor(model, post, eta: np.ndarray) -> np.ndarray:
     return arma_values(eta, model.design.y, coefficients.get("ar"), coefficients.get("ma"), model.design.autocor)
 
 
+def measurement_contribution(model, post, df: pd.DataFrame, *, in_sample: bool) -> np.ndarray | float:
+    """(chain, draw, row) draws of the ``me()`` and ``mi()`` terms' part of the linear predictor (C06,
+    docs/missing-and-measurement-error.md) on the rows of ``df``. On the fitted rows (``in_sample``) an ``me(x, sdx)`` term adds
+    its coefficient times the latent values ``meanme + sdme * zme`` of each draw (brms's ``Xme``), and an ``mi(col)`` term its
+    coefficient times the column, observed or, at a missing row, the draw's ``Ymi_col`` (brms's ``Yl``). On new rows an
+    ``mi(col)`` term reads the column, which must be observed (``_check_newdata``), and an ``me()`` term is refused: brms draws
+    the latent values of new rows (divergence D74). 0 without either term."""
+    out = 0.0
+    for t in getattr(model.spec, "me_terms", ()):
+        if not in_sample:
+            raise FormulaError(f"predict(newdata=...) of a model with {t.name!r} is not offered: brms draws the latent values of "
+                               "new rows, which no fixed rule reproduces; predict on the fitted rows (newdata=None) "
+                               "(docs/missing-and-measurement-error.md, divergence D74)")
+        roles = model.me_names[t.operands[0]]
+        latent = (post[roles["mean"]].transpose("chain", "draw").to_numpy()[..., None]
+                  + post[roles["sd"]].transpose("chain", "draw").to_numpy()[..., None]
+                  * post[roles["z"]].transpose("chain", "draw", ...).to_numpy())
+        out = out + post[roles["b"]].transpose("chain", "draw").to_numpy()[..., None] * latent
+    for t in getattr(model.spec, "mi_terms", ()):
+        col = t.operands[0]
+        coefficient = post[t.name].transpose("chain", "draw").to_numpy()[..., None]
+        if in_sample:
+            block, roles = model.design.missing[col], model.missing_names.get(col)
+            values = np.broadcast_to(block.filled, coefficient.shape[:2] + block.filled.shape).copy()
+            if roles is not None:
+                values[..., block.index] = post[roles["values"]].transpose("chain", "draw", roles["coordinate"]).to_numpy()
+        else:
+            values = df[col].to_numpy(dtype=float)
+        out = out + coefficient * values
+    return out
+
+
 def dpar_linear_predictor(model, post, df: pd.DataFrame, name: str) -> np.ndarray:
     """(chain, draw, row) draws of distributional parameter ``name``'s linear predictor (B01) on the rows of ``df`` (the
     fitted frame, or checked new rows): its raw-scale intercept draws plus its raw design times its coefficient draws, as
@@ -207,6 +244,15 @@ def _check_newdata(model, newdata: pd.DataFrame, *, need_trials: bool = False, i
                 if s.offset is not None and s.offset.column in missing else "")
         raise FormulaError(f"newdata lacks columns {missing}{hint}")
     df = newdata[cols].copy()
+    if getattr(s, "me_terms", ()):                               # C06: brms draws the latent values of new rows
+        raise FormulaError(f"predict(newdata=...) of a model with {s.me_terms[0].name!r} is not offered: brms draws the latent values "
+                           "of new rows, which no fixed rule reproduces; predict on the fitted rows (newdata=None) "
+                           "(docs/missing-and-measurement-error.md, divergence D74)")
+    for t in getattr(s, "mi_terms", ()):                         # C06: an mi() predictor is imputed on the fitted rows only
+        if df[t.operands[0]].isna().any():
+            raise FormulaError(f"newdata column {t.operands[0]!r}, read by {t.name!r}, has missing values: on new rows an mi() "
+                               "predictor must be observed (the model imputes the fitted rows only; "
+                               "docs/missing-and-measurement-error.md, divergence D74)")
     if df.isna().any().any():
         raise FormulaError("newdata contains missing values")
     categorical_names = {c.name for c in s.all_categoricals}
@@ -275,6 +321,7 @@ def _predict_by_hand(model, idata, df: pd.DataFrame | None, kind: str, seed, pol
     and posterior draw, all coefficients from that same level. In both cases every row with the same
     label shares that label's effects.
     """
+    in_sample = df is None                                      # the fitted rows: me() and mi() terms read their draws there (C06)
     if df is None:
         df = model.data
     post = idata.posterior
@@ -299,6 +346,7 @@ def _predict_by_hand(model, idata, df: pd.DataFrame | None, kind: str, seed, pol
         mu = mu + model.spec.offset.values(df)
     mu = mu + monotonic_contribution(model, post, df)           # the monotonic terms (B03), population-level as well
     mu = mu + gp_contribution(model, post, df)                  # the Gaussian processes (C03), population-level as well
+    mu = mu + measurement_contribution(model, post, df, in_sample=in_sample)   # the me() and mi() terms (C06)
     new_levels = {}
     for term in (model.spec.group_terms if include_group_effects else ()):
         g = term.factor
@@ -500,7 +548,8 @@ def predict(model, fit_result, *, newdata: pd.DataFrame | None = None, kind: str
               or bool(model.spec.dpars)                        # distributional formulas (B01): each row's own sigma is this layer's
               or bool(model.spec.mo_terms)                     # monotonic terms (B03): Bambi's predictions do not know them
               or bool(model.spec.gp_terms)                     # nor the Gaussian processes (C03)
-              or model.spec.autocor is not None)               # an autocorrelation term (C04): nor this one
+              or model.spec.autocor is not None                # an autocorrelation term (C04): nor this one
+              or bool(model.spec.me_terms) or bool(model.spec.mi_terms))   # nor the me() and mi() terms (C06)
     if dpar is not None:
         ds = _predict_dpar(model, idata, df, kind, dpar)
     elif fam.mixture:                                           # C05: every component's linear predictor, theta's mean and draws

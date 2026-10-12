@@ -62,6 +62,15 @@ def _monotonic_payload(model):
     return out
 
 
+def _measurement_payload(model):
+    """The target identity's entries of the me() terms (C06): each term's noisy values and known noise and the priors of its
+    latent values (its coefficient's prior is among the coefficients)."""
+    s, pr = model.spec, model.priors
+    means, sds = pr.me_priors(s, 'meanme'), pr.me_priors(s, 'sdme')
+    return [{'term': block.term, 'column': x, 'noise_column': block.noise_column, 'Xn': block.Xn, 'noise': block.noise,
+             'meanme': _prior(means[x]), 'sdme': _prior(sds[x])} for x, block in model.design.measurement_error.items()]
+
+
 def _mixture_payload(model):
     """The target identity's entry of a mixture (C05): its component families and identification, each component's
     priors (intercept, coefficients and sigma) and theta's prior with the concentrations it gives."""
@@ -118,7 +127,9 @@ def freeze_target(model):
                               if getattr(model, name) is not None},
         'formula': s.canonical_formula, 'link': model.link,
         'intercept': s.intercept, 'centered': d.centered,
-        'columns': d.columns, 'y': d.y, 'trials': d.trials,
+        # a response whose missing values are parameters (C06) enters with 0 at its missing rows, which 'missing' lists
+        'columns': d.columns, 'y': np.where(np.isnan(d.y), 0.0, d.y) if s.response in getattr(d, 'missing', {}) else d.y,
+        'trials': d.trials,
         'X_raw': d.X_raw, 'X_model': d.X_model, 'x_means': d.x_means,
         'categorical': [{'name': c.name, 'reference': c.reference, 'levels': c.levels,
                          'coefficients': c.coefficients, 'full_rank': c.full_rank}
@@ -149,6 +160,11 @@ def freeze_target(model):
         **({'gaussian_processes': _gp_payload(model)} if getattr(s, 'gp_terms', ()) else {}),
         # So does an autocorrelation term (C04): its series, positions and coefficient priors.
         **({'autocorrelation': _autocor_payload(model)} if getattr(s, 'autocor', None) is not None else {}),
+        # So do an me() term (C06): its noisy values, known noise and the priors of its latent values; and each column whose
+        # missing values are parameters (C06): its values with 0 at the missing rows, and those rows.
+        **({'measurement_error': _measurement_payload(model)} if getattr(d, 'measurement_error', {}) else {}),
+        **({'missing': [{'column': c, 'values': block.filled, 'index': block.index} for c, block in d.missing.items()]}
+           if getattr(d, 'missing', {}) else {}),
         'priors': {'intercept': prior(pr.intercept), 'sigma': prior(pr.sigma),
                    'coefficients': {} if mixture else {k: prior(v) for k,v in pr.coefficient_priors(s).items()},
                    'groups': {k: prior(v) for k,v in pr.group_priors(s).items()},

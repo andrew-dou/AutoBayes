@@ -168,7 +168,7 @@ on the same rows and right-hand side and assembles their graphs into one, with `
 replaced by brms's `multi_normal_cholesky` through the residual correlation's Cholesky factor `Lrescor` (LKJ prior, Stan's
 `cholesky_corr` coordinates) and with `rescor=False` independent; `predict()` adds a `response` dimension and draws each row's
 responses jointly. Verified against `gauss_mv_rescor`, `gauss_mv_norescor` and `gauss_mv_slopes` (categorical, interaction,
-offset, correlated slopes per response under brms's shared `cor` prior); a formula per response, `mi()`, `mo()`, `(1 |ID| g)`
+offset, correlated slopes per response under brms's shared `cor` prior); a formula per response (with `mi()`, C06 below), `mi()`, `mo()`, `(1 |ID| g)`
 across responses, other families and a missing `rescor` are refused (D56-D58; names D59); see
 [multivariate models](multivariate.md).
 
@@ -201,3 +201,13 @@ residuals, in data order, as brms's `posterior_linpred` does; new rows are refus
 `ab.loo` (C07) read the predictor with the term, as brms's do; `cov = TRUE`, `cosy()`, `car()`, `sar()`, `fcor()`,
 `unstr()`, other families, distributional formulas, addition terms, multivariate formulas, non-linear models, mixtures,
 `gp()` next to the term and new rows are refused (D68-D71); see [autocorrelation](autocorrelation.md).
+
+Missing values and measurement error (C06, brms's `mi()` and `me()`): a list of formulas, one per response,
+`ab.gaussian(["y ~ mi(xm) + w", "xm | mi() ~ w"], data, ab.Priors(resp={...}), rescor=False)`, makes the missing values (NaN) of
+`xm` parameters (`Ymi_xm`, flat), one variable shared by `xm`'s likelihood and `y`'s `mi(xm)` term (several `mi()` terms and
+acyclic chains of imputations are taken); `ab.gaussian("y ~ me(xobs, sdx)", data, ab.Priors(..., meanme=..., sdme=...))` gives a
+predictor observed with known noise latent values `meanme + sdme * zme` that the noisy values measure; `predict()` uses the
+draws' imputed and latent values on the fitted rows. Verified against `gauss_mi` and `gauss_me`; `mi()` without its column's
+formula, with `rescor=True`, in interactions, group-level or distributional formulas, and `me()` with `gr`, several `me()` terms,
+`me()` outside a univariate Gaussian formula, other families, new rows of an `me()` model and `log_lik()` / `loo()` /
+`bayes_R2()` of these models are refused (D72-D74; names D75); see [missing values and measurement error](missing-and-measurement-error.md).

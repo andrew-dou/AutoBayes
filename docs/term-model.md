@@ -19,6 +19,8 @@ One entry per term as written, in design order (main effects, then interactions)
 | `z:h` (A04) | `interaction` | `("z[q]:h[h2]", "z[q]:h[h3]", ...)`, first operand slowest | the cells `("q, h2", "q, h3", ...)`, Bambi's labels | `("z", "h")` |
 | `log(xpos)`, `I(x^2)` (A05, docs/transforms.md) | `transform` | `("log(xpos)",)`, the evaluated column named as written | `()` | `()` |
 | `mo(ord)` (B03, docs/monotonic.md) | `monotonic` | `()`: no column in `X`; its coefficient (brms's `bsp`) and simplex act through its own block | `()` | `()` |
+| `me(x, sdx)` (C06, docs/missing-and-measurement-error.md) | `measurement_error` | `()`: its coefficient (brms's `bsp`) multiplies the latent values of `x` | `()` | `()` |
+| `mi(col)` (C06) | `missing` | `()`: its coefficient (brms's `bsp`) multiplies `col` completed by its missing values | `()` | `()` |
 
 `term.operands` are the data columns the term is built from (`(x,)`, `(z,)`, `(x, z)`, `(x, w)`, `(z, h)`, and
 `(xpos,)` for `log(xpos)`); `term.categorical` names the operands declared categorical and `term.is_vector` (one
@@ -40,6 +42,12 @@ A monotonic term `mo(ord)` (B03) is a population-level term with a coefficient b
 `ModelSpec.monotonics` holds each one's coding (`Monotonic`: the column, its fitted range or ordered categories) once
 the data are seen, `Design.monotonic[ord]` its codes per fitted row and number of steps, and the model adds the term to
 the parent's linear predictor while Bambi builds it (docs/monotonic.md).
+`mo()`, `me(x, sdx)` and `mi(col)` are brms's special terms (`PopTerm.is_special`, `formula.SPECIAL_KINDS`): a coefficient and no
+design column, listed by `spec.coefficient_labels`, never by `spec.columns` or `spec.bambi_terms`. `me(x, sdx)` (C06) reads the
+noisy column and its known standard deviations (`term.operands == (x, sdx)`, `spec.me_terms`, `Design.measurement_error[x]`), and
+`mi(col)` a column whose missing values are parameters (`spec.mi_terms`; `spec.missing_columns` lists those columns and the
+response's own under the addition term `mi()`, `Design.missing[col]` holds their values and missing rows); the model adds both
+to the parent's linear predictor at build, as it adds `mo()` (docs/missing-and-measurement-error.md).
 
 ## Group-level terms: `GroupTerm(factor, coefs, correlated)`
 
@@ -89,7 +97,7 @@ dictionary never see it.
 
 brms's addition terms after `|` other than `trials()` (B02, docs/addition-terms.md) are data of the formula too, with no
 coefficient, prior or design column: `AdditionTerm(kind, column, lb, ub)` for `weights(col)`, `cens(col)` and
-`trunc(lb = a, ub = b)`, in the order written (`spec.addition(kind)` finds one; `term` is its canonical spelling, which
+`trunc(lb = a, ub = b)`, and `mi()` (C06: the response's missing values are parameters), in the order written (`spec.addition(kind)` finds one; `term` is its canonical spelling, which
 the canonical formula writes after `trials()`). `formula.addition_data(spec, frame)` gives brms's Stan data (`weights`,
 `cens`, `lb`, `ub`) and `Design` holds them on the fitted rows; the likelihood, not Bambi's formula, reads them.
 

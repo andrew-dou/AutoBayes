@@ -1163,11 +1163,26 @@
    "depends_on": [
     "C01_multivariate"
    ],
-   "status": "fixtures_frozen",
+   "status": "gates_green",
    "summary": "mi() and me() terms",
    "pr": null,
    "attempts": 0,
-   "gates": {},
+   "gates": {
+    "sha": "0021d266f913",
+    "dirty_tree": false,
+    "base": "parity/c01-multivariate",
+    "when": "2026-10-12T02:16Z",
+    "results": {
+     "immutability": {
+      "status": "pass",
+      "seconds": 0.0
+     },
+     "oracle": {
+      "status": "pass",
+      "seconds": 197.2
+     }
+    }
+   },
    "divergences": [],
    "next_action": "implementation awaits Andrew's Tier C go-ahead at the Tier B boundary",
    "fixtures": {

@@ -21,10 +21,18 @@ draws x rows x responses (a ``response`` dimension in the order written, brms's 
 array); ``kind="response"`` draws each row's responses jointly from the multivariate normal. ``fit()`` samples the
 assembled graph with PyMC's ``pm.sample`` (``sample_posterior``) and cleans the result as Bambi does.
 
-Refused, naming the construct: a formula per response (brms's ``bf(y ~ ...) + bf(y2 ~ ...)``), distributional formulas and
-addition terms (D56), ``mi()`` (C06, which builds on this module's per-response sub-models over one data frame), ``mo()``
-(not verified in a multivariate model; D56), correlated group effects across responses ``(1 |ID| g)`` (D57), families other
-than the Gaussian (``FamilySpec.multivariate``; D58), and a model without an explicit ``rescor`` (D58).
+Refused, naming the construct: a formula per response (brms's ``bf(y ~ ...) + bf(y2 ~ ...)``) without ``mi()``,
+distributional formulas and addition terms (D56), ``mi()`` in an ``mvbind()`` formula, ``mo()`` (not verified in a
+multivariate model; D56), correlated group effects across responses ``(1 |ID| g)`` (D57), families other than the Gaussian
+(``FamilySpec.multivariate``; D58), and a model without an explicit ``rescor`` (D58).
+
+Missing values (C06, docs/missing-and-measurement-error.md): brms's ``bf(y ~ mi(xm) + w) + bf(xm | mi() ~ w) +
+set_rescor(FALSE)`` is a list of formulas, one per response, ``ab.gaussian(["y ~ mi(xm) + w", "xm | mi() ~ w"], data,
+ab.Priors(resp={...}), rescor=False)``: the response ``xm`` has missing values (NaN), which are the parameters ``Ymi_xm``
+(brms's ``Ymi_xm``, flat), and ``mi(xm)`` reads the column completed by them (brms's ``Yl_xm``). Each response's model holds
+the missing values it reads; the assembled graph has one ``Ymi_xm``, by brms's name, shared by them. Refused: an ``mi()``
+term without its column's ``| mi()`` formula, with ``rescor=True``, in a cycle of imputations, ``me()`` in a multivariate
+model, and a response read by another formula other than through ``mi()`` (D72, D73).
 """
 from __future__ import annotations
 
@@ -40,7 +48,8 @@ import pandas as pd
 
 from autobayes.correlation import check_correlation_cholesky, cholesky_corr_free, cholesky_corr_rv, n_free
 from autobayes.families import FAMILIES, get_family
-from autobayes.formula import _GROUP_RE, _IDENT, MVBIND_RE, FormulaError, ModelSpec, _split_top_level, parse_formula
+from autobayes.formula import (_GROUP_RE, _IDENT, MI_CALL_RE, MVBIND_RE, FormulaError, ModelSpec, _split_top_level, check_imputation,
+                               parse_formula)
 from autobayes.priors import PriorError, Priors, describe_prior
 
 _MVBIND_FORMULA_RE = re.compile(r"^\s*mvbind\s*\(([^()]*)\)\s*([^~]*?)\s*~\s*(.*?)\s*$", re.S)   # mvbind(<responses>) <rest> ~ <rhs>
@@ -48,13 +57,17 @@ _MI_RE = re.compile(r"(?<![A-Za-z0-9_.])mi\s*\(")                               
 _MO_RE = re.compile(r"(?<![A-Za-z0-9_.])mo\s*\(")                                                 # brms's mo() (B03)
 _GP_RE = re.compile(r"(?<![A-Za-z0-9_.])gp\s*\(")                                                 # brms's gp() (C03)
 _AUTOCOR_RE = re.compile(r"(?<![A-Za-z0-9_.])(ar|ma|arma)\s*\(")                                     # brms's ARMA terms (C04)
+_ME_RE = re.compile(r"(?<![A-Za-z0-9_.])me\s*\(")                                                 # brms's me() (C06)
 RESPONSE_DIM, RESPONSE_DIM_T = "__resp__", "__resp_T__"     # the graph's response coordinates (Lrescor, rescor, the joint response)
 PREDICTION_DIM = "response"                                 # predict()'s response dimension, brms's last axis of its prediction arrays
 
 
 def is_multivariate_formula(formula) -> bool:
-    """Whether ``formula`` is brms's ``mvbind(y, y2) ~ ...`` (C01), alone or first in a list of formulas."""
+    """Whether ``formula`` is brms's ``mvbind(y, y2) ~ ...`` (C01), alone or first in a list of formulas, or a list of
+    formulas with ``mi()`` (C06: one formula per response, ``["y ~ mi(xm) + w", "xm | mi() ~ w"]``)."""
     if isinstance(formula, (list, tuple)) and formula:
+        if all(isinstance(f, str) for f in formula) and any(MI_CALL_RE.search(f) for f in formula):
+            return True
         formula = formula[0]
     return isinstance(formula, str) and MVBIND_RE.match(formula) is not None
 
@@ -78,19 +91,33 @@ class MultivariateSpec:
     rescor: bool
 
     @property
+    def separate(self) -> bool:
+        """A formula of its own per response (C06): ``formula`` is the list as written, ``rhs`` empty."""
+        return isinstance(self.formula, tuple)
+
+    @property
     def formulas(self) -> dict[str, str]:
         """Each response's own formula, ``{"y": "y ~ x + (1 | g)", ...}``, from which its univariate model is built."""
         return {r: self.specs[r].formula for r in self.responses}
 
     @property
     def canonical_formula(self) -> str:
-        """``mvbind(y, y2) ~ <the canonical right-hand side>``."""
+        """``mvbind(y, y2) ~ <the canonical right-hand side>``; a formula per response (C06) as brms writes it,
+        ``bf(y ~ mi(xm) + w) + bf(xm | mi() ~ w)``."""
+        if self.separate:
+            return " + ".join(f"bf({self.specs[r].canonical_formula})" for r in self.responses)
         return f"mvbind({', '.join(self.responses)}) ~ {self.specs[self.responses[0]].rhs}"
 
     @property
     def groups(self) -> tuple[str, ...]:
-        """The grouping factors of every response's formula (the same right-hand side, so the same factors)."""
-        return self.specs[self.responses[0]].groups
+        """The grouping factors of every response's formula (the same right-hand side, so the same factors; with a formula
+        per response, C06, every response's in the order met)."""
+        return tuple(dict.fromkeys(g for r in self.responses for g in self.specs[r].groups))
+
+    @property
+    def imputed(self) -> tuple[str, ...]:
+        """The responses whose missing values are parameters, ``col | mi() ~ ...`` (C06), in the order written."""
+        return tuple(r for r in self.responses if self.specs[r].addition("mi") is not None)
 
 
 def parse_multivariate(formula, data: pd.DataFrame | None = None, family: str = "gaussian", categorical=None, *,
@@ -102,6 +129,8 @@ def parse_multivariate(formula, data: pd.DataFrame | None = None, family: str = 
     if not fam.multivariate:
         raise FormulaError(f"a multivariate model (brms's mvbind() or mvbf()) is offered for the {', '.join(_offering()) or 'no'} family "
                            f"here; a multivariate {fam.name} model is not (docs/multivariate.md, divergence D58)")
+    if is_multivariate_formula(formula) and not isinstance(formula, str) and not MVBIND_RE.match(formula[0]):
+        return _parse_imputation(formula, data, family, categorical, rescor=rescor)      # C06: a formula per response, with mi()
     if not isinstance(formula, str):
         first = formula[0] if isinstance(formula, (list, tuple)) and formula else formula
         what = ("a distributional formula in a multivariate model (brms's bf(mvbind(y, y2) ~ ..., sigma ~ z))"
@@ -139,7 +168,9 @@ def parse_multivariate(formula, data: pd.DataFrame | None = None, family: str = 
     for piece in _split_top_level(rhs):
         if _MI_RE.search(piece):
             raise FormulaError(f"{formula!r}: {piece!r}: brms's mi() (missing values modelled by a response's own formula) is not "
-                               "part of this slice (feature C06; docs/multivariate.md, divergence D56)")
+                               "part of this slice (feature C06; docs/multivariate.md, divergence D56): not in an mvbind() formula, "
+                               "whose responses share one right-hand side; C06 takes it in a list of formulas, one per response, "
+                               "['y ~ mi(x) + w', 'x | mi() ~ w'] with rescor=False (docs/missing-and-measurement-error.md)")
         if _GP_RE.search(piece):
             raise FormulaError(f"{formula!r}: {piece!r}: a Gaussian process in a multivariate formula is not verified in this slice "
                                "(each response would have its own process, brms's sdgp_y and lscale_y); write it in a univariate "
@@ -148,6 +179,10 @@ def parse_multivariate(formula, data: pd.DataFrame | None = None, family: str = 
             raise FormulaError(f"{formula!r}: {piece!r}: an autocorrelation term in a multivariate formula is not verified in this "
                                "slice (brms gives each response its own ARMA term, ar_y and ar_y2, with J_lag_y and J_lag_y2); write it "
                                "in a univariate model (docs/autocorrelation.md, divergence D70)")
+        if _ME_RE.search(piece):
+            raise FormulaError(f"{formula!r}: {piece!r}: a measurement-error term in a multivariate model is not supported in this "
+                               "slice; me() belongs to a univariate Gaussian model here (docs/missing-and-measurement-error.md, "
+                               "divergence D73)")
         if _MO_RE.search(piece):
             raise FormulaError(f"{formula!r}: {piece!r}: a monotonic term in a multivariate formula is not verified in this slice (each "
                                "response would have its own coefficient and simplex, brms's bsp_y and simo_y); write it in a "
@@ -170,6 +205,116 @@ def parse_multivariate(formula, data: pd.DataFrame | None = None, family: str = 
                                "right-hand side every response shares")
         specs[r] = s
     return MultivariateSpec(formula.strip(), responses, rhs, MappingProxyType(specs), bool(rescor))
+
+
+IMPUTATION_FORM = ("a list of formulas, one per response, the formula of a response with missing values written 'x | mi() ~ ...' "
+                   "and read by another as mi(x): ab.gaussian(['y ~ mi(x) + w', 'x | mi() ~ w'], data, ab.Priors(resp={...}), "
+                   "rescor=False) (brms's bf(y ~ mi(x) + w) + bf(x | mi() ~ w) + set_rescor(FALSE); docs/missing-and-measurement-error.md)")
+
+
+def response_categorical(spec: MultivariateSpec, categorical) -> dict:
+    """Each response's declared categorical columns (C06): with one right-hand side (``mvbind()``) every response takes
+    ``categorical``; with a formula per response, each takes the declarations of its own main effects, and a declaration no
+    formula uses stays with the first, which refuses it as a univariate formula does."""
+    if not spec.separate or not isinstance(categorical, Mapping):
+        return {r: categorical for r in spec.responses}
+    mains = {r: {t.name for t in s.pop_terms if t.kind in ("numeric", "categorical")} for r, s in spec.specs.items()}
+    used = {k for m in mains.values() for k in m}
+    out = {r: {k: v for k, v in categorical.items() if k in mains[r]} or None for r in spec.responses}
+    stray = {k: v for k, v in categorical.items() if k not in used}
+    if stray:
+        first = spec.responses[0]
+        out[first] = {**(out[first] or {}), **stray}
+    return out
+
+
+def _parse_imputation(formulas, data, family, categorical, *, rescor) -> MultivariateSpec:
+    """A formula per response with brms's ``mi()`` (C06): each ``'<response> ~ <terms>'`` or ``'<response> | mi() ~ <terms>'``
+    parsed as the univariate formula it is (and validated against ``data``), the responses distinct, ``rescor=False``. Every
+    ``mi(col)`` term needs ``col``'s own formula with ``| mi()`` in the list (brms refuses it otherwise too); refused, naming the
+    construct: no ``mi()`` term (a formula per response alone, D56), ``rescor=True`` and imputations in a cycle (D72), ``me()``
+    (D73), ``mo()``, other addition terms (D56), and a response read by another formula other than through ``mi()``."""
+    texts = list(formulas)
+    if len(texts) < 2 or not all(isinstance(f, str) for f in texts):
+        raise FormulaError(f"{formulas!r}: {IMPUTATION_FORM}")
+    if any(MVBIND_RE.match(f) for f in texts):
+        raise FormulaError(f"{formulas!r}: mvbind() inside a list of formulas is not supported in this slice; {IMPUTATION_FORM}")
+    if rescor is None:
+        raise ValueError("a multivariate model needs rescor=True or rescor=False (divergence D58); a model with mi() takes rescor=False "
+                         "(brms's set_rescor(FALSE); docs/missing-and-measurement-error.md)")
+    if not isinstance(rescor, (bool, np.bool_)):
+        raise ValueError(f"rescor must be True or False, got {rescor!r}")
+    if rescor:
+        raise FormulaError(f"{formulas!r}: mi() with a residual correlation (rescor=True, brms's set_rescor(TRUE)) is not supported in "
+                           "this slice: brms would correlate the imputed values' residuals with the other responses'; pass "
+                           "rescor=False (docs/missing-and-measurement-error.md, divergence D72)")
+    specs0 = []
+    for text in texts:
+        try:
+            specs0.append(parse_formula(text, None, family, None))     # the structure, before the data and the declarations
+        except FormulaError as e:
+            raise FormulaError(f"{formulas!r}, the formula {text!r}: {e}") from None
+    responses = tuple(s.response for s in specs0)
+    dup = sorted({r for r in responses if responses.count(r) > 1})
+    if dup:
+        raise FormulaError(f"{formulas!r}: the response(s) {dup} have more than one formula; give each response one")
+    imputed = tuple(s.response for s in specs0 if s.addition("mi") is not None)
+    for s in specs0:
+        others = [a.term for a in s.additions if a.kind != "mi"]
+        if others or s.trials is not None:
+            raise FormulaError(f"{s.formula!r}: addition terms ({', '.join(others or ['trials()'])}) on a response of a multivariate model "
+                               "are not supported in this slice (docs/multivariate.md, divergence D56)")
+        if s.me_terms:
+            raise FormulaError(f"{s.formula!r}: a measurement-error term in a multivariate model is not supported in this slice; me() "
+                               "belongs to a univariate Gaussian model here (docs/missing-and-measurement-error.md, divergence D73)")
+        if s.mo_terms:
+            raise FormulaError(f"{s.formula!r}: a monotonic term in a multivariate model is not verified in this slice (docs/multivariate.md, "
+                               "divergence D56)")
+        for t in s.mi_terms:
+            col = t.operands[0]
+            if col not in responses:
+                raise FormulaError(f"{s.formula!r}: {t.name!r} reads {col!r}, which no formula of the list models; add its formula, "
+                                   f"'{col} | mi() ~ <terms>' (brms refuses an mi() term without it too; divergence D72)")
+            if col not in imputed:
+                raise FormulaError(f"{s.formula!r}: {t.name!r} reads {col!r}, whose formula must say that its missing values are "
+                                   f"parameters: write it '{col} | mi() ~ ...' (divergence D72)")
+        check_imputation(s, imputed)
+        columns = {*(c for t in s.pop_terms if t.kind != "missing" for c in t.operands), *(c for t in s.group_terms for c in t.operands),
+                   *([s.offset.column] if s.offset is not None else [])}       # what the formula reads other than through mi()
+        plain = sorted(columns & (set(responses) - {s.response}))
+        if plain:
+            raise FormulaError(f"{s.formula!r}: the response(s) {plain} of another formula are read here other than through mi(); "
+                               f"write mi({plain[0]}) to read {plain[0]!r} with its imputed values (docs/missing-and-measurement-error.md)")
+    if not any(s.mi_terms for s in specs0):
+        raise FormulaError(f"{formulas!r}: a formula of its own per response (brms's bf(y ~ ...) + bf(y2 ~ ...)) is not supported in this "
+                           "slice without mi(); a multivariate model is one formula, 'mvbind(y, y2) ~ <terms>', whose right-hand side every "
+                           f"response shares (docs/multivariate.md, divergence D56), or {IMPUTATION_FORM}")
+    reads = {s.response: [t.operands[0] for t in s.mi_terms] for s in specs0}
+    state: dict[str, int] = {}
+
+    def visit(r, path):                                       # depth-first search for a cycle of mi() reads
+        state[r] = 1
+        for c in reads[r]:
+            if state.get(c) == 1:
+                cycle = path[path.index(c):] + [c] if c in path else [r, c]
+                raise FormulaError(f"{formulas!r}: the imputations form a cycle ({' -> '.join(cycle)}): each formula reads the next "
+                                   "one's mi() column; this is not one joint model, and is refused (divergence D72)")
+            if state.get(c, 0) == 0:
+                visit(c, path + [c])
+        state[r] = 2
+
+    for r in responses:
+        if state.get(r, 0) == 0:
+            visit(r, [r])
+    spec0 = MultivariateSpec(tuple(t.strip() for t in texts), responses, "", MappingProxyType({s.response: s for s in specs0}), False)
+    cats = response_categorical(spec0, categorical)
+    specs = {}
+    for text, r in zip(texts, responses):
+        try:
+            specs[r] = parse_formula(text, data, family, cats[r])
+        except FormulaError as e:
+            raise FormulaError(f"{formulas!r}, the formula of the response {r!r} ({text!r}): {e}") from None
+    return replace(spec0, specs=MappingProxyType(specs))
 
 
 # -- the joint likelihood --------------------------------------------------------------------------------------
@@ -239,15 +384,18 @@ class MultivariateModel:
         self.responses: tuple[str, ...] = spec0.responses
         self.rescor = bool(rescor)
         self.center_predictors = bool(center_predictors)
+        cats = response_categorical(spec0, categorical)          # each response's declarations (C06: its own main effects')
         self.submodels = MappingProxyType({r: Model(spec0.formulas[r], data, priors.response_priors(r), family=family,
-                                                    center_predictors=center_predictors, categorical=categorical)
+                                                    center_predictors=center_predictors, categorical=cats[r], imputed=spec0.imputed)
                                            for r in self.responses})
         subs = list(self.submodels.values())
         if len({sub.design.n for sub in subs}) != 1 or any(len(sub.dropped_rows) for sub in subs):
             raise RuntimeError("the responses' models were fit to different rows")
         self.spec = MultivariateSpec(spec0.formula, spec0.responses, spec0.rhs,
                                      MappingProxyType({r: sub.spec for r, sub in self.submodels.items()}), self.rescor)
-        self.effective_center_predictors = subs[0].effective_center_predictors
+        # one right-hand side: the responses' centring; a formula per response (C06): the flag, which each response's table
+        # applies when its formula has an intercept
+        self.effective_center_predictors = self.center_predictors if self.spec.separate else subs[0].effective_center_predictors
         self.warnings: list[str] = list(dict.fromkeys(w for sub in subs for w in sub.warnings))
         self.design = MultivariateDesign(self.responses, np.column_stack([sub.design.y for sub in subs]),
                                          MappingProxyType({r: sub.design for r, sub in self.submodels.items()}))
@@ -266,6 +414,23 @@ class MultivariateModel:
         """The multivariate graph's name of a variable of ``response``'s univariate model: ``y_Intercept`` for its
         ``Intercept``, ``y_1|g_sigma`` for its ``1|g_sigma`` (value variables alike, ``y_sigma_log__``)."""
         return f"{response}_{name}"
+
+    def value_name(self, response: str, name: str) -> str:
+        """The graph's name of a value variable of ``response``'s model: ``variable(response, name)``, but the missing values
+        ``Ymi_<col>`` (C06) keep their name, one variable of the model shared by the responses that hold them."""
+        shared = {roles["values"] for roles in self.submodels[response].missing_names.values()}
+        return name if name in shared else self.variable(response, name)
+
+    @property
+    def missing_names(self) -> dict[str, dict[str, str]]:
+        """The missing values of the model (C06), by column: ``"values"`` the free variable ``Ymi_<col>`` (brms's
+        ``Ymi_<col>``, flat), ``"coordinate"`` its dimension, whose coordinates are the missing rows (0-based), and
+        ``"response"`` the response whose formula imputes the column (``<col> | mi() ~ ...``). Empty without one."""
+        out = {}
+        for r, sub in self.submodels.items():
+            for col, roles in sub.missing_names.items():
+                out.setdefault(col, {**roles, "response": col})
+        return out
 
     @property
     def observed_names(self) -> tuple[str, ...]:
@@ -316,15 +481,23 @@ class MultivariateModel:
         from pytensor.graph import FunctionGraph
 
         outputs, coords, lengths, aliases = [], {}, {}, []
+        shared, replaced = {}, []                            # C06: a column's missing values, one variable shared by the responses
         for r, sub in self.submodels.items():
             fg, _ = fgraph_from_model(sub.pymc_model, inlined_views=True)
             renamed = {}
+            missing = {roles["values"] for roles in sub.missing_names.values()}
             for out in fg.outputs:
                 op = out.owner.op
                 if isinstance(op, ModelObservedRV):
                     if self.rescor:                          # replaced by the joint likelihood
                         continue
                     renamed[out.name] = out.name             # the response's own likelihood keeps the response's name
+                elif out.name in missing:                    # Ymi_<col> keeps brms's name; the first response's variable is the model's
+                    renamed[out.name] = out.name
+                    if out.name in shared:
+                        replaced.append((out, shared[out.name]))
+                        continue
+                    shared[out.name] = out
                 else:
                     new = self.variable(r, out.name)
                     renamed[out.name] = new
@@ -354,6 +527,9 @@ class MultivariateModel:
         for old, new in aliases:                             # one dimension length per shared coordinate
             if old in merged.variables:
                 merged.replace(old, new, import_missing=True)
+        for old, new in replaced:                            # C06: one variable of the missing values of each column
+            if old in merged.variables:
+                merged.replace(old, new, import_missing=True)
         merged._coords, merged._dim_lengths = coords, lengths
         model = model_from_fgraph(merged, mutate_fgraph=True)
         if self.rescor:
@@ -375,7 +551,7 @@ class MultivariateModel:
         observed variables ``observed_names``, and with ``rescor=True`` ``Lrescor`` (free, ``K x K``, sampled on the
         ``K (K - 1) / 2`` cholesky_corr coordinates) and the deterministic ``rescor``, each on the response coordinates."""
         pmm, K = self.pymc_model, len(self.responses)
-        expected = {self.variable(r, v.name) for r, sub in self.submodels.items() for v in sub.pymc_model.value_vars}
+        expected = {self.value_name(r, v.name) for r, sub in self.submodels.items() for v in sub.pymc_model.value_vars}
         expected |= {"Lrescor_cholesky_corr__"} if self.rescor else set()
         got = {v.name for v in pmm.value_vars}
         if got != expected:
@@ -400,18 +576,33 @@ class MultivariateModel:
                 raise RuntimeError(f"PyMC dims of {self.observed_names[0]!r} are not (__obs__, {RESPONSE_DIM})")
 
     # -- points --------------------------------------------------------------------------------------------
-    def value_point(self, *, resp: Mapping[str, Mapping], Lrescor=None) -> dict[str, np.ndarray]:
+    def value_point(self, *, resp: Mapping[str, Mapping], Lrescor=None, Ymi=None) -> dict[str, np.ndarray]:
         """A point in the graph's value space: ``resp`` maps each response to the keyword arguments of its univariate
         model's ``Model.value_point`` (``{"y": {"intercept": ..., "b": ..., "sd": ..., "z": ..., "sigma": ...}, ...}``),
         ``Lrescor`` is the Cholesky factor of the residual correlation matrix (lower triangular, unit-norm rows, in the
-        responses' order), required exactly with ``rescor=True`` and stored on Stan's ``cholesky_corr`` coordinates."""
+        responses' order), required exactly with ``rescor=True`` and stored on Stan's ``cholesky_corr`` coordinates. ``Ymi``
+        (C06) gives the missing values of each column of ``missing_names`` (``{"xm": array(Nmi)}``, one per missing row; a
+        single column also takes the bare array), which every response holding them shares: it is not part of ``resp``."""
         if not isinstance(resp, Mapping) or set(resp) != set(self.responses):
             raise ValueError(f"resp must map exactly the responses {list(self.responses)} to their value_point arguments")
+        missing = list(self.missing_names)
+        if missing:
+            if Ymi is None:
+                raise ValueError(f"Ymi (the missing values of {missing}) is required")
+            values = dict(Ymi) if isinstance(Ymi, Mapping) else ({missing[0]: Ymi} if len(missing) == 1 else None)
+            if values is None or set(values) != set(missing):
+                raise ValueError(f"Ymi must cover exactly the columns with missing values {missing}")
+        elif Ymi is not None:
+            raise ValueError("this model has no missing values; Ymi does not apply")
         point = {}
         for r, sub in self.submodels.items():
             if not isinstance(resp[r], Mapping):
                 raise ValueError(f"resp[{r!r}] must be a mapping of the keyword arguments of {r}'s Model.value_point")
-            point.update({self.variable(r, name): value for name, value in sub.value_point(**resp[r]).items()})
+            if "Ymi" in resp[r]:
+                raise ValueError(f"resp[{r!r}] holds Ymi: the missing values are the model's, shared by its responses; pass them at "
+                                 "the top level, value_point(resp=..., Ymi={...})")
+            args = {**resp[r], **({"Ymi": {c: values[c] for c in sub.missing_names}} if sub.missing_names else {})}
+            point.update({self.value_name(r, name): value for name, value in sub.value_point(**args).items()})
         if self.rescor:
             if Lrescor is None:
                 raise ValueError("Lrescor (the Cholesky factor of the residual correlation matrix) is required: rescor=True")
@@ -426,8 +617,8 @@ class MultivariateModel:
     def response_posterior(self, posterior, response: str):
         """The draws of ``response``'s variables in ``posterior`` (an xarray Dataset of this graph's names) under its
         univariate model's names, which ``Model``'s prediction code reads."""
-        rename = {new: old for old, new in self._names[response].items() if new != old and new in posterior.data_vars}
-        return posterior[list(rename)].rename(rename)
+        names = {new: old for old, new in self._names[response].items() if new in posterior.data_vars}   # C06: Ymi_<col> keeps its name
+        return posterior[list(names)].rename({new: old for new, old in names.items() if new != old})
 
     # -- sampling (ab.fit) ---------------------------------------------------------------------------------
     def sample_posterior(self, *, inference_method: str = "pymc", cores=None, **kwargs):
@@ -482,11 +673,11 @@ class MultivariateModel:
         s, K, R = self.spec, len(self.responses), self.responses
         lines = [f"AutoBayes multivariate {self.family_spec.tag} model of {K} responses ({', '.join(R)}), "
                  + ("with residual correlation (brms set_rescor(TRUE))" if self.rescor else "without residual correlation (brms set_rescor(FALSE))"),
-                 f"  formula   : {s.formula}"]
+                 f"  formula   : {list(s.formula) if s.separate else s.formula}"]
         if s.canonical_formula != s.formula:
             lines += [f"  expanded  : {s.canonical_formula}"]
         lines += [f"  responses : {'; '.join(s.formulas.values())}   (one univariate model per response on the same rows and "
-                  "right-hand side: brms's mvbind())",
+                  + ("its own formula: brms's bf(...) + bf(...))" if s.separate else "right-hand side: brms's mvbind())"),
                   f"  data      : n = {self.design.n} rows, each with its {K} responses", ""]
         if self.rescor:
             eta = float(self.priors.rescor.params["eta"])
@@ -507,13 +698,28 @@ class MultivariateModel:
         if s.groups:
             lines += ["  Group-level effects are separate per response (each response's group terms have their own sd, z and effects, brms's "
                       "sd_m, z_m and r_m of that response) and uncorrelated across responses (no shared ID)."]
+        for col, roles in self.missing_names.items():         # C06: the missing values, shared by the responses that hold them
+            rows = self.submodels[col].design.missing[col].index.tolist()
+            readers = [r for r, sub in self.submodels.items() if any(t.operands[0] == col for t in sub.spec.mi_terms)]
+            lines += ["", f"Missing values of {col} (brms's mi())",
+                      f"  {len(rows)} of {self.design.n} rows of {col} are missing (0-based {rows[:12]}{'...' if len(rows) > 12 else ''}; brms's "
+                      f"Jmi_{col} is 1-based): their values are the parameters {roles['values']} (brms's Ymi_{col}), flat, with no prior of",
+                      f"  their own. {col}'s formula evaluates its likelihood at the observed and imputed values together (brms's Yl_{col}), "
+                      f"and mi({col}) in {', '.join(readers)} reads the same completed column: one variable of the model, informed by "
+                      "every formula that holds it."]
         for r, sub in self.submodels.items():
             lines += ["", f"Response {r}: its univariate model; in the multivariate graph its PyMC variables are named {r}_<name> "
                       + ("and its likelihood is the joint one above" if self.rescor else f"and its likelihood is the observed variable {r!r}")]
             lines += [f"  {line}" if line else "" for line in sub.describe().splitlines()]
         lines += ["", "PyMC variables sampled (value space)"]
+        listed = set()
         for r, sub in self.submodels.items():                # each response's in its own model's order, then Lrescor's
-            lines += [f"  {self.variable(r, v.name):<28} {r}'s {v.name} (above)" for v in sub.pymc_model.value_vars]
+            for v in sub.pymc_model.value_vars:
+                name = self.value_name(r, v.name)
+                if name not in listed:                       # C06: the shared missing values once, under brms's name
+                    listed.add(name)
+                    lines.append(f"  {name:<28} {r}'s {v.name} (above)" if name != v.name else
+                                 f"  {name:<28} the missing values of {v.name[len('Ymi_'):]} (shared)")
         if self.rescor:
             lines.append(f"  {'Lrescor_cholesky_corr__':<28} Lrescor on Stan's cholesky_corr coordinates (canonical partial correlations, arctanh scale)")
         deterministic = {d.name for d in self.pymc_model.deterministics}
@@ -547,13 +753,20 @@ def predict_multivariate(model: MultivariateModel, fit_result, *, newdata: pd.Da
         raise ValueError("include_group_effects must be boolean")
     if not include_group_effects and new_groups != "error":
         raise ValueError("new_groups must stay at its default when group effects are excluded")
-    first = model.submodels[model.responses[0]]
-    policies = _group_policies(first, new_groups)
+    # Every response's grouping factors (one right-hand side: the same; a formula per response, C06: each its own) and new
+    # rows checked against every response's formula, which reads its own columns
+    union = SimpleNamespace(spec=SimpleNamespace(groups=model.spec.groups))
+    policies = _group_policies(union, new_groups)
     binding = check_fit_binding(model, fit_result, allow_unverified=True)
     post = getattr(fit_result, "idata", fit_result).posterior
-    df = None if newdata is None else _check_newdata(first, newdata, include_group_effects=include_group_effects)
-    new_levels = {t.factor: ([] if df is None else sorted(set(df[t.column]) - set(first.design.group_designs[t.factor].levels)))
-                  for t in (first.spec.group_terms if include_group_effects else ())}
+    dfs = {r: None if newdata is None else _check_newdata(sub, newdata, include_group_effects=include_group_effects)
+           for r, sub in model.submodels.items()}
+    new_levels = {}
+    for r, sub in model.submodels.items():
+        for t in (sub.spec.group_terms if include_group_effects else ()):
+            if t.factor not in new_levels:
+                new_levels[t.factor] = ([] if dfs[r] is None else
+                                        sorted(set(dfs[r][t.column]) - set(sub.design.group_designs[t.factor].levels)))
     for g, unseen in new_levels.items():
         if unseen and policies[g] == "error":
             raise FormulaError(
@@ -562,8 +775,9 @@ def predict_multivariate(model: MultivariateModel, fit_result, *, newdata: pd.Da
                 "mapping can set the policy separately for each factor.")
     rng = np.random.default_rng(seed)
     posts = {r: model.response_posterior(post, r) for r in model.responses}
-    eta = np.stack([_predict_by_hand(sub, SimpleNamespace(posterior=posts[r]), df, "linear", rng, policies,
-                                     include_group_effects=include_group_effects)["eta"].transpose("chain", "draw", "__obs__").to_numpy()
+    eta = np.stack([_predict_by_hand(sub, SimpleNamespace(posterior=posts[r]), dfs[r], "linear", rng,
+                                     {g: policies[g] for g in sub.spec.groups}, include_group_effects=include_group_effects)
+                    ["eta"].transpose("chain", "draw", "__obs__").to_numpy()
                     for r, sub in model.submodels.items()], axis=-1)                        # (chain, draw, row, response)
     dims = ("chain", "draw", "__obs__", PREDICTION_DIM)
     coords = {"chain": post["chain"], "draw": post["draw"], "__obs__": np.arange(eta.shape[2]), PREDICTION_DIM: list(model.responses)}
@@ -584,7 +798,7 @@ def predict_multivariate(model: MultivariateModel, fit_result, *, newdata: pd.Da
             z = rng.standard_normal(mean.shape)
             out["y"] = (dims, mean + np.einsum("cdkj,cdnj->cdnk", sigma[..., :, None] * L, z))
     ds = xr.Dataset(out, coords=coords)
-    _prediction_attrs(first, ds, policies, new_levels, in_sample=df is None, manual=True, include_group_effects=include_group_effects)
+    _prediction_attrs(union, ds, policies, new_levels, in_sample=newdata is None, manual=True, include_group_effects=include_group_effects)
     ds.attrs["fit_binding_status"] = binding
     if kind == "linear":
         ds.attrs.update(prediction_scale="linear", link=model.link)
@@ -602,9 +816,12 @@ def multivariate_default_priors(formula, data: pd.DataFrame, *, family: str = "g
     from autobayes.priors import LKJ
 
     spec = parse_multivariate(formula, data, family, categorical, rescor=rescor)
-    resp = {r: default_priors(spec.formulas[r], data, family=family, categorical=categorical, nu=nu, link=link,
-                              center_predictors=center_predictors) for r in spec.responses}
+    cats = response_categorical(spec, categorical)              # each response's declarations (C06: its own main effects')
+    resp = {r: default_priors(spec.formulas[r], data, family=family, categorical=cats[r], nu=nu, link=link,
+                              center_predictors=center_predictors, imputed=spec.imputed) for r in spec.responses}
     cor = resp[spec.responses[0]].cor
+    if spec.separate:                                           # C06: every response's correlated terms, each factor once
+        cor = {g: p for r in spec.responses for g, p in dict(resp[r].cor or {}).items()} or None
     priors = Priors(resp={r: replace(p, cor=None) for r, p in resp.items()}, cor=cor,
                     rescor=replace(LKJ(1), source="default") if spec.rescor else None)
     priors.validate_multivariate(spec, family)
@@ -619,11 +836,12 @@ def multivariate_prior_table(priors: Priors, spec: MultivariateSpec, family="gau
     from autobayes.priors import brms_prior
 
     priors.validate_multivariate(spec, family)
-    rows = []
-    for i, r in enumerate(spec.responses):
+    rows, cor_rows = [], set()
+    for r in spec.responses:
         for row in prior_table(priors.response_priors(r), spec.specs[r], family, center_predictors=center_predictors):
-            if row["class"] == "cor":
-                if i == 0:
+            if row["class"] == "cor":                       # once per factor (C06: whichever response has the correlated term)
+                if (row["group"], row["coef"]) not in cor_rows:
+                    cor_rows.add((row["group"], row["coef"]))
                     rows.append(row)
                 continue
             rows.append({**row, "resp": r})
@@ -639,9 +857,14 @@ def _freeze_target(model: MultivariateModel) -> dict[str, str]:
     formula, design, response, priors), their order, ``Y``, and the residual correlation and its prior."""
     from autobayes.identity import SCHEMA, _canonical, _prior
 
+    Y = model.design.Y
+    missing = np.isnan(Y)                                   # C06: the missing values are parameters; their rows enter instead
     payload = {"schema": SCHEMA, "family": model.family,
                "multivariate": {"formula": model.spec.canonical_formula, "responses": list(model.responses), "rescor": model.rescor,
-                                "rescor_prior": _prior(model.priors.rescor) if model.rescor else None, "Y": model.design.Y,
+                                "rescor_prior": _prior(model.priors.rescor) if model.rescor else None,
+                                "Y": np.where(missing, 0.0, Y) if missing.any() else Y,
+                                **({"missing": {r: np.flatnonzero(missing[:, k]) for k, r in enumerate(model.responses)}}
+                                   if missing.any() else {}),
                                 "targets": {r: sub.target_identity["sha256"] for r, sub in model.submodels.items()}}}
     encoded = json.dumps(_canonical(payload), sort_keys=True, separators=(",", ":"), ensure_ascii=False, allow_nan=False).encode("utf-8")
     return {"schema": SCHEMA, "sha256": hashlib.sha256(encoded).hexdigest()}

@@ -74,6 +74,10 @@ Tiers A and B are complete (October 2026), except smooth terms `s()`, which are 
 - **Multivariate Gaussian models** (Tier C, C01): `ab.gaussian("mvbind(y, y2) ~ ...", data, priors, rescor=True)` with
   priors by response, `Priors(resp={...}, rescor=ab.LKJ(eta))`, and brms's residual correlation, or `rescor=False`
   ([multivariate models](docs/multivariate.md)).
+- **Missing values and measurement error** (Tier C, C06): `ab.gaussian(["y ~ mi(xm) + w", "xm | mi() ~ w"], data, priors,
+  rescor=False)` imputes `xm`'s missing values as parameters of the model, and `ab.gaussian("y ~ me(xobs, sdx)", ...)` gives a
+  predictor observed with known noise latent values under `Priors(meanme=..., sdme=...)`
+  ([missing values and measurement error](docs/missing-and-measurement-error.md)).
 
 Every known difference from brms is listed in [divergences](docs/brms-parity/divergences.md), and the feature ledger
 is [ledger.json](docs/brms-parity/ledger.json) (`python tools/parity_status.py`). The tier reviews are

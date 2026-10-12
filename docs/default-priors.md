@@ -34,6 +34,8 @@ model only when `ab.default_priors()` is called and its result passed in.
 | `sdgp` of a Gaussian process (C03) | `student_t(3, 0, scale)` on the class row, lower bound 0 (a group-level SD's default) | `HalfStudentT(3, scale)` in `Priors(sdgp={"x": ...})` |
 | `lscale` of a Gaussian process (C03) | on the coefficient row `gpx` (the class row empty, lower bound 0): the inverse gamma with 1% of its mass below the smallest distance between distinct scaled inputs (floored at 0.01) and 1% above the largest, its parameters printed to 6 decimals; `normal(0, 0.5)` with two distinct inputs | `InverseGamma(a, b)` solved exactly (the sixth decimal can differ from brms's own solver's, D67), or `HalfNormal(0.5)`, in `Priors(lscale={"x": ...})` (docs/gaussian-processes.md) |
 | `ar`, `ma` of an autocorrelation term (C04, `cov = FALSE`) | flat, no bounds, one class row each | `Flat()` |
+| `meanme`, `sdme` of an `me(x, sdx)` term (C06) | flat on the class rows (`sdme` with lower bound 0), one `coef` row `mex` each | `Flat()` keyed by the noisy column (`sdme`'s flat on the positive half line, PyMC's `HalfFlat`; docs/missing-and-measurement-error.md) |
+| `Intercept`, `sigma` of a response with missing values (`x \| mi()`, C06) | brms's median and MAD of the column are NA: location 0 and scale 2.5 | `StudentT(3, 0, 2.5)`, `HalfStudentT(3, 2.5)` |
 
 The location and scale are brms's `def_scale_prior` arithmetic on the response read through the family's link
 (`FamilySpec.default_prior_link`): the response itself for the Gaussian and Student-t families; `log(y)`, zeros read as
@@ -71,7 +73,8 @@ parameters take the family's own defaults (`FamilySpec.default_scale_prior`, `de
 - A multivariate formula (C01, docs/multivariate.md) takes `rescor=True` or `rescor=False`:
   `ab.default_priors("mvbind(y, y2) ~ x + (1 | g)", data, rescor=True)` gives each response its own defaults under `resp`
   (its Intercept location and scale read from that response), `lkj(1)` on a correlated term's `cor` once for every
-  response (brms's `cor` has no `resp`) and `lkj(1)` on `rescor`; the table has each response's rows under its `resp`.
+  response (brms's `cor` has no `resp`) and `lkj(1)` on `rescor`; the table has each response's rows under its `resp`. A list
+  of formulas with `mi()` (C06, `rescor=False`) is one too: each response's own defaults, an `mi()` term's coefficient flat.
 - `ab.Flat()` is accepted for the intercept and `b` only; `ab.InverseGamma(alpha, beta)` for `sd`, `sigma`, `shape` and
   `phi`, not for `nu` (its truncation at 1 is not one this library renormalises, D22).
 - Refused, with the constructors' messages: a family or link the library lacks (`sratio`, brms's `cauchit` link),
