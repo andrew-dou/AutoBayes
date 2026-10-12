@@ -1095,10 +1095,10 @@
    "pr": null,
    "attempts": 0,
    "gates": {
-    "sha": "a7136d158bef",
+    "sha": "e5c729177dbc",
     "dirty_tree": false,
-    "base": "origin/main",
-    "when": "2026-10-12T01:28Z",
+    "base": "parity/c02-nonlinear",
+    "when": "2026-10-12T02:27Z",
     "results": {
      "immutability": {
       "status": "pass",
@@ -1106,7 +1106,7 @@
      },
      "oracle": {
       "status": "pass",
-      "seconds": 175.5
+      "seconds": 266.3
      }
     }
    },
