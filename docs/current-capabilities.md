@@ -197,6 +197,7 @@ the lagged residuals of earlier rows of its own series in time order, after ever
 `Priors(ar=..., ma=...)` (unbounded; brms's default flat, `ab.Flat()`); the MA recursion is a `pytensor.scan` over the
 positions of a series that the JAX backend compiles. Predictions on the fitted rows add the term from the observed
 residuals, in data order, as brms's `posterior_linpred` does; new rows are refused. Verified against `gauss_ar1`,
-`gauss_arma11` and `gauss_arma22_varint` (lags two deep next to a varying intercept); `cov = TRUE`, `cosy()`, `car()`,
-`sar()`, `fcor()`, `unstr()`, other families, distributional formulas, addition terms and new rows are refused (D68-D71);
-see [autocorrelation](autocorrelation.md).
+`gauss_arma11` and `gauss_arma22_varint` (lags two deep next to a varying intercept); `ab.log_lik`, `ab.bayes_R2` and
+`ab.loo` (C07) read the predictor with the term, as brms's do; `cov = TRUE`, `cosy()`, `car()`, `sar()`, `fcor()`,
+`unstr()`, other families, distributional formulas, addition terms, multivariate formulas, non-linear models, mixtures,
+`gp()` next to the term and new rows are refused (D68-D71); see [autocorrelation](autocorrelation.md).

@@ -67,15 +67,24 @@ on the predictor at `ar = ma = 0` with every other variable moved off its initia
   position and the coefficients' priors; fit records list `autocorrelation` and the priors `ar` and `ma`;
   `prior_table()` writes brms's `ar` and `ma` class rows. A coefficient no row reads (lag `k` needs a series of more than
   `k` rows) is named in a warning.
+- Post-processing (C07): `ab.log_lik(model, fit)` is each fitted row's Normal log density at the predictor with the ARMA term,
+  the mean brms's `log_lik()` reads with `cov = FALSE` (it computes the term over all rows at once and returns them in data
+  order); `ab.bayes_R2` reads `predict(kind="mean")`, brms's `posterior_epred`, the term included; `ab.loo` is PSIS-LOO of that
+  log-likelihood, as brms's `loo()` is. The term conditions each row on the observed responses before it, so leave-one-out
+  here leaves out a row's own density, not its role in the next rows' lagged residuals, in brms as here.
 
 ## Refused, naming the construct
 
 `cov = TRUE`, brms's covariance formulation (D68); `cosy()`, `car()`, `sar()`, `fcor()`, `unstr()` (D69); families other
 than the Gaussian, an autocorrelation term next to or inside a distributional formula, with a response addition term
-(`weights()`, `cens()`, `trunc()`), a `gr` of two columns (`g:h`), a non-numeric time column (D70); predictions on new rows
-(D71); two autocorrelation terms in one formula, `p = q = 0`, a non-integer or negative order, an argument the function
-does not have, the response or the trials column as `time` or `gr`, `time` equal to `gr` (brms refuses these too, or they
-are not R).
+(`weights()`, `cens()`, `trunc()`), a `gr` of two columns (`g:h`), a non-numeric time column (D70); the term in a
+multivariate formula (C01: brms gives each response its own ARMA term), in a non-linear expression (C02: brms adds one with
+`bf(..., autocor = ~ ar(...))`) and next to `gp()` (C03: no frozen case verifies the pair) (D70); in a non-linear parameter's
+formula and in a mixture (C05), which brms refuses too; the `ar` and `ma` priors of a multivariate, non-linear or mixture
+model; predictions on new rows (D71); two autocorrelation terms in one formula, `p = q = 0`, a non-integer or negative order,
+an argument the function does not have, the response or the trials column as `time` or `gr`, `time` equal to `gr` (brms
+refuses these too, or they are not R). The other features' priors (`components` / `theta`, `resp` / `rescor`, `sdgp` /
+`lscale`, `nlpars`) are refused in a model with the term, each naming its feature.
 
 ## Evidence
 
@@ -88,4 +97,6 @@ predictions with and without the group effects). The oracle derives brms's row o
 G2 maps brms's `ar` and `ma` to the model's. `tests/test_autocorrelation.py` covers the parsing and refusals, the series
 against brms's own Stan data, the NumPy and graph recursions against an independent transcription of the model for orders
 up to `p = 3`, `q = 3`, the density and its gradient, the JAX density and gradient, priors, defaults, predictions,
-`describe()`, identity, records, prior-predictive draws and corrupted fixtures. Nothing samples.
+`describe()`, identity, records, prior-predictive draws and corrupted fixtures, and, with the other Tier C features, the
+refusals above and `log_lik`, `bayes_R2` and `loo` against the graph's own per-row density and `mu` at the frozen brms points
+of the three cases (where `mu` is brms's `posterior_epred`). Nothing samples.

@@ -100,7 +100,9 @@ likelihood on `mu` is `FamilySpec.nonlinear_likelihood`.
   Stan program as calls of functions Stan does not have) and in a parameter's formula (brms takes them there: a Gaussian
   process `gp_pred_a_1` or a monotonic term added to `nlp_a`), `offset()` in a parameter's formula and response addition
   terms (`weights()`, `cens()`, `trunc()`) with a non-linear formula (D61). The priors of a Gaussian process (`sdgp`,
-  `lscale`) are refused with them.
+  `lscale`) are refused with them. An autocorrelation term `ar()`, `ma()`, `arma()` (C04, docs/autocorrelation.md): in the
+  expression it is brms's term, not a function, and brms's way of adding one to a non-linear model, `bf(..., autocor = ~
+  ar(...))`, is not offered (D70); in a parameter's formula brms refuses it too; its priors `ar` and `ma` are refused.
 - A distributional formula with `nl=True` (`sigma ~ x` next to the parameters' formulas); a non-linear model in a
   multivariate formula, `mvbind(y, y2) ~ a * exp(b * x)` (brms gives each response its own parameters, `X_y_a`, `X_y2_a`) or
   a list of response formulas, and `rescor=` with `nl=True`; a non-linear model in a mixture, `ab.mixture(..., nl=True)` and

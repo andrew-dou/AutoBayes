@@ -363,6 +363,10 @@ class Priors:
         if self.components is not None or self.theta is not None:
             raise PriorError("components and theta are the priors of a mixture (ab.mixture, docs/mixtures.md); "
                              "a multivariate model takes neither")
+        if self.ar is not None or self.ma is not None:              # C04
+            raise PriorError("ar and ma are the priors of an autocorrelation term ar(), ma(), arma() (docs/autocorrelation.md); a "
+                             "multivariate model takes neither: an autocorrelation term in a multivariate formula is not supported "
+                             "(divergence D70)")
         top = [name for name in self._RESPONSE_CLASSES if getattr(self, name) is not None]
         if top:
             raise PriorError(
@@ -936,6 +940,9 @@ class Priors:
                if getattr(self, name) is not None]
         if top:
             raise PriorError(f"a mixture's priors are per component, {form}; {top} at the top level do not apply")
+        if self.ar is not None or self.ma is not None:              # C04: as brms, a mixture takes no autocorrelation term
+            raise PriorError("ar and ma are the priors of an autocorrelation term ar(), ma(), arma() (docs/autocorrelation.md); a "
+                             "mixture takes neither, as in brms")
         comps = self.components
         if comps is None:
             raise PriorError(f"a mixture needs the priors of each component: {form}")

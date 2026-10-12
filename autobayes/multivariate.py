@@ -47,6 +47,7 @@ _MVBIND_FORMULA_RE = re.compile(r"^\s*mvbind\s*\(([^()]*)\)\s*([^~]*?)\s*~\s*(.*
 _MI_RE = re.compile(r"(?<![A-Za-z0-9_.])mi\s*\(")                                                 # brms's mi() (C06)
 _MO_RE = re.compile(r"(?<![A-Za-z0-9_.])mo\s*\(")                                                 # brms's mo() (B03)
 _GP_RE = re.compile(r"(?<![A-Za-z0-9_.])gp\s*\(")                                                 # brms's gp() (C03)
+_AUTOCOR_RE = re.compile(r"(?<![A-Za-z0-9_.])(ar|ma|arma)\s*\(")                                     # brms's ARMA terms (C04)
 RESPONSE_DIM, RESPONSE_DIM_T = "__resp__", "__resp_T__"     # the graph's response coordinates (Lrescor, rescor, the joint response)
 PREDICTION_DIM = "response"                                 # predict()'s response dimension, brms's last axis of its prediction arrays
 
@@ -143,6 +144,10 @@ def parse_multivariate(formula, data: pd.DataFrame | None = None, family: str = 
             raise FormulaError(f"{formula!r}: {piece!r}: a Gaussian process in a multivariate formula is not verified in this slice "
                                "(each response would have its own process, brms's sdgp_y and lscale_y); write it in a univariate "
                                "model (docs/multivariate.md, divergence D56)")
+        if _AUTOCOR_RE.search(piece):
+            raise FormulaError(f"{formula!r}: {piece!r}: an autocorrelation term in a multivariate formula is not verified in this "
+                               "slice (brms gives each response its own ARMA term, ar_y and ar_y2, with J_lag_y and J_lag_y2); write it "
+                               "in a univariate model (docs/autocorrelation.md, divergence D70)")
         if _MO_RE.search(piece):
             raise FormulaError(f"{formula!r}: {piece!r}: a monotonic term in a multivariate formula is not verified in this slice (each "
                                "response would have its own coefficient and simplex, brms's bsp_y and simo_y); write it in a "

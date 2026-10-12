@@ -165,14 +165,19 @@ def parse_autocor(piece: str, formula: str) -> Autocor | None:
 def check_autocor(term: Autocor, piece: str, *, response: str, trials: str | None, fam, additions, formula: str) -> None:
     """The refusals of an autocorrelation term that depend on the rest of the formula: its columns may be predictors or
     grouping factors, but not the response or the trials column; the family must take the term (``FamilySpec.
-    autocorrelation``: the Gaussian family, verified against frozen brms cases); response addition terms are not
-    combined with it (D70)."""
+    autocorrelation``: the Gaussian family, verified against frozen brms cases; a mixture, C05, as brms refuses it too);
+    response addition terms are not combined with it (D70)."""
     from autobayes.families import FAMILIES
 
     for column in term.columns:
         if column == response or (trials is not None and column == trials):
             raise FormulaError(f"{piece!r}: the {'response' if column == response else 'trials column'} {column!r} cannot be "
                                "the time or series column of an autocorrelation term")
+    if fam.mixture:                                          # C05: brms refuses it too (not a divergence)
+        raise FormulaError(
+            f"{formula!r}: an autocorrelation term in a mixture ({term.term}) is not supported, as in brms ('Explicit covariance "
+            "terms can only be specified on mu': a mixture's linear predictors are mu1, mu2, ...); docs/autocorrelation.md"
+        )
     if not fam.autocorrelation:
         offering = [name for name, other in FAMILIES.items() if other.autocorrelation]
         raise FormulaError(

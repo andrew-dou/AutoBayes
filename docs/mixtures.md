@@ -94,7 +94,8 @@ the top level of a mixture's `Priors`.
 
 Components of any family but the Gaussian (D52); `order = "none"` / `False` (D53); a formula per component, or formulas on
 `sigma<k>` or `theta` (a list of formulas, brms's `bf(y ~ x, mu2 ~ z, theta1 ~ w)`; D54); group-level terms, `offset()`,
-response addition terms and `mo()` (D55); and, as brms refuses them under `order = "mu"`, `0 +` / `- 1` and
+response addition terms and `mo()` (D55); an autocorrelation term `ar()`, `ma()`, `arma()` and the `ar` and `ma` priors (C04,
+docs/autocorrelation.md; brms refuses the term in a mixture too); and, as brms refuses them under `order = "mu"`, `0 +` / `- 1` and
 `center_predictors=False`, which leave no centred intercept to order. brms's `pp_mixture()` (the components'
 posterior membership probabilities) is not offered.
 

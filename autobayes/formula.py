@@ -2188,6 +2188,12 @@ def parse_formula(formula: str | list[str], data: pd.DataFrame | None = None, fa
             )
         autocor = autocors[0][0]
         check_autocor(autocor, autocors[0][1], response=response, trials=trials, fam=fam, additions=additions, formula=formula)
+        if gps:                                              # C03: not verified together (brms accepts the pair; D70)
+            raise FormulaError(
+                f"{formula!r}: the autocorrelation term {autocor.term!r} next to the Gaussian process {gps[0][0].term!r} is not "
+                "supported in this slice: no frozen brms case verifies the pair (brms takes it, the residuals then those of the "
+                "predictor with the process); docs/autocorrelation.md, divergence D70"
+            )
     # A derived factor's column (g_h) is added to the fitted frame: it must not shadow a column the formula uses.
     in_use = {response, *predictors, *transform_columns, *mo_columns, *gp_columns, *operands_all, *([trials] if trials is not None else []),
               *([offset.column] if offset is not None else []), *(c for a in additions for c in a.columns)}

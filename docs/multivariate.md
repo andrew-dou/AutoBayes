@@ -78,7 +78,9 @@ per response (C06's `bf(y ~ mi(x)) + bf(x | mi() ~ w)`).
 ## Refused, with the construct named
 
 A formula per response (`["y ~ x", "y2 ~ z"]`, brms's `bf(y ~ ...) + bf(y2 ~ ...)`), a distributional formula in a
-multivariate model, addition terms after `mvbind()`, `mi()` (feature C06) and `mo()` (D56); correlated group effects across
+multivariate model, addition terms after `mvbind()`, `mi()` (feature C06) and `mo()` (D56); an autocorrelation term `ar()`,
+`ma()`, `arma()` (C04: brms gives each response its own, `ar_y` and `ar_y2`; docs/autocorrelation.md, D70) and the `ar` and
+`ma` priors at the top level or in a response's; correlated group effects across
 responses `(1 |ID| g)` (D57); families other than the Gaussian and a missing `rescor` (D58); a response that is also a
 predictor, grouping factor or offset; fewer than two or repeated responses; a top-level class other than `resp`, `cor` and
 `rescor`, a response-specific `cor`, a `rescor` prior without `rescor=True`; `resp` or `rescor` for a model with one

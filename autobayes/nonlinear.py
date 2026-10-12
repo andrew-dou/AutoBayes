@@ -219,6 +219,10 @@ class _Parser:
         raise self._error("expected a number, a name, a function or '('")
 
     def _call(self, name: str, pos: int):
+        if name in ("ar", "ma", "arma"):                                   # C04: brms's autocorrelation term, not a function
+            raise FormulaError(f"{self.text!r}: {name}() at position {pos} is brms's autocorrelation term (C04), not a function of the "
+                               "non-linear expression; a non-linear model takes no autocorrelation term in this slice (brms adds one "
+                               "with bf(..., autocor = ~ ar(...)); docs/autocorrelation.md, divergence D70)")
         if name in ("nlf", "lf"):
             raise FormulaError(f"{self.text!r}: brms's {name}() is not supported here (divergence D60): give each non-linear "
                                "parameter its own linear formula in the list, and write the non-linear expression once")
@@ -586,6 +590,9 @@ def parse_nonlinear(formulas, data: pd.DataFrame | None = None, family: str = "g
         if d.gp_terms:                                                 # C03: brms adds gp_pred_<nlpar>_1 to the parameter
             raise FormulaError(f"{text!r}: the Gaussian process {d.gp_terms[0].term!r} in a non-linear parameter's formula is not "
                                "supported in this slice (divergence D61)")
+        if d.autocor is not None:                                      # C04: brms refuses it too
+            raise FormulaError(f"{text!r}: the autocorrelation term {d.autocor.term!r} in a non-linear parameter's formula is not "
+                               "supported, as in brms ('Explicit covariance terms can only be specified on mu'; docs/autocorrelation.md)")
         reads = [*d.pop_columns, *(c for t in d.group_terms for c in t.operands)]
         nested = [c for c in reads if c in nl_names]
         if nested:
@@ -701,7 +708,9 @@ def check_nonlinear_priors(priors: Priors, spec: NonlinearSpec, fam) -> None:
                                (("resp", "rescor"), "a multivariate model (docs/multivariate.md)",
                                 "a non-linear model in a multivariate formula is not supported (divergence D62)"),
                                (("sdgp", "lscale"), "a Gaussian process gp(x) (docs/gaussian-processes.md)",
-                                "a non-linear model takes no Gaussian process (divergence D61)")):
+                                "a non-linear model takes no Gaussian process (divergence D61)"),
+                               (("ar", "ma"), "an autocorrelation term ar(), ma(), arma() (docs/autocorrelation.md)",
+                                "a non-linear model takes no autocorrelation term (divergence D70)")):
         given = [f for f in fields if getattr(priors, f) is not None]
         if given:
             raise PriorError(f"{' and '.join(given)} {'is' if len(given) == 1 else 'are'} the prior{'s' if len(given) > 1 else ''} "

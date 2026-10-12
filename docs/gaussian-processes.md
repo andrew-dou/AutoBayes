@@ -103,7 +103,8 @@ processes, approximate processes, the floor). At `l = 0.5` and `l = 0.48188...` 
 Several covariates in one `gp()`, `by =`, other kernels (`matern32`, `matern52`, `exponential`), `iso`, `gr = FALSE`, `cmc`,
 `scale = FALSE`, `c` without `k`, an expression as input (`gp(log(x))`), two processes of one column, `gp()` in an interaction,
 a group-level term or a distributional formula, the categorical family, a non-numeric or infinite input column, a column with one
-distinct value, and a `c` that leaves a fitted input outside the boundary.
+distinct value, and a `c` that leaves a fitted input outside the boundary. An autocorrelation term `ar()`, `ma()`, `arma()` next
+to `gp()` is refused too (C04: brms takes the pair, which no frozen case verifies; docs/autocorrelation.md, D70).
 
 ## Evidence
 
