@@ -1000,6 +1000,9 @@ class Priors:
         if self.ar is not None or self.ma is not None:              # C04: as brms, a mixture takes no autocorrelation term
             raise PriorError("ar and ma are the priors of an autocorrelation term ar(), ma(), arma() (docs/autocorrelation.md); a "
                              "mixture takes neither, as in brms")
+        if self.sdgp is not None or self.lscale is not None:          # C03: gp() in a mixture is refused (D55)
+            raise PriorError("sdgp and lscale are the priors of a Gaussian process gp() (docs/gaussian-processes.md); a mixture takes "
+                             "no Gaussian process in this slice (divergence D55)")
         comps = self.components
         if comps is None:
             raise PriorError(f"a mixture needs the priors of each component: {form}")

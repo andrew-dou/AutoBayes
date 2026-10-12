@@ -1388,6 +1388,8 @@ class Model:
         if self.family_spec.mixture:                          # C05: the components' parameters and theta
             if ar is not None or ma is not None:              # C04: a mixture has no autocorrelation term
                 raise ValueError("ar and ma are an autocorrelation term's coefficients; a mixture has none")
+            if sdgp is not None or lscale is not None or zgp is not None:   # C03: a mixture has no Gaussian process
+                raise ValueError("sdgp, lscale and zgp are a Gaussian process's values; a mixture has none")
             from autobayes.families.mixture import value_point
             return value_point(self, intercept=intercept, b=b, sigma=sigma, theta=theta, sd=sd, z=z, L=L, shape=shape, phi=phi,
                                nu=nu, zi=zi, hu=hu, bsp=bsp, simo=simo,
