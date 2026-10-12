@@ -36,9 +36,10 @@ Gaussian's ``Normal(mu, sigma)``). Priors are per parameter, ``Priors(nlpars={"a
 
 Refused, naming the construct (docs/brms-parity/divergences.md, D60-D63): brms's ``nlf()`` and ``lf()`` and a non-linear
 parameter inside another's formula (D60); functions and operators outside the grammar, an integer-literal division brms's
-Stan code would truncate is real division here, the response as a covariate, and ``mo()``, ``offset()`` or addition
-terms with a non-linear formula (D61); distributional formulas with ``nl``, non-linear models in multivariate
-formulas and families without a verified non-linear likelihood (D62); ``loop = FALSE`` (D63).
+Stan code would truncate is real division here, the response as a covariate, ``gp()`` and ``mo()`` in the expression or in
+a parameter's formula, and ``offset()`` or addition terms with a non-linear formula (D61); distributional formulas with
+``nl``, non-linear models in multivariate formulas (``mvbind()`` or a list of response formulas) and in mixtures
+(``ab.mixture``), and families without a verified non-linear likelihood (D62); ``loop = FALSE`` (D63).
 """
 from __future__ import annotations
 
@@ -61,6 +62,7 @@ from autobayes.priors import AUXILIARY, Prior, PriorError, Priors, describe_prio
 # -- the expression grammar ----------------------------------------------------------------------------------------------
 FUNCTIONS = MappingProxyType({"exp": 1, "log": 1, "sqrt": 1, "inv_logit": 1, "plogis": 1, "pow": 2})   # name -> arguments
 _ALIASES = MappingProxyType({"plogis": "inv_logit"})          # R's name of the logistic CDF, which Stan does not have
+_SPECIAL_TERMS = MappingProxyType({"gp": "Gaussian process (C03)", "mo": "monotonic term (B03)"})   # brms's terms, not functions
 GRAMMAR = ("the non-linear expression takes non-linear parameters, numeric data columns and numeric constants, combined with "
            "+ - * / ^ (R's ** is ^), parentheses, unary minus and the functions exp(), log(), sqrt(), inv_logit() (or plogis()) "
            "and pow(x, y) (docs/nonlinear.md, divergence D61)")
@@ -220,6 +222,11 @@ class _Parser:
         if name in ("nlf", "lf"):
             raise FormulaError(f"{self.text!r}: brms's {name}() is not supported here (divergence D60): give each non-linear "
                                "parameter its own linear formula in the list, and write the non-linear expression once")
+        if name in _SPECIAL_TERMS:
+            raise FormulaError(f"{self.text!r}: {name}() at position {pos} is brms's {_SPECIAL_TERMS[name]}, a term of a linear "
+                               "formula, not a function of the non-linear expression (brms writes it into its Stan program as a "
+                               "call of a function Stan does not have); a non-linear model takes no such term in this slice, in a "
+                               f"parameter's formula either (divergence D61); {GRAMMAR}")
         if name not in FUNCTIONS:
             raise FormulaError(f"{self.text!r}: {name}() at position {pos} is outside the grammar; {GRAMMAR}")
         self._expect("(")
@@ -395,6 +402,7 @@ class NonlinearSpec:
     bambi_terms = ()
     mo_terms = ()
     monotonics = ()
+    gp_terms = ()                         # Gaussian processes (C03): none, as a non-linear model takes none (D61)
     groups = ()
     group_coefficients = ()
     correlated_terms = ()
@@ -468,12 +476,20 @@ class NonlinearSpec:
         return tuple(dict.fromkeys([self.response, *self.model_columns, *operands]))
 
 
+_MULTIVARIATE = ("a non-linear model in a multivariate formula is not supported (divergence D62; brms gives each response its "
+                 "own non-linear parameters, X_<response>_<nlpar>): give one response's non-linear model, " + NL_FORM)
+
+
 def _check_formula_list(formulas) -> None:
+    from autobayes.formula import MVBIND_RE
+
+    first = formulas[0] if isinstance(formulas, (list, tuple)) and formulas else formulas
+    if isinstance(first, str) and MVBIND_RE.match(first):              # brms's mvbind(y, y2) ~ ... (C01)
+        raise FormulaError(f"{first!r}: mvbind() with nl=True: {_MULTIVARIATE}")
     if isinstance(formulas, str) or not isinstance(formulas, (list, tuple)):
         raise FormulaError(f"nl=True takes {NL_FORM}; got {formulas!r}")
-    if any(isinstance(f, (list, tuple)) for f in formulas):
-        raise FormulaError("non-linear models in multivariate formulas are not supported (divergence D62): give one response's "
-                           f"non-linear model, {NL_FORM}")
+    if any(isinstance(f, (list, tuple)) for f in formulas):            # a formula per response, brms's bf(...) + bf(...)
+        raise FormulaError(f"a list of response formulas with nl=True: {_MULTIVARIATE}")
     if not all(isinstance(f, str) for f in formulas):
         raise FormulaError(f"nl=True takes {NL_FORM}; got {formulas!r}")
     for text in formulas:
@@ -495,8 +511,9 @@ def parse_nonlinear(formulas, data: pd.DataFrame | None = None, family: str = "g
     categorical in every parameter's formula that names it as a main effect, and must be one. Refused, naming the
     construct: a parameter the expression does not use, or a name of the expression that is neither a parameter nor a
     column; a parameter in another parameter's formula; the response in the expression or in a parameter's formula;
-    a formula of a distributional parameter (``sigma ~ ...``), or of ``mu``; addition terms, ``offset()`` and ``mo()``;
-    a covariate that is not numeric, finite and observed on every row."""
+    a formula of a distributional parameter (``sigma ~ ...``), or of ``mu``; addition terms, ``offset()``, ``mo()`` and
+    ``gp()``; ``mvbind()`` or a list of response formulas (a multivariate model); a covariate that is not numeric, finite
+    and observed on every row."""
     from autobayes.families import get_family
 
     fam = get_family(family)
@@ -564,6 +581,9 @@ def parse_nonlinear(formulas, data: pd.DataFrame | None = None, family: str = "g
                                "(divergence D61)")
         if d.mo_terms:
             raise FormulaError(f"{text!r}: the monotonic term {d.mo_terms[0].name!r} in a non-linear parameter's formula is not "
+                               "supported in this slice (divergence D61)")
+        if d.gp_terms:                                                 # C03: brms adds gp_pred_<nlpar>_1 to the parameter
+            raise FormulaError(f"{text!r}: the Gaussian process {d.gp_terms[0].term!r} in a non-linear parameter's formula is not "
                                "supported in this slice (divergence D61)")
         reads = [*d.pop_columns, *(c for t in d.group_terms for c in t.operands)]
         nested = [c for c in reads if c in nl_names]
@@ -675,6 +695,16 @@ def check_nonlinear_priors(priors: Priors, spec: NonlinearSpec, fam) -> None:
         if getattr(priors, field) is not None:
             raise PriorError(f"a non-linear model has no {field} prior of its own: its coefficients and group SDs are its non-linear "
                              f"parameters', given as nlpars={{'<parameter>': {{'b': ..., 'sd': ...}}}} (docs/nonlinear.md)")
+    for fields, owner, why in ((("components", "theta"), "a mixture (ab.mixture, docs/mixtures.md)",
+                                "a non-linear model in a mixture is not supported (divergence D62)"),
+                               (("resp", "rescor"), "a multivariate model (docs/multivariate.md)",
+                                "a non-linear model in a multivariate formula is not supported (divergence D62)"),
+                               (("sdgp", "lscale"), "a Gaussian process gp(x) (docs/gaussian-processes.md)",
+                                "a non-linear model takes no Gaussian process (divergence D61)")):
+        given = [f for f in fields if getattr(priors, f) is not None]
+        if given:
+            raise PriorError(f"{' and '.join(given)} {'is' if len(given) == 1 else 'are'} the prior{'s' if len(given) > 1 else ''} "
+                             f"of {owner}; {why}")
     scale, zero = fam.scale_parameter, fam.zero_parameter
     for name in AUXILIARY:
         if getattr(priors, name) is not None and name not in (scale, zero):
@@ -1563,16 +1593,30 @@ def predict_nonlinear(model: NonlinearModel, fit_result, *, newdata: pd.DataFram
 
 
 # -- brms's default priors and prior table ----------------------------------------------------------------------------------
-def nonlinear_default_priors(formula, data: pd.DataFrame, fam, categorical=None) -> Priors:
+def nonlinear_default_priors(formula, data: pd.DataFrame, *, family: str = "gaussian", categorical=None, nu=None, link=None,
+                             families=None, order=None, rescor=None) -> Priors:
     """brms's ``default_prior()`` of a non-linear model (brms 2.23, checked against R): every parameter's coefficients flat
     (class ``b``, ``Flat()``), its group SDs ``student_t(3, 0, scale)`` (``HalfStudentT(3, scale)``) and the family's auxiliary
     parameter its default (the Gaussian ``sigma``: the same), with brms's data-dependent ``scale`` of the response
-    (``default_priors.location_scale``: ``max(2.5, round(mad(y), 1))``), and ``lkj(1)`` on each correlated term's factor."""
+    (``default_priors.location_scale``: ``max(2.5, round(mad(y), 1))``), and ``lkj(1)`` on each correlated term's factor.
+    ``ab.default_priors(..., nl=True)`` hands its keywords through: a mixture's ``families`` and ``order``, a multivariate
+    model's ``rescor`` and a family without a non-linear likelihood are refused (divergence D62), and so is ``nu``."""
     from autobayes.default_priors import DF, _default, location_scale
+    from autobayes.families import FAMILIES, get_family
     from autobayes.priors import LKJ, Flat, HalfStudentT
 
-    if fam.nonlinear_likelihood is None:
+    if families is not None or order is not None:
+        raise FormulaError("families= and order= are a mixture's (ab.mixture, docs/mixtures.md); a non-linear model in a mixture "
+                           "is not supported (divergence D62)")
+    if rescor is not None:
+        raise FormulaError("rescor= belongs to a multivariate model, 'mvbind(y, y2) ~ ...'; a non-linear model in a multivariate "
+                           "formula is not supported (docs/nonlinear.md, divergence D62)")
+    fam = get_family(family, link)
+    if fam.mixture or fam.nonlinear_likelihood is None:
         raise FormulaError(f"the {fam.name} family is not offered with nl=True (divergence D62)")
+    if nu is not None:
+        accepting = [name for name, other in FAMILIES.items() if "nu" in other.fixed_parameters]
+        raise ValueError(f"nu applies only to the {' or '.join(accepting)} family, which is not offered with nl=True (divergence D62)")
     spec = parse_nonlinear(formula, data, fam.name, categorical)
     _, scale = location_scale(np.asarray(data[spec.response], dtype=float), fam.default_prior_link)
     nlpars = {}

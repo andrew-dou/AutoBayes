@@ -2035,7 +2035,7 @@ def categorical(formula: str, data: pd.DataFrame, priors: Priors, *,
 
 
 def mixture(formula: str, data: pd.DataFrame, priors: Priors, *, families: list[str], order: str | bool | None = None,
-            center_predictors: bool = True, categorical: Mapping[str, object] | None = None) -> Model:
+            center_predictors: bool = True, categorical: Mapping[str, object] | None = None, nl: bool = False) -> Model:
     """A finite mixture (brms ``mixture(gaussian, gaussian)``, C05, docs/mixtures.md): ``y_i ~ sum_k theta_k
     Normal(mu_k,i, sigma_k)`` with one linear predictor per component on the formula's design (brms's ``mu<k>``, each with
     its own centred intercept and coefficients), one residual SD per component (``sigma<k>``) and the mixing proportions
@@ -2050,7 +2050,12 @@ def mixture(formula: str, data: pd.DataFrame, priors: Priors, *, families: list[
     ``predict(kind="linear")`` returns every component's ``mu`` with a ``component`` dimension (brms's
     ``posterior_linpred``), ``kind="mean"`` the mixture's expected response ``sum_k theta_k mu_k`` as ``mean`` and
     ``kind="response"`` draws a component by theta, then its Normal. Population-level terms only; one formula for every
-    component; other component families, ``order="none"``, group-level terms and offsets are refused (D52-D55).
+    component; other component families, ``order="none"``, group-level terms and offsets are refused (D52-D55), and so is
+    ``nl=True``, a non-linear formula in a mixture (C02, D62).
     """
+    if nl:                                                    # C02: brms's bf(..., nl = TRUE) with mixture(...), not verified
+        raise FormulaError("nl=True with a mixture is not supported (docs/nonlinear.md, divergence D62): brms puts the non-linear "
+                           "expression in every component's mean (mu1, mu2) with shared non-linear parameters, which is not "
+                           "verified here; a non-linear model is ab.gaussian([...], data, priors, nl=True)")
     return Model(formula, data, priors, family="mixture", families=families, order=order, center_predictors=center_predictors,
                  categorical=categorical)

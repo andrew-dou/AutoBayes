@@ -185,7 +185,8 @@ nl=True)` builds an `ab.NonlinearModel` whose mean is an expression in non-linea
 (`+ - * / ^`, unary minus, `exp`, `log`, `sqrt`, `inv_logit`/`plogis`, `pow`; parsed by the library's own parser, never
 evaluated), each parameter with its own never-centred linear formula of the term model (population-level terms and every
 group-level term the term model takes) under `Priors(nlpars={"a": {"b": ..., "sd": ...}})`; the library builds the PyMC graph
-itself, and `predict(nlpar="a")` returns a parameter's values. Verified against `gauss_nonlinear_exp` and
-`gauss_nonlinear_terms` (frozen with it) at machine precision; `nlf()`, `lf()`, nested parameters, functions outside the
-grammar, distributional or multivariate combinations, other families and `loop = FALSE` are refused (D60-D63); see
+itself, and `predict(nlpar="a")` returns a parameter's values; `ab.log_lik`, `ab.bayes_R2` and `ab.loo` (C07) take it as
+they take a linear Gaussian model. Verified against `gauss_nonlinear_exp` and `gauss_nonlinear_terms` (frozen with it) at
+machine precision; `nlf()`, `lf()`, nested parameters, functions outside the grammar, `gp()` and `mo()`, distributional,
+multivariate and mixture combinations, other families and `loop = FALSE` are refused (D60-D63); see
 [non-linear formulas](nonlinear.md).

@@ -3,9 +3,10 @@ nl=True)``, brms's ``bf(y ~ a * exp(b * x), a ~ 1 + (1 | g), b ~ 1, nl = TRUE)``
 (R's precedence; nothing is evaluated), the model's term model and refusals (D60-D63), the priors per non-linear
 parameter, the graph against a density written by hand, ``value_point``, by-hand predictions (``nlpar=``, new rows, group
 policies), ``describe()``, the target identity, fit plumbing with a stubbed sampler, fit records, prior-predictive draws,
-and brms's default priors (the tables below were printed by brms 2.23.0's ``default_prior()``, R 4.5.2, C collation, on
-``FRAME``). Nothing here samples; the brms comparison is the oracle cases ``gauss_nonlinear_exp`` and
-``gauss_nonlinear_terms``."""
+brms's default priors (the tables below were printed by brms 2.23.0's ``default_prior()``, R 4.5.2, C collation, on
+``FRAME``), the combinations with the other features refused (a multivariate formula, C01; a mixture, C05; ``gp()``, C03;
+their priors, and ``nlpars`` in theirs) and C07's ``log_lik``, ``bayes_R2`` and ``loo`` against the graph's own density.
+Nothing here samples; the brms comparison is the oracle cases ``gauss_nonlinear_exp`` and ``gauss_nonlinear_terms``."""
 import ast
 import copy
 import dataclasses
@@ -162,7 +163,12 @@ def test_parameters_covariates_and_their_formulas():
 @pytest.mark.parametrize("formulas, message", [
     ("ypos ~ a * exp(b * x)", r"nl=True takes a list of formulas"),
     (["ypos ~ a * exp(b * x)"], r"has no formula of a non-linear parameter"),
-    ([["ypos ~ a", "a ~ 1"], ["y ~ b", "b ~ 1"]], r"non-linear models in multivariate formulas are not supported \(divergence D62\)"),
+    ([["ypos ~ a", "a ~ 1"], ["y ~ b", "b ~ 1"]], r"a list of response formulas with nl=True: a non-linear model in a multivariate "
+                                                  r"formula is not supported \(divergence D62"),
+    ("mvbind(ypos, xpos) ~ a * exp(b * x)", r"'mvbind\(ypos, xpos\) ~ a \* exp\(b \* x\)': mvbind\(\) with nl=True: a non-linear "
+                                            r"model in a multivariate formula is not supported \(divergence D62"),
+    (["mvbind(ypos, xpos) ~ a * exp(b * x)", "a ~ 1", "b ~ 1"], r"mvbind\(\) with nl=True: a non-linear model in a multivariate "
+                                                                 r"formula is not supported \(divergence D62"),
     (["ypos ~ a * exp(b * x)", "nlf(a ~ c * d)", "b ~ 1"], r"brms's nlf\(\) is not supported here \(divergence D60\)"),
     (["ypos ~ a * exp(b * x)", "a ~ 1 + b", "b ~ 1"], r"'b' is a non-linear parameter; a non-linear parameter inside another's formula "
                                                       r"is not supported \(divergence D60\)"),
@@ -180,6 +186,14 @@ def test_parameters_covariates_and_their_formulas():
     (["ypos ~ a * exp(b * x)", "a ~ 1 + offset(w)", "b ~ 1"], r"'offset\(w\)' in a non-linear parameter's formula is not supported in "
                                                              r"this slice \(divergence D61\)"),
     (["ypos ~ a * exp(b * x)", "a ~ 1 + mo(w)", "b ~ 1"], r"the monotonic term 'mo\(w\)' in a non-linear parameter's formula"),
+    (["ypos ~ a * exp(b * x)", "a ~ 1 + gp(w)", "b ~ 1"], r"the Gaussian process 'gp\(w\)' in a non-linear parameter's formula is not "
+                                                         r"supported in this slice \(divergence D61\)"),
+    (["ypos ~ a * exp(b * x)", "a ~ 1", "b ~ 1 + gp(w, k = 5, c = 1.5)"], r"the Gaussian process 'gp\(w, k = 5, c = 1.5\)' in a "
+                                                                          r"non-linear parameter's formula is not supported"),
+    (["ypos ~ a * gp(x)", "a ~ 1"], r"gp\(\) at position 4 is brms's Gaussian process \(C03\), a term of a linear formula, not a "
+                                    r"function of the non-linear expression .* \(divergence D61\)"),
+    (["ypos ~ a * exp(b * mo(w))", "a ~ 1", "b ~ 1"], r"mo\(\) at position 12 is brms's monotonic term \(B03\), a term of a linear "
+                                                      r"formula"),
     (["ypos ~ a * abs(b * x)", "a ~ 1", "b ~ 1"], r"abs\(\) at position 4 is outside the grammar"),
     (["ypos ~ a * exp(b * x)", "a | weights(w) ~ 1", "b ~ 1"], r"a non-linear parameter's formula is '<parameter> ~ <terms>'"),
     (["ypos ~ a * exp(b * qq)", "a ~ 1", "b ~ 1"], r"columns not in data: \['qq'\] \(\['qq'\] appear in the non-linear formula"),
@@ -738,3 +752,106 @@ def test_the_gates_see_a_corrupted_correlated_nonlinear_fixture():
         raw["points"][0]["u"]["values"][i] += 1e-6
     with pytest.raises(OracleMismatch, match=r"point 0: Stan's cholesky_corr coordinate 0 of L_3"):
         gates.check_gradient(_corrupted(fx, b, cholesky))
+
+
+# -- with the other features: multivariate models (C01), mixtures (C05), Gaussian processes (C03), post-processing (C07) ------
+def test_nl_is_refused_with_a_multivariate_model_or_a_mixture():
+    """brms takes both (``bf(mvbind(y, y2) ~ a * exp(b * x), ..., nl = TRUE)`` gives each response its own parameters,
+    ``X_y_a``; ``mixture(gaussian, gaussian)`` puts the expression in every component's mean with shared parameters), and
+    neither is verified here (divergence D62): refused by every entry point, naming the construct."""
+    with pytest.raises(FormulaError, match=r"rescor= belongs to a multivariate model, 'mvbind\(y, y2\) ~ \.\.\.'; a non-linear model "
+                                           r"in a multivariate formula is not supported \(docs/nonlinear.md, divergence D62\)"):
+        ab.gaussian(EXP, FRAME, EXP_PRIORS, nl=True, rescor=False)
+    with pytest.raises(FormulaError, match=r"mvbind\(\) with nl=True: a non-linear model in a multivariate formula is not supported"):
+        ab.gaussian(["mvbind(ypos, xpos) ~ a * exp(b * x)", "a ~ 1 + (1 | g)", "b ~ 1"], FRAME, EXP_PRIORS, nl=True)
+    with pytest.raises(FormulaError, match=r"nl=True with a mixture is not supported \(docs/nonlinear.md, divergence D62\)"):
+        ab.mixture(EXP, FRAME, EXP_PRIORS, families=["gaussian", "gaussian"], nl=True)
+    with pytest.raises(FormulaError, match=r"families= and order= are a mixture's \(ab.mixture, docs/mixtures.md\); a non-linear model "
+                                           r"in a mixture is not supported \(divergence D62\)"):
+        ab.default_priors(EXP, FRAME, family="mixture", families=["gaussian", "gaussian"], nl=True)
+    with pytest.raises(FormulaError, match=r"the mixture family is not offered with nl=True \(divergence D62\)"):
+        ab.default_priors(EXP, FRAME, family="mixture", nl=True)
+    with pytest.raises(FormulaError, match=r"rescor= belongs to a multivariate model"):
+        ab.default_priors(EXP, FRAME, rescor=True, nl=True)
+    with pytest.raises(FormulaError, match=r"mvbind\(\) with nl=True"):
+        ab.default_priors(["mvbind(ypos, xpos) ~ a * exp(b * x)", "a ~ 1", "b ~ 1"], FRAME, nl=True)
+    with pytest.raises(ValueError, match=r"nu applies only to the student family, which is not offered with nl=True"):
+        ab.default_priors(EXP, FRAME, nu=4, nl=True)
+
+
+LINEAR = ab.Priors(intercept=ab.Normal(0, 5), b=ab.Normal(0, 2), sigma=ab.HalfNormal(1))
+MIXTURE = ab.Priors(components=[LINEAR, LINEAR], theta=ab.Dirichlet(1))
+RESPONSES = {"y": {"intercept": ab.Normal(0, 5), "b": ab.Normal(0, 2), "sigma": ab.HalfNormal(1)},
+             "xpos": {"intercept": ab.Normal(0, 5), "b": ab.Normal(0, 2), "sigma": ab.HalfNormal(1)}}
+NLPARS = {"a": {"b": ab.Normal(0, 1)}}
+
+
+@pytest.mark.parametrize("field, value, message", [
+    ("sdgp", ab.HalfNormal(1), r"sdgp is the prior of a Gaussian process gp\(x\) \(docs/gaussian-processes.md\); a non-linear model takes "
+                               r"no Gaussian process \(divergence D61\)"),
+    ("lscale", ab.InverseGamma(3, 1), r"lscale is the prior of a Gaussian process gp\(x\)"),
+    ("components", [LINEAR, LINEAR], r"components is the prior of a mixture \(ab.mixture, docs/mixtures.md\); a non-linear model in a "
+                                     r"mixture is not supported \(divergence D62\)"),
+    ("theta", ab.Dirichlet(1), r"theta is the prior of a mixture"),
+    ("resp", RESPONSES, r"resp is the prior of a multivariate model \(docs/multivariate.md\); a non-linear model in a multivariate "
+                        r"formula is not supported \(divergence D62\)"),
+    ("rescor", ab.LKJ(1), r"rescor is the prior of a multivariate model"),
+])
+def test_a_nonlinear_model_refuses_the_priors_of_the_other_features(field, value, message):
+    with pytest.raises(PriorError, match=message):
+        ab.gaussian(EXP, FRAME, dataclasses.replace(EXP_PRIORS, **{field: value}), nl=True)
+
+
+def test_the_other_models_refuse_nlpars():
+    linear = r"nlpars gives the priors of non-linear parameters, which a model has only with nl=True \(docs/nonlinear.md\); this formula is linear"
+    with pytest.raises(PriorError, match=linear):
+        ab.gaussian("y ~ x", FRAME, dataclasses.replace(LINEAR, nlpars=NLPARS))
+    mix = dict(families=["gaussian", "gaussian"])
+    ab.mixture("y ~ x", FRAME, MIXTURE, **mix)
+    with pytest.raises(PriorError, match=linear):
+        ab.mixture("y ~ x", FRAME, dataclasses.replace(MIXTURE, nlpars=NLPARS), **mix)
+    with pytest.raises(PriorError, match=r"component 2 \(brms's mu2 and sigma2\): " + linear):
+        ab.mixture("y ~ x", FRAME, dataclasses.replace(MIXTURE, components=[LINEAR, dataclasses.replace(LINEAR, nlpars=NLPARS)]), **mix)
+    mv = ab.Priors(resp=RESPONSES, rescor=ab.LKJ(1))
+    ab.gaussian("mvbind(y, xpos) ~ x", FRAME, mv, rescor=True)
+    with pytest.raises(PriorError, match=r"nlpars gives the priors of non-linear parameters \(ab.gaussian\(..., nl=True\), "
+                                         r"docs/nonlinear.md\); a multivariate model takes none: a non-linear model in a multivariate "
+                                         r"formula is not supported \(divergence D62\)"):
+        ab.gaussian("mvbind(y, xpos) ~ x", FRAME, dataclasses.replace(mv, nlpars=NLPARS), rescor=True)
+    with pytest.raises(PriorError, match=r"response 'y': the priors of the response 'y' take the classes .*; unexpected \['nlpars'\]"):
+        ab.gaussian("mvbind(y, xpos) ~ x", FRAME, dataclasses.replace(mv, resp={**RESPONSES, "y": {**RESPONSES["y"], "nlpars": NLPARS}}),
+                    rescor=True)
+    with pytest.raises(PriorError, match=r"response 'y': " + linear):
+        ab.gaussian("mvbind(y, xpos) ~ x", FRAME, dataclasses.replace(mv, resp={**RESPONSES, "y": ab.Priors(**RESPONSES["y"], nlpars=NLPARS)}),
+                    rescor=True)
+
+
+@pytest.mark.parametrize("case", ["gauss_nonlinear_exp", "gauss_nonlinear_terms"])
+def test_log_lik_bayes_R2_and_loo_are_the_graphs(case):
+    """C07's post-processing of a non-linear model, at the frozen brms points held as draws: ``log_lik`` row by row is the
+    graph's own elementwise log density of the response (the per-row terms whose sum gate G2 checks against brms's
+    ``log_prob``), as C07 checks it for every other model; ``bayes_R2`` is ``var(mu) / (var(mu) + var(y - mu))`` with the
+    graph's ``mu`` (brms's ``posterior_epred`` of a Gaussian non-linear model); ``loo`` is PSIS-LOO of that log-likelihood."""
+    from autobayes.post_processing import loo_from_log_lik
+    from tests.oracle import adapter
+    from tests.oracle.tolerances import rel_err
+
+    _, _, b = _bundle(case)
+    pmm = b.model.pymc_model
+    pointwise = pmm.compile_fn(pmm.logp(vars=pmm.observed_RVs, sum=False), inputs=pmm.value_vars, point_fn=True,
+                               on_unused_input="ignore")
+    mu_fn = pmm.compile_fn(pmm.replace_rvs_by_values([pmm[b.model.names["mu"]]]), inputs=pmm.value_vars, point_fn=True,
+                           on_unused_input="ignore")
+    idata = adapter.draws(b.fixture, b.model, b.cmap, b.gmap)
+    ll, r2 = ab.log_lik(b.model, idata), ab.bayes_R2(b.model, idata)
+    assert ll.dims == ("chain", "draw", "__obs__") and ll.shape == (1, len(b.fixture.points), b.model.design.n)
+    assert r2.dims == ("chain", "draw") and r2.shape == (1, len(b.fixture.points))
+    y = np.asarray(b.model.design.y, dtype=float)
+    for k, _, vp in b.points():
+        assert rel_err(ll.to_numpy()[0, k], np.asarray(pointwise(vp)[0], dtype=float).ravel()) <= 1e-12, k
+        (mu,) = mu_fn(vp)
+        mu = np.asarray(mu, dtype=float)
+        assert rel_err(r2.to_numpy()[0, k], np.var(mu, ddof=1) / (np.var(mu, ddof=1) + np.var(y - mu, ddof=1))) <= 1e-12, k
+    res, reference = ab.loo(b.model, idata), loo_from_log_lik(ll)
+    np.testing.assert_array_equal(res.pointwise.to_numpy(), reference.pointwise.to_numpy())
+    np.testing.assert_array_equal(res.estimates.to_numpy(), reference.estimates.to_numpy())

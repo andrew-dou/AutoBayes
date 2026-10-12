@@ -85,15 +85,29 @@ likelihood on `mu` is `FamilySpec.nonlinear_likelihood`.
   `fit()` samples the graph with PyMC's `sample` (`sample_posterior`, as Bambi's `fit()` samples a model it built, dropping
   the per-row deterministics and the `_offset` variables); `fit_record()` records the formulas, covariates, parameters,
   names and priors; `prior_predictive()` draws the graph (refused under a flat prior).
+- **Post-processing** (C07, docs/post-processing.md): `ab.log_lik(model, fit)` is each fitted row's `Normal(y_i | mu_i,
+  sigma)` log density per draw, `ab.bayes_R2(model, fit)` the per-draw `var(mu) / (var(mu) + var(y - mu))` (brms's
+  `posterior_epred` of a Gaussian non-linear model is `mu`) and `ab.loo(model, fit)` PSIS-LOO of that log-likelihood, through
+  the same code as for a linear model. They are checked against the graph's own elementwise log density and `mu` at the
+  frozen brms points; no frozen non-linear case holds brms's `log_lik()` / `loo()` tables (the two predate C07's `post`
+  block).
 
 ## Refused, naming the construct
 
 - brms's `nlf()` and `lf()`, and a non-linear parameter inside another parameter's formula (D60).
 - Functions and operators outside the grammar, R's `2L`/`0x10`/`1i` literals and unary plus; the response as a covariate of
-  the expression or as a predictor of a parameter; `mo()` and `offset()` in a parameter's formula and response addition terms
-  (`weights()`, `cens()`, `trunc()`) with a non-linear formula (D61).
-- A distributional formula with `nl=True` (`sigma ~ x` next to the parameters' formulas), a non-linear model in a
-  multivariate formula, and families other than the Gaussian (D62).
+  the expression or as a predictor of a parameter; `gp()` and `mo()` written in the expression (brms passes them into its
+  Stan program as calls of functions Stan does not have) and in a parameter's formula (brms takes them there: a Gaussian
+  process `gp_pred_a_1` or a monotonic term added to `nlp_a`), `offset()` in a parameter's formula and response addition
+  terms (`weights()`, `cens()`, `trunc()`) with a non-linear formula (D61). The priors of a Gaussian process (`sdgp`,
+  `lscale`) are refused with them.
+- A distributional formula with `nl=True` (`sigma ~ x` next to the parameters' formulas); a non-linear model in a
+  multivariate formula, `mvbind(y, y2) ~ a * exp(b * x)` (brms gives each response its own parameters, `X_y_a`, `X_y2_a`) or
+  a list of response formulas, and `rescor=` with `nl=True`; a non-linear model in a mixture, `ab.mixture(..., nl=True)` and
+  `ab.default_priors(..., families=..., nl=True)` (brms puts the expression in every component's mean with shared
+  parameters); families other than the Gaussian (D62). A non-linear model's priors refuse the multivariate model's `resp`
+  and `rescor` and the mixture's `components` and `theta`; every other model's priors refuse `nlpars` (a multivariate
+  model's at the top level and in each response's, a mixture's at the top level and in each component's).
 - `loop=False` (D63).
 - A covariate that is not a numeric column, or has missing or non-finite values; a formula of a parameter the expression does
   not use; two formulas for one parameter; a name of the expression that is neither a parameter nor a column.
@@ -117,5 +131,7 @@ with its `nlpar` rows. `tests/test_nonlinear.py` covers the grammar (R's precede
 module calls no evaluating builtin), the term model and its refusals, the priors, a density written by hand on a model with
 every construct, `value_point`, predictions written by hand (fitted and new rows, `nlpar=`, both unseen-level policies),
 `describe()`, the identity, the fit plumbing with a stubbed sampler and the fit record, prior-predictive draws, seven
-`default_prior()` tables printed by brms for a small frame, and that the gates fail on a corrupted non-linear fixture.
-Nothing samples.
+`default_prior()` tables printed by brms for a small frame, that the gates fail on a corrupted non-linear fixture, every
+refusal of a combination with the other features (multivariate formulas, mixtures, Gaussian processes and their priors,
+`nlpars` in theirs), and `log_lik`, `bayes_R2` and `loo` against the graph's own density and `mu` on both frozen cases
+(within 2.1e-15 relative). Nothing samples.

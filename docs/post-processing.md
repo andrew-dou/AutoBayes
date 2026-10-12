@@ -25,7 +25,9 @@ link, `log Phi` of the probit, the zero-inflated and hurdle forms of D28, the or
 Under `weights(w)` each row's log density is multiplied by its weight, as brms multiplies it. Offered for every family:
 Gaussian, Student-t (fixed or learned `nu`), Poisson, negative binomial, Gamma, lognormal, Beta, Bernoulli and binomial
 (logit and probit), zero-inflated and hurdle Poisson, cumulative (the log probability of the 1-based category) and
-categorical.
+categorical. A non-linear model (C02, `nl=True`, docs/nonlinear.md) is taken the same way, its linear predictor the
+non-linear predictor `mu` (brms's `posterior_linpred`); `tests/test_nonlinear.py` checks `log_lik`, `bayes_R2` and `loo` on
+it against the graph's own density and `mu` at the frozen brms points.
 
 ## `bayes_R2(model, fit)`
 
