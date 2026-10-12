@@ -378,7 +378,14 @@ class Priors:
             raise PriorError("ar and ma are the priors of an autocorrelation term ar(), ma(), arma() (docs/autocorrelation.md); a "
                              "multivariate model takes neither: an autocorrelation term in a multivariate formula is not supported "
                              "(divergence D70)")
-        top = [name for name in (*self._RESPONSE_CLASSES, "meanme", "sdme") if getattr(self, name) is not None]   # me(): C06
+        if self.sdgp is not None or self.lscale is not None:          # C03: a multivariate formula takes no gp()
+            raise PriorError("sdgp and lscale are the priors of a Gaussian process gp(x) (docs/gaussian-processes.md); a multivariate "
+                             "model takes neither: a Gaussian process in a multivariate formula is not supported (divergence D56)")
+        if self.meanme is not None or self.sdme is not None:          # C06
+            raise PriorError("meanme and sdme are the priors of a measurement-error term me(x, sdx) (docs/missing-and-measurement-error.md); "
+                             "a multivariate model takes neither: a measurement-error term in a multivariate model is not supported "
+                             "(divergence D73)")
+        top = [name for name in self._RESPONSE_CLASSES if getattr(self, name) is not None]
         if top:
             raise PriorError(
                 f"a multivariate model takes its priors by response, as brms's resp: Priors(resp={{{', '.join(f'{r!r}: {{...}}' for r in responses)}}}"

@@ -93,6 +93,27 @@ in multivariate models, other families, expressions inside `me()`, missing noisy
 `predict(newdata=...)` of a model with `me()`, missing values of an `mi()` column on new rows, and `log_lik()`, `loo()` and
 `bayes_R2()` of models with `me()` or `mi()` (D74). Names and layout differ from brms's (D75).
 
+## With the other features
+
+No frozen case verifies `me()` or `mi()` next to another Tier C feature, so each pair is refused, naming the term:
+
+- Non-linear models (C02, `nl=True`): `me()` and `mi()` in the expression (brms's terms, not functions of it) or in a
+  parameter's formula, `mi()` on the response or a parameter's left-hand side, and the `meanme` and `sdme` priors.
+- Gaussian processes (C03) and autocorrelation terms (C04): `me()`, `mi()` and the response's `| mi()` in a formula with
+  `gp()` or with `ar()`, `ma()`, `arma()` (C04 refuses an autocorrelation term next to any addition term, `| mi()` among them,
+  first); in a list of formulas with `mi()`, `gp()` and autocorrelation terms are refused in every formula, as they are in an
+  `mvbind()` formula.
+- Mixtures (C05): `me()`, `mi()` and `| mi()` are not available for the mixture family, a mixture takes one formula (so no
+  list with `mi()`), and `meanme` and `sdme` are refused at the top level of a mixture's priors, in a component's, and by its
+  `value_point` together with `zme` and `Ymi`.
+- Priors. Each model refuses the fields of the features it does not have: an `me()` model `components`, `theta`, `resp`,
+  `rescor`, `sdgp`, `lscale`, `nlpars`, `ar` and `ma`; the multivariate `mi()` model the same at the top level (`sdgp` and
+  `lscale` there included, which a multivariate model used to take without a word) and in each response's priors; a model
+  without `me()` (a mixture, a non-linear model, a model with a Gaussian process or an autocorrelation term, a plain one)
+  `meanme` and `sdme`.
+- Sampling and post-processing. `ab.fit()` draws the multivariate `mi()` model through its own `sample_posterior` and the
+  `me()` model through Bambi (`inference._posterior_sampler`); `log_lik()`, `loo()` and `bayes_R2()` (C07) refuse both (D74).
+
 ## Evidence
 
 The frozen cases `gauss_mi` (`bf(y ~ mi(xm) + w) + bf(xm | mi() ~ w) + set_rescor(FALSE)`, 7 of 36 `xm` values missing) and

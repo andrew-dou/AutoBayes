@@ -233,7 +233,8 @@ def _parse_imputation(formulas, data, family, categorical, *, rescor) -> Multiva
     parsed as the univariate formula it is (and validated against ``data``), the responses distinct, ``rescor=False``. Every
     ``mi(col)`` term needs ``col``'s own formula with ``| mi()`` in the list (brms refuses it otherwise too); refused, naming the
     construct: no ``mi()`` term (a formula per response alone, D56), ``rescor=True`` and imputations in a cycle (D72), ``me()``
-    (D73), ``mo()``, other addition terms (D56), and a response read by another formula other than through ``mi()``."""
+    (D73), ``mo()``, other addition terms (D56), a Gaussian process ``gp()`` (C03, D56) or an autocorrelation term (C04, D70) in
+    any formula of the list, as in an ``mvbind()`` formula, and a response read by another formula other than through ``mi()``."""
     texts = list(formulas)
     if len(texts) < 2 or not all(isinstance(f, str) for f in texts):
         raise FormulaError(f"{formulas!r}: {IMPUTATION_FORM}")
@@ -270,6 +271,14 @@ def _parse_imputation(formulas, data, family, categorical, *, rescor) -> Multiva
         if s.mo_terms:
             raise FormulaError(f"{s.formula!r}: a monotonic term in a multivariate model is not verified in this slice (docs/multivariate.md, "
                                "divergence D56)")
+        if s.gp_terms:                                        # C03: refused as in an mvbind() formula (a formula with mi() already was)
+            raise FormulaError(f"{s.formula!r}: the Gaussian process {s.gp_terms[0].term!r} in a multivariate model is not verified in this "
+                               "slice (each response would have its own process, brms's sdgp_y and lscale_y); write it in a univariate "
+                               "model (docs/multivariate.md, divergence D56)")
+        if s.autocor is not None:                             # C04: likewise
+            raise FormulaError(f"{s.formula!r}: the autocorrelation term {s.autocor.term!r} in a multivariate model is not verified in "
+                               "this slice (brms gives each response its own ARMA term, ar_y and ar_y2); write it in a univariate model "
+                               "(docs/autocorrelation.md, divergence D70)")
         for t in s.mi_terms:
             col = t.operands[0]
             if col not in responses:

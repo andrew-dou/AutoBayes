@@ -5,7 +5,9 @@ The grammar and its refusals, the term model, the priors (``meanme``, ``sdme``, 
 densities written out here with scipy (the latent values and the noisy values' density of ``me()``; the observed and imputed
 values of ``mi()``, one variable of the missing values shared by the responses), ``value_point``, predictions on fitted and new
 rows, brms's default priors and prior table, ``describe()``, the target identity, and the refusals of what is not part of the
-slice. Nothing samples. The numbers against brms are the oracle's (tests/oracle, cases gauss_me and gauss_mi)."""
+slice, with the other Tier C features among them (non-linear models, Gaussian processes, autocorrelation terms, mixtures, each
+other's prior fields) and the single fit hook. Nothing samples. The numbers against brms are the oracle's (tests/oracle, cases
+gauss_me and gauss_mi)."""
 import re
 
 import arviz as az
@@ -546,3 +548,271 @@ def test_me_fit_record(me_model):
     assert model["priors"]["b:me(xobs, sdx)"] == "Normal(mu=0, sigma=2)" and model["fit_binding_status"] == "matched"
     assert model["measurement_error"] == {"me(xobs, sdx)": {"column": "xobs", "noise_column": "sdx", "names": me_model.me_names["xobs"]}}
     assert {"meanme_xobs", "sdme_xobs", "me(xobs, sdx)"} <= set(rec["posterior"])
+
+
+# -- 5. with the other Tier C features: non-linear models (C02), Gaussian processes (C03), autocorrelation terms (C04),
+# mixtures (C05), the single fit hook (C01, C02) and post-processing (C07) ------------------------------------------------------
+LINEAR = dict(intercept=ab.Normal(0, 5), b=ab.Normal(0, 2), sigma=ab.HalfNormal(1))
+NLPARS = {"a": {"b": ab.Normal(1, 1)}, "b": {"b": ab.Normal(0, 1)}}
+GP = dict(sdgp=ab.HalfNormal(1), lscale=ab.InverseGamma(3, 1))
+TWO = ["gaussian", "gaussian"]
+
+
+def tier_c(frame: pd.DataFrame) -> pd.DataFrame:
+    """The frame with a time column for ar(), ma() and arma() and a positive response for a non-linear model."""
+    return frame.assign(t=np.arange(len(frame)), ypos=np.exp(frame["y"] / 3))
+
+
+def test_nonlinear_models_refuse_the_terms(me_data, mi_data):
+    """C02: in the expression me() and mi() are brms's terms, not functions; in a parameter's formula, on the response's or a
+    parameter's left-hand side, as a parameter's prior key and as a non-linear model's priors (meanme, sdme) they are refused,
+    naming the term: no frozen case verifies them in a non-linear model (D72, D73)."""
+    me, mi = tier_c(me_data), tier_c(mi_data)
+    priors = ab.Priors(nlpars=NLPARS, sigma=ab.HalfNormal(1))
+    for formulas, frame, message in (
+            (["ypos ~ a * exp(b * w) * me(xobs, sdx)", "a ~ 1", "b ~ 1"], me,
+             r"me\(\) at position 17 is brms's measurement-error term \(C06\), a term of a linear formula, not a function of the "
+             r"non-linear expression; .*divergence D73"),
+            (["ypos ~ a * exp(b * w) + mi(xm)", "a ~ 1", "b ~ 1"], mi, r"mi\(\) at position 17 is brms's missing-value term \(C06\).*D72"),
+            (MI, mi, r"'mi\(xm\) \+ w': mi\(\) at position 0 is brms's missing-value term \(C06\)"),
+            (["ypos ~ a * exp(b * w)", "a ~ 1 + me(xobs, sdx)", "b ~ 1"], me,
+             r"'a ~ 1 \+ me\(xobs, sdx\)': the measurement-error term 'me\(xobs, sdx\)' in a non-linear parameter's formula is not "
+             r"supported in this slice .*divergence D73"),
+            (["ypos ~ a * exp(b * w)", "a ~ 1 + mi(xm)", "b ~ 1"], mi,
+             r"'a ~ 1 \+ mi\(xm\)': the missing-value term 'mi\(xm\)' in a non-linear parameter's formula is not supported .*D72"),
+            (["xm | mi() ~ a * exp(b * w)", "a ~ 1", "b ~ 1"], mi,
+             r"the response's mi\(\) \('xm \| mi\(\)', its missing values as parameters\) with a non-linear formula is not supported "
+             r"in this slice .*divergence D72"),
+            (["ypos ~ a * exp(b * w)", "a | mi() ~ 1", "b ~ 1"], mi,
+             r"'a \| mi\(\) ~ 1': mi\(\) marks a data column's missing values as parameters; a non-linear parameter has no data")):
+        with pytest.raises(FormulaError, match=message):
+            ab.gaussian(formulas, frame, priors, nl=True)
+    with pytest.raises(FormulaError, match=r"the measurement-error term 'me\(xobs, sdx\)' in a non-linear parameter's formula"):
+        ab.default_priors(["ypos ~ a * exp(b * w)", "a ~ 1 + me(xobs, sdx)", "b ~ 1"], me, nl=True)
+    for name, prior in (("meanme", ab.Normal(0, 1)), ("sdme", ab.HalfNormal(1))):
+        with pytest.raises(ab.PriorError, match=rf"{name} is the prior of a measurement-error term me\(x, sdx\) .*; a non-linear "
+                                                r"model takes no measurement-error term \(divergence D73\)"):
+            ab.gaussian(["ypos ~ a * exp(b * w)", "a ~ 1", "b ~ 1"], me, ab.Priors(nlpars=NLPARS, sigma=ab.HalfNormal(1), **{name: prior}),
+                        nl=True)
+        with pytest.raises(ab.PriorError, match=rf"the priors of 'a' take the keys \['b', 'sd'\] .*; unexpected \['{name}'\]"):
+            ab.gaussian(["ypos ~ a * exp(b * w)", "a ~ 1", "b ~ 1"], me,
+                        ab.Priors(nlpars={**NLPARS, "a": {"b": ab.Normal(1, 1), name: prior}}, sigma=ab.HalfNormal(1)), nl=True)
+
+
+def test_gaussian_processes_are_refused_next_to_the_terms(me_data, mi_data):
+    """C03: no frozen case verifies me(), mi() or a response's | mi() next to gp() (D72, D73), for the constructor as for
+    ab.default_priors; a list of formulas with mi() refuses gp() in its other formulas too, as an mvbind() formula does
+    (D56)."""
+    for build in (lambda f: ab.gaussian(f, me_data, me_priors(**GP)), lambda f: ab.default_priors(f, me_data)):
+        for formula in ("y ~ me(xobs, sdx) + gp(w)", "y ~ gp(w, k = 5, c = 5/4) + me(xobs, sdx)"):
+            with pytest.raises(FormulaError, match=r"the measurement-error term 'me\(xobs, sdx\)' next to the Gaussian process "
+                                                   r"'gp\(w.*\)' \(C03\) is not supported in this slice: no frozen brms case verifies "
+                                                   r"the pair .*divergence D73"):
+                build(formula)
+    for formulas, message in (
+            (["y ~ mi(xm) + gp(w)", "xm | mi() ~ w"], r"the missing-value term 'mi\(xm\)' next to the Gaussian process 'gp\(w\)' "
+                                                      r"\(C03\) is not supported in this slice.*divergence D72"),
+            (["y ~ mi(xm) + w", "xm | mi() ~ gp(w)"], r"the response's mi\(\) \('xm \| mi\(\)'\) next to the Gaussian process "
+                                                      r"'gp\(w\)' \(C03\).*divergence D72"),
+            (["y ~ mi(xm) + w", "xm | mi() ~ w", "v ~ gp(w)"], r"'v ~ gp\(w\)': the Gaussian process 'gp\(w\)' in a multivariate "
+                                                               r"model is not verified in this slice .*divergence D56")):
+        responses = tuple(re.match(r"\s*(\w+)", f).group(1) for f in formulas)
+        for build in (lambda: ab.gaussian(formulas, mi_data, mi_priors(responses), rescor=False),
+                      lambda: ab.default_priors(formulas, mi_data, rescor=False)):
+            with pytest.raises(FormulaError, match=message):
+                build()
+
+
+def test_autocorrelation_terms_are_refused_next_to_the_terms(me_data, mi_data):
+    """C04: no frozen case verifies me() or mi() next to ar(), ma() or arma() (D72, D73); C04 refuses a response's | mi()
+    next to one first, as it refuses every addition term there (D70); a list of formulas with mi() refuses the term in its
+    other formulas too, as an mvbind() formula does (D70)."""
+    me, mi = tier_c(me_data), tier_c(mi_data)
+    for build in (lambda f: ab.gaussian(f, me, me_priors(ar=ab.Normal(0, 0.5), ma=ab.Normal(0, 0.5))), lambda f: ab.default_priors(f, me)):
+        for formula, term in (("y ~ me(xobs, sdx) + ar(t)", "ar(time = t, p = 1)"),
+                              ("y ~ arma(time = t, p = 1, q = 1) + me(xobs, sdx)", "arma(time = t, p = 1, q = 1)")):
+            with pytest.raises(FormulaError, match=r"the measurement-error term 'me\(xobs, sdx\)' next to the autocorrelation term "
+                                                   + re.escape(f"'{term}' (C04) is not supported in this slice: no frozen brms case "
+                                                               "verifies the pair") + r".*divergence D73"):
+                build(formula)
+    for formulas, message in (
+            (["y ~ mi(xm) + w + ar(t)", "xm | mi() ~ w"], r"the missing-value term 'mi\(xm\)' next to the autocorrelation term "
+                                                          r"'ar\(time = t, p = 1\)' \(C04\).*divergence D72"),
+            (["y ~ mi(xm) + w", "xm | mi() ~ w + ma(t)"], r"the autocorrelation term 'ma\(time = t, q = 1\)' with the response "
+                                                          r"addition term\(s\) mi\(\) is not supported in this slice .*divergence D70"),
+            (["y ~ mi(xm) + w", "xm | mi() ~ w", "v ~ w + arma(t)"], r"'v ~ w \+ arma\(t\)': the autocorrelation term "
+                                                                     r"'arma\(time = t, p = 1, q = 1\)' in a multivariate model is "
+                                                                     r"not verified in this slice .*divergence D70")):
+        responses = tuple(re.match(r"\s*(\w+)", f).group(1) for f in formulas)
+        for build in (lambda: ab.gaussian(formulas, mi, mi_priors(responses), rescor=False),
+                      lambda: ab.default_priors(formulas, mi, rescor=False)):
+            with pytest.raises(FormulaError, match=message):
+                build()
+
+
+def test_mixtures_refuse_the_terms_and_their_priors(me_data, mi_data):
+    """C05: me(), mi() and a response's | mi() are not available for the mixture family (D72, D73), a mixture takes no list
+    of formulas (D54); meanme and sdme are refused at a mixture's top level and in a component's priors, and its value_point
+    refuses them with zme and Ymi."""
+    comps = [ab.Priors(**LINEAR), ab.Priors(**LINEAR)]
+    priors = ab.Priors(components=comps, theta=ab.Dirichlet(1))
+    for formula, frame, message in (
+            ("y ~ me(xobs, sdx)", me_data, r"the measurement-error term 'me\(xobs, sdx\)' is not available for the mixture family; "
+                                           r"brms's me\(\) is verified here for the gaussian family .*divergence D73"),
+            ("y ~ mi(xm) + w", mi_data, r"the missing-value term 'mi\(xm\)' is not available for the mixture family.*divergence D72"),
+            ("xm | mi() ~ w", mi_data, r"'mi\(\)' is not available for the mixture family; brms's mi\(\) is verified here for the gaussian"),
+            (MI, mi_data, r"a mixture takes one formula, the same for every component")):
+        with pytest.raises(FormulaError, match=message):
+            ab.mixture(formula, frame, priors, families=TWO)
+    with pytest.raises(FormulaError, match=r"the measurement-error term 'me\(xobs, sdx\)' is not available for the mixture family"):
+        ab.default_priors("y ~ me(xobs, sdx)", me_data, family="mixture", families=TWO)
+    for name, prior in (("meanme", ab.Normal(0, 1)), ("sdme", ab.HalfNormal(1))):
+        with pytest.raises(ab.PriorError, match=rf"a mixture's priors are per component, .*\['{name}'\] at the top level do not apply"):
+            ab.mixture("y ~ w", me_data, ab.Priors(components=comps, theta=ab.Dirichlet(1), **{name: prior}), families=TWO)
+        with pytest.raises(ab.PriorError, match=rf"component 2 \(brms's mu2 and sigma2\): the formula has no measurement-error term "
+                                                rf"me\(x, sdx\); do not pass {name}"):
+            ab.mixture("y ~ w", me_data, ab.Priors(components=[comps[0], ab.Priors(**LINEAR, **{name: prior})], theta=ab.Dirichlet(1)),
+                       families=TWO)
+    m = ab.mixture("y ~ w", me_data, priors, families=TWO)
+    point = dict(intercept=[0.0, 1.0], b=np.zeros((1, 2)), sigma=[1.0, 1.0], theta=[0.5, 0.5])
+    m.value_point(**point)
+    for name, value in (("meanme", 0.3), ("sdme", 0.5), ("zme", np.zeros(len(me_data))), ("Ymi", [0.1])):
+        with pytest.raises(ValueError, match=rf"\['{name}'\] do not apply to a mixture"):
+            m.value_point(**point, **{name: value})
+
+
+@pytest.mark.parametrize("name, value, message", [
+    ("components", [ab.Priors(**LINEAR), ab.Priors(**LINEAR)], r"components and theta are the priors of a mixture"),
+    ("theta", ab.Dirichlet(1), r"components and theta are the priors of a mixture"),
+    ("resp", {"y": response()}, r"resp and rescor are the priors of a multivariate model"),
+    ("rescor", ab.LKJ(2), r"resp and rescor are the priors of a multivariate model"),
+    ("sdgp", ab.HalfNormal(1), r"the formula has no Gaussian process gp\(x\); do not pass sdgp"),
+    ("lscale", ab.InverseGamma(3, 1), r"the formula has no Gaussian process gp\(x\); do not pass lscale"),
+    ("nlpars", NLPARS, r"nlpars gives the priors of non-linear parameters, which a model has only with nl=True"),
+    ("ar", ab.Normal(0, 0.5), r"do not pass ar; the formula has no autocorrelation term"),
+    ("ma", ab.Normal(0, 0.5), r"do not pass ma; the formula has no autocorrelation term"),
+])
+def test_the_other_features_priors_are_refused_in_an_me_model(me_data, name, value, message):
+    """C01-C05's prior fields do not apply to a univariate model with me(): each is refused naming its feature."""
+    with pytest.raises(ab.PriorError, match=message):
+        ab.gaussian(ME, me_data, me_priors(**{name: value}))
+
+
+@pytest.mark.parametrize("name, value, top, in_response", [
+    ("components", [ab.Priors(**LINEAR), ab.Priors(**LINEAR)], r"components and theta are the priors of a mixture .*; a multivariate "
+     r"model takes neither", r"components and theta are the priors of a mixture"),
+    ("theta", ab.Dirichlet(1), r"components and theta are the priors of a mixture", r"components and theta are the priors of a mixture"),
+    ("rescor", ab.LKJ(2), r"this model has no residual correlation \(rescor=False\)", r"cannot hold resp or rescor themselves"),
+    ("sdgp", ab.HalfNormal(1), r"sdgp and lscale are the priors of a Gaussian process gp\(x\) .*; a multivariate model takes neither: a "
+     r"Gaussian process in a multivariate formula is not supported \(divergence D56\)", r"the formula has no Gaussian process gp\(x\); do not pass sdgp"),
+    ("lscale", ab.InverseGamma(3, 1), r"sdgp and lscale are the priors of a Gaussian process", r"do not pass lscale"),
+    ("nlpars", NLPARS, r"nlpars gives the priors of non-linear parameters .*; a multivariate model takes none",
+     r"nlpars gives the priors of non-linear parameters, which a model has only with nl=True"),
+    ("ar", ab.Normal(0, 0.5), r"ar and ma are the priors of an autocorrelation term .*; a multivariate model takes neither",
+     r"do not pass ar; the formula has no autocorrelation term"),
+    ("ma", ab.Normal(0, 0.5), r"ar and ma are the priors of an autocorrelation term", r"do not pass ma"),
+    ("meanme", ab.Normal(0, 1), r"meanme and sdme are the priors of a measurement-error term me\(x, sdx\) .*; a multivariate model takes "
+     r"neither: a measurement-error term in a multivariate model is not supported \(divergence D73\)",
+     r"the formula has no measurement-error term me\(x, sdx\); do not pass meanme"),
+    ("sdme", ab.HalfNormal(1), r"meanme and sdme are the priors of a measurement-error term", r"do not pass sdme"),
+])
+def test_the_other_features_priors_are_refused_in_the_mi_model(mi_data, name, value, top, in_response):
+    """The multivariate mi() model refuses every other feature's prior field at the top level (sdgp and lscale included, which
+    a multivariate model used to take without a word) and in a response's priors, as a mapping of the response classes and
+    as a Priors."""
+    with pytest.raises(ab.PriorError, match=top):
+        ab.gaussian(MI, mi_data, ab.Priors(resp=mi_priors().resp, **{name: value}), rescor=False)
+    with pytest.raises(ab.PriorError, match=rf"response 'y': the priors of the response 'y' take the classes .*; unexpected \['{name}'\]"):
+        ab.gaussian(MI, mi_data, ab.Priors(resp={**mi_priors().resp, "y": {**response(), name: value}}), rescor=False)
+    with pytest.raises(ab.PriorError, match=rf"response 'xm': .*{in_response}"):
+        ab.gaussian(MI, mi_data, ab.Priors(resp={**mi_priors().resp, "xm": ab.Priors(**response(), **{name: value})}), rescor=False)
+
+
+def test_meanme_and_sdme_are_refused_without_me(me_data):
+    """A model with a Gaussian process (C03), one with an autocorrelation term (C04), one with neither, and an mvbind() model
+    (C01, at the top level and in a response's priors) refuse meanme and sdme, naming them."""
+    frame = tier_c(me_data)
+    for formula, base in (("y ~ w + gp(xobs)", dict(LINEAR, **GP)), ("y ~ w + ar(t)", dict(LINEAR, ar=ab.Normal(0, 0.5))),
+                          ("y ~ w", LINEAR)):
+        for name, prior in (("meanme", ab.Normal(0, 1)), ("sdme", ab.HalfNormal(1))):
+            with pytest.raises(ab.PriorError, match=rf"the formula has no measurement-error term me\(x, sdx\); do not pass {name}"):
+                ab.gaussian(formula, frame, ab.Priors(**base, **{name: prior}))
+    resp = {"y": response(), "w": response()}
+    with pytest.raises(ab.PriorError, match=r"meanme and sdme are the priors of a measurement-error term"):
+        ab.gaussian("mvbind(y, w) ~ xobs", frame, ab.Priors(resp=resp, sdme=ab.HalfNormal(1)), rescor=False)
+    with pytest.raises(ab.PriorError, match=r"response 'w': the formula has no measurement-error term me\(x, sdx\); do not pass meanme"):
+        ab.gaussian("mvbind(y, w) ~ xobs", frame, ab.Priors(resp={**resp, "w": ab.Priors(**response(), meanme=ab.Normal(0, 1))}),
+                    rescor=False)
+
+
+@pytest.mark.parametrize("name, value, message", [
+    ("sdgp", 0.5, "this model has no Gaussian process gp(x); sdgp, lscale and zgp do not apply"),
+    ("zgp", np.zeros(3), "this model has no Gaussian process gp(x); sdgp, lscale and zgp do not apply"),
+    ("ar", [0.1], "this model has no ar coefficients (no autocorrelation term ar(), ma() or arma()); ar does not apply"),
+    ("ma", [0.1], "this model has no ma coefficients (no autocorrelation term ar(), ma() or arma()); ma does not apply"),
+    ("theta", [0.5, 0.5], "theta (the mixing proportions) is a mixture's (ab.mixture); this model has none"),
+])
+def test_the_other_features_points_are_refused(me_model, mi_model, name, value, message):
+    """value_point of the me() model, and of each response of the mi() model, refuses the other features' arguments; the mi()
+    model's own value_point takes resp and Ymi alone."""
+    _, nat = me_point(me_model)
+    with pytest.raises(ValueError, match=re.escape(message)):
+        me_model.value_point(**{**nat, name: value})
+    _, resp, ymi = mi_point(mi_model)
+    with pytest.raises(ValueError, match=re.escape(message)):
+        mi_model.value_point(resp={**resp, "xm": {**resp["xm"], name: value}}, Ymi=ymi)
+    with pytest.raises(TypeError, match=f"unexpected keyword argument '{name}'"):
+        mi_model.value_point(resp=resp, Ymi=ymi, **{name: value})
+
+
+@pytest.mark.nosampling                                    # pm.sample is replaced: nothing samples
+def test_the_mi_model_is_drawn_through_the_single_fit_hook(mi_model, mi_data, me_model, monkeypatch):
+    """ab.fit draws every model through inference._posterior_sampler: the model's own sample_posterior where it has one, as
+    the multivariate mi() model does (one graph, no single Bambi model), Bambi's fit otherwise (the me() model). PyMC's sample,
+    stubbed here, is handed every free variable of the mi() graph, the missing values Ymi_xm among them; the fit is cleaned
+    (each intercept moved to the raw scale) and bound to the model, and predict() completes xm with the draws' missing values.
+    log_lik(), loo() and bayes_R2() refuse both models (C07, D74)."""
+    import jax
+    import pymc as pm
+
+    from autobayes.inference import _posterior_sampler
+
+    m = mi_model
+    assert _posterior_sampler(m) == m.sample_posterior and _posterior_sampler(me_model) == me_model.bambi_model.fit
+    rng = np.random.default_rng(5)
+    D = 3
+    fake = {"y_Intercept": rng.normal(size=(1, D)), "y_w": rng.normal(size=(1, D)), "y_sigma": rng.uniform(0.5, 1.5, (1, D)),
+            "y_mi(xm)": rng.normal(size=(1, D)), "xm_Intercept": rng.normal(size=(1, D)), "xm_w": rng.normal(size=(1, D)),
+            "xm_sigma": rng.uniform(0.5, 1.5, (1, D)), "Ymi_xm": rng.normal(size=(1, D, len(MISSING)))}
+    calls = {}
+
+    def fake_sample(**kwargs):
+        calls.update(kwargs)
+        return az.InferenceData(posterior=xr.Dataset({k: (("chain", "draw") + (("Ymi_xm_dim",) if k == "Ymi_xm" else ()), v.copy())
+                                                      for k, v in fake.items()}, coords={"Ymi_xm_dim": MISSING}))
+
+    monkeypatch.setattr(pm, "sample", fake_sample)
+    fit = ab.fit(m, backend="pymc", chains=1, draws=D, tune=0, seed=2)
+    assert calls["nuts_sampler"] == "pymc" and calls["draws"] == D and calls["random_seed"] == 2
+    assert {v.name for v in m.pymc_model.free_RVs} <= set(calls["var_names"]) and "Ymi_xm" in calls["var_names"]
+    post, wbar = fit.idata.posterior, mi_data["w"].mean()
+    for r in ("y", "xm"):                                  # brms's b_<r>_Intercept = Intercept_<r> - mean(w) b_<r>
+        assert np.allclose(post[f"{r}_Intercept"].to_numpy(), fake[f"{r}_Intercept"] - wbar * fake[f"{r}_w"], rtol=1e-12)
+    assert fit.target_identity == m.target_identity
+    out = m.predict(fit, kind="linear")
+    assert out.attrs["fit_binding_status"] == "matched"
+    eta = out["eta"].transpose("chain", "draw", "__obs__", "response").to_numpy()[0]
+    wc = (mi_data["w"] - wbar).to_numpy()
+    for d in range(D):
+        xm = mi_data["xm"].to_numpy().copy()
+        xm[MISSING] = fake["Ymi_xm"][0, d]
+        assert np.allclose(eta[d, :, 0], fake["y_Intercept"][0, d] + wc * fake["y_w"][0, d] + fake["y_mi(xm)"][0, d] * xm, rtol=1e-12)
+    monkeypatch.setattr("autobayes.inference.resolve_jax_device", lambda *args: (jax.devices("cpu")[0], "sequential"))
+    ab.fit(m, backend="numpyro", chains=1, draws=D, tune=0)
+    assert calls["nuts_sampler"] == "numpyro" and "Ymi_xm" in calls["var_names"]
+    me_post = draws(me_model, [{"Intercept": 0.1, "sigma": 1.0, "me(xobs, sdx)": 0.5, "meanme_xobs": 0.2, "sdme_xobs": 1.0,
+                                "zme_xobs": np.zeros(me_model.design.n)}])
+    for model, posterior in ((m, fit), (me_model, me_post)):
+        for fn, what in ((ab.log_lik, "log_lik()"), (ab.loo, "log_lik()"), (ab.bayes_R2, "bayes_R2()")):
+            with pytest.raises(ValueError, match=re.escape(f"{what} of a model with me() or mi() is not offered in this slice")):
+                fn(model, posterior)

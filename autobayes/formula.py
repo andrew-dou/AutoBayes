@@ -1988,7 +1988,9 @@ def _check_special_terms(spec: ModelSpec, fam, formula: str) -> None:
     """C06: ``me(x, sdx)`` and ``mi(col)`` where a frozen brms case verifies them (``FamilySpec.measurement_error``,
     ``FamilySpec.missing_values``): one ``me()`` term at most (brms correlates the latent values of several, its default
     ``set_mecor(TRUE)``), and one kind of special term per formula (``mo()``, ``me()`` and ``mi()`` share brms's ``bsp``
-    vector, whose order is verified for one kind only); ``me()`` is not taken in a formula whose response has ``| mi()``."""
+    vector, whose order is verified for one kind only); ``me()`` is not taken in a formula whose response has ``| mi()``;
+    neither term, nor the response's ``| mi()``, next to a Gaussian process ``gp()`` (C03) or an autocorrelation term
+    ``ar()``, ``ma()``, ``arma()`` (C04), as no frozen case verifies either pair."""
     from autobayes.families import FAMILIES
 
     for terms, flag, what, did in ((spec.me_terms, "measurement_error", "measurement-error", "D73"),
@@ -2017,6 +2019,16 @@ def _check_special_terms(spec: ModelSpec, fam, formula: str) -> None:
         raise FormulaError(
             f"{formula!r}: a measurement-error term in a formula whose response has mi() is not supported in this slice; me() "
             "belongs to a univariate Gaussian model here (docs/missing-and-measurement-error.md, divergence D73)"
+        )
+    special = ([f"the measurement-error term {t.name!r}" for t in spec.me_terms]
+               + [f"the missing-value term {t.name!r}" for t in spec.mi_terms]
+               + ([f"the response's mi() ('{spec.response} | mi()')"] if spec.addition("mi") is not None else []))
+    others = ([f"the Gaussian process {g.term!r} (C03)" for g in spec.gp_terms]
+              + ([f"the autocorrelation term {spec.autocor.term!r} (C04)"] if spec.autocor is not None else []))
+    if special and others:                                   # C03 / C04: no frozen brms case verifies either pair
+        raise FormulaError(
+            f"{formula!r}: {special[0]} next to {others[0]} is not supported in this slice: no frozen brms case verifies the pair "
+            f"(docs/missing-and-measurement-error.md, divergence {'D73' if spec.me_terms else 'D72'})"
         )
 
 

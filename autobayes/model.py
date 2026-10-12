@@ -1390,7 +1390,8 @@ class Model:
                 raise ValueError("ar and ma are an autocorrelation term's coefficients; a mixture has none")
             from autobayes.families.mixture import value_point
             return value_point(self, intercept=intercept, b=b, sigma=sigma, theta=theta, sd=sd, z=z, L=L, shape=shape, phi=phi,
-                               nu=nu, zi=zi, hu=hu, bsp=bsp, simo=simo)
+                               nu=nu, zi=zi, hu=hu, bsp=bsp, simo=simo,
+                               meanme=meanme, sdme=sdme, zme=zme, Ymi=Ymi)   # C06: a mixture has no me() / mi() term, refused there
         if theta is not None:
             raise ValueError("theta (the mixing proportions) is a mixture's (ab.mixture); this model has none")
         b = np.atleast_1d(np.asarray(b, dtype=float))

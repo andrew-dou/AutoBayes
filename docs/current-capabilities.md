@@ -210,4 +210,6 @@ predictor observed with known noise latent values `meanme + sdme * zme` that the
 draws' imputed and latent values on the fitted rows. Verified against `gauss_mi` and `gauss_me`; `mi()` without its column's
 formula, with `rescor=True`, in interactions, group-level or distributional formulas, and `me()` with `gr`, several `me()` terms,
 `me()` outside a univariate Gaussian formula, other families, new rows of an `me()` model and `log_lik()` / `loo()` /
-`bayes_R2()` of these models are refused (D72-D74; names D75); see [missing values and measurement error](missing-and-measurement-error.md).
+`bayes_R2()` of these models are refused (D72-D74; names D75), and so are both terms next to `gp()` or an autocorrelation term,
+in non-linear models and in mixtures (C02-C05), with each other feature's priors in these models and `meanme` / `sdme` in
+theirs; see [missing values and measurement error](missing-and-measurement-error.md).
