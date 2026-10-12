@@ -55,6 +55,10 @@ inputs and scaling are known once the data are seen). Several covariates in one 
 ``gr = FALSE``, ``cmc``, ``scale = FALSE``, interactions with ``gp()``, and ``gp()`` in a group-level or distributional
 formula are refused.
 
+brms's autocorrelation terms ``ar(time, gr, p)``, ``ma(time, gr, q)`` and ``arma(time, gr, p, q)`` in its regression
+formulation (C04, docs/autocorrelation.md) are held in ``ModelSpec.autocor`` (``autocor.Autocor``), one per formula: not
+a population-level term (no design column, no ``b`` coefficient), the coefficients ``ar`` and ``ma`` are its own.
+
 Group-level terms are optional and additive across distinct factors (M3c-3): a formula without them is a population-only
 model, as in brms ``brmsformula`` where group-level terms are optional; ``y ~ 1`` is intercept-only. ``(1 + x || g)``
 is brms's independent varying intercept and slope (A01): each numeric population-level term named varies by level
@@ -95,6 +99,7 @@ _MO_RE = re.compile(r"^mo\s*\((.*)\)$", re.S)                                   
 _MO_TERM_RE = re.compile(rf"^mo\(({_IDENT})\)$")                                                    # the canonical spelling mo(col)
 MVBIND_RE = re.compile(r"^\s*mvbind\s*\(", re.S)                                                       # brms's multivariate mvbind(y, y2) ~ ... (C01)
 _GP_RE = re.compile(r"^gp\s*\((.*)\)$", re.S)                                                        # gp(<inside>), brms's Gaussian process (C03)
+_AUTOCOR_RE = re.compile(r"^(ar|ma|arma|cosy|car|sar|fcor|unstr)\s*\(", re.S)   # brms's autocorrelation terms (C04; autobayes.autocor)
 SUPPORTED_TRANSFORMS = ("only log(col), exp(col), sqrt(col), I(col^k) with integer k, and I(col * k), I(col + k), I(col - k) with a "
                         "numeric constant k are supported as in-formula transforms of one numeric column (A05, docs/transforms.md); "
                         "other function calls and transformations inside the formula are not supported: compute the column in the "
@@ -1179,7 +1184,8 @@ class ModelSpec:
     the coding of each monotonic term's column (B03, ``mo(col)``; ``Monotonic``), in term order, known once the data are
     seen, as ``categoricals`` does for the categorical terms. ``gp_terms`` are the formula's Gaussian processes (C03,
     ``gp(x)``, ``gp(x, k = 10, c = 5/4)``; ``GaussianProcess``), in formula order, their inputs known once the data are seen:
-    terms of the linear predictor that are not population-level terms (no coefficient of class ``b``, no design column)."""
+    terms of the linear predictor that are not population-level terms (no coefficient of class ``b``, no design column).
+    ``autocor`` is the formula's autocorrelation term (C04, ``ar()``, ``ma()`` or ``arma()``; ``autocor.Autocor``), or None."""
 
     formula: str
     response: str
@@ -1195,11 +1201,12 @@ class ModelSpec:
     dpars: tuple["ModelSpec", ...]
     monotonics: tuple[Monotonic, ...]
     gp_terms: tuple[GaussianProcess, ...]
+    autocor: "Autocor | None" = None
 
     def __init__(self, formula, response, predictors=(), group=None, intercept=True,
                  levels=(), trials=None, rhs="", terms=(), categoricals=(), interactions=(),
                  *, groups=None, levels_by_group=None, pop_terms=None, group_terms=None, offset=None, additions=(), dpars=(),
-                 monotonics=None, gp_terms=()):
+                 monotonics=None, gp_terms=(), autocor=None):
         """Keep the original positional constructor: without ``pop_terms`` / ``group_terms`` the term model is
         built from the flat ``predictors``, ``terms``, ``categoricals``, ``interactions`` and ``group(s)``.
         Terms given as mappings (``dataclasses.asdict`` output) are rebuilt, the distributional formulas and the
@@ -1209,6 +1216,10 @@ class ModelSpec:
             offset = Offset(**offset)
         additions = tuple(a if isinstance(a, AdditionTerm) else AdditionTerm(**a) for a in additions)
         dpars = tuple(d if isinstance(d, ModelSpec) else ModelSpec(**d) for d in dpars)
+        if autocor is not None:                                  # C04: rebuilt from a mapping (dataclasses.asdict output)
+            from autobayes.autocor import Autocor
+            if not isinstance(autocor, Autocor):
+                autocor = Autocor(**autocor)
         if group_terms is not None:
             if groups is not None or group is not None:
                 raise ValueError("supply group_terms or group/groups, not both")
@@ -1248,7 +1259,7 @@ class ModelSpec:
                       levels_by_group=_GroupLevels((g, level_map[g]) for g in factors),
                       trials=trials, rhs=rhs, categoricals=categoricals,
                       pop_terms=pop_terms, group_terms=group_terms, offset=offset, additions=additions, dpars=dpars,
-                      monotonics=monotonics, gp_terms=gp_terms)
+                      monotonics=monotonics, gp_terms=gp_terms, autocor=autocor)
         for key, value in values.items():
             object.__setattr__(self, key, value)
 
@@ -1258,7 +1269,8 @@ class ModelSpec:
                      tuple(self.levels_by_group[g] for g in self.groups), self.trials, self.rhs,
                      self.categoricals, self.pop_terms, self.group_terms, self.offset, self.additions)
                     + ((self.dpars,) if self.dpars else ()) + ((self.monotonics,) if self.monotonics else ())
-                    + ((self.gp_terms,) if self.gp_terms else ()))
+                    + ((self.gp_terms,) if self.gp_terms else ())
+                    + ((self.autocor,) if self.autocor is not None else ()))
 
     def addition(self, kind: str) -> AdditionTerm | None:
         """The addition term of ``kind`` (``"weights"``, ``"cens"``, ``"trunc"``), or None when the formula has none."""
@@ -1795,6 +1807,11 @@ def _parse_formulas(formulas, data: pd.DataFrame | None, family: str, categorica
     # without the data); a declaration that names no formula's main effect stays with the response formula, which
     # refuses it as it always has.
     main0 = parse_formula(main, None, family, None)
+    if main0.autocor is not None:                             # C04: not next to a distributional formula (D70)
+        raise FormulaError(
+            f"{main!r}: the autocorrelation term {main0.autocor.term!r} with a distributional formula is not supported in this "
+            "slice (brms accepts bf(y ~ x + ar(...), sigma ~ z); docs/autocorrelation.md, divergence D70)"
+        )
     dpar0 = [parse_formula(f"{name} ~ {rhs}", None, family, None) for name, rhs, _ in parsed]
     mains = [{t.name for t in s.pop_terms if t.kind == "numeric"} for s in (main0, *dpar0)]
     if isinstance(categorical, Mapping):                    # a declared column is categorical in every formula
@@ -1837,6 +1854,11 @@ def _parse_formulas(formulas, data: pd.DataFrame | None, family: str, categorica
                 f"{text!r}: a Gaussian process in a distributional formula ({', '.join(g.term for g in d.gp_terms)}) is not supported "
                 f"in this slice: brms would give {name} a Gaussian process of its own; gp() belongs to the response formula here "
                 "(docs/gaussian-processes.md, divergence D64)"
+            )
+        if d.autocor is not None:                             # C04: brms too ('Explicit covariance terms can only be specified on mu')
+            raise FormulaError(
+                f"{text!r}: an autocorrelation term in a distributional formula ({d.autocor.term}) is not supported: it belongs "
+                "to the response formula, as in brms (docs/autocorrelation.md, divergence D70)"
             )
         for col in d.pop_columns:
             role = ("the response" if col == spec.response else "the trials column" if col == spec.trials
@@ -1939,6 +1961,7 @@ def parse_formula(formula: str | list[str], data: pd.DataFrame | None = None, fa
     raw_interactions: list[tuple[str, str, str]] = []      # (left, right, piece as written)
     offsets: list[tuple[Offset, str]] = []                 # (offset term, piece as written); at most one
     gps: list[tuple[GaussianProcess, str]] = []            # the Gaussian processes (C03): (term, piece as written)
+    autocors: list = []                                    # (autocorrelation term, piece as written); at most one (C04)
     saw_intercept_token = False
     remove_intercept = False
 
@@ -2000,6 +2023,14 @@ def parse_formula(formula: str | list[str], data: pd.DataFrame | None = None, fa
             if trials is not None and offset.column == trials:
                 raise FormulaError(f"{piece!r}: the trials column {trials!r} cannot be the offset")
             offsets.append((offset, piece))
+            continue
+        if _AUTOCOR_RE.match(piece):                            # brms's ar(), ma(), arma() (C04); its other structures refused (D69)
+            from autobayes.autocor import parse_autocor
+
+            term = parse_autocor(piece, formula)
+            if term is None:
+                raise FormulaError(f"{piece!r}: an autocorrelation term is written ar(...), ma(...) or arma(...) (docs/autocorrelation.md)")
+            autocors.append((term, piece))
             continue
         stars, colons = _split_top_level(piece, "*"), _split_top_level(piece, ":")
         if len(stars) > 1 or len(colons) > 1:                   # an interaction a:b, or the shorthand a*b
@@ -2146,9 +2177,21 @@ def parse_formula(formula: str | list[str], data: pd.DataFrame | None = None, fa
     if trials is not None and (trials in predictors or trials in operands_all):
         raise FormulaError(f"{trials!r}: the trials column cannot also be a predictor or the grouping factor")
     offset = offsets[0][0] if offsets else None
+    autocor = None
+    if autocors:                                             # C04: one autocorrelation term, for a family that takes it (D70)
+        from autobayes.autocor import check_autocor
+
+        if len(autocors) > 1:
+            raise FormulaError(
+                f"{formula!r}: {autocors[0][1]!r} and {autocors[1][1]!r}: one autocorrelation term per formula (brms: 'Can only "
+                "model one term per autocorrelation class'); write arma(time, gr, p, q) for an AR and an MA part"
+            )
+        autocor = autocors[0][0]
+        check_autocor(autocor, autocors[0][1], response=response, trials=trials, fam=fam, additions=additions, formula=formula)
     # A derived factor's column (g_h) is added to the fitted frame: it must not shadow a column the formula uses.
     in_use = {response, *predictors, *transform_columns, *mo_columns, *gp_columns, *operands_all, *([trials] if trials is not None else []),
               *([offset.column] if offset is not None else []), *(c for a in additions for c in a.columns)}
+    in_use |= set(autocor.columns) if autocor is not None else set()   # the time and series columns (C04)
     derived_columns: dict[str, GroupTerm] = {}
     for term in group_terms:
         if not term.derived:
@@ -2218,6 +2261,7 @@ def parse_formula(formula: str | list[str], data: pd.DataFrame | None = None, fa
         interactions.append(name)
     parts = ([*predictors, *interactions] + [g.term for g, _ in gps] + ([offset.term] if offset is not None else [])
              + [t.canonical for t in group_terms])
+    parts += [autocor.term] if autocor is not None else []        # the autocorrelation term, last (C04)
     canonical_rhs = " + ".join(parts) if parts else "1"           # intercept-only population model: 'y ~ 1'
     if remove_intercept:
         canonical_rhs = "0 + " + canonical_rhs
@@ -2227,7 +2271,7 @@ def parse_formula(formula: str | list[str], data: pd.DataFrame | None = None, fa
     spec = ModelSpec(
         formula=formula.strip(), response=response, intercept=not remove_intercept, trials=trials,
         rhs=canonical_rhs, categoricals=categoricals, pop_terms=pop_terms, group_terms=tuple(group_terms),
-        offset=offset, additions=additions, gp_terms=tuple(g for g, _ in gps),
+        offset=offset, additions=additions, gp_terms=tuple(g for g, _ in gps), autocor=autocor,
     )
     if spec.gp_terms and fam.per_category:                   # one linear predictor per category (C03)
         raise FormulaError(
@@ -2508,6 +2552,10 @@ def validate_data(spec: ModelSpec, data: pd.DataFrame, family: str = "gaussian",
     if len(data) < 2:
         raise FormulaError("need at least two observations")
     addition_data(spec, data)                                     # positive weights, censoring codes, responses inside the bounds (B02)
+    if spec.autocor is not None:                                  # C04: the series and their time order, or refused
+        from autobayes.autocor import series_layout
+
+        series_layout(spec.autocor, data)
     levels_by_group = {}
     for t in spec.group_terms:                                    # a derived factor's levels: the observed combinations
         levels = tuple(sorted(group_labels(t.factor, data).unique()))
@@ -2531,4 +2579,5 @@ def validate_data(spec: ModelSpec, data: pd.DataFrame, family: str = "gaussian",
         pop_terms=tuple(pop_term(t.name, t.kind, categoricals) for t in spec.pop_terms),   # levels now known
         group_terms=spec.group_terms, offset=spec.offset, additions=spec.additions, dpars=spec.dpars, monotonics=monotonics,
         gp_terms=gp_terms,
+        autocor=spec.autocor,
     )

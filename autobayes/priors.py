@@ -281,6 +281,10 @@ class Priors:
     (brms's ``class = b`` and ``class = sd`` with ``nlpar = "a"``; ``"b"`` covers the parameter's intercept too, brms's
     coefficient ``Intercept``, as one prior or as a mapping by term with an ``"Intercept"`` entry), while ``cor`` stays keyed
     by factor (brms's class ``cor`` has no ``nlpar``); refused for every other model.
+
+    ``ar`` and ``ma`` are the priors of an autocorrelation term's coefficients (C04, ``ar()``, ``ma()``, ``arma()``;
+    docs/autocorrelation.md): one location prior for every entry of the vector (brms's classes ``ar`` and ``ma``,
+    unbounded; flat by default, ``Flat()``), required exactly for the parts the term has and refused for every other model.
     """
 
     intercept: Prior | None = None
@@ -306,6 +310,8 @@ class Priors:
     sdgp: Prior | Mapping[str, Prior] | None = None   # each Gaussian process's marginal SD, by column (brms class ``sdgp``; C03)
     lscale: Prior | Mapping[str, Prior] | None = None  # each Gaussian process's length-scale, by column (brms class ``lscale``; C03)
     nlpars: Mapping[str, Mapping[str, object]] | None = None   # each non-linear parameter's {"b": ..., "sd": ...} (brms's nlpar =; C02)
+    ar: Prior | None = None          # an autocorrelation term's autoregressive coefficients (brms class ``ar``; C04)
+    ma: Prior | None = None          # an autocorrelation term's moving-average coefficients (brms class ``ma``; C04)
 
     def __post_init__(self):
         if isinstance(self.components, list):                         # one value for equal component lists (C05)
@@ -676,6 +682,29 @@ class Priors:
                                  f"bounded below by 0), got {prior}")
         return by_column
 
+    def autocor_priors(self, spec) -> dict[str, Prior]:
+        """The priors of an autocorrelation term's coefficients (C04, ``spec.autocor``): ``{"ar": ..., "ma": ...}`` for the
+        parts the term has (``p > 0``, ``q > 0``), each one prior for every entry of the vector, as brms's class ``ar`` /
+        ``ma`` is. Coverage is exact: a part the formula has needs its prior, and a prior for a part it lacks is refused."""
+        term = getattr(spec, "autocor", None)
+        wanted = dict(term.parts) if term is not None else {}
+        out: dict[str, Prior] = {}
+        for name, meaning in (("ar", "autoregressive"), ("ma", "moving-average")):
+            prior = getattr(self, name)
+            if name not in wanted:
+                if prior is not None:
+                    has = (f"; '{term.term}' has no {meaning} part" if term is not None else
+                           "; the formula has no autocorrelation term ar(), ma() or arma()")
+                    raise PriorError(f"do not pass {name}{has}")
+                continue
+            if prior is None:
+                raise PriorError(f"the autocorrelation term '{term.term}' has {wanted[name]} {meaning} coefficient(s), which need a "
+                                 f"prior: pass {name}=... (brms class {name}, unbounded; brms's default is flat, ab.Flat())")
+            if not isinstance(prior, Prior):
+                raise PriorError(f"prior for {name!r} must be a Prior, got {type(prior).__name__}")
+            out[name] = prior
+        return out
+
     def dpar_priors(self, spec, name: str) -> "Priors":
         """The priors of distributional parameter ``name``'s own formula (B01, ``spec.dpar(name)``) as a ``Priors`` with
         ``intercept`` and ``b`` only, read from ``Priors(<name>={"intercept": ..., "b": ...})``, so that the response
@@ -729,6 +758,7 @@ class Priors:
             return [f"mu{k}:{label}" for k, c in enumerate(self.components, start=1) for label in c.improper(spec)]
         out = ["intercept"] if getattr(spec, "intercept", True) and isinstance(self.intercept, Prior) and self.intercept.name == "Flat" else []
         out += [f"b:{col}" for col, p in self.coefficient_priors(spec).items() if p.name == "Flat"]
+        out += [name for name, p in self.autocor_priors(spec).items() if p.name == "Flat"]   # an ARMA term's ar / ma (C04)
         for name in getattr(spec, "dpar_names", ()):                  # a distributional parameter's formula (B01): sigma:b:zq
             out += [f"{name}:{label}" for label in self.dpar_priors(spec, name).improper(spec.dpar(name))]
         return out
@@ -805,6 +835,7 @@ class Priors:
                     f"on nu > {lower:g}, under its prior truncated there and renormalised, as brms does)"
                 )
         location = ([("intercept", self.intercept)] if has_intercept else []) + list(self.coefficient_priors(spec).items())
+        location += list(self.autocor_priors(spec).items())          # an ARMA term's ar and ma, unbounded (C04)
         if predicted:                                                 # its formula's intercept and coefficients (B01): location priors
             dspec, sub = spec.dpar(scale), self.dpar_priors(spec, scale)
             location += (([(f"{scale}:intercept", sub.intercept)] if dspec.intercept else [])

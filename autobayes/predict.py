@@ -40,6 +40,12 @@ component's linear predictor as ``eta`` with a ``component`` dimension (brms's `
 mixture's expected response ``sum_k theta_k mu_k`` as ``mean`` (brms's ``posterior_epred``) and ``kind="response"`` draws, per
 draw and row, a component by theta and then its Normal (brms's ``posterior_predict``), seeded.
 
+A model with an autocorrelation term (C04, docs/autocorrelation.md: brms's ``ar()``, ``ma()``, ``arma()``) is predicted in
+this layer on its fitted rows: the ARMA term is added to the linear predictor from the rows' observed residuals along each
+series, as brms's ``posterior_linpred`` and ``posterior_epred`` add it (without group effects, the residuals are those of
+the predictor without them, as under brms's ``re_formula = NA``), and ``kind="response"`` draws around that predictor. New
+rows are refused: brms computes the term on them from their own responses (divergence D71).
+
 ``new_groups`` decides what happens when ``newdata`` contains a level of the grouping
 factor that was not in the training data (a population-only model has no grouping factor: it
 needs no such column, its result carries ``new_groups = "not_applicable"``, and any value other
@@ -140,6 +146,18 @@ def gp_contribution(model, post, df: pd.DataFrame) -> np.ndarray | float:
         else:
             out = out + exact_values(g.scaled_inputs, sdgp, lscale, z)[..., g.index(df[column], where="newdata column")]
     return out
+
+
+def autocor_predictor(model, post, eta: np.ndarray) -> np.ndarray:
+    """(chain, draw, row) draws of the linear predictor with an autocorrelation term (C04) on the fitted rows: ``eta``, the
+    predictor without the term, plus brms's ARMA term on the observed residuals ``y - eta`` along each series
+    (``autocor.arma_values``, brms's row-by-row recursion), with each draw's ``ar`` and ``ma``."""
+    from autobayes.autocor import arma_values
+
+    roles, coefficients = model.autocor_names, {}
+    for part, _ in model.spec.autocor.parts:
+        coefficients[part] = post[roles[part]].transpose("chain", "draw", roles[f"{part}_coordinate"]).to_numpy()
+    return arma_values(eta, model.design.y, coefficients.get("ar"), coefficients.get("ma"), model.design.autocor)
 
 
 def dpar_linear_predictor(model, post, df: pd.DataFrame, name: str) -> np.ndarray:
@@ -314,6 +332,8 @@ def _predict_by_hand(model, idata, df: pd.DataFrame | None, kind: str, seed, pol
         for i, lvl in enumerate(labels):
             for k, (_, u, covariate) in enumerate(coefs):
                 mu[..., i] += (new_effects[lvl][k] if lvl in new_effects else u[..., levels.index(lvl)]) * covariate[i]
+    if model.spec.autocor is not None:                          # C04: the ARMA term on the fitted rows' residuals, added last
+        mu = autocor_predictor(model, post, mu)
     dims = ("chain", "draw", "__obs__")
     coords = {"chain": post["chain"], "draw": post["draw"], "__obs__": np.arange(len(df))}
     if kind == "linear":
@@ -454,6 +474,13 @@ def predict(model, fit_result, *, newdata: pd.DataFrame | None = None, kind: str
     if not include_group_effects and new_groups != "error":
         raise ValueError("new_groups must stay at its default when group effects are excluded")
     policies = _group_policies(model, new_groups)
+    if model.spec.autocor is not None and newdata is not None:  # C04: brms reads the term off the new rows' own responses (D71)
+        raise FormulaError(
+            f"predictions on new data are not offered for a model with the autocorrelation term {model.spec.autocor.term!r}: the "
+            "term needs each row's lagged residuals, which new rows without their responses do not have (brms computes it from "
+            "the new rows' own responses, sorted by series and time, as a series of their own; docs/autocorrelation.md, "
+            "divergence D71); predict on the fitted rows (newdata=None)"
+        )
     from autobayes.identity import check_fit_binding
     binding = check_fit_binding(model, fit_result, allow_unverified=True)
     idata = getattr(fit_result, "idata", fit_result)
@@ -472,7 +499,8 @@ def predict(model, fit_result, *, newdata: pd.DataFrame | None = None, kind: str
               or bool(model.spec.additions)                    # addition terms (B02): the truncated mean and draws are this layer's
               or bool(model.spec.dpars)                        # distributional formulas (B01): each row's own sigma is this layer's
               or bool(model.spec.mo_terms)                     # monotonic terms (B03): Bambi's predictions do not know them
-              or bool(model.spec.gp_terms))                    # nor the Gaussian processes (C03)
+              or bool(model.spec.gp_terms)                     # nor the Gaussian processes (C03)
+              or model.spec.autocor is not None)               # an autocorrelation term (C04): nor this one
     if dpar is not None:
         ds = _predict_dpar(model, idata, df, kind, dpar)
     elif fam.mixture:                                           # C05: every component's linear predictor, theta's mean and draws

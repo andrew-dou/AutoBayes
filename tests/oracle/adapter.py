@@ -58,6 +58,13 @@ covariates, each non-linear parameter's never-centred `X_<nlpar>` column by colu
 parameter's coefficient variables, and its group-level terms, which brms numbers as groups of their own and labels with the
 parameter (`Z_<id>_<nlpar>_<k>`, `r_<id>_<nlpar>_<k>`; the `nlpar` column of the group table), within the parameter
 (`match_nonlinear_columns`, `match_nonlinear_groups`, `nonlinear_coordinate_map`, `nonlinear_draws`; the maps key by parameter).
+
+An autocorrelation term (C04, `ar()`, `ma()`, `arma()`): brms's Stan data list the rows sorted by series and time
+(`order_data()`), while its predictions are in data order. `in_data_order` derives that permutation from the data's series
+and time columns as R's `order()` sorts them, requires brms's `Y` to be the response under it, and puts every per-row
+standata array back in data order, so that every matcher compares rows by content as for any other model; `J_lag` stays
+on brms's rows and `check_autocor_design` checks it, `Kar` and `Kma`, and each Stan row's series and position against the
+model's series. brms's `ar` and `ma` (`vector[Kar]`, `vector[Kma]`, unbounded) are the model's `ar` and `ma`.
 """
 from __future__ import annotations
 
@@ -104,7 +111,8 @@ def priors_from_spec(spec: dict) -> ab.Priors:
     "simo": {column: ["Dirichlet", a, ...]}}``; an auxiliary parameter with its own formula (B01) takes ``{"intercept": [...],
     "b": [...]}``; ``simo`` is the simplex prior of each monotonic term (B03); a mixture (C05) takes ``{"components": [spec, ...],
     "theta": ["Dirichlet", a, ...]}``, each component's spec of this same form; ``nlpars`` each non-linear parameter's
-    ``{"b": [...] | {term: ...}, "sd": [...] | {factor: ...}}`` (C02)."""
+    ``{"b": [...] | {term: ...}, "sd": [...] | {factor: ...}}`` (C02); ``ar`` and ``ma`` the priors of an
+    autocorrelation term's coefficients (C04)."""
     # C01, a multivariate model: {"resp": {response: {<the classes above>}}, "cor": {factor: ["LKJ", eta]}, "rescor": ["LKJ", eta]}
     if "resp" in spec:
         return ab.Priors(resp={r: priors_from_spec(sub) for r, sub in spec["resp"].items()}, cor=_prior(spec.get("cor")),
@@ -117,7 +125,8 @@ def priors_from_spec(spec: dict) -> ab.Priors:
                      components=[priors_from_spec(c) for c in spec["components"]] if "components" in spec else None,
                      theta=_prior(spec.get("theta")),
                      sdgp=_prior(spec.get("sdgp")), lscale=_prior(spec.get("lscale")),   # C03: {column: [...]} or one prior
-                     nlpars=_prior(spec.get("nlpars")))                                 # C02: {nlpar: {"b": ..., "sd": ...}}
+                     nlpars=_prior(spec.get("nlpars")),                                 # C02: {nlpar: {"b": ..., "sd": ...}}
+                     ar=_prior(spec.get("ar")), ma=_prior(spec.get("ma")))
 
 
 def build_model(case: dict, data: pd.DataFrame) -> ab.Model:
@@ -496,7 +505,8 @@ def natural_point(model: ab.Model, point: Point, cmap: ColumnMap, gmap: GroupMap
     ``phi`` are brms's parameters of those names (the Gaussian/Student-t/lognormal scale; the negative binomial/Gamma
     shape; the Beta precision); ``nu`` is brms's ``nu`` when the model learns it (a fixed nu is no value variable here,
     though brms reports it among its parameters); ``zi`` and ``hu`` are brms's zero-inflation and hurdle probabilities (B06);
-    ``bsp`` and ``simo`` each monotonic term's coefficient and simplex, by column (B03)."""
+    ``bsp`` and ``simo`` each monotonic term's coefficient and simplex, by column (B03); ``ar`` and ``ma`` an autocorrelation
+    term's coefficients, brms's vectors of those names (C04)."""
     if is_multivariate(model):                                 # C01: each response's arguments from its view of the point, and Lrescor
         return {"resp": {r: natural_point(sub, cmap.views[r].point(point), cmap.maps[r], gmap.maps[r]) for r, sub in model.submodels.items()},
                 **({"Lrescor": np.atleast_2d(point.pars["Lrescor"])} if model.rescor else {})}
@@ -559,8 +569,9 @@ def natural_point(model: ab.Model, point: Point, cmap: ColumnMap, gmap: GroupMap
         sdgp = {c: float(np.ravel(pars[f"sdgp_{k}"])[0]) for c, k in cmap.gp.items()}
         lscale = {c: float(np.ravel(pars[f"lscale_{k}"])[0]) for c, k in cmap.gp.items()}
         zgp = {c: np.ravel(pars[f"zgp_{k}"]).astype(float) for c, k in cmap.gp.items()}
+    ar, ma = (np.atleast_1d(pars[part]).astype(float) if part in model.autocor_names else None for part in ("ar", "ma"))   # C04
     return dict(intercept=intercept, b=b, sd=sd or None, z=z or None, L=L or None, sigma=sigma, shape=shape, phi=phi, nu=nu,
-                zi=zi, hu=hu, bsp=bsp, simo=simo, theta=theta, sdgp=sdgp, lscale=lscale, zgp=zgp)
+                zi=zi, hu=hu, bsp=bsp, simo=simo, theta=theta, sdgp=sdgp, lscale=lscale, zgp=zgp, ar=ar, ma=ma)
 
 
 def value_point(model: ab.Model, point: Point, cmap: ColumnMap, gmap: GroupMap) -> dict:
@@ -666,6 +677,10 @@ def coordinate_map(fixture: Fixture, model: ab.Model, cmap: ColumnMap, gmap: Gro
             if elem + 1 not in by_k:
                 raise OracleMismatch(f"bsp[{elem + 1}] is not the coefficient of a monotonic term of the AutoBayes model")
             target, expect = (model.mo_names[by_k[elem + 1]]["b"], 0), "identity"
+        elif par in ("ar", "ma"):                              # C04: brms's vector[Kar] ar / vector[Kma] ma, unbounded
+            if par not in model.autocor_names:
+                raise OracleMismatch(f"brms samples {par} but the AutoBayes model has no {par} coefficients")
+            target, expect = (model.autocor_names[par], elem), "identity"
         elif par == "sigma":
             target, expect = (f"{names['sigma']}_log__", 0), "log"
         elif par == "shape":                                   # negative binomial / Gamma: PyMC's alpha, sampled on the log scale
@@ -877,6 +892,10 @@ def draws(fixture: Fixture, model: ab.Model, cmap: ColumnMap, gmap: GroupMap) ->
     for par in ("zi", "hu"):                                    # the zero-inflation / hurdle probability (B06)
         if par in names and par in pts[0].pars:
             data[names[par]] = (("chain", "draw"), np.array([float(p.pars[par]) for p in pts])[None, :])
+    for part, order in (model.spec.autocor.parts if model.spec.autocor is not None else ()):   # C04: brms's ar and ma
+        roles = model.autocor_names
+        data[roles[part]] = (("chain", "draw", roles[f"{part}_coordinate"]), np.stack([np.atleast_1d(p.pars[part]) for p in pts])[None])
+        coords[roles[f"{part}_coordinate"]] = [str(k) for k in range(1, order + 1)]
     for name, dmap in (cmap.distributional or {}).items():       # B01: an auxiliary parameter's own formula, raw-scale intercept and b
         ds, roles = model.spec.dpar(name), model.dpar_names[name]
         if ds.intercept:
@@ -1356,3 +1375,113 @@ def brms_nlpar_values(fixture: Fixture, point: Point, name: str) -> np.ndarray:
         J = sd[f"J_{m}"].astype(int) - 1
         eta = eta + np.atleast_1d(point.pars[f"r_{m}_{name}_{cn}"])[J] * sd[f"Z_{m}_{name}_{cn}"]
     return eta
+
+
+# -- autocorrelation terms (C04) ----------------------------------------------------------------------------
+# brms's Stan data names of per-row arrays: the response, every design, the group indices and covariates, the offsets and the
+# addition-term data, the monotonic codes (J_lag, brms's lags on its sorted rows, is checked on those rows instead)
+_PER_ROW = re.compile(r"^(Y|X|X_\w+|Z_\d+_\d+|J_\d+|offsets|weights|cens|lb|ub|trials|Xmo_\d+)$")
+
+
+def brms_row_order(case: dict, data: pd.DataFrame, term) -> np.ndarray:
+    """brms's ``order_data()`` of an autocorrelation model: the data rows sorted by the series column and then by the time
+    column (data row per Stan row), as R's ``order(gr, time)`` sorts them: a declared factor by its levels' order (the case's
+    ``factors``), numbers numerically, anything else as C-locale text; the data order stands in for an absent time and a
+    constant for an absent series column. Two rows of a series at the same time cannot be ordered: brms refuses them."""
+    n = len(data)
+
+    def key(column):
+        levels = case["brms"].get("factors", {}).get(column)
+        values = data[column]
+        if levels is not None:
+            return np.array([list(levels).index(str(v)) for v in values], dtype=float)
+        if pd.api.types.is_numeric_dtype(values):
+            return values.to_numpy(dtype=float)
+        return np.unique(values.astype(str).to_numpy(), return_inverse=True)[1].astype(float)
+
+    series = np.zeros(n) if term.gr is None else key(term.gr)
+    time = np.arange(n, dtype=float) if term.time is None else key(term.time)
+    order = np.lexsort((time, series))
+    if np.any((series[order][1:] == series[order][:-1]) & (time[order][1:] == time[order][:-1])):
+        raise OracleMismatch(f"{term.term}: two rows of a series share a time point; brms cannot order them")
+    return order
+
+
+class _DataOrderFixture(Fixture):
+    """A fixture of an autocorrelation model whose per-row Stan data are back in data order (``in_data_order``):
+    ``stan_order`` is brms's permutation (data row per Stan row); every other entry, ``J_lag`` included, is brms's own."""
+
+    def __init__(self, raw: dict, standata: dict, stan_order: np.ndarray):
+        super().__init__(raw)
+        self._standata, self.stan_order = standata, stan_order
+
+    @property
+    def standata(self) -> dict[str, np.ndarray]:
+        return self._standata
+
+
+def in_data_order(case: dict, fixture: Fixture, model: ab.Model, data: pd.DataFrame) -> Fixture:
+    """``fixture`` with its per-row Stan data in data order when the model has an autocorrelation term (C04), else itself.
+    brms sorts such a model's rows by series and time (``brms_row_order``, derived from the data); brms's ``Y`` must be the
+    response under that permutation, row for row, and every per-row array (``_PER_ROW``) is put back through it, so the
+    matchers compare rows by content as for any other model and a wrong permutation fails them. An array of ``N`` rows
+    that is not a known per-row array stops the oracle rather than being left sorted or moved blindly."""
+    term = getattr(getattr(model, "spec", None), "autocor", None)   # a multivariate or non-linear model has none
+    if term is None:
+        return fixture
+    order = brms_row_order(case, data, term)
+    sd = fixture.standata
+    N = int(sd["N"])
+    if order.size != N:
+        raise OracleMismatch(f"brms has N = {N} rows, the data {order.size}")
+    y = data[model.spec.response].to_numpy(dtype=float)
+    if abs_err(sd["Y"], y[order]) > DESIGN_ABS:
+        raise OracleMismatch(f"brms's Y is not the response sorted by {term.columns} (brms's order_data()): it differs by "
+                             f"{abs_err(sd['Y'], y[order])}")
+    unsorted = {}
+    for key, value in sd.items():
+        if key == "J_lag" or np.ndim(value) == 0 or value.shape[0] != N:
+            unsorted[key] = value
+            continue
+        if not _PER_ROW.match(key):
+            raise OracleMismatch(f"brms's standata {key!r} has {N} rows but is not a known per-row array; cannot put it in data order")
+        back = np.empty_like(value)
+        back[order] = value
+        unsorted[key] = back
+    return _DataOrderFixture(fixture.raw, unsorted, order)
+
+
+def check_autocor_design(fixture: Fixture, model: ab.Model) -> None:
+    """G1 of an autocorrelation term (C04): brms's ``Kar`` and ``Kma`` are the term's ``p`` and ``q``; along brms's sorted
+    rows each row either continues the previous row's series one position later or starts a series (a change of brms's
+    series label) at position 0, in the model's series (``Design.autocor``); and brms's ``J_lag`` is, row by row, the lags
+    those positions give the next row, ``min(max(p, q), position)``. A model and a fixture of which only one has ARMA data
+    are a mismatch."""
+    sd, term = fixture.standata, getattr(getattr(model, "spec", None), "autocor", None)
+    brms_has = [k for k in ("Kar", "Kma", "J_lag") if k in sd]
+    if term is None:
+        if brms_has:
+            raise OracleMismatch(f"brms has the ARMA data {brms_has}; the AutoBayes model has no autocorrelation term")
+        return
+    if len(brms_has) != 3:
+        raise OracleMismatch(f"the AutoBayes model has {term.term}; brms's standata lacks {sorted({'Kar', 'Kma', 'J_lag'} - set(brms_has))}")
+    if (int(sd["Kar"]), int(sd["Kma"])) != (term.p, term.q):
+        raise OracleMismatch(f"brms has Kar = {int(sd['Kar'])}, Kma = {int(sd['Kma'])}; {term.term} has p = {term.p}, q = {term.q}")
+    order, design = getattr(fixture, "stan_order", None), model.design.autocor
+    if order is None:
+        raise OracleMismatch("the fixture of an autocorrelation model must be compared in data order (in_data_order)")
+    series, position = design.series_index[order], design.position[order]
+    labels = (np.zeros(order.size) if term.gr is None else model.data[term.gr].astype(str).to_numpy()[order])
+    for i in range(order.size):
+        starts = i == 0 or labels[i] != labels[i - 1]
+        if starts and (position[i] != 0 or (i and series[i] == series[i - 1])):
+            raise OracleMismatch(f"Stan row {i + 1} starts brms's series {labels[i]!r}; AutoBayes puts it at position {position[i]} "
+                                 f"of series {design.series[series[i]]!r}")
+        if not starts and (series[i] != series[i - 1] or position[i] != position[i - 1] + 1):
+            raise OracleMismatch(f"Stan row {i + 1} follows row {i} in brms's series {labels[i]!r}; AutoBayes puts it at position "
+                                 f"{position[i]} of series {design.series[series[i]]!r}")
+    expected = np.r_[np.minimum(term.max_lag, position[1:]), 0]
+    J_lag = np.asarray(sd["J_lag"], dtype=float).ravel()
+    if J_lag.shape != expected.shape or abs_err(J_lag, expected) > 0:
+        raise OracleMismatch(f"brms's J_lag {J_lag.astype(int).tolist()} differs from the lags of AutoBayes's series positions "
+                             f"{expected.tolist()}")

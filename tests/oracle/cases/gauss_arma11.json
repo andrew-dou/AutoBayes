@@ -5,10 +5,6 @@
  "note": "brms arma(p = 1, q = 1), regression formulation: ar and ma unbounded; mu[n] += Err[n, 1] * ma, then err[n] = Y[n] - mu[n], then mu[n] += Err[n, 1] * ar; standata rows sorted by (g, t), predictions in data order; no newdata",
  "seed": 307,
  "n_points": 8,
- "gate": {
-  "expect": "fail",
-  "reason": "C04_autocor not implemented; remove this field when it lands"
- },
  "data": {
   "generator": "tier_c",
   "seed": 207,

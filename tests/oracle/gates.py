@@ -6,7 +6,9 @@ G1 `check_design`        standata equals the model's design, response, trials, o
                          monotonic term's codes, number of steps and Dirichlet concentrations (Xmo_k, Jmo, con_simo_k; B03),
                          and a mixture's component designs X_mu<k> and theta's concentrations (con_theta; C05),
                          and each Gaussian process's row index, inputs or basis and scaling (Jgp_k, Xgp_k, Xgp_prior_k,
-                         dmax_k, cmeans_k; an approximate GP's slambda_k, Lgp_k, NBgp_k; C03)
+                         dmax_k, cmeans_k; an approximate GP's slambda_k, Lgp_k, NBgp_k; C03);
+                         an autocorrelation term's Kar, Kma and J_lag, with brms's rows sorted by series and time
+                         compared through the permutation derived from the data (C04, adapter.in_data_order)
 G2 `check_logp`          log density with and without the Jacobian, and its prior part, at every point
 G2 `check_gradient`      every gradient coordinate, mapped through the probed parameter table
 G3 `check_derived`       the graph's linear predictor, group effects and correlation matrices, and the raw-scale intercept
@@ -63,7 +65,7 @@ def prior_names(model) -> list[str]:
     intercept, each component's density as brms adds it, C05);
     the marginal SD and length-scale of every Gaussian process (not its standardised ``zgp``, which brms adds in the model
     block, C03); for a non-linear model (C02), every parameter's coefficients, group SDs and correlation factors, and the
-    auxiliary parameter."""
+    auxiliary parameter; an autocorrelation term's ``ar`` and ``ma`` (C04)."""
     if adapter.is_multivariate(model):                       # C01: each response's, under its names, and the residual correlation's
         return [model.variable(r, name) for r, sub in model.submodels.items() for name in prior_names(sub)] + (["Lrescor"] if model.rescor else [])
     if adapter.is_nonlinear(model):
@@ -92,6 +94,7 @@ def prior_names(model) -> list[str]:
     mixture = getattr(model, "mixture_names", {})          # C05: each component's sigma<k> and theta
     out += [*mixture["sigma"], mixture["theta"]] if mixture else []
     out += [roles[key] for roles in getattr(model, "gp_names", {}).values() for key in ("sdgp", "lscale")]   # C03
+    out += [v for k, v in getattr(model, "autocor_names", {}).items() if not k.endswith("_coordinate")]   # an ARMA term's ar and ma (C04)
     return out
 
 
@@ -103,6 +106,8 @@ class Bundle:
         self.data = fx.read_frame(self.case, d / "data.csv")
         self.newdata = fx.read_frame(self.case, d / "newdata.csv") if (d / "newdata.csv").exists() else None
         self.model = model or adapter.build_model(self.case, self.data)
+        # C04: brms sorts an autocorrelation model's Stan rows by series and time; its per-row data are compared in data order
+        self.fixture = adapter.in_data_order(self.case, self.fixture, self.model, self.data)
         # C07: the post-processing functions a case names (``"post": ["log_lik", "bayes_R2", "loo"]`` in its autobayes
         # section, each proposed as ``ab.<name>(model, idata)``) must exist, so that such a case fails until they do; the
         # gate that compares them with the fixture's ``post`` block (brms's log_lik(), bayes_R2(), loo()) lands with them
@@ -233,6 +238,7 @@ def check_design(b: Bundle) -> None:
         for key, value in mine.items():
             if key not in sd or np.shape(sd[key]) != np.shape(value) or abs_err(sd[key], value) > DESIGN_ABS:
                 raise OracleMismatch(f"Gaussian process {g.term!r}: brms {key} is {sd.get(key)!r}; AutoBayes has {value!r}")
+    adapter.check_autocor_design(b.fixture, b.model)             # C04: Kar, Kma, J_lag and each sorted row's series and position
     # the design columns (every formula's), the group partitions and the monotonic codes were matched by content when the
     # maps were built
     adapter.match_columns(b.fixture, b.model)
@@ -458,6 +464,7 @@ def check_default_prior(b: Bundle) -> None:
     expected |= {par for par in ("zi", "hu") if par in b.model.names}     # B06
     mixture = getattr(b.model, "mixture_names", {})        # C05: each component's sigma<k> and theta (Intercept, b above)
     expected |= {*mixture["sigma"], "theta"} if mixture else set()
+    expected |= {part for part in ("ar", "ma") if part in getattr(b.model, "autocor_names", {})}   # C04: an ARMA term's ar and ma
     if not expected <= classes:
         raise OracleMismatch(f"brms default_prior classes {sorted(classes)} lack {sorted(expected - classes)}")
     if adapter.is_nonlinear(b.model):                              # C02: each parameter's b (and sd) rows, cor by group

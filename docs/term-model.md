@@ -93,6 +93,17 @@ coefficient, prior or design column: `AdditionTerm(kind, column, lb, ub)` for `w
 the canonical formula writes after `trials()`). `formula.addition_data(spec, frame)` gives brms's Stan data (`weights`,
 `cens`, `lb`, `ub`) and `Design` holds them on the fitted rows; the likelihood, not Bambi's formula, reads them.
 
+## The autocorrelation term: `ModelSpec.autocor`
+
+brms's `ar(time, gr, p)`, `ma(time, gr, q)` and `arma(time, gr, p, q)` in the regression formulation (C04,
+docs/autocorrelation.md) are not population-level terms either: no design column and no `b` coefficient, but coefficients
+of their own (`ar`, `ma`; prior classes `ar` and `ma`). One per formula, held as `autocor.Autocor(call, time, gr, p, q)`
+(`term` is its canonical spelling, which the canonical formula writes last; `columns` the time and series columns it
+reads; `parts` the `("ar", p)` and `("ma", q)` it has), or None. `autocor.series_layout(term, frame)` gives the series of
+the rows (`AutocorDesign`: each row's series and position in time order, brms's sorted Stan rows and `J_lag`), which
+`Design.autocor` holds on the fitted rows; the model adds the term to the parent's linear predictor while Bambi builds it,
+after every other term, and Bambi's formula never sees it.
+
 ## Distributional formulas: `ModelSpec.dpars`
 
 A model given a list of formulas (B01, docs/distributional.md), `["y ~ x + (1 | g)", "sigma ~ z"]`, holds each formula

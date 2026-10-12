@@ -403,6 +403,7 @@ class NonlinearSpec:
     mo_terms = ()
     monotonics = ()
     gp_terms = ()                         # Gaussian processes (C03): none, as a non-linear model takes none (D61)
+    autocor = None                        # an autocorrelation term (C04): none, as a non-linear model takes none (D70)
     groups = ()
     group_coefficients = ()
     correlated_terms = ()

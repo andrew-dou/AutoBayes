@@ -25,6 +25,9 @@ docs/mixtures.md; ``ab.mixture(..., families=[...])``) has one linear predictor 
 ``sigma<k>`` per component and the mixing proportions ``theta`` (``autobayes/families/mixture.py``). A Gaussian process ``gp(x)`` or ``gp(x, k = 10, c =
 5/4)`` (C03, docs/gaussian-processes.md) is added to the parent's linear predictor while Bambi builds the model, as a
 monotonic term is (``Design.gp`` holds its inputs, ``Model.gp_names`` its PyMC names).
+brms's autocorrelation terms ``ar()``, ``ma()`` and ``arma()`` in the regression formulation (C04, docs/autocorrelation.md)
+are added to the Gaussian linear predictor last, on the residuals of every other term (``autobayes.autocor``;
+``Design.autocor`` holds the series of the fitted rows).
 """
 from __future__ import annotations
 
@@ -44,6 +47,7 @@ from autobayes.formula import (Categorical, FormulaError, ModelSpec, addition_da
 from autobayes.priors import AUXILIARY, PriorError, Priors, describe_prior
 
 _bambi_group_name = bambi_group_name          # ``1|g`` for the varying intercept of ``g``, ``x|g`` for the slope of ``x``
+_AUTOCOR_MEANING = {"ar": "autoregressive", "ma": "moving-average"}   # an autocorrelation term's parts (C04)
 
 
 @dataclass(frozen=True)
@@ -133,6 +137,7 @@ class Design:
     dpars: Mapping[str, DparDesign] = field(default_factory=lambda: MappingProxyType({}))   # each distributional parameter's own design, by brms name (B01)
     monotonic: Mapping[str, MonotonicBlock] = field(default_factory=lambda: MappingProxyType({}))   # each monotonic term's block, by column (B03)
     gp: Mapping[str, GPBlock] = field(default_factory=lambda: MappingProxyType({}))   # each Gaussian process's block, by column (C03)
+    autocor: object | None = None      # autocor.AutocorDesign: the series of an autocorrelation term on the fitted rows (C04), or None
 
     def __post_init__(self):
         if not self.columns:
@@ -292,6 +297,7 @@ class Model:
                 + ([spec0.trials] if spec0.trials else []) + ([spec0.offset.column] if spec0.offset is not None else [])
                 + [c for a in spec0.additions for c in a.columns]          # weights() and cens() columns (B02)
                 + [c for d in spec0.dpars for c in d.pop_columns])         # the columns distributional formulas read (B01)
+        cols += list(spec0.autocor.columns) if spec0.autocor is not None else []   # an autocorrelation term's time and series (C04)
         cols = list(dict.fromkeys(cols))                        # the offset column may also be a predictor
         missing = [c for c in cols if c not in data.columns]
         if missing:
@@ -358,6 +364,17 @@ class Model:
                     "they get no coefficient, and predictions for them are refused."
                 )
         self.data = df
+        self._autocor_design = None                          # C04: the series of the fitted rows, brms's sorted Stan rows
+        if self.spec.autocor is not None:
+            from autobayes.autocor import series_layout
+            self._autocor_design = series_layout(self.spec.autocor, self.data)
+            longest = self._autocor_design.T                 # lag k needs a series of more than k rows
+            unread = [f"{part}[{k}]" for part, order in self.spec.autocor.parts for k in range(max(longest, 1), order + 1)]
+            if unread:
+                self.warnings.append(
+                    f"no series of {self.spec.autocor.term} has more than {longest} row(s): {unread} multiply no lagged residual and "
+                    "are informed by their prior alone (brms keeps them too)"
+                )
 
         bambi_family = fam.bambi_family()
         if self.spec.additions:                              # brms's response addition terms act on the likelihood (B02)
@@ -385,6 +402,9 @@ class Model:
         if self.spec.gp_terms:                               # brms's gp() (C03): added the same way, through the same hook
             from autobayes.likelihoods import monotonic_family as linear_predictor_family
             bambi_family = linear_predictor_family(bambi_family, self._add_gp_effects)
+        if self.spec.autocor is not None:                    # brms's ar(), ma(), arma() (C04): added last, on the residuals
+            from autobayes.autocor import autocor_family
+            bambi_family = autocor_family(bambi_family, self._add_autocor_effects)
         self.bambi_model = bmb.Model(
             bambi_formula, self.data, family=bambi_family,
             priors=bambi_priors,
@@ -399,6 +419,8 @@ class Model:
         if fam.mixture:                                      # C05: the graph built beside Bambi's components, checked
             from autobayes.families.mixture import check_graph
             check_graph(self)
+        if self.spec.autocor is not None:                    # C04: the graph's ARMA terms against brms's recursion
+            self._check_autocor_effects()
         if fam.discrete:
             rv = self.pymc_model[self.names["y"]]
             obs = np.asarray(self.pymc_model.rvs_to_values[rv].eval())
@@ -441,6 +463,7 @@ class Model:
         variable_names += dpar_coefficients
         variable_names += [roles["simplex"] for roles in self.mo_names.values()]   # each monotonic term's simplex (B03)
         variable_names += [roles[k] for roles in self.gp_names.values() for k in ("sdgp", "lscale", "zgp")]   # each GP's (C03)
+        variable_names += [v for k, v in self.autocor_names.items() if not k.endswith("_coordinate")]   # ar and ma (C04)
         # Bambi's default result cleaning drops every posterior variable ending in _offset.
         retained = list(self.spec.terms) + [roles["group_effect"] for roles in self.group_coefficient_names.values()] + dpar_coefficients
         if any(name.endswith("_offset") for name in retained):
@@ -451,6 +474,7 @@ class Model:
         coords += [f"{self.dpar_names[d.response][f'b:{t.name}']}_dim" for d in self.spec.dpars for t in d.pop_terms if t.is_vector]
         coords += [roles["coordinate"] for roles in self.mo_names.values()]
         coords += [roles["coordinate"] for roles in self.gp_names.values()]       # C03
+        coords += [v for k, v in self.autocor_names.items() if k.endswith("_coordinate")]   # ar_dim and ma_dim (C04)
         coords += ["__obs__"]
         names = variable_names + coords
         duplicates = sorted({n for n in names if names.count(n) > 1})
@@ -679,7 +703,8 @@ class Model:
                       columns=self.spec.columns, categoricals=self.spec.categoricals, offset=offset,
                       weights=additions.get("weights"), cens=additions.get("cens"), lb=additions.get("lb"), ub=additions.get("ub"),
                       dpars=MappingProxyType({d.response: self._dpar_design(d) for d in self.spec.dpars}),
-                      monotonic=MappingProxyType(self._monotonic_design()), gp=MappingProxyType(self._gp_design()))
+                      monotonic=MappingProxyType(self._monotonic_design()), gp=MappingProxyType(self._gp_design()),
+                      autocor=self._autocor_design)
 
     def _dpar_design(self, d: ModelSpec) -> DparDesign:
         """The design of distributional parameter ``d.response``'s formula (B01), as Bambi built its distributional
@@ -871,6 +896,59 @@ class Model:
                 raise RuntimeError(f"the graph's {parent!r} does not move by the values of {block.term!r} at its rows' inputs; largest "
                                    f"difference {np.max(np.abs(moved - expected)) if moved.shape == expected.shape else moved.shape}")
 
+    # -- autocorrelation terms (C04) -----------------------------------------------------
+    def _add_autocor_effects(self, eta):
+        """brms's ARMA term, built inside the model Bambi is building (``autocor.autocor_family``, which Bambi calls on the
+        parent's linear predictor before the link, after every other term): ``ar`` and ``ma`` under their priors, vectors on
+        the coordinates ``"1"``..``"p"`` (``"1"``..``"q"``), and ``eta`` plus the term on the residuals of the fitted
+        responses along each series (``autocor.arma_effect``)."""
+        import pymc as pm
+
+        from autobayes.autocor import arma_effect, coefficient_vector
+
+        model = pm.modelcontext(None)
+        roles, priors, coefficients = self.autocor_names, self.priors.autocor_priors(self.spec), {}
+        for part, order in self.spec.autocor.parts:
+            model.add_coord(roles[f"{part}_coordinate"], [str(k) for k in range(1, order + 1)])
+            coefficients[part] = coefficient_vector(roles[part], priors[part], roles[f"{part}_coordinate"])
+        y = np.asarray(self.data[self.spec.response], dtype=float)
+        return arma_effect(eta, y, coefficients.get("ar"), coefficients.get("ma"), self._autocor_design)
+
+    def _check_autocor_effects(self) -> None:
+        """The autocorrelation term read off the graph (C04): ``ar`` and ``ma`` free, unconstrained vectors of ``p`` and ``q``
+        entries on the coordinates ``"1"``.., and the parent's linear predictor, at coefficients with distinct alternating
+        entries, equal row by row to brms's recursion (``autocor.arma_values``: a loop along brms's sorted rows with
+        ``J_lag``) applied to the predictor at ``ar = ma = 0``, where the term vanishes; every other variable sits a small,
+        distinct step from the graph's initial point, so that the predictor varies by row."""
+        from autobayes.autocor import arma_values, probe_coefficients
+
+        pmm, roles, parent = self.pymc_model, self.autocor_names, self.family_spec.parent
+        if self.bambi_model.family.link[parent].name != "identity":
+            raise RuntimeError(f"Bambi's link of {parent!r} is {self.bambi_model.family.link[parent].name}; the autocorrelation "
+                               "term is checked under the identity link")
+        start = pmm.initial_point()
+        for part, order in self.spec.autocor.parts:
+            rv = pmm[roles[part]]
+            if rv not in pmm.free_RVs or pmm.rvs_to_values[rv].name != roles[part] or np.shape(start[roles[part]]) != (order,):
+                raise RuntimeError(f"{roles[part]!r} is not a free, unconstrained vector of {order} entries in the graph")
+            coordinate = roles[f"{part}_coordinate"]
+            if (tuple(pmm.named_vars_to_dims.get(roles[part], ())) != (coordinate,)
+                    or tuple(str(v) for v in pmm.coords[coordinate]) != tuple(str(k) for k in range(1, order + 1))):
+                raise RuntimeError(f"PyMC dims of {roles[part]!r} are not ({coordinate!r},) with coordinates 1..{order}")
+        fn = pmm.compile_fn(pmm.replace_rvs_by_values([pmm[parent]]), inputs=pmm.value_vars, point_fn=True,
+                            on_unused_input="ignore", mode="FAST_COMPILE")
+        coefficient_vars = {roles[part] for part, _ in self.spec.autocor.parts}
+        point = {name: np.asarray(v, dtype=float) + (0.0 if name in coefficient_vars else
+                                                     0.05 * (1.0 + np.arange(np.size(v))).reshape(np.shape(v)) / max(np.size(v), 1))
+                 for name, v in start.items()}
+        probe = {part: probe_coefficients(order, 0.6 if part == "ar" else -0.45) for part, order in self.spec.autocor.parts}
+        eta = np.asarray(fn({**point, **{roles[part]: np.zeros(order) for part, order in self.spec.autocor.parts}})[0], dtype=float).ravel()
+        got = np.asarray(fn({**point, **{roles[part]: value for part, value in probe.items()}})[0], dtype=float).ravel()
+        expected = arma_values(eta, self.design.y, probe.get("ar"), probe.get("ma"), self.design.autocor)
+        if got.shape != expected.shape or not np.allclose(got, expected, rtol=1e-10, atol=1e-10):
+            raise RuntimeError(f"the graph's {parent!r} does not add brms's ARMA term {self.spec.autocor.term!r} on the residuals; "
+                               f"largest difference {np.max(np.abs(got - expected)) if got.shape == expected.shape else got.shape}")
+
     # -- naming ------------------------------------------------------------------------
     @property
     def link(self) -> str:
@@ -928,6 +1006,7 @@ class Model:
             out.update({name: name for name in roles["sigma"]}, theta=roles["theta"], component_dim=roles["coordinate"])
         if fam.continuous and fam.parent == "mu":
             out["mu"] = "mu"                                  # the continuous families whose parent is the location mu expose it by name (the Beta's parent is logit_mu)
+        out.update({k: v for k, v in self.autocor_names.items() if not k.endswith("_coordinate")})   # "ar", "ma" (C04)
         return out
 
     @property
@@ -960,6 +1039,17 @@ class Model:
         dimension (``zgp_x_dim``, coordinates ``"1"``..``"N"``); also ``names["sdgp:x"]`` and so on. Empty without one."""
         return {g.column: {"sdgp": f"sdgp_{g.column}", "lscale": f"lscale_{g.column}", "zgp": f"zgp_{g.column}",
                            "coordinate": f"zgp_{g.column}_dim"} for g in self.spec.gp_terms}
+
+    @property
+    def autocor_names(self) -> dict[str, str]:
+        """PyMC names of an autocorrelation term's coefficients (C04): ``"ar"`` and ``"ma"`` (brms's names; vectors of ``p``
+        and ``q`` entries, also ``names["ar"]`` and ``names["ma"]``) and their dimensions ``"ar_coordinate"`` (``ar_dim``,
+        coordinates ``"1"``..``"p"``) and ``"ma_coordinate"`` (``ma_dim``), for the parts the term has. Empty without one."""
+        term = getattr(self.spec, "autocor", None)            # a non-linear model's spec has none (C02)
+        out: dict[str, str] = {}
+        for part, _ in (term.parts if term is not None else ()):
+            out[part], out[f"{part}_coordinate"] = part, f"{part}_dim"
+        return out
 
     @property
     def dpar_names(self) -> dict[str, dict[str, str]]:
@@ -1032,7 +1122,7 @@ class Model:
     def value_point(self, *, intercept: float | None = None, b, sd=None, z=None, L=None, sigma=None,
                     shape=None, phi=None, nu: float | None = None,
                     zi: float | None = None, hu: float | None = None, bsp=None, simo=None, theta=None,
-                    sdgp=None, lscale=None, zgp=None) -> dict[str, np.ndarray]:
+                    sdgp=None, lscale=None, zgp=None, ar=None, ma=None) -> dict[str, np.ndarray]:
         """A point in PyMC's sampled (value) space, from natural-scale quantities.
 
         ``intercept`` is the *model* intercept (at the predictor means when centred),
@@ -1068,7 +1158,9 @@ class Model:
         (positive scalars, stored as their logs) and ``zgp`` (its standardised values, one per distinct input of the exact GP
         or per basis function of the approximate one, in brms's order), each keyed by the process's column,
         ``sdgp={"x": 0.8}``, ``lscale={"x": 0.3}``, ``zgp={"x": array(N)}`` (a single Gaussian process also accepts bare values),
-        required exactly when the model has one.
+        required exactly when the model has one. ``ar`` and ``ma`` are an autocorrelation term's coefficients (C04, brms's ``ar``
+        and ``ma``): ``p`` and ``q`` finite numbers (a scalar for one), stored as given (unconstrained), required
+        exactly for the parts the term has.
         """
         if self.family_spec.mixture:                          # C05: the components' parameters and theta
             from autobayes.families.mixture import value_point
@@ -1214,6 +1306,7 @@ class Model:
             i += k
         point.update(self._monotonic_point(bsp, simo))       # B03: each monotonic term's coefficient and simplex
         point.update(self._gp_point(sdgp, lscale, zgp))      # C03: each Gaussian process's sdgp, lscale and zgp
+        point.update(self._autocor_point(ar, ma))            # C04: an autocorrelation term's ar and ma
         expected = {v.name for v in self.pymc_model.value_vars}
         if set(point) != expected:
             raise RuntimeError(f"value names {sorted(point)} do not match PyMC's {sorted(expected)}")
@@ -1290,6 +1383,25 @@ class Model:
             point[roles["zgp"]] = z
         return point
 
+    def _autocor_point(self, ar, ma) -> dict[str, np.ndarray]:
+        """``value_point``'s entries of an autocorrelation term (C04): ``ar`` and ``ma`` as given, ``p`` and ``q`` finite
+        entries, for exactly the parts the term has."""
+        term, roles, point = self.spec.autocor, self.autocor_names, {}
+        orders = dict(term.parts) if term is not None else {}
+        for part, value in (("ar", ar), ("ma", ma)):
+            if part not in orders:
+                if value is not None:
+                    raise ValueError(f"this model has no {part} coefficients" + (f" ('{term.term}')" if term is not None else
+                                     " (no autocorrelation term ar(), ma() or arma())") + f"; {part} does not apply")
+                continue
+            if value is None:
+                raise ValueError(f"{part} is required: the term '{term.term}' has {orders[part]} {part} coefficient(s)")
+            arr = np.atleast_1d(np.asarray(value, dtype=float))
+            if arr.shape != (orders[part],) or not np.isfinite(arr).all():
+                raise ValueError(f"{part} must have {orders[part]} finite entries ('{term.term}'), got shape {arr.shape}")
+            point[roles[part]] = arr
+        return point
+
     def _dpar_point(self, name: str, value) -> dict[str, np.ndarray]:
         """``value_point``'s entries of distributional parameter ``name``'s formula (B01) from ``{"intercept": float,
         "b": array}``: the intercept (as sampled) and the coefficients term by term in design-column order."""
@@ -1357,7 +1469,8 @@ class Model:
                     + (["correlated varying slope(s)"] if s.correlated_terms else []) + (["offset"] if s.offset is not None else [])
                     + (["derived grouping factor(s)"] if any(t.derived for t in s.group_terms) else [])
                     + ([f"response addition term(s) {', '.join(a.term for a in s.additions)}"] if s.additions else [])
-                    + ([f"distributional formula(s) for {', '.join(s.dpar_names)}"] if s.dpars else []))
+                    + ([f"distributional formula(s) for {', '.join(s.dpar_names)}"] if s.dpars else [])
+                    + ([f"autocorrelation term {s.autocor.term}"] if s.autocor is not None else []))
         lines = [
             f"AutoBayes {fam.tag} model" + (" with " + " and ".join(features) if features else "")
             + (" (population-level only)" if not s.has_group else ""),
@@ -1379,6 +1492,7 @@ class Model:
             lines += [f"  offset    : {s.offset.expression}, added to the linear predictor as written (no coefficient, no prior, "
                       f"never centred; brms offset()); range {d.offset.min():.4f} to {d.offset.max():.4f} over the fitted rows"]
         lines += self._addition_lines()
+        lines += self._autocor_data_lines()                  # C04: the series of an autocorrelation term
         for t in s.transform_terms:
             tr, col = t.transform, d.X_raw[:, s.columns.index(t.name)]
             lines += [f"  {t.name:<10}: in-formula transform of {tr.column!r}, {tr.expression(f'{tr.column}_i')}, range {col.min():.4f} to "
@@ -1420,6 +1534,7 @@ class Model:
         rest = "".join(f" + gp({g.column})_i" for g in s.gp_terms) + (" + offset_i" if s.offset is not None else "") + "".join(
             f" + {effect(t.factor)}[{t.factor}_i]" + "".join(f" + x_{c},i * {slope_effect(t.factor, c)}[{t.factor}_i]" for c in t.slopes)
             for t in s.group_terms)
+        rest += " + arma_i" if s.autocor is not None else ""   # C04: the autocorrelation term, last
         if fam.thresholds:                                    # B05: no intercept in mu, the thresholds take its place
             body = (xs + rest) if xs else (rest[3:] or "0")
         else:
@@ -1435,6 +1550,7 @@ class Model:
                       "it has no coefficient and no prior and is not centred."]
         lines += self._monotonic_lines(lp)
         lines += self._gp_lines(lp)
+        lines += self._autocor_lines(lp)                     # C04
         scale = fam.scale_phrase
         same_group = " (same group)" if len(s.groups) == 1 else (" (same group effects)" if s.groups else "")
         for cat in s.categoricals:
@@ -1606,6 +1722,7 @@ class Model:
                           f"  {roles['lscale']} ~ {describe_prior(lscale[g.column], lb=0)}   (brms class lscale, coefficient {brms}; "
                           "on the scaled input)",
                           f"  {roles['zgp']}[j] ~ Normal(0, 1)   (brms's zgp)"]
+        lines += self._autocor_prior_lines()                 # C04: ar and ma
         if fam.per_category:
             lines += [f"  (one prior per class, the same for every non-reference category k = {', '.join(self.categories[1:])})"]
         for (g, c), prior in pr.sd_priors(s).items():
@@ -1683,6 +1800,10 @@ class Model:
                 roles[t.name] = f"b_{t.name}[{shown}] (vector; dims {t.name}_dim, posterior rows {rows})"
                 if fam.per_category:                          # B05: and one column per non-reference category
                     roles[t.name] = f"b_{t.name}[{shown}] (matrix; dims {t.name}_dim x {n['category_dim']})"
+        for part, order in (s.autocor.parts if s.autocor is not None else ()):   # C04: ar and ma, unconstrained vectors
+            acn = self.autocor_names
+            roles[acn[part]] = (f"{part}[1..{order}], the {_AUTOCOR_MEANING[part]} coefficients (brms's {part}; vector, dims "
+                                f"{acn[part + '_coordinate']}, unconstrained)")
         for v in self.pymc_model.value_vars:
             lines.append(f"  {v.name:<24} {roles.get(v.name, f'b_{v.name}')}")
         lines.append("Deterministic: " + "".join(f"{names['group_effect']} = {effect(g) if c == 'Intercept' else slope_effect(g, c)}, "
@@ -1736,6 +1857,45 @@ class Model:
                     f"scaled input: inputs {ls} * {g.dmax:g} apart in {c} are correlated exp(-1/2) = 0.61. gp({c}) is not centred: the "
                     "intercept is not its mean over the rows.", new]
         return out
+
+    def _autocor_data_lines(self) -> list[str]:
+        """``describe()``'s data line of an autocorrelation term (C04): its series and their order."""
+        term, d = self.spec.autocor, self.design.autocor
+        if term is None:
+            return []
+        lengths = d.lengths
+        series = f"{len(d.series)} series (the levels of {term.gr})" if term.gr is not None else "one series (no gr)"
+        ordered = f"ordered by {term.time}" if term.time is not None else "in the data order (no time)"
+        return [f"  autocor   : {term.term}: {series} of {lengths.min()} to {lengths.max()} rows, each {ordered}; brms's Stan data "
+                "list the rows sorted by series and then time, predictions keep the data order"]
+
+    def _autocor_lines(self, lp: str) -> list[str]:
+        """``describe()``'s paragraph of an autocorrelation term (C04): brms's ARMA term in its regression formulation, the
+        residual it reads and its recursion."""
+        term = self.spec.autocor
+        if term is None:
+            return []
+        lagged = [f"ar[{k}] * E_i[{k}]" for k in range(1, term.p + 1)] + [f"ma[{k}] * E_i[{k}]" for k in range(1, term.q + 1)]
+        ma = " + ".join(f"ma[{k}] * E_i[{k}]" for k in range(1, term.q + 1))
+        residual = (f"  e_i = y_i - eta_i, row i's residual, with eta_i = {lp}_i - arma_i the linear predictor without the term"
+                    if not term.q else
+                    f"  e_i = y_i - eta_i - ({ma}): row i's residual after the MA part (brms's err), with eta_i = {lp}_i - arma_i "
+                    "the linear predictor without the term; it is a recursion along each series")
+        return [f"  arma_i = {' + '.join(lagged)}: brms's ARMA term {term.term} (the regression formulation, cov = FALSE),",
+                "  added after every other term. E_i[k] is e of the row k places before row i in its own series, 0 when the series",
+                "  has no such row (brms's Err and J_lag): lags count rows, not units of time, so a gap in time is one step, as in brms.",
+                residual,
+                f"  {' and '.join(part for part, _ in term.parts)} {'are' if len(term.parts) > 1 else 'is'} unbounded (brms's vector[K] "
+                f"{term.parts[0][0]})" + (": |ar| < 1 is not imposed, so the AR part need not be stationary." if term.p else ".")]
+
+    def _autocor_prior_lines(self) -> list[str]:
+        """``describe()``'s prior lines of an autocorrelation term's ``ar`` and ``ma`` (C04)."""
+        term = self.spec.autocor
+        if term is None:
+            return []
+        priors = self.priors.autocor_priors(self.spec)
+        return [f"  {part}[k] ~ {describe_prior(priors[part])}, k = 1..{order}   (brms class {part}: each {_AUTOCOR_MEANING[part]} "
+                "coefficient, unbounded)" for part, order in term.parts]
 
     def _dpar_lines(self, ds: ModelSpec) -> list[str]:
         """``describe()``'s paragraph of distributional parameter ``ds.response``'s own formula (B01): its linear
@@ -1805,6 +1965,7 @@ class Model:
         found += [(f"simo:{c}", v) for c, v in pr.simo_priors(s).items()]          # a monotonic term's simplex (B03)
         found += [(f"sdgp:{c}", v) for c, v in pr.sdgp_priors(s).items()]          # a Gaussian process's SD and length-scale (C03)
         found += [(f"lscale:{c}", v) for c, v in pr.lscale_priors(s).items()]
+        found += list(pr.autocor_priors(s).items())                                  # an ARMA term's ar and ma (C04)
         if fam.scale_parameter in s.dpar_names:              # its own formula's priors (B01)
             ds, sub = s.dpar(fam.scale_parameter), pr.dpar_priors(s, fam.scale_parameter)
             found += [(f"{ds.response}:intercept", sub.intercept)] if ds.intercept else []

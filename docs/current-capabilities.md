@@ -190,3 +190,13 @@ they take a linear Gaussian model. Verified against `gauss_nonlinear_exp` and `g
 machine precision; `nlf()`, `lf()`, nested parameters, functions outside the grammar, `gp()` and `mo()`, distributional,
 multivariate and mixture combinations, other families and `loop = FALSE` are refused (D60-D63); see
 [non-linear formulas](nonlinear.md).
+
+Autocorrelation terms (C04, brms's `ar(time = t, gr = g, p)`, `ma(time = t, gr = g, q)` and `arma(time = t, gr = g, p, q)`
+in the regression formulation, `cov = FALSE`): for the Gaussian family, each row's linear predictor gains `ar` and `ma` times
+the lagged residuals of earlier rows of its own series in time order, after every other term, under
+`Priors(ar=..., ma=...)` (unbounded; brms's default flat, `ab.Flat()`); the MA recursion is a `pytensor.scan` over the
+positions of a series that the JAX backend compiles. Predictions on the fitted rows add the term from the observed
+residuals, in data order, as brms's `posterior_linpred` does; new rows are refused. Verified against `gauss_ar1`,
+`gauss_arma11` and `gauss_arma22_varint` (lags two deep next to a varying intercept); `cov = TRUE`, `cosy()`, `car()`,
+`sar()`, `fcor()`, `unstr()`, other families, distributional formulas, addition terms and new rows are refused (D68-D71);
+see [autocorrelation](autocorrelation.md).

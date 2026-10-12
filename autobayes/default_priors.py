@@ -26,6 +26,8 @@ brms's rules (``default_prior()``, ``def_dpar_prior``, ``def_scale_prior``, ``pr
 - A Gaussian process ``gp(x)`` (C03): its marginal SD ``sdgp`` takes the default of a group-level SD (brms's documentation
   says so), ``student_t(3, 0, scale)`` with ``lb`` 0 on the class row; its length-scale ``lscale`` an inverse gamma tuned to
   the process's inputs on its coefficient row (``gpx``), the class row empty with ``lb`` 0: ``default_lscale``.
+- An autocorrelation term (C04, ``ar()``, ``ma()``, ``arma()``): its ``ar`` and ``ma`` flat (brms's classes ``ar`` and
+  ``ma``, no bounds in the regression formulation), ``Flat()``, one class row each.
 - An auxiliary parameter with its own formula (B01, ``sigma ~ z``; brms's ``def_dpar_prior`` under the formula's log link):
   its intercept ``student_t(3, 0, scale)`` with brms's scale of the response read on the log scale for ``sigma``
   (``max(2.5, round(mad(log y), 1))``, zeros read as 0.1, 2.5 when a response is negative) and ``student_t(3, 0, 2.5)``
@@ -355,10 +357,11 @@ def default_priors(formula: str | list[str], data: pd.DataFrame, *, family: str 
     simo = {t.operands[0]: Dirichlet(1) for t in spec.mo_terms}         # B03: brms's dirichlet(1) on each monotonic simplex
     sdgp = {g.column: HalfStudentT(DF, scale) for g in spec.gp_terms}   # C03: a group-level SD's default
     lscale = {g.column: default_lscale(g) for g in spec.gp_terms}      # C03: tuned to the process's inputs
+    autocor = {part: Flat() for part, _ in spec.autocor.parts} if spec.autocor is not None else {}   # C04: flat ar and ma
     priors = Priors(intercept=mark(intercept), b=mark(Flat()) if spec.pop_terms else None, sd=mark(sd) or None,
                     cor=mark(cor) or None, nu=mark(learned.get("nu")), simo=mark(simo) or None,
                     sdgp=mark(sdgp) or None, lscale=mark(lscale) or None,
-                    **{k: mark(v) for k, v in auxiliary.items()})
+                    **{k: mark(v) for k, v in auxiliary.items()}, **{k: mark(v) for k, v in autocor.items()})
     priors.validate(spec, fam)
     return priors
 
@@ -524,6 +527,8 @@ def prior_table(priors: Priors, spec, family="gaussian", *, center_predictors: b
             add(None, cls, lb="0")                                    # rows carry the priors, the class row is empty
             for column, p in by_column.items():
                 add(p, cls, coef=brms_rename(f"gp({column})"))
+    for part, prior in priors.autocor_priors(spec).items():          # an ARMA term's ar / ma (C04): a class row each, unbounded
+        add(prior, part)
     if fam.scale_parameter is not None and fam.scale_parameter not in spec.dpar_names:
         add(getattr(priors, fam.scale_parameter), fam.scale_parameter, lb="0")
     if fam.zero_parameter is not None:                                # brms's real<lower=0,upper=1> zi / hu (B06)

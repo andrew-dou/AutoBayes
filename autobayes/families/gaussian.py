@@ -69,4 +69,5 @@ GAUSSIAN = FamilySpec(
     log_likelihood=_log_likelihood,                                 # C07: log_lik(), verified against gauss_varint_post
     multivariate=True,                                              # C01: mvbind(y, y2) ~ ..., verified against gauss_mv_rescor and gauss_mv_norescor
     nonlinear_likelihood=_nonlinear_likelihood,                     # C02: nl = TRUE, verified against gauss_nonlinear_exp and _terms
+    autocorrelation=True,                                           # C04: ar(), ma(), arma(), verified against gauss_ar1, gauss_arma11
 )

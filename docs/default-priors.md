@@ -33,6 +33,7 @@ model only when `ab.default_priors()` is called and its result passed in.
 | a mixture's `Intercept` and `b` (`dpar = mu<k>`), `sigma<k>`, `theta` (C05) | each Gaussian component the Gaussian family's defaults (its own rows under `dpar = mu<k>` and class `sigma<k>`); `dirichlet(1)` on `theta` | one `Priors` per component from the Gaussian family's defaults, `theta=Dirichlet(1)` (`family="mixture"`, `families=[...]`; docs/mixtures.md) |
 | `sdgp` of a Gaussian process (C03) | `student_t(3, 0, scale)` on the class row, lower bound 0 (a group-level SD's default) | `HalfStudentT(3, scale)` in `Priors(sdgp={"x": ...})` |
 | `lscale` of a Gaussian process (C03) | on the coefficient row `gpx` (the class row empty, lower bound 0): the inverse gamma with 1% of its mass below the smallest distance between distinct scaled inputs (floored at 0.01) and 1% above the largest, its parameters printed to 6 decimals; `normal(0, 0.5)` with two distinct inputs | `InverseGamma(a, b)` solved exactly (the sixth decimal can differ from brms's own solver's, D67), or `HalfNormal(0.5)`, in `Priors(lscale={"x": ...})` (docs/gaussian-processes.md) |
+| `ar`, `ma` of an autocorrelation term (C04, `cov = FALSE`) | flat, no bounds, one class row each | `Flat()` |
 
 The location and scale are brms's `def_scale_prior` arithmetic on the response read through the family's link
 (`FamilySpec.default_prior_link`): the response itself for the Gaussian and Student-t families; `log(y)`, zeros read as
