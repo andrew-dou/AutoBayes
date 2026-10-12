@@ -1022,10 +1022,10 @@
    "pr": null,
    "attempts": 0,
    "gates": {
-    "sha": "1fdeb8015d4d",
+    "sha": "9c0268798fd2",
     "dirty_tree": false,
-    "base": "origin/main",
-    "when": "2026-10-12T01:25Z",
+    "base": "parity/c03-gaussian-process",
+    "when": "2026-10-12T01:51Z",
     "results": {
      "immutability": {
       "status": "pass",
@@ -1033,7 +1033,7 @@
      },
      "oracle": {
       "status": "pass",
-      "seconds": 1243.3
+      "seconds": 255.2
      }
     }
    },
