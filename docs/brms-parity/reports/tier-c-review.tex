@@ -1,0 +1,174 @@
+\documentclass[11pt]{article}
+\usepackage[margin=1in]{geometry}
+\usepackage[T1]{fontenc}
+\usepackage{amsmath,amssymb,mathtools}
+\usepackage{booktabs,array,enumitem,caption}
+\usepackage{xcolor,hyperref}
+\sloppy
+\hypersetup{colorlinks=true, linkcolor=blue!50!black, urlcolor=blue!50!black}
+\newcommand{\code}[1]{\texttt{#1}}
+\newcommand{\file}[1]{\texttt{#1}}
+\setlist{nosep, leftmargin=1.4em}
+
+\title{AutoBayes brms-parity loop: Tier C review}
+\author{Status at the Tier C boundary, prepared for Andrew}
+\date{11 October 2026}
+
+\begin{document}
+\maketitle
+
+\noindent This is the Tier C boundary review, in the same form as the Tier A and B ones. All seven Tier C features,
+and the two-reference acceptance you approved at the Tier B boundary (P6), are implemented and pass every gate. They
+have not all reached \code{main}: since 11 October about 21:30 UTC, GitHub Actions has refused to start any job on
+your account (``recent account payments have failed or your spending limit needs to be increased''), so the merge
+queue, which waits for hosted CI, stopped after P6 and C05. The other six features are verified locally as one chain on
+top of \code{main} and are ready to merge in order once CI runs again. Section~\ref{sec:decisions} is the part that
+needs you.
+
+\section{What was built}
+\label{sec:built}
+
+Table~\ref{tab:built} lists the features.
+
+\begin{table}[tbp]
+\small
+\begin{center}\begin{tabular}{@{}>{\raggedright\arraybackslash}p{0.155\textwidth}>{\raggedright\arraybackslash}p{0.09\textwidth}>{\raggedright\arraybackslash}p{0.375\textwidth}>{\raggedright\arraybackslash}p{0.19\textwidth}>{\raggedright\arraybackslash}p{0.07\textwidth}@{}}
+\toprule
+Feature & State & What a user can now write & Frozen brms cases it passes & Diverg. \\
+\midrule
+P6 two references & merged \#47 & \code{link="cloglog"}, \code{cens()}, \code{trunc()}: accepted where brms is exact and against a committed 50-digit reference where brms is not & \code{bernoulli\_\allowbreak{}cloglog}, \code{gauss\_\allowbreak{}censored}, \code{gauss\_\allowbreak{}truncated}, new \code{binomial\_\allowbreak{}cloglog} & D18, D24, D25 \\
+C05 mixtures & merged \#48 & \code{ab.mixture(f, data, Priors(components=[...], theta=ab.Dirichlet(...)), families=[...])}: Gaussian components, ordered intercepts & \code{mixture\_\allowbreak{}gauss\_\allowbreak{}gauss} and two new & D52--D55 \\
+C07 post-processing & PR \#49, CI blocked & \code{ab.log\_lik}, \code{ab.bayes\_R2}, \code{ab.loo} (PSIS-LOO with loo 2.9.0's tables) & three frozen and three new \code{*\_post} cases & D48--D51 \\
+C01 multivariate & local, gated & \code{ab.gaussian("mvbind(y, y2) \textasciitilde{} ...", ..., rescor=True)}, \code{Priors(resp=\{...\}, rescor=ab.LKJ(eta))} & \code{gauss\_\allowbreak{}mv\_\allowbreak{}rescor}, \code{\_norescor}, new \code{\_slopes} & D56--D59 \\
+C03 Gaussian processes & local, gated & \code{gp(x)} (exact) and \code{gp(x, k = 10, c = 5/4)} (Hilbert-space), \code{Priors(sdgp=..., lscale=...)} & \code{gauss\_\allowbreak{}gp\_\allowbreak{}exact}, \code{\_approx} & D64--D67 \\
+C02 non-linear & local, gated & \code{ab.gaussian(["y \textasciitilde{} a * exp(b * x)", "a \textasciitilde{} 1 + (1 | g)", "b \textasciitilde{} 1"], ..., nl=True)}, \code{Priors(nlpars=\{...\})} & \code{gauss\_\allowbreak{}nonlinear\_\allowbreak{}exp}, new \code{\_terms} & D60--D63 \\
+C04 autocorrelation & local, gated & \code{ar(time, gr, p)}, \code{ma()}, \code{arma()} (regression form), \code{Priors(ar=..., ma=...)} & \code{gauss\_\allowbreak{}ar1}, \code{gauss\_\allowbreak{}arma11}, new \code{\_arma22\_varint} & D68--D71 \\
+C06 \code{mi()}, \code{me()} & local, gated & \code{["y \textasciitilde{} mi(xm) + w", "xm | mi() \textasciitilde{} w"]}; \code{me(xobs, sdx)} with \code{Priors(meanme=..., sdme=...)} & \code{gauss\_\allowbreak{}mi}, \code{gauss\_\allowbreak{}me} & D72--D75 \\
+\bottomrule
+\end{tabular}\end{center}
+\caption{\small The Tier C features and P6: where each stands, what it offers, and the frozen brms cases it passes.}\label{tab:built}
+\end{table}
+
+\noindent Spline phase~2 (\code{s()}) is not in this list: it waits for your licensing decision (Section~\ref{sec:decisions}).
+Every agent wrote its feature from brms's documentation, Stan data and outputs, never from brms's, loo's or mgcv's
+GPL source; C07's PSIS follows ArviZ's Apache-2.0 implementation and the published papers, with attribution in the
+docstrings.
+
+\paragraph{How close.} Measured with the gates' own comparisons on the chain's final tree: all 97 ungated cases pass,
+with worst relative errors over every case of $8.4\times10^{-10}$ in the log density, $7.2\times10^{-9}$ in the gradient,
+$5.2\times10^{-14}$ in predictions and $4.2\times10^{-15}$ between the JAX and PyTensor densities. The 25 cases new in
+Tier C and P6 sit near $10^{-15}$, with three exceptions:
+\begin{itemize}
+\item the log density of mixtures under brms's default half-Student-$t$ priors (up to $5.8\times10^{-10}$), which is
+  PyMC's float32 $\log 2$, the follow-up from Tier B;
+\item the cloglog cases, where brms's own arithmetic is inexact: its log density by up to $1.9\times10^{-10}$, and its
+  gradient by $6.3\times10^{-9}$ on \code{binomial\_cloglog}, all inside tolerance;
+\item the exact Gaussian process, whose Cholesky factor of a matrix with condition number up to $10^{7}$ costs
+  $8.9\times10^{-12}$ in the gradient and $5.2\times10^{-14}$ in predictions.
+\end{itemize}
+\noindent The three cases accepted against two references are reported in \#47: AutoBayes is within $3.7\times10^{-14}$ of
+the 50-digit reference wherever brms is not.
+
+\section{What combining the features found}
+\label{sec:integration}
+
+Because CI was down, the six unmerged features were rebased one onto the next and each was gated, and the whole
+non-sampling suite run, on the combined tree. Every link passed: 2{,}255 tests after C01, 2{,}355 after C03, 2{,}498 after
+C02, 2{,}609 after C04 and 2{,}748 after C06, with no failure at any step. Combining them was worth doing, because each
+feature had been written against a \code{main} that lacked the others, and several pairs silently accepted something no
+brms case verifies:
+
+\begin{itemize}
+\item \code{gp()} inside a multivariate formula built a model (a process per response); \code{gp()} next to \code{ar()} was
+  built as well, and a third formula with \code{gp()} in an \code{mi()} model would have put a process inside it.
+\item \code{ar}/\code{ma} priors at the top level of a multivariate, mixture or non-linear model, and \code{sdgp}/\code{lscale}
+  on a multivariate model or a mixture, were accepted and ignored.
+\item In a non-linear model, \code{me()} in a parameter's formula was accepted once priors were given, and \code{mi()} there
+  crashed with an index error.
+\end{itemize}
+
+\noindent All of these are now refused with a message naming the construct, each with a test. The rule applied is the
+loop's: a combination is offered only where a frozen brms case verifies it. Several of these refusals are stricter
+than brms, which accepts, for example, \code{gp()} next to \code{ar()} and in multivariate formulas; they are listed in
+the divergence rows.
+
+\paragraph{A real Linux failure.} C07's first hosted run, before the billing block, failed 12 of 2{,}133 tests on Linux:
+its loo probes regenerated their random inputs, and numpy's normal and Student-$t$ draws go through \code{exp}/\code{log},
+whose last bit differs between macOS and Linux builds, so an exact hash of the inputs differed. The probes now check
+the inputs rounded to 8 decimals, and I confirmed that all 30 still match loo's outputs with a third of every input
+moved by one ulp. The fix has not yet run on Linux.
+
+\section{Where AutoBayes knowingly differs from brms (Tier C rows)}
+\label{sec:divergences}
+
+\small
+\begin{center}\begin{tabular}{@{}>{\raggedright\arraybackslash}p{0.08\textwidth}>{\raggedright\arraybackslash}p{0.18\textwidth}>{\raggedright\arraybackslash}p{0.50\textwidth}>{\raggedright\arraybackslash}p{0.12\textwidth}@{}}
+\toprule
+& area & what differs & status \\
+\midrule
+D18, D24, D25 & cloglog, \code{cens()}, \code{trunc()} & brms inexact at some frozen points; accepted against the 50-digit reference there & accepted (P6) \\
+D48 & post-processing options & \code{newdata}, \code{re\_formula}, moment matching, \code{reloo}, \code{loo\_compare} not offered & kept \\
+D49 & \code{log\_lik} at extremes & brms returns $\pm$Inf or NaN at extreme linear predictors; ours finite & documented \\
+D50 & loo MCSE & loo's is NaN below $\mathrm{elpd}_i \approx -372$; ours finite & documented \\
+D51 & loo relative efficiency & differs for chains of ten draws or fewer & documented \\
+D52--D55 & mixtures & other component families, \code{order = "none"}, per-component formulas, group terms, offsets, \code{gp()}, \code{ar()} & kept / parked \\
+D56--D59 & multivariate & per-response formulas (except with \code{mi()}), \code{|ID|}, other families, \code{gp()}, \code{ar()}; names & kept \\
+D60--D63 & non-linear & nested parameters, \code{nlf()}, other families, \code{gp()}/\code{mo()}/\code{ar()}/\code{mi()}/\code{me()}, \code{loop = FALSE} & kept \\
+D64--D67 & Gaussian processes & other kernels, \code{by}, several covariates; exact GP at new inputs; brms's default-prior solver stops short of a rounding boundary on 2 of 309 probes & kept / documented \\
+D68--D71 & autocorrelation & \code{cov = TRUE}, \code{cosy}/\code{car}/\code{sar}/\code{fcor}, other contexts, new-data predictions & kept \\
+D72--D75 & \code{mi()}, \code{me()} & other contexts and families, \code{me()} on new rows, post-processing for these models & kept \\
+\bottomrule
+\end{tabular}\end{center}
+\normalsize
+
+\section{How the claims were checked, and their limits}
+\label{sec:verification}
+
+\begin{itemize}
+\item Each feature: the gate tool on the tree that will merge; the full non-sampling suite on the combined tree; the
+  adapter and gate changes read for weakening (all extensions; C06 made two response checks stricter, since a NaN in a
+  response had compared as equal); every earlier case model unchanged.
+\item Reproducibility: \code{oracle/regen.py check --all} regenerated all 98 frozen fixtures from R on the chain's
+  final tree and compared them with the committed files: all 98 identical.
+\end{itemize}
+
+\paragraph{Limits I know of.} The two new fitting paths (multivariate and non-linear models are built without Bambi)
+are tested only with the sampler replaced, because nothing in the loop samples; the first real fit of either is
+untested. C06 accepts a few combinations beyond its frozen cases, checked against hand-written \code{scipy} densities
+rather than brms: several \code{mi()} terms, imputations that read other imputed columns, and \code{me()} beside other
+terms. \code{binomial\_cloglog}'s seeded points were drawn from a narrower box after brms's own density was $-\infty$ at the
+default one. The hosted sampling tests have not run on anything after C05.
+
+\section{Process and cost}
+\label{sec:cost}
+
+Agent tokens reported: P6 0.63M, C05 0.80M, C07 0.68M, C01 0.75M, C03 0.75M, C02 0.91M, C04 0.70M, C06 0.88M, plus
+1.59M for the three rebases handed back to their agents (C02 0.31M, C04 0.92M, C06 0.36M), about 7.7M in all, against my
+estimate of 4.5--7M. Resuming an agent for its rebase was the expensive step: a resumed agent re-reads its whole
+earlier context. I would do rebases myself in future, as I did for C07, C01 and C03. The machine's load reached 141
+while three agents ran their suites at once; after that I ran nothing in parallel.
+
+\section{Decisions}
+\label{sec:decisions}
+
+\begin{enumerate}
+\item \textbf{CI.} Either restore GitHub Actions (billing or spending limit), after which I merge \#49 and the five
+  local features one at a time, each with hosted CI (about half an hour each); or tell me to merge on local
+  verification alone, which means the full non-sampling suite and the oracle on each tree, without the sampling tests
+  hosted CI runs.
+\item \textbf{Splines.} AutoBayes is MIT; the spline module from phase~1 follows mgcv's (GPL) R functions step by step.
+  My recommendation is a clean-room rewrite from Wood's published algorithms, keeping the same tests against mgcv's
+  output; the alternatives are licensing the module or the package under the GPL, or dropping \code{s()}.
+\item \textbf{Attribution.} C07's PSIS code follows ArviZ's (Apache-2.0) steps, with attribution in the docstrings. Do
+  you want a formal \file{NOTICE} file as well?
+\item \textbf{Cleanup.} Twenty-seven local worktrees now belong to merged or closed branches: the twenty-four
+  listed in the Tier B review, plus \file{docs-tierB}, \file{parity-p6} and \file{parity-c05}. The six unmerged Tier C
+  branches, \file{parity-b04} and the three permanent checkouts stay. I will remove the twenty-seven only on your yes.
+\end{enumerate}
+
+\paragraph{Follow-ups found and not done.} PyMC's half-Cauchy and half-Student-$t$ priors add $\log 2$ in float32
+($1.9\times10^{-9}$ per prior); mixtures have no per-row log density yet, so \code{log\_lik()} and \code{loo()} are not
+offered for them; \code{weights()} for the zero-inflated and hurdle families; the learned-$\nu$ \code{describe()} order
+that depends on Python's hash seed; frozen brms cases for the combinations refused above, wherever you want them.
+
+\end{document}

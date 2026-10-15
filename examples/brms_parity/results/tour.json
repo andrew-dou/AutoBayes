@@ -1,0 +1,468 @@
+[
+ {
+  "name": "demo_slopes",
+  "title": "Logistic regression with correlated varying intercepts and slopes",
+  "code": "ab.bernoulli(\"y ~ x + (1 + x | g)\", df, ab.Priors(intercept=ab.Normal(0, 2.5), b=ab.Normal(0, 1),\n    sd={\"g\": {\"Intercept\": ab.HalfNormal(1), \"x\": ab.HalfNormal(1)}}, cor={\"g\": ab.LKJ(2)}))",
+  "truth": {
+   "Intercept": -0.4,
+   "x": 0.9,
+   "1|g_sigma": 0.8,
+   "x|g_sigma": 0.4,
+   "cor|g": 0.0
+  },
+  "build_seconds": 0.755377541994676,
+  "fit_seconds": 6.029894082981627,
+  "summary": {
+   "x": {
+    "mean": 0.7622619983054058,
+    "q05": 0.5821313188938937,
+    "q95": 0.9480631455334348
+   },
+   "Intercept": {
+    "mean": -0.6556707687597216,
+    "q05": -0.9299974124786916,
+    "q95": -0.39188105634525827
+   },
+   "x|g_sigma": {
+    "mean": 0.5257285977825457,
+    "q05": 0.35286146102461385,
+    "q95": 0.7241367487322711
+   },
+   "1|g_sigma": {
+    "mean": 0.9201453422943171,
+    "q05": 0.7226067168908197,
+    "q95": 1.1563065810309758
+   },
+   "cor|g": {
+    "mean": -0.1514510780225781,
+    "q05": -0.4996664734987098,
+    "q95": 0.2114191980338111
+   }
+  },
+  "max_rhat": 1.0,
+  "min_ess_bulk": 870.0,
+  "loo": {
+   "Estimate": {
+    "elpd_loo": -843.4495640244145,
+    "p_loo": 56.26760912679359,
+    "looic": 1686.899128048829
+   },
+   "SE": {
+    "elpd_loo": 17.146181134143898,
+    "p_loo": 2.0637715681715316,
+    "looic": 34.292362268287796
+   }
+  },
+  "bayes_R2": 0.21474017628300993
+ },
+ {
+  "name": "demo_ordinal",
+  "title": "Ordinal (cumulative logit) regression with a varying intercept",
+  "code": "ab.cumulative(\"y ~ x + (1 | g)\", df, ab.Priors(intercept=ab.Normal(0, 2.5), b=ab.Normal(0, 1), sd=ab.HalfNormal(1)))",
+  "truth": {
+   "x": 0.8,
+   "1|g_sigma": 0.7,
+   "Intercept[1]": -1.5,
+   "Intercept[2]": -0.3,
+   "Intercept[3]": 0.6,
+   "Intercept[4]": 1.8
+  },
+  "build_seconds": 0.07701858301879838,
+  "fit_seconds": 7.343896041042171,
+  "summary": {
+   "x": {
+    "mean": 0.6282969162133526,
+    "q05": 0.5376159963208543,
+    "q95": 0.7195774580282688
+   },
+   "Intercept[1]": {
+    "mean": -1.55957838181817,
+    "q05": -1.8514410310812288,
+    "q95": -1.2701237127545928
+   },
+   "Intercept[2]": {
+    "mean": -0.42447227166031903,
+    "q05": -0.7098124194874567,
+    "q95": -0.14940832163767315
+   },
+   "Intercept[3]": {
+    "mean": 0.48474748507220533,
+    "q05": 0.2072961402298078,
+    "q95": 0.7654936824982869
+   },
+   "Intercept[4]": {
+    "mean": 1.4800522493391826,
+    "q05": 1.1956817589646997,
+    "q95": 1.7687311806656094
+   },
+   "1|g_sigma": {
+    "mean": 0.7590063804901904,
+    "q05": 0.5728962770735754,
+    "q95": 0.9982075318204376
+   },
+   "b_Intercept[1]": {
+    "mean": -1.55957838181817,
+    "q05": -1.8514410310812288,
+    "q95": -1.2701237127545928
+   },
+   "b_Intercept[2]": {
+    "mean": -0.42447227166031903,
+    "q05": -0.7098124194874567,
+    "q95": -0.14940832163767315
+   },
+   "b_Intercept[3]": {
+    "mean": 0.48474748507220533,
+    "q05": 0.2072961402298078,
+    "q95": 0.7654936824982869
+   },
+   "b_Intercept[4]": {
+    "mean": 1.4800522493391826,
+    "q05": 1.1956817589646997,
+    "q95": 1.7687311806656094
+   }
+  },
+  "max_rhat": 1.0,
+  "min_ess_bulk": 593.0,
+  "category_probabilities": [
+   [
+    0.284,
+    0.266,
+    0.201,
+    0.139,
+    0.11
+   ],
+   [
+    0.175,
+    0.221,
+    0.222,
+    0.195,
+    0.187
+   ],
+   [
+    0.102,
+    0.158,
+    0.204,
+    0.235,
+    0.3
+   ]
+  ]
+ },
+ {
+  "name": "demo_zip",
+  "title": "Zero-inflated Poisson counts",
+  "code": "ab.zero_inflated_poisson(\"y ~ x + (1 | g)\", df,\n    ab.Priors(intercept=ab.Normal(0, 2.5), b=ab.Normal(0, 1), sd=ab.HalfNormal(1), zi=ab.Beta(2, 2)))",
+  "truth": {
+   "Intercept": 0.6,
+   "x": 0.5,
+   "1|g_sigma": 0.5,
+   "zi": 0.3
+  },
+  "build_seconds": 0.08124737499747425,
+  "fit_seconds": 6.426256707985885,
+  "summary": {
+   "Intercept": {
+    "mean": 0.6609802490593468,
+    "q05": 0.5057850655583557,
+    "q95": 0.8185165211717708
+   },
+   "x": {
+    "mean": 0.4861292991578403,
+    "q05": 0.45019852089126894,
+    "q95": 0.5214687770296764
+   },
+   "zi": {
+    "mean": 0.3036994218124185,
+    "q05": 0.2773470792580385,
+    "q95": 0.32975367796114907
+   },
+   "1|g_sigma": {
+    "mean": 0.5058870591198992,
+    "q05": 0.40189835741251084,
+    "q95": 0.6344667703799323
+   }
+  },
+  "max_rhat": 1.0,
+  "min_ess_bulk": 443.0
+ },
+ {
+  "name": "demo_distributional",
+  "title": "Distributional regression: the residual SD has its own formula",
+  "code": "ab.gaussian([\"y ~ x\", \"sigma ~ z\"], df,\n    ab.Priors(intercept=ab.Normal(0, 5), b=ab.Normal(0, 1), sigma={\"intercept\": ab.Normal(0, 1), \"b\": ab.Normal(0, 1)}))",
+  "truth": {
+   "Intercept": 1.0,
+   "x": 0.5,
+   "sigma_Intercept": -0.2,
+   "sigma_z": 0.6
+  },
+  "build_seconds": 0.020297375041991472,
+  "fit_seconds": 1.6474082919885404,
+  "summary": {
+   "Intercept": {
+    "mean": 0.9920686577008848,
+    "q05": 0.9596719814549891,
+    "q95": 1.0237954907493807
+   },
+   "x": {
+    "mean": 0.5033111261110567,
+    "q05": 0.4710709495374622,
+    "q95": 0.5360597402548247
+   },
+   "sigma_Intercept": {
+    "mean": -0.23996111607245674,
+    "q05": -0.2803127224731725,
+    "q95": -0.1980652898411458
+   },
+   "sigma_z": {
+    "mean": 0.5802708223313898,
+    "q05": 0.5381327793273087,
+    "q95": 0.6217179105984584
+   }
+  },
+  "max_rhat": 1.0,
+  "min_ess_bulk": 4436.0
+ },
+ {
+  "name": "demo_multivariate",
+  "title": "Multivariate regression with a residual correlation",
+  "code": "resp = {\"intercept\": ab.Normal(0, 5), \"b\": ab.Normal(0, 1), \"sigma\": ab.HalfNormal(1)}\nab.gaussian(\"mvbind(y1, y2) ~ x\", df, ab.Priors(resp={\"y1\": resp, \"y2\": resp}, rescor=ab.LKJ(2)), rescor=True)",
+  "truth": {
+   "y1_x": 1.0,
+   "y2_x": 0.4,
+   "rescor": 0.6
+  },
+  "build_seconds": 0.04608770797494799,
+  "fit_seconds": 3.579204124980606,
+  "summary": {
+   "y1_Intercept": {
+    "mean": 0.4920120786519877,
+    "q05": 0.4233605696933212,
+    "q95": 0.5630217836207989
+   },
+   "y1_x": {
+    "mean": 1.016834027161683,
+    "q05": 0.946000335587754,
+    "q95": 1.0861586118546442
+   },
+   "y2_Intercept": {
+    "mean": -0.3176669368619585,
+    "q05": -0.3862996864623487,
+    "q95": -0.24751219691368348
+   },
+   "y2_x": {
+    "mean": 0.4232004925671696,
+    "q05": 0.3565372867771982,
+    "q95": 0.48955615888725207
+   },
+   "y1_sigma": {
+    "mean": 1.047755338640513,
+    "q05": 0.9970449791959598,
+    "q95": 1.098924835593598
+   },
+   "y2_sigma": {
+    "mean": 1.0079722688402724,
+    "q05": 0.9607739250763069,
+    "q95": 1.0573035787701404
+   },
+   "rescor": {
+    "mean": 0.6169271865152527,
+    "q05": 0.5745473910221197,
+    "q95": 0.6581792876523669
+   }
+  },
+  "max_rhat": 1.0,
+  "min_ess_bulk": 3132.0
+ },
+ {
+  "name": "demo_nonlinear",
+  "title": "Non-linear growth curve with a varying amplitude",
+  "code": "ab.gaussian([\"y ~ a * exp(b * x)\", \"a ~ 1 + (1 | g)\", \"b ~ 1\"], df,\n    ab.Priors(nlpars={\"a\": {\"b\": ab.Normal(2, 1), \"sd\": ab.HalfNormal(1)}, \"b\": {\"b\": ab.Normal(0, 1)}},\n              sigma=ab.HalfNormal(1)), nl=True)",
+  "truth": {
+   "b_b": 0.5,
+   "a_Intercept": 2.0,
+   "sigma": 0.4
+  },
+  "build_seconds": 0.025705875013954937,
+  "fit_seconds": 3.029420541948639,
+  "summary": {
+   "a_Intercept": {
+    "mean": 1.9128172474292848,
+    "q05": 1.7437225416591906,
+    "q95": 2.082277752794188
+   },
+   "b_Intercept": {
+    "mean": 0.5020343452120356,
+    "q05": 0.49470481713530595,
+    "q95": 0.5093764414802712
+   },
+   "a_1|g_sigma": {
+    "mean": 0.34248864342588536,
+    "q05": 0.2339393409043519,
+    "q95": 0.4982369025543374
+   },
+   "sigma": {
+    "mean": 0.3747984825201429,
+    "q05": 0.3572503795717589,
+    "q95": 0.3933846132167374
+   }
+  },
+  "max_rhat": 1.01,
+  "min_ess_bulk": 407.0
+ },
+ {
+  "name": "demo_gp",
+  "title": "Approximate Gaussian process (Hilbert-space basis, 20 functions)",
+  "code": "ab.gaussian(\"y ~ gp(x, k = 20, c = 5/4)\", df, ab.Priors(intercept=ab.Normal(0, 2), sigma=ab.HalfNormal(1),\n    sdgp=ab.HalfNormal(1), lscale=ab.InverseGamma(3, 1)))",
+  "truth": {
+   "sigma": 0.3
+  },
+  "build_seconds": 0.06693708302918822,
+  "fit_seconds": 7.8159800409921445,
+  "summary": {
+   "Intercept": {
+    "mean": 0.08707947558234187,
+    "q05": -1.1027726118020094,
+    "q95": 1.297041363847717
+   },
+   "sigma": {
+    "mean": 0.280835275335311,
+    "q05": 0.2625451093772549,
+    "q95": 0.3002448857231461
+   },
+   "sdgp_x": {
+    "mean": 1.2749199893876746,
+    "q05": 0.7252130620616156,
+    "q95": 2.0463804243712023
+   },
+   "lscale_x": {
+    "mean": 0.2549622528614741,
+    "q05": 0.19306891802908918,
+    "q95": 0.3167261795634976
+   }
+  },
+  "max_rhat": 1.0,
+  "min_ess_bulk": 2056.0
+ },
+ {
+  "name": "demo_ar",
+  "title": "Autoregressive residuals within each of 20 series",
+  "code": "ab.gaussian(\"y ~ x + ar(time = t, gr = g, p = 1)\", df,\n    ab.Priors(intercept=ab.Normal(0, 5), b=ab.Normal(0, 1), sigma=ab.HalfNormal(1), ar=ab.Normal(0, 0.5)))",
+  "truth": {
+   "ar[1]": 0.6,
+   "sigma": 0.5
+  },
+  "build_seconds": 0.044052790966816247,
+  "fit_seconds": 1.6818304169573821,
+  "summary": {
+   "Intercept": {
+    "mean": 1.0407851166727853,
+    "q05": 0.9819535586789037,
+    "q95": 1.1001032598534621
+   },
+   "x": {
+    "mean": 0.8044193291729916,
+    "q05": 0.7797336505348547,
+    "q95": 0.829173561493563
+   },
+   "ar[1]": {
+    "mean": 0.5396025305696327,
+    "q05": 0.48961701815200614,
+    "q95": 0.5906767269647296
+   },
+   "sigma": {
+    "mean": 0.4781926649399246,
+    "q05": 0.4588191797551146,
+    "q95": 0.49812916855650113
+   }
+  },
+  "max_rhat": 1.0,
+  "min_ess_bulk": 4494.0
+ },
+ {
+  "name": "demo_mixture",
+  "title": "Two-component Gaussian mixture",
+  "code": "comp = lambda m0: ab.Priors(intercept=ab.Normal(m0, 2), sigma=ab.HalfNormal(2))\nab.mixture(\"y ~ 1\", df, ab.Priors(components=[comp(-1), comp(1)], theta=ab.Dirichlet(2)),\n           families=[\"gaussian\", \"gaussian\"])",
+  "truth": {
+   "Intercept[1]": -2.0,
+   "Intercept[2]": 1.5,
+   "sigma1": 0.7,
+   "sigma2": 1.0,
+   "theta[1]": 0.35
+  },
+  "build_seconds": 0.03315075003774837,
+  "fit_seconds": 3.1202661249553785,
+  "summary": {
+   "Intercept[1]": {
+    "mean": -1.9153280812330031,
+    "q05": -1.9995923226095649,
+    "q95": -1.8276518592287616
+   },
+   "Intercept[2]": {
+    "mean": 1.470071433291647,
+    "q05": 1.3809351160201973,
+    "q95": 1.5593400011231442
+   },
+   "sigma1": {
+    "mean": 0.6911465934252881,
+    "q05": 0.629303737591852,
+    "q95": 0.7584884379676534
+   },
+   "sigma2": {
+    "mean": 1.0312740858063194,
+    "q05": 0.9662760271273514,
+    "q95": 1.1026718803348527
+   },
+   "theta[1]": {
+    "mean": 0.34150209266238324,
+    "q05": 0.3108354004443287,
+    "q95": 0.37261060982943556
+   },
+   "theta[2]": {
+    "mean": 0.6584979073376167,
+    "q05": 0.6273893901705645,
+    "q95": 0.6891645995556712
+   }
+  },
+  "max_rhat": 1.0,
+  "min_ess_bulk": 2425.0
+ },
+ {
+  "name": "demo_me",
+  "title": "Measurement error in a predictor (the naive slope is attenuated)",
+  "code": "ab.gaussian(\"y ~ me(xobs, sdx)\", df, ab.Priors(intercept=ab.Normal(0, 5), b=ab.Normal(0, 2),\n    sigma=ab.HalfNormal(1), meanme=ab.Normal(0, 2), sdme=ab.HalfNormal(1)))",
+  "truth": {
+   "slope_true": 1.2,
+   "slope_naive_least_squares": 0.935271408308987
+  },
+  "build_seconds": 0.028345166996587068,
+  "fit_seconds": 3.729781209025532,
+  "summary": {
+   "Intercept": {
+    "mean": 0.5180171427548692,
+    "q05": 0.45666359378543026,
+    "q95": 0.5766456800974447
+   },
+   "meanme_xobs": {
+    "mean": -0.07490619987350645,
+    "q05": -0.15319852307092957,
+    "q95": 0.003874383641227708
+   },
+   "me(xobs, sdx)": {
+    "mean": 1.319931273530327,
+    "q05": 1.2414360400479645,
+    "q95": 1.3968702137162592
+   },
+   "sigma": {
+    "mean": 0.4615496247330219,
+    "q05": 0.3895924212693373,
+    "q95": 0.5323050735253252
+   },
+   "sdme_xobs": {
+    "mean": 0.9113996188099457,
+    "q05": 0.850738219296464,
+    "q95": 0.9751140265528757
+   }
+  },
+  "max_rhat": 1.01,
+  "min_ess_bulk": 505.0
+ }
+]
