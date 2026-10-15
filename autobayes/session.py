@@ -81,6 +81,7 @@ def _summary_rows(model, idata) -> dict:
     mixture = getattr(model, "mixture_names", {})               # a mixture's sigma<k> and theta (C05)
     names += [*mixture["sigma"], mixture["theta"]] if mixture else []
     names += [roles[k] for roles in getattr(model, "gp_names", {}).values() for k in ("sdgp", "lscale")]   # each GP's (C03)
+    names += [v for k, v in getattr(model, "autocor_names", {}).items() if not k.endswith("_coordinate")]   # ar and ma (C04)
     zero = family_of(model).zero_parameter                      # the zero-inflation / hurdle probability (B06)
     names += [n[zero]] if zero is not None else []
     s = az.summary(idata, var_names=names, hdi_prob=0.94, round_to="none")
@@ -169,7 +170,8 @@ def fit_record(model, fit, *, panel: dict | None = None, max_treedepth: int = 10
                        **(_scale_priors(model) if fam.scale_parameter is not None else {}),
                        **({fam.zero_parameter: str(getattr(pr, fam.zero_parameter))} if fam.zero_parameter is not None else {}),
                        **({"nu": str(pr.nu)} if pr.nu is not None else {}),
-                       **({label: str(prior) for label, prior in prior_labels(model).items()} if mixture else {})},
+                       **({label: str(prior) for label, prior in prior_labels(model).items()} if mixture else {}),
+                       **{part: str(prior) for part, prior in pr.autocor_priors(s).items()}},   # an ARMA term's ar and ma (C04)
             # a mixture (C05): its component families, identification and PyMC names
             **({"mixture": {"families": list(model.components), "order": ORDER,
                             "names": {k: list(v) if isinstance(v, tuple) else v for k, v in model.mixture_names.items()}}}
@@ -197,6 +199,10 @@ def fit_record(model, fit, *, panel: dict | None = None, max_treedepth: int = 10
                                                 "distinct_inputs": len(g.inputs), "dmax": g.dmax, "cmean": g.cmean,
                                                 "names": model.gp_names[g.column]}
                                        for g in s.gp_terms}} if getattr(s, "gp_terms", ()) else {}),
+            # an autocorrelation term (C04): the term, its series and the PyMC names of ar and ma
+            **({"autocorrelation": {"term": s.autocor.term, "time": s.autocor.time, "gr": s.autocor.gr, "p": s.autocor.p,
+                                    "q": s.autocor.q, "series": len(d.autocor.series), "names": model.autocor_names}}
+               if getattr(s, "autocor", None) is not None else {}),
             "interactions": [list(pair) for pair in s.interactions],
             "canonical_formula": s.canonical_formula,
             "categorical": {c.name: {"reference": c.reference, "levels": list(c.levels),

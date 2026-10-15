@@ -177,6 +177,9 @@ class FamilySpec:
     # scale (the deterministic ``model.names["linpred"]``); set where a frozen brms case verifies it. None: the family is not
     # offered with ``nl=True``.
     nonlinear_likelihood: Callable[[object, object, dict], object] | None = None
+    # brms's ARMA terms ar(), ma(), arma() in the regression formulation (C04, docs/autocorrelation.md): whether the family's
+    # linear predictor takes them, set where a frozen brms case verifies it. They are added last, on the residuals y - eta.
+    autocorrelation: bool = False
 
     def with_link(self, link: str | None) -> "FamilySpec":
         """This family's spec under ``link``: this spec for ``None`` or its own link, the one a ``links`` entry builds

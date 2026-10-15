@@ -27,7 +27,10 @@ Gaussian, Student-t (fixed or learned `nu`), Poisson, negative binomial, Gamma, 
 (logit and probit), zero-inflated and hurdle Poisson, cumulative (the log probability of the 1-based category) and
 categorical. A non-linear model (C02, `nl=True`, docs/nonlinear.md) is taken the same way, its linear predictor the
 non-linear predictor `mu` (brms's `posterior_linpred`); `tests/test_nonlinear.py` checks `log_lik`, `bayes_R2` and `loo` on
-it against the graph's own density and `mu` at the frozen brms points.
+it against the graph's own density and `mu` at the frozen brms points. A model with an autocorrelation term (C04,
+docs/autocorrelation.md) is taken the same way: its linear predictor carries the ARMA term from the observed residuals, the
+mean brms's `log_lik()` reads with `cov = FALSE` (all rows at once, then in data order); `tests/test_autocorrelation.py`
+checks `log_lik`, `bayes_R2` and `loo` against the graph's own density and `mu` at the frozen brms points of its three cases.
 
 ## `bayes_R2(model, fit)`
 

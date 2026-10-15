@@ -90,6 +90,15 @@ def _gp_payload(model):
     return out
 
 
+def _autocor_payload(model):
+    """The target identity's entry of an autocorrelation term (C04): the term, its series and each fitted row's series and
+    position in time order (what the recursion reads), and the priors of its coefficients."""
+    term, design = model.spec.autocor, model.design.autocor
+    return {'term': term.term, 'time': term.time, 'gr': term.gr, 'p': term.p, 'q': term.q, 'series': list(design.series),
+            'series_index': design.series_index, 'position': design.position,
+            'priors': {part: _prior(prior) for part, prior in model.priors.autocor_priors(model.spec).items()}}
+
+
 def freeze_target(model):
     """Call once immediately after construction; only the digest is retained."""
     s, d, pr = model.spec, model.design, model.priors
@@ -138,6 +147,8 @@ def freeze_target(model):
         **({'mixture': _mixture_payload(model)} if mixture else {}),
         # So do Gaussian processes (C03): their inputs, scaling, row index, basis and priors.
         **({'gaussian_processes': _gp_payload(model)} if getattr(s, 'gp_terms', ()) else {}),
+        # So does an autocorrelation term (C04): its series, positions and coefficient priors.
+        **({'autocorrelation': _autocor_payload(model)} if getattr(s, 'autocor', None) is not None else {}),
         'priors': {'intercept': prior(pr.intercept), 'sigma': prior(pr.sigma),
                    'coefficients': {} if mixture else {k: prior(v) for k,v in pr.coefficient_priors(s).items()},
                    'groups': {k: prior(v) for k,v in pr.group_priors(s).items()},

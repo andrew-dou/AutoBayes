@@ -5,10 +5,6 @@
  "note": "brms ar(p = 1) in the regression formulation (cov = FALSE): ar is unbounded (vector[Kar] ar); mu[n] += Err[n, 1] * ar, Err the lagged residuals Y - mu within g (J_lag[n] = 1 when row n + 1 is in the same group); standata rows are sorted by (g, t) while posterior_linpred returns data order; no newdata (brms needs t and the response on new rows)",
  "seed": 306,
  "n_points": 8,
- "gate": {
-  "expect": "fail",
-  "reason": "C04_autocor not implemented; remove this field when it lands"
- },
  "data": {
   "generator": "tier_c",
   "seed": 206,

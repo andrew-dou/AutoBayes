@@ -1,0 +1,97 @@
+{
+ "id": "gauss_arma22_varint",
+ "tier": "C",
+ "feature": "C04_autocor",
+ "note": "brms arma(p = 2, q = 2), regression formulation, next to a varying intercept of h (crossed with the series g): J_lag up to 2, the MA recursion two lags deep, ar[1..2] and ma[1..2] unbounded; standata rows sorted by (g, t) (J_1 and Z_1_1 too), predictions in data order, with and without the group effects (brms's re_formula = NA reads the residuals of the predictor without them); no newdata",
+ "seed": 308,
+ "n_points": 8,
+ "data": {
+  "generator": "tier_c",
+  "seed": 208,
+  "n": 36
+ },
+ "brms": {
+  "formula": "y ~ x + (1 | h) + arma(time = t, gr = g, p = 2, q = 2)",
+  "family": {
+   "family": "gaussian"
+  },
+  "factors": {
+   "g": [
+    "a",
+    "b",
+    "c",
+    "d",
+    "e",
+    "f"
+   ],
+   "h": [
+    "h1",
+    "h2",
+    "h3",
+    "h4"
+   ]
+  },
+  "priors": [
+   {
+    "prior": "normal(0, 5)",
+    "class": "Intercept"
+   },
+   {
+    "prior": "normal(0, 2)",
+    "class": "b"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "sd",
+    "group": "h"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "sigma"
+   },
+   {
+    "prior": "normal(0, 0.5)",
+    "class": "ar"
+   },
+   {
+    "prior": "normal(0, 0.5)",
+    "class": "ma"
+   }
+  ]
+ },
+ "autobayes": {
+  "constructor": "gaussian",
+  "formula": "y ~ x + (1 | h) + arma(time = t, gr = g, p = 2, q = 2)",
+  "kwargs": {},
+  "priors": {
+   "intercept": [
+    "Normal",
+    0,
+    5
+   ],
+   "b": [
+    "Normal",
+    0,
+    2
+   ],
+   "sd": [
+    "HalfNormal",
+    1
+   ],
+   "sigma": [
+    "HalfNormal",
+    1
+   ],
+   "ar": [
+    "Normal",
+    0,
+    0.5
+   ],
+   "ma": [
+    "Normal",
+    0,
+    0.5
+   ]
+  }
+ }
+}
