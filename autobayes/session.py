@@ -119,6 +119,10 @@ def fit_record(model, fit, *, panel: dict | None = None, max_treedepth: int = 10
     binding = check_fit_binding(model, fit, allow_unverified=allow_unverified)
 
     p = panel if panel is not None else _panel(fit.idata, max_treedepth=max_treedepth)
+    if getattr(model.spec, "is_nonlinear", False):             # a non-linear model (C02): its own model section and summary
+        from autobayes.nonlinear import nonlinear_fit_record
+
+        return nonlinear_fit_record(model, fit, p, binding)
     fam = family_of(model)                                     # the family under the model's link
     s, d, pr = model.spec, model.design, model.priors
     mixture = fam.mixture                                      # C05: a mixture's priors are its components' and theta's

@@ -414,7 +414,7 @@ def _prediction_attrs(model, ds, policies, new_levels, *, in_sample, manual, inc
 
 def predict(model, fit_result, *, newdata: pd.DataFrame | None = None, kind: str = "response",
             new_groups: str | Mapping[str, str] = "error", seed: int | None = None, include_group_effects: bool = True,
-            dpar: str | None = None) -> xr.Dataset:
+            dpar: str | None = None, nlpar: str | None = None) -> xr.Dataset:
     """Expected response or new response draws, with explicit policies for unseen factors.
 
     A string applies to every factor; a mapping covers every factor exactly. RNG traversal
@@ -422,7 +422,17 @@ def predict(model, fit_result, *, newdata: pd.DataFrame | None = None, kind: str
     factors are independent identities. Common intercept draws are already on the raw scale.
     ``dpar`` names a distributional parameter with its own formula (B01): ``kind="linear"`` then returns its linear
     predictor and ``kind="mean"`` its values (brms's ``dpar =``); ``kind="response"`` does not apply.
+    A non-linear model (C02, docs/nonlinear.md) is predicted by ``nonlinear.predict_nonlinear``; ``nlpar`` names one of its
+    non-linear parameters, whose values ``kind="linear"`` and ``kind="mean"`` then return (brms's ``nlpar =``).
     """
+    if getattr(getattr(model, "spec", None), "is_nonlinear", False):    # a non-linear model (C02)
+        from autobayes.nonlinear import predict_nonlinear
+
+        return predict_nonlinear(model, fit_result, newdata=newdata, kind=kind, new_groups=new_groups, seed=seed,
+                                 include_group_effects=include_group_effects, dpar=dpar, nlpar=nlpar)
+    if nlpar is not None:
+        raise ValueError(f"nlpar applies to a non-linear model (nl=True; docs/nonlinear.md); this model has no non-linear parameter "
+                         f"(got {nlpar!r})")
     if getattr(model, "responses", None):                       # C01: a multivariate model predicts response by response
         from autobayes.multivariate import predict_multivariate
 

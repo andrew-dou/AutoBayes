@@ -67,6 +67,7 @@ from autobayes.prior_predictive import prior_predictive
 from autobayes.post_processing import Loo, bayes_R2, log_lik, loo
 from autobayes.diagnostics import panel
 from autobayes.session import compare_records, environment, fit_record, format_comparison, format_environment
+from autobayes.nonlinear import NonlinearModel, NonlinearSpec        # non-linear formulas, nl=True (C02, docs/nonlinear.md)
 
 __all__ = [
     "Beta", "Categorical", "DeviceError", "Dirichlet", "Exponential", "FitResult", "Flat", "FormulaError", "Gamma", "GroupTerm", "HalfCauchy",
@@ -77,4 +78,5 @@ __all__ = [
     "mixture",
     "Loo", "bayes_R2", "log_lik", "loo",
 ]
+__all__ += ["NonlinearModel", "NonlinearSpec"]         # C02
 __version__ = "0.8.0"

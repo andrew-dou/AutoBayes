@@ -31,6 +31,14 @@ def _tails():
     return NORMAL_TAILS
 
 
+def _nonlinear_likelihood(model, mu, scales):
+    """A non-linear model's likelihood (C02, docs/nonlinear.md): ``y ~ Normal(mu, sigma)`` with ``mu`` the non-linear predictor
+    under the identity link, brms's ``normal_lpdf(Y | mu, sigma)``."""
+    import pymc as pm
+
+    return pm.Normal(model.names["y"], mu=mu, sigma=scales["sigma"], observed=model.design.y, dims="__obs__")
+
+
 GAUSSIAN = FamilySpec(
     name="gaussian", tag="M0", parent="mu", link="identity", link_scale=None, mean_name="mu",
     response_kind="continuous", response_dtype=None,
@@ -60,4 +68,5 @@ GAUSSIAN = FamilySpec(
     monotonic=True,                                                 # B03: mo(x), verified against gauss_monotonic
     log_likelihood=_log_likelihood,                                 # C07: log_lik(), verified against gauss_varint_post
     multivariate=True,                                              # C01: mvbind(y, y2) ~ ..., verified against gauss_mv_rescor and gauss_mv_norescor
+    nonlinear_likelihood=_nonlinear_likelihood,                     # C02: nl = TRUE, verified against gauss_nonlinear_exp and _terms
 )

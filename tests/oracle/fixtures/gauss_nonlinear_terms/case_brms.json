@@ -1,0 +1,93 @@
+{
+ "bf_args": {
+  "nl": true
+ },
+ "extras": [
+  "group_scope"
+ ],
+ "factors": {
+  "g": [
+   "a",
+   "b",
+   "c",
+   "d",
+   "e",
+   "f"
+  ],
+  "h": [
+   "h1",
+   "h2",
+   "h3",
+   "h4"
+  ],
+  "z": [
+   "p",
+   "q",
+   "r"
+  ]
+ },
+ "family": {
+  "family": "gaussian"
+ },
+ "formula": [
+  "ypos ~ a * exp(-b * x) + inv_logit(c) * sqrt(xpos) / (1 + pow(w, 2)) - 0.25 * d * log(xpos)^2",
+  "a ~ 1 + z + (1 | g)",
+  "b ~ 1 + w + (1 | g)",
+  "c ~ 1 + w + (1 + w | h)",
+  "d ~ 0 + z"
+ ],
+ "id": "gauss_nonlinear_terms",
+ "n_points": 8,
+ "priors": [
+  {
+   "class": "b",
+   "coef": "Intercept",
+   "nlpar": "a",
+   "prior": "normal(1, 0.5)"
+  },
+  {
+   "class": "b",
+   "nlpar": "a",
+   "prior": "normal(0, 1)"
+  },
+  {
+   "class": "b",
+   "nlpar": "b",
+   "prior": "normal(0, 1)"
+  },
+  {
+   "class": "b",
+   "nlpar": "c",
+   "prior": "normal(0, 1)"
+  },
+  {
+   "class": "b",
+   "nlpar": "d",
+   "prior": "normal(0, 1)"
+  },
+  {
+   "class": "sd",
+   "nlpar": "a",
+   "prior": "normal(0, 1)"
+  },
+  {
+   "class": "sd",
+   "nlpar": "b",
+   "prior": "normal(0, 0.5)"
+  },
+  {
+   "class": "sd",
+   "nlpar": "c",
+   "prior": "normal(0, 1)"
+  },
+  {
+   "class": "cor",
+   "prior": "lkj(2)"
+  },
+  {
+   "class": "sigma",
+   "prior": "normal(0, 1)"
+  }
+ ],
+ "seed": 307
+}

@@ -53,6 +53,11 @@ A Gaussian process `gp(x)` (C03) is brms's GP `k`: its row index `Jgp_k` and its
 exact GP, the basis at them of an approximate one, `NBgp_k` basis functions) are matched by content to the model's
 `Design.gp` (`match_gp`, on `ColumnMap.gp`), which fixes the order of `zgp_k`; `sdgp_k` and `lscale_k` (one each: one
 covariate, no `by`) map to `sdgp_x_log__` and `lscale_x_log__`, `zgp_k` to `zgp_x`.
+A non-linear model (C02, brms's `nl = TRUE`) has no design `X`: its covariates `C_k` are matched by content to the model's
+covariates, each non-linear parameter's never-centred `X_<nlpar>` column by column to its design, its `b_<nlpar>` to the
+parameter's coefficient variables, and its group-level terms, which brms numbers as groups of their own and labels with the
+parameter (`Z_<id>_<nlpar>_<k>`, `r_<id>_<nlpar>_<k>`; the `nlpar` column of the group table), within the parameter
+(`match_nonlinear_columns`, `match_nonlinear_groups`, `nonlinear_coordinate_map`, `nonlinear_draws`; the maps key by parameter).
 """
 from __future__ import annotations
 
@@ -98,7 +103,8 @@ def priors_from_spec(spec: dict) -> ab.Priors:
     "sigma": [...], "shape": [...], "phi": [...], "nu": [...], "zi": ["Beta", a, b], "hu": ["Beta", a, b],
     "simo": {column: ["Dirichlet", a, ...]}}``; an auxiliary parameter with its own formula (B01) takes ``{"intercept": [...],
     "b": [...]}``; ``simo`` is the simplex prior of each monotonic term (B03); a mixture (C05) takes ``{"components": [spec, ...],
-    "theta": ["Dirichlet", a, ...]}``, each component's spec of this same form."""
+    "theta": ["Dirichlet", a, ...]}``, each component's spec of this same form; ``nlpars`` each non-linear parameter's
+    ``{"b": [...] | {term: ...}, "sd": [...] | {factor: ...}}`` (C02)."""
     # C01, a multivariate model: {"resp": {response: {<the classes above>}}, "cor": {factor: ["LKJ", eta]}, "rescor": ["LKJ", eta]}
     if "resp" in spec:
         return ab.Priors(resp={r: priors_from_spec(sub) for r, sub in spec["resp"].items()}, cor=_prior(spec.get("cor")),
@@ -110,7 +116,8 @@ def priors_from_spec(spec: dict) -> ab.Priors:
                      # C05: a mixture's priors, one spec of this form per component, and theta's Dirichlet
                      components=[priors_from_spec(c) for c in spec["components"]] if "components" in spec else None,
                      theta=_prior(spec.get("theta")),
-                     sdgp=_prior(spec.get("sdgp")), lscale=_prior(spec.get("lscale")))   # C03: {column: [...]} or one prior
+                     sdgp=_prior(spec.get("sdgp")), lscale=_prior(spec.get("lscale")),   # C03: {column: [...]} or one prior
+                     nlpars=_prior(spec.get("nlpars")))                                 # C02: {nlpar: {"b": ..., "sd": ...}}
 
 
 def build_model(case: dict, data: pd.DataFrame) -> ab.Model:
@@ -147,6 +154,8 @@ class ColumnMap:
     monotonic: dict = None                # B03: brms's special-term number k (Xmo_k, bsp[k], simo_k) of each monotonic term, by column
     mixture: bool = False                 # C05: dpars are a mixture's components (brms's mu<k>), not a categorical model's categories
     gp: dict = None                       # C03: brms's GP number k (Xgp_k, sdgp_k, lscale_k, zgp_k) of each Gaussian process, by column
+    nlpars: dict = None                   # C02: brms's X_<nlpar> column of each design column of each non-linear parameter, by name
+    covariates: dict = None               # C02: brms's covariate number k (C_k) of each covariate of the non-linear formula, by name
 
     def b_index(self, x_col: int) -> int:
         """Index into brms's ``b`` of design column ``x_col``."""
@@ -212,6 +221,8 @@ def _match_design(fixture: Fixture, model: ab.Model, X_name: str = "X", b_name: 
 def match_columns(fixture: Fixture, model: ab.Model) -> ColumnMap:
     if is_multivariate(model):                                 # C01: each response's design, by its view of the fixture
         return match_response_columns(fixture, model)
+    if is_nonlinear(model):                                   # C02: the covariates and each non-linear parameter's X_<nlpar>
+        return match_nonlinear_columns(fixture, model)
     fam = model.family_spec
     if fam.mixture:                                            # C05: one brms design per component, matched as B05's categories'
         return match_mixture(fixture, model)
@@ -392,6 +403,8 @@ def match_groups(fixture: Fixture, model: ab.Model) -> GroupMap:
     sides or on neither."""
     if is_multivariate(model):                                 # C01: each response's group terms, by its view of the fixture
         return match_response_groups(fixture, model)
+    if is_nonlinear(model):                                   # C02: each non-linear parameter's group-level terms
+        return match_nonlinear_groups(fixture, model)
     ids, cns, levels_of, coef_cn, used = {}, {}, {}, {}, set()
     n = model.design.n
     for (g, coef), block in model.design.group_blocks.items():
@@ -551,6 +564,8 @@ def natural_point(model: ab.Model, point: Point, cmap: ColumnMap, gmap: GroupMap
 
 
 def value_point(model: ab.Model, point: Point, cmap: ColumnMap, gmap: GroupMap) -> dict:
+    if is_nonlinear(model):                                   # C02
+        return model.value_point(**nonlinear_natural_point(model, point, cmap, gmap))
     return model.value_point(**natural_point(model, point, cmap, gmap))
 
 
@@ -578,6 +593,8 @@ def coordinate_map(fixture: Fixture, model: ab.Model, cmap: ColumnMap, gmap: Gro
     index within that variable), with the transform checked on both sides."""
     if is_multivariate(model):                                 # C01: each response's coordinates, then Lrescor's
         return response_coordinate_map(fixture, model, cmap, gmap)
+    if is_nonlinear(model):                                   # C02
+        return nonlinear_coordinate_map(fixture, model, cmap, gmap)
     names = model.names
     by_id = {m: g for g, m in gmap.brms_id.items()}
     by_cn = {(g, cn): coef for (g, coef), cn in gmap.coef_cn.items()}     # (factor, brms coefficient number) -> coefficient
@@ -789,6 +806,8 @@ def draws(fixture: Fixture, model: ab.Model, cmap: ColumnMap, gmap: GroupMap) ->
     coefficient and simplex (B03)."""
     if is_multivariate(model):                                 # C01: each response's draws under its names, Lrescor and rescor
         return response_draws(fixture, model, cmap, gmap)
+    if is_nonlinear(model):                                   # C02
+        return nonlinear_draws(fixture, model, cmap, gmap)
     pts = fixture.points
     names = model.names
     data, coords = {}, {"chain": [0], "draw": np.arange(len(pts))}
@@ -1046,3 +1065,294 @@ def response_draws(fixture: Fixture, model, cmap: ResponseMaps, gmap: ResponseMa
         post = post.assign({"Lrescor": (dims, L[None]), "rescor": (dims, (L @ np.swapaxes(L, -1, -2))[None])})
         post = post.assign_coords({RESPONSE_DIM: list(model.responses), RESPONSE_DIM_T: list(model.responses)})
     return az.InferenceData(posterior=post)
+
+
+# -- non-linear models (C02) ---------------------------------------------------------------------------------------
+# brms's nl = TRUE: no design X; one design X_<nlpar>, its coefficients b_<nlpar> and K_<nlpar> per non-linear parameter
+# (never centred: the intercept is a column of X_<nlpar> and an entry of b_<nlpar>), the covariates of the non-linear
+# formula as C_1, C_2, ..., and each parameter's group-level terms as groups of their own, whose Z_<id>_<nlpar>_<k>, r_<id>_
+# <nlpar>_<k> carry the parameter's name and whose rows of brms's group table carry it as `nlpar` (the fixture's extras
+# "group_scope"). Everything is matched by content, never by position: covariates to C_k, design columns to X_<nlpar>'s
+# columns, group-level coefficients to (J_<id>, Z_<id>_<nlpar>_<k>) within the parameter's own groups.
+def is_nonlinear(model) -> bool:
+    """A non-linear model (``ab.gaussian(..., nl=True)``, C02); a multivariate model (C01) has no single ``spec``."""
+    return bool(getattr(getattr(model, "spec", None), "is_nonlinear", False))
+
+
+@dataclass(frozen=True)
+class NlparMap:
+    """brms's ``X_<nlpar>`` column of each design column of one non-linear parameter (C02), in its design's column order."""
+    x_column: tuple[int, ...]
+
+
+def match_nonlinear_columns(fixture: Fixture, model: ab.Model) -> ColumnMap:
+    """The column map of a non-linear model (C02): each covariate of the non-linear formula to the one brms ``C_k`` with its
+    values, and each non-linear parameter's design columns, one by one, to the columns of brms's ``X_<nlpar>`` by content,
+    with ``K_<nlpar>`` and ``b_<nlpar>`` checked against them. brms's linear design ``X``, a brms covariate or ``X_<nlpar>``
+    without an AutoBayes counterpart, and the reverse, are mismatches."""
+    sd, design = fixture.standata, model.design
+    if "X" in sd:
+        raise OracleMismatch("brms has the linear design X; the AutoBayes model is non-linear")
+    brms_c = sorted(int(k[2:]) for k in sd if k.startswith("C_") and k[2:].isdigit())
+    covariates, used = {}, set()
+    for name, values in design.covariates.items():
+        hits = [k for k in brms_c if k not in used and sd[f"C_{k}"].shape == values.shape and abs_err(sd[f"C_{k}"], values) <= DESIGN_ABS]
+        if len(hits) != 1:
+            raise OracleMismatch(f"covariate {name!r} of the non-linear formula matches {len(hits)} brms covariates C_k within {DESIGN_ABS}")
+        covariates[name] = hits[0]
+        used.add(hits[0])
+    if used != set(brms_c):
+        raise OracleMismatch(f"brms covariates without an AutoBayes counterpart: {[f'C_{k}' for k in sorted(set(brms_c) - used)]}")
+    brms_nl = sorted(k[2:] for k in sd if k.startswith("X_"))
+    if brms_nl != sorted(design.nlpars):
+        raise OracleMismatch(f"brms has the non-linear parameter designs {['X_' + k for k in brms_nl]}; AutoBayes has the parameters "
+                             f"{sorted(design.nlpars)}")
+    pars, nlpars = fixture.points[0].pars, {}
+    for name, nd in design.nlpars.items():
+        X = np.atleast_2d(sd[f"X_{name}"]).reshape(nd.X.shape[0], -1)
+        labels = fixture.colnames(f"X_{name}") or [str(k) for k in range(X.shape[1])]
+        if X.shape != nd.X.shape:
+            raise OracleMismatch(f"brms X_{name} is {X.shape}; AutoBayes's design of {name!r} is {nd.X.shape} ({list(nd.columns)})")
+        taken, cols = set(), []
+        for c, label in enumerate(nd.columns):
+            hits = [k for k in range(X.shape[1]) if k not in taken and np.max(np.abs(X[:, k] - nd.X[:, c])) <= DESIGN_ABS]
+            if len(hits) != 1:
+                raise OracleMismatch(f"{name}'s design column {label!r} matches {len(hits)} brms X_{name} columns "
+                                     f"{[labels[k] for k in hits]} within {DESIGN_ABS}")
+            cols.append(hits[0])
+            taken.add(hits[0])
+        if int(sd[f"K_{name}"]) != X.shape[1] or coefficients(pars, f"b_{name}").size != X.shape[1]:
+            raise OracleMismatch(f"brms K_{name} = {int(sd[f'K_{name}'])} and b_{name} has {coefficients(pars, f'b_{name}').size} "
+                                 f"entries for {X.shape[1]} columns of X_{name}")
+        if f"Intercept_{name}" in pars or f"Kc_{name}" in sd:
+            raise OracleMismatch(f"brms centres the formula of {name} (Intercept_{name}, Kc_{name}); it never centres a non-linear "
+                                 "parameter's formula, and AutoBayes does not")
+        nlpars[name] = NlparMap(tuple(cols))
+    return ColumnMap((), None, False, nlpars=nlpars, covariates=covariates)
+
+
+def match_nonlinear_groups(fixture: Fixture, model: ab.Model) -> GroupMap:
+    """The group map of a non-linear model (C02), keyed by parameter: every group-level coefficient ``(factor, coef)`` of
+    parameter ``name``'s formula to the one brms group coefficient ``(id, cn)`` of that parameter (brms's group table, column
+    ``nlpar``) whose ``J_<id>`` induces its partition of the rows and whose ``Z_<id>_<name>_<cn>`` is its covariate column; then
+    the label, the level order, ``M_<id>``, the correlation flags and that every brms coefficient was used, as ``match_groups``
+    checks them. Keys: ``brms_id[(name, factor)]``, ``level_of[(name, factor)]``, ``coef_cn[(name, factor, coef)]``."""
+    if fixture.groups and any("nlpar" not in grp for grp in fixture.groups):
+        raise OracleMismatch("brms's group table has no nlpar column; freeze the case with extras: ['group_scope']")
+    ids, cns, levels_of, coef_cn, used = {}, {}, {}, {}, set()
+    n = model.design.n
+    for name, nd in model.design.nlpars.items():
+        for (g, coef), block in nd.group_blocks.items():
+            gidx = block.group_index
+            covariate = block.Z[np.arange(n), gidx]
+            found = []
+            for grp in fixture.groups:
+                key = (int(grp["id"]), int(grp["cn"]))
+                if grp["nlpar"] != name or key in used:
+                    continue
+                J = fixture.standata[f"J_{grp['id']}"].astype(int) - 1
+                if J.shape != gidx.shape or int(J.max()) + 1 != block.J:
+                    continue
+                m = np.full(block.J, -1)
+                for j in range(block.J):
+                    vals = np.unique(gidx[J == j])
+                    if vals.size != 1:
+                        break
+                    m[j] = vals[0]
+                else:
+                    if len(np.unique(m)) != block.J:
+                        continue
+                    Z = fixture.standata.get(f"Z_{grp['id']}_{name}_{grp['cn']}")
+                    if Z is not None and Z.shape == (n,) and np.max(np.abs(Z - covariate)) <= DESIGN_ABS:
+                        found.append((grp, m))
+            if len(found) != 1:
+                raise OracleMismatch(f"group-level coefficient {coef!r} of {g!r} in {name!r}: {len(found)} brms group terms of {name} "
+                                     f"induce its partition of the rows and carry its covariate column within {DESIGN_ABS}")
+            grp, m = found[0]
+            if grp["coef"] != coef:
+                raise OracleMismatch(f"{g!r} in {name!r}: the brms coefficient matched by content is labelled {grp['coef']!r}, "
+                                     f"AutoBayes has {coef!r}")
+            if [block.levels[i] for i in m] != list(grp["levels"]):
+                raise OracleMismatch(f"{g!r} in {name!r}: brms levels {grp['levels']} vs AutoBayes {[block.levels[i] for i in m]}")
+            if (name, g) in ids and ids[(name, g)] != int(grp["id"]):
+                raise OracleMismatch(f"{g!r} in {name!r}: its coefficients match different brms groups ({ids[(name, g)]} and {grp['id']})")
+            used.add((int(grp["id"]), int(grp["cn"])))
+            ids[(name, g)], levels_of[(name, g)], coef_cn[(name, g, coef)] = int(grp["id"]), m, int(grp["cn"])
+            if coef == "Intercept":
+                cns[(name, g)] = int(grp["cn"])
+    unmatched = [(grp["nlpar"], grp["group"], grp["coef"]) for grp in fixture.groups if (int(grp["id"]), int(grp["cn"])) not in used]
+    if unmatched:
+        raise OracleMismatch(f"brms group-level terms without an AutoBayes counterpart: {unmatched}")
+    for name, t in model.spec.nlpar_group_terms:
+        m = ids[(name, t.factor)]
+        M = int(fixture.standata[f"M_{m}"])
+        if M != len(t.coefs):
+            raise OracleMismatch(f"{t.factor!r} in {name!r}: brms group {m} has M_{m} = {M} coefficients, AutoBayes {len(t.coefs)}")
+        declared = f"L_{m}" in fixture.declarations
+        if M > 1 and declared != t.has_correlation:
+            raise OracleMismatch(f"{t.factor!r} in {name!r}: brms group {m} {'declares' if declared else 'has no'} L_{m}; AutoBayes's "
+                                 f"term '{t.canonical}' is {'correlated' if t.has_correlation else 'independent'}")
+    return GroupMap(ids, cns, levels_of, coef_cn)
+
+
+def nonlinear_cholesky(model: ab.Model, gmap: GroupMap, name: str, factor: str, pars: dict) -> np.ndarray:
+    """brms's ``L_<id>`` of parameter ``name``'s correlated term on ``factor`` in AutoBayes's coefficient order (C02)."""
+    m = gmap.brms_id[(name, factor)]
+    L = np.atleast_2d(pars[f"L_{m}"])
+    perm = [gmap.coef_cn[(name, factor, c)] - 1 for c in model.spec.nlpar(name).group_term_of(factor).coefs]
+    if perm == list(range(len(perm))):
+        return L
+    return np.linalg.cholesky((L @ L.T)[np.ix_(perm, perm)])
+
+
+def nonlinear_natural_point(model: ab.Model, point: Point, cmap: ColumnMap, gmap: GroupMap) -> dict:
+    """``NonlinearModel.value_point``'s arguments at a brms point (C02): per parameter ``b`` (brms's ``b_<nlpar>`` in the
+    AutoBayes design's column order), ``sd`` and ``z`` of its group-level terms (``sd_<id>``, ``z_<id>`` in AutoBayes's level
+    order) and ``L`` of its correlated ones; the family's auxiliary parameter by its brms name."""
+    pars, out = point.pars, {}
+    for d in model.spec.nlpars:
+        name = d.response
+        bb = coefficients(pars, f"b_{name}")
+        entry = {"b": np.array([bb[k] for k in cmap.nlpars[name].x_column], dtype=float)}
+        sd, z, L = {}, {}, {}
+        for t in d.group_terms:
+            m = gmap.brms_id[(name, t.factor)]
+            sd_m, zb = np.atleast_1d(pars[f"sd_{m}"]), np.atleast_2d(pars[f"z_{m}"])
+            per_sd, per_z = {}, {}
+            for coef in t.coefs:
+                cn = gmap.coef_cn[(name, t.factor, coef)]
+                za = np.empty(zb.shape[1])
+                za[gmap.level_of[(name, t.factor)]] = zb[cn - 1]
+                per_sd[coef], per_z[coef] = float(sd_m[cn - 1]), za
+            sd[t.factor], z[t.factor] = (per_sd, per_z) if t.slopes else (per_sd["Intercept"], per_z["Intercept"])
+            if t.has_correlation:
+                L[t.factor] = nonlinear_cholesky(model, gmap, name, t.factor, pars)
+        if sd:
+            entry.update(sd=sd, z=z)
+        if L:
+            entry["L"] = L
+        out[name] = entry
+    scale = model.family_spec.scale_parameter
+    return {"nlpars": out, **({scale: float(pars[scale])} if scale is not None else {})}
+
+
+def nonlinear_coordinate_map(fixture: Fixture, model: ab.Model, cmap: ColumnMap, gmap: GroupMap) -> list[tuple[int, str, int]]:
+    """``coordinate_map`` of a non-linear model (C02): ``b_<nlpar>[k]`` to the variable and index of the AutoBayes design
+    column brms's column k matched, ``sd_<id>`` / ``z_<id>`` / ``L_<id>`` to the parameter's group-level variables (``L_<id>``
+    on Stan's ``cholesky_corr`` coordinates, recomputed from ``L_<id>`` at every point and checked against the fixture's
+    ``u``), the auxiliary parameter to its log coordinate; each transform checked on both sides."""
+    names, scale = model.names, model.family_spec.scale_parameter
+    by_id = {m: key for key, m in gmap.brms_id.items()}                     # brms group id -> (parameter, factor)
+    by_cn = {(name, g, cn): coef for (name, g, coef), cn in gmap.coef_cn.items()}
+    pars = fixture.points[0].pars
+    seen_L: dict[tuple[str, str], int] = {}
+    out = []
+    for e in fixture.upars:
+        idx, transform = int(e["index"]) - 1, e["transform"]
+        par, elem = e["par"], (int(e["elem"]) - 1 if e["elem"] is not None else None)
+        if par is None:
+            raise OracleMismatch(f"brms's unconstrained coordinate {idx + 1} was not reached by the probe")
+        if par.startswith("b_") and par[2:] in (cmap.nlpars or {}):
+            name = par[2:]
+            col = cmap.nlpars[name].x_column.index(elem)
+            _, var, j = model.nlpar_coefficients[name][col]
+            target, expect = (var, 0 if j is None else j), "identity"
+        elif par == scale:
+            target, expect = (f"{names[scale]}_log__", 0), "log"
+        elif par.startswith("sd_") and par[3:].isdigit() and int(par[3:]) in by_id:
+            name, g = by_id[int(par[3:])]
+            if (name, g, elem + 1) not in by_cn:
+                raise OracleMismatch(f"{par}[{elem + 1}] is not the SD of a group-level coefficient of {g!r} in {name!r}")
+            target, expect = (f"{model.nlpar_group_names[(name, g, by_cn[(name, g, elem + 1)])]['sd']}_log__", 0), "log"
+        elif par.startswith("z_") and par[2:].isdigit() and int(par[2:]) in by_id:
+            name, g = by_id[int(par[2:])]
+            M = pars[par].shape[0]
+            c, j = elem % M, elem // M                                   # column-major flat index of (M, N)
+            if (name, g, c + 1) not in by_cn:
+                raise OracleMismatch(f"{par} coefficient {c + 1} is not a group-level coefficient of {g!r} in {name!r}")
+            target = (model.nlpar_group_names[(name, g, by_cn[(name, g, c + 1)])]["offset"], int(gmap.level_of[(name, g)][j]))
+            expect = "identity"
+        elif par.startswith("L_") and par[2:].isdigit() and int(par[2:]) in by_id:
+            name, g = by_id[int(par[2:])]
+            if (name, g) not in model.nlpar_correlation_names:
+                raise OracleMismatch(f"{par} is brms's correlation Cholesky factor of {g!r} in {name!r}, whose AutoBayes term is not correlated")
+            coefs = list(model.spec.nlpar(name).group_term_of(g).coefs)
+            if [gmap.coef_cn[(name, g, c)] for c in coefs] != list(range(1, len(coefs) + 1)):
+                raise OracleMismatch(f"{g!r} in {name!r}: brms orders the coefficients otherwise than AutoBayes {coefs}; the "
+                                     f"cholesky_corr coordinates of {par} are not comparable")
+            k = seen_L.get((name, g), 0)
+            seen_L[(name, g)] = k + 1
+            for q, pt_ in enumerate(fixture.points):
+                u = cholesky_corr_free(np.atleast_2d(pt_.pars[par]))
+                if k >= u.size or abs(u[k] - pt_.u[idx]) > 1e-10:
+                    raise OracleMismatch(f"point {q}: Stan's cholesky_corr coordinate {k} of {par} is "
+                                         f"{u[k] if k < u.size else 'absent'!r}; brms's unconstrained value is {pt_.u[idx]!r}")
+            target, expect = (f"{model.nlpar_correlation_names[(name, g)]['L']}_cholesky_corr__", k), "other"
+        else:
+            raise OracleMismatch(f"no adapter for brms parameter {par!r} ({fixture.declarations.get(par, 'undeclared')}) of a "
+                                 "non-linear model")
+        if transform != expect:
+            raise OracleMismatch(f"brms transform of {par}[{elem + 1}] is {transform!r}; AutoBayes uses {expect!r}")
+        out.append((idx, *target))
+    return out
+
+
+def nonlinear_draws(fixture: Fixture, model: ab.Model, cmap: ColumnMap, gmap: GroupMap) -> az.InferenceData:
+    """``draws`` of a non-linear model (C02): every parameter's coefficients under AutoBayes's names (``a_Intercept``, the
+    vector ``a_z`` over ``a_z_dim``) from brms's ``b_<nlpar>``, its group SDs and effects by level (``a_1|g`` from
+    ``r_<id>_<nlpar>_<cn>``), the Cholesky factor and correlation matrix of a correlated term, and the auxiliary parameter."""
+    pts = fixture.points
+    data, coords = {}, {"chain": [0], "draw": np.arange(len(pts))}
+    for d in model.spec.nlpars:
+        name, nmap = d.response, cmap.nlpars[d.response]
+        rows = model.nlpar_coefficients[name]
+        values = np.array([[coefficients(p.pars, f"b_{name}")[k] for k in nmap.x_column] for p in pts])   # (draw, column)
+        for var in dict.fromkeys(v for _, v, _ in rows):
+            positions = [(c, j) for c, (_, v, j) in enumerate(rows) if v == var]
+            if positions[0][1] is None:
+                data[var] = (("chain", "draw"), values[:, positions[0][0]][None, :])
+            else:
+                term = next(t for t in d.pop_terms if model.nlpar_names[name][f"b:{t.name}"] == var)
+                vec = np.empty((len(pts), len(positions)))
+                for c, j in positions:
+                    vec[:, j] = values[:, c]
+                data[var] = (("chain", "draw", f"{var}_dim"), vec[None])
+                coords[f"{var}_dim"] = list(term.levels)
+        for t in d.group_terms:
+            m = gmap.brms_id[(name, t.factor)]
+            for coef in t.coefs:
+                roles, cn = model.nlpar_group_names[(name, t.factor, coef)], gmap.coef_cn[(name, t.factor, coef)]
+                level_of = gmap.level_of[(name, t.factor)]
+                r = np.empty((len(pts), len(level_of)))
+                for q, p in enumerate(pts):
+                    r[q, level_of] = np.atleast_1d(p.pars[f"r_{m}_{name}_{cn}"])
+                data[roles["sd"]] = (("chain", "draw"), np.array([np.atleast_1d(p.pars[f"sd_{m}"])[cn - 1] for p in pts])[None, :])
+                data[roles["group_effect"]] = (("chain", "draw", roles["coordinate"]), r[None])
+                coords[roles["coordinate"]] = list(model.design.nlpars[name].group_blocks[(t.factor, coef)].levels)
+            if t.has_correlation:
+                croles = model.nlpar_correlation_names[(name, t.factor)]
+                L = np.stack([nonlinear_cholesky(model, gmap, name, t.factor, p.pars) for p in pts])
+                dims = ("chain", "draw", croles["coordinate"], croles["coordinate_T"])
+                data[croles["L"]] = (dims, L[None])
+                data[croles["cor"]] = (dims, (L @ np.swapaxes(L, -1, -2))[None])
+                coords[croles["coordinate"]] = coords[croles["coordinate_T"]] = list(t.coefs)
+    scale = model.family_spec.scale_parameter
+    if scale is not None:
+        data[model.names[scale]] = (("chain", "draw"), np.array([float(p.pars[scale]) for p in pts])[None, :])
+    return az.InferenceData(posterior=xr.Dataset(data, coords=coords))
+
+
+def brms_nlpar_values(fixture: Fixture, point: Point, name: str) -> np.ndarray:
+    """brms's own linear predictor of non-linear parameter ``name`` at a point (C02), from its Stan data and parameters alone:
+    ``X_<name> b_<name>`` plus, for every group coefficient of ``name`` in brms's group table, ``r_<id>_<name>_<cn>[J_<id>]``
+    times ``Z_<id>_<name>_<cn>`` (brms's ``nlp_<name>``)."""
+    sd = fixture.standata
+    X = np.asarray(sd[f"X_{name}"], dtype=float).reshape(int(sd["N"]), -1)
+    eta = X @ coefficients(point.pars, f"b_{name}")
+    for grp in fixture.groups:
+        if grp.get("nlpar") != name:
+            continue
+        m, cn = int(grp["id"]), int(grp["cn"])
+        J = sd[f"J_{m}"].astype(int) - 1
+        eta = eta + np.atleast_1d(point.pars[f"r_{m}_{name}_{cn}"])[J] * sd[f"Z_{m}_{name}_{cn}"]
+    return eta

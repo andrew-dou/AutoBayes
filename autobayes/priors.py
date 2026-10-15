@@ -275,6 +275,12 @@ class Priors:
     by the process's column, ``sdgp={"x": HalfNormal(1)}, lscale={"x": InverseGamma(3, 1)}`` (brms ``coef = gpx``); a single
     Gaussian process also accepts the bare priors, several need exact-key mappings (nothing is broadcast, as for ``sd``);
     both are required with a Gaussian process and refused without one.
+
+    A non-linear model (C02, ``nl=True``, docs/nonlinear.md) has no ``intercept``, ``b`` or ``sd`` of its own: ``nlpars``
+    gives each non-linear parameter's, ``nlpars={"a": {"b": Normal(1, 1), "sd": HalfNormal(1)}, "b": {"b": Normal(0, 1)}}``
+    (brms's ``class = b`` and ``class = sd`` with ``nlpar = "a"``; ``"b"`` covers the parameter's intercept too, brms's
+    coefficient ``Intercept``, as one prior or as a mapping by term with an ``"Intercept"`` entry), while ``cor`` stays keyed
+    by factor (brms's class ``cor`` has no ``nlpar``); refused for every other model.
     """
 
     intercept: Prior | None = None
@@ -299,6 +305,7 @@ class Priors:
     rescor: Prior | None = None               # C01: LKJ(eta) on the residual correlation of a multivariate model (brms class ``rescor``)
     sdgp: Prior | Mapping[str, Prior] | None = None   # each Gaussian process's marginal SD, by column (brms class ``sdgp``; C03)
     lscale: Prior | Mapping[str, Prior] | None = None  # each Gaussian process's length-scale, by column (brms class ``lscale``; C03)
+    nlpars: Mapping[str, Mapping[str, object]] | None = None   # each non-linear parameter's {"b": ..., "sd": ...} (brms's nlpar =; C02)
 
     def __post_init__(self):
         if isinstance(self.components, list):                         # one value for equal component lists (C05)
@@ -343,6 +350,10 @@ class Priors:
 
         fam = family if isinstance(family, FamilySpec) else get_family(family)
         responses = list(spec.responses)
+        if self.nlpars is not None:                                   # C02
+            raise PriorError("nlpars gives the priors of non-linear parameters (ab.gaussian(..., nl=True), docs/nonlinear.md); "
+                             "a multivariate model takes none: a non-linear model in a multivariate formula is not supported "
+                             "(divergence D62)")
         if self.components is not None or self.theta is not None:
             raise PriorError("components and theta are the priors of a mixture (ab.mixture, docs/mixtures.md); "
                              "a multivariate model takes neither")
@@ -709,7 +720,11 @@ class Priors:
     def improper(self, spec) -> list[str]:
         """The parameters under a flat prior (``Flat()``, brms's default for ``b``), labelled as fit records label them
         (``intercept``, ``b:x``); such a model has no prior predictive distribution. A mixture's (C05) carry their component's
-        brms name, ``mu1:b:x``."""
+        brms name, ``mu1:b:x``; a non-linear model's (C02) their parameter's, ``a:b:Intercept``."""
+        if getattr(spec, "is_nonlinear", False):                       # a non-linear model (C02): a:b:Intercept, a:b:x
+            from autobayes.nonlinear import nonlinear_improper
+
+            return nonlinear_improper(self, spec)
         if self.components is not None:
             return [f"mu{k}:{label}" for k, c in enumerate(self.components, start=1) for label in c.improper(spec)]
         out = ["intercept"] if getattr(spec, "intercept", True) and isinstance(self.intercept, Prior) and self.intercept.name == "Flat" else []
@@ -729,6 +744,13 @@ class Priors:
         from autobayes.families import FamilySpec, get_family
 
         fam = family if isinstance(family, FamilySpec) else get_family(family)
+        if getattr(spec, "is_nonlinear", False):                       # a non-linear model (C02): priors per non-linear parameter
+            from autobayes.nonlinear import check_nonlinear_priors
+
+            return check_nonlinear_priors(self, spec, fam)
+        if self.nlpars is not None:                                   # C02, refused for every other model, a mixture's included
+            raise PriorError("nlpars gives the priors of non-linear parameters, which a model has only with nl=True "
+                             "(docs/nonlinear.md); this formula is linear")
         if self.resp is not None or self.rescor is not None:          # C01: the priors of a multivariate model
             raise PriorError("resp and rescor are the priors of a multivariate model, 'mvbind(y, y2) ~ ...' built with "
                              "ab.gaussian(..., rescor=True | False) (docs/multivariate.md); this formula has one response")

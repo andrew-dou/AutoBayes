@@ -1772,6 +1772,7 @@ def _parse_formulas(formulas, data: pd.DataFrame | None, family: str, categorica
         if name in (p for p, _, _ in parsed):
             raise FormulaError(f"{text!r}: {name!r} has two formulas; give each distributional parameter one")
         if name != fam.scale_parameter or fam.distributional_link is None:
+            nl_hint = ""
             if name in (fam.scale_parameter, fam.zero_parameter, *fam.fixed_parameters, *fam.learnable_parameters):
                 why = f"brms's {name} ~ ... is not offered here"
             else:
@@ -1785,7 +1786,9 @@ def _parse_formulas(formulas, data: pd.DataFrame | None, family: str, categorica
                     why += (f"; if {name!r} is a second response, a formula of its own per response (brms's bf(y ~ ...) + "
                             f"bf({name} ~ ...)) is not supported: a multivariate model's responses share one right-hand side, "
                             f"'mvbind(y, {name}) ~ ...' (docs/multivariate.md, divergence D56)")
-            raise FormulaError(f"{text!r}: {why}; {_distributional_offer(fam)}")
+                nl_hint = (f". If {name!r} is a non-linear parameter of the first formula, build the model with nl=True "
+                           "(brms's nl = TRUE; docs/nonlinear.md)")              # C02
+            raise FormulaError(f"{text!r}: {why}; {_distributional_offer(fam)}{nl_hint}")
         parsed.append((name, rhs, text.strip()))
 
     # Route the declared categorical columns: each formula receives the declarations of its own main effects (read

@@ -5,10 +5,6 @@
  "note": "brms nl: mu = nlp_a * exp(nlp_b * C_1) with standata C_1 = x; nlp_a = X_a b_a + r_1_a_1[J_1] (intercept-only X_a, not centred), nlp_b = X_b b_b; parameters b_a, b_b, sigma, sd_1, z_1 (the group term has nlpar a); priors class b with nlpar a / b; response ypos (positive, about exp(0.3 + 0.4 x)) so the model is identifiable",
  "seed": 303,
  "n_points": 8,
- "gate": {
-  "expect": "fail",
-  "reason": "C02_nonlinear not implemented; remove this field when it lands"
- },
  "data": {
   "generator": "tier_c",
   "seed": 203,
