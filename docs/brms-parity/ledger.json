@@ -153,9 +153,9 @@
     "A12_links",
     "B02_cens_trunc_weights"
    ],
-   "status": "gates_green",
+   "status": "merged",
    "summary": "two-reference acceptance (brms where accurate, a committed 50-digit reference where not); lifts the cloglog, cens() and trunc() parks",
-   "pr": null,
+   "pr": 47,
    "attempts": 1,
    "gates": {
     "sha": "59210b6d3998",
@@ -178,7 +178,15 @@
     "D24",
     "D25"
    ],
-   "next_action": "agent (opus) in worktree parity-p6 (Andrew's decision 2026-10-11)"
+   "next_action": "follow-up: none",
+   "fixtures": {
+    "cases": [
+     "bernoulli_cloglog",
+     "binomial_cloglog",
+     "gauss_censored",
+     "gauss_truncated"
+    ]
+   }
   },
   {
    "id": "A01_independent_slopes",
@@ -980,9 +988,9 @@
    "depends_on": [
     "B01_distributional"
    ],
-   "status": "gates_green",
+   "status": "merged",
    "summary": "mvbind() multivariate responses with residual correlations",
-   "pr": null,
+   "pr": 50,
    "attempts": 1,
    "gates": {
     "sha": "4a9c7ba99df4",
@@ -1000,13 +1008,19 @@
      }
     }
    },
-   "divergences": [],
-   "next_action": "agent (opus) in worktree parity-c01",
+   "divergences": [
+    "D56",
+    "D57",
+    "D58",
+    "D59"
+   ],
+   "next_action": "per-response formulas (except mi()), |ID|, other families not offered; fit path never sampled",
    "fixtures": {
     "pr": 43,
     "cases": [
      "gauss_mv_rescor",
-     "gauss_mv_norescor"
+     "gauss_mv_norescor",
+     "gauss_mv_slopes"
     ]
    }
   },
@@ -1017,9 +1031,9 @@
    "depends_on": [
     "B01_distributional"
    ],
-   "status": "gates_green",
+   "status": "merged",
    "summary": "bf(nl = TRUE) non-linear formulas",
-   "pr": null,
+   "pr": 52,
    "attempts": 0,
    "gates": {
     "sha": "9c0268798fd2",
@@ -1037,12 +1051,18 @@
      }
     }
    },
-   "divergences": [],
-   "next_action": "implementation awaits Andrew's Tier C go-ahead at the Tier B boundary",
+   "divergences": [
+    "D60",
+    "D61",
+    "D62",
+    "D63"
+   ],
+   "next_action": "other families, nested nlpars not offered; fit path never sampled",
    "fixtures": {
     "pr": 43,
     "cases": [
-     "gauss_nonlinear_exp"
+     "gauss_nonlinear_exp",
+     "gauss_nonlinear_terms"
     ]
    }
   },
@@ -1051,11 +1071,11 @@
    "tier": "C",
    "lane": "formula",
    "depends_on": [
-    "B04_splines"
+    "A07_default_priors"
    ],
-   "status": "gates_green",
+   "status": "merged",
    "summary": "gp() terms",
-   "pr": null,
+   "pr": 51,
    "attempts": 0,
    "gates": {
     "sha": "3a6a924031ad",
@@ -1073,8 +1093,13 @@
      }
     }
    },
-   "divergences": [],
-   "next_action": "implementation awaits Andrew's Tier C go-ahead at the Tier B boundary",
+   "divergences": [
+    "D64",
+    "D65",
+    "D66",
+    "D67"
+   ],
+   "next_action": "other kernels, by=, several covariates not offered (D64)",
    "fixtures": {
     "pr": 43,
     "cases": [
@@ -1088,11 +1113,11 @@
    "tier": "C",
    "lane": "formula",
    "depends_on": [
-    "C01_multivariate"
+    "A07_default_priors"
    ],
-   "status": "gates_green",
+   "status": "merged",
    "summary": "ar(), ma(), arma(), car(), sar() autocorrelation",
-   "pr": null,
+   "pr": 53,
    "attempts": 0,
    "gates": {
     "sha": "e5c729177dbc",
@@ -1110,13 +1135,19 @@
      }
     }
    },
-   "divergences": [],
-   "next_action": "implementation awaits Andrew's Tier C go-ahead at the Tier B boundary",
+   "divergences": [
+    "D68",
+    "D69",
+    "D70",
+    "D71"
+   ],
+   "next_action": "cov=TRUE, cosy/car/sar/fcor, new-data predictions not offered (D68-D71)",
    "fixtures": {
     "pr": 43,
     "cases": [
      "gauss_ar1",
-     "gauss_arma11"
+     "gauss_arma11",
+     "gauss_arma22_varint"
     ]
    }
   },
@@ -1127,9 +1158,9 @@
    "depends_on": [
     "B06_zero_inflated_hurdle"
    ],
-   "status": "gates_green",
+   "status": "merged",
    "summary": "mixture() families",
-   "pr": null,
+   "pr": 48,
    "attempts": 1,
    "gates": {
     "sha": "4fba237c409f",
@@ -1147,12 +1178,19 @@
      }
     }
    },
-   "divergences": [],
-   "next_action": "agent (opus) in worktree parity-c05",
+   "divergences": [
+    "D52",
+    "D53",
+    "D54",
+    "D55"
+   ],
+   "next_action": "other component families, order='none', per-component formulas, group terms not offered (D52-D55); no per-row log density yet (log_lik/loo)",
    "fixtures": {
     "pr": 43,
     "cases": [
-     "mixture_gauss_gauss"
+     "mixture_gauss_gauss",
+     "mixture_gauss3_categorical",
+     "mixture_gauss_default_priors"
     ]
    }
   },
@@ -1163,9 +1201,9 @@
    "depends_on": [
     "C01_multivariate"
    ],
-   "status": "gates_green",
+   "status": "merged",
    "summary": "mi() and me() terms",
-   "pr": null,
+   "pr": 54,
    "attempts": 0,
    "gates": {
     "sha": "72eaaa1f5cb2",
@@ -1183,8 +1221,13 @@
      }
     }
    },
-   "divergences": [],
-   "next_action": "implementation awaits Andrew's Tier C go-ahead at the Tier B boundary",
+   "divergences": [
+    "D72",
+    "D73",
+    "D74",
+    "D75"
+   ],
+   "next_action": "other families and contexts not offered (D72-D75)",
    "fixtures": {
     "pr": 43,
     "cases": [
@@ -1200,9 +1243,9 @@
    "depends_on": [
     "A07_default_priors"
    ],
-   "status": "gates_green",
+   "status": "merged",
    "summary": "loo, bayes_R2, hypothesis, conditional effects through ArviZ where it exists",
-   "pr": null,
+   "pr": 49,
    "attempts": 1,
    "gates": {
     "sha": "fb14b0ae4e37",
@@ -1220,14 +1263,22 @@
      }
     }
    },
-   "divergences": [],
-   "next_action": "agent (opus) in worktree parity-c07",
+   "divergences": [
+    "D48",
+    "D49",
+    "D50",
+    "D51"
+   ],
+   "next_action": "waic, kfold, loo_compare, hypothesis, conditional_effects not offered (D48)",
    "fixtures": {
     "pr": 43,
     "cases": [
      "gauss_varint_post",
      "poisson_varint_post",
-     "gauss_varint_post_psis"
+     "gauss_varint_post_psis",
+     "cumulative_varint_post",
+     "binomial_weighted_post",
+     "categorical_poponly_post"
     ]
    }
   }
