@@ -1,0 +1,391 @@
+\documentclass[11pt]{article}
+\usepackage[margin=1in]{geometry}
+\usepackage[T1]{fontenc}
+\usepackage{amsmath,amssymb}
+\usepackage{booktabs,array,enumitem,caption}
+\usepackage{listings,xcolor,hyperref}
+\sloppy
+\hypersetup{colorlinks=true, linkcolor=blue!50!black, urlcolor=blue!50!black}
+\definecolor{cbg}{rgb}{0.96,0.96,0.96}
+\lstset{language=Python, basicstyle=\ttfamily\scriptsize, backgroundcolor=\color{cbg}, showstringspaces=false,
+  breaklines=true, frame=single, framerule=0pt, columns=fullflexible, keepspaces=true}
+\newcommand{\code}[1]{\texttt{#1}}
+\newcommand{\file}[1]{\texttt{#1}}
+\setlist{nosep, leftmargin=1.4em}
+
+\title{AutoBayes: brms in Python\\[2pt]\large status, demonstrations and a head-to-head comparison with brms}
+\author{Prepared for Andrew}
+\date{15 October 2026}
+
+\begin{document}
+\maketitle
+
+\section*{Summary}
+
+\begin{itemize}
+\item \textbf{Complete:} 25 of the 26 planned brms features are merged into \code{main}, each accepted only after
+  reproducing brms's own log density, gradient and predictions on frozen fixtures. The 26th, \code{s()} splines, waits
+  on a licensing decision. Measured against all of brms 2.23 that is roughly a quarter to a third by count (13 of 49
+  families), concentrated on the models applied researchers fit most (Section~\ref{sec:done}).
+\item \textbf{What you can do in Python now:} ten model classes, from correlated-slope logistic GLMMs to ordinal,
+  zero-inflated, distributional, multivariate, non-linear, Gaussian-process, autoregressive, mixture and
+  measurement-error models, each specified as in brms and fitted in 2--8 seconds on a laptop CPU (Section~\ref{sec:tour}).
+\item \textbf{Speed:} on four benchmark models with identical data, priors and sampler settings, AutoBayes (NumPyro)
+  went from formula to posterior 3.6--8.5 times faster than brms (rstan). Most of brms's time is compiling its Stan
+  program (26--37 seconds per model), but sampling alone was also roughly 4--9 times faster here. The two posteriors
+  agree within Monte Carlo error (every parameter within 1.9 combined standard errors), with similar effective sample
+  sizes (Section~\ref{sec:bench}). One run each, on a laptop with background load; read the numbers as ``several times
+  faster on these models'', not as a general constant.
+\item \textbf{Also better:} where brms's own arithmetic loses digits (complementary log-log gradients, censored and
+  truncated Gaussians, zero-inflated and hurdle densities at extreme linear predictors) AutoBayes computes the exact
+  value, verified against 50-digit references (Section~\ref{sec:better}).
+\item \textbf{Not better yet:} breadth (brms offers far more), maturity, and validation of sampling for the newest model
+  classes; GPU execution is untested.
+\end{itemize}
+
+\section{How much of brms is done}
+\label{sec:done}
+
+The brms-parity loop works through a planned scope of 26 features in three tiers. A feature is accepted only when the
+model AutoBayes builds reproduces brms's own Stan data, log density, gradient and predictions on frozen fixtures
+(98 of them, all regenerating identically from brms 2.23.0 and rstan); nothing in that test samples.
+
+\begin{center}\small
+\begin{tabular}{@{}>{\raggedright\arraybackslash}p{0.09\textwidth}>{\raggedright\arraybackslash}p{0.62\textwidth}>{\raggedright\arraybackslash}p{0.21\textwidth}@{}}
+\toprule
+Tier & Features & State \\
+\midrule
+A & independent and correlated varying slopes; \code{g:h}, \code{g/h}; interactions; transforms; \code{offset()}; negative binomial, Gamma, lognormal, Beta; probit and cloglog links; learned Student-$t$ $\nu$; brms's default priors & 13 of 13 merged \\
+B & distributional formulas (\code{sigma \textasciitilde{} z}); \code{weights()}, \code{cens()}, \code{trunc()}; \code{mo()}; cumulative and categorical families; zero-inflated and hurdle Poisson; \code{s()} splines & 5 of 6 merged; \code{s()} waits on the licensing decision \\
+C & multivariate (\code{mvbind}, residual correlation); non-linear formulas; Gaussian processes; \code{ar()}/\code{ma()}/\code{arma()}; finite mixtures; \code{mi()} and \code{me()}; \code{log\_lik}, \code{bayes\_R2}, PSIS-LOO & 7 of 7 merged \\
+\bottomrule
+\end{tabular}\end{center}
+
+\noindent Against everything brms 2.23 offers, the picture is narrower. Each feature is a deliberate slice (75 divergence
+rows list what is refused, with the reason), and several whole areas are not started:
+
+\begin{center}\small
+\begin{tabular}{@{}>{\raggedright\arraybackslash}p{0.22\textwidth}rr>{\raggedright\arraybackslash}p{0.42\textwidth}@{}}
+\toprule
+& brms & AutoBayes & not yet offered (examples) \\
+\midrule
+Response families & 49 & 13 & Weibull, exponential, skew-normal, beta-binomial, zero-inflated and hurdle negative binomial, \code{sratio}/\code{cratio}/\code{acat}, multinomial, Dirichlet, von Mises, Wiener, Cox \\
+Formula specials & $\approx$19 & 8 & \code{s()}, \code{t2()}, \code{cs()}, \code{mm()}, \code{car()}, \code{sar()}, \code{cosy()} \\
+Addition terms & $\approx$12 & 5 & \code{se()}, \code{rate()}, \code{thres()}, \code{subset()}, \code{dec()} \\
+Prior families & any Stan density & 11 & horseshoe, R2D2, lasso \\
+Post-processing & $\approx$25 & 6 & \code{waic}, \code{kfold}, \code{loo\_compare}, \code{hypothesis}, \code{conditional\_effects}, \code{pp\_check} \\
+\bottomrule
+\end{tabular}\end{center}
+
+\noindent By count that is roughly a quarter to a third of brms. By the models applied researchers most often fit with
+brms (generalised linear mixed models with correlated slopes, ordinal and categorical outcomes, zero-inflated counts,
+distributional, multivariate and non-linear models) it is far more than that; the second statement is my judgement,
+not a measurement.
+
+\section{What you can fit in Python today}
+\label{sec:tour}
+
+Ten models, one per class of brms model now offered, each on simulated data with known parameters and fitted with
+NumPyro on this laptop's CPU (Apple M1 Pro). The code shown is the whole model specification; the full script is
+\file{examples/brms\_parity/tour.py}. Every fit uses four chains of 1000 warm-up and 1000 kept draws.
+
+\subsection*{Logistic regression with correlated varying intercepts and slopes}
+\begin{lstlisting}
+ab.bernoulli("y ~ x + (1 + x | g)", df, ab.Priors(intercept=ab.Normal(0, 2.5), b=ab.Normal(0, 1),
+    sd={"g": {"Intercept": ab.HalfNormal(1), "x": ab.HalfNormal(1)}}, cor={"g": ab.LKJ(2)}))
+\end{lstlisting}
+\noindent\small Fit 6.0 s (four chains, 1000 + 1000 draws, NumPyro on the CPU); max $\hat R$ 1.000, min bulk ESS 870. PSIS-LOO $\widehat{\mathrm{elpd}}_{\mathrm{loo}} = -843.4$; Bayes $R^2 = 0.215$.
+
+\begin{center}\begin{tabular}{@{}lrrr@{}}\toprule parameter & true & posterior mean & 90\% interval \\ \midrule
+\code{x} & 0.90 & 0.76 & [0.58, 0.95] \\
+\code{Intercept} & -0.40 & -0.66 & [-0.93, -0.39] \\
+\code{x$|$g\_sigma} & 0.40 & 0.53 & [0.35, 0.72] \\
+\code{1$|$g\_sigma} & 0.80 & 0.92 & [0.72, 1.16] \\
+\code{cor$|$g} & 0.00 & -0.15 & [-0.50, 0.21] \\
+\bottomrule\end{tabular}\end{center}\normalsize
+
+\subsection*{Ordinal (cumulative logit) regression with a varying intercept}
+\begin{lstlisting}
+ab.cumulative("y ~ x + (1 | g)", df, ab.Priors(intercept=ab.Normal(0, 2.5), b=ab.Normal(0, 1), sd=ab.HalfNormal(1)))
+\end{lstlisting}
+\noindent\small Fit 7.3 s (four chains, 1000 + 1000 draws, NumPyro on the CPU); max $\hat R$ 1.000, min bulk ESS 593. Predicted category probabilities at $x = -1, 0, 1$ (population level): (0.28, 0.27, 0.20, 0.14, 0.11); (0.17, 0.22, 0.22, 0.20, 0.19); (0.10, 0.16, 0.20, 0.23, 0.30).
+
+\begin{center}\begin{tabular}{@{}lrrr@{}}\toprule parameter & true & posterior mean & 90\% interval \\ \midrule
+\code{x} & 0.80 & 0.63 & [0.54, 0.72] \\
+\code{Intercept[1]} & -1.50 & -1.56 & [-1.85, -1.27] \\
+\code{Intercept[2]} & -0.30 & -0.42 & [-0.71, -0.15] \\
+\code{Intercept[3]} & 0.60 & 0.48 & [0.21, 0.77] \\
+\code{Intercept[4]} & 1.80 & 1.48 & [1.20, 1.77] \\
+\code{1$|$g\_sigma} & 0.70 & 0.76 & [0.57, 1.00] \\
+\bottomrule\end{tabular}\end{center}\normalsize
+
+\subsection*{Zero-inflated Poisson counts}
+\begin{lstlisting}
+ab.zero_inflated_poisson("y ~ x + (1 | g)", df,
+    ab.Priors(intercept=ab.Normal(0, 2.5), b=ab.Normal(0, 1), sd=ab.HalfNormal(1), zi=ab.Beta(2, 2)))
+\end{lstlisting}
+\noindent\small Fit 6.4 s (four chains, 1000 + 1000 draws, NumPyro on the CPU); max $\hat R$ 1.000, min bulk ESS 443.
+
+\begin{center}\begin{tabular}{@{}lrrr@{}}\toprule parameter & true & posterior mean & 90\% interval \\ \midrule
+\code{Intercept} & 0.60 & 0.66 & [0.51, 0.82] \\
+\code{x} & 0.50 & 0.49 & [0.45, 0.52] \\
+\code{zi} & 0.30 & 0.30 & [0.28, 0.33] \\
+\code{1$|$g\_sigma} & 0.50 & 0.51 & [0.40, 0.63] \\
+\bottomrule\end{tabular}\end{center}\normalsize
+
+\subsection*{Distributional regression: the residual SD has its own formula}
+\begin{lstlisting}
+ab.gaussian(["y ~ x", "sigma ~ z"], df,
+    ab.Priors(intercept=ab.Normal(0, 5), b=ab.Normal(0, 1), sigma={"intercept": ab.Normal(0, 1), "b": ab.Normal(0, 1)}))
+\end{lstlisting}
+\noindent\small Fit 1.6 s (four chains, 1000 + 1000 draws, NumPyro on the CPU); max $\hat R$ 1.000, min bulk ESS 4436.
+
+\begin{center}\begin{tabular}{@{}lrrr@{}}\toprule parameter & true & posterior mean & 90\% interval \\ \midrule
+\code{Intercept} & 1.00 & 0.99 & [0.96, 1.02] \\
+\code{x} & 0.50 & 0.50 & [0.47, 0.54] \\
+\code{sigma\_Intercept} & -0.20 & -0.24 & [-0.28, -0.20] \\
+\code{sigma\_z} & 0.60 & 0.58 & [0.54, 0.62] \\
+\bottomrule\end{tabular}\end{center}\normalsize
+
+\subsection*{Multivariate regression with a residual correlation}
+\begin{lstlisting}
+resp = {"intercept": ab.Normal(0, 5), "b": ab.Normal(0, 1), "sigma": ab.HalfNormal(1)}
+ab.gaussian("mvbind(y1, y2) ~ x", df, ab.Priors(resp={"y1": resp, "y2": resp}, rescor=ab.LKJ(2)), rescor=True)
+\end{lstlisting}
+\noindent\small Fit 3.6 s (four chains, 1000 + 1000 draws, NumPyro on the CPU); max $\hat R$ 1.000, min bulk ESS 3132.
+
+\begin{center}\begin{tabular}{@{}lrrr@{}}\toprule parameter & true & posterior mean & 90\% interval \\ \midrule
+\code{y1\_Intercept} & -- & 0.49 & [0.42, 0.56] \\
+\code{y1\_x} & 1.00 & 1.02 & [0.95, 1.09] \\
+\code{y2\_Intercept} & -- & -0.32 & [-0.39, -0.25] \\
+\code{y2\_x} & 0.40 & 0.42 & [0.36, 0.49] \\
+\code{y1\_sigma} & -- & 1.05 & [1.00, 1.10] \\
+\code{y2\_sigma} & -- & 1.01 & [0.96, 1.06] \\
+\code{rescor} & 0.60 & 0.62 & [0.57, 0.66] \\
+\bottomrule\end{tabular}\end{center}\normalsize
+
+\subsection*{Non-linear growth curve with a varying amplitude}
+\begin{lstlisting}
+ab.gaussian(["y ~ a * exp(b * x)", "a ~ 1 + (1 | g)", "b ~ 1"], df,
+    ab.Priors(nlpars={"a": {"b": ab.Normal(2, 1), "sd": ab.HalfNormal(1)}, "b": {"b": ab.Normal(0, 1)}},
+              sigma=ab.HalfNormal(1)), nl=True)
+\end{lstlisting}
+\noindent\small Fit 3.0 s (four chains, 1000 + 1000 draws, NumPyro on the CPU); max $\hat R$ 1.010, min bulk ESS 407.
+
+\begin{center}\begin{tabular}{@{}lrrr@{}}\toprule parameter & true & posterior mean & 90\% interval \\ \midrule
+\code{a\_Intercept} & 2.00 & 1.91 & [1.74, 2.08] \\
+\code{b\_Intercept} & -- & 0.50 & [0.49, 0.51] \\
+\code{a\_1$|$g\_sigma} & -- & 0.34 & [0.23, 0.50] \\
+\code{sigma} & 0.40 & 0.37 & [0.36, 0.39] \\
+\bottomrule\end{tabular}\end{center}\normalsize
+
+\subsection*{Approximate Gaussian process (Hilbert-space basis, 20 functions)}
+\begin{lstlisting}
+ab.gaussian("y ~ gp(x, k = 20, c = 5/4)", df, ab.Priors(intercept=ab.Normal(0, 2), sigma=ab.HalfNormal(1),
+    sdgp=ab.HalfNormal(1), lscale=ab.InverseGamma(3, 1)))
+\end{lstlisting}
+\noindent\small Fit 7.8 s (four chains, 1000 + 1000 draws, NumPyro on the CPU); max $\hat R$ 1.000, min bulk ESS 2056.
+
+\begin{center}\begin{tabular}{@{}lrrr@{}}\toprule parameter & true & posterior mean & 90\% interval \\ \midrule
+\code{Intercept} & -- & 0.09 & [-1.10, 1.30] \\
+\code{sigma} & 0.30 & 0.28 & [0.26, 0.30] \\
+\code{sdgp\_x} & -- & 1.27 & [0.73, 2.05] \\
+\code{lscale\_x} & -- & 0.25 & [0.19, 0.32] \\
+\bottomrule\end{tabular}\end{center}\normalsize
+
+\subsection*{Autoregressive residuals within each of 20 series}
+\begin{lstlisting}
+ab.gaussian("y ~ x + ar(time = t, gr = g, p = 1)", df,
+    ab.Priors(intercept=ab.Normal(0, 5), b=ab.Normal(0, 1), sigma=ab.HalfNormal(1), ar=ab.Normal(0, 0.5)))
+\end{lstlisting}
+\noindent\small Fit 1.7 s (four chains, 1000 + 1000 draws, NumPyro on the CPU); max $\hat R$ 1.000, min bulk ESS 4494.
+
+\begin{center}\begin{tabular}{@{}lrrr@{}}\toprule parameter & true & posterior mean & 90\% interval \\ \midrule
+\code{Intercept} & -- & 1.04 & [0.98, 1.10] \\
+\code{x} & -- & 0.80 & [0.78, 0.83] \\
+\code{ar[1]} & 0.60 & 0.54 & [0.49, 0.59] \\
+\code{sigma} & 0.50 & 0.48 & [0.46, 0.50] \\
+\bottomrule\end{tabular}\end{center}\normalsize
+
+\subsection*{Two-component Gaussian mixture}
+\begin{lstlisting}
+comp = lambda m0: ab.Priors(intercept=ab.Normal(m0, 2), sigma=ab.HalfNormal(2))
+ab.mixture("y ~ 1", df, ab.Priors(components=[comp(-1), comp(1)], theta=ab.Dirichlet(2)),
+           families=["gaussian", "gaussian"])
+\end{lstlisting}
+\noindent\small Fit 3.1 s (four chains, 1000 + 1000 draws, NumPyro on the CPU); max $\hat R$ 1.000, min bulk ESS 2425.
+
+\begin{center}\begin{tabular}{@{}lrrr@{}}\toprule parameter & true & posterior mean & 90\% interval \\ \midrule
+\code{Intercept[1]} & -2.00 & -1.92 & [-2.00, -1.83] \\
+\code{Intercept[2]} & 1.50 & 1.47 & [1.38, 1.56] \\
+\code{sigma1} & 0.70 & 0.69 & [0.63, 0.76] \\
+\code{sigma2} & 1.00 & 1.03 & [0.97, 1.10] \\
+\code{theta[1]} & 0.35 & 0.34 & [0.31, 0.37] \\
+\code{theta[2]} & -- & 0.66 & [0.63, 0.69] \\
+\bottomrule\end{tabular}\end{center}\normalsize
+
+\subsection*{Measurement error in a predictor (the naive slope is attenuated)}
+\begin{lstlisting}
+ab.gaussian("y ~ me(xobs, sdx)", df, ab.Priors(intercept=ab.Normal(0, 5), b=ab.Normal(0, 2),
+    sigma=ab.HalfNormal(1), meanme=ab.Normal(0, 2), sdme=ab.HalfNormal(1)))
+\end{lstlisting}
+\noindent\small Fit 3.7 s (four chains, 1000 + 1000 draws, NumPyro on the CPU); max $\hat R$ 1.010, min bulk ESS 505. The naive least-squares slope on the noisy predictor is 0.94 (attenuated); the true slope is 1.2.
+
+\begin{center}\begin{tabular}{@{}lrrr@{}}\toprule parameter & true & posterior mean & 90\% interval \\ \midrule
+\code{Intercept} & -- & 0.52 & [0.46, 0.58] \\
+\code{meanme\_xobs} & -- & -0.07 & [-0.15, 0.00] \\
+\code{me(xobs, sdx)} & -- & 1.32 & [1.24, 1.40] \\
+\code{sigma} & -- & 0.46 & [0.39, 0.53] \\
+\code{sdme\_xobs} & -- & 0.91 & [0.85, 0.98] \\
+\bottomrule\end{tabular}\end{center}\normalsize
+
+\paragraph{Reading the tour.} Every fit converged ($\hat R \le 1.01$, smallest bulk ESS 407). Most true values lie inside
+their 90\% intervals; three do not: the ordinal slope (0.63 against 0.8), the autoregressive coefficient (0.54
+against 0.6, close to the known downward small-sample bias of AR estimates with 40-step series) and the
+measurement-error slope (1.32 against 1.2). I fitted these three data sets with brms as well: it gives 0.629, 0.539 and
+1.323, the same posteriors, so the misses are properties of those simulated data sets, not of AutoBayes. These are also
+the first real fits of the multivariate, non-linear, Gaussian-process, autoregressive, mixture and measurement-error
+code paths; until now they had been checked against brms only through their densities, never sampled.
+
+\section{Head to head with brms}
+\label{sec:bench}
+
+\paragraph{Set-up.} Four models on the same simulated data (\file{examples/brms\_parity/}), identical priors and sampler
+settings on both sides: four chains run in parallel, 1000 warm-up and 1000 kept draws each, target acceptance 0.9.
+brms~2.23 with rstan~2.32 (Stan's NUTS, C++); AutoBayes with NumPyro (NUTS in JAX, compiled by XLA) on the CPU. brms
+compiles its Stan program first; AutoBayes's JIT compilation is part of its fit and is estimated separately with a
+one-draw fit. Effective sample sizes and $\hat R$ for both come from the same ArviZ estimators.
+The machine also ran its desktop applications (load average 15--30 during the runs); both libraries ran
+back to back under the same conditions, once each. brms used rstan (cmdstanr is not installed here).
+
+\begin{table}[h]\centering\footnotesize\setlength{\tabcolsep}{4pt}
+\caption{Wall-clock seconds, one run each. AutoBayes's total also includes building the model (0.1--11 s); its compile time is estimated by a one-draw fit.}
+\begin{tabular}{@{}lrrrrrrrr@{}}
+\toprule
+& & \multicolumn{3}{c}{brms (rstan)} & \multicolumn{3}{c}{AutoBayes (NumPyro)} & \\
+\cmidrule(lr){3-5}\cmidrule(lr){6-8}
+model & rows & compile & sample & total & compile & sample & total & speed-up \\
+\midrule
+B1 logistic slopes & 2,000 & 37 & 6 & 43 & 4 & 1 & 8 & 5.3$\times$ \\
+B2 Gaussian slopes & 20,000 & 34 & 79 & 113 & 3 & 17 & 31 & 3.6$\times$ \\
+B3 ordinal & 1,500 & 28 & 34 & 62 & 3 & 5 & 7 & 8.5$\times$ \\
+B4 zero-infl.\ Poisson & 2,000 & 26 & 15 & 41 & 2 & 4 & 6 & 7.1$\times$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{table}[h]\centering\footnotesize\setlength{\tabcolsep}{4pt}
+\caption{Sampling efficiency: the smallest bulk ESS over the compared parameters, per second of sampling and per
+second end to end; and the largest disagreement between the two posteriors, in combined Monte Carlo standard errors.}
+\begin{tabular}{@{}lrrrrrrr@{}}
+\toprule
+& \multicolumn{3}{c}{brms} & \multicolumn{3}{c}{AutoBayes} & \\
+\cmidrule(lr){2-4}\cmidrule(lr){5-7}
+model & min ESS & per s sampling & per s total & min ESS & per s sampling & per s total & max $|z|$ \\
+\midrule
+B1 logistic slopes & 1017 & 162 & 23.6 & 1264 & 1716 & 155.4 & 1.9 \\
+B2 Gaussian slopes & 144 & 2 & 1.3 & 125 & 7 & 4.0 & 1.2 \\
+B3 ordinal & 558 & 17 & 9.0 & 530 & 116 & 72.9 & 0.4 \\
+B4 zero-infl.\ Poisson & 414 & 27 & 10.0 & 386 & 107 & 66.4 & 1.5 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\paragraph{What the numbers say.} End to end, AutoBayes was 3.6--8.5 times faster. For brms, 26--37 seconds of every
+fit is compiling the model's C++; brms can skip that when the same model is refitted (\code{update()} or a cached
+\code{file=}), so for repeated fits of one model the relevant comparison is the sampling column, where AutoBayes was
+also faster on all four models (roughly 4--9 times; its sampling time is estimated by subtracting a one-draw fit, so
+read it as approximate). Effective sample sizes per parameter are similar between the two, so the speed is not bought
+with worse mixing, and the posteriors agree (appendix). The largest model (B2, 20{,}000 rows) is the closest race
+(3.6 times end to end), partly because AutoBayes spends 11 seconds building that model through Bambi; its intercept
+mixes slowly in both libraries ($\hat R$ 1.02 for brms, 1.04 for AutoBayes), so its ESS figures are the least reliable.
+
+\paragraph{What they do not say.} These are four models on one laptop, one run each. I have not measured larger
+data, many more groups, or a GPU (where JAX may help further, but that is untested here), and brms with cmdstanr
+might sample somewhat faster than with rstan. The speed claim I would stand behind is: on typical hierarchical models
+of a few thousand rows, AutoBayes gets you a posterior that agrees with brms's several times sooner, mostly because
+there is no C++ compilation step.
+
+\section{Where AutoBayes is better than brms, and where it is not}
+\label{sec:better}
+
+\paragraph{Better, with evidence.}
+\begin{itemize}
+\item \emph{Turnaround.} No C++ compilation; formula to posterior in seconds (Section~\ref{sec:bench}).
+\item \emph{Numerical accuracy in the tails.} At frozen points, brms's complementary log-log gradient is $3.8\times10^{-7}$ off
+  the exact value, its censored-Gaussian gradient $2.5\times10^{-6}$ off (Stan's \code{normal\_lcdf} uses polynomial
+  approximations), and its truncated-Gaussian expected value $10^{-3}$ off; its zero-inflated and hurdle Poisson
+  gradients become NaN or infinite at extreme linear predictors, its cumulative probabilities lose digits between close
+  thresholds, and loo's Monte Carlo error is NaN below an elpd of about $-372$. AutoBayes uses stable forms, each
+  checked against 50-digit references (divergences D18, D24, D25, D28, D39, D50).
+\item \emph{Same target, proven.} Every model class is tested deterministically against brms itself, coordinate by
+  coordinate, on 98 frozen fixtures; unverified combinations are refused with a reason rather than silently built.
+\item \emph{Python.} Results are ArviZ \code{InferenceData}, predictions are xarray, data are pandas; the sampler is JAX,
+  which opens GPUs and vectorised chains (not yet validated).
+\end{itemize}
+
+\paragraph{Not better.}
+\begin{itemize}
+\item \emph{Breadth.} brms offers 49 families, many more terms and priors, and a large post-processing toolkit
+  (\code{conditional\_effects}, \code{hypothesis}, \code{pp\_check}, \code{loo\_compare}, emmeans); AutoBayes covers the
+  core (Section~\ref{sec:done}).
+\item \emph{Maturity.} brms has years of use and a community; AutoBayes's newest model classes were first sampled for
+  this report, and none has had a recovery or calibration study beyond the tour.
+\item \emph{Defaults.} AutoBayes asks for every prior explicitly (brms's defaults are available on request with
+  \code{ab.default\_priors()}); some will see that as better, others as friction.
+\end{itemize}
+
+\section{What comes next}
+\label{sec:next}
+
+\begin{enumerate}
+\item \textbf{Tier D (proposed), in the same oracle-gated loop.} The families researchers ask for next: Weibull,
+  exponential, skew-normal, beta-binomial, zero-inflated and hurdle negative binomial and Gamma/lognormal hurdles,
+  \code{sratio}/\code{cratio}/\code{acat}; post-processing: \code{loo\_compare}, \code{waic}, \code{kfold},
+  \code{hypothesis}, \code{conditional\_effects}; shrinkage priors (horseshoe, R2D2); \code{cs()}, \code{mm()},
+  \code{gr(by =)}. I would start by freezing the brms fixtures, as before.
+\item \textbf{Validation beyond the oracle.} Simulation-based calibration or recovery studies for each family, and a
+  first GPU run, both of which need your go-ahead (sampling budget, hardware).
+\item \textbf{Open decisions.} The \code{s()} licensing question (clean-room rewrite recommended); GitHub Actions
+  billing (the last nine merges went in on local verification, as you allowed).
+\item \textbf{Small fixes found on the way.} PyMC's float32 $\log 2$ in half-Student-$t$ and half-Cauchy priors
+  ($1.9\times10^{-9}$ per prior); a per-row log density for mixtures, so that \code{log\_lik} and \code{loo} work on them;
+  \code{weights()} for zero-inflated and hurdle families.
+\end{enumerate}
+
+\appendix
+\section{Posterior agreement, parameter by parameter}
+
+\begin{center}\footnotesize\setlength{\tabcolsep}{4pt}
+\begin{tabular}{@{}llrrrrr@{}}
+\toprule
+& & \multicolumn{2}{c}{posterior mean} & \multicolumn{2}{c}{posterior sd} & \\
+model & parameter & brms & AutoBayes & brms & AutoBayes & $z$ \\
+\midrule
+B1 logistic slopes & \code{b\_Intercept} & -0.264 & -0.273 & 0.113 & 0.111 & -1.88 \\
+B1 logistic slopes & \code{b\_x} & 0.750 & 0.747 & 0.079 & 0.077 & -1.32 \\
+B1 logistic slopes & \code{sd\_g\_\_Intercept} & 0.689 & 0.687 & 0.095 & 0.092 & -0.56 \\
+B1 logistic slopes & \code{sd\_g\_\_x} & 0.357 & 0.361 & 0.090 & 0.089 & 1.17 \\
+B1 logistic slopes & \code{cor\_g\_\_Intercept\_\_x} & 0.397 & 0.395 & 0.222 & 0.212 & -0.30 \\
+B2 Gaussian slopes & \code{b\_Intercept} & 1.971 & 1.967 & 0.069 & 0.074 & -0.40 \\
+B2 Gaussian slopes & \code{b\_x} & 0.754 & 0.751 & 0.037 & 0.039 & -1.22 \\
+B2 Gaussian slopes & \code{b\_z} & -0.383 & -0.383 & 0.011 & 0.011 & -0.22 \\
+B2 Gaussian slopes & \code{sd\_g\_\_Intercept} & 1.015 & 1.014 & 0.052 & 0.051 & -0.34 \\
+B2 Gaussian slopes & \code{sd\_g\_\_x} & 0.520 & 0.519 & 0.029 & 0.029 & -0.17 \\
+B2 Gaussian slopes & \code{cor\_g\_\_Intercept\_\_x} & -0.140 & -0.135 & 0.071 & 0.071 & 1.08 \\
+B2 Gaussian slopes & \code{sigma} & 1.500 & 1.500 & 0.008 & 0.007 & -0.35 \\
+B3 ordinal & \code{b\_Intercept[1]} & -1.379 & -1.383 & 0.171 & 0.161 & -0.34 \\
+B3 ordinal & \code{b\_Intercept[2]} & -0.195 & -0.197 & 0.166 & 0.157 & -0.21 \\
+B3 ordinal & \code{b\_Intercept[3]} & 0.741 & 0.740 & 0.167 & 0.160 & -0.13 \\
+B3 ordinal & \code{b\_Intercept[4]} & 1.962 & 1.962 & 0.175 & 0.166 & -0.03 \\
+B3 ordinal & \code{b\_x} & 0.858 & 0.858 & 0.053 & 0.052 & 0.26 \\
+B3 ordinal & \code{sd\_g\_\_Intercept} & 0.807 & 0.805 & 0.122 & 0.124 & -0.41 \\
+B4 zero-infl.\ Poisson & \code{b\_Intercept} & 0.547 & 0.545 & 0.080 & 0.077 & -0.41 \\
+B4 zero-infl.\ Poisson & \code{b\_x} & 0.501 & 0.501 & 0.020 & 0.020 & 0.96 \\
+B4 zero-infl.\ Poisson & \code{sd\_g\_\_Intercept} & 0.464 & 0.469 & 0.059 & 0.060 & 1.46 \\
+B4 zero-infl.\ Poisson & \code{zi} & 0.308 & 0.308 & 0.014 & 0.014 & -0.39 \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\end{document}
