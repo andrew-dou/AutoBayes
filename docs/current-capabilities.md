@@ -171,3 +171,11 @@ responses jointly. Verified against `gauss_mv_rescor`, `gauss_mv_norescor` and `
 offset, correlated slopes per response under brms's shared `cor` prior); a formula per response, `mi()`, `mo()`, `(1 |ID| g)`
 across responses, other families and a missing `rescor` are refused (D56-D58; names D59); see
 [multivariate models](multivariate.md).
+
+Gaussian processes (C03, brms's `gp()`): `gp(x)`, the exact process of one numeric column, and `gp(x, k = K, c = C)`, its
+Hilbert-space approximation with `K` basis functions, both with the squared-exponential kernel and brms's scaling of the input,
+add the process's value at each row's input to the linear predictor, under `Priors(sdgp=..., lscale=...)` keyed by column (brms's
+defaults, including the inverse-gamma `lscale` tuned to the inputs, from `ab.default_priors()`); for every family but the
+categorical one, verified against `gauss_gp_exact` and `gauss_gp_approx`; several covariates, `by`, other kernels, `iso`,
+`gr = FALSE`, `scale = FALSE` and `gp()` in interactions, group-level or distributional formulas are refused (D64), an exact GP
+predicts at fitted inputs only (D65) and an approximate one inside its boundary (D66); see [Gaussian processes](gaussian-processes.md).

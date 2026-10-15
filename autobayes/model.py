@@ -22,7 +22,9 @@ offered for the Gaussian family (accepted against two references since P6). The 
 ``["y ~ x + (1 | g)", "sigma ~ z"]``, and Bambi builds the parameter as a distributional component under a log link
 (``Design.dpars`` holds its design, ``Model.dpar_names`` its PyMC names). A finite mixture of Gaussian components (C05,
 docs/mixtures.md; ``ab.mixture(..., families=[...])``) has one linear predictor per component with ordered intercepts, a
-``sigma<k>`` per component and the mixing proportions ``theta`` (``autobayes/families/mixture.py``).
+``sigma<k>`` per component and the mixing proportions ``theta`` (``autobayes/families/mixture.py``). A Gaussian process ``gp(x)`` or ``gp(x, k = 10, c =
+5/4)`` (C03, docs/gaussian-processes.md) is added to the parent's linear predictor while Bambi builds the model, as a
+monotonic term is (``Design.gp`` holds its inputs, ``Model.gp_names`` its PyMC names).
 """
 from __future__ import annotations
 
@@ -94,6 +96,21 @@ class MonotonicBlock:
 
 
 @dataclass(frozen=True)
+class GPBlock:
+    """The block of one Gaussian process ``gp(x)`` (C03, docs/gaussian-processes.md): ``index`` is each fitted row's 0-based
+    position among the distinct inputs (brms's ``Jgp`` less 1), ``inputs`` the distinct inputs scaled by ``dmax``, in the order
+    they first appear (brms's ``Xgp_prior``, and the exact GP's ``Xgp``), ``basis`` the approximate GP's ``(N, k)`` basis at
+    them (brms's ``Xgp``; None for the exact GP) and ``slambda`` its frequencies (brms's ``slambda``). The term adds
+    ``f[index]`` to the linear predictor, ``f`` the process's values at the distinct inputs."""
+    term: str
+    column: str
+    index: np.ndarray
+    inputs: np.ndarray
+    basis: np.ndarray | None = None
+    slambda: np.ndarray | None = None
+
+
+@dataclass(frozen=True)
 class Design:
     """What the model was actually fit to. All arrays are dense NumPy."""
 
@@ -115,6 +132,7 @@ class Design:
     ub: np.ndarray | None = None
     dpars: Mapping[str, DparDesign] = field(default_factory=lambda: MappingProxyType({}))   # each distributional parameter's own design, by brms name (B01)
     monotonic: Mapping[str, MonotonicBlock] = field(default_factory=lambda: MappingProxyType({}))   # each monotonic term's block, by column (B03)
+    gp: Mapping[str, GPBlock] = field(default_factory=lambda: MappingProxyType({}))   # each Gaussian process's block, by column (C03)
 
     def __post_init__(self):
         if not self.columns:
@@ -364,6 +382,9 @@ class Model:
         if self.spec.mo_terms:                               # brms's mo() (B03): added to the parent's linear predictor at build
             from autobayes.likelihoods import monotonic_family
             bambi_family = monotonic_family(bambi_family, self._add_monotonic_effects)
+        if self.spec.gp_terms:                               # brms's gp() (C03): added the same way, through the same hook
+            from autobayes.likelihoods import monotonic_family as linear_predictor_family
+            bambi_family = linear_predictor_family(bambi_family, self._add_gp_effects)
         self.bambi_model = bmb.Model(
             bambi_formula, self.data, family=bambi_family,
             priors=bambi_priors,
@@ -419,6 +440,7 @@ class Model:
         dpar_coefficients = [v for roles in self.dpar_names.values() for k, v in roles.items() if k != "value"]   # B01
         variable_names += dpar_coefficients
         variable_names += [roles["simplex"] for roles in self.mo_names.values()]   # each monotonic term's simplex (B03)
+        variable_names += [roles[k] for roles in self.gp_names.values() for k in ("sdgp", "lscale", "zgp")]   # each GP's (C03)
         # Bambi's default result cleaning drops every posterior variable ending in _offset.
         retained = list(self.spec.terms) + [roles["group_effect"] for roles in self.group_coefficient_names.values()] + dpar_coefficients
         if any(name.endswith("_offset") for name in retained):
@@ -428,6 +450,7 @@ class Model:
         coords += [f"{t.name}_dim" for t in self.spec.pop_terms if t.is_vector]
         coords += [f"{self.dpar_names[d.response][f'b:{t.name}']}_dim" for d in self.spec.dpars for t in d.pop_terms if t.is_vector]
         coords += [roles["coordinate"] for roles in self.mo_names.values()]
+        coords += [roles["coordinate"] for roles in self.gp_names.values()]       # C03
         coords += ["__obs__"]
         names = variable_names + coords
         duplicates = sorted({n for n in names if names.count(n) > 1})
@@ -656,7 +679,7 @@ class Model:
                       columns=self.spec.columns, categoricals=self.spec.categoricals, offset=offset,
                       weights=additions.get("weights"), cens=additions.get("cens"), lb=additions.get("lb"), ub=additions.get("ub"),
                       dpars=MappingProxyType({d.response: self._dpar_design(d) for d in self.spec.dpars}),
-                      monotonic=MappingProxyType(self._monotonic_design()))
+                      monotonic=MappingProxyType(self._monotonic_design()), gp=MappingProxyType(self._gp_design()))
 
     def _dpar_design(self, d: ModelSpec) -> DparDesign:
         """The design of distributional parameter ``d.response``'s formula (B01), as Bambi built its distributional
@@ -769,6 +792,85 @@ class Model:
                 raise RuntimeError(f"the graph's {parent!r} does not move by D * sum(simplex[:Xmo]) per row with the coefficient of "
                                    f"{block.term!r}; largest difference {np.max(np.abs(moved - expected)) if moved.shape == expected.shape else moved.shape}")
 
+    # -- Gaussian processes (C03) --------------------------------------------------------
+    def _add_gp_effects(self, eta):
+        """brms's Gaussian processes, built inside the model Bambi is building (through the same ``transform_backend_eta`` hook
+        as the monotonic terms, before the link): for each process its marginal SD ``sdgp`` and length-scale ``lscale`` under
+        their priors (sampled on their logs) and its standardised values ``zgp``, and ``eta`` plus the process's values at
+        each row's input, ``f[index]`` (``autobayes.gaussian_process``: the exact GP's ``chol(K + 1e-12 I) zgp``, or the
+        Hilbert-space basis times ``sqrt(S) * zgp``)."""
+        import pymc as pm
+
+        from autobayes.gaussian_process import approximate_effect, exact_effect, positive_rv
+
+        model = pm.modelcontext(None)
+        sdgp, lscale = self.priors.sdgp_priors(self.spec), self.priors.lscale_priors(self.spec)
+        for g in self.spec.gp_terms:
+            roles = self.gp_names[g.column]
+            model.add_coord(roles["coordinate"], [str(j) for j in range(1, g.size + 1)])
+            s, l = positive_rv(roles["sdgp"], sdgp[g.column]), positive_rv(roles["lscale"], lscale[g.column])
+            z = pm.Normal(roles["zgp"], mu=np.float64(0.0), sigma=np.float64(1.0), shape=(g.size,), dims=roles["coordinate"])
+            if g.approximate:
+                f = approximate_effect(g.basis(pd.Series(g.inputs)), g.slambda, s, l, z)
+            else:
+                f = exact_effect(g.scaled_inputs, s, l, z)
+            eta = eta + f[g.index(self.data[g.column])]
+        return eta
+
+    def _gp_design(self) -> dict[str, GPBlock]:
+        """The block of each Gaussian process (C03), checked against the graph: ``sdgp`` and ``lscale`` free scalars sampled on
+        their logs, ``zgp`` a free vector of the process's size with the coordinate ``"1"``..``"N"``, and the process's
+        contribution to the parent's linear predictor recomputed from the data (``_check_gp_effects``). Empty without one."""
+        pmm, blocks = self.pymc_model, {}
+        for g in self.spec.gp_terms:
+            roles = self.gp_names[g.column]
+            for key in ("sdgp", "lscale"):
+                rv = pmm[roles[key]]
+                if rv not in pmm.free_RVs or rv.type.ndim != 0 or pmm.rvs_to_values[rv].name != f"{roles[key]}_log__":
+                    raise RuntimeError(f"{roles[key]!r} is not a free positive scalar of the graph sampled on its log")
+            z = pmm[roles["zgp"]]
+            if (z not in pmm.free_RVs or tuple(z.type.shape) != (g.size,) or pmm.rvs_to_values[z].name != roles["zgp"]
+                    or tuple(pmm.named_vars_to_dims.get(roles["zgp"], ())) != (roles["coordinate"],)
+                    or tuple(str(v) for v in pmm.coords[roles["coordinate"]]) != tuple(str(j) for j in range(1, g.size + 1))):
+                raise RuntimeError(f"{roles['zgp']!r} is not a free vector of {g.size} entries with the coordinate {roles['coordinate']!r}")
+            blocks[g.column] = GPBlock(g.term, g.column, g.index(self.data[g.column]), g.scaled_inputs,
+                                       g.basis(pd.Series(g.inputs)) if g.approximate else None, g.slambda if g.approximate else None)
+        if blocks:
+            self._check_gp_effects(blocks)
+        return blocks
+
+    def _check_gp_effects(self, blocks) -> None:
+        """Each Gaussian process's contribution, read off the graph: with every process at ``sdgp = 1``, ``lscale`` at the
+        smallest distance between its scaled inputs (exact; a well-conditioned covariance) or 0.3 (approximate) and ``zgp = 0``,
+        and every other variable at the graph's initial point, the parent's linear predictor (on Bambi's link scale) must move,
+        row by row, by exactly the process's values at a fixed ``zgp``, recomputed from the data
+        (``gaussian_process.exact_values`` / ``approximate_values``), when its ``zgp`` goes from 0 to that vector."""
+        from autobayes.gaussian_process import approximate_values, exact_values, smallest_distance
+
+        pmm, parent = self.pymc_model, self.family_spec.parent
+        link = self.bambi_model.family.link[parent].name
+        if link not in ("identity", "log"):
+            raise RuntimeError(f"Bambi's link of {parent!r} is {link}; the Gaussian processes are checked under the identity and log links")
+        fn = pmm.compile_fn(pmm.replace_rvs_by_values([pmm[parent]]), inputs=pmm.value_vars, point_fn=True,
+                            on_unused_input="ignore", mode="FAST_COMPILE")
+        at0, scales = pmm.initial_point(), {}
+        for column, block in blocks.items():
+            g, roles = self.spec.gp(column), self.gp_names[column]
+            scales[column] = 0.3 if g.approximate else smallest_distance(block.inputs)
+            at0.update({f"{roles['sdgp']}_log__": np.asarray(0.0), f"{roles['lscale']}_log__": np.asarray(np.log(scales[column])),
+                        roles["zgp"]: np.zeros(g.size)})
+        for column, block in blocks.items():
+            g, roles, lscale = self.spec.gp(column), self.gp_names[column], scales[column]
+            test = np.cos(np.arange(1.0, g.size + 1.0))
+            lo, hi = (np.asarray(fn(p)[0], dtype=float).ravel() for p in (at0, {**at0, roles["zgp"]: test}))
+            moved = hi - lo if link == "identity" else np.log(hi) - np.log(lo)
+            f = (approximate_values(block.basis, block.slambda, 1.0, lscale, test) if g.approximate
+                 else exact_values(block.inputs, 1.0, lscale, test))
+            expected = f[block.index]
+            if moved.shape != expected.shape or not np.allclose(moved, expected, rtol=1e-10, atol=1e-10):
+                raise RuntimeError(f"the graph's {parent!r} does not move by the values of {block.term!r} at its rows' inputs; largest "
+                                   f"difference {np.max(np.abs(moved - expected)) if moved.shape == expected.shape else moved.shape}")
+
     # -- naming ------------------------------------------------------------------------
     @property
     def link(self) -> str:
@@ -808,6 +910,7 @@ class Model:
             "y": self.spec.response if self.spec.trials is None else f"p({self.spec.response}, {self.spec.trials})",
             **{f"b:{t.name}": t.name for t in self.spec.pop_terms},
             **{f"simo:{column}": roles["simplex"] for column, roles in self.mo_names.items()},   # B03
+            **{f"{key}:{column}": roles[key] for column, roles in self.gp_names.items() for key in ("sdgp", "lscale", "zgp")},   # C03
         }
         if fam.scale_parameter is not None:
             out[fam.scale_parameter] = fam.bambi_scale_parameter
@@ -847,6 +950,16 @@ class Model:
         a monotonic term."""
         return {t.operands[0]: {"b": t.name, "simplex": f"simo_{t.operands[0]}", "coordinate": f"simo_{t.operands[0]}_dim"}
                 for t in self.spec.mo_terms}
+
+    @property
+    def gp_names(self) -> dict[str, dict[str, str]]:
+        """PyMC names of each Gaussian process ``gp(x)`` (C03), by its column in formula order: ``"sdgp"`` its marginal SD
+        (brms's ``sdgp``; ``sdgp_x``, sampled as ``sdgp_x_log__``), ``"lscale"`` its length-scale on the scaled input (brms's
+        ``lscale``; ``lscale_x``, sampled as ``lscale_x_log__``), ``"zgp"`` its standardised values (brms's ``zgp``; ``zgp_x``,
+        one per distinct input of the exact GP or per basis function of the approximate one) and ``"coordinate"`` their
+        dimension (``zgp_x_dim``, coordinates ``"1"``..``"N"``); also ``names["sdgp:x"]`` and so on. Empty without one."""
+        return {g.column: {"sdgp": f"sdgp_{g.column}", "lscale": f"lscale_{g.column}", "zgp": f"zgp_{g.column}",
+                           "coordinate": f"zgp_{g.column}_dim"} for g in self.spec.gp_terms}
 
     @property
     def dpar_names(self) -> dict[str, dict[str, str]]:
@@ -918,7 +1031,8 @@ class Model:
 
     def value_point(self, *, intercept: float | None = None, b, sd=None, z=None, L=None, sigma=None,
                     shape=None, phi=None, nu: float | None = None,
-                    zi: float | None = None, hu: float | None = None, bsp=None, simo=None, theta=None) -> dict[str, np.ndarray]:
+                    zi: float | None = None, hu: float | None = None, bsp=None, simo=None, theta=None,
+                    sdgp=None, lscale=None, zgp=None) -> dict[str, np.ndarray]:
         """A point in PyMC's sampled (value) space, from natural-scale quantities.
 
         ``intercept`` is the *model* intercept (at the predictor means when centred),
@@ -950,7 +1064,11 @@ class Model:
         bare value), required exactly when the model has one. A mixture (C05, docs/mixtures.md) takes ``intercept`` (the K
         components' centred intercepts, strictly increasing, on Stan's ordered coordinates), ``b`` of shape ``(columns, K)``,
         ``sigma`` (K residual SDs) and ``theta`` (the mixing proportions, a simplex of K, on Stan's stick-breaking
-        coordinates); ``theta`` applies to a mixture only.
+        coordinates); ``theta`` applies to a mixture only. A Gaussian process ``gp(x)`` (C03) takes ``sdgp`` and ``lscale``
+        (positive scalars, stored as their logs) and ``zgp`` (its standardised values, one per distinct input of the exact GP
+        or per basis function of the approximate one, in brms's order), each keyed by the process's column,
+        ``sdgp={"x": 0.8}``, ``lscale={"x": 0.3}``, ``zgp={"x": array(N)}`` (a single Gaussian process also accepts bare values),
+        required exactly when the model has one.
         """
         if self.family_spec.mixture:                          # C05: the components' parameters and theta
             from autobayes.families.mixture import value_point
@@ -1095,6 +1213,7 @@ class Model:
             point[term.name] = np.array(b[i:i + k]) if term.levels else np.asarray(b[i])
             i += k
         point.update(self._monotonic_point(bsp, simo))       # B03: each monotonic term's coefficient and simplex
+        point.update(self._gp_point(sdgp, lscale, zgp))      # C03: each Gaussian process's sdgp, lscale and zgp
         expected = {v.name for v in self.pymc_model.value_vars}
         if set(point) != expected:
             raise RuntimeError(f"value names {sorted(point)} do not match PyMC's {sorted(expected)}")
@@ -1132,6 +1251,43 @@ class Model:
                 raise ValueError(f"bsp for {m.term!r} must be a finite scalar")
             point[roles["b"]] = value
             point[f"{roles['simplex']}_stickbreaking__"] = stick_breaking_free(check_simplex(simplexes[c], m.D, f"simo for {m.term!r}"))
+        return point
+
+    def _gp_point(self, sdgp, lscale, zgp) -> dict[str, np.ndarray]:
+        """``value_point``'s entries of the Gaussian processes (C03): ``sdgp`` and ``lscale`` on their logs and ``zgp`` as given,
+        each keyed by column (a single Gaussian process also takes bare values)."""
+        roles_by = self.gp_names
+        if not roles_by:
+            if sdgp is not None or lscale is not None or zgp is not None:
+                raise ValueError("this model has no Gaussian process gp(x); sdgp, lscale and zgp do not apply")
+            return {}
+        columns = list(roles_by)
+        if sdgp is None or lscale is None or zgp is None:
+            raise ValueError(f"sdgp, lscale and zgp are required for the Gaussian processes {[self.spec.gp(c).term for c in columns]}, "
+                             f"keyed by column {columns}")
+
+        def by_column(value, label):
+            if isinstance(value, Mapping):
+                if set(value) != set(columns):
+                    raise ValueError(f"{label} must cover exactly the columns of the Gaussian processes {columns}; got {list(value)}")
+                return {c: value[c] for c in columns}
+            if len(columns) != 1:
+                raise ValueError(f"{label} requires an exact-key mapping over the Gaussian processes' columns {columns}")
+            return {columns[0]: value}
+
+        sds, scales, zs, point = by_column(sdgp, "sdgp"), by_column(lscale, "lscale"), by_column(zgp, "zgp"), {}
+        for c, roles in roles_by.items():
+            g = self.spec.gp(c)
+            for label, given in (("sdgp", sds[c]), ("lscale", scales[c])):
+                value = np.asarray(given, dtype=float)
+                if value.shape != () or not np.isfinite(value) or value <= 0:
+                    raise ValueError(f"{label} for {g.term!r} must be a finite positive scalar")
+                point[f"{roles[label]}_log__"] = np.asarray(np.log(value))
+            z = np.asarray(zs[c], dtype=float)
+            if z.shape != (g.size,) or not np.isfinite(z).all():
+                what = "distinct input" if not g.approximate else "basis function"
+                raise ValueError(f"zgp for {g.term!r} must have {g.size} finite entries, one per {what}")
+            point[roles["zgp"]] = z
         return point
 
     def _dpar_point(self, name: str, value) -> dict[str, np.ndarray]:
@@ -1196,6 +1352,7 @@ class Model:
                             if self.dropped_rows else ""))
         features = ((["categorical predictor(s)"] if s.categoricals else []) + (["interaction(s)"] if s.interactions else [])
                     + (["in-formula transform(s)"] if s.transform_terms else []) + (["monotonic effect(s)"] if s.mo_terms else [])
+                    + (["Gaussian process(es)"] if s.gp_terms else [])
                     + (["independent varying slope(s)"] if any(t.slopes and not t.has_correlation for t in s.group_terms) else [])
                     + (["correlated varying slope(s)"] if s.correlated_terms else []) + (["offset"] if s.offset is not None else [])
                     + (["derived grouping factor(s)"] if any(t.derived for t in s.group_terms) else [])
@@ -1233,6 +1390,13 @@ class Model:
                       f"whole numbers {m.minimum}..{m.maximum} coded as the value minus {m.minimum}, 0..{m.D}")
             lines += [f"  {t.name:<10}: monotonic effect of {m.column!r} (brms mo()): {coding} (brms's Xmo), D = {m.D} steps (brms's "
                       f"Jmo); recomputed from {m.column!r} on new rows, where a value outside the fitted coding is refused"]
+        for g in s.gp_terms:                                 # C03: each Gaussian process's inputs and scaling
+            kind = "approximate (Hilbert-space) Gaussian process" if g.approximate else "exact Gaussian process"
+            basis = (f"; k = {g.k} basis functions on [-L, L], L = c = {g.L:g}, of the scaled input less the mean of its distinct values, "
+                     f"{g.cmean:.6g}" if g.approximate else "")
+            lines += [f"  {f'gp({g.column})':<10}: {kind} of {g.column!r} (brms {g.term}), squared-exponential kernel; {len(g.inputs)} "
+                      f"distinct inputs from {min(g.inputs):g} to {max(g.inputs):g}, scaled by dmax = {g.dmax:g}, their largest "
+                      f"distance, so that it is 1 (brms's scale = TRUE){basis}"]
         for g, block in d.group_designs.items():
             lines += [f"  {'levels    ' if len(s.groups) == 1 else 'levels ' + g}: {', '.join(f'{j}={l}' for j, l in enumerate(block.levels))}"]
         for t in s.group_terms:
@@ -1253,7 +1417,7 @@ class Model:
                 + (f"; unused declared categories {list(cat.unused)}" if cat.unused else ""),
                 f"              proportions among fitted rows: {props}",
             ]
-        rest = (" + offset_i" if s.offset is not None else "") + "".join(
+        rest = "".join(f" + gp({g.column})_i" for g in s.gp_terms) + (" + offset_i" if s.offset is not None else "") + "".join(
             f" + {effect(t.factor)}[{t.factor}_i]" + "".join(f" + x_{c},i * {slope_effect(t.factor, c)}[{t.factor}_i]" for c in t.slopes)
             for t in s.group_terms)
         if fam.thresholds:                                    # B05: no intercept in mu, the thresholds take its place
@@ -1270,6 +1434,7 @@ class Model:
             lines += [f"  offset_i = {per_row}: the offset term, a known quantity added to every row's {lp}_i; "
                       "it has no coefficient and no prior and is not centred."]
         lines += self._monotonic_lines(lp)
+        lines += self._gp_lines(lp)
         scale = fam.scale_phrase
         same_group = " (same group)" if len(s.groups) == 1 else (" (same group effects)" if s.groups else "")
         for cat in s.categoricals:
@@ -1431,6 +1596,16 @@ class Model:
                 lines += [f"  b_{t.name} ~ {describe_prior(coef[t.name])}   (brms's bsp_{brms}: class b, coefficient {brms})",
                           f"  {self.mo_names[m.column]['simplex']} ~ {describe_prior(simplexes[m.column])}   (brms class simo, "
                           f"coefficient {brms}1; concentrations {con})"]
+        if s.gp_terms:                                       # each Gaussian process's marginal SD and length-scale (C03)
+            from autobayes.default_priors import brms_rename
+
+            sdgp, lscale = pr.sdgp_priors(s), pr.lscale_priors(s)
+            for g in s.gp_terms:
+                roles, brms = self.gp_names[g.column], brms_rename(f"gp({g.column})")
+                lines += [f"  {roles['sdgp']} ~ {describe_prior(sdgp[g.column], lb=0)}   (brms class sdgp, coefficient {brms})",
+                          f"  {roles['lscale']} ~ {describe_prior(lscale[g.column], lb=0)}   (brms class lscale, coefficient {brms}; "
+                          "on the scaled input)",
+                          f"  {roles['zgp']}[j] ~ Normal(0, 1)   (brms's zgp)"]
         if fam.per_category:
             lines += [f"  (one prior per class, the same for every non-reference category k = {', '.join(self.categories[1:])})"]
         for (g, c), prior in pr.sd_priors(s).items():
@@ -1453,6 +1628,10 @@ class Model:
                       "  the response on the link scale rounded to one decimal as its location (minus the mean offset; 0 under a logit or",
                       "  probit link) and max(2.5, its MAD rounded to one decimal) as its scale, which sd and sigma share; a flat prior is",
                       "  improper: it adds nothing to the log density, and prior_predictive() is refused."]
+            if any(label.startswith(("sdgp:", "lscale:")) for label in self.default_prior_labels):
+                lines += ["  A Gaussian process's sdgp shares that scale too; its lscale is the inverse gamma with 1% of its mass below the",
+                          "  smallest distance between distinct scaled inputs (at least 0.01) and 1% above the largest (1), its parameters",
+                          "  rounded to 6 decimals, or brms's half-normal normal(0, 0.5) when the process has two distinct inputs."]
         for w in self.warnings:
             lines += ["", "WARNING: " + w]
         lines += ["", "PyMC variables sampled (value space)"]
@@ -1491,6 +1670,12 @@ class Model:
             roles[mo["b"]] = f"b_{t.name}, the monotonic term's coefficient (brms's bsp)"
             roles[f"{mo['simplex']}_stickbreaking__"] = (f"{mo['simplex']}[1..{D}] on Stan's stick-breaking simplex coordinates ({D - 1} "
                                                          f"entries; brms's simo); dims {mo['coordinate']}")
+        for g in s.gp_terms:                                 # C03: each Gaussian process's SD, length-scale and standardised values
+            gn = self.gp_names[g.column]
+            roles[f"{gn['sdgp']}_log__"] = f"log({gn['sdgp']}), the marginal SD of gp({g.column}) (brms's sdgp)"
+            roles[f"{gn['lscale']}_log__"] = f"log({gn['lscale']}), the length-scale of gp({g.column}) on the scaled input (brms's lscale)"
+            roles[gn["zgp"]] = (f"{gn['zgp']}[1..{g.size}], the standardised values of gp({g.column}), one per "
+                                f"{'basis function' if g.approximate else 'distinct input'} (brms's zgp); dims {gn['coordinate']}")
         for t in s.pop_terms:
             if t.is_vector:
                 shown = ", ".join(f"({l})" for l in t.levels) if len(t.categorical) == 2 else ", ".join(t.levels)   # cells read (l, m)
@@ -1521,6 +1706,35 @@ class Model:
                     f"is the average change of {lp} per step, {D} * b_{t.name} the change from {m.lowest} to {m.highest}, and {lp} is "
                     f"monotonic in {c} whatever the sign of b_{t.name}.",
                     f"  {t.name} is not centred (brms does not centre it either): the intercept refers to rows at {c} = {m.lowest}."]
+        return out
+
+    def _gp_lines(self, lp: str) -> list[str]:
+        """``describe()``'s paragraph of the Gaussian processes (C03): each process written out (the exact GP's covariance and
+        Cholesky factor, or the approximate GP's basis and spectral density), what ``sdgp`` and ``lscale`` mean, and what new
+        rows take."""
+        out = []
+        for g in self.spec.gp_terms:
+            c, roles = g.column, self.gp_names[g.column]
+            sd, ls, z = roles["sdgp"], roles["lscale"], roles["zgp"]
+            if g.approximate:
+                out += [f"  gp({c})_i = sum_j phi_j(u_i) sqrt(S(w_j)) {z}[j], j = 1..{g.k}, with u_i = {c}_i / {g.dmax:g} - {g.cmean:.6g} the "
+                        f"scaled, centred input, phi_j(u) = sin(pi j (u + L) / (2 L)) / sqrt(L) the Laplacian's eigenfunctions on [-L, L], "
+                        f"L = {g.L:g}, w_j = pi j / (2 L) (brms's slambda), S(w) = {sd}^2 sqrt(2 pi) {ls} exp(-{ls}^2 w^2 / 2) the "
+                        f"kernel's spectral density and {z}[j] ~ Normal(0, 1): the Hilbert-space approximation of the Gaussian process "
+                        "(Solin and Sarkka 2020; Riutort-Mayol et al. 2023), brms's gp(x, k, c)."]
+                lo, hi = (g.cmean - g.L) * g.dmax, (g.cmean + g.L) * g.dmax
+                new = (f"  New rows: the basis at their inputs, which must lie inside the boundary, {c} in ({lo:.6g}, {hi:.6g}); "
+                       "beyond it the approximation does not hold and the input is refused (divergence D66).")
+            else:
+                out += [f"  gp({c})_i = f(u_i), u_i = {c}_i / {g.dmax:g} the scaled input: at the {len(g.inputs)} distinct scaled inputs, in "
+                        f"the order they first appear (brms's order), f = chol(K + 1e-12 I) {z}, K[j, m] = {sd}^2 exp(-(u_j - u_m)^2 / "
+                        f"(2 {ls}^2)), {z}[j] ~ Normal(0, 1): brms's exact Gaussian process, non-centred, with 1e-12 added to the "
+                        "diagonal of its covariance."]
+                new = (f"  New rows take the process's value at a fitted input of {c}; any other input is refused (brms draws one from "
+                       "the conditional normal, divergence D65; the approximate GP gp(x, k = ...) predicts anywhere inside its boundary).")
+            out += [f"  {sd} is the process's marginal SD (the SD of gp({c})_i, on the scale of {lp}); {ls} its length-scale on the "
+                    f"scaled input: inputs {ls} * {g.dmax:g} apart in {c} are correlated exp(-1/2) = 0.61. gp({c}) is not centred: the "
+                    "intercept is not its mean over the rows.", new]
         return out
 
     def _dpar_lines(self, ds: ModelSpec) -> list[str]:
@@ -1589,6 +1803,8 @@ class Model:
         found += [(f"sd:{sd_tag(g, c)}", v) for (g, c), v in pr.sd_priors(s).items()]
         found += [(f"cor:{g}", v) for g, v in pr.cor_priors(s).items()]
         found += [(f"simo:{c}", v) for c, v in pr.simo_priors(s).items()]          # a monotonic term's simplex (B03)
+        found += [(f"sdgp:{c}", v) for c, v in pr.sdgp_priors(s).items()]          # a Gaussian process's SD and length-scale (C03)
+        found += [(f"lscale:{c}", v) for c, v in pr.lscale_priors(s).items()]
         if fam.scale_parameter in s.dpar_names:              # its own formula's priors (B01)
             ds, sub = s.dpar(fam.scale_parameter), pr.dpar_priors(s, fam.scale_parameter)
             found += [(f"{ds.response}:intercept", sub.intercept)] if ds.intercept else []

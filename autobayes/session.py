@@ -80,6 +80,7 @@ def _summary_rows(model, idata) -> dict:
     names += [roles["simplex"] for roles in getattr(model, "mo_names", {}).values()]   # each monotonic term's simplex (B03)
     mixture = getattr(model, "mixture_names", {})               # a mixture's sigma<k> and theta (C05)
     names += [*mixture["sigma"], mixture["theta"]] if mixture else []
+    names += [roles[k] for roles in getattr(model, "gp_names", {}).values() for k in ("sdgp", "lscale")]   # each GP's (C03)
     zero = family_of(model).zero_parameter                      # the zero-inflation / hurdle probability (B06)
     names += [n[zero]] if zero is not None else []
     s = az.summary(idata, var_names=names, hdi_prob=0.94, round_to="none")
@@ -159,6 +160,8 @@ def fit_record(model, fit, *, panel: dict | None = None, max_treedepth: int = 10
                        **{f"sd:{sd_tag(g, c)}": str(prior) for (g, c), prior in sd_priors.items() if c != "Intercept"},
                        **{f"cor:{g}": str(prior) for g, prior in cor_priors.items()},
                        **{f"simo:{c}": str(prior) for c, prior in pr.simo_priors(s).items()},
+                       **{f"sdgp:{c}": str(prior) for c, prior in pr.sdgp_priors(s).items()},       # C03
+                       **{f"lscale:{c}": str(prior) for c, prior in pr.lscale_priors(s).items()},
                        **(_scale_priors(model) if fam.scale_parameter is not None else {}),
                        **({fam.zero_parameter: str(getattr(pr, fam.zero_parameter))} if fam.zero_parameter is not None else {}),
                        **({"nu": str(pr.nu)} if pr.nu is not None else {}),
@@ -185,6 +188,11 @@ def fit_record(model, fit, *, panel: dict | None = None, max_treedepth: int = 10
                                        "values": [s.monotonic(t.operands[0]).lowest, s.monotonic(t.operands[0]).highest],
                                        "D": s.monotonic(t.operands[0]).D, "names": model.mo_names[t.operands[0]]}
                                for t in s.mo_terms}} if s.mo_terms else {}),
+            # each Gaussian process (C03): its column, exact or approximate, its scaling and PyMC names
+            **({"gaussian_processes": {g.term: {"column": g.column, "approximate": g.approximate, "k": g.k, "c": g.c,
+                                                "distinct_inputs": len(g.inputs), "dmax": g.dmax, "cmean": g.cmean,
+                                                "names": model.gp_names[g.column]}
+                                       for g in s.gp_terms}} if getattr(s, "gp_terms", ()) else {}),
             "interactions": [list(pair) for pair in s.interactions],
             "canonical_formula": s.canonical_formula,
             "categorical": {c.name: {"reference": c.reference, "levels": list(c.levels),

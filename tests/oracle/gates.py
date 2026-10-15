@@ -4,7 +4,9 @@ Each raises `OracleMismatch` naming the point and the quantities that differ; a 
 G1 `check_design`        standata equals the model's design, response, trials, offsets, group coding and addition-term
                          data (weights, cens, lb, ub; B02), each distributional formula's X_<dpar> (B01), each
                          monotonic term's codes, number of steps and Dirichlet concentrations (Xmo_k, Jmo, con_simo_k; B03),
-                         and a mixture's component designs X_mu<k> and theta's concentrations (con_theta; C05)
+                         and a mixture's component designs X_mu<k> and theta's concentrations (con_theta; C05),
+                         and each Gaussian process's row index, inputs or basis and scaling (Jgp_k, Xgp_k, Xgp_prior_k,
+                         dmax_k, cmeans_k; an approximate GP's slambda_k, Lgp_k, NBgp_k; C03)
 G2 `check_logp`          log density with and without the Jacobian, and its prior part, at every point
 G2 `check_gradient`      every gradient coordinate, mapped through the probed parameter table
 G3 `check_derived`       the graph's linear predictor, group effects and correlation matrices, and the raw-scale intercept
@@ -53,7 +55,9 @@ def prior_names(model) -> list[str]:
     parameter with its own formula (B01), that formula's intercept and coefficients (brms's ``Intercept_sigma``, ``b_sigma``);
     the simplex of every monotonic term (``dirichlet_lpdf(simo_k | con_simo_k)``; its coefficient is among the terms, B03);
     a mixture's ``sigma<k>`` and its mixing proportions (``dirichlet_lpdf(theta | con_theta)``; its ordered intercepts are the
-    intercept, each component's density as brms adds it, C05)."""
+    intercept, each component's density as brms adds it, C05);
+    the marginal SD and length-scale of every Gaussian process (not its standardised ``zgp``, which brms adds in the model
+    block, C03)."""
     if adapter.is_multivariate(model):                       # C01: each response's, under its names, and the residual correlation's
         return [model.variable(r, name) for r, sub in model.submodels.items() for name in prior_names(sub)] + (["Lrescor"] if model.rescor else [])
     names = model.names
@@ -75,6 +79,7 @@ def prior_names(model) -> list[str]:
     out += [roles["simplex"] for roles in model.mo_names.values()]
     mixture = getattr(model, "mixture_names", {})          # C05: each component's sigma<k> and theta
     out += [*mixture["sigma"], mixture["theta"]] if mixture else []
+    out += [roles[key] for roles in getattr(model, "gp_names", {}).values() for key in ("sdgp", "lscale")]   # C03
     return out
 
 
@@ -204,6 +209,16 @@ def check_design(b: Bundle) -> None:
         theirs = np.atleast_1d(sd[f"con_simo_{k}"])
         if theirs.shape != con.shape or abs_err(theirs, con) > DESIGN_ABS:
             raise OracleMismatch(f"brms con_simo_{k} is {theirs!r}; the prior of {block.term!r} gives {con!r}")
+    for column, k in (b.cmap.gp or {}).items():                 # C03: Jgp_k and Xgp_k were matched by content; the scaling
+        g, block = b.model.spec.gp(column), d.gp[column]         # and the approximate GP's boundary and frequencies here
+        mine = {f"dmax_{k}": np.float64(g.dmax), f"cmeans_{k}": np.float64(g.cmean), f"Xgp_prior_{k}": block.inputs[:, None]}
+        if g.approximate:
+            mine.update({f"Lgp_{k}": np.float64(g.L), f"NBgp_{k}": np.float64(g.k), f"slambda_{k}": block.slambda[:, None]})
+        elif any(f"{key}_{k}" in sd for key in ("Lgp", "NBgp", "slambda")):
+            raise OracleMismatch(f"brms's Gaussian process {k} is approximate (Lgp_{k}, NBgp_{k}); {g.term!r} is exact")
+        for key, value in mine.items():
+            if key not in sd or np.shape(sd[key]) != np.shape(value) or abs_err(sd[key], value) > DESIGN_ABS:
+                raise OracleMismatch(f"Gaussian process {g.term!r}: brms {key} is {sd.get(key)!r}; AutoBayes has {value!r}")
     # the design columns (every formula's), the group partitions and the monotonic codes were matched by content when the
     # maps were built
     adapter.match_columns(b.fixture, b.model)
@@ -403,6 +418,8 @@ def check_default_prior(b: Bundle) -> None:
         expected.add("b")                                  # a design column or a monotonic term's coefficient (B03)
     if b.model.spec.mo_terms:                              # a monotonic term's simplex (B03)
         expected.add("simo")
+    if getattr(b.model.spec, "gp_terms", ()):              # a Gaussian process's marginal SD and length-scale (C03)
+        expected |= {"sdgp", "lscale"}
     if b.model.spec.groups:
         expected.add("sd")
     if b.model.correlation_names:                          # a correlated group term's LKJ prior (A02)

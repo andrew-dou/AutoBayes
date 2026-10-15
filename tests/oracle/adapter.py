@@ -48,10 +48,16 @@ the fixture as brms's univariate model of one response (`X_y` as `X`, `b_y` as `
 `groups[*].resp`), which the matching above applies to with that response's own model (`MultivariateModel.submodels`); the
 names it maps to are the response's in the multivariate graph (`y_Intercept`). The residual correlation `Lrescor` is mapped
 as `L_m` is: Stan's `cholesky_corr` coordinates recomputed from `Lrescor` at every point and checked against `u`.
+
+A Gaussian process `gp(x)` (C03) is brms's GP `k`: its row index `Jgp_k` and its `Xgp_k` (the distinct scaled inputs of an
+exact GP, the basis at them of an approximate one, `NBgp_k` basis functions) are matched by content to the model's
+`Design.gp` (`match_gp`, on `ColumnMap.gp`), which fixes the order of `zgp_k`; `sdgp_k` and `lscale_k` (one each: one
+covariate, no `by`) map to `sdgp_x_log__` and `lscale_x_log__`, `zgp_k` to `zgp_x`.
 """
 from __future__ import annotations
 
 import math
+import re
 from dataclasses import dataclass, replace
 from functools import cached_property
 
@@ -103,7 +109,8 @@ def priors_from_spec(spec: dict) -> ab.Priors:
                      zi=_prior(spec.get("zi")), hu=_prior(spec.get("hu")), simo=_prior(spec.get("simo")),
                      # C05: a mixture's priors, one spec of this form per component, and theta's Dirichlet
                      components=[priors_from_spec(c) for c in spec["components"]] if "components" in spec else None,
-                     theta=_prior(spec.get("theta")))
+                     theta=_prior(spec.get("theta")),
+                     sdgp=_prior(spec.get("sdgp")), lscale=_prior(spec.get("lscale")))   # C03: {column: [...]} or one prior
 
 
 def build_model(case: dict, data: pd.DataFrame) -> ab.Model:
@@ -139,6 +146,7 @@ class ColumnMap:
     distributional: dict = None           # B01: the column map of each auxiliary parameter's own formula (X_sigma), by name
     monotonic: dict = None                # B03: brms's special-term number k (Xmo_k, bsp[k], simo_k) of each monotonic term, by column
     mixture: bool = False                 # C05: dpars are a mixture's components (brms's mu<k>), not a categorical model's categories
+    gp: dict = None                       # C03: brms's GP number k (Xgp_k, sdgp_k, lscale_k, zgp_k) of each Gaussian process, by column
 
     def b_index(self, x_col: int) -> int:
         """Index into brms's ``b`` of design column ``x_col``."""
@@ -209,7 +217,7 @@ def match_columns(fixture: Fixture, model: ab.Model) -> ColumnMap:
         return match_mixture(fixture, model)
     if not fam.per_category:
         cmap = _with_distributional(fixture, model, _match_design(fixture, model, thresholds=fam.thresholds))
-        return replace(cmap, monotonic=match_monotonic(fixture, model))
+        return replace(cmap, monotonic=match_monotonic(fixture, model), gp=match_gp(fixture, model))
     # B05, the categorical family: one brms design per non-reference category, each matched like X; all must map alike
     from autobayes.default_priors import brms_dpar_names
 
@@ -273,6 +281,42 @@ def match_monotonic(fixture: Fixture, model: ab.Model) -> dict[str, int]:
                                  f"{block.D} steps (Xmo_k, Jmo[k])")
         out[column] = hits[0]
         used.add(hits[0])
+    return out
+
+
+def match_gp(fixture: Fixture, model: ab.Model) -> dict[str, int]:
+    """brms's GP number ``k`` of each Gaussian process ``gp(x)`` (C03), by the process's column: the one whose ``Jgp_k`` is the
+    process's row index (1-based) row by row and whose ``Xgp_k`` is its distinct scaled inputs, in order (an exact GP, without
+    ``NBgp_k``) or its basis at them (an approximate GP, ``NBgp_k`` basis functions), within ``DESIGN_ABS``; ``Kgp_k`` and
+    ``Dgp_k`` must be 1 (one covariate, no ``by``) and ``Nsubgp_k`` the number of distinct inputs. brms's Gaussian processes
+    without an AutoBayes counterpart, and the reverse, are a mismatch. The content match fixes the order of the distinct
+    inputs, which is the order of ``zgp_k`` (and, for the exact GP, what its Cholesky factor is)."""
+    sd, blocks = fixture.standata, model.design.gp
+    brms = sorted(int(m.group(1)) for m in (re.fullmatch(r"Xgp_(\d+)", key) for key in sd) if m)
+    if len(brms) != len(blocks):
+        raise OracleMismatch(f"brms has {len(brms)} Gaussian processes (Xgp_{brms}); the AutoBayes model has {len(blocks)}")
+    out, used = {}, set()
+    for column, block in blocks.items():
+        g = model.spec.gp(column)
+
+        def carries(k):
+            X, J = sd[f"Xgp_{k}"], sd.get(f"Jgp_{k}")
+            if J is None or J.shape != block.index.shape or abs_err(J, block.index + 1) > DESIGN_ABS:
+                return False
+            if g.approximate:
+                return (f"NBgp_{k}" in sd and int(sd[f"NBgp_{k}"]) == g.k and X.shape == block.basis.shape
+                        and abs_err(X, block.basis) <= DESIGN_ABS)
+            return f"NBgp_{k}" not in sd and X.shape == (block.inputs.size, 1) and abs_err(X[:, 0], block.inputs) <= DESIGN_ABS
+        hits = [k for k in brms if k not in used and carries(k)]
+        if len(hits) != 1:
+            raise OracleMismatch(f"Gaussian process {g.term!r}: {len(hits)} brms Gaussian processes carry its row index and its "
+                                 f"{'basis' if g.approximate else 'distinct scaled inputs'} (Jgp_k, Xgp_k) within {DESIGN_ABS}")
+        k = hits[0]
+        for name, want in ((f"Kgp_{k}", 1), (f"Dgp_{k}", 1), (f"Nsubgp_{k}", block.inputs.size)):
+            if name not in sd or int(sd[name]) != want:
+                raise OracleMismatch(f"Gaussian process {g.term!r}: brms {name} is {sd.get(name)!r}, expected {want}")
+        out[column] = k
+        used.add(k)
     return out
 
 
@@ -497,8 +541,13 @@ def natural_point(model: ab.Model, point: Point, cmap: ColumnMap, gmap: GroupMap
     if cmap.mixture:                                       # C05: brms's sigma<k> and the mixing proportions theta
         sigma = np.array([float(pars[name]) for name in model.mixture_names["sigma"]])
         theta = np.atleast_1d(pars["theta"]).astype(float)
+    sdgp = lscale = zgp = None
+    if cmap.gp:                                            # C03: brms's sdgp_k, lscale_k and zgp_k of each Gaussian process
+        sdgp = {c: float(np.ravel(pars[f"sdgp_{k}"])[0]) for c, k in cmap.gp.items()}
+        lscale = {c: float(np.ravel(pars[f"lscale_{k}"])[0]) for c, k in cmap.gp.items()}
+        zgp = {c: np.ravel(pars[f"zgp_{k}"]).astype(float) for c, k in cmap.gp.items()}
     return dict(intercept=intercept, b=b, sd=sd or None, z=z or None, L=L or None, sigma=sigma, shape=shape, phi=phi, nu=nu,
-                zi=zi, hu=hu, bsp=bsp, simo=simo, theta=theta)
+                zi=zi, hu=hu, bsp=bsp, simo=simo, theta=theta, sdgp=sdgp, lscale=lscale, zgp=zgp)
 
 
 def value_point(model: ab.Model, point: Point, cmap: ColumnMap, gmap: GroupMap) -> dict:
@@ -539,6 +588,7 @@ def coordinate_map(fixture: Fixture, model: ab.Model, cmap: ColumnMap, gmap: Gro
     others = len(cmap.dpars)
     simplex_coordinates = _simplex_coordinates(fixture, model, cmap)       # B03: the coordinates the probe could not reach
     by_k = {k: c for c, k in (cmap.monotonic or {}).items()}               # B03: brms's special-term number -> column
+    by_gp = {k: c for c, k in (cmap.gp or {}).items()}                     # C03: brms's GP number -> column
     out = []
     for e in fixture.upars:
         idx, transform = int(e["index"]) - 1, e["transform"]
@@ -665,6 +715,14 @@ def coordinate_map(fixture: Fixture, model: ab.Model, cmap: ColumnMap, gmap: Gro
                         f"point {q}: Stan's cholesky_corr coordinate {k} of {par} is {u[k] if k < u.size else 'absent'!r}; "
                         f"brms's unconstrained value is {pt_.u[idx]!r}")
             target, expect = (f"{model.correlation_names[g]['L']}_cholesky_corr__", k), "other"
+        elif (gp := re.fullmatch(r"(sdgp|lscale|zgp)_(\d+)", par)) and int(gp.group(2)) in by_gp:   # C03: a Gaussian process's
+            roles = model.gp_names[by_gp[int(gp.group(2))]]
+            if gp.group(1) == "zgp":                           # zgp_k in the order of the distinct inputs or basis functions
+                target, expect = (roles["zgp"], elem), "identity"
+            elif elem != 0:
+                raise OracleMismatch(f"{par}[{elem + 1}]: brms has several {gp.group(1)} for one Gaussian process; AutoBayes has one")
+            else:                                              # sdgp_k, lscale_k: real<lower=0>, sampled on the log scale
+                target, expect = (f"{roles[gp.group(1)]}_log__", 0), "log"
         else:
             raise OracleMismatch(f"no adapter for brms parameter {par!r} ({fixture.declarations.get(par, 'undeclared')})")
         if transform != expect:
@@ -755,6 +813,13 @@ def draws(fixture: Fixture, model: ab.Model, cmap: ColumnMap, gmap: GroupMap) ->
         data[roles["b"]] = (("chain", "draw"), np.array([float(np.atleast_1d(p.pars["bsp"])[k - 1]) for p in pts])[None, :])
         data[roles["simplex"]] = (("chain", "draw", roles["coordinate"]), np.stack([np.atleast_1d(p.pars[f"simo_{k}"]) for p in pts])[None])
         coords[roles["coordinate"]] = [str(j) for j in range(1, model.design.monotonic[column].D + 1)]
+    for column, k in (cmap.gp or {}).items():                   # C03: each Gaussian process's sdgp_k, lscale_k and zgp_k
+        roles = model.gp_names[column]
+        for key in ("sdgp", "lscale"):
+            data[roles[key]] = (("chain", "draw"), np.array([float(np.ravel(p.pars[f"{key}_{k}"])[0]) for p in pts])[None, :])
+        zs = np.stack([np.ravel(p.pars[f"zgp_{k}"]).astype(float) for p in pts])
+        data[roles["zgp"]] = (("chain", "draw", roles["coordinate"]), zs[None])
+        coords[roles["coordinate"]] = [str(j) for j in range(1, zs.shape[1] + 1)]
     for term in (t.name for t in model.spec.bambi_terms):       # the terms with design columns (a monotonic term has none)
         positions = [(c, j) for c, (_, t, j) in enumerate(model.coefficients) if t == term]
         if model.spec.is_vector_term(term):

@@ -11,7 +11,8 @@ Supported formulas combine numeric and declared categorical predictors,
 numeric-by-categorical interactions, intercept controls, and optional multiple
 independent varying-intercept factors with independent or correlated varying slopes, and a formula of its own for the
 auxiliary parameter (``["y ~ x", "sigma ~ z"]``: sigma, shape or phi under a log link), and brms's monotonic effects
-``mo(x)`` of ordinal predictors with a Dirichlet prior on their simplex. Explicit priors are required;
+``mo(x)`` of ordinal predictors with a Dirichlet prior on their simplex, and brms's Gaussian processes ``gp(x)`` (exact) and
+``gp(x, k = 10, c = 5/4)`` (Hilbert-space approximation) of one numeric column. Explicit priors are required;
 brms's own defaults are available explicitly with ``default_priors(formula, data, ...)``.
 
 See docs/current-capabilities.md for supported composition, test entry points,

@@ -1038,11 +1038,26 @@
    "depends_on": [
     "B04_splines"
    ],
-   "status": "fixtures_frozen",
+   "status": "gates_green",
    "summary": "gp() terms",
    "pr": null,
    "attempts": 0,
-   "gates": {},
+   "gates": {
+    "sha": "3a6a924031ad",
+    "dirty_tree": false,
+    "base": "parity/c01-multivariate",
+    "when": "2026-10-11T22:19Z",
+    "results": {
+     "immutability": {
+      "status": "pass",
+      "seconds": 0.0
+     },
+     "oracle": {
+      "status": "pass",
+      "seconds": 730.2
+     }
+    }
+   },
    "divergences": [],
    "next_action": "implementation awaits Andrew's Tier C go-ahead at the Tier B boundary",
    "fixtures": {

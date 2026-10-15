@@ -46,6 +46,7 @@ from autobayes.priors import PriorError, Priors, describe_prior
 _MVBIND_FORMULA_RE = re.compile(r"^\s*mvbind\s*\(([^()]*)\)\s*([^~]*?)\s*~\s*(.*?)\s*$", re.S)   # mvbind(<responses>) <rest> ~ <rhs>
 _MI_RE = re.compile(r"(?<![A-Za-z0-9_.])mi\s*\(")                                                 # brms's mi() (C06)
 _MO_RE = re.compile(r"(?<![A-Za-z0-9_.])mo\s*\(")                                                 # brms's mo() (B03)
+_GP_RE = re.compile(r"(?<![A-Za-z0-9_.])gp\s*\(")                                                 # brms's gp() (C03)
 RESPONSE_DIM, RESPONSE_DIM_T = "__resp__", "__resp_T__"     # the graph's response coordinates (Lrescor, rescor, the joint response)
 PREDICTION_DIM = "response"                                 # predict()'s response dimension, brms's last axis of its prediction arrays
 
@@ -138,6 +139,10 @@ def parse_multivariate(formula, data: pd.DataFrame | None = None, family: str = 
         if _MI_RE.search(piece):
             raise FormulaError(f"{formula!r}: {piece!r}: brms's mi() (missing values modelled by a response's own formula) is not "
                                "part of this slice (feature C06; docs/multivariate.md, divergence D56)")
+        if _GP_RE.search(piece):
+            raise FormulaError(f"{formula!r}: {piece!r}: a Gaussian process in a multivariate formula is not verified in this slice "
+                               "(each response would have its own process, brms's sdgp_y and lscale_y); write it in a univariate "
+                               "model (docs/multivariate.md, divergence D56)")
         if _MO_RE.search(piece):
             raise FormulaError(f"{formula!r}: {piece!r}: a monotonic term in a multivariate formula is not verified in this slice (each "
                                "response would have its own coefficient and simplex, brms's bsp_y and simo_y); write it in a "
