@@ -168,6 +168,10 @@ class FamilySpec:
     # under its PyMC name, as ``predict()`` puts them there); ``log_lik()`` multiplies it by the weights. The NumPy forms are in
     # ``families.pointwise``. None: ``log_lik()``, and so ``loo()``, are not offered for the family.
     log_likelihood: Callable[[object, object, object], object] | None = None
+    # brms's multivariate models (C01, docs/multivariate.md): whether ``mvbind(y, y2) ~ ...`` builds one model per response of
+    # this family over the same data, with or without a residual correlation (brms's set_rescor()); set where a frozen case
+    # verifies it.
+    multivariate: bool = False
 
     def with_link(self, link: str | None) -> "FamilySpec":
         """This family's spec under ``link``: this spec for ``None`` or its own link, the one a ``links`` entry builds

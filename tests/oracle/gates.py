@@ -21,12 +21,18 @@ C07 `check_post`         for a case that lists post-processing functions: `ab.lo
 A case that opts in to two-reference acceptance (P6, its gate field names a committed high-precision reference and the
 quantity kinds that may fall back on it: "gradient", "epred") has G2's gradient and G4's expected values checked by
 `two_reference`: brms where brms is accurate, the reference where it is not; every other check is unchanged.
+
+A multivariate model (C01) passes each gate response by response where the gate is about one response (G1's design, G3's
+linear predictor, group effects and raw-scale intercept, each response's view of the fixture, adapter.ResponseView) and as one
+model where it is about the joint density (G2, G5: one log density and gradient, the residual correlation's included; G3's
+rescor; G4: the predictions' response axis; G6: brms's table with every response's rows and rescor).
 """
 from __future__ import annotations
 
 import re
 from functools import cached_property
 from itertools import zip_longest
+from types import SimpleNamespace
 
 import numpy as np
 
@@ -48,6 +54,8 @@ def prior_names(model) -> list[str]:
     the simplex of every monotonic term (``dirichlet_lpdf(simo_k | con_simo_k)``; its coefficient is among the terms, B03);
     a mixture's ``sigma<k>`` and its mixing proportions (``dirichlet_lpdf(theta | con_theta)``; its ordered intercepts are the
     intercept, each component's density as brms adds it, C05)."""
+    if adapter.is_multivariate(model):                       # C01: each response's, under its names, and the residual correlation's
+        return [model.variable(r, name) for r, sub in model.submodels.items() for name in prior_names(sub)] + (["Lrescor"] if model.rescor else [])
     names = model.names
     out = [names["intercept"]] if model.spec.intercept else []
     out += list(model.spec.terms)
@@ -123,6 +131,8 @@ class Bundle:
 
 # -- G1 -----------------------------------------------------------------------------------------------------
 def check_design(b: Bundle) -> None:
+    if adapter.is_multivariate(b.model):                      # C01
+        return _check_design_multivariate(b)
     sd, d = b.fixture.standata, b.model.design
     if int(sd["N"]) != d.n:
         raise OracleMismatch(f"brms N = {int(sd['N'])}, AutoBayes n = {d.n}")
@@ -238,6 +248,8 @@ def check_gradient(b: Bundle) -> None:
 
 # -- G3 -----------------------------------------------------------------------------------------------------
 def check_derived(b: Bundle) -> None:
+    if adapter.is_multivariate(b.model):                      # C01
+        return _check_derived_multivariate(b)
     pmm, names, d = b.model.pymc_model, b.model.names, b.model.design
     groups = list(b.model.group_coefficient_names.items())          # every group-level coefficient: intercepts and slopes
     cors = list(b.model.correlation_names.items())                  # the correlation matrix of every correlated term (A02)
@@ -381,6 +393,8 @@ def default_prior_table(b: Bundle) -> list[dict[str, str]]:
 
 
 def check_default_prior(b: Bundle) -> None:
+    if adapter.is_multivariate(b.model):                      # C01
+        return _check_default_prior_multivariate(b)
     classes = {row["class"] for row in b.fixture.default_prior}
     expected = set()
     if b.model.spec.intercept and b.cmap.centred_intercept:
@@ -503,3 +517,107 @@ def check_post(b: Bundle) -> None:
             compare_post("loo n_eff", res.n_eff, fx.decode(ref["n_eff"]))
         else:
             raise OracleMismatch(f"no comparison for the post-processing function {name!r}")
+
+
+# -- multivariate models (C01) ------------------------------------------------------------------------------
+def _response_bundle(b: Bundle, response: str):
+    """One response of a multivariate model as the univariate gates see a bundle: its view of the fixture, its own model and
+    its maps."""
+    return SimpleNamespace(fixture=b.cmap.views[response], model=b.model.submodels[response], cmap=b.cmap.maps[response],
+                           gmap=b.gmap.maps[response])
+
+
+def _check_design_multivariate(b: Bundle) -> None:
+    """G1 of a multivariate model: brms's ``N``, ``nresp`` and ``nrescor`` (present exactly with a residual correlation), the
+    responses side by side (brms's ``Y_y``, ``Y_y2``, ... as the model's ``Y``), then every response's design, response and
+    group coding as G1 checks a univariate model's, on its view of the fixture."""
+    sd, m = b.fixture.standata, b.model
+    K = len(m.responses)
+    if int(sd["N"]) != m.design.n:
+        raise OracleMismatch(f"brms N = {int(sd['N'])}, AutoBayes n = {m.design.n}")
+    if m.rescor and (int(sd.get("nresp", -1)) != K or int(sd.get("nrescor", -1)) != K * (K - 1) // 2):
+        raise OracleMismatch(f"brms has nresp = {sd.get('nresp')}, nrescor = {sd.get('nrescor')}; AutoBayes has {K} correlated responses")
+    if not m.rescor and "nrescor" in sd:
+        raise OracleMismatch("brms has a residual correlation (nrescor) but the AutoBayes model has rescor=False")
+    err = abs_err(np.column_stack([sd[f"Y_{r}"] for r in m.responses]), m.design.Y)
+    if err > DESIGN_ABS:
+        raise OracleMismatch(f"the responses differ by {err}")
+    for r in m.responses:
+        try:
+            check_design(_response_bundle(b, r))
+        except OracleMismatch as e:
+            raise OracleMismatch(f"response {r!r}: {e}") from None
+
+
+def _check_derived_multivariate(b: Bundle) -> None:
+    """G3 of a multivariate model, on its graph: every response's linear predictor (brms's linpred on that response's slice),
+    group effects (``r_m_<resp>_c``) and correlation matrices (``Cor_m``), its raw-scale intercept (``b_<resp>_Intercept``),
+    and the residual correlation matrix ``rescor`` (brms's ``Rescor``)."""
+    m, pmm = b.model, b.model.pymc_model
+    wanted = []
+    for r, sub in m.submodels.items():
+        wanted += [m.variable(r, sub.names["linpred"])] + [m.variable(r, roles["group_effect"]) for roles in sub.group_coefficient_names.values()]
+        wanted += [m.variable(r, roles["cor"]) for roles in sub.correlation_names.values()]
+    wanted += ["rescor"] if m.rescor else []
+    fn = pmm.compile_fn(pmm.replace_rvs_by_values([pmm[v] for v in wanted]), inputs=pmm.value_vars, point_fn=True, on_unused_input="ignore")
+    ref = b.fixture.prediction("fitted", "linpred")
+    for k, p, vp in b.points():
+        out = dict(zip(wanted, fn(vp)))
+        nat = adapter.natural_point(m, p, b.cmap, b.gmap)["resp"]
+        for i, (r, sub) in enumerate(m.submodels.items()):
+            view, gmap = b.cmap.views[r], b.gmap.maps[r]
+            pars = view.point(p).pars
+            err = rel_err(np.asarray(out[m.variable(r, sub.names["linpred"])], dtype=float).ravel(), ref[k][:, i])
+            if err > PRED_REL:
+                raise OracleMismatch(f"point {k}: the graph's linear predictor of {r!r} differs from brms by {err}")
+            for (g, coef), roles in sub.group_coefficient_names.items():
+                mm, cn = gmap.brms_id[g], gmap.coef_cn[(g, coef)]
+                eff = np.asarray(out[m.variable(r, roles["group_effect"])], dtype=float).ravel()[gmap.level_of[g]]
+                err = rel_err(eff, np.atleast_1d(pars[f"r_{mm}_{cn}"]))
+                if err > PRED_REL:
+                    raise OracleMismatch(f"point {k}: group effects of {coef!r} of {g!r} for {r!r} differ from brms r_{mm}_{r}_{cn} by {err}")
+            for g, roles in sub.correlation_names.items():
+                mm, perm = gmap.brms_id[g], adapter.correlation_order(sub, gmap, g)
+                err = rel_err(np.asarray(out[m.variable(r, roles["cor"])], dtype=float), np.atleast_2d(pars[f"Cor_{mm}"])[np.ix_(perm, perm)])
+                if err > PRED_REL:
+                    raise OracleMismatch(f"point {k}: the correlation matrix of {g!r} for {r!r} differs from brms Cor_{mm} by {err}")
+            if "b_Intercept" in pars:
+                raw = nat[r]["intercept"] - float(sub.design.x_means @ nat[r]["b"])
+                err = rel_err(raw, float(pars["b_Intercept"]))
+                if err > PRED_REL:
+                    raise OracleMismatch(f"point {k}: raw-scale intercept of {r!r} {raw!r} vs brms b_{r}_Intercept {float(pars['b_Intercept'])!r}")
+        if m.rescor:
+            err = rel_err(np.asarray(out["rescor"], dtype=float), np.atleast_2d(p.pars["Rescor"]))
+            if err > PRED_REL:
+                raise OracleMismatch(f"point {k}: the residual correlation matrix differs from brms Rescor by {err}")
+
+
+def _check_default_prior_multivariate(b: Bundle) -> None:
+    """G6 of a multivariate model: brms's default-prior table has every response's classes under its ``resp`` (``Intercept``,
+    ``b``, ``sd``, the family's auxiliary parameter), a correlated term's ``cor`` and ``rescor`` without one, and
+    ``ab.default_priors()`` for the same formula, data, family and ``rescor``, written as brms's table, equals it row by row."""
+    m = b.model
+    rows = {(row.get("resp", ""), row["class"]) for row in b.fixture.default_prior}
+    expected = {("", "rescor")} if m.rescor else set()
+    for r, sub in m.submodels.items():
+        centred = b.cmap.maps[r].centred_intercept
+        expected |= {(r, "Intercept")} if sub.spec.intercept and centred else set()
+        expected |= {(r, "b")} if sub.spec.coefficient_labels or (sub.spec.intercept and not centred) else set()
+        expected |= {(r, "sd")} if sub.spec.groups else set()
+        expected |= {(r, sub.family_spec.scale_parameter)} if sub.family_spec.scale_parameter is not None else set()
+        expected |= {("", "cor")} if sub.correlation_names else set()
+    if not expected <= rows:
+        raise OracleMismatch(f"brms default_prior (resp, class) rows {sorted(rows)} lack {sorted(expected - rows)}")
+    if not b.fixture.prior_summary:
+        raise OracleMismatch("fixture has no prior_summary table")
+    ours, theirs = default_prior_table(b), b.fixture.default_prior
+
+    def key(row):
+        if row is None:
+            return None
+        return tuple(normalise_prior(row.get(k, "")) if k in ("prior", "lb", "ub") else row.get(k, "")
+                     for k in ("prior", "class", "coef", "group", "resp", "dpar", "nlpar", "lb", "ub", "tag", "source"))
+    diff = [f"  row {i}: AutoBayes {key(a)} vs brms {key(t)}" for i, (a, t) in enumerate(zip_longest(ours, theirs)) if key(a) != key(t)]
+    if diff:
+        raise OracleMismatch(f"ab.default_priors() written as brms's table differs from brms's default_prior() "
+                             f"({len(ours)} rows vs {len(theirs)}):\n" + "\n".join(diff[:12]))

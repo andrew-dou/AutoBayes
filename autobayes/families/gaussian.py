@@ -59,4 +59,5 @@ GAUSSIAN = FamilySpec(
     default_distributional_intercept=lambda scale: StudentT(3, 0, scale),   # brms Intercept_sigma: student_t(3, 0, scale of log y)
     monotonic=True,                                                 # B03: mo(x), verified against gauss_monotonic
     log_likelihood=_log_likelihood,                                 # C07: log_lik(), verified against gauss_varint_post
+    multivariate=True,                                              # C01: mvbind(y, y2) ~ ..., verified against gauss_mv_rescor and gauss_mv_norescor
 )

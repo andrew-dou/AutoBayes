@@ -228,7 +228,8 @@ def _default(prior: Prior) -> Prior:
 
 def default_priors(formula: str | list[str], data: pd.DataFrame, *, family: str = "gaussian", categorical: Mapping[str, object] | None = None,
                    nu: float | None = None, link: str | None = None, center_predictors: bool = True,
-                   families: list[str] | None = None, order: str | bool | None = None) -> Priors:
+                   families: list[str] | None = None, order: str | bool | None = None,
+                   rescor: bool | None = None) -> Priors:
     """brms's default priors for ``formula`` on ``data`` under ``family`` (brms 2.23's ``default_prior()``), as a
     ``Priors`` the constructors accept: ``ab.gaussian(f, df, ab.default_priors(f, df))``. ``formula`` may be a list with a
     distributional formula (B01, ``["y ~ x", "sigma ~ z"]``), whose priors are its intercept's and coefficients'.
@@ -244,9 +245,18 @@ def default_priors(formula: str | list[str], data: pd.DataFrame, *, family: str 
     per component, the component family's own defaults for the same formula and data (brms's ``def_dpar_prior`` of
     ``mu<k>`` and ``sigma<k>`` reads the response through the component's link: a Gaussian component's Intercept
     ``student_t(3, location, scale)``, flat ``b`` and ``sigma<k>`` ``student_t(3, 0, scale)``), and ``dirichlet(1)`` on
-    ``theta``."""
+    ``theta``.
+
+    A multivariate formula
+    (C01, ``mvbind(y, y2) ~ ...`` with ``rescor=True`` or ``False``, docs/multivariate.md) gets each response's defaults under
+    ``resp``, ``lkj(1)`` on a correlated term once for all responses and on the residual correlation (``rescor=True``)."""
     from autobayes.families import FAMILIES, get_family
     from autobayes.formula import parse_formula
+    from autobayes.multivariate import is_multivariate_formula, multivariate_default_priors
+
+    if rescor is not None or is_multivariate_formula(formula):       # C01: each response's defaults, and rescor's
+        return multivariate_default_priors(formula, data, family=family, categorical=categorical, nu=nu, link=link,
+                                           center_predictors=center_predictors, rescor=rescor)
 
     fam = get_family(family, link)                                    # an unknown family, or a withheld link, is refused here
     learned = {}
@@ -411,6 +421,10 @@ def prior_table(priors: Priors, spec, family="gaussian", *, center_predictors: b
     for each non-reference category under its ``dpar`` (``muc2``, ...), with the one prior the categories share."""
     from autobayes.families import FamilySpec, get_family
 
+    if getattr(spec, "responses", None):                              # C01: a multivariate model, one block of rows per response
+        from autobayes.multivariate import multivariate_prior_table
+
+        return multivariate_prior_table(priors, spec, family, center_predictors=center_predictors)
     fam = family if isinstance(family, FamilySpec) else get_family(family)
     priors.validate(spec, fam)
     if (fam.thresholds or fam.per_category) and not categories:

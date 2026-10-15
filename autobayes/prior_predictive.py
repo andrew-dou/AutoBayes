@@ -13,6 +13,8 @@ def prior_predictive(model, *, draws=500, seed=None):
     Parameters retain graph parameterization (including a centered intercept).
     This result is not a posterior fit. No new-data or sampler-backend option.
     """
+    if getattr(model, 'responses', None):                   # C01: not part of the multivariate slice
+        return model.prior_predictive(draws=draws, seed=seed)
     if isinstance(draws, (bool, np.bool_)) or not isinstance(draws, Integral) or draws <= 0:
         raise ValueError('draws must be a positive integer')
     if seed is not None and (isinstance(seed, (bool, np.bool_)) or not isinstance(seed, Integral) or seed < 0):

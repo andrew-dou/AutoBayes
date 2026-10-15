@@ -5,10 +5,6 @@
  "note": "brms: one Gaussian sub-model per response (Intercept_y, b_y, sigma_y; Intercept_y2, b_y2, sigma_y2; standata Y_y, X_y, Y_y2, X_y2, nresp = 2, nrescor = 1) and residual correlation Lrescor (cholesky_factor_corr[2], prior class Lrescor lkj_corr_cholesky(2)) in multi_normal_cholesky over (y, y2); (1 | g) is one group term per response (sd_1/z_1/r_1_y_1 with Z_1_y_1, J_1_y; sd_2/z_2/r_2_y2_1 with Z_2_y2_1, J_2_y2); groups carry resp; predictions are draws x rows x responses (fixture responses: y, y2)",
  "seed": 301,
  "n_points": 8,
- "gate": {
-  "expect": "fail",
-  "reason": "C01_multivariate not implemented; remove this field when it lands"
- },
  "data": {
   "generator": "tier_c",
   "seed": 201,

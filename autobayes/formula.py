@@ -86,6 +86,7 @@ _TRANSFORM_OP_RE = re.compile(rf"^I\s*\(\s*({_IDENT})\s*([*+-])\s*({_NUMBER})\s*
 _TRANSFORM_OP_FIRST_RE = re.compile(rf"^I\s*\(\s*({_NUMBER})\s*([*+])\s*({_IDENT})\s*\)$", re.S)     # I(k * col), I(k + col)
 _MO_RE = re.compile(r"^mo\s*\((.*)\)$", re.S)                                                        # mo(<inside>), brms's monotonic effect (B03)
 _MO_TERM_RE = re.compile(rf"^mo\(({_IDENT})\)$")                                                    # the canonical spelling mo(col)
+MVBIND_RE = re.compile(r"^\s*mvbind\s*\(", re.S)                                                       # brms's multivariate mvbind(y, y2) ~ ... (C01)
 SUPPORTED_TRANSFORMS = ("only log(col), exp(col), sqrt(col), I(col^k) with integer k, and I(col * k), I(col + k), I(col - k) with a "
                         "numeric constant k are supported as in-formula transforms of one numeric column (A05, docs/transforms.md); "
                         "other function calls and transformations inside the formula are not supported: compute the column in the "
@@ -1520,6 +1521,13 @@ def _parse_formulas(formulas, data: pd.DataFrame | None, family: str, categorica
                 own = [p for p in (fam.scale_parameter, fam.zero_parameter, *fam.fixed_parameters) if p is not None]
                 why = (f"the {fam.name} family has no parameter {name!r}"
                        + (f" (its parameters besides the mean are {own})" if own else " (it has no parameter besides the mean)"))
+                from autobayes.families import FAMILIES
+
+                if not any(name in (o.scale_parameter, o.zero_parameter, *o.fixed_parameters, *o.learnable_parameters)
+                           for o in FAMILIES.values()):              # C01: most likely a second response
+                    why += (f"; if {name!r} is a second response, a formula of its own per response (brms's bf(y ~ ...) + "
+                            f"bf({name} ~ ...)) is not supported: a multivariate model's responses share one right-hand side, "
+                            f"'mvbind(y, {name}) ~ ...' (docs/multivariate.md, divergence D56)")
             raise FormulaError(f"{text!r}: {why}; {_distributional_offer(fam)}")
         parsed.append((name, rhs, text.strip()))
 
@@ -1591,6 +1599,17 @@ def parse_formula(formula: str | list[str], data: pd.DataFrame | None = None, fa
     if not isinstance(formula, str):
         return _parse_formulas(formula, data, family, categorical)
     fam = get_family(family)
+    if MVBIND_RE.match(formula):                           # C01: a multivariate formula is one model per response, built elsewhere
+        from autobayes.families import FAMILIES
+
+        offering = [name for name, other in FAMILIES.items() if other.multivariate]
+        raise FormulaError(
+            f"{formula!r}: brms's multivariate formula mvbind(...) ~ ... is built by "
+            + ("ab.gaussian(formula, data, ab.Priors(resp={...}), rescor=True | False), one model per response "
+               "(docs/multivariate.md); a univariate formula has one response" if fam.multivariate else
+               f"ab.{offering[0] if offering else 'gaussian'}(..., rescor=...) for the {', '.join(offering) or 'no'} "
+               f"family only; a multivariate {fam.name} model is not offered (docs/multivariate.md, divergence D58)")
+        )
     trials, additions = None, ()
     if _BAMBI_PROPORTION_RE.match(formula):
         raise FormulaError(

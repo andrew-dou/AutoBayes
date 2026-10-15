@@ -90,6 +90,13 @@ its own intercept, columns, coefficients and centring; it has no group-level ter
 `Design.dpars[name]` (`DparDesign`) is its design and `Model.dpar_names[name]` its PyMC variables (`sigma_Intercept`,
 `sigma_z`), Bambi's distributional component named after the parameter (`alpha` for brms's `shape`).
 
+## Multivariate formulas: `MultivariateSpec`
+
+brms's `mvbind(y, y2) ~ x + (1 | g)` (C01, docs/multivariate.md) is not a `ModelSpec`: `autobayes.multivariate.parse_multivariate`
+gives a `MultivariateSpec` holding the responses in order, the shared right-hand side and each response's own formula
+`y ~ x + (1 | g)` parsed as the univariate `ModelSpec` it is (`specs`), from which `MultivariateModel` builds one univariate
+`Model` per response; every term kind above therefore reaches a multivariate model through its responses' term models.
+
 ## Design blocks: `Design.group_blocks[(factor, coef)]`
 
 `Model.design` holds one `GroupBlock(levels, Z, group_index, column_slice)` per (factor, coefficient), in
