@@ -45,6 +45,13 @@ def _draw_response(model, post, eta, mean, df, rng):
     return rng.beta(alpha, beta)
 
 
+def _log_likelihood(model, post, eta):
+    """brms's log_lik (C07): ``log Beta(y_i | mu_i phi, (1 - mu_i) phi)``, ``1 - mu_i`` as ``expit(-eta_i)`` (D13)."""
+    from autobayes.families.pointwise import beta_logit
+
+    return beta_logit(model.design.y, eta, auxiliary(model, post, "phi"))
+
+
 def _likelihood_lines(model) -> list[str]:
     s = scale_symbol(model)                                    # "phi", or "phi_i" with its own formula (B01)
     return [scale_line(model), "", "Likelihood",
@@ -81,4 +88,5 @@ BETA = FamilySpec(
     distributional_link="log",                                      # B01: phi ~ z, brms's log link (beta_distributional_phi)
     default_distributional_intercept=lambda scale: StudentT(3, 0, 2.5),   # brms Intercept_phi: student_t(3, 0, 2.5) under the log link
     monotonic=True,                                                 # B03: mo(x), verified against beta_monotonic
+    log_likelihood=_log_likelihood,                                 # C07: log_lik(), checked against the model's own density (test_post_processing.py)
 )

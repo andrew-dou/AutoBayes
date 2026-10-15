@@ -162,6 +162,12 @@ class FamilySpec:
     # component (``sigma<k>``) and the mixing proportions ``theta``; ``Model``, ``Priors``, ``predict()``, the target identity
     # and the fit record take the paths of ``autobayes/families/mixture.py``. False for every other family.
     mixture: bool = False
+    # brms's log_lik() (C07, docs/post-processing.md): (model, posterior, eta) -> the log density of each fitted row's response
+    # per draw, (chain, draw, row), from the linear predictor ``eta`` (``predict(kind="linear")``'s, with a trailing category
+    # axis for a per-category family) and the posterior's auxiliary parameters (each distributional parameter's per-row values
+    # under its PyMC name, as ``predict()`` puts them there); ``log_lik()`` multiplies it by the weights. The NumPy forms are in
+    # ``families.pointwise``. None: ``log_lik()``, and so ``loo()``, are not offered for the family.
+    log_likelihood: Callable[[object, object, object], object] | None = None
 
     def with_link(self, link: str | None) -> "FamilySpec":
         """This family's spec under ``link``: this spec for ``None`` or its own link, the one a ``links`` entry builds

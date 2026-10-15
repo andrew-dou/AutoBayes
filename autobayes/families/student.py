@@ -33,6 +33,14 @@ def _draw_response(model, post, eta, mean, df, rng):
     return mean + sigma * rng.standard_t(model.nu, size=mean.shape)
 
 
+def _log_likelihood(model, post, eta):
+    """brms's log_lik (C07): ``log StudentT(y_i | nu, mu_i, sigma)``, a learned nu per draw (A13)."""
+    from autobayes.families.pointwise import student_t
+
+    nu = post[model.names["nu"]].to_numpy()[..., None] if model.nu is None else model.nu
+    return student_t(model.design.y, nu, eta, auxiliary(model, post, "sigma"))
+
+
 def _likelihood_lines(model) -> list[str]:
     sigma = scale_symbol(model)                                # "sigma", or "sigma_i" with its own formula (B01)
     if model.nu is None:                                       # learned (A13)
@@ -77,4 +85,5 @@ STUDENT = FamilySpec(
     distributional_link="log",                                      # B01: sigma ~ z, brms's log link (student_distributional_sigma)
     default_distributional_intercept=lambda scale: StudentT(3, 0, scale),   # brms Intercept_sigma: student_t(3, 0, scale of log y)
     monotonic=True,                                                 # B03: mo(x), verified against student_monotonic
+    log_likelihood=_log_likelihood,                                 # C07: log_lik(), checked against the model's own density (test_post_processing.py)
 )

@@ -1,0 +1,77 @@
+{
+ "id": "categorical_poponly_post",
+ "tier": "C",
+ "feature": "C07_post_processing",
+ "note": "post block of an unordered categorical model: log_lik is log softmax(0, mu)[y]; brms refuses bayes_R2 for unordered categorical models ('bayes_R2' is not defined for unordered categorical models), so it is not recorded; 8 draws: k-hat Inf, raw importance weights",
+ "seed": 316,
+ "n_points": 8,
+ "data": {
+  "generator": "tier_b",
+  "seed": 216,
+  "n": 36,
+  "newdata": {
+   "seed": 316,
+   "n": 5
+  }
+ },
+ "brms": {
+  "formula": "cat3 ~ x",
+  "family": {
+   "family": "categorical"
+  },
+  "factors": {
+   "cat3": [
+    "c1",
+    "c2",
+    "c3"
+   ]
+  },
+  "priors": [
+   {
+    "prior": "normal(0, 3)",
+    "class": "Intercept",
+    "dpar": "muc2"
+   },
+   {
+    "prior": "normal(0, 3)",
+    "class": "Intercept",
+    "dpar": "muc3"
+   },
+   {
+    "prior": "normal(0, 1.5)",
+    "class": "b",
+    "dpar": "muc2"
+   },
+   {
+    "prior": "normal(0, 1.5)",
+    "class": "b",
+    "dpar": "muc3"
+   }
+  ],
+  "extras": [
+   "log_lik",
+   "loo"
+  ]
+ },
+ "autobayes": {
+  "constructor": "categorical",
+  "formula": "cat3 ~ x",
+  "kwargs": {},
+  "priors": {
+   "intercept": [
+    "Normal",
+    0,
+    3
+   ],
+   "b": [
+    "Normal",
+    0,
+    1.5
+   ]
+  },
+  "post": [
+   "log_lik",
+   "loo"
+  ]
+ }
+}

@@ -5,10 +5,6 @@
  "note": "post block as gauss_varint_post (8 draws, k-hat Inf, raw importance weights)",
  "seed": 312,
  "n_points": 8,
- "gate": {
-  "expect": "fail",
-  "reason": "C07_post_processing not implemented; remove this field when it lands"
- },
  "data": {
   "generator": "baseline",
   "seed": 212,

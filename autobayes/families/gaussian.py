@@ -14,6 +14,13 @@ def _draw_response(model, post, eta, mean, df, rng):
     return rng.normal(mean, auxiliary(model, post, "sigma"))       # sigma per draw, or per draw and row (B01)
 
 
+def _log_likelihood(model, post, eta):
+    """brms's log_lik (C07): ``log Normal(y_i | mu_i, sigma)``, sigma per draw (or per draw and row, B01)."""
+    from autobayes.families.pointwise import normal
+
+    return normal(model.design.y, eta, auxiliary(model, post, "sigma"))
+
+
 def _likelihood_lines(model) -> list[str]:
     return [scale_line(model), "", "Likelihood", f"  y_i ~ Normal(mu_i, {scale_symbol(model)})"]
 
@@ -51,4 +58,5 @@ GAUSSIAN = FamilySpec(
     distributional_link="log",                                      # B01: sigma ~ z, brms's log link
     default_distributional_intercept=lambda scale: StudentT(3, 0, scale),   # brms Intercept_sigma: student_t(3, 0, scale of log y)
     monotonic=True,                                                 # B03: mo(x), verified against gauss_monotonic
+    log_likelihood=_log_likelihood,                                 # C07: log_lik(), verified against gauss_varint_post
 )

@@ -47,6 +47,14 @@ def _draw_response(model, post, eta, mean, df, rng):
     return rng.binomial(trials, mean).astype(np.int64)
 
 
+def _log_likelihood(link: str, model, post, eta):
+    """brms's log_lik (C07): ``log Binomial(y_i | n_i, p_i)``, ``p_i`` the link's inverse at ``eta_i``, from the link's stable
+    log probabilities."""
+    from autobayes.families.pointwise import binomial
+
+    return binomial(model.design.y, model.design.trials, eta, link)
+
+
 def _mean_lines(link: str, model) -> list[str]:
     s, L = model.spec, LINKS[link]
     return [f"  P(success) = p_i = {L.probability}; {s.response}_i ~ Binomial({s.trials}_i, p_i); eta is on the {L.scale} scale."]
@@ -106,6 +114,7 @@ def _spec(link: str) -> FamilySpec:
         parked_links=PARKED_LINKS,
         addition_terms=frozenset({"weights"}),                  # B02: weights(), verified against the frozen case binomial_weighted (logit; the probit link's likelihood is weighted the same way)
         monotonic=True,                                             # B03: mo(x), verified against binomial_monotonic (logit; under probit the term enters the same linear predictor)
+        log_likelihood=partial(_log_likelihood, link),                # C07: log_lik(), verified against binomial_weighted_post (logit)
     )
 
 

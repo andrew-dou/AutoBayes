@@ -14,6 +14,9 @@ G4 `check_predictions`   predict() on the fixture's draws equals posterior_linpr
 G5 `check_jax`           the JAX-compiled density equals the PyTensor one at every point
 G6 `check_default_prior` brms's default-prior table has the classes this model has, and `ab.default_priors()` for the
                          same formula, data and family, written as brms's table, equals it row by row (A07)
+C07 `check_post`         for a case that lists post-processing functions: `ab.log_lik`, `ab.bayes_R2` and `ab.loo` on the
+                         fixture's draws, held as brms's fixed-parameter fit holds them (one chain per point), equal the
+                         fixture's `post` block (brms's log_lik(), bayes_R2() and loo()), every non-finite entry exactly
 
 A case that opts in to two-reference acceptance (P6, its gate field names a committed high-precision reference and the
 quantity kinds that may fall back on it: "gradient", "epred") has G2's gradient and G4's expected values checked by
@@ -428,3 +431,75 @@ def check_default_prior(b: Bundle) -> None:
 
 
 ALL = (check_design, check_logp, check_gradient, check_derived, check_predictions, check_jax, check_default_prior)
+
+
+# -- C07: post-processing -----------------------------------------------------------------------------------------
+def fixed_parameter_draws(b: Bundle):
+    """The fixture's points as brms's fixed-parameter fit holds them (``gen_fixture.R``'s ``Fixed_param`` run): one chain
+    per point with one draw each, so that the relative efficiencies brms hands loo, and ``ab.loo``'s default ones, are
+    those of one-draw chains (loo's NA, used as 1)."""
+    import arviz as az
+
+    post = adapter.draws(b.fixture, b.model, b.cmap, b.gmap).posterior
+    S = post.sizes["draw"]
+    chains = post.isel(chain=0, drop=True).rename({"draw": "chain"}).assign_coords(chain=np.arange(S))
+    return az.InferenceData(posterior=chains.expand_dims(draw=[0], axis=1))
+
+
+def compare_post(what: str, ours, theirs) -> None:
+    """``ours`` equals brms's ``theirs`` to ``PRED_REL`` where brms's is finite, and a non-finite entry of either is the
+    same non-finite value in the other (Inf with Inf, -Inf with -Inf, NaN with NaN)."""
+    ours, theirs = np.asarray(ours, dtype=float), np.asarray(theirs, dtype=float)
+    if ours.shape != theirs.shape:
+        raise OracleMismatch(f"{what}: AutoBayes has shape {ours.shape}, brms {theirs.shape}")
+    finite_o, finite_t = np.isfinite(ours), np.isfinite(theirs)
+    same = (ours == theirs) | (np.isnan(ours) & np.isnan(theirs))
+    differ = (finite_o != finite_t) | (~finite_o & ~finite_t & ~same)
+    if differ.any():
+        where = [tuple(int(i) for i in ix) for ix in np.argwhere(differ)[:5]]
+        raise OracleMismatch(f"{what}: non-finite entries differ at {where}: AutoBayes {ours[differ][:5].tolist()} vs brms "
+                             f"{theirs[differ][:5].tolist()}")
+    err = rel_err(ours[finite_o], theirs[finite_t])
+    if err > PRED_REL:
+        raise OracleMismatch(f"{what} differs from brms by {err}")
+
+
+def check_post(b: Bundle) -> None:
+    """C07: each post-processing function the case lists (``b.post``) on ``fixed_parameter_draws`` equals the fixture's
+    ``post`` block: ``log_lik`` brms's ``log_lik()`` (draws x rows); ``bayes_R2`` brms's ``bayes_R2(summary = FALSE)``
+    (draws x 1); ``loo`` brms's ``loo()``: the pointwise table (its five columns, by name), the estimates (rows elpd_loo,
+    p_loo, looic; columns Estimate, SE), ``pareto_k`` and ``n_eff``. A case that lists none has nothing to compare."""
+    if not b.post:
+        return
+    post = b.fixture.raw.get("post")
+    if not post:
+        raise OracleMismatch(f"the case lists {sorted(b.post)} but the fixture has no post block")
+    idata = fixed_parameter_draws(b)
+    S = len(b.fixture.points)
+    for name, fn in b.post.items():
+        if name not in post:
+            raise OracleMismatch(f"the case lists {name} but the fixture's post block has {sorted(post)}")
+        if name == "log_lik":
+            ours = fn(b.model, idata).transpose("chain", "draw", "__obs__").to_numpy().reshape(S, -1)
+            compare_post("log_lik", ours, fx.decode(post["log_lik"]))
+        elif name == "bayes_R2":
+            ours = fn(b.model, idata).transpose("chain", "draw").to_numpy().reshape(S, 1)
+            compare_post("bayes_R2", ours, fx.decode(post["bayes_R2"]))
+        elif name == "loo":
+            res, ref = fn(b.model, idata), post["loo"]
+            columns = list(ref["pointwise"].get("colnames") or [])
+            if list(res.pointwise.columns) != columns:
+                raise OracleMismatch(f"loo pointwise columns {list(res.pointwise.columns)} vs brms {columns}")
+            table = fx.decode(ref["pointwise"])
+            if res.pointwise.shape != table.shape:
+                raise OracleMismatch(f"loo pointwise: AutoBayes has shape {res.pointwise.shape}, brms {table.shape}")
+            for i, column in enumerate(columns):
+                compare_post(f"loo pointwise {column}", res.pointwise[column].to_numpy(), table[:, i])
+            if list(res.estimates.index) != list(ref["estimate_rows"]) or list(res.estimates.columns) != list(ref["estimates"]["colnames"]):
+                raise OracleMismatch(f"loo estimates {list(res.estimates.index)} x {list(res.estimates.columns)} vs brms "
+                                     f"{list(ref['estimate_rows'])} x {list(ref['estimates']['colnames'])}")
+            compare_post("loo estimates", res.estimates.to_numpy(), fx.decode(ref["estimates"]))
+            compare_post("loo pareto_k", res.pareto_k, fx.decode(ref["pareto_k"]))
+            compare_post("loo n_eff", res.n_eff, fx.decode(ref["n_eff"]))
+        else:
+            raise OracleMismatch(f"no comparison for the post-processing function {name!r}")

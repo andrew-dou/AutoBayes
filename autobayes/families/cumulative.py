@@ -80,6 +80,14 @@ def _draw_response(model, post, eta, mean, df, rng):
     return draw_categories(mean, rng)
 
 
+def _log_likelihood(model, post, eta):
+    """brms's log_lik (C07): ``log P(y_i | mu_i, b_Intercept)`` of the cumulative logit model, the thresholds per draw."""
+    from autobayes.families.pointwise import ordered_logistic
+
+    tau = post[model.names["thresholds"]].transpose("chain", "draw", model.names["threshold_dim"]).to_numpy()
+    return ordered_logistic(model.design.y, eta, tau[..., None, :])
+
+
 def _categories(model) -> str:
     """The categories in order, each with its 1-based code when the label is not the code itself."""
     if all(c == str(k) for k, c in enumerate(model.categories, start=1)):
@@ -143,4 +151,5 @@ CUMULATIVE = FamilySpec(
     check_formula=_check_formula,
     intercept_lines=_intercept_lines,
     monotonic=True,                                                 # B03: mo(x), verified against cumulative_monotonic
+    log_likelihood=_log_likelihood,                                 # C07: log_lik(), verified against cumulative_varint_post
 )

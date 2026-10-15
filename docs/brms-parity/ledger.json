@@ -1125,11 +1125,26 @@
    "depends_on": [
     "A07_default_priors"
    ],
-   "status": "implementing",
+   "status": "gates_green",
    "summary": "loo, bayes_R2, hypothesis, conditional effects through ArviZ where it exists",
    "pr": null,
    "attempts": 1,
-   "gates": {},
+   "gates": {
+    "sha": "fb14b0ae4e37",
+    "dirty_tree": false,
+    "base": "parity/c05-mixtures",
+    "when": "2026-10-11T20:50Z",
+    "results": {
+     "immutability": {
+      "status": "pass",
+      "seconds": 0.0
+     },
+     "oracle": {
+      "status": "pass",
+      "seconds": 442.8
+     }
+    }
+   },
    "divergences": [],
    "next_action": "agent (opus) in worktree parity-c07",
    "fixtures": {

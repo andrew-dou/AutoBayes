@@ -32,6 +32,14 @@ def _draw_response(model, post, eta, mean, df, rng):
     return rng.binomial(1, mean).astype(np.int64)
 
 
+def _log_likelihood(link: str, model, post, eta):
+    """brms's log_lik (C07): ``log Bernoulli(y_i | p_i)``, ``p_i`` the link's inverse at ``eta_i``, from the link's stable log
+    probabilities."""
+    from autobayes.families.pointwise import bernoulli
+
+    return bernoulli(model.design.y, eta, link)
+
+
 _LIKELIHOOD_LINES = {
     "logit": [
         "", "Likelihood", "  y_i ~ Bernoulli(p_i), sampled as log p(y_i | eta_i) = y_i * eta_i - softplus(eta_i)",
@@ -83,6 +91,7 @@ def _spec(link: str) -> FamilySpec:
         parked_links=PARKED_LINKS,
         addition_terms=frozenset({"weights"}),                  # B02: weights(), verified against the frozen case bernoulli_weighted (logit; the probit link's likelihood is weighted the same way)
         monotonic=True,                                             # B03: mo(x), verified against bernoulli_monotonic (logit; under probit the term enters the same linear predictor)
+        log_likelihood=partial(_log_likelihood, link),                # C07: log_lik(), checked against the model's own density (test_post_processing.py)
     )
 
 

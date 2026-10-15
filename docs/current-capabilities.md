@@ -149,3 +149,15 @@ on Stan's stick-breaking simplex), under `Priors(components=[...one Priors per c
 component. Verified against `mixture_gauss_gauss` and two cases frozen with it (three components with a categorical
 predictor and a prior per component; brms's default priors); other component families, `order = "none"`, formulas per
 component or on `theta`, group-level terms and offsets are refused (D52-D55); see [mixtures](mixtures.md).
+
+Post-processing (C07, brms's `log_lik()`, `bayes_R2()` and `loo()` with loo 2.9.0): `ab.log_lik(model, fit)` is each
+fitted row's log density per draw (times its weight under `weights()`) for every family, `ab.bayes_R2(model, fit)` the
+per-draw R-squared of the expected response (of the expected category for the cumulative family; refused for the
+categorical family, as brms refuses it), and `ab.loo(model, fit)` PSIS-LOO with brms's pointwise table, estimates, Pareto
+k and `n_eff`, the relative efficiencies computed from the chains as brms computes them; PSIS is implemented from the
+published algorithm with ArviZ's `psislw` as the reference (loo is GPL-3 and none of its source is used), and its tie and
+degenerate-tail rules were settled against loo's outputs on recorded probe inputs (`tests/loo_probes`). Verified against
+`gauss_varint_post`, `poisson_varint_post`, `gauss_varint_post_psis`, `cumulative_varint_post`, `binomial_weighted_post`
+and `categorical_poponly_post` (gate `check_post`); brms's further options are not offered (D48), and brms's `log_lik` at
+extreme linear predictors, loo's MCSE of an observation with `elpd_loo` below about -372 and loo's relative efficiencies
+of very short chains differ (D49-D51); see [post-processing](post-processing.md).

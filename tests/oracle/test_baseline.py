@@ -53,3 +53,11 @@ def test_g5_jax_density_equals_pytensor(bundle):
 
 def test_g6_default_prior_table(bundle):
     gates.check_default_prior(bundle)
+
+
+def test_c07_post_processing_equals_log_lik_bayes_R2_and_loo(bundle):
+    """C07: a case that lists post-processing functions (``"post"`` in its autobayes section) has them equal brms's
+    log_lik(), bayes_R2() and loo() in the fixture's ``post`` block; the other cases have nothing to compare."""
+    if not bundle.post:
+        pytest.skip("the case lists no post-processing function")
+    gates.check_post(bundle)

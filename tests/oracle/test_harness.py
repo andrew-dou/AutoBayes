@@ -566,3 +566,100 @@ def test_a_case_without_the_opt_in_behaves_as_before(gauss_bundle, opted_in_bund
         gates.check_predictions(_gate(truncated, fallback=["gradient"]))
     with pytest.raises(OracleMismatch, match=r"^point 4: gradient of x\[0\] AutoBayes"):
         gates.check_gradient(_gate(truncated, fallback=["epred"]))
+
+
+# -- C07: post-processing: log_lik, bayes_R2 and loo against the fixture's post block ----------------------------------
+@pytest.fixture(scope="module")
+def post_bundle():
+    if not fx.has_fixture("gauss_varint_post") or fx.load_case("gauss_varint_post").get("gate"):
+        pytest.skip("post case not frozen or still gated")
+    return gates.Bundle("gauss_varint_post")
+
+
+@pytest.fixture(scope="module")
+def psis_bundle():
+    if not fx.has_fixture("gauss_varint_post_psis") or fx.load_case("gauss_varint_post_psis").get("gate"):
+        pytest.skip("post case not frozen or still gated")
+    return gates.Bundle("gauss_varint_post_psis")
+
+
+def _bump(values, i, delta):
+    """Add ``delta`` to entry ``i`` of a fixture array, whose values are numbers, or strings when the array has an Inf."""
+    values[i] = repr(float(values[i]) + delta) if isinstance(values[i], str) else values[i] + delta
+
+
+def test_post_gate_passes_on_the_frozen_post_fixtures(post_bundle, psis_bundle):
+    for bundle in (post_bundle, psis_bundle):
+        idata = gates.fixed_parameter_draws(bundle)                 # brms's fixed-parameter fit: one chain per point
+        assert dict(idata.posterior.sizes)["chain"] == len(bundle.fixture.points)
+        assert dict(idata.posterior.sizes)["draw"] == 1
+        gates.check_post(bundle)
+
+
+def test_corrupted_log_lik_fails(post_bundle):
+    def mutate(raw):
+        _bump(raw["post"]["log_lik"]["values"], 17, 1e-8)           # a log density of a few units: 1e-8 is above 1e-9
+    with pytest.raises(OracleMismatch, match="log_lik differs from brms"):
+        gates.check_post(_corrupted(post_bundle, mutate))
+
+
+def test_corrupted_bayes_R2_draw_fails(post_bundle):
+    def mutate(raw):
+        _bump(raw["post"]["bayes_R2"]["values"], 3, 1e-8)
+    with pytest.raises(OracleMismatch, match="bayes_R2 differs from brms"):
+        gates.check_post(_corrupted(post_bundle, mutate))
+
+
+def test_corrupted_pointwise_elpd_fails(post_bundle, psis_bundle):
+    for bundle in (post_bundle, psis_bundle):                       # raw importance weights (k Inf), and PSIS
+        def mutate(raw):
+            _bump(raw["post"]["loo"]["pointwise"]["values"], 4, 1e-7)   # row 5's elpd_loo (column-major: the first column)
+        with pytest.raises(OracleMismatch, match="loo pointwise elpd_loo differs from brms"):
+            gates.check_post(_corrupted(bundle, mutate))
+
+
+def test_corrupted_loo_diagnostics_fail(psis_bundle):
+    def k_hat(raw):
+        _bump(raw["post"]["loo"]["pareto_k"]["values"], 9, 1e-8)
+    with pytest.raises(OracleMismatch, match="loo pareto_k differs from brms"):
+        gates.check_post(_corrupted(psis_bundle, k_hat))
+    def n_eff(raw):
+        _bump(raw["post"]["loo"]["n_eff"]["values"], 0, 1e-6)       # n_eff is about 62
+    with pytest.raises(OracleMismatch, match="loo n_eff differs from brms"):
+        gates.check_post(_corrupted(psis_bundle, n_eff))
+    def se(raw):
+        _bump(raw["post"]["loo"]["estimates"]["values"], 3, 1e-7)   # SE of elpd_loo (column-major: rows, then SE)
+    with pytest.raises(OracleMismatch, match="loo estimates differs from brms"):
+        gates.check_post(_corrupted(psis_bundle, se))
+
+
+def test_post_non_finite_entries_must_match_exactly(post_bundle):
+    """brms's k-hat is Inf on every row of the 8-draw fixture (a Pareto tail too short to fit): a finite brms value there
+    fails, as does an Inf where AutoBayes is finite; equal infinities and NaNs pass, a different one does not."""
+    def finite_k(raw):
+        raw["post"]["loo"]["pareto_k"]["values"][2] = "0.5"
+    with pytest.raises(OracleMismatch, match="loo pareto_k: non-finite entries differ"):
+        gates.check_post(_corrupted(post_bundle, finite_k))
+    def finite_influence(raw):
+        raw["post"]["loo"]["pointwise"]["values"][4 * 36 + 7] = "1.5"     # influence_pareto_k of row 8 (fifth column)
+    with pytest.raises(OracleMismatch, match="loo pointwise influence_pareto_k: non-finite entries differ"):
+        gates.check_post(_corrupted(post_bundle, finite_influence))
+    def infinite_n_eff(raw):
+        raw["post"]["loo"]["n_eff"]["values"][0] = "Inf"
+    with pytest.raises(OracleMismatch, match="loo n_eff: non-finite entries differ"):
+        gates.check_post(_corrupted(post_bundle, infinite_n_eff))
+    gates.compare_post("same", [np.inf, -np.inf, np.nan, 1.0], [np.inf, -np.inf, np.nan, 1.0 + 1e-12])
+    for ours, theirs in (([np.inf], [-np.inf]), ([np.nan], [np.inf]), ([np.inf], [1e300]), ([np.nan], [0.0]), ([0.0], [np.nan])):
+        with pytest.raises(OracleMismatch, match="non-finite entries differ"):
+            gates.compare_post("differs", ours, theirs)
+
+
+def test_post_block_and_columns_are_required(post_bundle):
+    def no_post(raw):
+        del raw["post"]
+    with pytest.raises(OracleMismatch, match="has no post block"):
+        gates.check_post(_corrupted(post_bundle, no_post))
+    def renamed(raw):
+        raw["post"]["loo"]["pointwise"]["colnames"][1] = "mcse"
+    with pytest.raises(OracleMismatch, match="loo pointwise columns"):
+        gates.check_post(_corrupted(post_bundle, renamed))
