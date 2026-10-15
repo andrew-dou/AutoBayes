@@ -59,6 +59,15 @@ brms's autocorrelation terms ``ar(time, gr, p)``, ``ma(time, gr, q)`` and ``arma
 formulation (C04, docs/autocorrelation.md) are held in ``ModelSpec.autocor`` (``autocor.Autocor``), one per formula: not
 a population-level term (no design column, no ``b`` coefficient), the coefficients ``ar`` and ``ma`` are its own.
 
+``me(x, sdx)`` and ``mi(col)`` are brms's measurement-error and missing-value terms (C06,
+docs/missing-and-measurement-error.md), special terms like ``mo()``: kinds ``"measurement_error"`` and ``"missing"``, a
+coefficient (brms's ``bsp``) and no design column. ``me(x, sdx)`` multiplies the latent values of a predictor ``x``
+observed with the known standard deviations ``sdx`` (one such term, Gaussian family); ``mi(col)`` multiplies a column whose
+missing values are parameters of the model, which another formula of a multivariate model, ``col | mi() ~ ...``, models
+(the addition term ``mi()``, ``AdditionTerm("mi")``; ``ModelSpec.missing_columns``). Both are refused in interactions,
+group-level and distributional formulas, with brms's ``gr`` and ``idx`` arguments, next to another kind of special term,
+and for families that do not take them.
+
 Group-level terms are optional and additive across distinct factors (M3c-3): a formula without them is a population-only
 model, as in brms ``brmsformula`` where group-level terms are optional; ``y ~ 1`` is intercept-only. ``(1 + x || g)``
 is brms's independent varying intercept and slope (A01): each numeric population-level term named varies by level
@@ -97,6 +106,11 @@ _TRANSFORM_OP_RE = re.compile(rf"^I\s*\(\s*({_IDENT})\s*([*+-])\s*({_NUMBER})\s*
 _TRANSFORM_OP_FIRST_RE = re.compile(rf"^I\s*\(\s*({_NUMBER})\s*([*+])\s*({_IDENT})\s*\)$", re.S)     # I(k * col), I(k + col)
 _MO_RE = re.compile(r"^mo\s*\((.*)\)$", re.S)                                                        # mo(<inside>), brms's monotonic effect (B03)
 _MO_TERM_RE = re.compile(rf"^mo\(({_IDENT})\)$")                                                    # the canonical spelling mo(col)
+_ME_RE = re.compile(r"^me\s*\((.*)\)$", re.S)                                                        # me(<inside>), brms's measurement error (C06)
+_ME_TERM_RE = re.compile(rf"^me\(({_IDENT}), ({_IDENT})\)$")                                         # the canonical spelling me(x, sdx)
+_MI_RE = re.compile(r"^mi\s*\((.*)\)$", re.S)                                                        # mi(<inside>), brms's missing values (C06)
+_MI_TERM_RE = re.compile(rf"^mi\(({_IDENT})\)$")                                                    # the canonical spelling mi(col)
+MI_CALL_RE = re.compile(r"(?<![A-Za-z0-9_.])mi\s*\(")                                                 # an mi( call anywhere in a formula (C06)
 MVBIND_RE = re.compile(r"^\s*mvbind\s*\(", re.S)                                                       # brms's multivariate mvbind(y, y2) ~ ... (C01)
 _GP_RE = re.compile(r"^gp\s*\((.*)\)$", re.S)                                                        # gp(<inside>), brms's Gaussian process (C03)
 _AUTOCOR_RE = re.compile(r"^(ar|ma|arma|cosy|car|sar|fcor|unstr)\s*\(", re.S)   # brms's autocorrelation terms (C04; autobayes.autocor)
@@ -150,12 +164,26 @@ class Categorical:
         return tuple(f"{self.name}[{l}]" for l in self.coefficients)
 
 
-POP_TERM_KINDS = ("numeric", "categorical", "interaction", "transform", "monotonic")
+POP_TERM_KINDS = ("numeric", "categorical", "interaction", "transform", "monotonic", "measurement_error", "missing")
+# brms's special terms (its bsp coefficients): a coefficient and no design column, built by this library, never by Bambi
+SPECIAL_KINDS = ("monotonic", "measurement_error", "missing")
 
 
 def monotonic_column(name: str) -> str | None:
     """The column of a monotonic term spelled ``mo(col)`` (B03), or None for any other term name."""
     m = _MO_TERM_RE.match(name)
+    return m.group(1) if m else None
+
+
+def measurement_error_columns(name: str) -> tuple[str, str] | None:
+    """The noisy column and the noise column of a measurement-error term spelled ``me(x, sdx)`` (C06), or None."""
+    m = _ME_TERM_RE.match(name)
+    return (m.group(1), m.group(2)) if m else None
+
+
+def missing_column(name: str) -> str | None:
+    """The column of a missing-value term spelled ``mi(col)`` (C06), or None for any other term name."""
+    m = _MI_TERM_RE.match(name)
     return m.group(1) if m else None
 
 
@@ -636,7 +664,10 @@ class PopTerm:
     ``"transform"`` of one numeric column, ``log(xpos)``, ``I(x^2)`` (A05, docs/transforms.md), whose single column
     is the evaluated transform and whose ``transform`` says how to evaluate it, or brms's ``"monotonic"`` effect
     ``mo(col)`` of an ordinal predictor (B03, docs/monotonic.md), which has no design column (``columns`` is empty): its
-    coefficient (brms's ``bsp``) and simplex act through its own block, ``ModelSpec.monotonic(col)`` its coding.
+    coefficient (brms's ``bsp``) and simplex act through its own block, ``ModelSpec.monotonic(col)`` its coding. brms's
+    ``"measurement_error"`` term ``me(x, sdx)`` and ``"missing"`` term ``mi(col)`` (C06, docs/missing-and-measurement-error.md)
+    are special terms like it: a coefficient (brms's ``bsp``) and no design column; the first multiplies the latent values of
+    a predictor observed with known noise, the second a column whose missing values are parameters of the model.
 
     ``columns`` are the design-column labels the term expands to, Bambi/formulae's own, in design order:
     ``x``; ``z[l]`` per coefficient level ``l``; ``x:z[l]``; ``x:w``; ``z[l]:h[m]`` per cell, the first operand's
@@ -665,8 +696,13 @@ class PopTerm:
             raise ValueError(f"PopTerm: {self.name!r} is not a supported in-formula transform")
         if self.kind == "monotonic" and (monotonic_column(self.name) is None or self.columns or self.levels):
             raise ValueError(f"PopTerm: a monotonic term is spelled 'mo(col)' and has no design column or level, got {self.name!r}")
+        if self.kind == "measurement_error" and (measurement_error_columns(self.name) is None or self.columns or self.levels):
+            raise ValueError(f"PopTerm: a measurement-error term is spelled 'me(x, sdx)' and has no design column or level, got {self.name!r}")
+        if self.kind == "missing" and (missing_column(self.name) is None or self.columns or self.levels):
+            raise ValueError(f"PopTerm: a missing-value term is spelled 'mi(col)' and has no design column or level, got {self.name!r}")
         if self.categorical is None:
-            default = {"numeric": (), "categorical": (self.name,), "interaction": (self.operands[-1],), "transform": (), "monotonic": ()}
+            default = {"numeric": (), "categorical": (self.name,), "interaction": (self.operands[-1],), "transform": (), "monotonic": (),
+                       "measurement_error": (), "missing": ()}
             object.__setattr__(self, "categorical", default[self.kind])
         else:
             object.__setattr__(self, "categorical", tuple(self.categorical))
@@ -676,11 +712,16 @@ class PopTerm:
     @property
     def operands(self) -> tuple[str, ...]:
         """The data columns the term is built from: ``(x,)``, ``(z,)``, ``(x, z)`` (numeric first), ``(x, w)`` or
-        ``(z, h)`` (main-effect order), ``(xpos,)`` for the transform ``log(xpos)``, ``(ord,)`` for ``mo(ord)``."""
+        ``(z, h)`` (main-effect order), ``(xpos,)`` for the transform ``log(xpos)``, ``(ord,)`` for ``mo(ord)``, ``(x, sdx)``
+        for ``me(x, sdx)`` and ``(col,)`` for ``mi(col)`` (C06)."""
         if self.kind == "transform":
             return (self.transform.column,)
         if self.kind == "monotonic":
             return (monotonic_column(self.name),)
+        if self.kind == "measurement_error":
+            return measurement_error_columns(self.name)
+        if self.kind == "missing":
+            return (missing_column(self.name),)
         return tuple(self.name.split(":"))
 
     @property
@@ -688,6 +729,12 @@ class PopTerm:
         """A monotonic term ``mo(col)`` (B03): no design column; its own coefficient and simplex, built by this library (Bambi
         never sees it)."""
         return self.kind == "monotonic"
+
+    @property
+    def is_special(self) -> bool:
+        """One of brms's special terms (its ``bsp`` coefficients): ``mo(col)`` (B03), ``me(x, sdx)`` or ``mi(col)`` (C06): a
+        coefficient and no design column, built by this library (Bambi never sees it)."""
+        return self.kind in SPECIAL_KINDS
 
     @property
     def transform(self) -> Transform:
@@ -842,7 +889,7 @@ class Offset:
         return v
 
 
-ADDITION_KINDS = ("weights", "cens", "trunc")    # brms's response addition terms besides trials() that are parsed (B02)
+ADDITION_KINDS = ("weights", "cens", "trunc", "mi")   # brms's response addition terms besides trials() that are parsed (B02; mi(), C06)
 
 # Addition terms that are parsed, represented and implemented but withheld, each with the reason its refusal carries
 # (docs/addition-terms.md): none since P6, which lifted the parks of cens() and trunc() (divergences D24 and D25).
@@ -863,7 +910,9 @@ class AdditionTerm:
     ``kind`` is ``"weights"`` (``weights(col)``: each row's log likelihood is multiplied by its weight), ``"cens"``
     (``cens(col)``: a censoring indicator per row, -1 left-, 0 un-, 1 right-censored) or ``"trunc"`` (``trunc(lb = a,
     ub = b)``: the response truncated to numeric bounds, ``None`` for an open side). ``column`` is the data column of
-    ``weights`` and ``cens``. ``addition_data`` turns the terms into brms's Stan data on a frame."""
+    ``weights`` and ``cens``. ``addition_data`` turns the terms into brms's Stan data on a frame. ``"mi"`` (``mi()``, C06,
+    docs/missing-and-measurement-error.md) says that the response's missing values are parameters of the model (brms's
+    ``Ymi``) rather than rows to drop; it reads no column and is no likelihood weight (``addition_data`` skips it)."""
 
     kind: str
     column: str | None = None
@@ -872,10 +921,13 @@ class AdditionTerm:
 
     @property
     def term(self) -> str:
-        """The term as the canonical formula writes it: ``weights(w)``, ``cens(c)``, ``trunc(lb = 0)``, ``trunc(lb = 0, ub = 5)``."""
+        """The term as the canonical formula writes it: ``weights(w)``, ``cens(c)``, ``trunc(lb = 0)``, ``trunc(lb = 0, ub = 5)``,
+        ``mi()``."""
         if self.kind == "trunc":
             sides = [f"{side} = {_number_text(v)}" for side, v in (("lb", self.lb), ("ub", self.ub)) if v is not None]
             return f"trunc({', '.join(sides)})"
+        if self.kind == "mi":
+            return "mi()"
         return f"{self.kind}({self.column})"
 
     @property
@@ -921,7 +973,8 @@ def _parse_additions(text: str, formula: str) -> tuple[str | None, tuple[Additio
             raise FormulaError(
                 f"{formula!r}: {piece!r} is not a supported response addition term. brms's left-hand side "
                 "'response | term + term' takes weights(col), cens(col) and trunc(lb = a, ub = b) here "
-                "(docs/addition-terms.md); a binomial response is exactly 'successes | trials(n)', with any other terms after it."
+                "(docs/addition-terms.md), and mi() in a multivariate list of formulas (docs/missing-and-measurement-error.md); "
+                "a binomial response is exactly 'successes | trials(n)', with any other terms after it."
             )
         if kind in seen:
             raise FormulaError(f"{formula!r}: {kind}() appears more than once on the left-hand side")
@@ -929,6 +982,14 @@ def _parse_additions(text: str, formula: str) -> tuple[str | None, tuple[Additio
         args = [a.strip() for a in _split_top_level(m.group(2), ",")] if m.group(2).strip() else []
         if kind == "trunc":
             additions.append(_parse_trunc(args, piece, formula))
+            continue
+        if kind == "mi":                                        # C06: the response's missing values are parameters (brms's Ymi)
+            if args:
+                raise FormulaError(
+                    f"{formula!r}: {piece!r}: mi() on the response takes no argument here; brms's mi(sdy), a response measured "
+                    "with known noise, is not part of this slice (docs/missing-and-measurement-error.md, divergence D72)"
+                )
+            additions.append(AdditionTerm("mi"))
             continue
         if len(args) != 1 or not re.fullmatch(_IDENT, args[0]):
             hint = {"weights": "; brms's weights(col, scale = TRUE), which rescales the weights to sum to the number of rows, "
@@ -963,6 +1024,12 @@ def _check_additions(additions: tuple[AdditionTerm, ...], fam, formula: str) -> 
             f"{formula!r}: cens() together with trunc() is not supported: brms adds a censored row of a truncated model as "
             "the untruncated tail log P(Y <= y) or log P(Y > y) minus the log mass between the bounds, which is not the "
             "censored probability of the truncated distribution (docs/addition-terms.md, divergence D25)"
+        )
+    others = [a.term for a in additions if a.kind != "mi"]
+    if others and len(others) < len(additions):                # C06: mi() is verified alone on the left-hand side
+        raise FormulaError(
+            f"{formula!r}: mi() together with {', '.join(others)} on the left-hand side is not verified in this slice: brms "
+            "would weight, censor or truncate the imputed rows too (docs/missing-and-measurement-error.md, divergence D72)"
         )
 
 
@@ -1005,13 +1072,16 @@ def addition_data(spec: "ModelSpec", df: pd.DataFrame, *, where: str = "column")
     """brms's Stan data of the formula's addition terms on ``df`` (B02), under brms's names: ``weights`` (positive finite
     weights), ``cens`` (-1, 0 or 1 per row, int64) and ``lb`` / ``ub`` (the truncation bounds per row, ``-inf`` / ``inf``
     on an open side, as brms writes both whenever ``trunc()`` is present). Each is checked here: a response outside the
-    truncation bounds is refused, as brms refuses it. Empty without addition terms."""
+    truncation bounds is refused, as brms refuses it. Empty without addition terms; ``mi()`` (C06) has no such data (its missing
+    rows are the model's ``Design.missing``)."""
     out: dict[str, np.ndarray] = {}
     for a in spec.additions:
         if a.kind == "weights":
             out["weights"] = _weights_values(a.column, df[a.column], where)
         elif a.kind == "cens":
             out["cens"] = _cens_values(a.column, df[a.column], where)
+        elif a.kind == "mi":
+            continue
         else:
             lb = -math.inf if a.lb is None else a.lb
             ub = math.inf if a.ub is None else a.ub
@@ -1059,10 +1129,10 @@ def pop_term(name: str, kind: str, categoricals=()) -> PopTerm:
     read from the declared categorical terms: a categorical term's coefficient levels; for an interaction, the
     non-reference levels of its one categorical operand (``x:z[l]``), the cells of its two categorical operands
     (``z[l]:h[m]``, levels ``"l, m"``), or no levels at all when both operands are numeric (``x:w``); none for a
-    numeric term; a monotonic term ``mo(col)`` has neither (B03)."""
+    numeric term; a special term (``mo(col)``, B03; ``me(x, sdx)`` and ``mi(col)``, C06) has neither."""
     if kind in ("numeric", "transform"):
         return PopTerm(name, kind, (name,), (), ())
-    if kind == "monotonic":
+    if kind in SPECIAL_KINDS:
         return PopTerm(name, kind, (), (), ())
     if kind == "categorical":
         levels = _find_categorical(categoricals, name).coefficients
@@ -1096,11 +1166,12 @@ def pop_term_design(term: PopTerm, df: pd.DataFrame, categoricals=()) -> np.ndar
     indicator, ``x:w`` the elementwise product of the two columns, ``z:h`` the product of the two indicators
     of each cell, which needs the declared ``Categorical`` terms for the operands' non-reference levels.
     Categorical columns are read as string labels (a fitted frame holds them recoded). A monotonic term ``mo(col)`` has no
-    column in the design (``(n, 0)``): its block is its codes, ``Monotonic.codes`` (B03)."""
+    column in the design (``(n, 0)``): its block is its codes, ``Monotonic.codes`` (B03); nor have ``me(x, sdx)`` and
+    ``mi(col)`` (C06), whose values are the model's (``Design.measurement_error``, ``Design.missing``)."""
     n = len(df)
     if term.kind == "numeric":
         return df[term.name].to_numpy(dtype=float)[:, None]
-    if term.kind == "monotonic":
+    if term.kind in SPECIAL_KINDS:
         return np.zeros((n, 0))
     if term.kind == "transform":                                 # evaluated from the raw column, never read from a column of its name
         return term.transform.values(df)[:, None]
@@ -1358,16 +1429,36 @@ class ModelSpec:
                 return m
         raise KeyError(column)
 
+    # -- measurement-error and missing-value terms (C06) ------------------------------------
+    @property
+    def me_terms(self) -> tuple[PopTerm, ...]:
+        """The measurement-error terms ``me(x, sdx)`` (C06), in formula order: population-level terms with no design column."""
+        return tuple(t for t in self.pop_terms if t.kind == "measurement_error")
+
+    @property
+    def mi_terms(self) -> tuple[PopTerm, ...]:
+        """The missing-value terms ``mi(col)`` (C06), in formula order: population-level terms with no design column."""
+        return tuple(t for t in self.pop_terms if t.kind == "missing")
+
+    @property
+    def missing_columns(self) -> tuple[str, ...]:
+        """The columns whose missing values are parameters of this formula's model (C06): the response's under ``| mi()``,
+        then each ``mi(col)`` term's column, in formula order without repeats."""
+        own = (self.response,) if self.addition("mi") is not None else ()
+        return tuple(dict.fromkeys([*own, *(t.operands[0] for t in self.mi_terms)]))
+
     @property
     def bambi_terms(self) -> tuple[PopTerm, ...]:
-        """The population-level terms Bambi builds: all but the monotonic ones, which this library adds to the graph (B03)."""
-        return tuple(t for t in self.pop_terms if not t.is_monotonic)
+        """The population-level terms Bambi builds: all but the special ones (``mo()``, B03; ``me()``, ``mi()``, C06), which this
+        library adds to the graph."""
+        return tuple(t for t in self.pop_terms if not t.is_special)
 
     @property
     def coefficient_labels(self) -> tuple[str, ...]:
         """brms's class ``b`` of this formula, one label per coefficient in term order: each design column (``columns``) and
-        each monotonic term by its name (``mo(ord)``, brms's ``bsp``), which has a coefficient but no design column."""
-        return tuple(label for t in self.pop_terms for label in (t.columns if not t.is_monotonic else (t.name,)))
+        each special term by its name (``mo(ord)``, B03; ``me(x, sdx)``, ``mi(col)``, C06; brms's ``bsp``), which has a
+        coefficient but no design column."""
+        return tuple(label for t in self.pop_terms for label in (t.columns if not t.is_special else (t.name,)))
 
     @property
     def groups(self) -> tuple[str, ...]:
@@ -1466,11 +1557,11 @@ class ModelSpec:
 
     @property
     def column_terms(self) -> tuple[tuple[str, str, int | None], ...]:
-        """``(column label, term, index within the term or None for a numeric term)`` per column (a monotonic term has
-        none)."""
+        """``(column label, term, index within the term or None for a numeric term)`` per column (a special term, ``mo()``,
+        ``me()`` or ``mi()``, has none)."""
         out: list[tuple[str, str, int | None]] = []
         for t in self.pop_terms:
-            if t.is_monotonic:
+            if t.is_special:
                 continue
             if t.levels:
                 out.extend((col, t.name, j) for j, col in enumerate(t.columns))
@@ -1584,6 +1675,13 @@ def _parse_group_term(inner: str, bars: str, factor: str, piece: str, response: 
                 f"{piece!r}: a monotonic effect cannot vary by {factor!r} in this slice: brms's '(1 + {s} {bars} {factor})' gives "
                 "every level its own coefficient of the monotonic term, which is not verified here (docs/monotonic.md, "
                 f"divergence D41); keep {s} as a population-level term, '{response} ~ ... + {s} + (1 | {factor})'"
+            )
+        if _ME_RE.match(s) or _MI_RE.match(s):                   # C06
+            which = ("a measurement-error term", "D73") if _ME_RE.match(s) else ("a missing-value term", "D72")
+            raise FormulaError(
+                f"{piece!r}: {which[0]} cannot vary by {factor!r} in this slice: brms's '(1 + {s} {bars} {factor})' gives every "
+                f"level its own coefficient of it, which is not verified here (docs/missing-and-measurement-error.md, divergence "
+                f"{which[1]}); keep {s} as a population-level term"
             )
         if "(" in s or ")" in s:
             raise FormulaError(
@@ -1765,6 +1863,12 @@ def _parse_formulas(formulas, data: pd.DataFrame | None, family: str, categorica
     main, *rest = formulas
     if not rest:
         return parse_formula(main, data, family, categorical)
+    if any(MI_CALL_RE.search(text) for text in formulas):     # C06: a formula per response with mi() is a multivariate model
+        raise FormulaError(
+            f"{list(formulas)!r}: a list of formulas with mi() is brms's multivariate model with one formula per response, "
+            "bf(y ~ mi(x) + ...) + bf(x | mi() ~ ...): it is built by ab.gaussian([...], data, ab.Priors(resp={...}), "
+            "rescor=False) for the gaussian family only (docs/missing-and-measurement-error.md, divergence D72)"
+        )
     head = _ADDITIONS_FORMULA_RE.match(main) or _FORMULA_RE.match(main)
     response = head.group(1) if head else None
     parsed: list[tuple[str, str, str]] = []                   # (parameter, right-hand side, formula as written)
@@ -1860,6 +1964,12 @@ def _parse_formulas(formulas, data: pd.DataFrame | None, family: str, categorica
                 f"{text!r}: an autocorrelation term in a distributional formula ({d.autocor.term}) is not supported: it belongs "
                 "to the response formula, as in brms (docs/autocorrelation.md, divergence D70)"
             )
+        if d.me_terms:                                       # C06
+            raise FormulaError(
+                f"{text!r}: a measurement-error term in a distributional formula ({', '.join(t.name for t in d.me_terms)}) is not "
+                "supported in this slice; me() belongs to the response formula of a univariate Gaussian model here "
+                "(docs/missing-and-measurement-error.md, divergence D73)"
+            )
         for col in d.pop_columns:
             role = ("the response" if col == spec.response else "the trials column" if col == spec.trials
                     else "a grouping factor of the response formula" if col in operands else None)
@@ -1872,6 +1982,76 @@ def _parse_formulas(formulas, data: pd.DataFrame | None, family: str, categorica
             d = validate_data(d, data, family, dpar=True)
         dpars.append(d)
     return replace(spec, dpars=tuple(dpars))
+
+
+def _check_special_terms(spec: ModelSpec, fam, formula: str) -> None:
+    """C06: ``me(x, sdx)`` and ``mi(col)`` where a frozen brms case verifies them (``FamilySpec.measurement_error``,
+    ``FamilySpec.missing_values``): one ``me()`` term at most (brms correlates the latent values of several, its default
+    ``set_mecor(TRUE)``), and one kind of special term per formula (``mo()``, ``me()`` and ``mi()`` share brms's ``bsp``
+    vector, whose order is verified for one kind only); ``me()`` is not taken in a formula whose response has ``| mi()``;
+    neither term, nor the response's ``| mi()``, next to a Gaussian process ``gp()`` (C03) or an autocorrelation term
+    ``ar()``, ``ma()``, ``arma()`` (C04), as no frozen case verifies either pair."""
+    from autobayes.families import FAMILIES
+
+    for terms, flag, what, did in ((spec.me_terms, "measurement_error", "measurement-error", "D73"),
+                                   (spec.mi_terms, "missing_values", "missing-value", "D72")):
+        if terms and not getattr(fam, flag):
+            offering = [name for name, other in FAMILIES.items() if getattr(other, flag)]
+            raise FormulaError(
+                f"{formula!r}: the {what} term {terms[0].name!r} is not available for the {fam.name} family; brms's "
+                f"{terms[0].name.split('(')[0]}() is verified here for the {', '.join(offering) or 'no'} "
+                f"famil{'y' if len(offering) == 1 else 'ies'} (docs/missing-and-measurement-error.md, divergence {did})"
+            )
+    if len(spec.me_terms) > 1:
+        raise FormulaError(
+            f"{formula!r}: several measurement-error terms ({', '.join(t.name for t in spec.me_terms)}) are not supported in this "
+            "slice: brms correlates their latent values by default (set_mecor(TRUE), a correlation matrix Lme), which is not "
+            "verified here; one me() term per formula (docs/missing-and-measurement-error.md, divergence D73)"
+        )
+    kinds = [k for k, terms in (("mo()", spec.mo_terms), ("me()", spec.me_terms), ("mi()", spec.mi_terms)) if terms]
+    if len(kinds) > 1:
+        raise FormulaError(
+            f"{formula!r}: {' and '.join(kinds)} terms in one formula are not supported in this slice: they share brms's vector of "
+            "special coefficients (bsp), whose order is verified for one kind of term only "
+            f"(docs/missing-and-measurement-error.md, divergence {'D73' if 'me()' in kinds else 'D72'})"
+        )
+    if spec.me_terms and spec.addition("mi") is not None:
+        raise FormulaError(
+            f"{formula!r}: a measurement-error term in a formula whose response has mi() is not supported in this slice; me() "
+            "belongs to a univariate Gaussian model here (docs/missing-and-measurement-error.md, divergence D73)"
+        )
+    special = ([f"the measurement-error term {t.name!r}" for t in spec.me_terms]
+               + [f"the missing-value term {t.name!r}" for t in spec.mi_terms]
+               + ([f"the response's mi() ('{spec.response} | mi()')"] if spec.addition("mi") is not None else []))
+    others = ([f"the Gaussian process {g.term!r} (C03)" for g in spec.gp_terms]
+              + ([f"the autocorrelation term {spec.autocor.term!r} (C04)"] if spec.autocor is not None else []))
+    if special and others:                                   # C03 / C04: no frozen brms case verifies either pair
+        raise FormulaError(
+            f"{formula!r}: {special[0]} next to {others[0]} is not supported in this slice: no frozen brms case verifies the pair "
+            f"(docs/missing-and-measurement-error.md, divergence {'D73' if spec.me_terms else 'D72'})"
+        )
+
+
+def check_imputation(spec: ModelSpec, imputed=()) -> None:
+    """C06: the missing values a formula's model holds must be imputed by a formula of the same (multivariate) model:
+    ``imputed`` names the responses of that model's ``col | mi() ~ ...`` formulas (empty for a univariate model). An
+    ``mi(col)`` term needs ``col`` among them (brms refuses an ``mi()`` predictor without its sub-model too), and a response
+    with ``| mi()`` must be one of them: a univariate ``y | mi() ~ ...`` is not part of this slice."""
+    for t in spec.mi_terms:
+        col = t.operands[0]
+        if col not in imputed:
+            raise FormulaError(
+                f"{spec.formula!r}: {t.name!r} reads a column whose missing values are modelled by a formula of its own, "
+                f"'{col} | mi() ~ ...', in the same model (brms's bf({spec.formula}) + bf({col} | mi() ~ ...)); write the model as "
+                f"a list of formulas, ab.gaussian(['{spec.formula}', '{col} | mi() ~ <terms>'], data, priors, rescor=False) "
+                "(docs/missing-and-measurement-error.md, divergence D72)"
+            )
+    if spec.addition("mi") is not None and spec.response not in imputed:
+        raise FormulaError(
+            f"{spec.formula!r}: the response's own missing values are imputed here only by the formula of an mi() predictor of "
+            f"another response, ab.gaussian(['y ~ mi({spec.response}) + ...', '{spec.formula}'], data, priors, rescor=False); a "
+            "univariate y | mi() ~ ... model is not part of this slice (docs/missing-and-measurement-error.md, divergence D72)"
+        )
 
 
 def parse_formula(formula: str | list[str], data: pd.DataFrame | None = None, family: str = "gaussian",
@@ -1955,6 +2135,7 @@ def parse_formula(formula: str | list[str], data: pd.DataFrame | None = None, fa
     predictors: list[str] = []                             # main effects as written: numeric, categorical, transform and monotonic terms
     transforms: dict[str, Transform] = {}                  # the transform terms among them, by canonical name
     monotonics: dict[str, str] = {}                        # the monotonic terms among them (B03): canonical name -> column
+    special_columns: dict[str, tuple[str, ...]] = {}       # the me() and mi() terms among them (C06): canonical name -> columns
     group_terms: list[GroupTerm] = []
     group_pieces: list[str] = []                           # each group term as written, for the messages below
     groups: list[str] = []                                 # the factors of group_terms, for the checks below
@@ -2063,6 +2244,13 @@ def parse_formula(formula: str | list[str], data: pd.DataFrame | None = None, fa
                         "process that changes with another variable is brms's gp(x, by = z), which is not offered either "
                         "(docs/gaussian-processes.md, divergence D64)"
                     )
+                if _ME_RE.match(side) or _MI_RE.match(side):        # C06
+                    which = ("a measurement-error term", "D73") if _ME_RE.match(side) else ("a missing-value term", "D72")
+                    raise FormulaError(
+                        f"{piece!r}: an interaction with {which[0]} ({side!r}) is not supported in this slice: brms gives it a "
+                        "special coefficient of its own times the product, which is not verified here "
+                        f"(docs/missing-and-measurement-error.md, divergence {which[1]})"
+                    )
                 if "(" in side or ")" in side:
                     if parse_transform(side) is None:
                         raise FormulaError(f"{side!r}: {SUPPORTED_TRANSFORMS}")
@@ -2104,6 +2292,58 @@ def parse_formula(formula: str | list[str], data: pd.DataFrame | None = None, fa
                 raise FormulaError(f"{piece!r}: the trials column {trials!r} cannot be a monotonic predictor")
             _main(f"mo({inner})", piece, call=True)                # under its canonical spelling, so 'mo( x )' duplicates 'mo(x)'
             monotonics[f"mo({inner})"] = inner
+            continue
+        me = _ME_RE.match(piece)
+        if me:                                                  # brms's measurement error me(x, sdx) (C06)
+            args = [a.strip() for a in _split_top_level(me.group(1), ",")] if me.group(1).strip() else []
+            named = [a for a in args if re.match(rf"^{_IDENT}\s*=", a)]
+            if named or len(args) > 2:
+                raise FormulaError(
+                    f"{piece!r}: me() takes the noisy column and the column of its known standard deviations here, me(x, sdx); "
+                    "brms's gr argument (me(x, sdx, gr = g), latent values shared within the levels of g) is not supported in "
+                    "this slice (docs/missing-and-measurement-error.md, divergence D73)"
+                )
+            if len(args) != 2:
+                raise FormulaError(f"{piece!r}: me() takes two column names, the noisy values and their known standard deviations, "
+                                   "me(x, sdx) (brms's me())")
+            bad = [a for a in args if not re.fullmatch(_IDENT, a)]
+            if bad:
+                raise FormulaError(
+                    f"{piece!r}: me() takes column names here, not expressions ({bad[0]!r}; brms evaluates one): compute the "
+                    "column in the data frame and write me(<column>, <noise column>) (docs/missing-and-measurement-error.md, "
+                    "divergence D73)"
+                )
+            x, sdx = args
+            for col in (x, sdx):
+                if col == response:
+                    raise FormulaError(f"{piece!r}: the response {response!r} cannot be read by me()")
+                if trials is not None and col == trials:
+                    raise FormulaError(f"{piece!r}: the trials column {trials!r} cannot be read by me()")
+            if x == sdx:
+                raise FormulaError(f"{piece!r}: the noisy column and the column of its standard deviations must differ")
+            _main(f"me({x}, {sdx})", piece, call=True)             # under its canonical spelling, 'me(x,sdx)' is 'me(x, sdx)'
+            special_columns[f"me({x}, {sdx})"] = (x, sdx)
+            continue
+        mi = _MI_RE.match(piece)
+        if mi:                                                  # brms's missing values mi(col) (C06)
+            inner = mi.group(1).strip()
+            if len(_split_top_level(inner, ",")) > 1:
+                raise FormulaError(
+                    f"{piece!r}: mi() takes one column here; brms's idx argument (mi(x, idx), the rows of x's own formula that "
+                    "each row of this one reads) is not supported in this slice (docs/missing-and-measurement-error.md, "
+                    "divergence D72)"
+                )
+            if not re.fullmatch(_IDENT, inner):
+                raise FormulaError(
+                    f"{piece!r}: mi() takes a column name here, the response of another formula of the model, written "
+                    "'<column> | mi() ~ ...' (docs/missing-and-measurement-error.md, divergence D72)"
+                )
+            if inner == response:
+                raise FormulaError(f"{piece!r}: the response {response!r} cannot be its own mi() predictor")
+            if trials is not None and inner == trials:
+                raise FormulaError(f"{piece!r}: the trials column {trials!r} cannot be an mi() predictor")
+            _main(f"mi({inner})", piece, call=True)
+            special_columns[f"mi({inner})"] = (inner,)
             continue
         if "(" in piece or ")" in piece:                       # an in-formula transform, log(col), I(col^2), ... (A05)
             tr = parse_transform(piece)
@@ -2171,8 +2411,10 @@ def parse_formula(formula: str | list[str], data: pd.DataFrame | None = None, fa
     transform_columns = [tr.column for tr in transforms.values()]   # the raw columns the transform terms read
     mo_columns = list(monotonics.values())                           # and the monotonic terms (B03)
     gp_columns = [g.column for g, _ in gps]                          # and the Gaussian processes (C03)
+    special_cols = [c for cols in special_columns.values() for c in cols]   # and the me() and mi() terms (C06)
     for col in operands_all:
-        if col in predictors or col in transform_columns or col in mo_columns or col in gp_columns or col == response:
+        if (col in predictors or col in transform_columns or col in mo_columns or col in gp_columns or col in special_cols
+                or col == response):
             raise FormulaError(f"{col!r}: the grouping factor cannot also be a predictor or the response")
     if trials is not None and (trials in predictors or trials in operands_all):
         raise FormulaError(f"{trials!r}: the trials column cannot also be a predictor or the grouping factor")
@@ -2194,8 +2436,20 @@ def parse_formula(formula: str | list[str], data: pd.DataFrame | None = None, fa
                 "supported in this slice: no frozen brms case verifies the pair (brms takes it, the residuals then those of the "
                 "predictor with the process); docs/autocorrelation.md, divergence D70"
             )
+    for name, cols in special_columns.items():                # C06: a column me() or mi() reads is read by nothing else
+        elsewhere = [*(p for p in predictors if p != name and p not in special_columns), *transform_columns, *mo_columns, *gp_columns,
+                     *(c for other, oc in special_columns.items() if other != name for c in oc),
+                     *([offset.column] if offset is not None else []), *(c for a in additions for c in a.columns),
+                     *(c for left, right, _ in raw_interactions for c in (left, right))]
+        shared = [c for c in cols if c in elsewhere]
+        if shared:
+            raise FormulaError(
+                f"{formula!r}: {shared[0]!r} is read by {name!r} and by another term of the formula; a column inside me() or "
+                "mi() is read by that term alone in this slice (docs/missing-and-measurement-error.md)"
+            )
     # A derived factor's column (g_h) is added to the fitted frame: it must not shadow a column the formula uses.
-    in_use = {response, *predictors, *transform_columns, *mo_columns, *gp_columns, *operands_all, *([trials] if trials is not None else []),
+    in_use = {response, *predictors, *transform_columns, *mo_columns, *gp_columns, *special_cols, *operands_all,
+              *([trials] if trials is not None else []),
               *([offset.column] if offset is not None else []), *(c for a in additions for c in a.columns)}
     in_use |= set(autocor.columns) if autocor is not None else set()   # the time and series columns (C04)
     derived_columns: dict[str, GroupTerm] = {}
@@ -2231,6 +2485,10 @@ def parse_formula(formula: str | list[str], data: pd.DataFrame | None = None, fa
             if g.column in categorical:
                 raise FormulaError(f"{piece!r}: {g.column!r} is declared categorical; the input of a Gaussian process is a numeric "
                                    "column, and one column cannot be both")
+        for name, cols in special_columns.items():           # nor do me() and mi(), which read numbers (C06)
+            declared = [c for c in cols if c in categorical]
+            if declared:
+                raise FormulaError(f"{name!r}: {declared[0]!r} is declared categorical; {name.split('(')[0]}() reads numbers")
     categoricals = _normalise_categorical(categorical, predictors, response, operands_all, trials, formula)
     if offset is not None and any(c.name == offset.column for c in categoricals):
         raise FormulaError(
@@ -2271,7 +2529,8 @@ def parse_formula(formula: str | list[str], data: pd.DataFrame | None = None, fa
     canonical_rhs = " + ".join(parts) if parts else "1"           # intercept-only population model: 'y ~ 1'
     if remove_intercept:
         canonical_rhs = "0 + " + canonical_rhs
-    kinds = {**{p: "transform" for p in transforms}, **{p: "monotonic" for p in monotonics}, **{p: "categorical" for p in cat_names}}
+    kinds = {**{p: "transform" for p in transforms}, **{p: "monotonic" for p in monotonics}, **{p: "categorical" for p in cat_names},
+             **{p: "measurement_error" if p.startswith("me(") else "missing" for p in special_columns}}   # C06
     pop_terms = (*(pop_term(p, kinds.get(p, "numeric"), categoricals) for p in predictors),
                  *(pop_term(name, "interaction", categoricals) for name in interactions))
     spec = ModelSpec(
@@ -2285,6 +2544,7 @@ def parse_formula(formula: str | list[str], data: pd.DataFrame | None = None, fa
             "each non-reference category its own Gaussian process, which is not part of this slice (docs/gaussian-processes.md, "
             "divergence D64)"
         )
+    _check_special_terms(spec, fam, formula)                 # C06: me() and mi() where a frozen brms case verifies them
     if spec.mo_terms and not fam.monotonic:                  # mo() where a frozen brms case verifies it (B03)
         from autobayes.families import FAMILIES
 
@@ -2505,6 +2765,44 @@ def binomial_counts(spec: ModelSpec, data: pd.DataFrame) -> tuple[np.ndarray, np
     return k, n
 
 
+def missing_values(label: str, s: pd.Series, response: bool = False) -> np.ndarray:
+    """A column whose missing values are parameters of the model (C06: the response of ``col | mi() ~ ...``, or the column of
+    an ``mi(col)`` term): real numeric, NaN (or pandas's NA) marking a missing row, every other value finite, and at least one
+    observed value. Returns the values as float64 with NaN at the missing rows."""
+    reject_complex(label, s)
+    if not _is_numeric(s):
+        raise FormulaError(f"{label} has dtype {s.dtype}; a column with missing values modelled by mi() must be numeric, NaN "
+                           "marking a missing value")
+    v = s.to_numpy(dtype=float, na_value=np.nan)
+    if np.isinf(v).any():
+        raise FormulaError(f"{label} has an infinite value at row {int(np.flatnonzero(np.isinf(v))[0])}; a missing value is NaN")
+    if np.isnan(v).all():
+        raise FormulaError(f"{label} has no observed value; {'its formula' if response else 'mi()'} needs observed rows")
+    return v
+
+
+def measurement_values(term: str, x: pd.Series, sd: pd.Series, *, where: str = "column") -> tuple[np.ndarray, np.ndarray]:
+    """The noisy values and their known standard deviations of ``me(x, sdx)`` (C06, brms's ``Xn`` and ``noise``): real numeric
+    and finite (missing noisy values are brms's ``me()`` with ``mi()``, not part of this slice), the standard deviations
+    positive (Stan's normal density needs a positive scale)."""
+    out = []
+    for s, what in ((x, "noisy values"), (sd, "known standard deviations")):
+        reject_complex(f"{where} {s.name!r}", s)
+        if not _is_numeric(s):
+            raise FormulaError(f"{where} {s.name!r} ({what} of {term!r}) has dtype {s.dtype}; it must be numeric")
+        v = s.to_numpy(dtype=float, na_value=np.nan)
+        if not np.isfinite(v).all():
+            raise FormulaError(f"{where} {s.name!r} ({what} of {term!r}) has missing or non-finite values (missing noisy values "
+                               "are brms's me() with mi(), not part of this slice; docs/missing-and-measurement-error.md, "
+                               "divergence D73)")
+        out.append(v)
+    if np.any(out[1] <= 0):
+        i = int(np.flatnonzero(out[1] <= 0)[0])
+        raise FormulaError(f"{where} {sd.name!r}: the known standard deviations of {term!r} must be positive; row {i} has "
+                           f"{float(out[1][i])!r}")
+    return out[0], out[1]
+
+
 def validate_data(spec: ModelSpec, data: pd.DataFrame, family: str = "gaussian", *, dpar: bool = False) -> ModelSpec:
     """Check columns exist, are numeric where required, and have no missing values. ``dpar=True`` validates a
     distributional parameter's formula (B01), whose left-hand side names a parameter rather than a column: its terms
@@ -2549,7 +2847,11 @@ def validate_data(spec: ModelSpec, data: pd.DataFrame, family: str = "gaussian",
     if not dpar:
         reject_complex(f"response {spec.response!r}", data[spec.response])
         fam.validate_response(spec, data)
-    na = data[needed].isna().any()
+    for c in spec.missing_columns:                               # C06: the columns whose missing values are parameters
+        missing_values(f"column {c!r}", data[c], c == spec.response)
+    for t in spec.me_terms:                                       # C06: the noisy column and its known noise
+        measurement_values(t.name, data[t.operands[0]], data[t.operands[1]])
+    na = data[[c for c in needed if c not in spec.missing_columns]].isna().any()
     if na.any():
         raise FormulaError(
             f"missing values in columns {list(na[na].index)}; M0 does not handle missing "

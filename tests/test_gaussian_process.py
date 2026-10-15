@@ -651,3 +651,17 @@ def test_gp_is_refused_in_mixtures_and_multivariate_formulas():
     resp = ab.Priors(intercept=ab.Normal(0, 2), sigma=ab.HalfNormal(1), **gp_priors)
     with pytest.raises(ab.FormulaError, match="Gaussian process in a multivariate formula"):
         ab.gaussian("mvbind(y, y2) ~ gp(x)", df, ab.Priors(resp={"y": resp, "y2": resp}), rescor=False)
+
+
+
+def test_a_mixture_refuses_gaussian_process_priors_and_values():
+    """gp() in a mixture is refused (D55), so its priors and values are refused too, not silently ignored."""
+    rng = np.random.default_rng(2)
+    df = pd.DataFrame({"x": rng.normal(size=30), "y": rng.normal(size=30)})
+    comp = ab.Priors(intercept=ab.Normal(0, 2), b=ab.Normal(0, 1), sigma=ab.HalfNormal(1))
+    with pytest.raises(ab.PriorError, match="sdgp and lscale"):
+        ab.mixture("y ~ x", df, ab.Priors(components=[comp, comp], theta=ab.Dirichlet(2), sdgp=ab.HalfNormal(1)),
+                   families=["gaussian", "gaussian"])
+    m = ab.mixture("y ~ x", df, ab.Priors(components=[comp, comp], theta=ab.Dirichlet(2)), families=["gaussian", "gaussian"])
+    with pytest.raises(ValueError, match="Gaussian process"):
+        m.value_point(intercept=[-1.0, 1.0], b=[[0.1, 0.2]], sigma=[1.0, 1.0], theta=[0.5, 0.5], sdgp=1.0)

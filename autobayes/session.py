@@ -78,6 +78,7 @@ def _summary_rows(model, idata) -> dict:
     names = ([n["intercept"]] if model.spec.intercept else []) + list(model.spec.terms) + [roles["sd"] for roles in model.group_coefficient_names.values()] + scale_names
     names += [n[name] for name in model.learned_parameters]     # a learned Student-t nu (A13)
     names += [roles["simplex"] for roles in getattr(model, "mo_names", {}).values()]   # each monotonic term's simplex (B03)
+    names += [roles[k] for roles in getattr(model, "me_names", {}).values() for k in ("mean", "sd")]   # an me() term's (C06)
     mixture = getattr(model, "mixture_names", {})               # a mixture's sigma<k> and theta (C05)
     names += [*mixture["sigma"], mixture["theta"]] if mixture else []
     names += [roles[k] for roles in getattr(model, "gp_names", {}).values() for k in ("sdgp", "lscale")]   # each GP's (C03)
@@ -167,6 +168,7 @@ def fit_record(model, fit, *, panel: dict | None = None, max_treedepth: int = 10
                        **{f"simo:{c}": str(prior) for c, prior in pr.simo_priors(s).items()},
                        **{f"sdgp:{c}": str(prior) for c, prior in pr.sdgp_priors(s).items()},       # C03
                        **{f"lscale:{c}": str(prior) for c, prior in pr.lscale_priors(s).items()},
+                       **{f"{cls}:{x}": str(prior) for cls in ("meanme", "sdme") for x, prior in pr.me_priors(s, cls).items()},   # C06
                        **(_scale_priors(model) if fam.scale_parameter is not None else {}),
                        **({fam.zero_parameter: str(getattr(pr, fam.zero_parameter))} if fam.zero_parameter is not None else {}),
                        **({"nu": str(pr.nu)} if pr.nu is not None else {}),
@@ -203,6 +205,9 @@ def fit_record(model, fit, *, panel: dict | None = None, max_treedepth: int = 10
             **({"autocorrelation": {"term": s.autocor.term, "time": s.autocor.time, "gr": s.autocor.gr, "p": s.autocor.p,
                                     "q": s.autocor.q, "series": len(d.autocor.series), "names": model.autocor_names}}
                if getattr(s, "autocor", None) is not None else {}),
+            # each measurement-error term (C06): its columns and PyMC names
+            **({"measurement_error": {t.name: {"column": t.operands[0], "noise_column": t.operands[1], "names": model.me_names[t.operands[0]]}
+                                      for t in s.me_terms}} if s.me_terms else {}),
             "interactions": [list(pair) for pair in s.interactions],
             "canonical_formula": s.canonical_formula,
             "categorical": {c.name: {"reference": c.reference, "levels": list(c.levels),

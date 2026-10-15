@@ -26,6 +26,7 @@ test or `match`.
 | Multivariate (C01) | `multivariate` (brms's `mvbind(y, y2) ~ ...`: one model per response, with or without residual correlation, docs/multivariate.md; set where a frozen case verifies it) | yes | no | no | no | no | no | no | no | no |
 | Non-linear formulas (C02) | `nonlinear_likelihood` (the likelihood of a non-linear model on its predictor `mu`, `nl=True`, docs/nonlinear.md; set where a frozen case verifies it; None: refused, D62) | `Normal(mu, sigma)` | none | none | none | none | none | none | none | none |
 | Autocorrelation (C04) | `autocorrelation` (the family's linear predictor takes brms's `ar()`, `ma()`, `arma()` terms in the regression formulation, docs/autocorrelation.md; set where a frozen case verifies it) | yes | no (D70) | no (D70) | no (D70) | no (D70) | no (D70) | no (D70) | no (D70) | no (D70) |
+| Missing values and measurement error (C06) | `missing_values`, `measurement_error` (brms's `mi(col)` with `col \| mi() ~ ...`, the addition term `"mi"` in `addition_terms`, and `me(x, sdx)`, docs/missing-and-measurement-error.md; set where a frozen case verifies it) | yes | no | no | no | no | no | no | no | no |
 
 A family with a `distributional_link` lets its auxiliary parameter have its own formula (docs/distributional.md): Bambi
 builds it as a distributional component named `bambi_scale_parameter`, `model.names[scale_parameter]` is then the per-row
@@ -90,6 +91,7 @@ would keep both; every other family has `zero_parameter=None`. Their mean needs 
 | Post-processing (C07) | `log_likelihood`: the zero-inflated Poisson log mass (D28's stable form) | `log_likelihood`: the hurdle Poisson log mass |
 | Multivariate (C01) | no | no |
 | Autocorrelation (C04) | no (D70) | no (D70) |
+| Missing values and measurement error (C06) | no | no |
 
 The ordinal and categorical families (B05, docs/ordinal-categorical.md) have a response of K categories, which
 `FamilySpec.response_categories` turns into brms's `Y`, each row's 1-based category, keeping the labels as
@@ -113,6 +115,7 @@ family, whose every coefficient has a trailing axis over the non-reference categ
 | Post-processing (C07) | `log_likelihood`: log P(y = k), the ordered logistic's stable form; `bayes_R2()` of the expected category `sum_k k P(y = k)` | `log_likelihood`: the log softmax of `(0, mu)` at the category; `bayes_R2()` refused, as brms refuses it |
 | Multivariate (C01) | no | no |
 | Autocorrelation (C04) | no (D70) | no (D70) |
+| Missing values and measurement error (C06) | no | no |
 
 A finite mixture (C05, docs/mixtures.md) is the registered family `mixture`, whose spec sets `mixture`: the model holds its
 component families (`model.components`, Gaussian in this slice) and its own names (`model.mixture_names`), the parent `mu`
@@ -134,6 +137,7 @@ when `mixture` is set; every other family has `mixture=False`.
 | Post-processing (C07) | no `log_likelihood`: `log_lik()` and `loo()` are not offered |
 | Multivariate (C01) | no |
 | Autocorrelation (C04) | no (D70) |
+| Missing values and measurement error (C06) | no |
 
 ## Adding a family
 

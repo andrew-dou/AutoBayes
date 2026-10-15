@@ -41,7 +41,10 @@ the graph: every response's variables under their new names with their transform
 
 `MultivariateSpec` (`model.spec`) is the parsed formula: the responses in order, the shared right-hand side and each
 response's `ModelSpec` (`specs`), the per-response sub-models over one data frame being the extension point for a formula
-per response (C06's `bf(y ~ mi(x)) + bf(x | mi() ~ w)`).
+per response. C06 uses it (docs/missing-and-measurement-error.md): a list of formulas with `mi()`, `["y ~ mi(xm) + w",
+"xm | mi() ~ w"]` with `rescor=False`, is one formula per response (`spec.separate`, `formula` the list, `rhs` empty,
+`canonical_formula` brms's `bf(...) + bf(...)`), each response built from its own formula with its own declarations, and the
+missing values `Ymi_xm` one variable of the assembled graph, by brms's name, shared by the responses that hold them.
 
 ## Using it
 
@@ -77,10 +80,11 @@ per response (C06's `bf(y ~ mi(x)) + bf(x | mi() ~ w)`).
 
 ## Refused, with the construct named
 
-A formula per response (`["y ~ x", "y2 ~ z"]`, brms's `bf(y ~ ...) + bf(y2 ~ ...)`), a distributional formula in a
-multivariate model, addition terms after `mvbind()`, `mi()` (feature C06) and `mo()` (D56); an autocorrelation term `ar()`,
-`ma()`, `arma()` (C04: brms gives each response its own, `ar_y` and `ar_y2`; docs/autocorrelation.md, D70) and the `ar` and
-`ma` priors at the top level or in a response's; correlated group effects across
+A formula per response without `mi()` (`["y ~ x", "y2 ~ z"]`, brms's `bf(y ~ ...) + bf(y2 ~ ...)`; with `mi()` it is C06's),
+a distributional formula in a multivariate model, addition terms after `mvbind()`, `mi()` inside `mvbind()` (C06 takes it in a
+list of formulas), `me()` (D73) and `mo()` (D56); an autocorrelation term `ar()`, `ma()`, `arma()` (C04: brms gives each
+response its own, `ar_y` and `ar_y2`; docs/autocorrelation.md, D70) and the `ar` and `ma` priors at the top level or in a
+response's; correlated group effects across
 responses `(1 |ID| g)` (D57); families other than the Gaussian and a missing `rescor` (D58); a response that is also a
 predictor, grouping factor or offset; fewer than two or repeated responses; a top-level class other than `resp`, `cor` and
 `rescor`, a response-specific `cor`, a `rescor` prior without `rescor=True`; `resp` or `rescor` for a model with one

@@ -26,6 +26,11 @@ A case that opts in to two-reference acceptance (P6, its gate field names a comm
 quantity kinds that may fall back on it: "gradient", "epred") has G2's gradient and G4's expected values checked by
 `two_reference`: brms where brms is accurate, the reference where it is not; every other check is unchanged.
 
+C06: G1 checks brms's coding of a response's missing rows (`check_response`: Inf in `Y`, `Jmi`, `Nmi`, `lbmi`, `ubmi`) and, through
+the adapter, `Ksp`, `Xn_1`, `noise_1` and `Mme_1`; G2 maps `Ymi`, `bsp`, `meanme`, `sdme` and `zme` (`meanme` and `sdme` in the
+prior part); G3 checks an `me()` term's latent values against brms's `Xme_1` (`check_latent`); G4 and G6 read them as every
+other quantity.
+
 A multivariate model (C01) passes each gate response by response where the gate is about one response (G1's design, G3's
 linear predictor, group effects and raw-scale intercept, each response's view of the fixture, adapter.ResponseView) and as one
 model where it is about the joint density (G2, G5: one log density and gradient, the residual correlation's included; G3's
@@ -95,6 +100,9 @@ def prior_names(model) -> list[str]:
     out += [*mixture["sigma"], mixture["theta"]] if mixture else []
     out += [roles[key] for roles in getattr(model, "gp_names", {}).values() for key in ("sdgp", "lscale")]   # C03
     out += [v for k, v in getattr(model, "autocor_names", {}).items() if not k.endswith("_coordinate")]   # an ARMA term's ar and ma (C04)
+    # C06: an me() term's meanme and sdme (brms's lprior; its zme and the noisy values' density are in the model block, and the
+    # missing values Ymi have no prior); an me() / mi() term's coefficient is among the terms
+    out += [roles[k] for roles in getattr(model, "me_names", {}).values() for k in ("mean", "sd")]
     return out
 
 
@@ -179,9 +187,7 @@ def check_design(b: Bundle) -> None:
         theirs = np.atleast_1d(sd["con_theta"])
         if theirs.shape != con.shape or abs_err(theirs, con) > DESIGN_ABS:
             raise OracleMismatch(f"brms con_theta is {theirs!r}; the prior of theta gives {con!r}")
-    err = abs_err(sd["Y"], d.y)
-    if err > DESIGN_ABS:
-        raise OracleMismatch(f"response differs by {err}")
+    check_response(sd, b.model)                                  # C06: with brms's Inf at the missing rows (Jmi, Nmi), if any
     if d.trials is not None:
         if "trials" not in sd:
             raise OracleMismatch("AutoBayes has trials but brms standata has none")
@@ -243,6 +249,33 @@ def check_design(b: Bundle) -> None:
     # maps were built
     adapter.match_columns(b.fixture, b.model)
     adapter.match_groups(b.fixture, b.model)
+
+
+def check_response(sd: dict, model) -> None:
+    """G1's response check: brms's ``Y`` equals the model's response on every row. A response whose missing values are
+    parameters (C06, ``y | mi() ~ ...``, ``Design.missing[response]``) is compared on its observed rows, and brms's own coding of
+    the missing rows must be the model's: ``Y`` infinite exactly there (brms writes Inf), ``Jmi`` those rows (1-based), ``Nmi``
+    their number and ``lbmi`` / ``ubmi`` brms's open bounds of the missing values."""
+    y_brms, y = np.asarray(sd["Y"], dtype=float), np.asarray(model.design.y, dtype=float)
+    block = getattr(model.design, "missing", {}).get(model.spec.response)
+    if block is None:
+        if not np.isfinite(y_brms).all() or "Jmi" in sd or "Nmi" in sd:
+            raise OracleMismatch("brms's response has missing values (Inf in Y, Jmi, Nmi); the AutoBayes model holds none")
+        observed = np.ones(y.shape, dtype=bool)
+    else:
+        rows = np.flatnonzero(~np.isfinite(y_brms))
+        if rows.tolist() != block.index.tolist() or not np.isinf(y_brms[rows]).all():
+            raise OracleMismatch(f"brms's Y is infinite at rows {rows.tolist()}; the AutoBayes model's missing rows are {block.index.tolist()}")
+        if (np.atleast_1d(sd.get("Jmi", np.zeros(0))).astype(int) - 1).tolist() != block.index.tolist() or int(sd.get("Nmi", -1)) != block.index.size:
+            raise OracleMismatch(f"brms's Jmi {sd.get('Jmi')} / Nmi {sd.get('Nmi')} are not the model's missing rows {block.index.tolist()}")
+        if "lbmi" in sd and not (np.isneginf(sd["lbmi"]) and np.isposinf(sd["ubmi"])):
+            raise OracleMismatch(f"brms bounds the missing values by lbmi {sd['lbmi']}, ubmi {sd['ubmi']}; the AutoBayes model does not")
+        observed = np.isfinite(y_brms)
+        if not np.isnan(y[~observed]).all():
+            raise OracleMismatch("the AutoBayes response is not missing (NaN) at brms's missing rows")
+    err = abs_err(y_brms[observed], y[observed])
+    if not err <= DESIGN_ABS:
+        raise OracleMismatch(f"response differs by {err}")
 
 
 # -- G2 -----------------------------------------------------------------------------------------------------
@@ -363,6 +396,22 @@ def check_derived(b: Bundle) -> None:
             err = rel_err(raw, float(p.pars["b_Intercept"]))
             if err > PRED_REL:
                 raise OracleMismatch(f"point {k}: raw-scale intercept {raw!r} vs brms b_Intercept {float(p.pars['b_Intercept'])!r}")
+    check_latent(b)                                                  # C06: an me() term's latent values, brms's Xme_k
+
+
+def check_latent(b: Bundle) -> None:
+    """G3 of an ``me()`` term (C06): the graph's latent values ``Xme_<x>`` equal brms's ``Xme_k`` at every point."""
+    measurement = b.cmap.measurement or {}
+    if not measurement:
+        return
+    pmm = b.model.pymc_model
+    names = [b.model.me_names[x]["latent"] for x in measurement]
+    fn = pmm.compile_fn(pmm.replace_rvs_by_values([pmm[v] for v in names]), inputs=pmm.value_vars, point_fn=True, on_unused_input="ignore")
+    for k, p, vp in b.points():
+        for (x, g), value in zip(measurement.items(), fn(vp)):
+            err = rel_err(np.asarray(value, dtype=float), np.atleast_1d(p.pars[f"Xme_{g}"]))
+            if err > PRED_REL:
+                raise OracleMismatch(f"point {k}: the graph's latent values of {x!r} differ from brms Xme_{g} by {err}")
 
 
 # -- G4 -----------------------------------------------------------------------------------------------------
@@ -465,6 +514,7 @@ def check_default_prior(b: Bundle) -> None:
     mixture = getattr(b.model, "mixture_names", {})        # C05: each component's sigma<k> and theta (Intercept, b above)
     expected |= {*mixture["sigma"], "theta"} if mixture else set()
     expected |= {part for part in ("ar", "ma") if part in getattr(b.model, "autocor_names", {})}   # C04: an ARMA term's ar and ma
+    expected |= {"meanme", "sdme"} if b.model.spec.me_terms else set()     # C06: an me() term's latent values
     if not expected <= classes:
         raise OracleMismatch(f"brms default_prior classes {sorted(classes)} lack {sorted(expected - classes)}")
     if adapter.is_nonlinear(b.model):                              # C02: each parameter's b (and sd) rows, cor by group
@@ -646,9 +696,18 @@ def _check_design_multivariate(b: Bundle) -> None:
         raise OracleMismatch(f"brms has nresp = {sd.get('nresp')}, nrescor = {sd.get('nrescor')}; AutoBayes has {K} correlated responses")
     if not m.rescor and "nrescor" in sd:
         raise OracleMismatch("brms has a residual correlation (nrescor) but the AutoBayes model has rescor=False")
-    err = abs_err(np.column_stack([sd[f"Y_{r}"] for r in m.responses]), m.design.Y)
-    if err > DESIGN_ABS:
+    Y_brms = np.column_stack([sd[f"Y_{r}"] for r in m.responses])
+    observed = np.isfinite(Y_brms)                                   # C06: brms writes Inf at a response's missing rows
+    if not np.array_equal(observed, ~np.isnan(m.design.Y)):
+        raise OracleMismatch("brms's responses are infinite (missing) at other rows than the AutoBayes model's missing ones")
+    err = abs_err(Y_brms[observed], m.design.Y[observed])
+    if not err <= DESIGN_ABS:
         raise OracleMismatch(f"the responses differ by {err}")
+    for r, sub in m.submodels.items():                              # C06: an mi(col) term reads the imputing response's column
+        for col, block in sub.design.missing.items():
+            owner = m.submodels[col].design.missing[col] if col in m.submodels else None
+            if owner is None or block.index.tolist() != owner.index.tolist() or not np.array_equal(block.filled, owner.filled):
+                raise OracleMismatch(f"response {r!r}: the column {col!r} it reads through mi() is not {col!r}'s own, with its missing rows")
     for r in m.responses:
         try:
             check_design(_response_bundle(b, r))

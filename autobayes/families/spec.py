@@ -131,7 +131,7 @@ class FamilySpec:
     zero_parameter: str | None = None
     default_zero_prior: Callable[[], object] | None = None   # brms's default prior of the zero_parameter: beta(1, 1), ``Beta(1, 1)`` (A07)
     # brms's response addition terms (B02, docs/addition-terms.md):
-    addition_terms: frozenset[str] = frozenset()   # the addition terms besides trials() the family's likelihood takes: "weights" where a frozen brms case verifies it; "cens" and "trunc" where the family has tails (Gaussian; accepted against two references since P6)
+    addition_terms: frozenset[str] = frozenset()   # the addition terms besides trials() the family's likelihood takes: "weights" where a frozen brms case verifies it; "cens" and "trunc" where the family has tails (Gaussian; accepted against two references since P6); "mi" where the response's missing values may be parameters (Gaussian, C06)
     tails: Callable[[], object] | None = None      # () -> likelihoods.Tails: the log-CDF, log-CCDF and log mass between bounds (PyTensor, finite with a finite gradient) and the truncated mean and draws (NumPy) that cens() and trunc() need; None without them
     # Ordinal and categorical responses (B05, docs/ordinal-categorical.md). ``response_categories`` turns the response
     # column into brms's ``Y``: (ModelSpec, column) -> (the categories in order as labels, each row's 1-based category,
@@ -180,6 +180,11 @@ class FamilySpec:
     # brms's ARMA terms ar(), ma(), arma() in the regression formulation (C04, docs/autocorrelation.md): whether the family's
     # linear predictor takes them, set where a frozen brms case verifies it. They are added last, on the residuals y - eta.
     autocorrelation: bool = False
+    # brms's measurement-error term me(x, sdx) and missing-value term mi(col) with the response's mi() (C06,
+    # docs/missing-and-measurement-error.md): whether the family's linear predictor takes them, set where a frozen case verifies
+    # it (the response's own mi() is an addition term, "mi" in ``addition_terms``).
+    measurement_error: bool = False
+    missing_values: bool = False
 
     def with_link(self, link: str | None) -> "FamilySpec":
         """This family's spec under ``link``: this spec for ``None`` or its own link, the one a ``links`` entry builds

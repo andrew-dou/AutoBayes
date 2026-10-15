@@ -103,6 +103,9 @@ likelihood on `mu` is `FamilySpec.nonlinear_likelihood`.
   `lscale`) are refused with them. An autocorrelation term `ar()`, `ma()`, `arma()` (C04, docs/autocorrelation.md): in the
   expression it is brms's term, not a function, and brms's way of adding one to a non-linear model, `bf(..., autocor = ~
   ar(...))`, is not offered (D70); in a parameter's formula brms refuses it too; its priors `ar` and `ma` are refused.
+  Missing values and measurement error (C06, docs/missing-and-measurement-error.md): `me()` and `mi()` in the expression
+  (brms's terms, not functions) and in a parameter's formula, `mi()` on the response's or a parameter's left-hand side, and
+  the priors `meanme` and `sdme` (D72, D73).
 - A distributional formula with `nl=True` (`sigma ~ x` next to the parameters' formulas); a non-linear model in a
   multivariate formula, `mvbind(y, y2) ~ a * exp(b * x)` (brms gives each response its own parameters, `X_y_a`, `X_y2_a`) or
   a list of response formulas, and `rescor=` with `nl=True`; a non-linear model in a mixture, `ab.mixture(..., nl=True)` and

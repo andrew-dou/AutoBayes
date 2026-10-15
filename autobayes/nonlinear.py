@@ -39,7 +39,9 @@ parameter inside another's formula (D60); functions and operators outside the gr
 Stan code would truncate is real division here, the response as a covariate, ``gp()`` and ``mo()`` in the expression or in
 a parameter's formula, and ``offset()`` or addition terms with a non-linear formula (D61); distributional formulas with
 ``nl``, non-linear models in multivariate formulas (``mvbind()`` or a list of response formulas) and in mixtures
-(``ab.mixture``), and families without a verified non-linear likelihood (D62); ``loop = FALSE`` (D63).
+(``ab.mixture``), and families without a verified non-linear likelihood (D62); ``loop = FALSE`` (D63); ``me()`` and ``mi()``
+in the expression or in a parameter's formula, ``mi()`` on the response or a parameter, and the ``meanme`` and ``sdme``
+priors (C06, D72-D73).
 """
 from __future__ import annotations
 
@@ -53,9 +55,9 @@ from types import MappingProxyType
 import numpy as np
 import pandas as pd
 
-from autobayes.formula import (_FORMULA_RE, _IDENT, FormulaError, ModelSpec, _is_numeric, bambi_group_name, categorical_labels,
-                               factor_column, group_labels, parse_formula, pop_term_design, reject_complex, sd_tag,
-                               validate_data)
+from autobayes.formula import (_FORMULA_RE, _IDENT, MI_CALL_RE, FormulaError, ModelSpec, _is_numeric, bambi_group_name,
+                               categorical_labels, factor_column, group_labels, parse_formula, pop_term_design, reject_complex,
+                               sd_tag, validate_data)
 from autobayes.model import Design, GroupBlock, Model
 from autobayes.priors import AUXILIARY, Prior, PriorError, Priors, describe_prior
 
@@ -226,6 +228,11 @@ class _Parser:
         if name in ("nlf", "lf"):
             raise FormulaError(f"{self.text!r}: brms's {name}() is not supported here (divergence D60): give each non-linear "
                                "parameter its own linear formula in the list, and write the non-linear expression once")
+        if name in ("me", "mi"):                                           # C06: brms's special terms, not functions
+            what, did = ("measurement-error term", "D73") if name == "me" else ("missing-value term", "D72")
+            raise FormulaError(f"{self.text!r}: {name}() at position {pos} is brms's {what} (C06), a term of a linear formula, not a "
+                               "function of the non-linear expression; a non-linear model takes no such term in this slice, in a "
+                               f"parameter's formula either (docs/missing-and-measurement-error.md, divergence {did})")
         if name in _SPECIAL_TERMS:
             raise FormulaError(f"{self.text!r}: {name}() at position {pos} is brms's {_SPECIAL_TERMS[name]}, a term of a linear "
                                "formula, not a function of the non-linear expression (brms writes it into its Stan program as a "
@@ -408,6 +415,9 @@ class NonlinearSpec:
     monotonics = ()
     gp_terms = ()                         # Gaussian processes (C03): none, as a non-linear model takes none (D61)
     autocor = None                        # an autocorrelation term (C04): none, as a non-linear model takes none (D70)
+    me_terms = ()                         # me() and mi() terms and columns with missing values (C06): none (D72, D73)
+    mi_terms = ()
+    missing_columns = ()
     groups = ()
     group_coefficients = ()
     correlated_terms = ()
@@ -516,15 +526,20 @@ def parse_nonlinear(formulas, data: pd.DataFrame | None = None, family: str = "g
     categorical in every parameter's formula that names it as a main effect, and must be one. Refused, naming the
     construct: a parameter the expression does not use, or a name of the expression that is neither a parameter nor a
     column; a parameter in another parameter's formula; the response in the expression or in a parameter's formula;
-    a formula of a distributional parameter (``sigma ~ ...``), or of ``mu``; addition terms, ``offset()``, ``mo()`` and
-    ``gp()``; ``mvbind()`` or a list of response formulas (a multivariate model); a covariate that is not numeric, finite
-    and observed on every row."""
+    a formula of a distributional parameter (``sigma ~ ...``), or of ``mu``; addition terms (``mi()`` among them), ``offset()``,
+    ``mo()``, ``gp()``, ``me()`` and ``mi()``; ``mvbind()`` or a list of response formulas (a multivariate model); a covariate
+    that is not numeric, finite and observed on every row."""
     from autobayes.families import get_family
 
     fam = get_family(family)
     _check_formula_list(formulas)
     main, *rest = formulas
-    if "~" in main and "|" in main.split("~", 1)[0]:
+    lhs = main.split("~", 1)[0] if "~" in main else ""
+    if "|" in lhs and MI_CALL_RE.search(lhs.split("|", 1)[1]):           # C06
+        raise FormulaError(f"{main!r}: the response's mi() ('{lhs.split('|', 1)[0].strip()} | mi()', its missing values as parameters) "
+                           "with a non-linear formula is not supported in this slice (docs/missing-and-measurement-error.md, "
+                           "divergence D72)")
+    if "|" in lhs:
         raise FormulaError(f"{main!r}: response addition terms (trials(), weights(), cens(), trunc()) with a non-linear formula are "
                            "not supported in this slice (divergence D61); the left-hand side is the response column alone")
     head = _FORMULA_RE.match(main)
@@ -536,6 +551,10 @@ def parse_nonlinear(formulas, data: pd.DataFrame | None = None, family: str = "g
     parsed: list[tuple[str, str, str]] = []                     # (parameter, right-hand side, formula as written)
     for text in rest:
         m = _FORMULA_RE.match(text)
+        if "~" in text and "|" in text.split("~", 1)[0] and MI_CALL_RE.search(text.split("~", 1)[0]):   # C06
+            raise FormulaError(f"{text!r}: mi() marks a data column's missing values as parameters; a non-linear parameter has no data "
+                               "of its own, and its formula is '<parameter> ~ <terms>' (docs/missing-and-measurement-error.md, "
+                               "divergence D72)")
         if not m or "|" in text.split("~", 1)[0]:
             raise FormulaError(f"{text!r}: a non-linear parameter's formula is '<parameter> ~ <terms>' with the parameter's name on "
                                f"the left; {NL_FORM}")
@@ -593,6 +612,11 @@ def parse_nonlinear(formulas, data: pd.DataFrame | None = None, family: str = "g
         if d.autocor is not None:                                      # C04: brms refuses it too
             raise FormulaError(f"{text!r}: the autocorrelation term {d.autocor.term!r} in a non-linear parameter's formula is not "
                                "supported, as in brms ('Explicit covariance terms can only be specified on mu'; docs/autocorrelation.md)")
+        if d.me_terms or d.mi_terms:                                   # C06: not verified in a parameter's formula
+            t = (*d.me_terms, *d.mi_terms)[0]
+            what, did = ("measurement-error", "D73") if t.kind == "measurement_error" else ("missing-value", "D72")
+            raise FormulaError(f"{text!r}: the {what} term {t.name!r} in a non-linear parameter's formula is not supported in this slice "
+                               f"(docs/missing-and-measurement-error.md, divergence {did})")
         reads = [*d.pop_columns, *(c for t in d.group_terms for c in t.operands)]
         nested = [c for c in reads if c in nl_names]
         if nested:
@@ -710,7 +734,9 @@ def check_nonlinear_priors(priors: Priors, spec: NonlinearSpec, fam) -> None:
                                (("sdgp", "lscale"), "a Gaussian process gp(x) (docs/gaussian-processes.md)",
                                 "a non-linear model takes no Gaussian process (divergence D61)"),
                                (("ar", "ma"), "an autocorrelation term ar(), ma(), arma() (docs/autocorrelation.md)",
-                                "a non-linear model takes no autocorrelation term (divergence D70)")):
+                                "a non-linear model takes no autocorrelation term (divergence D70)"),
+                               (("meanme", "sdme"), "a measurement-error term me(x, sdx) (docs/missing-and-measurement-error.md)",
+                                "a non-linear model takes no measurement-error term (divergence D73)")):
         given = [f for f in fields if getattr(priors, f) is not None]
         if given:
             raise PriorError(f"{' and '.join(given)} {'is' if len(given) == 1 else 'are'} the prior{'s' if len(given) > 1 else ''} "

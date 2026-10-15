@@ -740,6 +740,51 @@ def monotonic_family(base, add_effects: Callable):
     return family
 
 
+def missing_response_family(base, index, values_name: str, coordinate: str):
+    """The Bambi family ``base`` whose response has missing values that are parameters of the model (C06, brms's
+    ``y | mi() ~ ...``, docs/missing-and-measurement-error.md): Bambi is handed the response with a placeholder at the missing
+    rows ``index`` (0-based), and its likelihood is built here as a ``CustomDist`` that evaluates the family's density at the
+    completed response, brms's ``Yl = Y`` with ``Yl[Jmi] = Ymi``: the free variable ``values_name`` (brms's ``Ymi``) on the
+    coordinate ``coordinate`` (the missing rows), under brms's flat prior (PyMC's ``Flat``), takes the place of the
+    placeholders, which the density never reads. Draws are the family's own on every row."""
+    import copy
+
+    import bambi as bmb
+    from bambi.backend.utils import get_distribution_from_likelihood
+    from bambi.defaults import get_builtin_family
+
+    family = get_builtin_family(base) if isinstance(base, str) else copy.copy(base)
+    lk = family.likelihood
+    base_dist = get_distribution_from_likelihood(lk)
+    rows = np.asarray(index, dtype=np.int64)
+
+    class MissingDist:
+        """``y ~ family(...)`` over the observed values and the missing ones, ``values_name``, together."""
+
+        def __new__(cls, name, *, observed=None, dims=None, **params):
+            model = pm.modelcontext(None)
+            model.add_coord(coordinate, [int(i) for i in rows])
+            missing = pm.Flat(values_name, dims=coordinate)
+            keys = tuple(params)
+
+            def logp(value, *args):
+                *ps, ymi = args
+                return pm.logp(base_dist.dist(**dict(zip(keys, ps))), pt.set_subtensor(value[rows], ymi))
+
+            def draw(*args):
+                *ps, _, size = args
+                return base_dist.dist(**dict(zip(keys, ps)), size=size)
+
+            return pm.CustomDist(name, *(params[k] for k in keys), missing, dist=draw, logp=logp, observed=observed, dims=dims)
+
+        @staticmethod
+        def dist(**params):
+            return base_dist.dist(**params)
+
+    family.likelihood = bmb.Likelihood(lk.name, params=lk.params, parent=lk.parent, dist=MissingDist)
+    return family
+
+
 # ---- ordinal (cumulative) and categorical responses (brms-parity B05) --------------------------------------------------
 # brms 2.23, with eta (brms's mu) the linear predictor and the response coded 1..K (brms's Y):
 #   cumulative("logit"), disc = 1, no category-specific effects: ordered_logistic_lpmf(y | eta, tau), Stan's ordered
