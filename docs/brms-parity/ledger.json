@@ -1476,11 +1476,26 @@
    "depends_on": [
     "A02_correlated_slopes"
    ],
-   "status": "implementing",
+   "status": "gates_green",
    "summary": "category-specific effects cs(), multi-membership mm(), gr(by =) and |ID| correlations",
    "pr": null,
    "attempts": 1,
-   "gates": {},
+   "gates": {
+    "sha": "e59376153bea",
+    "dirty_tree": false,
+    "base": "origin/main",
+    "when": "2026-10-16T03:04Z",
+    "results": {
+     "immutability": {
+      "status": "pass",
+      "seconds": 0.0
+     },
+     "oracle": {
+      "status": "pass",
+      "seconds": 284.0
+     }
+    }
+   },
    "divergences": [],
    "next_action": "agent (opus), wave D1",
    "fixtures": {
