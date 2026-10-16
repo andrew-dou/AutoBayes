@@ -1,0 +1,191 @@
+{
+ "id": "mixture_gauss3_post",
+ "tier": "C",
+ "feature": "C07_post_processing",
+ "note": "post block of a finite mixture (C05 x C07): mixture_gauss3_categorical's three Gaussian components, priors and dirichlet(2, 3, 4) on new data. brms's log_lik() of a mixture is log_lik_mixture, each row's log(sum_k theta_k exp(normal_lpdf(y | mu_k, sigma_k))) (draws x rows); bayes_R2(summary = FALSE) uses posterior_epred, sum_k theta_k mu_k, against y; loo() of that log_lik. 8 draws: k-hat Inf, raw importance weights; r_eff of one-draw chains is NA, used as 1",
+ "seed": 317,
+ "n_points": 8,
+ "data": {
+  "generator": "tier_c",
+  "seed": 217,
+  "n": 36,
+  "newdata": {
+   "seed": 317,
+   "n": 5
+  }
+ },
+ "brms": {
+  "formula": "y ~ x + z",
+  "family": {
+   "mixture": [
+    {
+     "family": "gaussian"
+    },
+    {
+     "family": "gaussian"
+    },
+    {
+     "family": "gaussian"
+    }
+   ]
+  },
+  "factors": {
+   "z": [
+    "p",
+    "q",
+    "r"
+   ]
+  },
+  "priors": [
+   {
+    "prior": "normal(-1, 2)",
+    "class": "Intercept",
+    "dpar": "mu1"
+   },
+   {
+    "prior": "normal(0.5, 2)",
+    "class": "Intercept",
+    "dpar": "mu2"
+   },
+   {
+    "prior": "normal(2, 2)",
+    "class": "Intercept",
+    "dpar": "mu3"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "b",
+    "dpar": "mu1"
+   },
+   {
+    "prior": "normal(0, 2)",
+    "class": "b",
+    "dpar": "mu2"
+   },
+   {
+    "prior": "normal(0.5, 1)",
+    "class": "b",
+    "coef": "zq",
+    "dpar": "mu2"
+   },
+   {
+    "prior": "normal(0, 1.5)",
+    "class": "b",
+    "dpar": "mu3"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "sigma1"
+   },
+   {
+    "prior": "student_t(3, 0, 2)",
+    "class": "sigma2"
+   },
+   {
+    "prior": "exponential(1)",
+    "class": "sigma3"
+   },
+   {
+    "prior": "dirichlet(2, 3, 4)",
+    "class": "theta"
+   }
+  ],
+  "extras": [
+   "log_lik",
+   "bayes_R2",
+   "loo"
+  ]
+ },
+ "autobayes": {
+  "constructor": "mixture",
+  "formula": "y ~ x + z",
+  "kwargs": {
+   "families": [
+    "gaussian",
+    "gaussian",
+    "gaussian"
+   ],
+   "categorical": {
+    "z": "p"
+   }
+  },
+  "priors": {
+   "components": [
+    {
+     "intercept": [
+      "Normal",
+      -1,
+      2
+     ],
+     "b": [
+      "Normal",
+      0,
+      1
+     ],
+     "sigma": [
+      "HalfNormal",
+      1
+     ]
+    },
+    {
+     "intercept": [
+      "Normal",
+      0.5,
+      2
+     ],
+     "b": {
+      "x": [
+       "Normal",
+       0,
+       2
+      ],
+      "z": {
+       "q": [
+        "Normal",
+        0.5,
+        1
+       ],
+       "r": [
+        "Normal",
+        0,
+        2
+       ]
+      }
+     },
+     "sigma": [
+      "HalfStudentT",
+      3,
+      2
+     ]
+    },
+    {
+     "intercept": [
+      "Normal",
+      2,
+      2
+     ],
+     "b": [
+      "Normal",
+      0,
+      1.5
+     ],
+     "sigma": [
+      "Exponential",
+      1
+     ]
+    }
+   ],
+   "theta": [
+    "Dirichlet",
+    2,
+    3,
+    4
+   ]
+  },
+  "post": [
+   "log_lik",
+   "bayes_R2",
+   "loo"
+  ]
+ }
+}

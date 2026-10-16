@@ -82,6 +82,13 @@ the top level of a mixture's `Priors`.
 - `predict()`: `kind="linear"` returns `eta` with a `component` dimension (brms's `posterior_linpred`, draws x rows x K);
   `kind="mean"` returns `mean = sum_k theta_k mu_k` (brms's `posterior_epred`); `kind="response"` draws, per draw and row, a
   component by theta and then its Normal (brms's `posterior_predict`), seeded. New rows need the formula's columns.
+- `ab.log_lik(model, fit)` (C07, docs/post-processing.md) is each fitted row's `log_mix(theta, normal_lpdf(y_i | mu_1,i,
+  sigma_1), ..., normal_lpdf(y_i | mu_K,i, sigma_K))` per draw (brms's `log_lik_mixture`), from the family's
+  `FamilySpec.log_likelihood` (`families.pointwise.gaussian_mixture`, the likelihood's own form with the largest term factored
+  out); `ab.loo(model, fit)` is PSIS-LOO of it, and `ab.bayes_R2(model, fit)` the per-draw R-squared of `mean = sum_k theta_k
+  mu_k` against `y` (brms's `bayes_R2` uses `posterior_epred`). brms's `log_lik_mixture` sums `exp(log theta_k + log_lik_k)`
+  without factoring the largest term out (brms 2.23.0's source), so at a row where every component's log density is below
+  about -745 its value is `-Inf` where this one is finite (the D49 kind of difference; no frozen point is there).
 - `ab.default_priors(formula, data, family="mixture", families=[...])` returns brms's defaults: each component the Gaussian
   family's (Intercept `student_t(3, round(median(y), 1), max(2.5, round(mad(y), 1)))`, flat `b`, `sigma<k>`
   `student_t(3, 0, scale)` with lower bound 0) and `dirichlet(1)` on theta; `model.prior_table()` writes brms's rows (class
@@ -122,3 +129,10 @@ prior-predictive draws, `describe()`, the identity, five `default_prior()` table
 brms sorts them), the fit record, and that the gates fail on a corrupted `mixture_gauss3_categorical` fixture (an ordered
 or simplex coordinate, a `sigma3`, theta or `z[r]` gradient, `con_theta`, a raw intercept, the linear predictor, the mean,
 `lprior`, `X_mu2`, the default-prior table) and on a model with another number of components or none. Nothing samples.
+
+`log_lik`, `bayes_R2` and `loo` (C07) pass the post gate against `mixture_gauss3_post` (the three components and priors of
+`mixture_gauss3_categorical` on other data, frozen with brms's `log_lik()`, `bayes_R2(summary = FALSE)` and `loo()`): the
+log-likelihood within 8.4e-16, the R-squared draws within 5.6e-17 and loo's pointwise table and estimates within 2.7e-15
+(`PRED_REL` is 1e-9); `tests/test_post_processing.py` checks `log_lik` against the graph's own per-row density at the points
+of the three mixture cases (within 9e-16), and `tests/test_mixture.py` the NumPy row density against the 60-digit reference,
+the three functions by hand, and that the post gate fails on a moved log-likelihood entry or R-squared draw.

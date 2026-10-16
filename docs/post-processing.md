@@ -31,6 +31,10 @@ it against the graph's own density and `mu` at the frozen brms points. A model w
 docs/autocorrelation.md) is taken the same way: its linear predictor carries the ARMA term from the observed residuals, the
 mean brms's `log_lik()` reads with `cov = FALSE` (all rows at once, then in data order); `tests/test_autocorrelation.py`
 checks `log_lik`, `bayes_R2` and `loo` against the graph's own density and `mu` at the frozen brms points of its three cases.
+A finite mixture (C05, docs/mixtures.md) is taken too: each row's `log_mix(theta, normal_lpdf(y_i | mu_k,i, sigma_k), ...)`
+from `predict(kind="linear")`'s components (brms's `log_lik_mixture`), and `bayes_R2` of the mixture's mean `sum_k theta_k
+mu_k,i`, brms's `posterior_epred`; verified against the frozen case `mixture_gauss3_post` and, at the points of the three
+mixture cases, against the graph's own density.
 
 ## `bayes_R2(model, fit)`
 
@@ -90,11 +94,13 @@ algorithm, and loo's documented behaviour and its outputs on probe inputs (run i
   them, one chain per point (so `r_eff` is loo's NA, used as 1): `gauss_varint_post`, `poisson_varint_post`
   (8 draws: a 2-draw tail, `k = Inf`, raw importance weights), `gauss_varint_post_psis` (64 draws: a 13-draw tail fitted
   and smoothed, `k` from -0.49 to 1.74), `cumulative_varint_post` (the ordinal `bayes_R2`), `binomial_weighted_post`
-  (trials and weights) and `categorical_poponly_post` (`log_lik` and `loo`; brms refuses `bayes_R2`). Harness tests show a
+  (trials and weights), `categorical_poponly_post` (`log_lik` and `loo`; brms refuses `bayes_R2`) and `mixture_gauss3_post`
+  (three Gaussian components: brms's `log_lik_mixture` and the mixture's `posterior_epred`). Harness tests show a
   corrupted log-likelihood entry, R-squared draw, pointwise elpd, k-hat, `n_eff` or SE fails, as does a changed
   non-finite entry.
 - `tests/test_post_processing.py`: at every frozen point, `log_lik` row by row equals the PyMC model's elementwise log
-  density (whose sum gate G2 checks against brms's `log_prob`) on one case of every family and feature, to 1e-12;
+  density (whose sum gate G2 checks against brms's `log_prob`) on one case of every family and feature and on the three
+  mixture cases, to 1e-12;
   `loo` and `relative_eff` equal loo 2.9.0's outputs recorded in `tests/loo_probes/loo-2.9.0.json` on deterministic
   inputs (S from 8 to 4000, `r_eff` given, NA and computed, heavy tails with `k` above 1, ties at and inside the tail,
   constant columns, log-likelihoods near -380 and -800), within 3e-13 except D50; `psis` equals ArviZ's `psislw` where

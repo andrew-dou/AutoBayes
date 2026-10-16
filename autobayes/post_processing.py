@@ -1,8 +1,8 @@
 """brms's post-processing of a fit (brms-parity C07, docs/post-processing.md): the pointwise log-likelihood ``log_lik()``,
 the Bayesian R-squared ``bayes_R2()`` and approximate leave-one-out cross-validation by Pareto-smoothed importance sampling
 ``loo()``, each computed from the posterior draws of a model's fit (a ``FitResult`` or its ``InferenceData``) on the fitted
-rows. Accepted against brms 2.23 / loo 2.9.0 on the frozen oracle cases ``gauss_varint_post``, ``poisson_varint_post`` and
-``gauss_varint_post_psis``.
+rows. Accepted against brms 2.23 / loo 2.9.0 on the frozen oracle cases ``gauss_varint_post``, ``poisson_varint_post``,
+``gauss_varint_post_psis`` and the other ``*_post`` cases (a finite mixture's: ``mixture_gauss3_post``).
 
 ``log_lik(model, fit)`` is brms's ``log_lik()``: the log density of each fitted row's response at each draw, from the family's
 ``FamilySpec.log_likelihood`` (NumPy, ``families.pointwise``) at ``predict(kind="linear")``'s linear predictor and the draw's

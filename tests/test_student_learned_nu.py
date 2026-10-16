@@ -4,11 +4,16 @@ brms declares ``real<lower=1> nu``, adds ``gamma_lpdf(nu | 2, 0.1) - gamma_lccdf
 ``log(nu - 1)``. Here: the refusals; the density against a closed-form reference that includes the truncation constant,
 with and without the Jacobian; every accepted prior family against its own closed-form truncation constant; the
 gradient of the ``log(nu - 1)`` coordinate on both paths against the analytic derivative; ``value_point``; predictions
-with each draw's own nu; ``describe()``; the target identity and the fit record; the prior predictive. Nothing samples.
+with each draw's own nu; ``describe()``, the same under two hash seeds; the target identity and the fit record; the prior
+predictive. Nothing samples.
 """
 import json
+import os
+import subprocess
+import sys
 from dataclasses import replace
 from math import factorial
+from pathlib import Path
 from types import SimpleNamespace
 
 import arviz as az
@@ -21,6 +26,7 @@ from scipy.stats import t as student_t
 
 import autobayes as ab
 
+REPO = Path(__file__).resolve().parent.parent
 FORMULA = "y ~ x + (1 | g)"
 PRIORS = ab.Priors(intercept=ab.Normal(0, 5), b=ab.Normal(0, 2), sd=ab.HalfNormal(1), sigma=ab.HalfNormal(1),
                    nu=ab.Gamma(2, 0.1))
@@ -247,6 +253,43 @@ def test_describe(df, model):
     assert f"  {'nu_interval__':<24} log(nu - 1)" in text
     fixed = ab.student(FORMULA, df, FIXED, nu=4).describe()
     assert "  nu = 4 (fixed, not sampled)" in fixed and "nu_interval__" not in fixed and "Learned nu is not supported" in fixed
+    assert text.index(f"  {'sigma_log__':<24} log(sigma)") < text.index(f"  {'nu_interval__':<24} log(nu - 1)")
+
+
+def _fresh(seed: int, script: str) -> dict:
+    """``script`` run by this interpreter in a fresh process under ``PYTHONHASHSEED=seed``: its last JSON line."""
+    env = dict(os.environ, PYTHONHASHSEED=str(seed))
+    proc = subprocess.run([sys.executable, "-c", script], cwd=REPO, env=env, capture_output=True, text=True, timeout=600)
+    lines = [ln for ln in proc.stdout.splitlines() if ln.startswith("{")]
+    assert proc.returncode == 0 and lines, (proc.returncode, proc.stdout[-2000:], proc.stderr[-3000:])
+    return json.loads(lines[-1])
+
+
+SET_ORDER = 'import json; print(json.dumps({"order": list(set(("mu", "sigma", "nu")) - {"mu"})}))'   # as Bambi's auxiliary_parameters
+BUILD = """
+import json
+import autobayes as ab
+from tests.test_student_learned_nu import FORMULA, PRIORS, frame
+m = ab.student(FORMULA, frame(), PRIORS)
+print(json.dumps({"describe": m.describe(), "identity": m.target_identity, "value_vars": [v.name for v in m.pymc_model.value_vars]}))
+"""
+
+
+def test_describe_does_not_depend_on_the_hash_seed():
+    """Bambi creates sigma and nu in the iteration order of the set of their names (``Family.auxiliary_parameters``), so
+    PyMC's order of ``sigma_log__`` and ``nu_interval__`` follows ``PYTHONHASHSEED``. Built under two hash seeds that order
+    that set differently, the PyMC orders differ and ``describe()`` (sigma, then nu) and the target identity do not."""
+    seeds = {}
+    for seed in range(32):
+        seeds.setdefault(tuple(_fresh(seed, SET_ORDER)["order"]), seed)
+        if len(seeds) == 2:
+            break
+    assert len(seeds) == 2, "no two hash seeds order {'sigma', 'nu'} differently"
+    first, second = (_fresh(seed, BUILD) for seed in seeds.values())
+    assert first["value_vars"] != second["value_vars"] and sorted(first["value_vars"]) == sorted(second["value_vars"])
+    assert first["describe"] == second["describe"] and first["identity"] == second["identity"]
+    text = first["describe"]
+    assert text.index("  sigma_log__ ") < text.index("  nu_interval__ ")
 
 
 def test_target_identity_and_fit_record(df, model, monkeypatch):
