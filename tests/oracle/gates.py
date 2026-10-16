@@ -24,6 +24,10 @@ C07 `check_post`         for a case that lists post-processing functions: `ab.lo
 D05 `check_waic`, `check_loo_compare`   in the same `post` gate: `ab.waic` against brms's waic(); `ab.loo_compare` of the case's
                          model with the case it names (`compare_with`), by loo and by waic, and `ab.model_weights` ("loo",
                          "pseudobma" with BB=False) against brms's loo_compare() and model_weights() of the two fits
+D06 `check_hypothesis`, `check_conditional_effects`   in the same `post` gate: `ab.hypothesis` of the case's hypotheses
+                         (`post_args`) against brms's hypothesis() table, column by column (labels and stars exactly), and
+                         its draws; `ab.conditional_effects` of the case's effects against brms's conditional_effects()
+                         table of each, every column (the grid, the values held, cond__, effect1__ and the summaries)
 
 A case that opts in to two-reference acceptance (P6, its gate field names a committed high-precision reference and the
 quantity kinds that may fall back on it: "gradient", "epred") has G2's gradient and G4's expected values checked by
@@ -668,7 +672,9 @@ def check_post(b: Bundle) -> None:
     (draws x 1); ``loo`` brms's ``loo()``: the pointwise table (its five columns, by name), the estimates (rows elpd_loo,
     p_loo, looic; columns Estimate, SE), ``pareto_k`` and ``n_eff``; ``waic`` brms's ``waic()`` (D05, ``check_waic``);
     ``loo_compare`` brms's ``loo_compare()`` and ``model_weights()`` of this model and the case it names (D05,
-    ``check_loo_compare``). A case that lists none has nothing to compare."""
+    ``check_loo_compare``); ``hypothesis`` and ``conditional_effects`` brms's ``hypothesis()`` and ``conditional_effects()``
+    of the case's ``post_args`` (D06, ``check_hypothesis``, ``check_conditional_effects``). A case that lists none has
+    nothing to compare."""
     if not b.post:
         return
     post = b.fixture.raw.get("post")
@@ -705,6 +711,10 @@ def check_post(b: Bundle) -> None:
             check_waic(fn(b.model, idata), post["waic"])
         elif name == "loo_compare":                                  # D05
             check_loo_compare(b, idata, post["loo_compare"])
+        elif name == "hypothesis":                                   # D06
+            check_hypothesis(b, idata, post["hypothesis"])
+        elif name == "conditional_effects":                          # D06
+            check_conditional_effects(b, idata, post["conditional_effects"])
         else:
             raise OracleMismatch(f"no comparison for the post-processing function {name!r}")
 
@@ -767,6 +777,73 @@ def check_loo_compare(b: Bundle, idata, ref) -> None:
         compare_post(f"model_weights {kind}", w.to_numpy(), theirs)
         with np.errstate(divide="ignore"):
             compare_post(f"model_weights {kind} (log)", np.log(w.to_numpy()), np.log(theirs))
+
+
+# -- D06: hypothesis and conditional_effects ---------------------------------------------------------------------
+def _post_args(b: Bundle, name: str) -> list:
+    """The arguments the case hands ``name`` (its autobayes section's ``post_args``), which must be what brms was given (the
+    frozen brms section's list of that name)."""
+    args = list((b.case.get("autobayes", {}).get("post_args") or {}).get(name) or [])
+    frozen = list(b.case["brms"].get(name) or [])
+    if not args or args != frozen:
+        raise OracleMismatch(f"{name}: the case's post_args {args} are not brms's {frozen}")
+    return args
+
+
+def _compare_table_column(what: str, ours, theirs) -> None:
+    """One column of a brms table from the fixture (``{"dims", "values"}`` numbers, or a list of text with ``None`` for
+    brms's NA) against the same column of an AutoBayes table: numbers with ``compare_post``, text exactly."""
+    if isinstance(theirs, dict):
+        try:
+            values = np.asarray(ours, dtype=float)
+        except (TypeError, ValueError):
+            raise OracleMismatch(f"{what}: AutoBayes's column is not numeric ({list(ours)[:3]}...); brms's is") from None
+        compare_post(what, values, fx.decode(theirs))
+        return
+    text = [None if v is None or (isinstance(v, float) and np.isnan(v)) else str(v) for v in ours]
+    pairs = list(zip_longest(text, list(theirs)))
+    diff = [i for i, (a, t) in enumerate(pairs) if a != t]
+    if diff:
+        raise OracleMismatch(f"{what} differs from brms at rows {diff[:5]}: AutoBayes {[pairs[i][0] for i in diff[:3]]} vs brms "
+                             f"{[pairs[i][1] for i in diff[:3]]}")
+
+
+def check_hypothesis(b: Bundle, idata, ref) -> None:
+    """D06: ``ab.hypothesis`` of the case's hypotheses on the fixture's draws against brms's ``hypothesis()``: the table's
+    columns by name and in order, each column (``Hypothesis`` and ``Star`` exactly, the numbers to ``PRED_REL`` with brms's
+    NA, stored NaN, exactly), and the draws of each hypothesis, ``(draws, hypotheses)`` with brms's names ``H1``, ..."""
+    hypotheses = _post_args(b, "hypothesis")
+    res = b.post["hypothesis"](b.model, idata, hypotheses)
+    table = ref["table"]
+    columns = list(table["columns"])
+    if list(res.table.columns) != columns:
+        raise OracleMismatch(f"hypothesis columns {list(res.table.columns)} vs brms {columns}")
+    for column in columns:
+        _compare_table_column(f"hypothesis {column}", res.table[column].tolist(), table["values"][column])
+    names = list(ref["samples"].get("colnames") or [])
+    if list(res.samples.columns) != names:
+        raise OracleMismatch(f"hypothesis samples columns {list(res.samples.columns)} vs brms {names}")
+    compare_post("hypothesis samples", res.samples.to_numpy(), fx.decode(ref["samples"]))
+
+
+def check_conditional_effects(b: Bundle, idata, ref) -> None:
+    """D06: ``ab.conditional_effects`` of the case's effects on the fixture's draws against brms's ``conditional_effects()``:
+    the effects in brms's order, and for each its table's columns by name and in order and every column (the grid of the
+    effect, the response and the other variables as held, the grouping factors' NA as None, ``cond__``, ``effect1__``,
+    ``estimate__``, ``se__``, ``lower__``, ``upper__``), text exactly and numbers to ``PRED_REL``."""
+    effects = _post_args(b, "conditional_effects")
+    if effects != list(ref):
+        raise OracleMismatch(f"conditional_effects: the case asks for {effects}; brms's tables are {list(ref)}")
+    res = b.post["conditional_effects"](b.model, idata, effects)
+    if list(res) != effects:
+        raise OracleMismatch(f"conditional_effects returned {list(res)} for the effects {effects}")
+    for effect in effects:
+        table, theirs = res[effect], ref[effect]
+        columns = list(theirs["columns"])
+        if list(table.columns) != columns:
+            raise OracleMismatch(f"conditional_effects {effect}: columns {list(table.columns)} vs brms {columns}")
+        for column in columns:
+            _compare_table_column(f"conditional_effects {effect} {column}", table[column].tolist(), theirs["values"][column])
 
 
 # -- multivariate models (C01) ------------------------------------------------------------------------------

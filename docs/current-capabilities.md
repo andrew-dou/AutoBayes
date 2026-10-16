@@ -171,6 +171,14 @@ model's estimates), and `ab.model_weights(results, weights)` brms's Akaike weigh
 with `BB=False`; verified against `gauss_loo_compare_x` and `gauss_loo_compare_xw` (gate `check_post`) and against loo's and
 brms's outputs on recorded probes; stacking, BMA, K-fold, the Bayesian bootstrap, mixed criteria and a multivariate model's
 WAIC are refused (D92-D95).
+`ab.hypothesis(model, fit, hypotheses)` (D06, brms's `hypothesis()`) tests point and one-sided hypotheses on the
+population-level coefficients by brms's names (brms's table: Estimate, Est.Error, the interval, Evid.Ratio, Post.Prob, Star,
+and the draws), reading the text with a parser of its own, never evaluating it; `ab.conditional_effects(model, fit, effects)`
+(brms's `conditional_effects()` with its defaults) gives each predictor's grid with the others at their means and reference
+levels, the group-level effects left out, and the median, MAD and 95 % interval of the expected response; verified against
+`gauss_hypothesis_effects` and `bernoulli_hypothesis_effects` (gate `check_post`) and against brms's `hypothesis()` on
+recorded draws; brms's Savage-Dickey ratio of a point hypothesis, its other arguments and the models no case verifies are
+not offered (D96-D99). `ab.log_lik`, `ab.bayes_R2` and `ab.loo` refuse a multivariate model naming it.
 
 Multivariate Gaussian models (C01, brms's `bf(mvbind(y, y2) ~ ...) + set_rescor()`): `ab.gaussian("mvbind(y, y2) ~ x + (1 | g)",
 data, ab.Priors(resp={"y": {...}, "y2": {...}}, rescor=ab.LKJ(eta)), rescor=True)` builds one univariate model per response

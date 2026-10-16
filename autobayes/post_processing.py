@@ -92,7 +92,7 @@ def log_lik(model, fit_result) -> xr.DataArray:
     from autobayes.families import family_of
     from autobayes.predict import _with_dpars, predict
 
-    _refuse_measurement(model, "log_lik()")
+    _refuse_unsupported(model, "log_lik()")                 # me() / mi() (D74) and multivariate models (D95)
     fam = family_of(model)
     if fam.log_likelihood is None:
         raise ValueError(f"log_lik() is not offered for the {model.family} family")
@@ -123,7 +123,7 @@ def bayes_R2(model, fit_result) -> xr.DataArray:
     from autobayes.families import family_of
     from autobayes.predict import predict
 
-    _refuse_measurement(model, "bayes_R2()")
+    _refuse_unsupported(model, "bayes_R2()")                 # me() / mi() (D74) and multivariate models (D95)
     fam = family_of(model)
     if fam.per_category:
         raise ValueError(f"bayes_R2() is not defined for the {model.family} family's unordered categories (brms: \"'bayes_R2' is "
