@@ -39,6 +39,10 @@ linear predictor, group effects and raw-scale intercept, each response's view of
 model where it is about the joint density (G2, G5: one log density and gradient, the residual correlation's included; G3's
 rescor; G4: the predictions' response axis; G6: brms's table with every response's rows and rescor).
 
+D08: G2's prior part includes a shared correlation ID's distributional SDs and the potential that carries brms's normalisation
+constant of gr(by = )'s SDs; G3 adds a shared ID's distributional effects (r_m_<dpar>_c) to brms's linear predictor of the
+parameter and checks the graph's effects against them.
+
 A non-linear model (C02, brms's nl = TRUE) is checked by the same gates through the adapter's non-linear maps: G1 its
 covariates C_k, each parameter's X_<nlpar> (K_<nlpar>, never centred) and group designs (`check_nonlinear_design`); G2 every
 b_<nlpar> coordinate; G3 the graph's non-linear predictor, each parameter's values against brms's own X_<nlpar> b_<nlpar> plus
@@ -97,6 +101,10 @@ def prior_names(model) -> list[str]:
         out.append(names["nu"])
     out += [names[par] for par in ("zi", "hu") if par in names]   # the zero-inflation / hurdle probability (B06)
     out += [roles["sd"] for roles in model.group_coefficient_names.values()]
+    out += [roles["sd"] for roles in getattr(model, "dpar_group_names", {}).values()]   # D08: a shared ID's distributional SDs
+    # D08: brms's normalisation constant of gr(by = )'s SDs (a potential of the graph, where brms's lprior has it)
+    out += [roles["by_normalisation"] for roles in model.group_coefficient_names.values()
+            if roles.get("by_normalisation") in model.pymc_model.named_vars]
     out += [roles["L"] for roles in model.correlation_names.values()]
     out += [roles["simplex"] for roles in model.mo_names.values()]
     mixture = getattr(model, "mixture_names", {})          # C05: each component's sigma<k> and theta
@@ -327,8 +335,9 @@ def check_derived(b: Bundle) -> None:
     groups = list(b.model.group_coefficient_names.items())          # every group-level coefficient: intercepts and slopes
     cors = list(b.model.correlation_names.items())                  # the correlation matrix of every correlated term (A02)
     distributional = list(b.model.dpar_names.items())               # each auxiliary parameter's own formula (B01): its per-row values
+    dpar_groups = list(getattr(b.model, "dpar_group_names", {}).items())   # D08: a shared ID's distributional coefficients
     dets = ([pmm[names["linpred"]]] + [pmm[roles["group_effect"]] for _, roles in groups] + [pmm[roles["cor"]] for _, roles in cors]
-            + [pmm[roles["value"]] for _, roles in distributional])
+            + [pmm[roles["value"]] for _, roles in distributional] + [pmm[roles["group_effect"]] for _, roles in dpar_groups])
     if b.cmap.thresholds:                                           # B05: the graph's b_Intercept, brms's raw thresholds (the last)
         dets.append(pmm[names["thresholds"]])
     fn = pmm.compile_fn(pmm.replace_rvs_by_values(dets), inputs=pmm.value_vars, point_fn=True, on_unused_input="ignore")
@@ -366,6 +375,11 @@ def check_derived(b: Bundle) -> None:
                 eta = float(p.pars[f"Intercept_{name}"]) + (Xc - Xc.mean(0)) @ bd
             else:
                 eta = X @ bd
+            for (dname, g, coef), _ in dpar_groups:                # D08: plus brms's r_m_<name>_c[J_m] Z_m_<name>_c of a shared ID
+                if dname == name:
+                    m, cn = b.gmap.brms_id[g], b.gmap.dpar_cn[(name, g, coef)]
+                    J = b.fixture.standata[f"J_{m}"].astype(int) - 1
+                    eta = eta + np.atleast_1d(p.pars[f"r_{m}_{name}_{cn}"])[J] * b.fixture.standata[f"Z_{m}_{name}_{cn}"]
             err = rel_err(np.asarray(value, dtype=float).ravel(), np.exp(eta))
             if err > PRED_REL:
                 raise OracleMismatch(f"point {k}: the graph's {name} differs from exp of brms's linear predictor of {name} by {err}")
@@ -376,6 +390,13 @@ def check_derived(b: Bundle) -> None:
                 if err > PRED_REL:
                     raise OracleMismatch(f"point {k}: raw-scale intercept of {name} {raw!r} vs brms b_{name}_Intercept "
                                          f"{float(p.pars[f'b_{name}_Intercept'])!r}")
+        start = 1 + len(groups) + len(cors) + len(distributional)
+        for ((name, g, coef), _), eff in zip(dpar_groups, out[start:start + len(dpar_groups)]):   # D08: brms's r_m_<name>_c
+            m, cn = b.gmap.brms_id[g], b.gmap.dpar_cn[(name, g, coef)]
+            err = rel_err(np.asarray(eff, dtype=float).ravel()[b.gmap.level_of[g]], np.atleast_1d(p.pars[f"r_{m}_{name}_{cn}"]))
+            if err > PRED_REL:
+                raise OracleMismatch(f"point {k}: group effects of {coef!r} of {g!r} in {name}'s formula differ from brms r_{m}_{name}_{cn} "
+                                     f"by {err}")
         if b.cmap.thresholds:                                        # B05: b_Intercept = Intercept + sum_p mean(x_p) b_p
             nat = adapter.natural_point(b.model, p, b.cmap, b.gmap)
             brms = np.atleast_1d(p.pars["b_Intercept"])

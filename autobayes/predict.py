@@ -84,7 +84,8 @@ import xarray as xr
 
 from autobayes.families import family_of
 from autobayes.families.spec import DISTRIBUTIONAL_INVERSE_LINKS
-from autobayes.formula import FormulaError, categorical_labels, check_counts, group_labels, pop_term_design, reject_complex
+from autobayes.formula import (FormulaError, by_levels_of, categorical_labels, check_counts, group_labels, mm_weights, pop_term_design,
+                               reject_complex)
 
 _NEW_GROUPS = {"error", "resample_observed", "population"}
 
@@ -197,10 +198,12 @@ def measurement_contribution(model, post, df: pd.DataFrame, *, in_sample: bool) 
     return out
 
 
-def dpar_linear_predictor(model, post, df: pd.DataFrame, name: str) -> np.ndarray:
+def dpar_linear_predictor(model, post, df: pd.DataFrame, name: str, *, include_group_effects: bool = True) -> np.ndarray:
     """(chain, draw, row) draws of distributional parameter ``name``'s linear predictor (B01) on the rows of ``df`` (the
     fitted frame, or checked new rows): its raw-scale intercept draws plus its raw design times its coefficient draws, as
-    the response formula's is computed here."""
+    the response formula's is computed here; with its group-level terms (D08: a correlation ID shared with the response
+    formula's term) each row adds the effect of its level, unless ``include_group_effects`` is False. A level the fit has not
+    seen is refused here (``predict()`` refuses new levels of a shared ID's factor first)."""
     ds, roles = model.spec.dpar(name), model.dpar_names[name]
     shape = (post.sizes["chain"], post.sizes["draw"])
     a = post[roles["intercept"]].to_numpy() if ds.intercept else np.zeros(shape)
@@ -210,25 +213,45 @@ def dpar_linear_predictor(model, post, df: pd.DataFrame, name: str) -> np.ndarra
         b = np.concatenate([post[roles[f"b:{t.name}"]].to_numpy() if t.levels else post[roles[f"b:{t.name}"]].to_numpy()[..., None]
                             for t in ds.pop_terms], axis=-1)
         eta = eta + np.einsum("cdp,np->cdn", b, X)
+    for t in (ds.group_terms if include_group_effects else ()):   # D08: a shared ID's varying intercept of the parameter
+        levels = list(model.design.dpars[name].group_blocks[(t.factor, "Intercept")].levels)
+        labels = group_labels(t.factor, df).to_numpy()
+        unseen = sorted(set(labels) - set(levels))
+        if unseen:
+            raise FormulaError(f"levels {unseen} of {t.factor!r} were not seen in training; {name}'s formula has no effect for them "
+                               "(new levels of a factor whose correlation ID is shared are not offered; divergence D106)")
+        u = post[model.dpar_group_names[(name, t.factor, "Intercept")]["group_effect"]].transpose("chain", "draw", ...).to_numpy()
+        eta = eta + u[..., [levels.index(l) for l in labels]]
     return eta
 
 
-def dpar_values(model, post, df: pd.DataFrame, name: str) -> np.ndarray:
+def dpar_values(model, post, df: pd.DataFrame, name: str, *, include_group_effects: bool = True) -> np.ndarray:
     """(chain, draw, row) draws of distributional parameter ``name`` itself (B01): the inverse link of its linear
     predictor, refused where it is not a positive finite number."""
-    return DISTRIBUTIONAL_INVERSE_LINKS[model.design.dpars[name].link](dpar_linear_predictor(model, post, df, name), name)
+    return DISTRIBUTIONAL_INVERSE_LINKS[model.design.dpars[name].link](
+        dpar_linear_predictor(model, post, df, name, include_group_effects=include_group_effects), name)
 
 
-def _with_dpars(model, post, df: pd.DataFrame):
+def _with_dpars(model, post, df: pd.DataFrame, *, include_group_effects: bool = True):
     """The posterior with each distributional parameter's per-row draws under its PyMC name (B01), the form in which the
     families' mean and response functions read an auxiliary parameter (``families.spec.auxiliary``)."""
-    return post.assign({model.dpar_names[name]["value"]: (("chain", "draw", "__row__"), dpar_values(model, post, df, name))
+    return post.assign({model.dpar_names[name]["value"]: (("chain", "draw", "__row__"),
+                                                         dpar_values(model, post, df, name, include_group_effects=include_group_effects))
                         for name in model.spec.dpar_names})
+
+
+def term_labels(term, df: pd.DataFrame) -> list[np.ndarray]:
+    """The level labels a group-level term reads on the rows of ``df``: one array, or one per member of a multi-membership
+    term (D08)."""
+    if term.is_mm:
+        return [group_labels(c, df).to_numpy() for c in term.members]
+    return [df[term.column].to_numpy()]
 
 
 def _check_newdata(model, newdata: pd.DataFrame, *, need_trials: bool = False, include_group_effects: bool = True) -> pd.DataFrame:
     s = model.spec
-    operands = [c for t in s.group_terms for c in t.operands] if include_group_effects else []   # g and h, never g_h
+    operands = [c for t in s.group_terms for c in t.data_columns] if include_group_effects else []   # g and h, never g_h; D08:
+    operands += [c for d in s.dpars for t in d.group_terms for c in t.data_columns] if include_group_effects else []   # mm(), by
     cols = [*s.model_columns] + ([s.offset.column] if s.offset is not None else []) + operands   # every formula's columns (B01)
     cols = list(dict.fromkeys(cols))
     if need_trials:
@@ -283,18 +306,32 @@ def _check_newdata(model, newdata: pd.DataFrame, *, need_trials: bool = False, i
     if need_trials:
         df[s.trials] = check_counts(f"newdata trials {s.trials!r}", df[s.trials])
     for t in (s.group_terms if include_group_effects else ()):   # labels as text; a derived factor's column is built here
+        if t.is_mm:                                              # D08: the member columns, and the weights checked
+            for c in t.members:
+                df[c] = group_labels(c, df)
+            mm_weights(t, df, where="newdata column")
+            continue
         df[t.column] = group_labels(t.factor, df)
+        if t.by is not None:                                     # D08: a fitted level keeps its fitted by level
+            block = model.design.group_blocks[(t.factor, "Intercept")]
+            fitted = {level: block.by_levels[block.by_index[j]] for j, level in enumerate(block.levels)}
+            for level, b in by_levels_of(t, df, where="newdata column").items():
+                if level in fitted and fitted[level] != b:
+                    raise FormulaError(f"newdata gives the level {level!r} of {t.factor!r} the {t.by!r} level {b!r}; it was fitted "
+                                       f"within {fitted[level]!r} (gr({t.factor}, by = {t.by}))")
+            df[t.by] = group_labels(t.by, df)
     return df.reset_index(drop=True)
 
 
-def _predict_dpar(model, idata, df: pd.DataFrame | None, kind: str, name: str) -> xr.Dataset:
+def _predict_dpar(model, idata, df: pd.DataFrame | None, kind: str, name: str, *, include_group_effects: bool = True) -> xr.Dataset:
     """``predict(..., dpar=name)`` (B01): the distributional parameter's linear predictor (``kind="linear"``, ``eta``) or
-    its values (``kind="mean"``, under its brms name), per draw and row; its formula has no group-level terms, so the group
-    policies change nothing here and nothing is random (``predict()`` writes the policy attributes)."""
+    its values (``kind="mean"``, under its brms name), per draw and row; its formula's group-level terms (D08, a shared
+    correlation ID's) add the effects of fitted levels only (``predict()`` refuses new levels of such a factor first), so the
+    group policies change nothing here and nothing is random (``predict()`` writes the policy attributes)."""
     if df is None:
         df = model.data
     post = idata.posterior
-    eta = dpar_linear_predictor(model, post, df, name)
+    eta = dpar_linear_predictor(model, post, df, name, include_group_effects=include_group_effects)
     if kind == "linear":
         if not np.isfinite(eta).all():
             raise ValueError(f"the linear predictor of {name} contains nonfinite draws")
@@ -351,8 +388,10 @@ def _predict_by_hand(model, idata, df: pd.DataFrame | None, kind: str, seed, pol
     for term in (model.spec.group_terms if include_group_effects else ()):
         g = term.factor
         levels = list(model.design.group_designs[g].levels)
-        labels = df[term.column]
-        new_levels[g] = sorted(set(labels) - set(levels))
+        members = term_labels(term, df)                         # D08: one label array per member of a multi-membership term
+        weights = mm_weights(term, df) if term.is_mm else np.ones((len(df), 1))
+        labels = members[0]
+        new_levels[g] = sorted(set().union(*(set(m) for m in members)) - set(levels))
         # (sd draws, effect draws, covariate column) per coefficient: ones for the intercept, the raw column for a slope
         coefs = []
         for coef in term.coefs:
@@ -377,9 +416,11 @@ def _predict_by_hand(model, idata, df: pd.DataFrame | None, kind: str, seed, pol
             else:                                        # one observed level per draw; its whole effect vector is reused
                 chosen = rng.integers(0, len(levels), size=coefs[0][0].shape)
                 new_effects[lvl] = [np.take_along_axis(u, chosen[..., None], axis=-1)[..., 0] for _, u, _ in coefs]
-        for i, lvl in enumerate(labels):
-            for k, (_, u, covariate) in enumerate(coefs):
-                mu[..., i] += (new_effects[lvl][k] if lvl in new_effects else u[..., levels.index(lvl)]) * covariate[i]
+        for member, w in zip(members, weights.T):                # one member, weight 1, except for a multi-membership term (D08)
+            for i, lvl in enumerate(member):
+                for k, (_, u, covariate) in enumerate(coefs):
+                    effect = (new_effects[lvl][k] if lvl in new_effects else u[..., levels.index(lvl)]) * covariate[i]
+                    mu[..., i] += effect if not term.is_mm else w[i] * effect
     if model.spec.autocor is not None:                          # C04: the ARMA term on the fitted rows' residuals, added last
         mu = autocor_predictor(model, post, mu)
     dims = ("chain", "draw", "__obs__")
@@ -395,7 +436,7 @@ def _predict_by_hand(model, idata, df: pd.DataFrame | None, kind: str, seed, pol
     else:                                                        # mu held the linear predictor eta
         trunc = model.spec.addition("trunc")
         if model.spec.dpars and (kind == "response" or fam.expected_response is not None or trunc is not None):
-            post = _with_dpars(model, post, df)                  # each row's own sigma, shape or phi (B01)
+            post = _with_dpars(model, post, df, include_group_effects=include_group_effects)   # each row's own sigma (B01)
         if trunc is None:
             mean = expected_response(fam, model, post, mu)
         else:                                                    # brms's posterior_epred of a truncated model: the truncated mean (B02)
@@ -534,9 +575,17 @@ def predict(model, fit_result, *, newdata: pd.DataFrame | None = None, kind: str
     idata = getattr(fit_result, "idata", fit_result)
     df = (None if newdata is None else _check_newdata(
         model, newdata, need_trials=(fam.has_trials and kind in ("mean", "response")), include_group_effects=include_group_effects))
-    new_levels = {t.factor: ([] if df is None else sorted(set(df[t.column]) - set(model.design.group_designs[t.factor].levels)))
+    new_levels = {t.factor: ([] if df is None else sorted(set().union(*(set(m) for m in term_labels(t, df)))
+                                                          - set(model.design.group_designs[t.factor].levels)))
                   for t in (model.spec.group_terms if include_group_effects else ())}
     for g, unseen in new_levels.items():
+        t = model.spec.group_term_of(g)
+        if unseen and policies[g] != "error" and (t.by is not None or t.id is not None):   # D08
+            raise FormulaError(
+                f"newdata has levels of {g!r} not seen in training: {unseen}; new levels of "
+                + (f"'{t.canonical}' (one SD per level of {t.by!r})" if t.by is not None else
+                   f"a factor whose correlation ID {t.id!r} is shared with a distributional formula")
+                + " are not offered in this slice (docs/multi-membership-and-by.md, divergences D105, D106)")
         if unseen and policies[g] == "error":
             raise FormulaError(
                 f"newdata has levels of {g!r} not seen in training: {unseen}. "
@@ -549,9 +598,10 @@ def predict(model, fit_result, *, newdata: pd.DataFrame | None = None, kind: str
               or bool(model.spec.mo_terms)                     # monotonic terms (B03): Bambi's predictions do not know them
               or bool(model.spec.gp_terms)                     # nor the Gaussian processes (C03)
               or model.spec.autocor is not None                # an autocorrelation term (C04): nor this one
-              or bool(model.spec.me_terms) or bool(model.spec.mi_terms))   # nor the me() and mi() terms (C06)
+              or bool(model.spec.me_terms) or bool(model.spec.mi_terms)    # nor the me() and mi() terms (C06)
+              or bool(model.spec.custom_group_terms))          # nor the mm() and gr(by = ) terms (D08)
     if dpar is not None:
-        ds = _predict_dpar(model, idata, df, kind, dpar)
+        ds = _predict_dpar(model, idata, df, kind, dpar, include_group_effects=include_group_effects)
     elif fam.mixture:                                           # C05: every component's linear predictor, theta's mean and draws
         ds = _predict_mixture(model, idata, df, kind, seed)
     elif manual:

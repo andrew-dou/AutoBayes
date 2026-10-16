@@ -223,3 +223,12 @@ formula, with `rescor=True`, in interactions, group-level or distributional form
 `bayes_R2()` of these models are refused (D72-D74; names D75), and so are both terms next to `gp()` or an autocorrelation term,
 in non-linear models and in mixtures (C02-C05), with each other feature's priors in these models and `meanme` / `sdme` in
 theirs; see [missing values and measurement error](missing-and-measurement-error.md).
+
+Multi-membership, `gr(by = )` and IDs shared with sigma (D08): `(1 | mm(g, g2, weights = cbind(w1, w2)))` (each row a weighted
+member of several levels, brms's group `mmgg2`, weights scaled to sum to 1), `(1 | gr(g, by = gby))` (one SD per level of
+`gby`, brms's prior constant included) and `["y ~ x + (1 + x |p| g)", "sigma ~ 1 + (1 |p| g)"]` (one correlation matrix across
+the response formula's term and log sigma's varying intercept, `Priors(sigma={"intercept": ..., "sd": ...})`); `predict()`,
+`ab.log_lik` and the default priors take them. Verified against `gauss_mm`, `gauss_gr_by` and `gauss_shared_id`; slopes with
+`mm()` and `by`, the terms next to other special terms, in multivariate and non-linear models, other IDs and new levels of `by`
+and shared-ID factors are refused (D104-D106); `cs()` and the case `acat_cs` wait for D04's acat family (D107); see
+[multi-membership and by](multi-membership-and-by.md).

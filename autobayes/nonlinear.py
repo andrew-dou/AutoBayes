@@ -600,6 +600,9 @@ def parse_nonlinear(formulas, data: pd.DataFrame | None = None, family: str = "g
     nlpars = []
     for (name, prhs, text), cat in zip(parsed, routed):
         d = parse_formula(f"{name} ~ {prhs}", None, family, cat)
+        if d.custom_group_terms:                                       # D08: brms's mm() and gr(by = ) are verified in linear models
+            raise FormulaError(f"{text!r}: '{d.custom_group_terms[0].canonical}' in a non-linear parameter's formula is not supported in "
+                               "this slice (docs/multi-membership-and-by.md, divergences D104, D105)")
         if d.offset is not None:
             raise FormulaError(f"{text!r}: {d.offset.term!r} in a non-linear parameter's formula is not supported in this slice "
                                "(divergence D61)")

@@ -69,6 +69,6 @@
  },
  "gate": {
   "expect": "fail",
-  "reason": "D08_cs_mm_gr not implemented; remove this field when it lands"
+  "reason": "D08_cs_mm_gr parked this case: cs() needs D04's acat family (unordered thresholds, per-threshold linear predictors, the acat likelihood and its default-prior rows), which is not built yet; cs() is refused naming it (divergence D107). Remove this field when D04's acat family and cs() land"
  }
 }

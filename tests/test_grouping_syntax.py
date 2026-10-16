@@ -82,8 +82,8 @@ REFUSALS = [
     ("y ~ x + (1 | g:1h)", {}, "'1h' is not a column name"),
     ("y ~ x + (1 | g:)", {}, "'' is not a column name"),
     ("y ~ x + (1 | log(g):h)", {}, "transformed grouping factors are not supported"),
-    ("y ~ x + (1 | g:h | id)", {}, "correlation IDs are not supported"),
-    ("y ~ x + (1 | mm(g, h):k)", {}, "multimembership grouping is not supported"),
+    ("y ~ x + (1 | g:h | id)", {}, "a correlation ID is a name between two bars"),          # D08: '|p|' names one
+    ("y ~ x + (1 | mm(g, h):k)", {}, "mm() takes two or more member columns"),                 # D08: mm() is the whole grouping
 ]
 
 

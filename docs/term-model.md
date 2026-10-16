@@ -72,6 +72,13 @@ The parameters of coefficient `c` are brms's `sd_m[c]` (`1|g_sigma`, `x|g_sigma`
 `Model.group_names[factor]` keeps the varying intercept's roles with each slope's as `sd:x`, `offset:x`,
 `group_effect:x` (docs/varying-slopes.md).
 
+D08 (docs/multi-membership-and-by.md): `GroupTerm.members` and `weights` make the term brms's multi-membership
+`(1 | mm(g, g2, weights = cbind(w1, w2)))` (factor `mmgg2`, `operands` the member columns, `GroupBlock.memberships` and
+`weights` per row), `GroupTerm.by` brms's `(1 | gr(g, by = gby))` (`GroupBlock.by_levels`, `by_index`); both are
+`GroupTerm.custom`, built by the model in the linear-predictor hook rather than by Bambi (`ModelSpec.bambi_group_terms` are the
+others). `GroupTerm.id` is a correlation ID shared with a distributional formula's term of the same factor
+(`ModelSpec.shared_ids`, `DparDesign.group_blocks`, `Model.dpar_group_names`).
+
 ## Gaussian processes: `ModelSpec.gp_terms`
 
 brms's `gp(x)` and `gp(x, k = 10, c = 5/4)` (C03, docs/gaussian-processes.md) add a function of one numeric column to the linear

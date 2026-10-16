@@ -25,14 +25,17 @@ docs/mixtures.md; ``ab.mixture(..., families=[...])``) has one linear predictor 
 ``sigma<k>`` per component and the mixing proportions ``theta`` (``autobayes/families/mixture.py``). A Gaussian process ``gp(x)`` or ``gp(x, k = 10, c =
 5/4)`` (C03, docs/gaussian-processes.md) is added to the parent's linear predictor while Bambi builds the model, as a
 monotonic term is (``Design.gp`` holds its inputs, ``Model.gp_names`` its PyMC names).
+brms's multi-membership term ``(1 | mm(g, g2, ...))`` and ``(1 | gr(g, by = gby))`` (D08, docs/multi-membership-and-by.md) are
+added to the parent's linear predictor the same way, under Bambi's names of a varying intercept (``1|mmgg2_sigma``, ...); a
+correlation ID shared with sigma's formula is Bambi's two components' terms correlated by the post-build edit of A02.
 brms's autocorrelation terms ``ar()``, ``ma()`` and ``arma()`` in the regression formulation (C04, docs/autocorrelation.md)
 are added to the Gaussian linear predictor last, on the residuals of every other term (``autobayes.autocor``;
 ``Design.autocor`` holds the series of the fitted rows).
 """
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from types import MappingProxyType
+from dataclasses import dataclass, field, replace
+from types import MappingProxyType, SimpleNamespace
 
 import numpy as np
 import pandas as pd
@@ -41,12 +44,13 @@ from collections.abc import Mapping
 
 from autobayes.correlation import check_correlation_cholesky, cholesky_corr_free, cholesky_corr_rv, n_free
 from autobayes.families import FAMILIES, FamilySpec, get_family
-from autobayes.formula import (Categorical, FormulaError, ModelSpec, addition_data, bambi_group_name, binomial_counts,
+from autobayes.formula import (Categorical, FormulaError, ModelSpec, addition_data, bambi_group_name, binomial_counts, by_levels_of,
                                categorical_labels, check_imputation, factor_column, group_labels, interaction_cells,
-                               measurement_values, missing_values, parse_formula, pop_term_design, sd_tag)
+                               measurement_values, missing_values, mm_weights, parse_formula, pop_term_design, sd_tag)
 from autobayes.priors import AUXILIARY, PriorError, Priors, describe_prior
 
 _bambi_group_name = bambi_group_name          # ``1|g`` for the varying intercept of ``g``, ``x|g`` for the slope of ``x``
+_SYMMETRIC_HALF = frozenset({"HalfNormal", "HalfStudentT", "HalfCauchy"})   # D08: half priors of a distribution symmetric about 0
 _AUTOCOR_MEANING = {"ar": "autoregressive", "ma": "moving-average"}   # an autocorrelation term's parts (C04)
 
 
@@ -74,6 +78,15 @@ class GroupBlock:
     Z: np.ndarray
     group_index: np.ndarray
     column_slice: slice
+    # D08, a multi-membership term (1 | mm(g, g2, ...)): each member's 0-based level index per row (brms's J_m_k - 1) and its
+    # weight per row (brms's W_m_k, scaled to sum to 1 on each row); Z is their weighted sum of indicators and group_index
+    # the first member's index. Empty for every other term.
+    memberships: tuple[np.ndarray, ...] = ()
+    weights: tuple[np.ndarray, ...] = ()
+    # D08, a term with gr(g, by = gby): the levels of gby, sorted (brms's Nby_m of them), and the 0-based by-level of each
+    # level of g (brms's Jby_m - 1); the coefficient's SD is a vector over by_levels. Empty / None for every other term.
+    by_levels: tuple[str, ...] = ()
+    by_index: np.ndarray | None = None
 
     @property
     def J(self) -> int:
@@ -96,6 +109,9 @@ class DparDesign:
     columns: tuple[str, ...]
     centered: bool
     link: str
+    # D08: the group blocks of the formula's group-level terms, which share a correlation ID with the response formula's
+    # (``sigma ~ (1 |p| g)``), keyed (factor, coefficient) as ``Design.group_blocks``; empty for every other formula
+    group_blocks: Mapping[tuple[str, str], GroupBlock] = field(default_factory=lambda: MappingProxyType({}))
 
 
 @dataclass(frozen=True)
@@ -341,11 +357,12 @@ class Model:
                 "intercept, '0 + ...' (docs/distributional.md, divergence D34)"
             )
         priors.validate(spec0, fam)                     # structure now; per-level coverage once levels are known
-        operands = [c for t in spec0.group_terms for c in t.operands]   # the columns the grouping factors are read from
+        operands = [c for t in spec0.group_terms for c in t.data_columns]   # the columns the grouping factors are read from
         cols = ([spec0.response, *spec0.pop_columns] + operands
                 + ([spec0.trials] if spec0.trials else []) + ([spec0.offset.column] if spec0.offset is not None else [])
                 + [c for a in spec0.additions for c in a.columns]          # weights() and cens() columns (B02)
-                + [c for d in spec0.dpars for c in d.pop_columns])         # the columns distributional formulas read (B01)
+                + [c for d in spec0.dpars for c in d.pop_columns]          # the columns distributional formulas read (B01)
+                + [c for d in spec0.dpars for t in d.group_terms for c in t.data_columns])   # and their shared-ID terms (D08)
         cols += list(spec0.autocor.columns) if spec0.autocor is not None else []   # an autocorrelation term's time and series (C04)
         cols = list(dict.fromkeys(cols))                        # the offset column may also be a predictor
         missing = [c for c in cols if c not in data.columns]
@@ -388,7 +405,13 @@ class Model:
         for m in self.spec.monotonics:                       # a monotonic predictor's values no fitted row takes (B03)
             self.warnings.extend(m.notes(df[m.column]))
         for t in self.spec.group_terms:                      # labels as text; a derived factor g:h gets its own column g_h
+            if t.is_mm:                                      # D08: a multi-membership term's labels are its member columns
+                for c in t.members:
+                    df[c] = group_labels(c, df)
+                continue
             df[t.column] = group_labels(t.factor, df)
+            if t.by is not None:                             # D08: and gr(by = )'s by column, as text
+                df[t.by] = group_labels(t.by, df)
         for t in (*self.spec.transform_terms, *(t for d in self.spec.dpars for t in d.transform_terms)):
             df[t.name] = t.transform.values(df)              # the evaluated column Bambi is handed, under the term's own name (A05)
         self.categories: tuple[str, ...] = ()               # the response's categories, in order (B05: cumulative, categorical)
@@ -462,6 +485,9 @@ class Model:
         if self.spec.me_terms or self.spec.mi_terms:         # brms's me() and mi() (C06): added the same way
             from autobayes.likelihoods import monotonic_family
             bambi_family = monotonic_family(bambi_family, self._add_measurement_effects)
+        if self.spec.custom_group_terms:                     # brms's mm() and gr(by = ) (D08): added the same way
+            from autobayes.likelihoods import monotonic_family
+            bambi_family = monotonic_family(bambi_family, self._add_custom_group_effects)
         if self.spec.autocor is not None:                    # brms's ar(), ma(), arma() (C04): added last, on the residuals
             from autobayes.autocor import autocor_family
             bambi_family = autocor_family(bambi_family, self._add_autocor_effects)
@@ -472,8 +498,8 @@ class Model:
         )
         self.bambi_model.build()
         self.pymc_model = self.bambi_model.backend.model
-        if self.spec.correlated_terms:                       # brms's correlated slopes (A02): a post-build edit of Bambi's graph
-            self.pymc_model = self._correlate_group_effects(self.pymc_model)
+        if self.spec.correlated_terms or self.spec.shared_ids:   # brms's correlated slopes (A02) and shared IDs (D08): a post-build
+            self.pymc_model = self._correlate_group_effects(self.pymc_model)   # edit of Bambi's graph
             self.bambi_model.backend.model = self.pymc_model  # what Bambi's fit() samples and cleans
         self.design = self._extract_design()
         if self.spec.me_terms or self.spec.mi_terms:         # C06: each term's contribution to the linear predictor, checked
@@ -517,8 +543,8 @@ class Model:
         if self.family_spec.mixture:                        # C05: each component's sigma, theta and the component coordinates
             roles = self.mixture_names
             variable_names += [*roles["sigma"], roles["theta"], roles["coordinate"], f"{self.spec.response}_dim"]
-        for roles in self.group_coefficient_names.values():
-            variable_names.extend(roles[k] for k in ("sd", "offset", "group_effect"))
+        for roles in (*self.group_coefficient_names.values(), *self.dpar_group_names.values()):   # D08: a shared ID's dpar terms too
+            variable_names.extend(roles[k] for k in ("sd", "offset", "group_effect", "by_normalisation") if k in roles)
         for roles in self.correlation_names.values():
             variable_names.extend(roles[k] for k in ("L", "cor"))
         dpar_coefficients = [v for roles in self.dpar_names.values() for k, v in roles.items() if k != "value"]   # B01
@@ -533,6 +559,7 @@ class Model:
         if any(name.endswith("_offset") for name in retained):
             raise FormulaError("generated name collision: coefficient/effect suffix '_offset' is reserved by Bambi; rename the column")
         coords = [roles["coordinate"] for roles in self.group_names.values()]
+        coords += [roles["by_coordinate"] for roles in self.group_names.values() if "by_coordinate" in roles]   # D08
         coords += [roles[k] for roles in self.correlation_names.values() for k in ("coordinate", "coordinate_T")]
         coords += [f"{t.name}_dim" for t in self.spec.pop_terms if t.is_vector]
         coords += [f"{self.dpar_names[d.response][f'b:{t.name}']}_dim" for d in self.spec.dpars for t in d.pop_terms if t.is_vector]
@@ -565,12 +592,16 @@ class Model:
         cor_priors = self.priors.cor_priors(self.spec)
         fgraph, memo = fgraph_from_model(model, inlined_views=True)
         replacements, added = [], []
-        for t in self.spec.correlated_terms:
-            g, M = t.factor, len(t.coefs)
+        # D08: a correlation ID shared with a distributional formula is one more correlated group, its coefficients the
+        # response formula's term's and then the distributional formula's (Bambi's sigma_1|g, under the component's prefix)
+        groups = [(t.factor, t.coefs, [self._group_roles(t.factor, c) for c in t.coefs]) for t in self.spec.correlated_terms]
+        groups += [(s.factor, s.labels, [self._shared_roles(s.factor, dpar, c) for dpar, c in s.coefs]) for s in self.spec.shared_ids]
+        for g, labels, roles in groups:
+            M = len(labels)
             names = self._correlation_roles(g)
             rv, transform, value = cholesky_corr_rv(names["L"], float(cor_priors[g].params["eta"]), M)
             for dim in (names["coordinate"], names["coordinate_T"]):
-                fgraph._coords[dim] = tuple(t.coefs)
+                fgraph._coords[dim] = tuple(labels)
                 fgraph._dim_lengths[dim] = pytensor.shared(M, name=dim)
             L = model_free_rv(rv, value, transform, names["coordinate"], names["coordinate_T"])
             L.name = names["L"]
@@ -579,7 +610,6 @@ class Model:
             cor_det = model_deterministic(cor, names["coordinate"], names["coordinate_T"])
             cor_det.name = names["cor"]
             added += [L, cor_det]
-            roles = [self._group_roles(g, c) for c in t.coefs]
             zs = [memo[model[r["offset"]]] for r in roles]
             for c in range(1, M):
                 sd = memo[model[roles[c]["sd"]]]
@@ -691,15 +721,24 @@ class Model:
                 raise RuntimeError("Bambi built a group design for a formula without a group-level term")
             Z = np.zeros((len(X_raw), 0))
         else:
-            expected_terms = [_bambi_group_name(t.factor, coef) for t in self.spec.group_terms for coef in t.coefs]
-            if group is None or list(group.terms) != expected_terms:
+            # D08: the multi-membership and by terms are the model's own (_custom_group_blocks); Bambi's group design holds
+            # the others, side by side, and Design.Z every block in formula order
+            expected_terms = [_bambi_group_name(t.factor, coef) for t in self.spec.bambi_group_terms for coef in t.coefs]
+            if (group is None) != (not expected_terms) or (group is not None and list(group.terms) != expected_terms):
                 raise RuntimeError("Bambi group terms differ from formula order")
-            Z = group.design_matrix
-            Z = np.asarray(Z.toarray() if hasattr(Z, "toarray") else Z, dtype=float)
-            start = 0
+            bambi_Z = group.design_matrix if group is not None else np.zeros((len(X_raw), 0))
+            bambi_Z = np.asarray(bambi_Z.toarray() if hasattr(bambi_Z, "toarray") else bambi_Z, dtype=float)
+            custom = self._custom_group_blocks() if self.spec.custom_group_terms else {}
+            start, bambi_start, parts = 0, 0, []
             for t in self.spec.group_terms:
                 g = t.factor
                 levels = self.spec.levels_by_group[g]
+                if t.custom:                                 # D08: the block built and checked against the graph here
+                    block = custom[g]
+                    group_blocks[(g, "Intercept")] = replace(block, column_slice=slice(start, start + len(levels)))
+                    parts.append(block.Z)
+                    start += len(levels)
+                    continue
                 labels = self.data[t.column].to_numpy()
                 indicator = np.column_stack([labels == level for level in levels]).astype(float)
                 for coef in t.coefs:
@@ -707,10 +746,12 @@ class Model:
                     bterm = group.terms[name]
                     if tuple(str(v) for v in bterm.groups) != levels:
                         raise RuntimeError(f"Bambi level order for {g!r} differs from sorted fitted labels")
-                    block_slice = slice(start, start + len(levels))
-                    if group.slices[name] != block_slice:
+                    if group.slices[name] != slice(bambi_start, bambi_start + len(levels)):
                         raise RuntimeError(f"Bambi group slice for {g!r} differs from formula order")
-                    block = Z[:, block_slice]
+                    block_slice = slice(start, start + len(levels))
+                    block = bambi_Z[:, group.slices[name]]
+                    parts.append(block)
+                    bambi_start += len(levels)
                     if coef == "Intercept":
                         if not np.array_equal(block, indicator) or not np.array_equal(block.sum(1), np.ones(len(X_raw))):
                             raise RuntimeError(f"group design for {g!r} does not encode original rows one-hot")
@@ -734,9 +775,12 @@ class Model:
                         dims = tuple(self.pymc_model.named_vars_to_dims.get(roles[key], ()))
                         if dims != (coord,):
                             raise RuntimeError(f"PyMC dims of {roles[key]!r} are {dims}; expected ({coord!r},)")
-            if Z.shape != (len(X_raw), start):
+            Z = np.concatenate(parts, axis=1) if parts else np.zeros((len(X_raw), 0))
+            if Z.shape != (len(X_raw), start) or bambi_Z.shape != (len(X_raw), bambi_start):
                 raise RuntimeError("unexpected concatenated group design shape")
-            for t in self.spec.correlated_terms:             # the correlation factor (A02): a free variable on Stan's coordinates
+            for g in self.correlation_names:                 # the correlation factor (A02; a shared ID's, D08): a free variable on
+                coefs = self.correlation_coefs(g)            # Stan's coordinates
+                t = SimpleNamespace(factor=g, coefs=coefs)
                 names, M = self._correlation_roles(t.factor), len(t.coefs)
                 L = self.pymc_model[names["L"]]
                 if L not in self.pymc_model.free_RVs or tuple(L.type.shape) != (M, M):
@@ -783,7 +827,8 @@ class Model:
         comp = self.bambi_model.components.get(bname)
         if comp is None or comp.design.common is None:
             raise RuntimeError(f"Bambi built no distributional component {bname!r} for the formula '{d.formula}'")
-        if comp.design.group is not None:
+        group_blocks = self._dpar_group_blocks(d, comp) if d.group_terms else {}   # D08: a shared correlation ID's terms
+        if comp.design.group is not None and not d.group_terms:
             raise RuntimeError(f"Bambi built group-level terms for the formula '{d.formula}', which has none")
         names = list(comp.design.common.terms)
         if names != (["Intercept"] if d.intercept else []) + list(d.terms):
@@ -802,7 +847,39 @@ class Model:
         centered = bool(self._bambi_centring and d.intercept and d.pop_terms)   # an intercept-only formula has nothing to centre
         x_means = X_raw.mean(0) if centered else np.zeros(X_raw.shape[1])
         return DparDesign(name=d.response, X_raw=X_raw, X_model=X_raw - x_means if centered else X_raw, x_means=x_means,
-                          columns=d.columns, centered=centered, link=self.family_spec.distributional_link)
+                          columns=d.columns, centered=centered, link=self.family_spec.distributional_link,
+                          group_blocks=MappingProxyType(group_blocks))
+
+    def _dpar_group_blocks(self, d: ModelSpec, comp) -> dict[tuple[str, str], GroupBlock]:
+        """D08: the blocks of a distributional formula's group-level terms (each shares a correlation ID with the response
+        formula's term of its factor; the varying intercept only), as Bambi built its distributional component's group
+        design: every term in formula order, the level order the sorted fitted labels, each block the one-hot indicator of
+        the row's level, and the effects ``<component>_1|g`` and offsets on the factor's level dimension."""
+        group = comp.design.group
+        expected = [_bambi_group_name(t.factor, c) for t in d.group_terms for c in t.coefs]
+        if group is None or list(group.terms) != expected:
+            raise RuntimeError(f"Bambi's group terms of the formula '{d.formula}' are {None if group is None else list(group.terms)}; "
+                               f"expected {expected}")
+        Z = np.asarray(group.design_matrix.toarray() if hasattr(group.design_matrix, "toarray") else group.design_matrix, dtype=float)
+        blocks, start = {}, 0
+        for t in d.group_terms:
+            levels = self.spec.levels_by_group[t.factor]
+            if d.levels_by_group[t.factor] != levels or tuple(str(v) for v in group.terms[_bambi_group_name(t.factor, "Intercept")].groups) != levels:
+                raise RuntimeError(f"the levels of {t.factor!r} in the formula '{d.formula}' differ from the response formula's")
+            labels = self.data[t.column].to_numpy()
+            indicator = np.column_stack([labels == level for level in levels]).astype(float)
+            block_slice = slice(start, start + len(levels))
+            if group.slices[_bambi_group_name(t.factor, "Intercept")] != block_slice or not np.array_equal(Z[:, block_slice], indicator):
+                raise RuntimeError(f"Bambi's group design of {t.factor!r} in the formula '{d.formula}' does not encode the rows one-hot")
+            roles = self._shared_roles(t.factor, d.response, "Intercept")
+            for key in ("offset", "group_effect"):
+                if tuple(self.pymc_model.named_vars_to_dims.get(roles[key], ())) != (roles["coordinate"],):
+                    raise RuntimeError(f"PyMC dims of {roles[key]!r} are not ({roles['coordinate']!r},)")
+            if self.pymc_model[roles["sd"]] not in self.pymc_model.free_RVs:
+                raise RuntimeError(f"{roles['sd']!r} is not a free variable of the graph")
+            blocks[(t.factor, "Intercept")] = GroupBlock(levels, Z[:, block_slice], indicator.argmax(1), block_slice)
+            start += len(levels)
+        return blocks
 
     def _bambi_dpar(self, name: str) -> str:
         """Bambi's (and so PyMC's) name of distributional parameter ``name`` (B01): the family's ``bambi_scale_parameter``
@@ -962,6 +1039,125 @@ class Model:
             if moved.shape != expected.shape or not np.allclose(moved, expected, rtol=1e-10, atol=1e-10):
                 raise RuntimeError(f"the graph's {parent!r} does not move by the values of {block.term!r} at its rows' inputs; largest "
                                    f"difference {np.max(np.abs(moved - expected)) if moved.shape == expected.shape else moved.shape}")
+
+    # -- multi-membership and by terms (D08) ---------------------------------------------
+    def _custom_term_layout(self, t) -> dict:
+        """D08: what one multi-membership or ``by`` term reads off the fitted rows: its sorted levels; each member's 0-based
+        level index per row and its weights (brms's ``J_m_k - 1`` and ``W_m_k``; one member, weight 1, for a ``by`` term);
+        for a ``by`` term the sorted levels of the by column and the 0-based by-level of each level (brms's ``Jby_m - 1``)."""
+        levels = self.spec.levels_by_group[t.factor]
+        position = {level: j for j, level in enumerate(levels)}
+        if t.is_mm:
+            index = tuple(np.array([position[str(v)] for v in self.data[c]], dtype=np.int64) for c in t.members)
+            weights = mm_weights(t, self.data)
+            return {"levels": levels, "index": index, "weights": tuple(weights[:, k] for k in range(len(t.members))),
+                    "by_levels": (), "by_index": None}
+        index = (np.array([position[str(v)] for v in self.data[t.column]], dtype=np.int64),)
+        by_of = by_levels_of(t, self.data)
+        by_levels = tuple(sorted(set(by_of.values())))
+        return {"levels": levels, "index": index, "weights": (np.ones(len(self.data)),), "by_levels": by_levels,
+                "by_index": np.array([by_levels.index(by_of[level]) for level in levels], dtype=np.int64)}
+
+    def _add_custom_group_effects(self, eta):
+        """brms's multi-membership terms ``(1 | mm(g, g2, weights = cbind(w1, w2)))`` and ``(1 | gr(g, by = gby))`` (D08), built
+        inside the model Bambi is building (``likelihoods.monotonic_family``'s hook on the parent's linear predictor, before the
+        link), named as Bambi names a varying intercept: the SD ``1|g_sigma`` under the term's ``sd`` prior (sampled on its log;
+        with ``by``, one SD per level of the by column on ``g__by_dim``), the standardised effects ``1|g_offset ~ Normal(0, 1)``
+        and the effects ``1|g = sd[by of the level] * 1|g_offset`` (a deterministic on ``g__factor_dim``); each row adds
+        ``sum_k W_k * 1|g[J_k]`` (brms's ``W_m_k r_m_1[J_m_k]``), its one level's effect for a ``by`` term."""
+        import pymc as pm
+        import pytensor.tensor as pt
+
+        model = pm.modelcontext(None)
+        sds = self.priors.sd_priors(self.spec)
+        for t in self.spec.custom_group_terms:
+            roles, layout = self.group_coefficient_names[(t.factor, "Intercept")], self._custom_term_layout(t)
+            model.add_coord(roles["coordinate"], list(layout["levels"]))
+            prior = sds[(t.factor, "Intercept")]
+            dist = getattr(pm, prior.name)
+            params = {k: np.float64(v) for k, v in prior.params.items()}
+            if t.by is not None:
+                model.add_coord(roles["by_coordinate"], list(layout["by_levels"]))
+                sd = dist(roles["sd"], **params, dims=roles["by_coordinate"])
+                scale = sd[layout["by_index"]]
+                # brms's lprior of sd_m (M_m x Nby_m, M_m = 1 here) adds the untruncated density of every entry and subtracts
+                # the lower bound's log CCDF once for the term, not once per by level (gauss_gr_by's lprior): for a prior
+                # symmetric about 0 (normal, student_t, cauchy) brms's density is log 2 below the half prior's for each by
+                # level after the first. The constant is reproduced so that the log density is brms's; it moves no parameter.
+                missing = (len(layout["by_levels"]) - 1) * (np.log(2.0) if prior.name in _SYMMETRIC_HALF else 0.0)
+                if missing:
+                    pm.Potential(roles["by_normalisation"], pt.as_tensor_variable(np.float64(-missing)))
+            else:
+                scale = dist(roles["sd"], **params)
+            z = pm.Normal(roles["offset"], mu=np.float64(0.0), sigma=np.float64(1.0), dims=roles["coordinate"])
+            r = pm.Deterministic(roles["group_effect"], scale * z, dims=roles["coordinate"])
+            for index, weight in zip(layout["index"], layout["weights"]):
+                eta = eta + (r[index] if t.by is not None else np.asarray(weight, dtype=np.float64) * r[index])
+        return eta
+
+    def _custom_group_blocks(self) -> dict[str, GroupBlock]:
+        """The block of each multi-membership and ``by`` term (D08), by factor, checked against the graph: the SD a free
+        positive variable sampled on its log (a vector over the by levels with ``by``), the standardised effects a free vector
+        and the effects a deterministic on the level dimension, the coordinates the sorted levels; and the term's contribution
+        to the parent's linear predictor recomputed from the data (``_check_custom_group_effects``). ``Z`` is the weighted sum
+        of the members' indicators (the indicator of the level for a ``by`` term)."""
+        pmm, blocks = self.pymc_model, {}
+        start = pmm.initial_point()
+        for t in self.spec.custom_group_terms:
+            roles, layout = self.group_coefficient_names[(t.factor, "Intercept")], self._custom_term_layout(t)
+            levels, n = layout["levels"], len(self.data)
+            sd = pmm[roles["sd"]]
+            shape = (len(layout["by_levels"]),) if t.by is not None else ()
+            if (sd not in pmm.free_RVs or pmm.rvs_to_values[sd].name != f"{roles['sd']}_log__"
+                    or np.shape(start.get(f"{roles['sd']}_log__")) != shape):
+                raise RuntimeError(f"{roles['sd']!r} is not a free positive variable of shape {shape} sampled on its log")
+            if t.by is not None and (tuple(pmm.named_vars_to_dims.get(roles["sd"], ())) != (roles["by_coordinate"],)
+                                     or tuple(str(v) for v in pmm.coords[roles["by_coordinate"]]) != layout["by_levels"]):
+                raise RuntimeError(f"PyMC dims of {roles['sd']!r} are not ({roles['by_coordinate']!r},) with the levels of {t.by!r}")
+            if tuple(str(v) for v in pmm.coords[roles["coordinate"]]) != levels:
+                raise RuntimeError(f"PyMC coordinate {roles['coordinate']!r} differs from the fitted labels")
+            if pmm[roles["offset"]] not in pmm.free_RVs or pmm[roles["group_effect"]] not in pmm.deterministics:
+                raise RuntimeError(f"{roles['offset']!r} is not a free variable or {roles['group_effect']!r} not a deterministic")
+            for key in ("offset", "group_effect"):
+                if tuple(pmm.named_vars_to_dims.get(roles[key], ())) != (roles["coordinate"],):
+                    raise RuntimeError(f"PyMC dims of {roles[key]!r} are not ({roles['coordinate']!r},)")
+            Z = np.zeros((n, len(levels)))
+            for index, weight in zip(layout["index"], layout["weights"]):
+                np.add.at(Z, (np.arange(n), index), weight)
+            blocks[t.factor] = GroupBlock(levels, Z, layout["index"][0], slice(0, len(levels)),
+                                          memberships=layout["index"] if t.is_mm else (),
+                                          weights=layout["weights"] if t.is_mm else (),
+                                          by_levels=layout["by_levels"], by_index=layout["by_index"])
+        self._check_custom_group_effects(blocks)
+        return blocks
+
+    def _check_custom_group_effects(self, blocks) -> None:
+        """Each multi-membership and ``by`` term's contribution (D08), read off the graph: with every such term's SD at 1 and
+        standardised effects at 0, and every other variable at the graph's initial point, the parent's linear predictor (on
+        Bambi's link scale: the parent itself, or the log of ``mu`` under a log link) must move, row by row, by exactly
+        ``sum_k W_k * test[J_k]`` (``Z @ test``, recomputed from the data) when the term's standardised effects go from 0 to
+        a fixed vector ``test``."""
+        pmm, parent = self.pymc_model, self.family_spec.parent
+        link = self.bambi_model.family.link[parent].name
+        if link not in ("identity", "log"):
+            raise RuntimeError(f"Bambi's link of {parent!r} is {link}; the mm() and gr(by = ) terms are checked under the identity "
+                               "and log links")
+        fn = pmm.compile_fn(pmm.replace_rvs_by_values([pmm[parent]]), inputs=pmm.value_vars, point_fn=True,
+                            on_unused_input="ignore", mode="FAST_COMPILE")
+        at0 = pmm.initial_point()
+        for factor in blocks:
+            roles = self.group_coefficient_names[(factor, "Intercept")]
+            at0[f"{roles['sd']}_log__"] = np.zeros(np.shape(at0[f"{roles['sd']}_log__"]))
+            at0[roles["offset"]] = np.zeros(blocks[factor].J)
+        for factor, block in blocks.items():
+            roles = self.group_coefficient_names[(factor, "Intercept")]
+            test = np.cos(np.arange(1.0, block.J + 1.0))
+            lo, hi = (np.asarray(fn(p)[0], dtype=float).ravel() for p in (at0, {**at0, roles["offset"]: test}))
+            moved = hi - lo if link == "identity" else np.log(hi) - np.log(lo)
+            expected = block.Z @ test
+            if moved.shape != expected.shape or not np.allclose(moved, expected, rtol=1e-10, atol=1e-10):
+                raise RuntimeError(f"the graph's {parent!r} does not move by the weighted effects of {factor!r} at its rows' levels; "
+                                   f"largest difference {np.max(np.abs(moved - expected)) if moved.shape == expected.shape else moved.shape}")
 
     # -- autocorrelation terms (C04) -----------------------------------------------------
     def _add_autocor_effects(self, eta):
@@ -1302,8 +1498,35 @@ class Model:
 
     @property
     def correlation_names(self) -> dict[str, dict[str, str]]:
-        """``_correlation_roles`` of every correlated group term, by factor in formula order (empty without one)."""
-        return {t.factor: self._correlation_roles(t.factor) for t in self.spec.correlated_terms}
+        """``_correlation_roles`` of every correlated group term, by factor in formula order, then of every correlation ID
+        shared with a distributional formula (D08; empty without one)."""
+        out = {t.factor: self._correlation_roles(t.factor) for t in self.spec.correlated_terms}
+        out.update({s.factor: self._correlation_roles(s.factor) for s in getattr(self.spec, "shared_ids", ())})
+        return out
+
+    def correlation_coefs(self, factor: str) -> tuple[str, ...]:
+        """The coefficients of the correlation matrix of ``factor``, its coordinates: the correlated term's (``Intercept``,
+        ``x``), or a shared correlation ID's, brms's names across formulas (``Intercept``, ``x``, ``sigma_Intercept``; D08)."""
+        shared = self.spec.shared_id_of(factor) if hasattr(self.spec, "shared_id_of") else None
+        return shared.labels if shared is not None else self.spec.group_term_of(factor).coefs
+
+    def _shared_roles(self, factor: str, dpar: str, coef: str) -> dict[str, str]:
+        """PyMC names of one coefficient of a shared correlation ID (D08): the response formula's (``dpar`` empty) are
+        ``_group_roles``; a distributional formula's carry Bambi's prefix of its component (``sigma_1|g``, ``sigma_1|g_sigma``,
+        ``sigma_1|g_offset``), on the factor's own level dimension."""
+        roles = self._group_roles(factor, coef)
+        if not dpar:
+            return roles
+        prefix = f"{self._bambi_dpar(dpar)}_"
+        return {k: (v if k == "coordinate" else prefix + v) for k, v in roles.items()}
+
+    @property
+    def dpar_group_names(self) -> dict[tuple[str, str, str], dict[str, str]]:
+        """PyMC roles (``sd``, ``offset``, ``group_effect``, ``coordinate``) of every group-level coefficient of a distributional
+        formula (D08: the terms sharing a correlation ID with the response formula's), keyed ``(parameter, factor,
+        coefficient)``; empty without one."""
+        return {(d.response, t.factor, c): self._shared_roles(t.factor, d.response, c)
+                for d in self.spec.dpars for t in d.group_terms for c in t.coefs}
 
     @property
     def group_names(self) -> dict[str, dict[str, str]]:
@@ -1316,16 +1539,23 @@ class Model:
             roles = self._group_roles(t.factor)
             for coef in t.slopes:
                 roles.update({f"{k}:{coef}": v for k, v in self._group_roles(t.factor, coef).items() if k != "coordinate"})
-            if t.has_correlation:
+            if t.has_correlation or t.id is not None:          # a correlated term, or a shared correlation ID (D08)
                 roles.update({k: v for k, v in self._correlation_roles(t.factor).items() if k in ("L", "cor")})
+            if t.by is not None:                               # D08: the dimension of gr(by = )'s SD
+                roles["by_coordinate"] = f"{factor_column(t.factor)}__by_dim"
             out[t.factor] = roles
         return out
 
     @property
     def group_coefficient_names(self) -> dict[tuple[str, str], dict[str, str]]:
         """PyMC roles (``sd``, ``offset``, ``group_effect``, ``coordinate``) of every group-level coefficient, keyed
-        ``(factor, coefficient)`` in formula order like ``Design.group_blocks``."""
-        return {(g, coef): self._group_roles(g, coef) for g, coef in self.spec.group_coefficients}
+        ``(factor, coefficient)`` in formula order like ``Design.group_blocks``. A term with ``gr(g, by = gby)`` (D08) also has
+        ``by_coordinate``, the dimension of its SD (``g__by_dim``, one entry per level of ``gby``)."""
+        by = {t.factor: t.by for t in self.spec.group_terms}
+        return {(g, coef): {**self._group_roles(g, coef),
+                            **({"by_coordinate": f"{factor_column(g)}__by_dim",
+                                "by_normalisation": f"{_bambi_group_name(g, coef)}_sigma_by_normalisation"} if by[g] else {})}
+                for g, coef in self.spec.group_coefficients}
 
     @property
     def coefficients(self) -> tuple[tuple[str, str, int | None], ...]:
@@ -1450,7 +1680,7 @@ class Model:
                         raise ValueError(f"z for {what} must have {block.J} finite entries")
                     sd_by_coef[(g, coef)], z_by_coef[(g, coef)] = sds[coef], arr
         L_by_group = {}
-        correlated = [t.factor for t in self.spec.correlated_terms]
+        correlated = list(self.correlation_names)             # the correlated terms' factors, and a shared ID's (D08)
         if not correlated:
             if L is not None:
                 raise ValueError("this model has no correlated group term '(1 + x | g)'; L does not apply")
@@ -1465,8 +1695,8 @@ class Model:
                 by_group = {correlated[0]: L}
             else:
                 raise ValueError(f"L requires an exact-key mapping for multiple correlated grouping factors {correlated}")
-            for t in self.spec.correlated_terms:
-                L_by_group[t.factor] = check_correlation_cholesky(by_group[t.factor], len(t.coefs), f"L for {t.factor!r}")
+            for g in correlated:
+                L_by_group[g] = check_correlation_cholesky(by_group[g], len(self.correlation_coefs(g)), f"L for {g!r}")
         scale = self.family_spec.scale_parameter                 # "sigma", "shape", "phi" or None
         auxiliary = {"sigma": sigma, "shape": shape, "phi": phi}
         if {k for k, v in auxiliary.items() if v is not None} != ({scale} if scale is not None else set()):
@@ -1503,7 +1733,20 @@ class Model:
             return np.asarray(np.log(arr))
 
         for (g, coef), roles in self.group_coefficient_names.items():
-            point[f"{roles['sd']}_log__"] = log_scale(sd_by_coef[(g, coef)], f"sd:{sd_tag(g, coef)}")
+            if "by_coordinate" in roles:                       # D08: gr(by = ): one SD per level of the by column
+                block = self.design.group_blocks[(g, coef)]
+                value = sd_by_coef[(g, coef)]
+                if isinstance(value, Mapping):
+                    if set(value) != set(block.by_levels):
+                        raise ValueError(f"sd for {g!r} must cover exactly the levels {list(block.by_levels)} of its by column")
+                    value = [value[b] for b in block.by_levels]
+                arr = np.asarray(value, dtype=float)
+                if arr.shape != (len(block.by_levels),) or not np.isfinite(arr).all() or (arr <= 0).any():
+                    raise ValueError(f"sd for {g!r} must be {len(block.by_levels)} finite positive SDs, one per level "
+                                     f"{list(block.by_levels)} of its by column (or a mapping over them)")
+                point[f"{roles['sd']}_log__"] = np.log(arr)
+            else:
+                point[f"{roles['sd']}_log__"] = log_scale(sd_by_coef[(g, coef)], f"sd:{sd_tag(g, coef)}")
             point[roles["offset"]] = z_by_coef[(g, coef)]
         for g, roles in self.correlation_names.items():              # Stan's cholesky_corr coordinates of L (A02)
             point[f"{roles['L']}_cholesky_corr__"] = cholesky_corr_free(L_by_group[g])
@@ -1688,10 +1931,12 @@ class Model:
         """``value_point``'s entries of distributional parameter ``name``'s formula (B01) from ``{"intercept": float,
         "b": array}``: the intercept (as sampled) and the coefficients term by term in design-column order."""
         d, roles = self.spec.dpar(name), self.dpar_names[name]
-        if not isinstance(value, Mapping) or set(value) - {"intercept", "b"}:
-            raise ValueError(f"{name} has its own formula '{d.formula}': give {name}={{'intercept': float, 'b': array}} "
+        keys = {"intercept", "b", "sd", "z"} if d.group_terms else {"intercept", "b"}   # D08: a shared ID's terms' sd and z
+        if not isinstance(value, Mapping) or set(value) - keys:
+            raise ValueError(f"{name} has its own formula '{d.formula}': give {name}={{'intercept': float, 'b': array"
+                             + (", 'sd': {factor: float}, 'z': {factor: array}" if d.group_terms else "") + "} "
                              "(the formula's intercept as sampled and its coefficients in design-column order)")
-        point = {}
+        point = self._dpar_group_point(name, value.get("sd"), value.get("z")) if d.group_terms else {}
         if d.intercept:
             if value.get("intercept") is None:
                 raise ValueError(f"{name}['intercept'] is required: '{d.formula}' has an intercept")
@@ -1710,6 +1955,36 @@ class Model:
             k = len(term.columns)
             point[roles[f"b:{term.name}"]] = np.array(b[i:i + k]) if term.levels else np.asarray(b[i])
             i += k
+        return point
+
+    def _dpar_group_point(self, name: str, sd, z) -> dict[str, np.ndarray]:
+        """D08: ``value_point``'s entries of a distributional formula's group-level terms (a shared correlation ID's): each
+        term's SD on its log and its standardised effects, from ``sd`` and ``z`` keyed by factor (a single term also takes the
+        bare values)."""
+        d = self.spec.dpar(name)
+        factors = [t.factor for t in d.group_terms]
+
+        def keyed(value, label):
+            if value is None:
+                raise ValueError(f"{name}[{label!r}] is required: '{d.formula}' has the group-level term(s) {factors}")
+            if isinstance(value, Mapping):
+                if set(value) != set(factors):
+                    raise ValueError(f"{name}[{label!r}] must cover exactly the factors {factors}; got {list(value)}")
+                return value
+            if len(factors) != 1:
+                raise ValueError(f"{name}[{label!r}] requires an exact-key mapping over the factors {factors}")
+            return {factors[0]: value}
+
+        sds, zs, point = keyed(sd, "sd"), keyed(z, "z"), {}
+        for t in d.group_terms:
+            roles, block = self._shared_roles(t.factor, name, "Intercept"), self.design.dpars[name].group_blocks[(t.factor, "Intercept")]
+            value = np.asarray(sds[t.factor], dtype=float)
+            if value.shape != () or not np.isfinite(value) or value <= 0:
+                raise ValueError(f"{name}['sd'] for {t.factor!r} must be a finite positive scalar")
+            arr = np.asarray(zs[t.factor], dtype=float)
+            if arr.shape != (block.J,) or not np.isfinite(arr).all():
+                raise ValueError(f"{name}['z'] for {t.factor!r} must have {block.J} finite entries")
+            point[f"{roles['sd']}_log__"], point[roles["offset"]] = np.log(value), arr
         return point
 
     # -- description -------------------------------------------------------------------
@@ -1769,9 +2044,12 @@ class Model:
         features = ((["categorical predictor(s)"] if s.categoricals else []) + (["interaction(s)"] if s.interactions else [])
                     + (["in-formula transform(s)"] if s.transform_terms else []) + (["monotonic effect(s)"] if s.mo_terms else [])
                     + (["Gaussian process(es)"] if s.gp_terms else [])
-                    + (["independent varying slope(s)"] if any(t.slopes and not t.has_correlation for t in s.group_terms) else [])
+                    + (["independent varying slope(s)"] if any(t.slopes and not t.has_correlation and t.id is None for t in s.group_terms) else [])
                     + (["correlated varying slope(s)"] if s.correlated_terms else []) + (["offset"] if s.offset is not None else [])
                     + (["derived grouping factor(s)"] if any(t.derived for t in s.group_terms) else [])
+                    + (["multi-membership term(s)"] if any(t.is_mm for t in s.group_terms) else [])           # D08
+                    + (["group SDs by level of a factor (gr(by = ))"] if any(t.by for t in s.group_terms) else [])
+                    + (["correlation ID(s) shared with a distributional formula"] if s.shared_ids else [])
                     + ([f"response addition term(s) {', '.join(a.term for a in s.additions)}"] if s.additions else [])
                     + ([f"distributional formula(s) for {', '.join(s.dpar_names)}"] if s.dpars else [])
                     + ([f"autocorrelation term {s.autocor.term}"] if s.autocor is not None else [])
@@ -1820,6 +2098,18 @@ class Model:
         for g, block in d.group_designs.items():
             lines += [f"  {'levels    ' if len(s.groups) == 1 else 'levels ' + g}: {', '.join(f'{j}={l}' for j, l in enumerate(block.levels))}"]
         for t in s.group_terms:
+            block = d.group_blocks.get((t.factor, "Intercept"))
+            if t.is_mm:                                      # D08: brms's mm(): memberships and weights
+                w = ("the weight columns " + ", ".join(t.weights) + " divided by their sum on each row (brms's scale = TRUE)"
+                     if t.weights else f"equal weights 1/{len(t.members)}")
+                lines += [f"  {t.factor:<10}: multi-membership grouping {t.grouping} (brms's mm(); group name {t.factor}): each row belongs to its "
+                          f"levels of {', '.join(repr(c) for c in t.members)} with {w}; the levels are the union of the members' labels "
+                          f"(brms's J_m_k and W_m_k)"]
+            if t.by is not None:                             # D08: brms's gr(by = ): the SD of each level's by level
+                groups = "; ".join(f"{b}: " + ", ".join(l for j, l in enumerate(block.levels) if block.by_index[j] == k)
+                                   for k, b in enumerate(block.by_levels))
+                lines += [f"  {t.factor:<10}: gr({t.factor}, by = {t.by}): one SD per level of {t.by!r} ({groups}); each level of "
+                          f"{t.factor!r} lies within one level of {t.by!r} (brms's Nby_m and Jby_m)"]
             if t.derived:
                 ga, gb = t.operands
                 name = _bambi_group_name(t.factor, "Intercept")
@@ -1838,7 +2128,8 @@ class Model:
                 f"              proportions among fitted rows: {props}",
             ]
         rest = "".join(f" + gp({g.column})_i" for g in s.gp_terms) + (" + offset_i" if s.offset is not None else "") + "".join(
-            f" + {effect(t.factor)}[{t.factor}_i]" + "".join(f" + x_{c},i * {slope_effect(t.factor, c)}[{t.factor}_i]" for c in t.slopes)
+            ("".join(f" + W_{c},i * {effect(t.factor)}[{c}_i]" for c in t.members) if t.is_mm else   # D08: brms's W_m_k r_m_1[J_m_k]
+             f" + {effect(t.factor)}[{t.factor}_i]") + "".join(f" + x_{c},i * {slope_effect(t.factor, c)}[{t.factor}_i]" for c in t.slopes)
             for t in s.group_terms)
         rest += " + arma_i" if s.autocor is not None else ""   # C04: the autocorrelation term, last
         if fam.thresholds:                                    # B05: no intercept in mu, the thresholds take its place
@@ -1975,7 +2266,22 @@ class Model:
             lines += ["", "Group effects (non-centred)"]
             for t in s.group_terms:
                 g, block = t.factor, d.group_designs[t.factor]
-                lines += [f"  u_{g}[j] = sd_{g} * z_{g}[j], z_{g}[j] ~ Normal(0, 1), j = 0..{block.J - 1}"]
+                shared = s.shared_id_of(g)
+                if t.by is not None:                         # D08: the SD of the level's by level
+                    lines += [f"  u_{g}[j] = sd_{g}[{t.by}[j]] * z_{g}[j], z_{g}[j] ~ Normal(0, 1), j = 0..{block.J - 1}: one SD per level "
+                              f"of {t.by!r} ({', '.join(block.by_levels)}), the level's own (brms's sd_m[1, Jby_m[j]])"]
+                else:
+                    lines += [f"  u_{g}[j] = sd_{g} * z_{g}[j], z_{g}[j] ~ Normal(0, 1), j = 0..{block.J - 1}"]
+                if t.is_mm:
+                    lines += [f"  Row i adds sum_k W_k,i * u_{g}[level k of row i] over its members {', '.join(t.members)}, the weights summing to 1."]
+                if shared is not None:                       # D08: one correlation matrix across the response and sigma formulas
+                    effects = [f"u_{g}[j]"] + [f"{slope_effect(g, c)}[j]" for c in t.slopes] + [f"u_{dp},{g}[j]" for dp, _ in shared.coefs if dp]
+                    sds = [f"sd_{g}"] + [f"sd_{c}|{g}" for c in t.slopes] + [f"sd_{dp},{g}" for dp, _ in shared.coefs if dp]
+                    lines += [f"  ({', '.join(effects)}) = diag({', '.join(sds)}) L_{g} z[j], z[j] ~ Normal(0, I): the correlation ID {shared.id!r}",
+                              f"  shares one correlation matrix Cor_{g} = L_{g} L_{g}^T over ({', '.join(shared.labels)}), brms's one group across",
+                              f"  the response formula's '{t.canonical}' and the distributional formula's term(s) (brms's scale_r_cor;",
+                              f"  PyMC {self._correlation_roles(g)['cor']}); each slope multiplies the raw predictor, never centred."]
+                    continue
                 if t.has_correlation:
                     zs = [f"z_{g}[j]"] + [f"z_{c}|{g}[j]" for c in t.slopes]
                     for i, c in enumerate(t.slopes, start=1):
@@ -2057,6 +2363,8 @@ class Model:
             if ds.intercept:
                 lines += [f"  a_{name}{'_c' if dd.centered else ''} ~ {describe_prior(sub.intercept)}   (on the {dd.link} scale of {name})"]
             lines += [f"  b_{name}_{col} ~ {describe_prior(prior)}" for col, prior in sub.coefficient_priors(ds).items()]
+            lines += [f"  sd_{name},{g} ~ {describe_prior(prior, lb=0)}   (brms class sd with dpar = {name})"   # D08: a shared ID's terms
+                      for (g, c), prior in (sub.sd_priors(ds).items() if ds.group_terms else ())]
         lines += fam.likelihood_lines(self)
         lines += self._addition_likelihood_lines()
         if self.default_prior_labels:                         # priors filled in by ab.default_priors() (A07)
@@ -2087,6 +2395,12 @@ class Model:
         for (g, c), names in self.group_coefficient_names.items():
             roles[f"{names['sd']}_log__"] = f"log(sd_{sd_tag(g, c)})"
             roles[names["offset"]] = ("z" if len(s.groups) == 1 else f"z_{g}") if c == "Intercept" else f"z_{c}|{g}"
+        for (g, c), names in self.group_coefficient_names.items():   # D08: gr(by = )'s SD, a vector over the by levels
+            if "by_coordinate" in names:
+                roles[f"{names['sd']}_log__"] = f"log(sd_{g}[{', '.join(self.design.group_blocks[(g, c)].by_levels)}]) (vector; dims {names['by_coordinate']})"
+        for (name, g, c), names in self.dpar_group_names.items():   # D08: a shared ID's distributional coefficient
+            roles[f"{names['sd']}_log__"] = f"log(sd_{name},{g})"
+            roles[names["offset"]] = f"z_{name},{g}"
         for g, names in self.correlation_names.items():
             roles[f"{names['L']}_cholesky_corr__"] = f"L_{g} on Stan's cholesky_corr coordinates (canonical partial correlations, arctanh scale)"
         if fam.scale_parameter is not None and fam.scale_parameter not in s.dpar_names:
@@ -2140,6 +2454,7 @@ class Model:
             lines.append(f"  {name:<24} {roles.get(name, f'b_{name}')}")
         lines.append("Deterministic: " + "".join(f"{names['group_effect']} = {effect(g) if c == 'Intercept' else slope_effect(g, c)}, "
                                                  for (g, c), names in self.group_coefficient_names.items())
+                     + "".join(f"{names['group_effect']} = u_{name},{g}, " for (name, g, _), names in self.dpar_group_names.items())   # D08
                      + "".join(f"{names['cor']} = Cor_{g} = L_{g} L_{g}^T, " for g, names in self.correlation_names.items()) + fam.deterministic_note
                      + "".join(f"; {dn['value']} = exp(eta_{name}), one {name} per row (B01)" for name, dn in self.dpar_names.items())
                      + "".join(f"; {me['latent']} = meanme_{x} + sdme_{x} * zme_{x}, one per row (brms's Xme)" for x, me in self.me_names.items()))
@@ -2273,8 +2588,9 @@ class Model:
         name, dd = ds.response, self.design.dpars[ds.response]
         a = f"a_{name}{'_c' if dd.centered else ''}" if ds.intercept else "0"
         xs = " + ".join(_linear_terms(ds, dd.centered, b=f"b_{name}"))
+        groups = "".join(f" + u_{name},{t.factor}[{t.factor}_i]" for t in ds.group_terms)   # D08: a shared ID's varying intercept
         lines = ["", f"Distributional parameter {name} (its own formula '{ds.formula}', {dd.link} link; brms's bf(..., {ds.formula}))",
-                 f"  {dd.link}({name}_i) = eta_{name},i = {a}" + (f" + {xs}" if xs else ""),
+                 f"  {dd.link}({name}_i) = eta_{name},i = {a}" + (f" + {xs}" if xs else "") + groups,
                  f"  {name}_i = exp(eta_{name},i) > 0 is row i's {name} in the likelihood below; the coefficients act on log {name}."]
         if dd.centered:
             lines += [f"  Its columns are centred at their own fitted-row means (brms's Xc_{name}), so a_{name}_c is log {name} there and",
@@ -2282,6 +2598,10 @@ class Model:
                       f"  a_{name} = a_{name}_c - sum_p mean(x_p) * b_{name}_p (brms's b_{name}_Intercept), computed after sampling."]
         elif not ds.intercept:
             lines += [f"  No intercept: log {name} is the raw design times its coefficients."]
+        for t in ds.group_terms:                             # D08: correlated with the response formula's term through its ID
+            roles = self.dpar_group_names[(name, t.factor, "Intercept")]
+            lines += [f"  u_{name},{t.factor}[j] (PyMC {roles['group_effect']}) is the varying intercept of log {name} by {t.factor}, '{t.canonical}': "
+                      f"it shares the correlation ID {t.id!r} with the response formula's term (Group effects, below)."]
         return lines
 
     def _addition_lines(self) -> list[str]:
@@ -2348,6 +2668,7 @@ class Model:
             ds, sub = s.dpar(fam.scale_parameter), pr.dpar_priors(s, fam.scale_parameter)
             found += [(f"{ds.response}:intercept", sub.intercept)] if ds.intercept else []
             found += [(f"{ds.response}:b:{k}", v) for k, v in sub.coefficient_priors(ds).items()]
+            found += [(f"{ds.response}:sd:{sd_tag(g, c)}", v) for (g, c), v in (sub.sd_priors(ds).items() if ds.group_terms else ())]   # D08
         elif fam.scale_parameter is not None:
             found.append((fam.scale_parameter, getattr(pr, fam.scale_parameter)))
         if fam.zero_parameter is not None:
