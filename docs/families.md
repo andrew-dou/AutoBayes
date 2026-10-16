@@ -27,6 +27,7 @@ test or `match`.
 | Non-linear formulas (C02) | `nonlinear_likelihood` (the likelihood of a non-linear model on its predictor `mu`, `nl=True`, docs/nonlinear.md; set where a frozen case verifies it; None: refused, D62) | `Normal(mu, sigma)` | none | none | none | none | none | none | none | none |
 | Autocorrelation (C04) | `autocorrelation` (the family's linear predictor takes brms's `ar()`, `ma()`, `arma()` terms in the regression formulation, docs/autocorrelation.md; set where a frozen case verifies it) | yes | no (D70) | no (D70) | no (D70) | no (D70) | no (D70) | no (D70) | no (D70) | no (D70) |
 | Missing values and measurement error (C06) | `missing_values`, `measurement_error` (brms's `mi(col)` with `col \| mi() ~ ...`, the addition term `"mi"` in `addition_terms`, and `me(x, sdx)`, docs/missing-and-measurement-error.md; set where a frozen case verifies it) | yes | no | no | no | no | no | no | no | no |
+| Shrinkage priors (D07) | `shrinkage` (the family takes brms's `horseshoe()` and `R2D2()` on class `b`, scaled by `bambi_scale_parameter`, brms's `autoscale = TRUE`; docs/shrinkage-priors.md; set where a frozen case verifies it) | yes | no (D102) | no (D102) | no (D102) | no (D102) | no (D102) | no (D102) | no (D102) | no (D102) |
 
 A family with a `distributional_link` lets its auxiliary parameter have its own formula (docs/distributional.md): Bambi
 builds it as a distributional component named `bambi_scale_parameter`, `model.names[scale_parameter]` is then the per-row
@@ -158,6 +159,7 @@ prior (`ExtraParameter.bambi_prior`, which reads `min(y)` for `ndt`); every othe
 | Prediction | exp, Weibull draws, by hand | exp, exponential draws, by hand | identity, skew-normal draws, by hand | `expected_response` `exp(mu + sigma^2 / 2) + ndt`, `ndt + LogNormal` draws, by hand | identity, Normal plus exponential draws, by hand |
 | Default priors | log; shape `Gamma(0.01, 0.01)` | log | identity; sigma `HalfStudentT(3, scale)`; alpha `Normal(0, 4)` | log; sigma `HalfStudentT(3, scale)`; ndt `Uniform(0, "min_Y")` | identity; sigma `HalfStudentT(3, scale)`; beta `Gamma(1, 0.1)` |
 | Addition terms, distributional formulas, mo(), multivariate, non-linear, autocorrelation, me()/mi() | none (D79) | none (D79) | none (D79) | none (D79) | none (D79) |
+| Shrinkage priors (D07) | no (D102) | no (D102) | no (D102) | no (D102) | no (D102) |
 | Post-processing (C07) | `log_likelihood`: Weibull | exponential | skew normal | shifted lognormal | ex-Gaussian |
 
 The beta-binomial, geometric and `negbinomial2` families (D02, docs/discrete-families.md) are discrete families built from the

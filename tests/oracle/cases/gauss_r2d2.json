@@ -66,9 +66,5 @@
     0.7
    ]
   }
- },
- "gate": {
-  "expect": "fail",
-  "reason": "D07_shrinkage_priors not implemented; remove this field when it lands"
  }
 }
