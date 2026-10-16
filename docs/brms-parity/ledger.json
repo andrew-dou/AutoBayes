@@ -1452,11 +1452,26 @@
    "depends_on": [
     "C07_post_processing"
    ],
-   "status": "implementing",
+   "status": "gates_green",
    "summary": "hypothesis() and conditional_effects() (deterministic given the draws)",
    "pr": null,
    "attempts": 1,
-   "gates": {},
+   "gates": {
+    "sha": "3bc1d079220d",
+    "dirty_tree": false,
+    "base": "origin/main",
+    "when": "2026-10-16T04:21Z",
+    "results": {
+     "immutability": {
+      "status": "pass",
+      "seconds": 0.0
+     },
+     "oracle": {
+      "status": "pass",
+      "seconds": 868.4
+     }
+    }
+   },
    "divergences": [],
    "next_action": "agent reported gates green at cc16fe9 (eb63ec5); merge queue after D01",
    "fixtures": {

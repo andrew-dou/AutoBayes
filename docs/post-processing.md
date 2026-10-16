@@ -1,7 +1,7 @@
-# Post-processing: `log_lik`, `bayes_R2`, `loo`, `waic`, `loo_compare`, `model_weights`
+# Post-processing: `log_lik`, `bayes_R2`, `loo`, `waic`, `loo_compare`, `model_weights`, `hypothesis`, `conditional_effects`
 
-brms-parity feature C07 (brms's `log_lik()`, `bayes_R2()` and `loo()`, loo 2.9.0) and D05 (brms's `waic()`,
-`loo_compare()` and `model_weights()`).
+brms-parity feature C07 (brms's `log_lik()`, `bayes_R2()` and `loo()`, loo 2.9.0), D05 (brms's `waic()`,
+`loo_compare()` and `model_weights()`) and D06 (brms's `hypothesis()` and `conditional_effects()`).
 
 ```python
 import autobayes as ab
@@ -13,6 +13,8 @@ print(res)
 w = ab.waic(model, fit)              # WAIC: w.pointwise, w.estimates
 ab.loo_compare({"m1": ab.loo(m1, fit1), "m2": ab.loo(m2, fit2)})          # loo's table, best model first
 ab.model_weights({"m1": ab.loo(m1, fit1), "m2": ab.loo(m2, fit2)}, "loo")  # brms's Akaike weights
+h = ab.hypothesis(model, fit, ["x > 0", "x + w = 0", "zr < zq"])          # D06: h.table, h.samples
+ce = ab.conditional_effects(model, fit, ["x", "z"])                       # D06: {"x": DataFrame, "z": DataFrame}
 ```
 
 Each takes the model and its fit (a `FitResult` or its `InferenceData`, checked against the model as `predict()` checks
@@ -38,7 +40,9 @@ checks `log_lik`, `bayes_R2` and `loo` against the graph's own density and `mu` 
 A finite mixture (C05, docs/mixtures.md) is taken too: each row's `log_mix(theta, normal_lpdf(y_i | mu_k,i, sigma_k), ...)`
 from `predict(kind="linear")`'s components (brms's `log_lik_mixture`), and `bayes_R2` of the mixture's mean `sum_k theta_k
 mu_k,i`, brms's `posterior_epred`; verified against the frozen case `mixture_gauss3_post` and, at the points of the three
-mixture cases, against the graph's own density.
+mixture cases, against the graph's own density. A multivariate model (C01) is refused by `log_lik`, `bayes_R2` and `loo`
+naming the construct, as `waic` refuses it (D95; until D06 the first three failed with an `AttributeError`), and so is a
+model with `me()` or `mi()` (D74).
 
 ## `bayes_R2(model, fit)`
 
@@ -137,6 +141,61 @@ brms's `model_weights()` of the same results, a `pandas.Series` in the order giv
 with the Bayesian bootstrap (brms's default `BB = TRUE`), which draws random numbers; `BB` must be `False` for `"pseudobma"` and is
 refused for the others (D92). The other checks are those of `loo_compare`.
 
+## `hypothesis(model, fit, hypotheses, alpha=0.05, robust=False)` (D06)
+
+brms's `hypothesis(fit, hypotheses)` with its default `class = "b"`: tests on the population-level coefficients, named as
+brms names them (`x`, `zq` for level `q` of `z`, `x:zq`, `zq:hh2`, `logxpos`, `IxE2`, and `Intercept`, the raw-scale
+intercept, brms's `b_Intercept`). A hypothesis is `left (= OR < OR >) right`, a point hypothesis (`=`) or a one-sided one
+(`<`, `>`); its draws are those of `left - right` (of `left` when `right` is the text `0`). Returns an `ab.Hypothesis`:
+
+- `table`, brms's columns: `Hypothesis` brms's text (whitespace removed; `(left) op 0` when `right` is `0`, else
+  `(left)-(right) op 0`: `"zr < zq"` is `(zr)-(zq) < 0`); `Estimate` the mean and `Est.Error` the SD of the draws (with
+  `robust=True` the median and the MAD, `1.4826 median |v - median v|`); `CI.Lower` and `CI.Upper` the `alpha / 2` and
+  `1 - alpha / 2` quantiles of a point hypothesis's draws and the `alpha` and `1 - alpha` quantiles of a one-sided one
+  (R's type 7, a 90 % interval by default); for a one-sided hypothesis `Post.Prob` the share of draws strictly on its
+  side of zero and `Evid.Ratio` the draws on that side over the others (a draw at zero counts against it; `Inf` when every
+  draw is on its side, 0 when none is); for a point hypothesis both are NaN (D96); `Star` `"*"` when `Post.Prob > 1 -
+  alpha` (one-sided) or the interval excludes zero (point), else `""`;
+- `samples`, the draws of each hypothesis, `(draws, hypotheses)` with brms's names `H1`, `H2`, ..., the chains one after
+  another; `hypotheses`, `alpha`, `robust`; `fit_binding_status` as `predict()` reports it. Printing it prints the table.
+
+The hypotheses are read by a parser of their own (`autobayes/hypothesis.py`) and never evaluated as code. It takes numbers
+in decimal notation, names, parentheses, `+ - * / ^` with R's precedence (`^` above the unary signs and grouping to the
+right: `-2^2` is -4, `2^-1` is 0.5, `2^3^2` is 512; the signs above `*` and `/`), and `exp`, `log`, `sqrt` and `abs` of one
+argument. Refused, naming the problem: what brms refuses (not exactly one of `=`, `<`, `>`, so `>=`, `==` and `!=` too;
+an empty side; no parameter; an unknown name, with the model's names; exponent notation, which brms reads as a name),
+draws where a hypothesis is NaN (`log` of a negative value; brms stops there too), and what brms would evaluate in R but
+the parser does not take (other functions, `%%`, `&`, backticks; D97). The names of the special terms (`moord`, brms's class
+`bsp`) and of a distributional formula's coefficients (`sigma_z`) are refused naming why (D97); so are multivariate and
+non-linear models, mixtures and the cumulative and categorical families (D99). `hypothesis_from_draws(draws, hypotheses)`
+(`from autobayes.hypothesis import hypothesis_from_draws`) is brms's default method: hypotheses on draws given by name.
+
+## `conditional_effects(model, fit, effects, resolution=100, prob=0.95)` (D06)
+
+brms's `conditional_effects(fit, effects)` with its defaults: the expected response along one predictor with the others
+held fixed. `effects` names predictors of the population-level formula (one name, or a list); for each, a
+`pandas.DataFrame` with brms's columns, in a dict keyed by effect in the order given:
+
+- the effect's grid: `resolution` evenly spaced values from the fitted rows' minimum to their maximum of a numeric
+  predictor (R's `seq(min, max, length.out = 100)`), the levels of a categorical one, reference first;
+- the response and every other variable of the model as held on the grid: numeric predictors at their mean over the
+  fitted rows, categorical ones at their reference level (brms's first level), the response at its mean (brms writes it
+  into the grid, where it changes nothing), the grouping factors missing (`None`): brms's default `re_formula = NA` leaves
+  the group-level effects out; the columns are the effect, the response, the population-level variables in formula order
+  and the grouping factors;
+- `cond__` (`"1"`), `effect1__` (the grid), and the summaries over the draws of brms's `posterior_epred` at each grid row
+  (`predict(kind="mean", include_group_effects=False)`, which gate G4 checks against `posterior_epred(re_formula = NA)`) as
+  brms's default `robust = TRUE` summarises them: `estimate__` the median, `se__` the MAD (`1.4826 median |e - median e|`),
+  `lower__` and `upper__` the `(1 - prob) / 2` and `1 - (1 - prob) / 2` quantiles (R's type 7).
+
+Taken: the Gaussian, Student-t, Bernoulli, Poisson, negative binomial, Gamma, lognormal, Beta, zero-inflated and hurdle
+Poisson families, with categorical predictors, interactions, transforms (the grid is on the raw column: `xpos` for
+`log(xpos)`) and any group-level terms. Refused, naming the construct (D99): the binomial family (its grid needs trials),
+the cumulative and categorical families, mixtures, multivariate and non-linear models, and models with an offset, `mo()`,
+`gp()`, `me()`, `mi()`, an autocorrelation term, addition terms or a distributional formula: no frozen case records how brms
+holds them on the grid. Interaction effects (`"x:z"`), grouping factors as effects, brms's default of every effect, and its
+other arguments are not offered (D98).
+
 ## Verification
 
 - The oracle gate `check_post` (`tests/oracle/gates.py`, test `test_c07_post_processing_equals_log_lik_bayes_R2_and_loo`)
@@ -166,6 +225,23 @@ refused for the others (D92). The other checks are those of `loo_compare`.
   3.7e-115, so they are compared as numbers and as logarithms, the small one to 1e-9 in its exponent. Harness tests
   (`tests/oracle/test_loo_compare_harness.py`) show a corrupted pointwise or estimated WAIC, comparison entry, row order,
   column name, pointwise elpd of either model, weight, other model's log density or other case fails.
+- D06: the same gate compares `ab.hypothesis` with brms's `hypothesis()` table and draws, and `ab.conditional_effects` with
+  its `conditional_effects()` tables (`check_hypothesis`, `check_conditional_effects`), on `gauss_hypothesis_effects`
+  (`y ~ x + w + z + (1 | g)`: `"x > 0"`, `"x + w = 0"`, `"zr < zq"`; effects `x` and `z`, the group term left out) and
+  `bernoulli_hypothesis_effects` (`yb ~ x + z`: `"Intercept < 0"`, `"x > 0"`, `"zq - zr = 0"`; the probability's
+  summaries), every column, labels, stars and brms's NA included. Harness tests
+  (`tests/oracle/test_hypothesis_effects_harness.py`) show a corrupted entry of either table, a label, a star, a draw, a
+  grid value, a value held, a level, a grouping factor's NA, `cond__`, the column or effect order, or arguments other than
+  brms's fail.
+- `tests/test_hypothesis_effects.py`: `hypothesis` equals brms 2.23's `hypothesis()` on recorded draws
+  (`tests/hypothesis_probes`, recorded by `probe_hypothesis.R` with brms's default method on a data frame of draws, no
+  Stan): 45 hypotheses on 40 draws with `alpha` 0.05, 0.1 and 0.2 and `robust` on and off, and eight edge sets (all draws
+  on one side, ties at zero, all zero, one draw, `Post.Prob` exactly and just above `1 - alpha`), every entry to 3e-15 and
+  every label and star; the 19 hypotheses brms refuses there are refused; R's precedence; on every frozen case `hypothesis`
+  takes (84), each of brms's design-column names and `Intercept` has exactly brms's coefficient at the fixture's points as
+  its draws. `conditional_effects` on every frozen case it takes (43, ten families): the grid, the values held and the
+  summaries of the predictions at the grid; its options, refusals and the multivariate refusals of `log_lik`, `bayes_R2`,
+  `loo` and `waic`.
 - `tests/test_loo_compare.py`: WAIC, `loo_compare` by loo and by waic, and pseudo-BMA weights equal loo 2.9.0's outputs
   (`tests/loo_probes/loo-compare-2.9.0.json`, recorded by `probe_compare.R` on the inputs of `compare_inputs.py`): seven sets
   of two to five models, given named and unnamed, with exact ties, 8 to 4000 draws, log-likelihoods near -800, nearly equal
@@ -195,3 +271,14 @@ refused for the others (D92). The other checks are those of `loo_compare`.
   `model1`, ... as loo names an unnamed list) rather than brms's argument expressions, and the full table as a DataFrame where
   loo prints `elpd_diff` and `se_diff` only by default.
 - D95: `waic()` of a multivariate model is refused; brms computes it from the model's `log_lik()` (not probed here).
+- D96: a point hypothesis's `Evid.Ratio` and `Post.Prob` are always NaN: brms computes the Savage-Dickey density ratio
+  from prior draws (`sample_prior = "yes"`), which a fit here does not hold; without them brms's are NA too.
+- D97: `hypothesis()` takes class `b` of the response formula, `alpha` and `robust`; not brms's `class`, `group`, `scope`
+  or `seed`, a distributional formula's coefficients or the special terms' (class `bsp`), or R expressions beyond the
+  parser's grammar.
+- D98: `conditional_effects()` takes named single-predictor effects, `resolution` and `prob`; not brms's default of every
+  effect, interaction effects, `conditions`, `int_conditions`, `re_formula`, `method`, `robust = FALSE`, spaghetti and
+  surface plots, `categorical`, `transform` or plots.
+- D99: both refuse multivariate and non-linear models, mixtures and the cumulative and categorical families;
+  `conditional_effects()` also the binomial family, offsets, `mo()`, `gp()`, `me()`, `mi()`, autocorrelation, addition terms
+  and distributional formulas.

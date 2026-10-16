@@ -70,6 +70,8 @@ from autobayes.predict import predict
 from autobayes.prior_predictive import prior_predictive
 from autobayes.post_processing import Loo, bayes_R2, log_lik, loo
 from autobayes.post_processing import Waic, loo_compare, model_weights, waic   # D05, docs/post-processing.md
+from autobayes.hypothesis import Hypothesis, hypothesis                       # D06, docs/post-processing.md
+from autobayes.conditional_effects import conditional_effects                # D06
 from autobayes.diagnostics import panel
 from autobayes.session import compare_records, environment, fit_record, format_comparison, format_environment
 from autobayes.nonlinear import NonlinearModel, NonlinearSpec        # non-linear formulas, nl=True (C02, docs/nonlinear.md)
@@ -87,4 +89,5 @@ __all__ = [
 __all__ += ["NonlinearModel", "NonlinearSpec"]         # C02
 __all__ += ["Waic", "loo_compare", "model_weights", "waic"]   # D05
 __all__ += ["Uniform", "exgaussian", "exponential", "shifted_lognormal", "skew_normal", "weibull"]   # D01
+__all__ += ["Hypothesis", "conditional_effects", "hypothesis"]   # D06
 __version__ = "0.8.0"

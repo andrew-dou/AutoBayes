@@ -106,9 +106,5 @@
     "z"
    ]
   }
- },
- "gate": {
-  "expect": "fail",
-  "reason": "D06_hypothesis_conditional_effects not implemented; remove this field when it lands"
  }
 }
