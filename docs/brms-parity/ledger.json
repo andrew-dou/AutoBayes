@@ -1335,9 +1335,9 @@
    "depends_on": [
     "A08_negbinomial"
    ],
-   "status": "gates_green",
+   "status": "merged",
    "summary": "beta_binomial, geometric, negbinomial2 families",
-   "pr": null,
+   "pr": 62,
    "attempts": 1,
    "gates": {
     "sha": "aa3a905e0485",
@@ -1355,8 +1355,12 @@
      }
     }
    },
-   "divergences": [],
-   "next_action": "agent (opus), wave D2",
+   "divergences": [
+    "D80",
+    "D81",
+    "D82"
+   ],
+   "next_action": "other links, distributional phi/sigma, addition terms, mo/me/mi/mm, autocorrelation, mv, mixture, nl not offered (D80-D82)",
    "fixtures": {
     "pr": 57,
     "cases": [
