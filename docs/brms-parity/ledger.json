@@ -1390,11 +1390,26 @@
    "depends_on": [
     "C07_post_processing"
    ],
-   "status": "implementing",
+   "status": "gates_green",
    "summary": "waic(), loo_compare() and model weights",
    "pr": null,
    "attempts": 1,
-   "gates": {},
+   "gates": {
+    "sha": "caa0ef015214",
+    "dirty_tree": false,
+    "base": "origin/main",
+    "when": "2026-10-16T02:54Z",
+    "results": {
+     "immutability": {
+      "status": "pass",
+      "seconds": 0.0
+     },
+     "oracle": {
+      "status": "pass",
+      "seconds": 336.8
+     }
+    }
+   },
    "divergences": [],
    "next_action": "agent (opus), wave D1",
    "fixtures": {
