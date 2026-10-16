@@ -210,3 +210,68 @@ def beta_binomial_logit(y, trials, eta, phi):
 
     a, b = expit(eta) * phi, expit(-eta) * phi
     return log_binomial_coefficient(trials, y) + betaln(y + a, trials - y + b) - betaln(a, b)
+
+
+# -- D03, docs/zero-inflated-hurdle.md -----------------------------------------------------------------------------------------
+def _log_softplus(x):
+    """``log(log(1 + exp(x)))``: ``x + log1p(-exp(x) / 2)`` below -20 (as ``likelihoods.log_softplus``), else its log."""
+    x = np.asarray(x, dtype=float)
+    low = x < -20.0
+    with np.errstate(divide="ignore"):
+        return np.where(low, x + np.log1p(-0.5 * np.exp(np.minimum(x, -20.0))), np.log(softplus(np.maximum(x, -20.0))))
+
+
+def _cloglog_log_p1(t):
+    """``log(1 - exp(-exp(t)))``: ``t + log1p(-exp(t) / 2)`` below -20 (as ``likelihoods.cloglog_log_p1``), else
+    ``log(-expm1(-exp(t)))``."""
+    t = np.asarray(t, dtype=float)
+    with np.errstate(over="ignore", divide="ignore"):
+        return np.where(t < -20.0, t + np.log1p(-0.5 * np.exp(np.minimum(t, -20.0))), np.log(-np.expm1(-np.exp(np.maximum(t, -20.0)))))
+
+
+def neg_binomial_log_zero(eta, shape):
+    """``log NB(0 | exp(eta), shape)`` = ``-shape softplus(eta - log shape)``."""
+    return -shape * softplus(eta - np.log(shape))
+
+
+def zero_inflated_negbinomial_log(y, eta, shape, zi):
+    """brms's ``zero_inflated_neg_binomial_log_lpmf``: ``log(zi + (1 - zi) NB(0 | mu, shape))`` at zero, ``log(1 - zi) + log
+    NB(y | mu, shape)`` above, ``mu = exp(eta)``."""
+    zero = np.logaddexp(np.log(zi), np.log1p(-zi) + neg_binomial_log_zero(eta, shape))
+    return np.where(y == 0, zero, np.log1p(-zi) + neg_binomial_2_log(y, eta, shape))
+
+
+def hurdle_negbinomial_log(y, eta, shape, hu):
+    """brms's ``hurdle_neg_binomial_log_lpmf``: ``log hu`` at zero, ``log(1 - hu) + log NB(y | mu, shape) - log(1 - NB(0 | mu,
+    shape))`` above, the truncation as ``log(1 - exp(-exp(t)))`` with ``t = log shape + log softplus(eta - log shape)``."""
+    log_shape = np.log(shape)
+    positive = np.log1p(-hu) + neg_binomial_2_log(y, eta, shape) - _cloglog_log_p1(log_shape + _log_softplus(eta - log_shape))
+    return np.where(y == 0, np.log(hu) + 0.0 * eta, positive)
+
+
+def zero_inflated_binomial_logit(y, trials, eta, zi):
+    """brms's ``zero_inflated_binomial_logit_lpmf``: ``log(zi + (1 - zi) (1 - p)^n)`` at zero, ``log(1 - zi) + log Binomial(y |
+    n, p)`` above, ``p = expit(eta)``."""
+    zero = np.logaddexp(np.log(zi), np.log1p(-zi) - trials * softplus(eta))
+    return np.where(y == 0, zero, np.log1p(-zi) + binomial(y, trials, eta, "logit"))
+
+
+def zero_inflated_beta_logit(y, eta, phi, zi):
+    """brms's ``zero_inflated_beta_lpdf``: ``log zi`` at zero, ``log(1 - zi) + log Beta(y | mu phi, (1 - mu) phi)`` above, ``mu =
+    expit(eta)`` (the Beta part evaluated at y = 1/2 and eta = 0 on the zero rows, where its density is infinite at 0 and its
+    shape parameters may underflow)."""
+    zero = y == 0
+    positive = np.log1p(-zi) + beta_logit(np.where(zero, 0.5, y), np.where(zero, 0.0, eta), phi)
+    return np.where(y == 0, np.log(zi) + 0.0 * eta, positive)
+
+
+def hurdle_gamma_log(y, eta, shape, hu):
+    """brms's ``hurdle_gamma_lpdf``: ``log hu`` at zero, ``log(1 - hu) + log Gamma(y | shape, shape / exp(eta))`` above."""
+    positive = np.log1p(-hu) + gamma_log(np.where(y == 0, 1.0, y), eta, shape)
+    return np.where(y == 0, np.log(hu) + 0.0 * eta, positive)
+
+
+def hurdle_lognormal(y, mu, sigma, hu):
+    """brms's ``hurdle_lognormal_lpdf``: ``log hu`` at zero, ``log(1 - hu) + log LogNormal(y | mu, sigma)`` above."""
+    positive = np.log1p(-hu) + lognormal(np.where(y == 0, 1.0, y), mu, sigma)
+    return np.where(y == 0, np.log(hu) + 0.0 * mu, positive)

@@ -531,6 +531,324 @@ def hurdle_poisson_family():
     return bmb.Family("hurdle_poisson_log", likelihood, link={"log_mu": "identity", "hu": "logit"})
 
 
+# ---- more zero-inflated and hurdle families (brms-parity D03, docs/zero-inflated-hurdle.md) ----------------------------
+# brms 2.23's published densities ("Parameterization of Response Distributions in brms"), with eta the linear predictor of
+# the count, proportion or positive part, and zi, hu in (0, 1) brms's zero-inflation and hurdle probabilities:
+#   zero_inflated_negbinomial(eta, shape, zi)  y = 0: log(zi + (1 - zi) NB(0 | mu, shape)); y > 0: log1m(zi) + log NB(y | mu, shape)
+#   hurdle_negbinomial(eta, shape, hu)         y = 0: log(hu);  y > 0: log1m(hu) + log NB(y | mu, shape) - log(1 - NB(0 | mu, shape))
+#   zero_inflated_binomial(eta, zi; n)         y = 0: log(zi + (1 - zi) (1 - p)^n); y > 0: log1m(zi) + log Binomial(y | n, p)
+#   zero_inflated_beta(eta, phi, zi)           y = 0: log(zi);  0 < y < 1: log1m(zi) + log Beta(y | mu phi, (1 - mu) phi)
+#   hurdle_gamma(eta, shape, hu)               y = 0: log(hu);  y > 0: log1m(hu) + log Gamma(y | shape, shape / mu)
+#   hurdle_lognormal(mu, sigma, hu)            y = 0: log(hu);  y > 0: log1m(hu) + log LogNormal(y | mu, sigma)
+# with mu = exp(eta) (log link), p and mu = inv_logit(eta) (logit link) and NB brms's neg_binomial_2 (mean mu, variance
+# mu + mu^2 / shape). Each family keeps its linear predictor as Bambi's parent under the identity link, as B06's do, and
+# brms's names for its parameters (shape is Bambi's alpha, as for the negative binomial and Gamma families). The forms:
+# - the negative binomial in eta: log NB(y | eta, shape) = log C(y + shape - 1, y) - shape softplus(eta - log shape)
+#   - y softplus(log shape - eta), two non-positive terms added, so nothing cancels at large or small mu, the softplus the
+#   stable one above; log C as lgamma(shape + y) - lgamma(shape) written through Stirling's remainder (``_log_rising``),
+#   whose terms are of the size of the result for every shape, where the difference of two lgamma of size shape log(shape)
+#   loses all its digits as shape grows (the Poisson limit);
+# - its zero mass log NB(0 | eta, shape) = -shape softplus(eta - log shape) and the hurdle's log(1 - NB(0)) =
+#   log(1 - exp(-exp(t))) with t = log shape + log softplus(eta - log shape), which is ``cloglog_log_p1(t)`` (B06's hurdle
+#   truncation, the Poisson's t = eta in the limit shape -> infinity), log softplus written as x + log1p(-exp(x) / 2) below
+#   x = -20 so that it never takes log(0);
+# - the zero-inflated y = 0 rows are B06's two-term log-sum-exp; the y > 0 terms of every family are evaluated on y > 0
+#   rows only (eta at 0 and the response at an interior value elsewhere, never at y = 0, where the Beta, Gamma and
+#   lognormal densities are infinite), so that a branch a switch does not take is finite with a finite gradient.
+# The Beta part is the Beta family's (``_beta_shape_parameters``, D13), the lognormal part PyMC's LogNormal (the lognormal
+# family's), the Gamma part ``shape log(shape) - lgamma(shape) - shape eta + (shape - 1) log y - shape y exp(-eta)`` written in
+# eta (no log(exp(eta))); the binomial part ``binomial_logit_logp`` (M2). Checked against brms in the oracle cases
+# zero_inflated_negbinomial_varint, hurdle_negbinomial_varint, zero_inflated_binomial_varint, zero_inflated_beta_varint,
+# hurdle_gamma_varint and hurdle_lognormal_varint; in tests/test_zero_inflated_hurdle_more.py the negative binomial and
+# binomial rows against 50-digit references (value, and gradient on both paths: PyTensor's goes through its digamma, the
+# gradient of gammaln, which is 1.5e-10 off relative between 1 and 12, JAX's is exact to rounding) and the others against SciPy.
+
+_LOG_SOFTPLUS_LOWER = -20.0
+_STIRLING_SWITCH = 16.0
+_F64_HALF, _F64_ONE = np.float64(0.5), np.float64(1.0)
+
+
+def log_softplus(x):
+    """``log(log(1 + exp(x)))``, finite with a finite gradient for every finite ``x``: ``log(softplus(x))`` from ``x = -20``
+    (``softplus`` is at least 2e-9 there) and ``x + log1p(-exp(x) / 2)`` below, from ``log(1 + e^x) = e^x (1 - e^x / 2 +
+    e^2x / 3 - ...)`` (the omitted term is ``5 e^2x / 24``, below 1e-18 there)."""
+    x = pt.as_tensor_variable(x)
+    low = x < _LOG_SOFTPLUS_LOWER
+    x_lo = pt.switch(low, x, _LOG_SOFTPLUS_LOWER)
+    x_hi = pt.switch(low, _LOG_SOFTPLUS_LOWER, x)
+    return pt.switch(low, x_lo + pt.log1p(-_F64_HALF * pt.exp(x_lo)), pt.log(stable_softplus(x_hi)))
+
+
+def _stirling_remainder(x):
+    """``lgamma(x) - ((x - 1/2) log x - x + log(2 pi) / 2)`` for ``x > 0``: ``_stirlerr_sym``'s two branches, each evaluated
+    on ``x`` moved into its own range, so that the series is never evaluated at a tiny ``x``, where its powers of ``1 / x``
+    overflow."""
+    x = pt.as_tensor_variable(x)
+    small = x < _STIRLING_SWITCH
+    x_lo = pt.switch(small, x, _STIRLING_SWITCH)
+    x_hi = pt.switch(small, _STIRLING_SWITCH, x)
+    lo = pt.gammaln(x_lo + _F64_ONE) - (x_lo + _F64_HALF) * pt.log(x_lo) + x_lo - _HALF_LOG_2PI
+    x2 = x_hi * x_hi
+    hi = (1.0 / 12 - (1.0 / 360 - (1.0 / 1260 - (1.0 / 1680 - 1.0 / 1188 / x2) / x2) / x2) / x2) / x_hi
+    return pt.switch(small, lo, hi)
+
+
+def _log_rising(shape, y):
+    """``lgamma(shape + y) - lgamma(shape)`` for ``shape > 0`` and ``y >= 0``, written as ``(shape - 1/2) log1p(y / shape) +
+    y log(shape + y) - y`` plus the difference of the two Stirling remainders (Stirling's formula for each lgamma): every
+    term is at most of the size of the result, whatever ``shape``."""
+    b = shape + y
+    return ((shape - _F64_HALF) * pt.log1p(y / shape) + y * pt.log(b) - y
+            + _stirling_remainder(b) - _stirling_remainder(shape))
+
+
+def log_nb_coefficient(y, shape):
+    """``log C(y + shape - 1, y)`` = ``lgamma(y + shape) - lgamma(shape) - lgamma(y + 1)``: exactly 0 at ``y = 0``, else
+    ``_log_rising``, evaluated at ``y = 1`` on the zero rows so that no branch divides by zero."""
+    y = pt.as_tensor_variable(y)
+    zero = pt.eq(y, 0.0)
+    y_pos = pt.switch(zero, _F64_ONE, y)
+    return pt.switch(zero, 0.0, _log_rising(shape, y_pos) - pt.gammaln(y_pos + _F64_ONE))
+
+
+def neg_binomial_2_log_lpmf(value, eta, shape):
+    """brms's ``neg_binomial_2_log_lpmf(value | eta, shape)``: ``log C(y + shape - 1, y) - shape softplus(eta - log shape) - y
+    softplus(log shape - eta)``, i.e. ``shape log(shape / (mu + shape)) + y log(mu / (mu + shape))`` with ``mu = exp(eta)``."""
+    y = pt.cast(value, "float64")
+    log_shape = pt.log(shape)
+    return log_nb_coefficient(y, shape) - shape * stable_softplus(eta - log_shape) - y * stable_softplus(log_shape - eta)
+
+
+def neg_binomial_log_zero(eta, shape):
+    """``log NB(0 | exp(eta), shape)`` = ``shape log(shape / (mu + shape))`` = ``-shape softplus(eta - log shape)``."""
+    return -shape * stable_softplus(eta - pt.log(shape))
+
+
+def neg_binomial_log_positive(eta, shape):
+    """``log(1 - NB(0 | exp(eta), shape))``, the hurdle negative binomial's zero truncation: ``cloglog_log_p1(t)`` with
+    ``t = log(-log NB(0)) = log shape + log softplus(eta - log shape)``, finite with a finite gradient for every finite
+    ``eta`` and ``shape``."""
+    log_shape = pt.log(shape)
+    return cloglog_log_p1(log_shape + log_softplus(eta - log_shape))
+
+
+def zero_inflated_negbinomial_logp(value, log_mu, alpha, zi):
+    """brms's ``zero_inflated_neg_binomial_log_lpmf(value | log_mu, shape, zi)`` with ``alpha`` the shape, in the stable form
+    above; ``-inf`` for a negative value."""
+    is_zero = pt.eq(value, 0)
+    zero = _log_sum_exp2(pt.log(zi), pt.log1p(-zi) + neg_binomial_log_zero(log_mu, alpha))
+    positive = pt.log1p(-zi) + neg_binomial_2_log_lpmf(value, pt.switch(is_zero, 0.0, log_mu), alpha)
+    return pt.switch(pt.lt(value, 0), -np.inf, pt.switch(is_zero, zero, positive))
+
+
+def hurdle_negbinomial_logp(value, log_mu, alpha, hu):
+    """brms's ``hurdle_neg_binomial_log_lpmf(value | log_mu, shape, hu)`` with ``alpha`` the shape, in the stable form above;
+    ``-inf`` for a negative value."""
+    is_zero = pt.eq(value, 0)
+    eta = pt.switch(is_zero, 0.0, log_mu)
+    positive = pt.log1p(-hu) + neg_binomial_2_log_lpmf(value, eta, alpha) - neg_binomial_log_positive(eta, alpha)
+    return pt.switch(pt.lt(value, 0), -np.inf, pt.switch(is_zero, pt.log(hu), positive))
+
+
+def zero_inflated_binomial_logp(value, logit_p, zi, n):
+    """brms's ``zero_inflated_binomial_logit_lpmf(value | n, logit_p, zi)``: the zero row ``log(zi + (1 - zi) exp(-n
+    softplus(eta)))`` as B06's log-sum-exp, the others ``log1m(zi)`` plus ``binomial_logit_logp`` (``-inf`` outside 0..n)."""
+    nf = pt.cast(pt.as_tensor_variable(n), "float64")
+    zero = _log_sum_exp2(pt.log(zi), pt.log1p(-zi) - nf * stable_softplus(logit_p))
+    positive = pt.log1p(-zi) + binomial_logit_logp(value, logit_p, n)
+    return pt.switch(pt.eq(value, 0), zero, positive)
+
+
+def zero_inflated_beta_logp(value, logit_mu, phi, zi):
+    """brms's ``zero_inflated_beta_lpdf(value | mu, phi, zi)`` with ``mu = inv_logit(logit_mu)``: ``log(zi)`` at 0, else
+    ``log1m(zi)`` plus the Beta family's density; ``-inf`` outside [0, 1) (at 1 the Beta density itself is infinite for
+    ``(1 - mu) phi < 1``, and 1 is outside the family's support, as brms's data check says)."""
+    is_zero = pt.eq(value, 0)
+    inside = pt.and_(pt.gt(value, 0), pt.lt(value, 1))
+    # the Beta part at eta = 0 and y = 1/2 on the other rows: PyMC's Beta checks alpha > 0 and beta > 0 over all rows at
+    # once, and expit(-eta) phi underflows to 0 beyond |eta| = 745, which on a zero row would void the whole likelihood
+    a, b = _beta_shape_parameters(pt.switch(inside, logit_mu, 0.0), phi)
+    positive = pt.log1p(-zi) + pm.logp(pm.Beta.dist(alpha=a, beta=b), pt.switch(inside, value, _F64_HALF))
+    return pt.switch(is_zero, pt.log(zi), pt.switch(inside, positive, -np.inf))
+
+
+def gamma_log_lpdf(value, eta, shape):
+    """``log Gamma(value | shape, rate = shape / exp(eta))`` (brms's ``gamma_lpdf(y | shape, shape / mu)``) written in ``eta``."""
+    return (shape * pt.log(shape) - pt.gammaln(shape) - shape * eta + (shape - _F64_ONE) * pt.log(value)
+            - shape * value * pt.exp(-eta))
+
+
+def hurdle_gamma_logp(value, log_mu, alpha, hu):
+    """brms's ``hurdle_gamma_lpdf(value | shape, shape / mu, hu)`` with ``alpha`` the shape: ``log(hu)`` at 0, else ``log1m(hu)``
+    plus the Gamma density; ``-inf`` for a negative value."""
+    is_zero = pt.eq(value, 0)
+    y = pt.switch(is_zero, _F64_ONE, value)
+    positive = pt.log1p(-hu) + gamma_log_lpdf(y, pt.switch(is_zero, 0.0, log_mu), alpha)
+    return pt.switch(pt.lt(value, 0), -np.inf, pt.switch(is_zero, pt.log(hu), positive))
+
+
+def hurdle_lognormal_logp(value, mu, sigma, hu):
+    """brms's ``hurdle_lognormal_lpdf(value | mu, sigma, hu)``: ``log(hu)`` at 0, else ``log1m(hu)`` plus PyMC's LogNormal
+    density (``-inf`` for a negative value)."""
+    is_zero = pt.eq(value, 0)
+    positive = pt.log1p(-hu) + pm.logp(pm.LogNormal.dist(mu=mu, sigma=sigma), pt.switch(is_zero, _F64_ONE, value))
+    return pt.switch(is_zero, pt.log(hu), positive)
+
+
+_POISSON_DRAW_LIMIT = np.iinfo(np.int64).max - 10 * np.sqrt(float(np.iinfo(np.int64).max))   # numpy's Poisson generator's range
+
+
+def zero_truncated_negbinomial_draws(mu, shape, rng):
+    """Draws of a ``NB(mu, shape)`` count (brms's ``neg_binomial_2``) conditioned on being positive, one per entry, exact for
+    every ``mu >= 0`` and ``shape > 0`` in O(1) per draw. The count is Poisson(lambda) with lambda ~ Gamma(shape, rate =
+    shape / mu); given ``y > 0`` it is a zero-truncated Poisson(lambda) with lambda drawn from its conditional density
+    ``Gamma(lambda | shape, shape / mu) (1 - exp(-lambda)) / P(y > 0)``. Writing ``1 - exp(-lambda)`` as ``int_0^1 lambda
+    exp(-u lambda) du`` makes that density the lambda-marginal of ``(lambda, u)`` with density proportional to ``lambda^shape
+    exp(-lambda (c + u))`` on ``u`` in (0, 1), ``c = shape / mu``: ``u`` has the CDF ``(1 - ((c + u) / c)^-shape) / P(y > 0)``,
+    which inverts in closed form, and ``lambda | u ~ Gamma(shape + 1, rate = c + u)``. With ``V`` uniform the rate is
+    ``c (1 - V P(y > 0))^(-1 / shape)``, so ``lambda = Gamma(shape + 1) * (mu / shape) (1 - V P(y > 0))^(1 / shape)``, the
+    power formed as ``exp(log1p(-V P(y > 0)) / shape)`` and ``P(y > 0) = -expm1(-shape log1p(mu / shape))``, exact for small
+    ``mu`` and small ``shape``; the count is then ``zero_truncated_poisson_draws(lambda)``. 1 where ``mu`` has underflowed to
+    0 (the limit). A non-positive or non-finite shape, and a lambda beyond the integer generator's range, are refused."""
+    mu, shape = np.broadcast_arrays(np.asarray(mu, dtype=float), np.asarray(shape, dtype=float))
+    if not (np.all(np.isfinite(shape)) and np.all(shape > 0) and np.all(np.isfinite(mu)) and np.all(mu >= 0)):
+        raise ValueError("zero-truncated negative binomial draws need a finite mean mu >= 0 and a finite shape > 0")
+    live = mu > 0
+    m, s = np.where(live, mu, 1.0), np.where(live, shape, 1.0)
+    positive = -np.expm1(-s * np.log1p(m / s))                        # P(y > 0)
+    v = rng.uniform(size=mu.shape)
+    with np.errstate(over="ignore"):
+        scale = np.exp(np.log(m) - np.log(s) + np.log1p(-v * positive) / s)
+        lam = rng.gamma(s + 1.0, scale)
+    if not (np.all(np.isfinite(lam)) and np.all(lam < _POISSON_DRAW_LIMIT)):
+        raise ValueError("zero-truncated negative binomial draws exceed the integer random-generator limit; inspect the mean and "
+                         "shape draws")
+    return np.where(live, zero_truncated_poisson_draws(lam, rng), 1).astype(np.int64)
+
+
+def _zero_part(zero_probability, shape, rng):
+    """Where a draw is the zero part: a uniform draw below zi or hu, as brms's posterior_predict decides it."""
+    return rng.uniform(size=shape) < zero_probability
+
+
+def zero_inflated_negbinomial_random(log_mu, alpha, zi, rng=None, size=None):
+    shape = size if size is not None else np.broadcast_shapes(np.shape(log_mu), np.shape(alpha), np.shape(zi))
+    zero = _zero_part(zi, shape, rng)
+    mu = np.broadcast_to(np.exp(log_mu), shape)
+    return np.where(zero, 0, rng.negative_binomial(alpha, alpha / (alpha + mu), size=shape)).astype(np.int64)
+
+
+def hurdle_negbinomial_random(log_mu, alpha, hu, rng=None, size=None):
+    shape = size if size is not None else np.broadcast_shapes(np.shape(log_mu), np.shape(alpha), np.shape(hu))
+    zero = _zero_part(hu, shape, rng)
+    counts = zero_truncated_negbinomial_draws(np.broadcast_to(np.exp(log_mu), shape), np.broadcast_to(alpha, shape), rng)
+    return np.where(zero, 0, counts).astype(np.int64)
+
+
+def zero_inflated_binomial_random(logit_p, zi, n, rng=None, size=None):
+    shape = size if size is not None else np.broadcast_shapes(np.shape(logit_p), np.shape(zi), np.shape(n))
+    zero = _zero_part(zi, shape, rng)
+    return np.where(zero, 0, rng.binomial(n, expit(logit_p), size=shape)).astype(np.int64)
+
+
+def zero_inflated_beta_random(logit_mu, phi, zi, rng=None, size=None):
+    shape = size if size is not None else np.broadcast_shapes(np.shape(logit_mu), np.shape(phi), np.shape(zi))
+    zero = _zero_part(zi, shape, rng)
+    return np.where(zero, 0.0, rng.beta(expit(logit_mu) * phi, expit(-np.asarray(logit_mu)) * phi, size=shape))
+
+
+def hurdle_gamma_random(log_mu, alpha, hu, rng=None, size=None):
+    shape = size if size is not None else np.broadcast_shapes(np.shape(log_mu), np.shape(alpha), np.shape(hu))
+    zero = _zero_part(hu, shape, rng)
+    return np.where(zero, 0.0, rng.gamma(alpha, np.exp(log_mu) / alpha, size=shape))
+
+
+def hurdle_lognormal_random(mu, sigma, hu, rng=None, size=None):
+    shape = size if size is not None else np.broadcast_shapes(np.shape(mu), np.shape(sigma), np.shape(hu))
+    zero = _zero_part(hu, shape, rng)
+    return np.where(zero, 0.0, rng.lognormal(mu, sigma, size=shape))
+
+
+def _zero_family(name: str, label: str, params: tuple[str, ...], links: dict, logp, random, dtype: str | None = None,
+                 trials: bool = False):
+    """A Bambi family whose likelihood is ``logp`` / ``random`` (a ``pm.CustomDist``) of the parent ``params[0]`` and the
+    auxiliary parameters ``params[1:]``, each with its prior from the prior dict; ``dtype="int64"`` for counts. ``trials``:
+    a two-column ``p(k, n)`` response whose trials reach the likelihood as ``n``, as ``binomial_logit_family`` hands them."""
+    import bambi as bmb
+
+    names = (*params, "n") if trials else params
+    extra = {"dtype": dtype} if dtype is not None else {}
+
+    class Dist:
+        def __new__(cls, name_, **kwargs):
+            args = [kwargs.pop(p) for p in names]
+            return pm.CustomDist(name_, *args, logp=logp, random=random, **extra, **kwargs)
+
+        @staticmethod
+        def dist(**kwargs):
+            args = [kwargs.pop(p) for p in names]
+            return pm.CustomDist.dist(*args, logp=logp, random=random, **extra, **kwargs)
+
+    Dist.__name__ = label
+    likelihood = bmb.Likelihood(label, params=list(params), parent=params[0], dist=Dist)
+    if not trials:
+        return bmb.Family(name, likelihood, link=links)
+
+    class TrialsFamily(bmb.Family):
+        @staticmethod
+        def transform_backend_kwargs(kwargs):
+            observed = kwargs.pop("observed")
+            kwargs["observed"] = np.asarray(observed[:, 0]).squeeze().astype(np.int64)
+            kwargs["n"] = np.asarray(observed[:, 1]).squeeze().astype(np.int64)
+            return kwargs
+
+    return TrialsFamily(name, likelihood, link=links)
+
+
+def zero_inflated_negbinomial_family():
+    """Bambi family of brms's ``zero_inflated_negbinomial()``: the identity link on ``log_mu`` (the linear predictor), the
+    shape (Bambi's ``alpha``) and ``zi`` with their priors."""
+    return _zero_family("zero_inflated_negbinomial_log", "ZeroInflatedNegBinomialLog", ("log_mu", "alpha", "zi"),
+                        {"log_mu": "identity", "alpha": "log", "zi": "logit"}, zero_inflated_negbinomial_logp,
+                        zero_inflated_negbinomial_random, dtype="int64")
+
+
+def hurdle_negbinomial_family():
+    """Bambi family of brms's ``hurdle_negbinomial()``: as the zero-inflated one, with ``hu``."""
+    return _zero_family("hurdle_negbinomial_log", "HurdleNegBinomialLog", ("log_mu", "alpha", "hu"),
+                        {"log_mu": "identity", "alpha": "log", "hu": "logit"}, hurdle_negbinomial_logp,
+                        hurdle_negbinomial_random, dtype="int64")
+
+
+def zero_inflated_binomial_family():
+    """Bambi family of brms's ``zero_inflated_binomial()`` for a two-column ``p(k, n)`` response: the identity link on
+    ``logit_p`` (the linear predictor) and ``zi`` with its prior."""
+    return _zero_family("zero_inflated_binomial_logit", "ZeroInflatedBinomialLogit", ("logit_p", "zi"),
+                        {"logit_p": "identity", "zi": "logit"}, zero_inflated_binomial_logp, zero_inflated_binomial_random,
+                        dtype="int64", trials=True)
+
+
+def zero_inflated_beta_family():
+    """Bambi family of brms's ``zero_inflated_beta()``: the identity link on ``logit_mu`` (the linear predictor), the
+    precision ``phi`` and ``zi`` with their priors."""
+    return _zero_family("zero_inflated_beta_logit", "ZeroInflatedBetaLogit", ("logit_mu", "phi", "zi"),
+                        {"logit_mu": "identity", "phi": "log", "zi": "logit"}, zero_inflated_beta_logp, zero_inflated_beta_random)
+
+
+def hurdle_gamma_family():
+    """Bambi family of brms's ``hurdle_gamma()`` (log link): the identity link on ``log_mu`` (the linear predictor), the shape
+    (Bambi's ``alpha``) and ``hu`` with their priors."""
+    return _zero_family("hurdle_gamma_log", "HurdleGammaLog", ("log_mu", "alpha", "hu"),
+                        {"log_mu": "identity", "alpha": "log", "hu": "logit"}, hurdle_gamma_logp, hurdle_gamma_random)
+
+
+def hurdle_lognormal_family():
+    """Bambi family of brms's ``hurdle_lognormal()``: the identity link on the log-scale location ``mu`` (the linear
+    predictor), ``sigma`` and ``hu`` with their priors."""
+    return _zero_family("hurdle_lognormal_location", "HurdleLogNormal", ("mu", "sigma", "hu"),
+                        {"mu": "identity", "sigma": "log", "hu": "logit"}, hurdle_lognormal_logp, hurdle_lognormal_random)
+
+
 # ---- skew normal, ex-Gaussian and shifted lognormal (brms-parity D01, docs/continuous-families.md) --------------------
 # brms 2.23 parameterises the skew normal and the ex-Gaussian by their mean mu (the linear predictor, identity link) and the
 # shifted lognormal by the location of log(y - ndt); the densities are the published ones (brms's vignette

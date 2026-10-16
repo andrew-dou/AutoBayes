@@ -98,6 +98,7 @@ ZERO_INFLATED_POISSON = FamilySpec(
     default_scale_prior=None,
     zero_parameter="zi",
     default_zero_prior=lambda: Beta(1, 1),                          # brms zi: beta(1, 1), lb 0, ub 1
+    addition_terms=frozenset({"weights"}),                          # D03: weights(), verified against the frozen case zero_inflated_poisson_weighted
     monotonic=True,                                                 # B03: mo(x), verified against zero_inflated_poisson_monotonic
     log_likelihood=_log_likelihood,                                 # C07: log_lik(), checked against the model's own density (test_post_processing.py)
 )

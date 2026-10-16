@@ -2976,6 +2976,37 @@ def validate_proportion_response(name: str, s: pd.Series, family_label: str) -> 
         )
 
 
+def validate_nonnegative_response(name: str, s: pd.Series, family_label: str) -> None:
+    """A hurdle family's continuous response (hurdle Gamma, hurdle lognormal; D03): a real numeric column of finite values,
+    zero or positive (the zeros are the hurdle's). Missing values are left to the shared missing-data check that follows."""
+    validate_numeric_response(name, s, family_label)
+    v = s.to_numpy(dtype=float)
+    v = v[~np.isnan(v)]
+    if np.any(np.isinf(v)):
+        raise FormulaError(f"response {name!r} has a non-finite value; the {family_label} family needs finite non-negative responses.")
+    if np.any(v < 0):
+        raise FormulaError(
+            f"response {name!r} has a negative value ({float(v[v < 0][0])!r}); the {family_label} family needs non-negative responses "
+            "(an exact zero is the hurdle's zero part)."
+        )
+
+
+def validate_zero_proportion_response(name: str, s: pd.Series, family_label: str) -> None:
+    """A zero-inflated proportion's response (zero-inflated Beta; D03): a real numeric column of values in [0, 1), the exact
+    zeros being the zero part. Missing values are left to the shared missing-data check that follows."""
+    validate_numeric_response(name, s, family_label)
+    v = s.to_numpy(dtype=float)
+    v = v[~np.isnan(v)]
+    if np.any(np.isinf(v)):
+        raise FormulaError(f"response {name!r} has a non-finite value; the {family_label} family needs proportions in [0, 1).")
+    bad = v[(v < 0) | (v >= 1)]
+    if bad.size:
+        raise FormulaError(
+            f"response {name!r} has a value outside [0, 1) ({float(bad[0])!r}); the {family_label} family needs proportions in [0, 1): "
+            "an exact 0 is the zero part, an exact 1 is refused (brms's zero_one_inflated_beta, which models it, is not offered)."
+        )
+
+
 def validate_binary_response(name: str, s: pd.Series) -> None:
     reject_complex(f"response {name!r}", s)
     if pd.api.types.is_bool_dtype(s):

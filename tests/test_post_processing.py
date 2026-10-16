@@ -46,7 +46,11 @@ CROSS_CHECK = ["gauss_weighted", "gauss_distributional_sigma", "gauss_slope_corr
                # D02: the beta-binomial, geometric and negbinomial2 families
                "beta_binomial_varint", "geometric_varint", "negbinomial2_varint",
                # D04: the sratio, cratio and acat families, with category-specific effects cs()
-               "sratio_varint", "cratio_varint", "acat_varint", "acat_cs", "sratio_cs", "cratio_cs"]
+               "sratio_varint", "cratio_varint", "acat_varint", "acat_cs", "sratio_cs", "cratio_cs",
+               # D03: six more zero-inflated and hurdle families, and weights() for B06's two
+               "zero_inflated_negbinomial_varint", "hurdle_negbinomial_varint", "zero_inflated_binomial_varint",
+               "zero_inflated_beta_varint", "hurdle_gamma_varint", "hurdle_lognormal_varint", "zero_inflated_poisson_weighted",
+               "hurdle_poisson_weighted"]
 
 
 def _bundle(case_id):

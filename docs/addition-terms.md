@@ -3,7 +3,7 @@
 brms-parity features B02 and P6. brms writes information about the response on the left-hand side of the formula, after
 a `|`, as addition terms joined with `+`: `k | trials(n)` (the binomial trials, M2), `y | weights(w)`,
 `y | cens(c)`, `y | trunc(lb = 0)`, and combinations such as `k | trials(n) + weights(w)`. This library parses all
-four into the term model; `weights()` is offered for the nine Tier A families (each verified by a frozen weighted case; not yet the zero-inflated and hurdle families), and `cens()` and `trunc()` for
+four into the term model; `weights()` is offered for the nine Tier A families (each verified by a frozen weighted case) and, since D03, for the eight zero-inflated and hurdle families (the frozen cases `zero_inflated_poisson_weighted` and `hurdle_poisson_weighted`; docs/zero-inflated-hurdle.md), and `cens()` and `trunc()` for
 the Gaussian family. These two were withheld (B02) because brms's own numbers for their frozen fixtures are not exact
 everywhere; since P6 they are accepted against two references, brms where brms is accurate and a committed 50-digit
 reference where it is not (below, and divergences D24 and D25).

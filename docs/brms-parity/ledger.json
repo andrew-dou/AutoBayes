@@ -1377,11 +1377,26 @@
    "depends_on": [
     "B06_zero_inflated_hurdle"
    ],
-   "status": "implementing",
+   "status": "gates_green",
    "summary": "zero_inflated_negbinomial/binomial/beta, hurdle_negbinomial/gamma/lognormal; weights() for these families",
    "pr": null,
    "attempts": 1,
-   "gates": {},
+   "gates": {
+    "sha": "8c966e16088c",
+    "dirty_tree": false,
+    "base": "origin/main",
+    "when": "2026-10-16T21:29Z",
+    "results": {
+     "immutability": {
+      "status": "pass",
+      "seconds": 0.0
+     },
+     "oracle": {
+      "status": "pass",
+      "seconds": 332.9
+     }
+    }
+   },
    "divergences": [],
    "next_action": "agent (opus), wave D3",
    "fixtures": {
