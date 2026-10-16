@@ -290,6 +290,10 @@ class FamilySpec:
     # it (the response's own mi() is an addition term, "mi" in ``addition_terms``).
     measurement_error: bool = False
     missing_values: bool = False
+    # brms's shrinkage priors horseshoe() and R2D2() on the whole class b (D07, docs/shrinkage-priors.md): whether the family
+    # takes them, set where a frozen brms case verifies it. brms scales them by the residual SD sigma (autoscale = TRUE), which
+    # the family's ``bambi_scale_parameter`` names.
+    shrinkage: bool = False
 
     def with_link(self, link: str | None) -> "FamilySpec":
         """This family's spec under ``link``: this spec for ``None`` or its own link, the one a ``links`` entry builds

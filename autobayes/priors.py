@@ -303,6 +303,10 @@ def brms_prior(prior: Prior) -> str:
     if prior.name == "Flat":
         return ""
     from autobayes.default_priors import r_number
+    from autobayes.shrinkage import brms_spelling, is_shrinkage
+
+    if is_shrinkage(prior):                               # D07: horseshoe(...) / R2D2(...) on the whole class b
+        return brms_spelling(prior)
 
     if prior.name == "Dirichlet":                         # its concentrations in order, or brms's one-number shorthand
         return f"dirichlet({', '.join(r_number(float(v)) for v in prior.params.values())})"
@@ -492,6 +496,9 @@ class Priors:
 
         fam = family if isinstance(family, FamilySpec) else get_family(family)
         responses = list(spec.responses)
+        from autobayes.shrinkage import check_prior
+
+        check_prior(self)                                             # D07: horseshoe() / R2D2() in a response's priors
         if self.nlpars is not None:                                   # C02
             raise PriorError("nlpars gives the priors of non-linear parameters (ab.gaussian(..., nl=True), docs/nonlinear.md); "
                              "a multivariate model takes none: a non-linear model in a multivariate formula is not supported "
@@ -965,6 +972,9 @@ class Priors:
         from autobayes.families import FamilySpec, get_family
 
         fam = family if isinstance(family, FamilySpec) else get_family(family)
+        from autobayes.shrinkage import check_model, check_prior, is_shrinkage
+
+        check_prior(self)                                             # D07: a shrinkage prior anywhere but the bare b is refused
         if getattr(spec, "is_nonlinear", False):                       # a non-linear model (C02): priors per non-linear parameter
             from autobayes.nonlinear import check_nonlinear_priors
 
@@ -1031,7 +1041,11 @@ class Priors:
                     f"prior for 'nu' must be a positive-support prior {sorted(TRUNCATABLE)}; got {self.nu} (nu is learned "
                     f"on nu > {lower:g}, under its prior truncated there and renormalised, as brms does)"
                 )
-        location = ([("intercept", self.intercept)] if has_intercept else []) + list(self.coefficient_priors(spec).items())
+        shrinkage = is_shrinkage(self.b)                              # D07: horseshoe() / R2D2() on the whole class b
+        if shrinkage:
+            check_model(self.b, spec, fam)
+        location = ([("intercept", self.intercept)] if has_intercept else [])
+        location += [] if shrinkage else list(self.coefficient_priors(spec).items())
         location += list(self.autocor_priors(spec).items())          # an ARMA term's ar and ma, unbounded (C04)
         dpar_sds = []
         if predicted:                                                 # its formula's intercept and coefficients (B01): location priors
@@ -1100,6 +1114,7 @@ class Priors:
         import bambi as bmb
         from autobayes.families import FamilySpec, get_family
         from autobayes.formula import ModelSpec, bambi_group_name
+        from autobayes.shrinkage import is_shrinkage
 
         self.validate(spec, family)
         fam = family if isinstance(family, FamilySpec) else get_family(family)
@@ -1121,7 +1136,12 @@ class Priors:
             out[fam.zero_parameter] = getattr(self, fam.zero_parameter).to_bambi()
         if self.nu is not None:                             # a learned Student-t nu (A13): its prior truncated at the bound
             out["nu"] = self.nu.to_bambi_truncated(fam.learnable_parameters["nu"])
-        out.update(self._bambi_terms(spec))
+        if is_shrinkage(self.b):                            # D07: each term's coefficients are its slice of b = zb * sdb
+            from autobayes.shrinkage import bambi_priors
+
+            out.update(bambi_priors(self.b, spec, fam))
+        else:
+            out.update(self._bambi_terms(spec))
         for (group, coef), prior in self.sd_priors(spec).items():
             out[bambi_group_name(group, coef)] = bmb.Prior("Normal", mu=0.0, sigma=prior.to_bambi())
         return out

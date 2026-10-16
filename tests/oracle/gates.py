@@ -51,6 +51,12 @@ A non-linear model (C02, brms's nl = TRUE) is checked by the same gates through 
 covariates C_k, each parameter's X_<nlpar> (K_<nlpar>, never centred) and group designs (`check_nonlinear_design`); G2 every
 b_<nlpar> coordinate; G3 the graph's non-linear predictor, each parameter's values against brms's own X_<nlpar> b_<nlpar> plus
 its group effects, the group effects and correlation matrices (`check_nonlinear_derived`); G4 predict(); G6 the nlpar rows.
+
+D07, a shrinkage prior on b (brms's horseshoe() or R2D2()): G1 checks brms's Kscales and the prior's data (hs_df, hs_df_global,
+hs_df_slab, hs_scale_global, hs_scale_slab; R2D2_mean_R2, R2D2_prec_R2, R2D2_cons_D2) against the model's prior
+(`check_shrinkage_data`); G2's prior part is brms's lprior, which holds hs_global and hs_slab (or R2D2_R2) and not the coefficients,
+now transformed parameters (zb, hs_local and R2D2_phi are in brms's model block); G3 checks the graph's coefficients, sdb and
+R2D2_tau2 against brms's b, sdb and R2D2_tau2 (`check_shrinkage`).
 """
 from __future__ import annotations
 
@@ -93,7 +99,9 @@ def prior_names(model) -> list[str]:
         return out + ([model.names[scale]] if scale is not None else [])
     names = model.names
     out = [names["intercept"]] if model.spec.intercept else []
-    out += list(model.spec.terms)
+    shrinkage = getattr(model, "shrinkage_names", {})       # D07: b is then zb * sdb, a transformed parameter without a prior
+    out += [] if shrinkage else list(model.spec.terms)
+    out += list(shrinkage.get("lprior", ()))                # D07: brms's lprior holds hs_global and hs_slab, or R2D2_R2
     distributional = model.spec.dpar_names                  # the auxiliary parameters with a formula of their own (B01)
     if "sigma" in names and "sigma" not in distributional:
         out.append(names["sigma"])
@@ -262,6 +270,7 @@ def check_design(b: Bundle) -> None:
             if key not in sd or np.shape(sd[key]) != np.shape(value) or abs_err(sd[key], value) > DESIGN_ABS:
                 raise OracleMismatch(f"Gaussian process {g.term!r}: brms {key} is {sd.get(key)!r}; AutoBayes has {value!r}")
     adapter.check_autocor_design(b.fixture, b.model)             # C04: Kar, Kma, J_lag and each sorted row's series and position
+    check_shrinkage_data(b)                                      # D07: Kscales and a shrinkage prior's data
     # the design columns (every formula's), the group partitions and the monotonic codes were matched by content when the
     # maps were built
     adapter.match_columns(b.fixture, b.model)
@@ -427,6 +436,65 @@ def check_derived(b: Bundle) -> None:
             if err > PRED_REL:
                 raise OracleMismatch(f"point {k}: raw-scale intercept {raw!r} vs brms b_Intercept {float(p.pars['b_Intercept'])!r}")
     check_latent(b)                                                  # C06: an me() term's latent values, brms's Xme_k
+    check_shrinkage(b)                                               # D07: b, sdb and R2D2_tau2 of a shrinkage prior on b
+
+
+_SHRINKAGE_DATA = ("Kscales", "hs_df", "hs_df_global", "hs_df_slab", "hs_scale_global", "hs_scale_slab", "R2D2_mean_R2",
+                   "R2D2_prec_R2", "R2D2_cons_D2")
+
+
+def check_shrinkage_data(b: Bundle) -> None:
+    """G1 of a shrinkage prior on b (D07): brms's ``Kscales`` is the number of coefficients and the prior's data are the
+    prior's arguments (the horseshoe's ``hs_df``, ``hs_df_global``, ``hs_df_slab``, ``hs_scale_global``, ``hs_scale_slab``;
+    R2D2's ``R2D2_mean_R2``, ``R2D2_prec_R2`` and ``R2D2_cons_D2``, one concentration per coefficient in brms's order of b);
+    a model without a shrinkage prior has none of them."""
+    from autobayes.shrinkage import concentration
+
+    sd, roles = b.fixture.standata, getattr(b.model, "shrinkage_names", {})
+    present = sorted(k for k in _SHRINKAGE_DATA if k in sd)
+    if not roles:
+        if present:
+            raise OracleMismatch(f"brms has a shrinkage prior's data {present}; the AutoBayes model has none")
+        return
+    prior, K = b.model.priors.b, len(b.model.spec.columns)
+    p = {k: float(v) for k, v in prior.params.items()}
+    if prior.name == "Horseshoe":
+        mine = {"Kscales": K, "hs_df": p["df"], "hs_df_global": p["df_global"], "hs_df_slab": p["df_slab"],
+                "hs_scale_global": p["scale_global"], "hs_scale_slab": p["scale_slab"]}
+    else:
+        cons = np.empty(K)
+        cons[[b.cmap.b_index(k) for k in b.cmap.x_column]] = concentration(prior, K)   # in brms's order of b
+        mine = {"Kscales": K, "R2D2_mean_R2": p["mean_R2"], "R2D2_prec_R2": p["prec_R2"], "R2D2_cons_D2": cons}
+    if present != sorted(mine):
+        raise OracleMismatch(f"brms has the shrinkage data {present}; the AutoBayes model's {prior.name} prior has {sorted(mine)}")
+    for key, value in mine.items():
+        theirs = np.asarray(sd[key], dtype=float)
+        if theirs.shape != np.shape(value) or abs_err(theirs, value) > DESIGN_ABS:
+            raise OracleMismatch(f"brms {key} is {sd[key]!r}; the AutoBayes model's {prior} gives {value!r}")
+
+
+def check_shrinkage(b: Bundle) -> None:
+    """G3 of a shrinkage prior on b (D07): at every point the graph's coefficients (each term's deterministic, in design-column
+    order), their scales ``sdb`` and R2D2's ``R2D2_tau2`` equal brms's transformed parameters ``b``, ``sdb`` and ``R2D2_tau2``
+    (brms's vectors in its order of b, mapped through the column map)."""
+    roles = getattr(b.model, "shrinkage_names", {})
+    if not roles:
+        return
+    pmm = b.model.pymc_model
+    terms = [t.name for t in b.model.spec.bambi_terms]
+    tau2 = [roles["R2D2_tau2"]] if "R2D2_tau2" in roles else []
+    fn = pmm.compile_fn(pmm.replace_rvs_by_values([pmm[v] for v in (roles["sdb"], *terms, *tau2)]), inputs=pmm.value_vars,
+                        point_fn=True, on_unused_input="ignore")
+    order = [b.cmap.b_index(k) for k in b.cmap.x_column]
+    for k, p, vp in b.points():
+        sdb, *rest = (np.atleast_1d(np.asarray(v, dtype=float)) for v in fn(vp))
+        coefs = np.concatenate(rest[:len(terms)])
+        pairs = [("sdb", sdb, np.atleast_1d(p.pars["sdb"])[order]), ("b", coefs, adapter.coefficients(p.pars)[order])]
+        pairs += [("R2D2_tau2", rest[-1], np.atleast_1d(p.pars["R2D2_tau2"]))] if tau2 else []
+        for what, mine, theirs in pairs:
+            err = rel_err(mine, theirs.astype(float))
+            if err > PRED_REL:
+                raise OracleMismatch(f"point {k}: the graph's {what} differs from brms's {what} by {err}")
 
 
 def check_latent(b: Bundle) -> None:

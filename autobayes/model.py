@@ -359,6 +359,9 @@ class Model:
                 "intercept, '0 + ...' (docs/distributional.md, divergence D34)"
             )
         priors.validate(spec0, fam)                     # structure now; per-level coverage once levels are known
+        if self.shrinkage_names and not self.center_predictors:   # D07: brms's b of an uncentred design holds the intercept
+            raise PriorError(f"{priors.b.name}() on b with center_predictors=False is not offered: no frozen case verifies it "
+                             "(docs/shrinkage-priors.md, divergence D102)")
         operands = [c for t in spec0.group_terms for c in t.data_columns]   # the columns the grouping factors are read from
         cols = ([spec0.response, *spec0.pop_columns] + operands
                 + ([spec0.trials] if spec0.trials else []) + ([spec0.offset.column] if spec0.offset is not None else [])
@@ -506,6 +509,9 @@ class Model:
             self.pymc_model = self._correlate_group_effects(self.pymc_model)   # edit of Bambi's graph
             self.bambi_model.backend.model = self.pymc_model  # what Bambi's fit() samples and cleans
         self.design = self._extract_design()
+        if self.shrinkage_names:                             # D07: b = zb * sdb under horseshoe() / R2D2(), checked
+            from autobayes.shrinkage import check_graph
+            check_graph(self)
         if self.spec.me_terms or self.spec.mi_terms:         # C06: each term's contribution to the linear predictor, checked
             self._check_measurement_effects()
         if fam.mixture:                                      # C05: the graph built beside Bambi's components, checked
@@ -559,6 +565,8 @@ class Model:
         variable_names += [v for k, v in self.autocor_names.items() if not k.endswith("_coordinate")]   # ar and ma (C04)
         variable_names += [roles[k] for roles in self.me_names.values() for k in ("mean", "sd", "z", "latent", "noisy")]   # C06
         variable_names += [roles["values"] for roles in self.missing_names.values()]   # C06: the missing values Ymi_<col>
+        shrinkage = self.shrinkage_names                    # D07: zb, sdb and the horseshoe's or R2D2's own variables
+        variable_names += [v for k, v in shrinkage.items() if k not in ("prior", "coordinate", "lprior")]
         # Bambi's default result cleaning drops every posterior variable ending in _offset.
         retained = list(self.spec.terms) + [roles["group_effect"] for roles in self.group_coefficient_names.values()] + dpar_coefficients
         if any(name.endswith("_offset") for name in retained):
@@ -572,6 +580,7 @@ class Model:
         coords += [roles["coordinate"] for roles in self.gp_names.values()]       # C03
         coords += [v for k, v in self.autocor_names.items() if k.endswith("_coordinate")]   # ar_dim and ma_dim (C04)
         coords += [roles["coordinate"] for roles in self.missing_names.values()]   # C06: the missing rows of each column
+        coords += [shrinkage["coordinate"]] if shrinkage else []                    # D07: zb_dim
         coords += ["__obs__"]
         names = variable_names + coords
         duplicates = sorted({n for n in names if names.count(n) > 1})
@@ -1473,6 +1482,17 @@ class Model:
         return out
 
     @property
+    def shrinkage_names(self) -> dict:
+        """PyMC names of a shrinkage prior on b (D07, docs/shrinkage-priors.md; ``shrinkage.names``): ``"prior"`` its name
+        (``Horseshoe`` or ``R2D2``), ``"zb"`` the standardised coefficients, ``"sdb"`` their scales, ``"coordinate"`` the
+        dimension of both (``zb_dim``, the design columns), and the prior's own variables under brms's names (``hs_global``,
+        ``hs_slab``, ``hs_local``; ``R2D2_R2``, ``R2D2_phi``, ``R2D2_tau2``), with ``"lprior"`` those whose densities brms
+        sums into ``lprior``. Empty without one."""
+        from autobayes.shrinkage import names
+
+        return names(getattr(self.priors, "b", None))
+
+    @property
     def dpar_names(self) -> dict[str, dict[str, str]]:
         """PyMC names of each distributional parameter's own formula (B01), by brms name in formula order: ``"value"`` the
         parameter itself, a deterministic with one value per row (``sigma``; Bambi's ``alpha`` for brms's ``shape``;
@@ -1574,11 +1594,11 @@ class Model:
         per column of each ``PopTerm``."""
         return self.spec.column_terms
 
-    def value_point(self, *, intercept: float | None = None, b, sd=None, z=None, L=None, sigma=None,
+    def value_point(self, *, intercept: float | None = None, b=None, sd=None, z=None, L=None, sigma=None,
                     shape=None, phi=None, nu: float | None = None,
                     zi: float | None = None, hu: float | None = None, bsp=None, simo=None, theta=None,
                     sdgp=None, lscale=None, zgp=None, ar=None, ma=None, meanme=None, sdme=None, zme=None,
-                    Ymi=None, alpha=None, beta=None, ndt=None) -> dict[str, np.ndarray]:
+                    Ymi=None, alpha=None, beta=None, ndt=None, shrinkage=None) -> dict[str, np.ndarray]:
         """A point in PyMC's sampled (value) space, from natural-scale quantities.
 
         ``intercept`` is the *model* intercept (at the predictor means when centred),
@@ -1626,7 +1646,10 @@ class Model:
         parameters of the skew-normal, ex-Gaussian and shifted lognormal families (D01, ``FamilySpec.extra_parameters``), given
         exactly for them: the skewness ``alpha`` (any finite number, stored as given), the exponential component's mean ``beta``
         (positive, stored as its log) and the non-decision time ``ndt`` (strictly between 0 and the smallest response, stored
-        as ``log(ndt / (min(y) - ndt))``, PyMC's interval coordinate and Stan's).
+        as ``log(ndt / (min(y) - ndt))``, PyMC's interval coordinate and Stan's). Under a shrinkage prior on b (D07,
+        docs/shrinkage-priors.md) ``b`` is a transformed parameter and is omitted: ``shrinkage`` gives brms's ``zb`` and the
+        prior's scales instead (``shrinkage.value_entries``), ``{"zb": ..., "hs_global": ..., "hs_slab": ..., "hs_local": ...}``
+        or ``{"zb": ..., "R2D2_R2": ..., "R2D2_phi": ...}``, each vector in design-column order.
         """
         extras = {"alpha": alpha, "beta": beta, "ndt": ndt}                  # D01
         if self.family_spec.mixture:                          # C05: the components' parameters and theta
@@ -1635,6 +1658,8 @@ class Model:
                                  "a mixture has none")
             if ar is not None or ma is not None:              # C04: a mixture has no autocorrelation term
                 raise ValueError("ar and ma are an autocorrelation term's coefficients; a mixture has none")
+            if shrinkage is not None:                         # D07: a mixture takes no shrinkage prior
+                raise ValueError("shrinkage holds the variables of a shrinkage prior on b; a mixture has none")
             if sdgp is not None or lscale is not None or zgp is not None:   # C03: a mixture has no Gaussian process
                 raise ValueError("sdgp, lscale and zgp are a Gaussian process's values; a mixture has none")
             from autobayes.families.mixture import value_point
@@ -1643,7 +1668,14 @@ class Model:
                                meanme=meanme, sdme=sdme, zme=zme, Ymi=Ymi)   # C06: a mixture has no me() / mi() term, refused there
         if theta is not None:
             raise ValueError("theta (the mixing proportions) is a mixture's (ab.mixture); this model has none")
-        b = np.atleast_1d(np.asarray(b, dtype=float))
+        from autobayes.shrinkage import value_entries
+        shrunk = value_entries(self, shrinkage)               # D07: zb and the shrinkage prior's scales; {} without one
+        if shrunk and b is not None:
+            raise ValueError(f"b is a transformed parameter under the {self.priors.b.name} prior (b = zb * sdb): omit it and give "
+                             "zb and the prior's scales in shrinkage=...")
+        if not shrunk and b is None:
+            raise ValueError(f"b is required: {len(self.spec.columns)} coefficients, one per design column {list(self.spec.columns)}")
+        b = np.zeros(len(self.spec.columns)) if shrunk else np.atleast_1d(np.asarray(b, dtype=float))
         if self.family_spec.per_category:                     # B05: one coefficient per design column and non-reference category
             others = len(self.categories) - 1
             if b.shape != (len(self.spec.columns), others):
@@ -1797,10 +1829,11 @@ class Model:
             raise ValueError(f"nu is fixed at {self.nu:g} in this model, not sampled; omit it" if getattr(self, "nu", None) is not None
                              else f"the {self.family} family has no nu; omit it")
         i = 0
-        for term in self.spec.bambi_terms:                    # b in design-column order: one entry per term column
+        for term in ([] if shrunk else self.spec.bambi_terms):   # b in design-column order: one entry per term column
             k = len(term.columns)
             point[term.name] = np.array(b[i:i + k]) if term.levels else np.asarray(b[i])
             i += k
+        point.update(shrunk)                                  # D07: zb, the scales on their coordinates
         mo = bool(self.spec.mo_terms)                        # bsp is a monotonic term's (B03) or an me() / mi() term's (C06)
         point.update(self._monotonic_point(bsp if mo or not (self.spec.me_terms or self.spec.mi_terms) else None, simo))
         point.update(self._gp_point(sdgp, lscale, zgp))      # C03: each Gaussian process's sdgp, lscale and zgp
@@ -2042,6 +2075,7 @@ class Model:
             from autobayes.families.mixture import describe
             return describe(self)
         s, d, pr = self.spec, self.design, self.priors
+        from autobayes.shrinkage import brms_spelling          # D07: brms's name of a shrinkage prior on b
         def effect(g):
             return "u" if len(s.groups) == 1 else f"u_{g}"
         def slope_effect(g, c):
@@ -2080,7 +2114,8 @@ class Model:
                     + ([f"response addition term(s) {', '.join(a.term for a in s.additions)}"] if s.additions else [])
                     + ([f"distributional formula(s) for {', '.join(s.dpar_names)}"] if s.dpars else [])
                     + ([f"autocorrelation term {s.autocor.term}"] if s.autocor is not None else [])
-                    + (["measurement-error term(s)"] if s.me_terms else []) + (["missing-value term(s)"] if s.mi_terms else []))
+                    + (["measurement-error term(s)"] if s.me_terms else []) + (["missing-value term(s)"] if s.mi_terms else [])
+                    + ([f"a shrinkage prior on b ({brms_spelling(pr.b).split('(')[0]})"] if self.shrinkage_names else []))   # D07
         lines = [
             f"AutoBayes {fam.tag} model" + (" with " + " and ".join(features) if features else "")
             + (" (population-level only)" if not s.has_group else ""),
@@ -2340,7 +2375,11 @@ class Model:
                       "k (brms's class Intercept)"]
         elif s.intercept:
             lines += [f"  {a}{each} ~ {describe_prior(pr.intercept)}"]
-        lines += [f"  b_{col}{each} ~ {describe_prior(coef[col])}" for col in s.columns]
+        if self.shrinkage_names:                             # D07: one joint prior on b, b = zb * sdb
+            from autobayes.shrinkage import describe_lines
+            lines += describe_lines(self)
+        else:
+            lines += [f"  b_{col}{each} ~ {describe_prior(coef[col])}" for col in s.columns]
         if s.mo_terms:                                       # a monotonic term's coefficient (brms bsp, class b) and simplex (B03)
             from autobayes.default_priors import brms_rename
             from autobayes.priors import dirichlet_concentration
@@ -2479,6 +2518,11 @@ class Model:
             acn = self.autocor_names
             roles[acn[part]] = (f"{part}[1..{order}], the {_AUTOCOR_MEANING[part]} coefficients (brms's {part}; vector, dims "
                                 f"{acn[part + '_coordinate']}, unconstrained)")
+        shrinkage_note = ""
+        if self.shrinkage_names:                             # D07: zb and the shrinkage prior's scales; b, sdb deterministic
+            from autobayes.shrinkage import deterministic_note, value_roles
+            roles.update(value_roles(self))
+            shrinkage_note = deterministic_note(self)
         for name in self._described_value_names():
             lines.append(f"  {name:<24} {roles.get(name, f'b_{name}')}")
         lines.append("Deterministic: " + "".join(f"{names['group_effect']} = {effect(g) if c == 'Intercept' else slope_effect(g, c)}, "
@@ -2486,7 +2530,8 @@ class Model:
                      + "".join(f"{names['group_effect']} = u_{name},{g}, " for (name, g, _), names in self.dpar_group_names.items())   # D08
                      + "".join(f"{names['cor']} = Cor_{g} = L_{g} L_{g}^T, " for g, names in self.correlation_names.items()) + fam.deterministic_note
                      + "".join(f"; {dn['value']} = exp(eta_{name}), one {name} per row (B01)" for name, dn in self.dpar_names.items())
-                     + "".join(f"; {me['latent']} = meanme_{x} + sdme_{x} * zme_{x}, one per row (brms's Xme)" for x, me in self.me_names.items()))
+                     + "".join(f"; {me['latent']} = meanme_{x} + sdme_{x} * zme_{x}, one per row (brms's Xme)" for x, me in self.me_names.items())
+                     + shrinkage_note)
         return "\n".join(lines)
 
     def _measurement_data_lines(self) -> list[str]:

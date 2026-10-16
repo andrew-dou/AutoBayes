@@ -180,6 +180,10 @@ def freeze_target(model):
         **({'measurement_error': _measurement_payload(model)} if getattr(d, 'measurement_error', {}) else {}),
         **({'missing': [{'column': c, 'values': block.filled, 'index': block.index} for c, block in d.missing.items()]}
            if getattr(d, 'missing', {}) else {}),
+        # So does a shrinkage prior on b (D07, horseshoe() or R2D2()): the prior and its arguments, its scaling by sigma (brms's
+        # autoscale = TRUE) and the design columns its vectors (zb, the local scales, R2D2's simplex) follow.
+        **({'shrinkage': {'class': 'b', 'prior': prior(pr.b), 'autoscale': 'sigma', 'columns': list(d.columns)}}
+           if getattr(model, 'shrinkage_names', {}) else {}),
         'priors': {'intercept': prior(pr.intercept), 'sigma': prior(pr.sigma),
                    'coefficients': {} if mixture else {k: prior(v) for k,v in pr.coefficient_priors(s).items()},
                    'groups': {k: prior(v) for k,v in pr.group_priors(s).items()},

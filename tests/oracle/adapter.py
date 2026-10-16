@@ -87,6 +87,14 @@ D01: a family's extra parameter (`FamilySpec.extra_parameters`) is brms's parame
 it is), `beta` (`real<lower=0>`, on the log scale) and `ndt` (`real<lower=0,upper=min_Y>`, `min_Y` the smallest `Y`: Stan's
 lower-upper coordinate `log(ndt / (min_Y - ndt))`, recomputed from `ndt` at every point and checked against the fixture's `u`,
 and the probe's step checked, as for `zi`, before it is mapped to `ndt_interval__`).
+
+D07: under a shrinkage prior on b (brms's `horseshoe()` or `R2D2()`, `Model.shrinkage_names`) brms's `b` is a transformed parameter
+`zb .* sdb`: the point gives the model `zb` and the prior's scales (`shrinkage_point`, each vector put in AutoBayes's design-column
+order through the column map) and no `b`; `zb[k]` maps to `zb` and `hs_local[k]` to `hs_local_log__` at the AutoBayes column of
+brms's `b[k]`, `hs_global` and `hs_slab` to their logs, `R2D2_R2` (`real<lower=0,upper=1>`) to `R2D2_R2_logodds__` with the probe's
+step and Stan's logit checked as for `zi`, and the simplex `R2D2_phi` takes unreached coordinates as a monotonic term's simplex
+does, its stick-breaking coordinates recomputed and checked before they are mapped to `R2D2_phi_stickbreaking__` (which needs
+AutoBayes's design columns in brms's order of `b`: the stick-breaking map is not symmetric in the entries).
 """
 from __future__ import annotations
 
@@ -752,14 +760,49 @@ def natural_point(model: ab.Model, point: Point, cmap: ColumnMap, gmap: GroupMap
         special = {cls: {x: (np.atleast_1d(pars[f"{cls}_{k}"]).astype(float) if cls == "zme" else float(np.atleast_1d(pars[f"{cls}_{k}"])[0]))
                          for x, k in cmap.measurement.items()} for cls in ("meanme", "sdme", "zme")}
     extras = {e.name: float(pars[e.name]) for e in model.family_spec.extra_parameters}   # D01: brms's alpha, beta or ndt
+    shrinkage = shrinkage_point(model, pars, cmap)          # D07: zb and the horseshoe's or R2D2's scales, or None
     return dict(intercept=intercept, b=b, sd=sd or None, z=z or None, L=L or None, sigma=sigma, shape=shape, phi=phi, nu=nu,
-                zi=zi, hu=hu, bsp=bsp, simo=simo, theta=theta, sdgp=sdgp, lscale=lscale, zgp=zgp, ar=ar, ma=ma, **special, **extras)
+                zi=zi, hu=hu, bsp=bsp, simo=simo, theta=theta, sdgp=sdgp, lscale=lscale, zgp=zgp, ar=ar, ma=ma, **special, **extras,
+                **({"shrinkage": shrinkage} if shrinkage is not None else {}))
+
+
+_SHRINKAGE_PARS = {"Horseshoe": ("zb", "hs_global", "hs_slab", "hs_local"), "R2D2": ("zb", "R2D2_R2", "R2D2_phi")}
+
+
+def shrinkage_point(model: ab.Model, pars: dict, cmap: ColumnMap) -> dict | None:
+    """D07: the model's ``shrinkage`` argument of ``value_point`` at a brms point, brms's ``zb`` and the prior's scales
+    (``hs_global``, ``hs_slab``, ``hs_local``; ``R2D2_R2``, ``R2D2_phi``), each vector put in AutoBayes's design-column order (the
+    entry of brms's ``b`` of each AutoBayes column); None for a model without a shrinkage prior, whose brms side must have
+    none of these parameters either."""
+    roles = getattr(model, "shrinkage_names", {})
+    declared = sorted({p for keys in _SHRINKAGE_PARS.values() for p in keys} & set(pars))
+    if not roles:
+        if declared:
+            raise OracleMismatch(f"brms has a shrinkage prior's parameters {declared}; the AutoBayes model has none")
+        return None
+    keys = _SHRINKAGE_PARS[roles["prior"]]
+    if declared != sorted(keys):
+        raise OracleMismatch(f"brms has the parameters {declared}; the AutoBayes model's {roles['prior']} prior has {sorted(keys)}")
+    order = [cmap.b_index(k) for k in cmap.x_column]          # brms's index into b of each AutoBayes design column
+    out = {}
+    for key in keys:
+        value = np.atleast_1d(pars[key]).astype(float)
+        if key in ("zb", "hs_local", "R2D2_phi"):
+            if value.shape != (len(order),):
+                raise OracleMismatch(f"brms's {key} has {value.size} entries; the AutoBayes model has {len(order)} coefficients")
+            out[key] = value[order]
+        else:
+            out[key] = float(value[0])
+    return out
 
 
 def value_point(model: ab.Model, point: Point, cmap: ColumnMap, gmap: GroupMap) -> dict:
     if is_nonlinear(model):                                   # C02
         return model.value_point(**nonlinear_natural_point(model, point, cmap, gmap))
-    return model.value_point(**natural_point(model, point, cmap, gmap))
+    nat = natural_point(model, point, cmap, gmap)
+    if "shrinkage" in nat:                                     # D07: b is the transformed parameter zb * sdb, not a value
+        nat["b"] = None
+    return model.value_point(**nat)
 
 
 def value_layout(model: ab.Model, point: dict) -> dict[str, slice]:
@@ -985,6 +1028,22 @@ def coordinate_map(fixture: Fixture, model: ab.Model, cmap: ColumnMap, gmap: Gro
                 raise OracleMismatch(f"{par}[{elem + 1}]: brms has several {gp.group(1)} for one Gaussian process; AutoBayes has one")
             else:                                              # sdgp_k, lscale_k: real<lower=0>, sampled on the log scale
                 target, expect = (f"{roles[gp.group(1)]}_log__", 0), "log"
+        elif (sh := getattr(model, "shrinkage_names", {})) and par in ("zb", "hs_global", "hs_slab", "hs_local", "R2D2_R2"):   # D07
+            if par not in sh:
+                raise OracleMismatch(f"brms samples {par}, which the AutoBayes model's {sh['prior']} prior on b has not")
+            if par in ("zb", "hs_local"):                      # brms's zb[k], hs_local[k]: the AutoBayes column of brms's b[k]
+                c = cmap.x_column.index(cmap.x_of_b(elem))
+                target, expect = ((sh["zb"], c), "identity") if par == "zb" else ((f"{sh['hs_local']}_log__", c), "log")
+            elif par == "R2D2_R2":                             # real<lower=0,upper=1>: Stan's logit, PyMC's log-odds (as zi)
+                if abs(float(e["du"]) - LOGIT_STEP) > 1e-9:
+                    raise OracleMismatch(f"brms's probe moved the coordinate of {par} by {e['du']!r}; logit({par}) moves it by {LOGIT_STEP!r}")
+                for q, pt_ in enumerate(fixture.points):
+                    p = float(pt_.pars[par])
+                    if abs(math.log(p / (1.0 - p)) - pt_.u[idx]) > 1e-10:
+                        raise OracleMismatch(f"point {q}: logit({par}) is {math.log(p / (1.0 - p))!r}; brms's unconstrained value is {pt_.u[idx]!r}")
+                target, expect = (f"{sh[par]}_logodds__", 0), "other"
+            else:                                              # hs_global, hs_slab: real<lower=0>, on the log scale
+                target, expect = (f"{sh[par]}_log__", 0), "log"
         else:
             raise OracleMismatch(f"no adapter for brms parameter {par!r} ({fixture.declarations.get(par, 'undeclared')})")
         if transform != expect:
@@ -1018,6 +1077,24 @@ def _simplex_coordinates(fixture: Fixture, model: ab.Model, cmap: ColumnMap) -> 
                                          f"values at {[i + 1 for i in index]} are {pt_.u[index]!r}")
             for j, i in enumerate(index):
                 out[i] = (f"{model.mixture_names['theta']}_stickbreaking__", j)
+            continue
+        if name == "R2D2_phi" and getattr(model, "shrinkage_names", {}).get("R2D2_phi"):   # D07: the R2D2 prior's simplex
+            order = [cmap.b_index(k) for k in cmap.x_column]
+            if order != list(range(len(order))):
+                raise OracleMismatch(f"brms orders the coefficients of b as {order} of AutoBayes's design columns; the stick-breaking "
+                                     "coordinates of R2D2_phi are not comparable")
+            size = len(order) - 1
+            index = unreached[pos:pos + size]
+            pos += size
+            if len(index) != size:
+                raise OracleMismatch(f"brms's simplex {name!r} needs {size} unreached coordinates; {len(index)} are left")
+            for q, pt_ in enumerate(fixture.points):
+                u = stick_breaking_free(np.atleast_1d(pt_.pars[name]))
+                if np.max(np.abs(u - pt_.u[index])) > 1e-10:
+                    raise OracleMismatch(f"point {q}: Stan's stick-breaking coordinates of {name} are {u!r}; brms's unconstrained "
+                                         f"values at {[i + 1 for i in index]} are {pt_.u[index]!r}")
+            for j, i in enumerate(index):
+                out[i] = (f"{model.shrinkage_names['R2D2_phi']}_stickbreaking__", j)
             continue
         k = int(name[len("simo_"):]) if name.startswith("simo_") and name[len("simo_"):].isdigit() else None
         if k not in by_k:

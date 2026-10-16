@@ -79,6 +79,7 @@ from autobayes.session import compare_records, environment, fit_record, format_c
 from autobayes.nonlinear import NonlinearModel, NonlinearSpec        # non-linear formulas, nl=True (C02, docs/nonlinear.md)
 from autobayes.model import exgaussian, exponential, shifted_lognormal, skew_normal, weibull   # D01, docs/continuous-families.md
 from autobayes.model import beta_binomial, geometric, negbinomial2   # D02, docs/discrete-families.md
+from autobayes.shrinkage import Horseshoe, R2D2   # D07: brms's horseshoe() and R2D2() on b, docs/shrinkage-priors.md
 
 __all__ = [
     "Beta", "Categorical", "DeviceError", "Dirichlet", "Exponential", "FitResult", "Flat", "FormulaError", "Gamma", "GroupTerm", "HalfCauchy",
@@ -94,4 +95,5 @@ __all__ += ["Waic", "loo_compare", "model_weights", "waic"]   # D05
 __all__ += ["Uniform", "exgaussian", "exponential", "shifted_lognormal", "skew_normal", "weibull"]   # D01
 __all__ += ["Hypothesis", "conditional_effects", "hypothesis"]   # D06
 __all__ += ["beta_binomial", "geometric", "negbinomial2"]   # D02
+__all__ += ["Horseshoe", "R2D2"]                       # D07
 __version__ = "0.8.0"

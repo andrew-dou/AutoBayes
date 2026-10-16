@@ -260,3 +260,13 @@ response draws, `log_lik()` and brms's default priors. Verified against `beta_bi
 `negbinomial2_varint` (log densities within 8.8e-16 relative); other links, distributional formulas, addition terms, `mo()`,
 `me()`/`mi()`, `mm()`, autocorrelation terms, multivariate, mixture and non-linear use are refused (D80-D82); see
 [discrete families](discrete-families.md).
+
+Shrinkage priors on b (D07, brms's `horseshoe()` and `R2D2()` on class `b`): `ab.Priors(b=ab.Horseshoe(df, scale_global,
+df_global, scale_slab, df_slab))` (the regularised horseshoe) and `ab.Priors(b=ab.R2D2(mean_R2, prec_R2, cons_D2))`, brms's
+defaults and argument order, one joint prior on every coefficient built non-centred as brms builds it (`b = zb * sdb`, the
+scales under brms's names on brms's coordinates) and scaled by the residual SD sigma (brms's `autoscale = TRUE`);
+`describe()`, the prior table, the target identity, `prior_predictive()` and `predict()` take them. Verified against
+`gauss_horseshoe` and `gauss_r2d2`; the prior on anything but the whole class `b`, `par_ratio`, `autoscale = FALSE`,
+`main = TRUE`, other families, formulas without an intercept or population-level terms, `center_predictors=False`, and
+group-level, offset, addition, distributional, `mo()`, `me()`, `mi()`, `gp()` and autocorrelation terms are refused
+(D100-D103); see [shrinkage priors](shrinkage-priors.md).
