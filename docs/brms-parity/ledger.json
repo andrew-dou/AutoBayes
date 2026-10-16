@@ -1184,7 +1184,7 @@
     "D54",
     "D55"
    ],
-   "next_action": "other component families, order='none', per-component formulas, group terms not offered (D52-D55); no per-row log density yet (log_lik/loo)",
+   "next_action": "other component families, order='none', per-component formulas, group terms not offered (D52-D55); log_lik/loo added in #56",
    "fixtures": {
     "pr": 43,
     "cases": [
@@ -1278,7 +1278,8 @@
      "gauss_varint_post_psis",
      "cumulative_varint_post",
      "binomial_weighted_post",
-     "categorical_poponly_post"
+     "categorical_poponly_post",
+     "mixture_gauss3_post"
     ]
    }
   },
