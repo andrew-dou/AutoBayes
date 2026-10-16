@@ -1405,9 +1405,9 @@
    "depends_on": [
     "B05_ordinal_categorical"
    ],
-   "status": "gates_green",
+   "status": "merged",
    "summary": "cumulative probit, sratio, cratio, acat",
-   "pr": null,
+   "pr": 64,
    "attempts": 1,
    "gates": {
     "sha": "5ad02d0b6db9",
@@ -1425,8 +1425,11 @@
      }
     }
    },
-   "divergences": [],
-   "next_action": "agent (opus), wave D2",
+   "divergences": [
+    "D88",
+    "D89"
+   ],
+   "next_action": "cumulative probit withheld until its P6 reference lands (D88; branch p6/cumulative-probit-reference); other links, disc, mo(), addition terms not offered (D38, D89)",
    "fixtures": {
     "pr": 57,
     "cases": [
@@ -1596,7 +1599,7 @@
     "D106",
     "D107"
    ],
-   "next_action": "acat_cs (cs()) parked until D04's acat family; mm() slopes, by with slopes, IDs within a formula not offered",
+   "next_action": "complete: acat_cs passes since D04 (#64); mm() slopes, by with slopes, IDs within a formula not offered",
    "fixtures": {
     "pr": 57,
     "cases": [
