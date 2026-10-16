@@ -1377,9 +1377,9 @@
    "depends_on": [
     "B06_zero_inflated_hurdle"
    ],
-   "status": "gates_green",
+   "status": "merged",
    "summary": "zero_inflated_negbinomial/binomial/beta, hurdle_negbinomial/gamma/lognormal; weights() for these families",
-   "pr": null,
+   "pr": 65,
    "attempts": 1,
    "gates": {
     "sha": "34915bc1e3ba",
@@ -1397,8 +1397,11 @@
      }
     }
    },
-   "divergences": [],
-   "next_action": "agent (opus), wave D3",
+   "divergences": [
+    "D84",
+    "D86"
+   ],
+   "next_action": "other links, distributional zi/hu and auxiliary formulas, cens/trunc/mo/me/mi/mm/gr(by)/autocorrelation, mv, nl, mixture not offered (D84); brms hurdle_negbinomial draws differ (D86)",
    "fixtures": {
     "pr": 57,
     "cases": [
