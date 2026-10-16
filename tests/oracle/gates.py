@@ -21,6 +21,9 @@ G6 `check_default_prior` brms's default-prior table has the classes this model h
 C07 `check_post`         for a case that lists post-processing functions: `ab.log_lik`, `ab.bayes_R2` and `ab.loo` on the
                          fixture's draws, held as brms's fixed-parameter fit holds them (one chain per point), equal the
                          fixture's `post` block (brms's log_lik(), bayes_R2() and loo()), every non-finite entry exactly
+D05 `check_waic`, `check_loo_compare`   in the same `post` gate: `ab.waic` against brms's waic(); `ab.loo_compare` of the case's
+                         model with the case it names (`compare_with`), by loo and by waic, and `ab.model_weights` ("loo",
+                         "pseudobma" with BB=False) against brms's loo_compare() and model_weights() of the two fits
 
 A case that opts in to two-reference acceptance (P6, its gate field names a committed high-precision reference and the
 quantity kinds that may fall back on it: "gradient", "epred") has G2's gradient and G4's expected values checked by
@@ -639,7 +642,9 @@ def check_post(b: Bundle) -> None:
     """C07: each post-processing function the case lists (``b.post``) on ``fixed_parameter_draws`` equals the fixture's
     ``post`` block: ``log_lik`` brms's ``log_lik()`` (draws x rows); ``bayes_R2`` brms's ``bayes_R2(summary = FALSE)``
     (draws x 1); ``loo`` brms's ``loo()``: the pointwise table (its five columns, by name), the estimates (rows elpd_loo,
-    p_loo, looic; columns Estimate, SE), ``pareto_k`` and ``n_eff``. A case that lists none has nothing to compare."""
+    p_loo, looic; columns Estimate, SE), ``pareto_k`` and ``n_eff``; ``waic`` brms's ``waic()`` (D05, ``check_waic``);
+    ``loo_compare`` brms's ``loo_compare()`` and ``model_weights()`` of this model and the case it names (D05,
+    ``check_loo_compare``). A case that lists none has nothing to compare."""
     if not b.post:
         return
     post = b.fixture.raw.get("post")
@@ -672,8 +677,72 @@ def check_post(b: Bundle) -> None:
             compare_post("loo estimates", res.estimates.to_numpy(), fx.decode(ref["estimates"]))
             compare_post("loo pareto_k", res.pareto_k, fx.decode(ref["pareto_k"]))
             compare_post("loo n_eff", res.n_eff, fx.decode(ref["n_eff"]))
+        elif name == "waic":                                         # D05
+            check_waic(fn(b.model, idata), post["waic"])
+        elif name == "loo_compare":                                  # D05
+            check_loo_compare(b, idata, post["loo_compare"])
         else:
             raise OracleMismatch(f"no comparison for the post-processing function {name!r}")
+
+
+# -- D05: waic, loo_compare and model_weights ---------------------------------------------------------------------
+def check_waic(res, ref) -> None:
+    """D05: ``ab.waic`` against brms's ``waic()``: the pointwise table (its three columns, by name) and the estimates (rows
+    elpd_waic, p_waic, waic; columns Estimate, SE)."""
+    columns = list(ref["pointwise"].get("colnames") or [])
+    if list(res.pointwise.columns) != columns:
+        raise OracleMismatch(f"waic pointwise columns {list(res.pointwise.columns)} vs brms {columns}")
+    table = fx.decode(ref["pointwise"])
+    if res.pointwise.shape != table.shape:
+        raise OracleMismatch(f"waic pointwise: AutoBayes has shape {res.pointwise.shape}, brms {table.shape}")
+    for i, column in enumerate(columns):
+        compare_post(f"waic pointwise {column}", res.pointwise[column].to_numpy(), table[:, i])
+    if list(res.estimates.index) != list(ref["estimate_rows"]) or list(res.estimates.columns) != list(ref["estimates"]["colnames"]):
+        raise OracleMismatch(f"waic estimates {list(res.estimates.index)} x {list(res.estimates.columns)} vs brms "
+                             f"{list(ref['estimate_rows'])} x {list(ref['estimates']['colnames'])}")
+    compare_post("waic estimates", res.estimates.to_numpy(), fx.decode(ref["estimates"]))
+
+
+def check_loo_compare(b: Bundle, idata, ref) -> None:
+    """D05: brms's ``loo_compare()`` of this case's model with the case its autobayes section names (``compare_with``), on the
+    same data, each on its own frozen points held as brms's fixed-parameter fit holds them. The other model must be the target
+    brms evaluated (its log density at its points equals the fixture's ``other_lp`` to ``LOGP_REL``); then both models'
+    pointwise elpd_loo and elpd_waic, ``ab.loo_compare`` by loo and by waic (rows best first, by name; loo's eight columns, by
+    name) and ``ab.model_weights`` by ``"loo"`` and by ``"pseudobma"`` with ``BB=False`` (in the order given) equal brms's.
+    ``compare_post``'s ``max(1, |a|, |b|)`` scale compares a weight far below one absolutely, so the weights' logarithms are
+    compared too: a weight of 1e-115 must be right to ``PRED_REL`` in its exponent."""
+    other_id = b.case.get("autobayes", {}).get("compare_with")
+    models = list(ref["models"])
+    if not other_id or models != [b.case["id"], other_id]:
+        raise OracleMismatch(f"loo_compare: the fixture compares {models}; the case compares {[b.case['id'], other_id]}")
+    other = Bundle(other_id)
+    lp = np.array([other.logp(vp) for _, _, vp in other.points()])
+    err = rel_err(lp, fx.decode(ref["other_lp"]))
+    if err > LOGP_REL:
+        raise OracleMismatch(f"loo_compare: {other_id}'s log density at its points differs from brms's other_lp by {err}")
+    fits = ((b.model, idata), (other.model, fixed_parameter_draws(other)))
+    results = {"loo": {m: ab.loo(model, d) for m, (model, d) in zip(models, fits)},
+               "waic": {m: ab.waic(model, d) for m, (model, d) in zip(models, fits)}}
+    for crit in ("loo", "waic"):
+        elpd = ref[f"elpd_{crit}"]
+        if list(elpd.get("colnames") or []) != models:
+            raise OracleMismatch(f"loo_compare elpd_{crit}: brms's columns {elpd.get('colnames')} are not {models}")
+        ours = np.column_stack([results[crit][m].pointwise[f"elpd_{crit}"].to_numpy() for m in models])
+        compare_post(f"loo_compare pointwise elpd_{crit}", ours, fx.decode(elpd))
+        table, theirs = b.post["loo_compare"](results[crit]), ref[crit]
+        if list(table.index) != list(theirs["rows"]):
+            raise OracleMismatch(f"loo_compare by {crit}: rows {list(table.index)} vs brms {list(theirs['rows'])}")
+        if list(table.columns) != list(theirs["table"].get("colnames") or []):
+            raise OracleMismatch(f"loo_compare by {crit}: columns {list(table.columns)} vs brms {theirs['table'].get('colnames')}")
+        compare_post(f"loo_compare by {crit}", table.to_numpy(), fx.decode(theirs["table"]))
+    for kind, kwargs in (("loo", {}), ("pseudobma", {"BB": False})):
+        w = ab.model_weights(results["loo"], kind, **kwargs)
+        if list(w.index) != list(ref["weights_models"]):
+            raise OracleMismatch(f"model_weights {kind}: models {list(w.index)} vs brms {list(ref['weights_models'])}")
+        theirs = fx.decode(ref[f"weights_{kind}"])
+        compare_post(f"model_weights {kind}", w.to_numpy(), theirs)
+        with np.errstate(divide="ignore"):
+            compare_post(f"model_weights {kind} (log)", np.log(w.to_numpy()), np.log(theirs))
 
 
 # -- multivariate models (C01) ------------------------------------------------------------------------------

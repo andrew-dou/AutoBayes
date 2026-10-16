@@ -1,6 +1,7 @@
-# Post-processing: `log_lik`, `bayes_R2`, `loo`
+# Post-processing: `log_lik`, `bayes_R2`, `loo`, `waic`, `loo_compare`, `model_weights`
 
-brms-parity feature C07 (brms's `log_lik()`, `bayes_R2()` and `loo()`, loo 2.9.0).
+brms-parity feature C07 (brms's `log_lik()`, `bayes_R2()` and `loo()`, loo 2.9.0) and D05 (brms's `waic()`,
+`loo_compare()` and `model_weights()`).
 
 ```python
 import autobayes as ab
@@ -9,6 +10,9 @@ ll = ab.log_lik(model, fit)          # (chain, draw, __obs__): each fitted row's
 r2 = ab.bayes_R2(model, fit)         # (chain, draw): Bayesian R-squared per draw
 res = ab.loo(model, fit)             # PSIS-LOO: res.pointwise, res.estimates, res.pareto_k, res.n_eff
 print(res)
+w = ab.waic(model, fit)              # WAIC: w.pointwise, w.estimates
+ab.loo_compare({"m1": ab.loo(m1, fit1), "m2": ab.loo(m2, fit2)})          # loo's table, best model first
+ab.model_weights({"m1": ab.loo(m1, fit1), "m2": ab.loo(m2, fit2)}, "loo")  # brms's Akaike weights
 ```
 
 Each takes the model and its fit (a `FitResult` or its `InferenceData`, checked against the model as `predict()` checks
@@ -86,6 +90,53 @@ algorithm, and loo's documented behaviour and its outputs on probe inputs (run i
 | `mcse_elpd_loo` | `sqrt(log(1 + V / E^2))`, `V = sum_s w_s^2 (p_s - E)^2 / r_eff` the self-normalised variance of `E = exp(elpd_loo_i)` carried to the log scale by a log-normal approximation | loo 2.7.0's NEWS ("simplify mcse_elpd using log-normal approximation"); the formula and the `r_eff` divisor settled by probing |
 | `r_eff` | ArviZ's `ess(method="mean")` of `exp(log_lik)` over `S`; 1 for chains of fewer than four draws or a constant likelihood (loo's NA, replaced by 1) | ArviZ; brms's use of it and the NA rule settled by probing |
 
+## `waic(model, fit)` (D05)
+
+brms's `waic()`, the widely applicable information criterion (Watanabe 2010, JMLR 11; the WAIC section of Vehtari,
+Gelman and Gabry 2017) of `log_lik()`: `lpd_i = log mean_s p(y_i | theta_s)` (a log-sum-exp, finite at
+log-likelihoods near -800, as loo's is), `p_waic_i` the sample variance (divisor `S - 1`) of `log p(y_i | theta_s)`
+over the draws, `elpd_waic_i = lpd_i - p_waic_i` and `waic_i = -2 elpd_waic_i`; the estimates are the sums and `SE = sqrt(N var_i)`, NaN for a single
+observation (loo's NA). The result, an `ab.Waic`, holds brms's tables: `pointwise` (columns `elpd_waic`, `p_waic`,
+`waic`) and `estimates` (rows `elpd_waic`, `p_waic`, `waic`; columns `Estimate`, `SE`), also as `res.elpd_waic`,
+`res.se_elpd_waic`, `res.p_waic`, `res.waic`; printing it counts the observations with `p_waic` above 0.4, where loo
+warns and recommends PSIS-LOO. `ab.post_processing.waic_from_log_lik(log_lik)` takes any `(chain, draw, __obs__)`
+log-likelihood. Fewer than two draws and a non-finite log-likelihood are refused (loo stops on the first and returns NaN
+rows for the second), as are a multivariate model (D95) and a model with `me()` or `mi()` (D74).
+
+## `loo_compare(results)` (D05)
+
+brms's `loo_compare()` (loo 2.9.0's) of several models' `ab.loo()` or `ab.waic()` results, given as a mapping
+`{name: result}` or a list (named `model1`, `model2`, ... as loo names an unnamed list). Returns loo's table as a
+`pandas.DataFrame`, one row per model indexed by name, best first (the largest `elpd`; exact ties keep the order given,
+as loo keeps it), with loo's eight columns: `elpd_diff` and `se_diff`, then the model's own estimate and SE of `elpd`,
+`p` and the information criterion (`elpd_loo`, `se_elpd_loo`, `p_loo`, `se_p_loo`, `looic`, `se_looic`, or the `waic`
+names). For model `k` and the best model `b`, `elpd_diff = sum_i (elpd_k,i - elpd_b,i)` and `se_diff =
+sqrt(N var_i(elpd_k,i - elpd_b,i))` (Vehtari, Gelman and Gabry 2017, on model comparison), 0 and 0 for the best model.
+brms's `loo_compare(fit1, fit2)` needs each criterion stored first (`add_criterion`); here each result is computed first
+(`ab.loo(model, fit)`), which also fixes `r_eff` (D94).
+
+Refused, naming the reason: a single model (loo: at least two), models on different numbers of observations (loo's
+error), a single observation (loo stops there too), anything that is not an `ab.loo()` or `ab.waic()` result, and PSIS-LOO
+and WAIC results together, which loo 2.9.0 compares silently (D93). Models fit to different responses are compared with a
+warning, as brms's `loo_compare` warns when the fits' `yhash` attributes differ (probed): `ab.loo()` and `ab.waic()`
+record a fingerprint of the response (its fitted values and, for a binomial model, the trials; `Loo.response`,
+`Waic.response`), and results of a bare log-likelihood carry none.
+
+## `model_weights(results, weights, BB=None)` (D05)
+
+brms's `model_weights()` of the same results, a `pandas.Series` in the order given:
+
+- `weights="loo"` (`ab.loo()` results) and `weights="waic"` (`ab.waic()` results): brms's Akaike weights of the
+  information criterion, `exp(-dIC_k / 2) / sum_j exp(-dIC_j / 2)` with `dIC` the difference from the smallest, which are
+  `exp(elpd_k) / sum_j exp(elpd_j)`;
+- `weights="pseudobma", BB=False` (`ab.loo()` results): the pseudo-BMA weights of Yao, Vehtari, Simpson and Gelman (2018,
+  "Using stacking to average Bayesian predictive distributions", Bayesian Analysis 13(3)) without the Bayesian bootstrap,
+  the same formula on `elpd_loo` (brms hands it to loo's `loo_model_weights`).
+
+`weights` has no default: brms's default `"stacking"`, and `"bma"`, `"kfold"`, are not offered, and neither is pseudo-BMA
+with the Bayesian bootstrap (brms's default `BB = TRUE`), which draws random numbers; `BB` must be `False` for `"pseudobma"` and is
+refused for the others (D92). The other checks are those of `loo_compare`.
+
 ## Verification
 
 - The oracle gate `check_post` (`tests/oracle/gates.py`, test `test_c07_post_processing_equals_log_lik_bayes_R2_and_loo`)
@@ -106,14 +157,41 @@ algorithm, and loo's documented behaviour and its outputs on probe inputs (run i
   constant columns, log-likelihoods near -380 and -800), within 3e-13 except D50; `psis` equals ArviZ's `psislw` where
   the two take the same tail.
 
+- D05: the same gate compares `ab.waic` with brms's `waic()` on `gauss_loo_compare_x` and `gauss_loo_compare_xw`
+  (`check_waic`), and on `gauss_loo_compare_x`, whose autobayes section names the other case (`"compare_with":
+  "gauss_loo_compare_xw"`, the same data, its own frozen points), checks that the other model is the one brms compared (its
+  log density at its points equals the fixture's `other_lp`), then both models' pointwise `elpd_loo` and `elpd_waic`,
+  `ab.loo_compare` by loo and by waic (rows, columns and every entry) and `ab.model_weights` by `"loo"` and by `"pseudobma"`
+  with `BB=False` against brms's `loo_compare()` and `model_weights()` (`check_loo_compare`). The weights are 1 and
+  3.7e-115, so they are compared as numbers and as logarithms, the small one to 1e-9 in its exponent. Harness tests
+  (`tests/oracle/test_loo_compare_harness.py`) show a corrupted pointwise or estimated WAIC, comparison entry, row order,
+  column name, pointwise elpd of either model, weight, other model's log density or other case fails.
+- `tests/test_loo_compare.py`: WAIC, `loo_compare` by loo and by waic, and pseudo-BMA weights equal loo 2.9.0's outputs
+  (`tests/loo_probes/loo-compare-2.9.0.json`, recorded by `probe_compare.R` on the inputs of `compare_inputs.py`): seven sets
+  of two to five models, given named and unnamed, with exact ties, 8 to 4000 draws, log-likelihoods near -800, nearly equal
+  models and a weight that underflows to zero, all within 1e-9; brms 2.23's `loo_compare` and `model_weights` by `"loo"`,
+  `"waic"` and `"pseudobma"` (`BB = FALSE`) of three fixed-parameter fits with weights from 4.6e-11 to 0.99, given worst
+  first, equal those recomputed from the log-likelihoods brms computed (`brms-2.23.0-weights.json`, recorded by
+  `probe_brms_weights.R`); and the API's names, tie order, response warning and refusals.
+
 ## Divergences (docs/brms-parity/divergences.md)
 
 - D48: brms's further options are not offered: `newdata`, `re_formula`, `resp`, `ndraws`, `draw_ids` (log_lik);
-  `summary = TRUE` (bayes_R2); moment matching, `reloo`, `save_psis`, several models and `loo_compare`, `waic`,
-  `kfold`, `loo_R2`.
+  `summary = TRUE` (bayes_R2); moment matching, `reloo`, `save_psis`, several models in one `loo()` call, `kfold`,
+  `loo_R2` (`waic` and `loo_compare` landed with D05).
 - D49: at extreme linear predictors brms's R-side `log_lik` works from probabilities that round to 0 or 1 and returns
   `-Inf` or `NaN` (or loses digits) where `ab.log_lik` returns the finite value of the model's own density.
 - D50: `mcse_elpd_loo` of an observation with `elpd_loo_i` below about -372, where `exp(elpd_loo_i)^2` underflows: loo's
   is NaN, `ab.loo`'s the value of the same formula, computed as `sum_s (w_s p_s / E - w_s)^2`.
 - D51: `r_eff` for chains of fewer than about sixteen draws, and for some strongly autocorrelated chains of about fifty:
   loo's ESS (the posterior package's) and ArviZ's differ there.
+- D92: `model_weights`: brms's default `"stacking"`, `"bma"`, `"kfold"` and pseudo-BMA with the Bayesian bootstrap (brms's
+  default `BB = TRUE`) are not offered, and `weights` has no default.
+- D93: `loo_compare` of PSIS-LOO and WAIC results together: loo 2.9.0 compares them without a warning (the table takes the
+  first result's column names); refused here. `model_weights` also refuses models on different numbers of observations and
+  warns when the responses differ, where brms's `model_weights` gave the weights without a warning on a probe with a
+  shifted response.
+- D94: the arguments and the output: results (`ab.loo()`, `ab.waic()`) rather than fits, named by the mapping's keys (or
+  `model1`, ... as loo names an unnamed list) rather than brms's argument expressions, and the full table as a DataFrame where
+  loo prints `elpd_diff` and `se_diff` only by default.
+- D95: `waic()` of a multivariate model is refused; brms computes it from the model's `log_lik()` (not probed here).
