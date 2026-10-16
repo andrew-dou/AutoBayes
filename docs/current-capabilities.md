@@ -278,9 +278,10 @@ one coefficient per threshold (brms's `bcs`, under the class-`b` prior), each th
 returned by `predict(kind="linear")` with a `threshold` dimension; `predict()`, `log_lik()`, `loo()`, `bayes_R2()` and brms's
 default priors. Verified against `sratio_varint`, `cratio_varint`, `acat_varint`, `acat_cs`, `sratio_cs` and `cratio_cs` (and
 `log_lik()`, `bayes_R2()`, `loo()` against `sratio_cs_post`, `cratio_cs_post`, `acat_cs_post`); other
-links, `disc`, `mo()`, addition terms and the other forms of `cs()` are refused (D38, D89). The cumulative probit link is built
-but withheld: brms's own gradient of `cumulative_probit_varint` is off the exact value by up to 6.5e-5 relative, and the case
-waits for a two-reference (P6) reference of the model (D88); see [ordinal and categorical responses](ordinal-categorical.md).
+links, `disc`, `mo()`, addition terms and the other forms of `cs()` are refused (D38, D89). The cumulative probit link,
+`ab.cumulative(..., link="probit")`, is offered: brms's own gradient of `cumulative_probit_varint` is off the exact value by
+up to 6.5e-5 relative, and the case is accepted against a 50-digit reference of the model where brms is off it (P6, D88); see
+[ordinal and categorical responses](ordinal-categorical.md).
 
 Six more zero-inflated and hurdle families (D03, brms's `zero_inflated_negbinomial()`, `hurdle_negbinomial()`,
 `zero_inflated_binomial()`, `zero_inflated_beta()`, `hurdle_gamma()`, `hurdle_lognormal()`): `ab.zero_inflated_negbinomial` and

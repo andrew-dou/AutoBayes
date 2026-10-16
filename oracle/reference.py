@@ -10,15 +10,20 @@ with this reference where brms is not. The reference is an independent third imp
 library only (nothing from autobayes or tests/), reads the frozen fixture's ``case_brms.json``, ``data.csv``,
 ``newdata.csv`` and the seeded points' unconstrained values in ``fixture.json``, applies brms's constraining transforms
 and their Jacobians itself (identity for ``b``, ``Intercept`` and ``z_1``; ``exp`` with log-Jacobian ``u`` for ``sigma``
-and ``sd_1``, as the fixture's probed ``upars`` table says), and evaluates the model's log density in Python's decimal
-arithmetic at 50 significant digits. The models, in brms's parameterisation (``eta = Intercept + b (x - mean(x)) + sd_1
-z_1[g]``, the separate centred intercept and non-centred group effects of a varying intercept on ``g``):
+and ``sd_1``; Stan's ``ordered`` transform of the cumulative model's thresholds, ``Intercept[1] = u_1`` and
+``Intercept[k] = Intercept[k - 1] + exp(u_k)`` with log-Jacobian ``u_2 + ... + u_K``; as the fixture's probed ``upars`` table
+says), and evaluates the model's log density in Python's decimal arithmetic at 50 significant digits. The models, in
+brms's parameterisation (``eta = Intercept + b (x - mean(x)) + sd_1 z_1[g]``, the separate centred intercept and
+non-centred group effects of a varying intercept on ``g``; the cumulative model's ``eta`` has no intercept, its
+thresholds ``c_1 < ... < c_K`` are brms's ``Intercept``, and ``c_0 = -inf``, ``c_{K+1} = inf``):
 
     bernoulli, cloglog   yb ~ x + (1 | g)                     yb log(1 - exp(-exp(eta))) - (1 - yb) exp(eta)
     binomial, cloglog    k | trials(size) ~ x + (1 | g)       log C(size, k) + k log(1 - exp(-exp(eta))) - (size - k) exp(eta)
     gaussian, censored   y | cens(cens_ind) ~ x + (1 | g)     by code 0 / 1 / -1: log of the density, of 1 - Phi or of Phi
                                                               of (y - eta) / sigma (the density's -log sigma included)
     gaussian, truncated  ypos | trunc(lb = 0) ~ x + (1 | g)   the density minus log(1 - Phi((lb - eta) / sigma))
+    cumulative, probit   ord ~ x + (1 | g)                    log(Phi(c_ord - eta) - Phi(c_{ord-1} - eta)), ord in 1..K+1,
+                                                              the difference taken in the tail it lies in (``log_normal_interval``)
 
 with brms's priors: ``normal(m, s)`` on ``Intercept`` and ``b`` (``normal_lpdf``), ``normal(m, s)`` on ``sd_1`` and ``sigma``,
 which are declared ``<lower=0>`` (``normal_lpdf(. | m, s) - normal_lccdf(0 | m, s)``), and ``std_normal`` on ``z_1``. Every
@@ -29,8 +34,8 @@ included, is exact to 50 digits.
 
 Per seeded point the file holds the log density with and without the Jacobian, the gradient with and without it in
 brms's unconstrained order (without: a fourth-order central difference of the 50-digit density with step 1e-10, whose
-truncation and rounding errors are both below 1e-35; with: plus 1 in each log-transformed coordinate, the derivative of
-its log-Jacobian ``u``), and, for the truncated model, every expected value gate G4 compares: ``posterior_epred``'s
+truncation and rounding errors are both below 1e-35; with: plus 1 in each log-transformed coordinate and in each
+threshold coordinate after the first, the derivative of its log-Jacobian ``u``), and, for the truncated model, every expected value gate G4 compares: ``posterior_epred``'s
 truncated mean ``eta + sigma phi(a) / (1 - Phi(a))``, ``a = (lb - eta) / sigma``, on the fitted rows and on ``newdata``
 (``x`` centred at the fitted mean), with and without the group effects. Values are written as strings with 30
 significant digits, with the sha256 of every file read. Erf and erfc: the series of positive terms for ``|x| < 3`` (with
@@ -67,6 +72,7 @@ MODELS = {   # the brms formulas this script implements -> (family, link); Case.
     "k | trials(size) ~ x + (1 | g)": ("binomial", "cloglog"),
     "y | cens(cens_ind) ~ x + (1 | g)": ("gaussian", "identity"),
     "ypos | trunc(lb = 0) ~ x + (1 | g)": ("gaussian", "identity"),
+    "ord ~ x + (1 | g)": ("cumulative", "probit"),
 }
 _NORMAL = re.compile(r"normal\(\s*([-+0-9.eE]+)\s*,\s*([-+0-9.eE]+)\s*\)")
 
@@ -159,6 +165,42 @@ def log_ccdf(t: Decimal) -> Decimal:
         return +r
 
 
+def log_normal_interval(a: Decimal | None, b: Decimal | None) -> Decimal:
+    """log(Phi(b) - Phi(a)) for a < b, ``None`` standing for -inf (a) or inf (b): in the upper tail (a >= 0) as
+    (erfc(a / sqrt 2) - erfc(b / sqrt 2)) / 2, in the lower tail (b <= 0) as (erfc(-b / sqrt 2) - erfc(-a / sqrt 2)) / 2,
+    and across 0 as 1 - erfc(b / sqrt 2) / 2 - erfc(-a / sqrt 2) / 2, each a difference of terms of the size of the result
+    or smaller; when the two terms of a difference agree in their leading digits, it is recomputed with as many further
+    digits as they cancel."""
+    if a is None and b is None:
+        return Decimal(0)
+    if a is None:
+        return log_cdf(b)
+    if b is None:
+        return log_ccdf(a)
+    if not a < b:
+        raise ValueError(f"log_normal_interval needs a < b, got {a} and {b}")
+    extra = 0
+    while True:
+        ctx = CONTEXT.copy()
+        ctx.prec = PREC + GUARD + extra
+        with localcontext(ctx):
+            root2 = Decimal(2).sqrt()
+            if a >= 0:
+                hi, lo = _erfc(a / root2) / 2, _erfc(b / root2) / 2
+            elif b <= 0:
+                hi, lo = _erfc(-b / root2) / 2, _erfc(-a / root2) / 2
+            else:
+                hi, lo = 1 - _erfc(-a / root2) / 2, _erfc(b / root2) / 2
+            diff = hi - lo
+            lost = max(0, hi.adjusted() - diff.adjusted())
+            if lost <= GUARD // 2 + extra:
+                r = diff.ln()
+                break
+        extra = lost + GUARD // 2
+    with localcontext(CONTEXT):
+        return +r
+
+
 def inverse_mills(t: Decimal) -> Decimal:
     """phi(t) / (1 - Phi(t)), the standard Normal density over its upper tail mass."""
     with _guarded():
@@ -230,12 +272,19 @@ class Case:
             raise SystemExit(f"{case_id}: brms's group table {self.fixture['groups']} is not one varying intercept on g with the levels {self.levels}")
         self.priors = self._priors(brms["priors"])
         self.upars = [(e["par"], int(e["elem"]), e["transform"]) for e in self.fixture["upars"]]
-        expected = [("b", 1, "identity"), ("Intercept", 1, "identity")] + ([("sigma", 1, "log")] if family == "gaussian" else []) \
-            + [("sd_1", 1, "log")] + [("z_1", j, "identity") for j in range(1, len(self.levels) + 1)]
-        if self.upars != expected:
-            raise SystemExit(f"{case_id}: brms's unconstrained coordinates are {self.upars}; this script implements {expected}")
+        if family == "cumulative":     # the ordered thresholds are one transform of the whole vector, which the probe calls "joint"
+            self.nthres = int(self.fixture["standata"]["nthres"]["values"][0])
+            expected = [("b", "identity")] + [("Intercept", "joint")] * self.nthres + [("sd_1", "log")] \
+                + [("z_1", "identity")] * len(self.levels)
+            if [(par, transform) for par, _, transform in self.upars] != expected:
+                raise SystemExit(f"{case_id}: brms's unconstrained coordinates are {self.upars}; this script implements {expected}")
+        else:
+            expected = [("b", 1, "identity"), ("Intercept", 1, "identity")] + ([("sigma", 1, "log")] if family == "gaussian" else []) \
+                + [("sd_1", 1, "log")] + [("z_1", j, "identity") for j in range(1, len(self.levels) + 1)]
+            if self.upars != expected:
+                raise SystemExit(f"{case_id}: brms's unconstrained coordinates are {self.upars}; this script implements {expected}")
         fitted = read_csv(self.dir / "data.csv")
-        response = {"bernoulli": "yb", "binomial": "k"}.get(family, "ypos" if self.lb is not None else "y")
+        response = {"bernoulli": "yb", "binomial": "k", "cumulative": "ord"}.get(family, "ypos" if self.lb is not None else "y")
         X, Y = self.fixture["standata"]["X"], self.fixture["standata"]["Y"]
         j, n = X["colnames"].index("x"), len(fitted)
         if [float(r["x"]) for r in fitted] != X["values"][j * n:(j + 1) * n] or [float(r[response]) for r in fitted] != Y["values"]:
@@ -271,6 +320,10 @@ class Case:
             return row
         if self.formula.startswith("yb "):
             row["y"] = int(r["yb"])
+        elif self.family == "cumulative":
+            row["y"] = int(r["ord"])
+            if not 1 <= row["y"] <= self.nthres + 1:
+                raise SystemExit(f"{self.id}: category {row['y']} outside 1..{self.nthres + 1}")
         elif self.formula.startswith("k "):
             row["k"], row["n"] = int(r["k"]), int(r["size"])
             row["log_choose"] = Decimal(math.comb(row["n"], row["k"])).ln()
@@ -290,16 +343,33 @@ class Case:
             if transform == "log":
                 pars.setdefault(par, []).append(v.exp())
                 jacobian += v
+            elif transform == "joint" and par in pars:          # Stan's ordered: each threshold the previous plus exp(u)
+                pars[par].append(pars[par][-1] + v.exp())
+                jacobian += v
             else:
                 pars.setdefault(par, []).append(v)
         return pars, jacobian
 
+    def jacobian_slopes(self) -> list[int]:
+        """d (log-Jacobian) / d u_i: 1 in each log-transformed coordinate and each threshold coordinate after the first."""
+        out, seen = [], set()
+        for par, _, transform in self.upars:
+            out.append(1 if transform == "log" or (transform == "joint" and par in seen) else 0)
+            seen.add(par)
+        return out
+
     def eta(self, pars: dict, row: dict, groups: bool = True) -> Decimal:
-        eta = pars["Intercept"][0] + pars["b"][0] * row["xc"]
+        if self.family == "cumulative":                     # the thresholds take the intercept's place
+            eta = pars["b"][0] * row["xc"]
+        else:
+            eta = pars["Intercept"][0] + pars["b"][0] * row["xc"]
         return eta + pars["sd_1"][0] * pars["z_1"][row["level"]] if groups else eta
 
     def row_term(self, pars: dict, row: dict) -> Decimal:
         eta = self.eta(pars, row)
+        if self.family == "cumulative":                     # probit: Phi(c_y - eta) - Phi(c_{y-1} - eta)
+            c, y = pars["Intercept"], row["y"]
+            return log_normal_interval(c[y - 2] - eta if y > 1 else None, c[y - 1] - eta if y <= self.nthres else None)
         if self.link == "cloglog":
             e = eta.exp()
             if "k" in row:
@@ -359,7 +429,7 @@ def build(case_id: str) -> str:
             _, jacobian = case.constrain(u)
             lp_nojac = case.lp_nojac(u)
             grad_nojac = case.gradient_nojac(u)
-            grad = [g + (1 if transform == "log" else 0) for g, (_, _, transform) in zip(grad_nojac, case.upars)]
+            grad = [g + slope for g, slope in zip(grad_nojac, case.jacobian_slopes())]
             points.append({"lp": text(lp_nojac + jacobian), "lp_nojac": text(lp_nojac), "grad": [text(g) for g in grad],
                            "grad_nojac": [text(g) for g in grad_nojac]})
         out = {

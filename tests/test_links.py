@@ -144,11 +144,18 @@ def test_links_offered_parked_and_refused(df):
         assert cloglog.inverse_link is inverse_cloglog and cloglog.with_link("probit") is probit
         assert get_family(family, "probit") is probit and probit.with_link("logit") is spec     # one spec per link
         assert get_family(family, None) is spec and get_family(family, "logit") is spec and probit.with_link("probit") is probit
-    ordinal = {"cumulative", "sratio", "cratio", "acat"}          # D04: brms's other ordinal links are withheld, with reasons (D38, D88)
+    ordinal = {"cumulative", "sratio", "cratio", "acat"}          # D04: brms's other ordinal links are withheld, with reasons (D38)
     for name, spec in FAMILIES.items():
-        if name not in ("bernoulli", "binomial"):
+        if name not in ("bernoulli", "binomial", "cumulative"):
             assert not spec.links and spec.with_link(spec.link) is spec
-            assert set(spec.parked_links) == ({"probit", "probit_approx", "cloglog", "cauchit"} if name in ordinal else set())
+        if name in ordinal:
+            assert set(spec.parked_links) == ({"probit_approx", "cloglog", "cauchit"} if name == "cumulative"
+                                              else {"probit", "probit_approx", "cloglog", "cauchit"})
+        elif name not in ("bernoulli", "binomial"):
+            assert not spec.parked_links
+    cumulative = FAMILIES["cumulative"]                           # D04, P6: its probit link is offered (D88)
+    assert set(cumulative.links) == {"probit"} and cumulative.with_link("probit").link == "probit"
+    assert cumulative.with_link("probit") is cumulative.with_link("probit") and cumulative.with_link("logit") is cumulative
     with pytest.raises(ValueError, match=r"link must be one of \['cloglog', 'logit', 'probit'\] for the bernoulli family, got 'cauchit'"):
         ab.bernoulli(BERNOULLI, df, PRIORS, link="cauchit")
     with pytest.raises(ValueError, match=r"for the binomial family, got 1$"):
@@ -157,7 +164,8 @@ def test_links_offered_parked_and_refused(df):
         assert ctor(formula, df, PRIORS, link="cloglog").link == "cloglog"
     gpriors = ab.Priors(intercept=ab.Normal(0, 2.5), b=ab.Normal(0, 1.5), sd=ab.HalfNormal(1), sigma=ab.HalfNormal(1))
     with pytest.raises(ValueError, match=r"the gaussian family has the identity link only; link='probit' is not available "
-                                         r"\(link= applies to the bernoulli and binomial families, which take \['cloglog', 'logit', 'probit'\]\)"):
+                                         r"\(link= applies to the families with more than one link: bernoulli \['cloglog', 'logit', 'probit'\], "
+                                         r"binomial \['cloglog', 'logit', 'probit'\], cumulative \['logit', 'probit'\]\)"):
         ab.Model(BERNOULLI, df, gpriors, family="gaussian", link="probit")
     with pytest.raises(ValueError, match="the poisson family has the log link only; link='identity' is not available"):
         ab.Model("k ~ x + (1 | g)", df, PRIORS, family="poisson", link="identity")

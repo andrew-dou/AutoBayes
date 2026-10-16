@@ -319,8 +319,9 @@ class Model:
                 fam = fam.with_link(link)
             except ValueError as e:
                 offering = [name for name, other in FAMILIES.items() if other.links]
-                hint = (f" (link= applies to the {' and '.join(offering)} families, which take "
-                        f"{sorted({l for name in offering for l in (FAMILIES[name].link, *FAMILIES[name].links)})})") if not fam.links else ""
+                hint = (" (link= applies to the families with more than one link: "      # each with its own links (A12, D88)
+                        + ", ".join(f"{name} {sorted([FAMILIES[name].link, *FAMILIES[name].links])}" for name in offering)
+                        + ")") if not fam.links else ""
                 raise ValueError(f"{e}{hint}") from None
         if "nu" in fam.fixed_parameters:
             if nu is not None and priors.nu is not None:

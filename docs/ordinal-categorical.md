@@ -83,7 +83,7 @@ rounding on the fixture).
 - The term model is shared: the cumulative family takes categorical predictors, interactions, transforms, the offset
   (which enters `mu`), any number of grouping factors and independent or correlated slopes. The categorical family takes
   population-level terms (and `0 +`); group-level terms and the offset are refused in this slice (divergence D37).
-- Not offered: other cumulative links (the probit link is built but withheld, D88, below), `disc`, category-specific
+- Not offered: other cumulative links than logit and probit (the probit link since P6's reference, D88, below), `disc`, category-specific
   effects `cs()` in the cumulative family and other threshold structures (divergences D38, D89); a categorical reference
   category other than the first sorted label (D36). brms's `sratio`, `cratio` and `acat` families are D04's (below).
 
@@ -161,11 +161,13 @@ mixture models, the intercept's removal (brms refuses it too), and every link bu
 
 **The cumulative probit link** (`cumulative("probit")`, brms's `ordered_probit_lpmf`) is built (`cumulative._probit()`: the
 same graph with `log Phi(d_1)`, `log Phi(-d_{K-1})` and the log Normal mass between `d_{k-1}` and `d_k` from the tail where it
-lies) but withheld (D88): on the frozen case `cumulative_probit_varint` its log density, linear predictor, expected values, JAX
-density and default priors equal brms's (G1, G2's log densities, G3-G6 pass with the park lifted), but brms's own gradient
-there is off the 50-digit value by up to 6.5e-5 relative at 86 of its 88 entries, beyond the oracle's 1e-7, where this
-library's is within 4e-15. Two-reference acceptance (P6) would accept it against a 50-digit reference of the model, which
-`oracle/reference.py` does not implement; `ab.cumulative(..., link="probit")` is refused with that reason until it does.
+lies), `ab.cumulative(..., link="probit")` (D88): on the frozen case `cumulative_probit_varint` its log density, linear
+predictor, expected values, JAX density and default priors equal brms's (G1, G2's log densities, G3-G6), but brms's own
+gradient there is off the 50-digit value by up to 6.5e-5 relative at 86 of its 88 entries, beyond the oracle's 1e-7, where
+this library's is within 4e-15. The case is accepted by two-reference acceptance (P6): `oracle/reference.py` implements the
+cumulative probit model at 50 digits (Stan's ordered transform and its Jacobian, each row's Normal mass taken in the tail it
+lies in), its log densities equal brms's to 3.6e-16 at every frozen point, and G2's gradient falls back on it at the 173
+of 176 entries (with and without the Jacobian) where brms is off it.
 Two thresholds closer than about 1e-6 in a far tail keep about `|tau - eta| eps / gap` relative accuracy in the probit row
 (`likelihoods.normal_log_mass`).
 
@@ -178,7 +180,7 @@ the unordered `Intercept` and `bcs` mapped entry by entry; the graph's `mu` or `
 point with `cs()`), `b_Intercept`; `predict()` against `posterior_linpred` / `posterior_epred` on fitted and new rows with
 and without group effects; the JAX density; and `ab.default_priors()` against brms's `default_prior()` (the `cs()` column a
 class-`b` row). `sratio_cs_post`, `cratio_cs_post` and `acat_cs_post`, frozen with this feature too, pass C07's post gate:
-`log_lik()`, `bayes_R2()` (the expected category) and `loo()` against brms's. `cumulative_probit_varint` stays gated (D88). `tests/test_more_ordinal.py` checks the rows and their
+`log_lik()`, `bayes_R2()` (the expected category) and `loo()` against brms's. `cumulative_probit_varint` passes with P6's reference for G2's gradient (D88). `tests/test_more_ordinal.py` checks the rows and their
 gradients against a 50-digit reference written from the definitions on linear predictors from -1000 to 1000 (with an
 unordered threshold vector holding a gap of 1e-9) on both paths, the probit rows likewise, the models' density, graph and
 gradient by hand on both paths (unordered thresholds, two `cs()` terms, an offset) and at 300 rows under JAX, `value_point`,

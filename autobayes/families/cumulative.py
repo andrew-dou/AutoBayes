@@ -16,8 +16,9 @@ D04: brms's ``cumulative("probit")``, ``P(y <= k) = Phi(tau_k - mu)`` (brms's ``
 ``_probit()``: the same thresholds and graph with the likelihood ``likelihoods.ordinal_family("cumulative_probit", ...)``. Its
 log density, predictions and defaults equal brms's on the oracle case ``cumulative_probit_varint``, but brms's own gradient
 there (Stan's ``ordered_probit_lpmf``) is off the 50-digit value by up to 6.5e-5 relative at 86 of its 88 entries, where this
-one is within 4e-15; the link is therefore withheld (``parked_links``, divergence D88) until two-reference acceptance (P6) has
-a reference of that model. brms's other cumulative links are withheld too (divergence D38).
+one is within 4e-15. The case is accepted by two-reference acceptance (P6) against the 50-digit reference of the model
+(``oracle/reference.py``, ``tests/oracle/references/cumulative_probit_varint.json``), so the link is offered (``links``,
+divergence D88). brms's other cumulative links are withheld (divergence D38).
 """
 from __future__ import annotations
 
@@ -35,11 +36,6 @@ from autobayes.formula import FormulaError, ordinal_categories, pop_term_design
 PARKED_ORDINAL_LINKS = MappingProxyType({
     link: f"brms's {link} link of the ordinal families is not verified against a frozen brms case here (docs/ordinal-categorical.md, "
           "divergence D38)" for link in ("probit_approx", "cloglog", "cauchit")})
-# D04: the cumulative family's probit link is built (_probit) but withheld until P6 has a reference of its frozen case (D88)
-PROBIT_PARKED = ("brms's gradient of the frozen case cumulative_probit_varint (Stan's ordered_probit_lpmf) is off the 50-digit value "
-                 "by up to 6.5e-5 relative at 86 of its 88 entries, beyond the oracle's tolerance, while its log density, predictions "
-                 "and default priors equal this library's; the link waits for a two-reference (P6) reference of that model "
-                 "(docs/ordinal-categorical.md, divergence D88)")
 
 
 def _validate_response(spec, data) -> None:
@@ -173,7 +169,8 @@ CUMULATIVE = FamilySpec(
     intercept_lines=_intercept_lines,
     monotonic=True,                                                 # B03: mo(x), verified against cumulative_monotonic
     log_likelihood=_log_likelihood,                                 # C07: log_lik(), verified against cumulative_varint_post
-    parked_links=MappingProxyType({**PARKED_ORDINAL_LINKS, "probit": PROBIT_PARKED}),   # D04: the probit link is _probit(), withheld (D88)
+    links=MappingProxyType({"probit": lambda: _probit()}),          # D04: the probit link, accepted against brms and P6's reference (D88)
+    parked_links=PARKED_ORDINAL_LINKS,
 )
 
 
@@ -198,8 +195,7 @@ def _probit_likelihood_lines(model) -> list[str]:
 @lru_cache(maxsize=None)
 def _probit() -> FamilySpec:
     """The cumulative family's spec under the probit link (D04): CUMULATIVE's, with the probit likelihood, probabilities and
-    words. Withheld from ``CUMULATIVE.links`` (``PROBIT_PARKED``, divergence D88): lifting the park is adding it there once a
-    P6 reference of ``cumulative_probit_varint`` exists."""
+    words; ``CUMULATIVE.links["probit"]`` (divergence D88: accepted on ``cumulative_probit_varint`` with P6's reference)."""
     from autobayes.families.ordinal import ordinal_bambi_setup, ordinal_expected_response, ordinal_log_likelihood
 
     return replace(
