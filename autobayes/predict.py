@@ -45,6 +45,10 @@ component's linear predictor as ``eta`` with a ``component`` dimension (brms's `
 mixture's expected response ``sum_k theta_k mu_k`` as ``mean`` (brms's ``posterior_epred``) and ``kind="response"`` draws, per
 draw and row, a component by theta and then its Normal (brms's ``posterior_predict``), seeded.
 
+An ordinal model with category-specific effects ``cs(x)`` (D04, docs/ordinal-categorical.md) is predicted in this layer:
+``kind="linear"`` returns every threshold's predictor, ``mu + x * bcs[k]``, with a ``threshold`` dimension (brms's
+``posterior_linpred``), from which the category probabilities and draws follow.
+
 A model with an autocorrelation term (C04, docs/autocorrelation.md: brms's ``ar()``, ``ma()``, ``arma()``) is predicted in
 this layer on its fitted rows: the ARMA term is added to the linear predictor from the rows' observed residuals along each
 series, as brms's ``posterior_linpred`` and ``posterior_epred`` add it (without group effects, the residuals are those of
@@ -423,6 +427,10 @@ def _predict_by_hand(model, idata, df: pd.DataFrame | None, kind: str, seed, pol
                     mu[..., i] += effect if not term.is_mm else w[i] * effect
     if model.spec.autocor is not None:                          # C04: the ARMA term on the fitted rows' residuals, added last
         mu = autocor_predictor(model, post, mu)
+    cs = getattr(model.spec, "cs_terms", ())
+    if cs:                                                       # D04: each threshold's predictor, mu + sum_c x_c bcs_c[k]
+        mu = mu[..., None] + sum(df[t.operands[0]].to_numpy(dtype=float)[:, None]
+                                 * post[t.name].transpose("chain", "draw", n["threshold_dim"]).to_numpy()[..., None, :] for t in cs)
     dims = ("chain", "draw", "__obs__")
     coords = {"chain": post["chain"], "draw": post["draw"], "__obs__": np.arange(len(df))}
     if kind == "linear":
@@ -431,6 +439,9 @@ def _predict_by_hand(model, idata, df: pd.DataFrame | None, kind: str, seed, pol
         if fam.per_category:                                     # B05: brms's mu<k> of the non-reference categories
             out = {"eta": (dims + ("category",), mu)}
             coords["category"] = list(model.categories[1:])
+        elif cs:                                                 # D04: brms's posterior_linpred, one column per threshold
+            out = {"eta": (dims + ("threshold",), mu)}
+            coords["threshold"] = [str(k) for k in range(1, len(model.categories))]
         else:
             out = {"eta": (dims, mu)}
     else:                                                        # mu held the linear predictor eta

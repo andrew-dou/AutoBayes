@@ -170,7 +170,10 @@ def test_names_are_brms_coefficient_names_on_every_case():
     kinds = {why.split(" is not offered")[0] for _, why in refused}
     assert kinds == {"hypothesis() of a multivariate model", "hypothesis() of a non-linear model (nl=True)",
                      "hypothesis() of a model with a mixture", "hypothesis() of a model with the cumulative family's thresholds",
-                     "hypothesis() of a model with the categorical family's categories"}
+                     "hypothesis() of a model with the categorical family's categories",
+                     # D04: the sratio, cratio and acat families' unordered thresholds, refused as the cumulative family's
+                     "hypothesis() of a model with the sratio family's thresholds", "hypothesis() of a model with the cratio family's "
+                     "thresholds", "hypothesis() of a model with the acat family's thresholds"}
 
 
 def _bundle(case_id):

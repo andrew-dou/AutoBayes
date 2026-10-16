@@ -118,6 +118,14 @@ family, whose every coefficient has a trailing axis over the non-reference categ
 | Autocorrelation (C04) | no (D70) | no (D70) |
 | Missing values and measurement error (C06) | no | no |
 
+D04 (docs/ordinal-categorical.md) adds brms's `sratio`, `cratio` and `acat` families (`autobayes/families/ordinal.py`, logit
+link): `thresholds` with `ordered_thresholds = False` (brms's unordered `vector[nthres] Intercept`,
+`likelihoods.unordered_thresholds`, sampled as it is) and `category_specific` (the formula takes `cs(x)`, brms's `bcs`); the
+graph is `likelihoods.ordinal_family` (`b_Intercept` and, with `cs()` terms, the per-threshold predictor `mu_cs`), the
+probabilities, draws and `log_likelihood` come from `likelihoods.ordinal_log_probabilities`, and their other links are
+`parked_links` (D38). The same graph builds the cumulative family's probit link (`cumulative._probit()`), which is withheld
+(D88). No monotonic effects (not verified for them), multivariate, autocorrelation or C06 terms.
+
 A finite mixture (C05, docs/mixtures.md) is the registered family `mixture`, whose spec sets `mixture`: the model holds its
 component families (`model.components`, Gaussian in this slice) and its own names (`model.mixture_names`), the parent `mu`
 is the components' linear predictors side by side (B05's per-category design over the components), the expected response

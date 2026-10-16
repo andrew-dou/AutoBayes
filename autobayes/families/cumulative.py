@@ -11,14 +11,35 @@ graph. ``predict(kind="linear")`` returns ``mu`` (brms's ``posterior_linpred``),
 probabilities ``p`` with a ``category`` dimension (brms's ``posterior_epred``) and ``kind="response"`` draws 1-based
 categories. Checked against brms in the oracle cases ``cumulative_varint`` and ``cumulative_poponly_categorical``, not
 assumed.
+
+D04: brms's ``cumulative("probit")``, ``P(y <= k) = Phi(tau_k - mu)`` (brms's ``ordered_probit_lpmf``), is built by
+``_probit()``: the same thresholds and graph with the likelihood ``likelihoods.ordinal_family("cumulative_probit", ...)``. Its
+log density, predictions and defaults equal brms's on the oracle case ``cumulative_probit_varint``, but brms's own gradient
+there (Stan's ``ordered_probit_lpmf``) is off the 50-digit value by up to 6.5e-5 relative at 86 of its 88 entries, where this
+one is within 4e-15; the link is therefore withheld (``parked_links``, divergence D88) until two-reference acceptance (P6) has
+a reference of that model. brms's other cumulative links are withheld too (divergence D38).
 """
 from __future__ import annotations
 
+from dataclasses import replace
+from functools import lru_cache
+from types import MappingProxyType
+
 import numpy as np
-from scipy.special import expit
+from scipy.special import expit, ndtr
 
 from autobayes.families.spec import NO_FIXED_PARAMETERS, STANDARD_PREDICTION_KINDS, FamilySpec
 from autobayes.formula import FormulaError, ordinal_categories, pop_term_design
+
+# brms's ordinal links that no frozen case verifies here, with the reason FamilySpec.with_link gives (divergence D38)
+PARKED_ORDINAL_LINKS = MappingProxyType({
+    link: f"brms's {link} link of the ordinal families is not verified against a frozen brms case here (docs/ordinal-categorical.md, "
+          "divergence D38)" for link in ("probit_approx", "cloglog", "cauchit")})
+# D04: the cumulative family's probit link is built (_probit) but withheld until P6 has a reference of its frozen case (D88)
+PROBIT_PARKED = ("brms's gradient of the frozen case cumulative_probit_varint (Stan's ordered_probit_lpmf) is off the 50-digit value "
+                 "by up to 6.5e-5 relative at 86 of its 88 entries, beyond the oracle's tolerance, while its log density, predictions "
+                 "and default priors equal this library's; the link waits for a two-reference (P6) reference of that model "
+                 "(docs/ordinal-categorical.md, divergence D88)")
 
 
 def _validate_response(spec, data) -> None:
@@ -152,4 +173,40 @@ CUMULATIVE = FamilySpec(
     intercept_lines=_intercept_lines,
     monotonic=True,                                                 # B03: mo(x), verified against cumulative_monotonic
     log_likelihood=_log_likelihood,                                 # C07: log_lik(), verified against cumulative_varint_post
+    parked_links=MappingProxyType({**PARKED_ORDINAL_LINKS, "probit": PROBIT_PARKED}),   # D04: the probit link is _probit(), withheld (D88)
 )
+
+
+# -- D04: the probit link ------------------------------------------------------------------------------------------------
+def _probit_mean_lines(model) -> list[str]:
+    K = len(model.categories)
+    return [f"  P(y_i <= k) = Phi(b_Intercept[k] - mu_i), k = 1..{K - 1}, Phi the standard Normal CDF, for the {K} ordered "
+            f"categories {_categories(model)};",
+            "  P(y_i = k) is the difference of consecutive ones (brms's posterior_epred). mu has no intercept: the thresholds",
+            "  b_Intercept[k] take its place, and a larger mu moves probability towards the higher categories."]
+
+
+def _probit_likelihood_lines(model) -> list[str]:
+    return ["", "Likelihood",
+            "  y_i ~ OrderedProbit(mu_i, b_Intercept): brms's ordered_probit_lpmf (cumulative(\"probit\"), disc = 1), written",
+            "  as log Phi(b_Intercept[1] - mu_i) for the first category, log Phi(mu_i - b_Intercept[K - 1]) for the last and the",
+            "  log Normal mass between b_Intercept[y - 1] - mu_i and b_Intercept[y] - mu_i otherwise, from the tail where it",
+            "  lies (likelihoods.normal_log_mass): finite with a finite gradient for every finite mu (autobayes/likelihoods.py).",
+            "  The response is fitted as its 1-based category (brms's Y)."]
+
+
+@lru_cache(maxsize=None)
+def _probit() -> FamilySpec:
+    """The cumulative family's spec under the probit link (D04): CUMULATIVE's, with the probit likelihood, probabilities and
+    words. Withheld from ``CUMULATIVE.links`` (``PROBIT_PARKED``, divergence D88): lifting the park is adding it there once a
+    P6 reference of ``cumulative_probit_varint`` exists."""
+    from autobayes.families.ordinal import ordinal_bambi_setup, ordinal_expected_response, ordinal_log_likelihood
+
+    return replace(
+        CUMULATIVE, link="probit", link_scale="probit", inverse_link=ndtr,       # P(y <= k) = Phi(tau_k - mu)
+        expected_response=ordinal_expected_response("cumulative_probit"),
+        scale_phrase="probit (latent)", mean_lines=_probit_mean_lines, likelihood_lines=_probit_likelihood_lines,
+        bambi_setup=ordinal_bambi_setup("cumulative_probit", ordered=True),
+        log_likelihood=ordinal_log_likelihood("cumulative_probit"),
+        links=MappingProxyType({"logit": lambda: CUMULATIVE}),
+    )

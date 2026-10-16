@@ -2,7 +2,8 @@
 
 Adding a family is one module in this package that builds its spec, plus its entry in ``FAMILIES``;
 see docs/families.md. A family with several links (Bernoulli, binomial: logit, probit and cloglog) registers its
-default link's spec and reaches the others through ``FamilySpec.links`` (docs/links.md).
+default link's spec and reaches the others through ``FamilySpec.links`` (docs/links.md); so does the cumulative family
+for its probit link (D04).
 Nothing outside this package compares a family name against a string (``tests/test_family_registry.py`` enforces that).
 """
 from __future__ import annotations
@@ -25,6 +26,7 @@ from autobayes.families.lognormal import LOGNORMAL
 from autobayes.families.mixture import MIXTURE
 from autobayes.families.negbinomial import NEGBINOMIAL
 from autobayes.families.negbinomial2 import NEGBINOMIAL2
+from autobayes.families.ordinal import ACAT, CRATIO, SRATIO
 from autobayes.families.poisson import POISSON
 from autobayes.families.shifted_lognormal import SHIFTED_LOGNORMAL
 from autobayes.families.skew_normal import SKEW_NORMAL
@@ -36,7 +38,8 @@ from autobayes.families.zero_inflated_poisson import ZERO_INFLATED_POISSON
 FAMILIES = MappingProxyType({spec.name: spec for spec in (GAUSSIAN, STUDENT, POISSON, NEGBINOMIAL, GAMMA, LOGNORMAL, BETA, BERNOULLI, BINOMIAL,
                                                           ZERO_INFLATED_POISSON, HURDLE_POISSON, CUMULATIVE, CATEGORICAL, MIXTURE,
                                                           WEIBULL, EXPONENTIAL, SKEW_NORMAL, SHIFTED_LOGNORMAL, EXGAUSSIAN,   # D01
-                                                          BETA_BINOMIAL, GEOMETRIC, NEGBINOMIAL2)})   # D02
+                                                          BETA_BINOMIAL, GEOMETRIC, NEGBINOMIAL2,                             # D02
+                                                          SRATIO, CRATIO, ACAT)})                                             # D04
 
 
 def get_family(name: str, link: str | None = None) -> FamilySpec:

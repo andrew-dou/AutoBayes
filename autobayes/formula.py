@@ -72,7 +72,10 @@ brms's multi-membership term ``(1 | mm(g, g2, weights = cbind(w1, w2)))``, ``(1 
 ``gby``) and a correlation ID ``(1 + x |p| g)`` shared with a distributional formula's ``sigma ~ 1 + (1 |p| g)`` (D08,
 docs/multi-membership-and-by.md) are ``GroupTerm`` fields (``members``/``weights``, ``by``, ``id``); the first two are built by the
 model itself (``GroupTerm.custom``), the third by Bambi and then correlated across the formulas (``ModelSpec.shared_ids``).
-brms's category-specific ``cs()`` is refused until the acat, sratio and cratio families exist (D107).
+brms's category-specific effect ``cs(x)`` (D04, docs/ordinal-categorical.md) is a special term too, kind
+``"category_specific"``: no design column and one coefficient per threshold (brms's ``bcs``, class ``b``), for the families that
+take it (``FamilySpec.category_specific``: sratio, cratio, acat); elsewhere, with an expression inside, next to the column as a
+population-level term and in interactions and group-level terms it is refused naming the construct (divergences D89, D107).
 
 Group-level terms are optional and additive across distinct factors (M3c-3): a formula without them is a population-only
 model, as in brms ``brmsformula`` where group-level terms are optional; ``y ~ 1`` is intercept-only. ``(1 + x || g)``
@@ -110,7 +113,8 @@ _TRANSFORM_FN_RE = re.compile(rf"^(log|exp|sqrt)\s*\(\s*({_IDENT})\s*\)$", re.S)
 _TRANSFORM_POW_RE = re.compile(rf"^I\s*\(\s*({_IDENT})\s*\^\s*([+-]?\d+)\s*\)$", re.S)               # I(col^k), integer k
 _TRANSFORM_OP_RE = re.compile(rf"^I\s*\(\s*({_IDENT})\s*([*+-])\s*({_NUMBER})\s*\)$", re.S)          # I(col * k), I(col + k), I(col - k)
 _TRANSFORM_OP_FIRST_RE = re.compile(rf"^I\s*\(\s*({_NUMBER})\s*([*+])\s*({_IDENT})\s*\)$", re.S)     # I(k * col), I(k + col)
-_CS_RE = re.compile(r"^cs\s*\((.*)\)$", re.S)                                                        # cs(<inside>), brms's category-specific effect (D08, parked)
+_CS_RE = re.compile(r"^cs\s*\((.*)\)$", re.S)                                                        # cs(<inside>), brms's category-specific effect (D04)
+_CS_TERM_RE = re.compile(rf"^cs\(({_IDENT})\)$")                                                    # the canonical spelling cs(col)
 _MO_RE = re.compile(r"^mo\s*\((.*)\)$", re.S)                                                        # mo(<inside>), brms's monotonic effect (B03)
 _MO_TERM_RE = re.compile(rf"^mo\(({_IDENT})\)$")                                                    # the canonical spelling mo(col)
 _ME_RE = re.compile(r"^me\s*\((.*)\)$", re.S)                                                        # me(<inside>), brms's measurement error (C06)
@@ -171,9 +175,11 @@ class Categorical:
         return tuple(f"{self.name}[{l}]" for l in self.coefficients)
 
 
-POP_TERM_KINDS = ("numeric", "categorical", "interaction", "transform", "monotonic", "measurement_error", "missing")
-# brms's special terms (its bsp coefficients): a coefficient and no design column, built by this library, never by Bambi
-SPECIAL_KINDS = ("monotonic", "measurement_error", "missing")
+POP_TERM_KINDS = ("numeric", "categorical", "interaction", "transform", "monotonic", "measurement_error", "missing",
+                  "category_specific")
+# brms's special terms (its bsp coefficients, and D04's category-specific bcs): a coefficient and no design column, built by
+# this library, never by Bambi
+SPECIAL_KINDS = ("monotonic", "measurement_error", "missing", "category_specific")
 
 
 def monotonic_column(name: str) -> str | None:
@@ -191,6 +197,12 @@ def measurement_error_columns(name: str) -> tuple[str, str] | None:
 def missing_column(name: str) -> str | None:
     """The column of a missing-value term spelled ``mi(col)`` (C06), or None for any other term name."""
     m = _MI_TERM_RE.match(name)
+    return m.group(1) if m else None
+
+
+def category_specific_column(name: str) -> str | None:
+    """The column of a category-specific term spelled ``cs(col)`` (D04), or None for any other term name."""
+    m = _CS_TERM_RE.match(name)
     return m.group(1) if m else None
 
 
@@ -707,9 +719,11 @@ class PopTerm:
             raise ValueError(f"PopTerm: a measurement-error term is spelled 'me(x, sdx)' and has no design column or level, got {self.name!r}")
         if self.kind == "missing" and (missing_column(self.name) is None or self.columns or self.levels):
             raise ValueError(f"PopTerm: a missing-value term is spelled 'mi(col)' and has no design column or level, got {self.name!r}")
+        if self.kind == "category_specific" and (category_specific_column(self.name) is None or self.columns or self.levels):
+            raise ValueError(f"PopTerm: a category-specific term is spelled 'cs(col)' and has no design column or level, got {self.name!r}")
         if self.categorical is None:
             default = {"numeric": (), "categorical": (self.name,), "interaction": (self.operands[-1],), "transform": (), "monotonic": (),
-                       "measurement_error": (), "missing": ()}
+                       "measurement_error": (), "missing": (), "category_specific": ()}
             object.__setattr__(self, "categorical", default[self.kind])
         else:
             object.__setattr__(self, "categorical", tuple(self.categorical))
@@ -729,6 +743,8 @@ class PopTerm:
             return measurement_error_columns(self.name)
         if self.kind == "missing":
             return (missing_column(self.name),)
+        if self.kind == "category_specific":                      # D04: cs(col)
+            return (category_specific_column(self.name),)
         return tuple(self.name.split(":"))
 
     @property
@@ -739,8 +755,9 @@ class PopTerm:
 
     @property
     def is_special(self) -> bool:
-        """One of brms's special terms (its ``bsp`` coefficients): ``mo(col)`` (B03), ``me(x, sdx)`` or ``mi(col)`` (C06): a
-        coefficient and no design column, built by this library (Bambi never sees it)."""
+        """One of brms's special terms (its ``bsp`` coefficients): ``mo(col)`` (B03), ``me(x, sdx)`` or ``mi(col)`` (C06); or a
+        category-specific effect ``cs(col)`` (D04, brms's ``bcs``, one coefficient per threshold): a coefficient and no design
+        column, built by this library (Bambi never sees it)."""
         return self.kind in SPECIAL_KINDS
 
     @property
@@ -1545,6 +1562,12 @@ class ModelSpec:
     def mi_terms(self) -> tuple[PopTerm, ...]:
         """The missing-value terms ``mi(col)`` (C06), in formula order: population-level terms with no design column."""
         return tuple(t for t in self.pop_terms if t.kind == "missing")
+
+    @property
+    def cs_terms(self) -> tuple[PopTerm, ...]:
+        """The category-specific terms ``cs(col)`` (D04), in formula order: population-level terms with no design column and
+        one coefficient per threshold (brms's ``bcs``; its ``Xcs`` columns in this order)."""
+        return tuple(t for t in self.pop_terms if t.kind == "category_specific")
 
     @property
     def missing_columns(self) -> tuple[str, ...]:
@@ -2392,6 +2415,7 @@ def parse_formula(formula: str | list[str], data: pd.DataFrame | None = None, fa
     transforms: dict[str, Transform] = {}                  # the transform terms among them, by canonical name
     monotonics: dict[str, str] = {}                        # the monotonic terms among them (B03): canonical name -> column
     special_columns: dict[str, tuple[str, ...]] = {}       # the me() and mi() terms among them (C06): canonical name -> columns
+    category_specific: dict[str, str] = {}                 # the cs() terms among them (D04): canonical name -> column
     group_terms: list[GroupTerm] = []
     group_pieces: list[str] = []                           # each group term as written, for the messages below
     groups: list[str] = []                                 # the factors of group_terms, for the checks below
@@ -2494,6 +2518,12 @@ def parse_formula(formula: str | list[str], data: pd.DataFrame | None = None, fa
                         "mo(x):z gives each interaction its own coefficient (and mo(x):mo(w) a simplex per factor), which is not "
                         "verified here (docs/monotonic.md, divergence D40)"
                     )
+                if _CS_RE.match(side):                              # D04
+                    raise FormulaError(
+                        f"{piece!r}: an interaction with a category-specific term ({side!r}) is not supported in this slice: brms's "
+                        "cs(x):z is not verified here; compute the product column in the data frame and write cs(<column>) "
+                        "(docs/ordinal-categorical.md, divergence D89)"
+                    )
                 if _GP_RE.match(side):
                     raise FormulaError(
                         f"{piece!r}: an interaction with a Gaussian process ({side!r}) is not supported in this slice; a Gaussian "
@@ -2521,12 +2551,31 @@ def parse_formula(formula: str | list[str], data: pd.DataFrame | None = None, fa
                 _main(right, piece)
             raw_interactions.append((left, right, piece))
             continue
-        if _CS_RE.match(piece):                                 # D08: brms's category-specific effects, parked with acat_cs (D107)
-            raise FormulaError(
-                f"{piece!r}: brms's category-specific effect cs() is not supported: brms takes it in the acat, sratio and cratio families "
-                "only (one coefficient per threshold, brms's bcs), which this library does not have yet (D04); the frozen case acat_cs "
-                "waits for them (divergence D107)"
-            )
+        csm = _CS_RE.match(piece)
+        if csm:                                                 # brms's category-specific effect cs(col) (D04; D08 parked it, D107)
+            if not fam.category_specific:
+                from autobayes.families import FAMILIES
+
+                offering = [name for name, other in FAMILIES.items() if other.category_specific]
+                raise FormulaError(
+                    f"{piece!r}: brms's category-specific effect cs() is not supported for the {fam.name} family: brms takes it in its "
+                    f"ordinal families, and this library in the {', '.join(offering)} families (one coefficient per threshold, brms's "
+                    "bcs; docs/ordinal-categorical.md, divergence D89)"
+                )
+            inner = csm.group(1).strip()
+            if not re.fullmatch(_IDENT, inner):
+                raise FormulaError(
+                    f"{piece!r}: cs() takes one column name here, not {inner!r}; brms's cs(x + w), cs(1) and expressions inside cs() "
+                    "are not supported in this slice: write one cs(<column>) per numeric column (docs/ordinal-categorical.md, "
+                    "divergence D89)"
+                )
+            if inner == response:
+                raise FormulaError(f"{piece!r}: the response {response!r} cannot be a category-specific predictor")
+            if trials is not None and inner == trials:
+                raise FormulaError(f"{piece!r}: the trials column {trials!r} cannot be a category-specific predictor")
+            _main(f"cs({inner})", piece, call=True)                # under its canonical spelling, 'cs( x )' duplicates 'cs(x)'
+            category_specific[f"cs({inner})"] = inner
+            continue
         gpm = _GP_RE.match(piece)
         if gpm:                                                 # brms's Gaussian process gp(x), gp(x, k = 10, c = 5/4) (C03)
             gp = _parse_gp(piece, gpm.group(1), response, trials)
@@ -2674,6 +2723,7 @@ def parse_formula(formula: str | list[str], data: pd.DataFrame | None = None, fa
     mo_columns = list(monotonics.values())                           # and the monotonic terms (B03)
     gp_columns = [g.column for g, _ in gps]                          # and the Gaussian processes (C03)
     special_cols = [c for cols in special_columns.values() for c in cols]   # and the me() and mi() terms (C06)
+    special_cols += list(category_specific.values())                 # and the cs() terms (D04)
     for col in operands_all:
         if (col in predictors or col in transform_columns or col in mo_columns or col in gp_columns or col in special_cols
                 or col == response):
@@ -2739,6 +2789,17 @@ def parse_formula(formula: str | list[str], data: pd.DataFrame | None = None, fa
                 f"{formula!r}: {shared[0]!r} is read by {name!r} and by another term of the formula; a column inside me() or "
                 "mi() is read by that term alone in this slice (docs/missing-and-measurement-error.md)"
             )
+    for name, col in category_specific.items():                # D04: a column inside cs() is read by that term alone
+        elsewhere = [*(p for p in predictors if p != name and p not in category_specific), *transform_columns, *mo_columns, *gp_columns,
+                     *(c for cols in special_columns.values() for c in cols), *([offset.column] if offset is not None else []),
+                     *(c for a in additions for c in a.columns), *(c for left, right, _ in raw_interactions for c in (left, right)),
+                     *(s for t in group_terms for s in t.slopes)]
+        if col in elsewhere:
+            raise FormulaError(
+                f"{formula!r}: {col!r} is read by {name!r} and by another term of the formula; a column inside cs() is read by that "
+                "term alone in this slice (brms accepts x + cs(x), whose b_x and bcs_x are not separately identified; "
+                "docs/ordinal-categorical.md, divergence D89)"
+            )
     # A derived factor's column (g_h) is added to the fitted frame: it must not shadow a column the formula uses.
     in_use = {response, *predictors, *transform_columns, *mo_columns, *gp_columns, *special_cols, *operands_all,
               *([trials] if trials is not None else []),
@@ -2781,6 +2842,10 @@ def parse_formula(formula: str | list[str], data: pd.DataFrame | None = None, fa
             declared = [c for c in cols if c in categorical]
             if declared:
                 raise FormulaError(f"{name!r}: {declared[0]!r} is declared categorical; {name.split('(')[0]}() reads numbers")
+        for name, col in category_specific.items():          # nor does cs() here (D04): brms's cs(z) of a factor is not verified
+            if col in categorical:
+                raise FormulaError(f"{name!r}: {col!r} is declared categorical; cs() takes a numeric column in this slice (brms's cs() "
+                                   "of a factor, one coefficient per level and threshold, is not verified here; divergence D89)")
     categoricals = _normalise_categorical(categorical, predictors, response, operands_all, trials, formula)
     if offset is not None and any(c.name == offset.column for c in categoricals):
         raise FormulaError(
@@ -2822,7 +2887,8 @@ def parse_formula(formula: str | list[str], data: pd.DataFrame | None = None, fa
     if remove_intercept:
         canonical_rhs = "0 + " + canonical_rhs
     kinds = {**{p: "transform" for p in transforms}, **{p: "monotonic" for p in monotonics}, **{p: "categorical" for p in cat_names},
-             **{p: "measurement_error" if p.startswith("me(") else "missing" for p in special_columns}}   # C06
+             **{p: "measurement_error" if p.startswith("me(") else "missing" for p in special_columns},   # C06
+             **{p: "category_specific" for p in category_specific}}                                     # D04
     pop_terms = (*(pop_term(p, kinds.get(p, "numeric"), categoricals) for p in predictors),
                  *(pop_term(name, "interaction", categoricals) for name in interactions))
     spec = ModelSpec(
@@ -2943,8 +3009,9 @@ def ordinal_categories(name: str, s: pd.Series) -> tuple[tuple[str, ...], np.nda
     row's 1-based category (brms's ``Y``) and a warning naming the categories no fitted row takes."""
     label = f"response {name!r}"
     reject_complex(label, s)
-    need = ("the cumulative family needs an ordinal response: positive integers 1..K or an ordered pandas Categorical "
-            "(pd.Categorical(values, categories=[lowest, ..., highest], ordered=True), brms's ordered factor)")
+    need = ("the ordinal families (cumulative, sratio, cratio, acat) need an ordinal response: positive integers 1..K or an "
+            "ordered pandas Categorical (pd.Categorical(values, categories=[lowest, ..., highest], ordered=True), brms's ordered "
+            "factor)")
     if isinstance(s.dtype, pd.CategoricalDtype):
         if not s.cat.ordered:
             raise FormulaError(f"{label} is an unordered pandas Categorical, whose category order means nothing; {need}")
@@ -3177,6 +3244,17 @@ def validate_data(spec: ModelSpec, data: pd.DataFrame, family: str = "gaussian",
     for c in spec.predictors:
         if np.isclose(np.std(data[c].to_numpy(dtype=float)), 0.0):
             raise FormulaError(f"predictor {c!r} is constant")
+    for t in getattr(spec, "cs_terms", ()):                       # D04: a category-specific column is a numeric predictor too
+        c = t.operands[0]
+        reject_complex(f"column {c!r}", data[c])
+        if not _is_numeric(data[c]):
+            raise FormulaError(f"column {c!r} of {t.name!r} has dtype {data[c].dtype}; cs() takes a numeric column in this slice "
+                               "(divergence D89)")
+        values = data[c].to_numpy(dtype=float)
+        if not np.isfinite(values).all():
+            raise FormulaError(f"column {c!r} of {t.name!r} has non-finite values")
+        if np.isclose(np.std(values), 0.0):
+            raise FormulaError(f"predictor {c!r} of {t.name!r} is constant")
     for t in spec.pop_terms:                                      # a numeric-by-numeric product column is a predictor too
         if t.kind == "interaction" and not t.categorical and np.isclose(np.std(pop_term_design(t, data)), 0.0):
             raise FormulaError(f"interaction {t.name!r} is constant ({' * '.join(t.operands)} takes a single value in the fitted rows)")

@@ -5,7 +5,8 @@ the spec. A family is one module in this package that builds its spec (``gaussia
 ``student.py``, ``poisson.py``, ``negbinomial.py``, ``gamma.py``, ``lognormal.py``, ``beta.py``, ``bernoulli.py``,
 ``binomial.py``, ``zero_inflated_poisson.py``, ``hurdle_poisson.py``, ``cumulative.py``, ``categorical.py``, ``mixture.py``,
 ``weibull.py``, ``exponential.py``, ``skew_normal.py``, ``shifted_lognormal.py``, ``exgaussian.py``, ``beta_binomial.py``,
-``geometric.py``, ``negbinomial2.py``);
+``geometric.py``, ``negbinomial2.py``; D04's ``ordinal.py`` builds
+the three sequential and adjacent-category ordinal families, ``sratio``, ``cratio`` and ``acat``);
 ``autobayes.families.FAMILIES`` is the registry and ``get_family(name)`` the lookup. Callable fields
 take the built ``Model`` (or the frame being validated) because that is what the call sites have in
 hand; none of them is called before ``Model.__init__`` has resolved the spec.
@@ -249,6 +250,12 @@ class FamilySpec:
     # the intercept in place of the generic one. None / False for every other family.
     response_categories: Callable[[object, object], tuple] | None = None
     thresholds: bool = False
+    # D04 (docs/ordinal-categorical.md): whether the thresholds are brms's ``ordered[nthres] Intercept`` (cumulative), sampled
+    # on Stan's ordered coordinates, or its unordered ``vector[nthres] Intercept`` (sratio, cratio, acat), sampled as they are;
+    # and whether the family takes brms's category-specific effects ``cs(x)`` (one coefficient per threshold, brms's ``bcs``;
+    # set where a frozen case verifies it).
+    ordered_thresholds: bool = True
+    category_specific: bool = False
     per_category: bool = False
     bambi_setup: Callable[[object, dict], tuple] | None = None
     check_formula: Callable[[object], None] | None = None

@@ -44,7 +44,9 @@ CROSS_CHECK = ["gauss_weighted", "gauss_distributional_sigma", "gauss_slope_corr
                # D01: the Weibull, exponential, skew-normal, shifted lognormal and ex-Gaussian families
                "weibull_varint", "exponential_varint", "skew_normal_varint", "shifted_lognormal_varint", "exgaussian_varint",
                # D02: the beta-binomial, geometric and negbinomial2 families
-               "beta_binomial_varint", "geometric_varint", "negbinomial2_varint"]
+               "beta_binomial_varint", "geometric_varint", "negbinomial2_varint",
+               # D04: the sratio, cratio and acat families, with category-specific effects cs()
+               "sratio_varint", "cratio_varint", "acat_varint", "acat_cs", "sratio_cs", "cratio_cs"]
 
 
 def _bundle(case_id):

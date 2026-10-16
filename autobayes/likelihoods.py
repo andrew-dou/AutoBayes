@@ -1188,6 +1188,148 @@ def cumulative_logit_family(terms, means, dim: str):
     return CumulativeLogitFamily("cumulative_logit", likelihood, link={"mu": "identity", "Intercept": "identity"})
 
 
+# ---- more ordinal models (brms-parity D04, docs/ordinal-categorical.md) ------------------------------------------------------
+# brms 2.23, with the 1-based category y, the K - 1 thresholds tau (brms's b_Intercept on the raw design), the linear
+# predictor eta (brms's mu) and disc = 1, each family written through the gaps d_k = tau_k - eta_k (eta_k = eta, or with
+# category-specific effects cs(x) the threshold's own eta + Xcs bcs[, k]; brms subtracts Xcs bcs from the thresholds, which
+# is the same), from the published definitions (Agresti, Categorical Data Analysis, ch. 8; Buerkner and Vuorre 2019):
+#   cumulative("probit"): P(y <= k) = Phi(d_k), so P(y = k) = Phi(d_k) - Phi(d_{k-1}) (d_0 = -inf, d_K = inf); the first row
+#     is log Phi(d_1), the last log Phi(-d_{K-1}) and a middle one the log Normal mass between d_{k-1} and d_k, each from
+#     log_normal_cdf / normal_log_mass above, never a difference of probabilities;
+#   sratio("logit"), the stopping ratio: P(y = k | y >= k) = expit(d_k), so log P(y = k) = log expit(d_k) + sum_{j<k}
+#     log(1 - expit(d_j)) = -softplus(-d_k) [k < K] - sum_{j<k} softplus(d_j);
+#   cratio("logit"), the continuation ratio: P(y > k | y >= k) = expit(eta_k - tau_k) = expit(-d_k), so log P(y = k) =
+#     log(1 - expit(-d_k)) [k < K] + sum_{j<k} log expit(-d_j): the same row as sratio's, the logistic being symmetric;
+#   acat("logit"), adjacent categories: log(P(y = k + 1) / P(y = k)) = eta_k - tau_k = -d_k, so log P(y = k) = s_k -
+#     log_sum_exp(s_1, ..., s_K) with s_1 = 0, s_k = -sum_{j<k} d_j, the largest s factored out of the sum.
+# Each is a sum of stable non-positive terms, finite with a finite gradient for every finite eta and tau on the PyTensor path
+# and under JAX's autodiff; a row's thresholds are selected by the one-hot switch of _select, as for the cumulative logit row.
+ORDINAL_KINDS = ("cumulative_probit", "sratio_logit", "cratio_logit", "acat_logit")
+_ZERO, _ONE = np.float64(0.0), np.float64(1.0)
+
+
+def ordinal_logp_rows(kind: str, value, d):
+    """``log P(y = value)`` of the ordinal model ``kind`` (``ORDINAL_KINDS``) from the gaps ``d = tau - eta`` (``(..., K -
+    1)``, PyTensor), for 1-based categories ``value``; ``-inf`` outside ``1..K``."""
+    y = pt.cast(value, "int64")
+    k = d.shape[-1]
+    has_upper, has_lower = pt.le(y, k), pt.ge(y, 2)
+    both = pt.and_(has_upper, has_lower)
+    upper = _select(d, pt.clip(y - 1, 0, k - 1))                         # d_y, the row's own gap
+    lower = _select(d, pt.clip(y - 2, 0, k - 1))                         # d_{y-1}
+    if kind == "cumulative_probit":
+        middle = normal_log_mass(pt.switch(both, lower, -1.0), pt.switch(both, upper, 1.0), _ZERO, _ONE)
+        out = pt.switch(both, middle, pt.switch(has_upper, log_normal_cdf(upper), log_normal_cdf(-lower)))
+    elif kind in ("sratio_logit", "cratio_logit"):
+        passed = _select(pt.cumsum(stable_softplus(d), axis=-1), pt.clip(y - 2, 0, k - 1))   # sum_{j<y} softplus(d_j)
+        out = pt.switch(has_upper, -stable_softplus(-upper), 0.0) - pt.switch(has_lower, passed, 0.0)
+    elif kind == "acat_logit":
+        full = pt.concatenate([pt.zeros_like(d[..., :1]), -pt.cumsum(d, axis=-1)], axis=-1)       # s_1 = 0, s_k
+        m = pt.max(full, axis=-1, keepdims=True)
+        out = (_select(full, pt.clip(y - 1, 0, k)) - m[..., 0]) - pt.log(pt.sum(pt.exp(full - m), axis=-1))
+    else:
+        raise ValueError(f"kind must be one of {ORDINAL_KINDS}, got {kind!r}")
+    return pt.switch(pt.and_(pt.ge(y, 1), pt.le(y, k + 1)), out, -np.inf)
+
+
+def ordinal_log_probabilities(kind: str, d):
+    """``log P(y = k)``, ``k = 1..K``, of the ordinal model ``kind`` from the gaps ``d = tau - eta`` (``(..., K - 1)``, NumPy),
+    ``(..., K)``: the rows of ``ordinal_logp_rows`` for every category (brms's ``posterior_epred`` is their exponential)."""
+    from scipy.special import erf, log_ndtr
+
+    def log1mexp(a):                                                        # log(1 - exp(a)), a <= 0
+        return np.where(a > -math.log(2.0), np.log(-np.expm1(a)), np.log1p(-np.exp(a)))
+
+    d = np.asarray(d, dtype=float)
+    end = np.ones(d.shape[:-1] + (1,))
+    with np.errstate(divide="ignore", invalid="ignore", over="ignore"):
+        if kind == "cumulative_probit":                                     # the log Normal mass between lo and hi, as
+            hi = np.concatenate([d, np.inf * end], axis=-1)                # normal_log_mass forms it: d_k, d_K = inf
+            lo = np.concatenate([-np.inf * end, d], axis=-1)               # d_{k-1}, d_0 = -inf
+            upper_tail = log_ndtr(-lo) + log1mexp(log_ndtr(-hi) - log_ndtr(-lo))     # both gaps above 0
+            lower_tail = log_ndtr(hi) + log1mexp(log_ndtr(lo) - log_ndtr(hi))        # both below 0
+            across = np.log(0.5 * (erf(hi / _SQRT2) - erf(lo / _SQRT2)))            # a sum of two non-negative terms
+            return np.where(lo > 0, upper_tail, np.where(hi < 0, lower_tail, across))
+        if kind in ("sratio_logit", "cratio_logit"):
+            sp = np.logaddexp(0.0, d)                                       # softplus(d_j) = -log(1 - expit(d_j))
+            stop = np.concatenate([-np.logaddexp(0.0, -d), 0.0 * end], axis=-1)
+            passed = np.concatenate([0.0 * end, np.cumsum(sp, axis=-1)], axis=-1)
+            return stop - passed
+        if kind == "acat_logit":
+            full = np.concatenate([0.0 * end, -np.cumsum(d, axis=-1)], axis=-1)
+            m = full.max(axis=-1, keepdims=True)
+            return (full - m) - np.log(np.exp(full - m).sum(axis=-1, keepdims=True))
+    raise ValueError(f"kind must be one of {ORDINAL_KINDS}, got {kind!r}")
+
+
+def ordinal_gaps(eta, thresholds, per_threshold: bool):
+    """``d = tau - eta``, ``(..., K - 1)``: ``eta`` one value per row (``per_threshold=False``, ``(...)``) or one per row and
+    threshold (``cs()``, ``(..., K - 1)``), ``thresholds`` ``(..., K - 1)`` broadcasting against it (NumPy or PyTensor)."""
+    return thresholds - (eta if per_threshold else eta[..., None])
+
+
+def _ordinal_dist(kind: str, per_threshold: bool):
+    """The log density and the forward draws of the ordinal model ``kind`` for ``pm.CustomDist`` with the parameters (``eta``,
+    the thresholds)."""
+    def logp(value, eta, thresholds):
+        return ordinal_logp_rows(kind, value, ordinal_gaps(eta, thresholds, per_threshold))
+
+    def random(eta, thresholds, rng=None, size=None):
+        d = ordinal_gaps(np.asarray(eta, dtype=float), np.asarray(thresholds, dtype=float), per_threshold)
+        return draw_categories(np.exp(ordinal_log_probabilities(kind, d)), rng, size)
+
+    return logp, random
+
+
+def unordered_thresholds(name, prior_name: str, params: dict, labels, dim: str):
+    """brms's unordered ``vector[nthres] Intercept`` (sratio, cratio, acat; D04) with the same prior on every threshold
+    (``Priors(intercept=...)``, brms's class ``Intercept``): a PyMC variable named ``name`` with dims ``dim`` (coordinates
+    ``labels``), sampled as it is (no transform, as brms's), its density the prior's summed over the thresholds and its forward
+    draws the prior's independent draws. Must be called inside a PyMC model context."""
+    model = pm.modelcontext(None)
+    if dim not in model.coords:
+        model.add_coord(dim, list(labels))
+    return getattr(pm, prior_name)(name, **{k: np.float64(v) for k, v in params.items()}, dims=dim)
+
+
+def ordinal_family(kind: str, terms, means, dim: str, add_category_specific: Callable | None = None):
+    """Bambi family for brms's ``cumulative("probit")``, ``sratio("logit")``, ``cratio("logit")`` and ``acat("logit")`` (D04),
+    built as ``cumulative_logit_family`` is: the linear predictor ``mu`` (no thresholds) as the parent under the identity link,
+    the thresholds ``Intercept`` (``ordered_thresholds`` or ``unordered_thresholds``) as an auxiliary parameter, and
+    ``b_Intercept = Intercept + sum_p means[p] b_p`` (brms's thresholds of the raw design) a deterministic the likelihood
+    reads. ``add_category_specific(mu)``, given for a model with category-specific effects ``cs(x)``, creates their
+    coefficients inside the model being built and returns the ``(n, K - 1)`` predictor of every threshold (brms's ``mu`` plus
+    ``Xcs bcs``), which the likelihood then reads instead of ``mu``."""
+    import bambi as bmb
+
+    if kind not in ORDINAL_KINDS:
+        raise ValueError(f"kind must be one of {ORDINAL_KINDS}, got {kind!r}")
+    means = np.asarray(means, dtype=np.float64)
+    names = tuple(terms)
+    per_threshold = add_category_specific is not None
+    logp, random = _ordinal_dist(kind, per_threshold)
+
+    class OrdinalLikelihood:
+        """``y ~ Ordinal(mu, b_Intercept)`` of ``kind``, ``b_Intercept = Intercept + sum_p mean(x_p) b_p``."""
+
+        def __new__(cls, name, mu, Intercept, **kwargs):
+            model = pm.modelcontext(None)
+            thresholds = Intercept
+            if names:
+                b = pt.concatenate([pt.atleast_1d(model[term]) for term in names])
+                thresholds = Intercept + pt.dot(means, b)
+            thresholds = pm.Deterministic("b_Intercept", thresholds, dims=dim)
+            eta = add_category_specific(mu) if per_threshold else mu
+            return pm.CustomDist(name, eta, thresholds, logp=logp, random=random,
+                                 signature=("(k)" if per_threshold else "()") + ",(k)->()", dtype="int64", **kwargs)
+
+    class OrdinalFamily(bmb.Family):
+        SUPPORTED_LINKS = {"mu": ["identity"], "Intercept": ["identity"]}
+
+    likelihood = bmb.Likelihood(f"Ordinal_{kind}", params=["mu", "Intercept"], parent="mu", dist=OrdinalLikelihood)
+    return OrdinalFamily(f"ordinal_{kind}", likelihood, link={"mu": "identity", "Intercept": "identity"})
+
+
 def no_intercept(name, **kwargs):
     """A Bambi intercept prior that adds nothing (and no variable) to the linear predictor: the cumulative family's
     formula keeps formulae's intercept, so that categorical predictors are treatment coded as brms codes them, while

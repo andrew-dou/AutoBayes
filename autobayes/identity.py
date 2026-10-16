@@ -184,6 +184,10 @@ def freeze_target(model):
         # autoscale = TRUE) and the design columns its vectors (zb, the local scales, R2D2's simplex) follow.
         **({'shrinkage': {'class': 'b', 'prior': prior(pr.b), 'autoscale': 'sigma', 'columns': list(d.columns)}}
            if getattr(model, 'shrinkage_names', {}) else {}),
+        # So do category-specific terms (D04): each cs() term's column on the fitted rows (its coefficients' prior is among the
+        # coefficients'); unordered thresholds are the family's (sratio, cratio, acat), which 'family' names.
+        **({'category_specific': [{'term': f'cs({c})', 'column': c, 'values': values} for c, values in d.category_specific.items()]}
+           if getattr(d, 'category_specific', {}) else {}),
         'priors': {'intercept': prior(pr.intercept), 'sigma': prior(pr.sigma),
                    'coefficients': {} if mixture else {k: prior(v) for k,v in pr.coefficient_priors(s).items()},
                    'groups': {k: prior(v) for k,v in pr.group_priors(s).items()},

@@ -5,7 +5,8 @@ Bernoulli and grouped binomial with a logit or probit link, Poisson and negative
 counts and Gamma responses with a log link, lognormal responses with the identity
 link on the log-scale location, Beta proportions with a logit link and precision ``phi``, and zero-inflated and hurdle
 Poisson counts with the zero-inflation or hurdle probability ``zi`` / ``hu`` under a ``Beta`` prior, ordinal responses with
-brms's cumulative logit model and unordered categorical responses with one linear predictor per non-reference category,
+brms's cumulative logit and probit models, its sratio, cratio and acat models (with category-specific effects ``cs(x)``; D04)
+and unordered categorical responses with one linear predictor per non-reference category,
 and finite mixtures of Gaussian components with ordered intercepts and Dirichlet mixing proportions; Weibull and
 exponential responses with a log link on the mean, skew-normal and ex-Gaussian responses parameterised by their mean, and
 shifted lognormal responses with a non-decision time below the smallest response (D01); beta-binomial responses with
@@ -80,6 +81,7 @@ from autobayes.nonlinear import NonlinearModel, NonlinearSpec        # non-linea
 from autobayes.model import exgaussian, exponential, shifted_lognormal, skew_normal, weibull   # D01, docs/continuous-families.md
 from autobayes.model import beta_binomial, geometric, negbinomial2   # D02, docs/discrete-families.md
 from autobayes.shrinkage import Horseshoe, R2D2   # D07: brms's horseshoe() and R2D2() on b, docs/shrinkage-priors.md
+from autobayes.model import acat, cratio, sratio                    # D04, docs/ordinal-categorical.md
 
 __all__ = [
     "Beta", "Categorical", "DeviceError", "Dirichlet", "Exponential", "FitResult", "Flat", "FormulaError", "Gamma", "GroupTerm", "HalfCauchy",
@@ -96,4 +98,5 @@ __all__ += ["Uniform", "exgaussian", "exponential", "shifted_lognormal", "skew_n
 __all__ += ["Hypothesis", "conditional_effects", "hypothesis"]   # D06
 __all__ += ["beta_binomial", "geometric", "negbinomial2"]   # D02
 __all__ += ["Horseshoe", "R2D2"]                       # D07
+__all__ += ["acat", "cratio", "sratio"]                             # D04
 __version__ = "0.8.0"

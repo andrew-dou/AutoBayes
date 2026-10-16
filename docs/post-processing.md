@@ -30,8 +30,8 @@ with dims `(chain, draw, __obs__)`. It is the per-row term of the model's own li
 link, `log Phi` of the probit, the zero-inflated and hurdle forms of D28, the ordinal `log_inv_logit_diff` form).
 Under `weights(w)` each row's log density is multiplied by its weight, as brms multiplies it. Offered for every family:
 Gaussian, Student-t (fixed or learned `nu`), Poisson, negative binomial, Gamma, lognormal, Beta, Bernoulli and binomial
-(logit and probit), zero-inflated and hurdle Poisson, cumulative (the log probability of the 1-based category) and
-categorical. A non-linear model (C02, `nl=True`, docs/nonlinear.md) is taken the same way, its linear predictor the
+(logit and probit), zero-inflated and hurdle Poisson, cumulative, sratio, cratio and acat (the log probability of the
+1-based category; D04's with `cs()` terms too) and categorical. A non-linear model (C02, `nl=True`, docs/nonlinear.md) is taken the same way, its linear predictor the
 non-linear predictor `mu` (brms's `posterior_linpred`); `tests/test_nonlinear.py` checks `log_lik`, `bayes_R2` and `loo` on
 it against the graph's own density and `mu` at the frozen brms points. A model with an autocorrelation term (C04,
 docs/autocorrelation.md) is taken the same way: its linear predictor carries the ARMA term from the observed residuals, the
@@ -50,8 +50,9 @@ brms's `bayes_R2(summary = FALSE)` (Gelman, Goodrich, Gabry and Vehtari 2019, "R
 models"): per draw, `var(yhat) / (var(yhat) + var(y - yhat))` over the fitted rows, `yhat` the expected response
 (`predict(kind="mean")`, brms's `posterior_epred`) and `y - yhat` the residuals, for every family (the Gaussian's
 included: brms uses the residuals, not `sigma`). A binomial model's `yhat` is the expected count `n p` against the
-successes; weights play no part. For the cumulative family brms's `yhat` is the expected category `sum_k k P(y = k)`
-against the 1-based category (settled by probing brms); brms refuses the categorical family ("'bayes_R2' is not defined
+successes; weights play no part. For the ordinal families brms's `yhat` is the expected category `sum_k k P(y = k)`
+against the 1-based category (settled by probing brms for the cumulative family; D04's `sratio_cs_post`,
+`cratio_cs_post` and `acat_cs_post` record it for the others); brms refuses the categorical family ("'bayes_R2' is not defined
 for unordered categorical models") and so does `ab.bayes_R2`. Returns an `xarray.DataArray` named `R2`, dims
 `(chain, draw)`; summarise it as you like (brms's `summary = TRUE` is the mean, SD and quantiles).
 

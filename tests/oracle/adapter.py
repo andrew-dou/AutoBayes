@@ -83,6 +83,12 @@ correlation ID shared with a distributional formula is one brms group whose coef
 them in the order `correlation_order` gives (three coefficients: the probe calls the later `cholesky_corr` coordinates
 'joint', each still recomputed from `L_m` and checked against `u`).
 
+D04: the sratio, cratio and acat families' thresholds are brms's unordered `vector[nthres] Intercept` (identity coordinates),
+mapped to AutoBayes's `Intercept` entry by entry (`ColumnMap.ordered` False); the cumulative probit model's are ordered, as the
+logit model's. A category-specific term `cs(x)` is brms's column of `Xcs` (`Kcs` of them, matched by content to the model's
+`Design.category_specific`, `match_cs`, `ColumnMap.cs`), and its coefficients are that row of brms's `matrix[Kcs, nthres] bcs`
+(column-major in the probed table), mapped to the term's vector `cs(x)` over the thresholds.
+
 D01: a family's extra parameter (`FamilySpec.extra_parameters`) is brms's parameter of that name: `alpha` (unbounded, sampled as
 it is), `beta` (`real<lower=0>`, on the log scale) and `ndt` (`real<lower=0,upper=min_Y>`, `min_Y` the smallest `Y`: Stan's
 lower-upper coordinate `log(ndt / (min_Y - ndt))`, recomputed from `ndt` at every point and checked against the fixture's `u`,
@@ -201,6 +207,8 @@ class ColumnMap:
     covariates: dict = None               # C02: brms's covariate number k (C_k) of each covariate of the non-linear formula, by name
     special: tuple = ()                   # C06: the model's me() / mi() term, by name, as brms's bsp[1] (match_special)
     measurement: dict = None              # C06: brms's measurement-error group k (Xn_k, meanme_k, sdme_k, zme_k) of each me() term, by noisy column
+    ordered: bool = True                  # D04: with thresholds, brms's ordered[nthres] Intercept; False for its vector[nthres] Intercept
+    cs: tuple = ()                        # D04: the model's cs() columns in brms's Xcs column order (row k of bcs is cs[k]'s), match_cs
 
     def b_index(self, x_col: int) -> int:
         """Index into brms's ``b`` of design column ``x_col``."""
@@ -239,10 +247,13 @@ def _match_design(fixture: Fixture, model: ab.Model, X_name: str = "X", b_name: 
         taken.add(hits[0])
     rest = [k for k in range(X.shape[1]) if k not in taken]
     intercept_col = None
+    ordered = getattr(model.family_spec, "ordered_thresholds", True)
     if thresholds:                                            # B05: brms's ordinal X has no intercept column, its Intercept
-        declared = fixture.declarations.get(intercept_name, "")  # is the vector of ordered thresholds
-        if "nthres" not in fixture.standata or not declared.startswith("ordered["):
-            raise OracleMismatch(f"AutoBayes's cumulative model has thresholds but brms declares {intercept_name!r} as {declared!r}")
+        declared = fixture.declarations.get(intercept_name, "")  # is the vector of ordered thresholds (D04: or unordered ones)
+        want = "ordered[" if ordered else "vector["
+        if "nthres" not in fixture.standata or not declared.startswith(want):
+            raise OracleMismatch(f"AutoBayes's {model.family} model has {'ordered' if ordered else 'unordered'} thresholds but brms "
+                                 f"declares {intercept_name!r} as {declared!r}")
     elif model.spec.intercept:
         ones = [k for k in rest if np.max(np.abs(X[:, k] - 1.0)) <= DESIGN_ABS]
         if len(ones) != 1:
@@ -260,7 +271,29 @@ def _match_design(fixture: Fixture, model: ab.Model, X_name: str = "X", b_name: 
         raise OracleMismatch(f"brms {b_name} has {coefficients(pars, b_name).size} entries; expected {expected_b} from {X.shape[1]} design columns")
     if Kc_name in fixture.standata and int(fixture.standata[Kc_name]) != expected_b:
         raise OracleMismatch(f"brms {Kc_name} = {int(fixture.standata[Kc_name])} but {b_name} has {expected_b} entries")
-    return ColumnMap(tuple(cols), intercept_col, centred, thresholds=thresholds)
+    return ColumnMap(tuple(cols), intercept_col, centred, thresholds=thresholds, ordered=ordered or not thresholds)
+
+
+def match_cs(fixture: Fixture, model: ab.Model) -> tuple[str, ...]:
+    """D04: the model's category-specific columns in brms's ``Xcs`` column order: each ``Xcs`` column must equal one
+    ``cs(x)`` term's column (``Design.category_specific``) row by row within ``DESIGN_ABS`` and ``Kcs`` their number; brms's
+    ``Xcs`` without a ``cs()`` term of the model, and the reverse, are a mismatch."""
+    sd = fixture.standata
+    mine = dict(getattr(model.design, "category_specific", {}) or {})
+    if "Xcs" not in sd:
+        if mine:
+            raise OracleMismatch(f"the AutoBayes model has the category-specific columns {list(mine)}; brms's standata has no Xcs")
+        return ()
+    Xcs, Kcs = np.atleast_2d(sd["Xcs"]), int(sd["Kcs"]) if "Kcs" in sd else None
+    if Kcs != Xcs.shape[1] or Kcs != len(mine) or Xcs.shape[0] != model.design.n:
+        raise OracleMismatch(f"brms has Kcs = {Kcs} category-specific columns (Xcs {Xcs.shape}); the AutoBayes model has {list(mine)}")
+    out = []
+    for k in range(Xcs.shape[1]):
+        hits = [c for c, v in mine.items() if c not in out and abs_err(Xcs[:, k], v) <= DESIGN_ABS]
+        if len(hits) != 1:
+            raise OracleMismatch(f"brms's Xcs column {k + 1} matches {len(hits)} category-specific columns of the model {hits}")
+        out.append(hits[0])
+    return tuple(out)
 
 
 def match_columns(fixture: Fixture, model: ab.Model) -> ColumnMap:
@@ -273,7 +306,8 @@ def match_columns(fixture: Fixture, model: ab.Model) -> ColumnMap:
         return match_mixture(fixture, model)
     if not fam.per_category:
         cmap = _with_distributional(fixture, model, _match_design(fixture, model, thresholds=fam.thresholds))
-        return replace(cmap, monotonic=match_monotonic(fixture, model), gp=match_gp(fixture, model), **match_special(fixture, model))
+        return replace(cmap, monotonic=match_monotonic(fixture, model), gp=match_gp(fixture, model), **match_special(fixture, model),
+                       cs=match_cs(fixture, model))                    # D04
     # B05, the categorical family: one brms design per non-reference category, each matched like X; all must map alike
     from autobayes.default_priors import brms_dpar_names
 
@@ -761,6 +795,9 @@ def natural_point(model: ab.Model, point: Point, cmap: ColumnMap, gmap: GroupMap
                          for x, k in cmap.measurement.items()} for cls in ("meanme", "sdme", "zme")}
     extras = {e.name: float(pars[e.name]) for e in model.family_spec.extra_parameters}   # D01: brms's alpha, beta or ndt
     shrinkage = shrinkage_point(model, pars, cmap)          # D07: zb and the horseshoe's or R2D2's scales, or None
+    if cmap.cs:                                            # D04: brms's bcs, one row per Xcs column, one column per threshold
+        bcs = np.atleast_2d(pars["bcs"]).astype(float)
+        extras["bcs"] = {c: bcs[k] for k, c in enumerate(cmap.cs)}
     return dict(intercept=intercept, b=b, sd=sd or None, z=z or None, L=L or None, sigma=sigma, shape=shape, phi=phi, nu=nu,
                 zi=zi, hu=hu, bsp=bsp, simo=simo, theta=theta, sdgp=sdgp, lscale=lscale, zgp=zgp, ar=ar, ma=ma, **special, **extras,
                 **({"shrinkage": shrinkage} if shrinkage is not None else {}))
@@ -877,6 +914,12 @@ def coordinate_map(fixture: Fixture, model: ab.Model, cmap: ColumnMap, gmap: Gro
             target, expect = (f"{names['intercept']}_ordered__", k), "joint"
         elif cmap.mixture and par in model.mixture_names["sigma"]:   # C05: brms's real<lower=0> sigma<k>, on the log scale
             target, expect = (f"{names[par]}_log__", 0), "log"
+        elif par == "Intercept" and cmap.thresholds and not cmap.ordered:   # D04: brms's unordered vector[nthres] Intercept
+            target, expect = (names["intercept"], elem), "identity"
+        elif par == "bcs" and cmap.cs:                         # D04: brms's matrix[Kcs, nthres] bcs, column-major
+            Kcs = len(cmap.cs)
+            column, k = cmap.cs[elem % Kcs], elem // Kcs
+            target, expect = (next(t.name for t in model.spec.cs_terms if t.operands[0] == column), k), "identity"
         elif par == "Intercept" and cmap.thresholds:          # B05: the cumulative thresholds, brms's ordered[nthres]
             k = seen_thresholds
             seen_thresholds += 1
@@ -1161,6 +1204,10 @@ def draws(fixture: Fixture, model: ab.Model, cmap: ColumnMap, gmap: GroupMap) ->
         zs = np.stack([np.ravel(p.pars[f"zgp_{k}"]).astype(float) for p in pts])
         data[roles["zgp"]] = (("chain", "draw", roles["coordinate"]), zs[None])
         coords[roles["coordinate"]] = [str(j) for j in range(1, zs.shape[1] + 1)]
+    for k, column in enumerate(cmap.cs or ()):                  # D04: each cs() term's coefficients, brms's bcs row k
+        term = next(t.name for t in model.spec.cs_terms if t.operands[0] == column)
+        data[term] = (("chain", "draw", names["threshold_dim"]), np.stack([np.atleast_2d(p.pars["bcs"])[k] for p in pts])[None])
+        coords[names["threshold_dim"]] = [str(j) for j in range(1, len(model.categories))]
     for k, name in enumerate(cmap.special or ()):               # C06: the me() / mi() term's coefficient, brms's bsp[1]
         data[name] = (("chain", "draw"), np.array([float(np.atleast_1d(p.pars["bsp"])[k]) for p in pts])[None, :])
     for x, k in (cmap.measurement or {}).items():               # C06: an me() term's meanme_k, sdme_k and zme_k

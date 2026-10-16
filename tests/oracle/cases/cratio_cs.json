@@ -1,0 +1,70 @@
+{
+ "id": "cratio_cs",
+ "tier": "D",
+ "feature": "D04_more_ordinal",
+ "note": "D04: cs(x) in cratio(logit) with a population-level w and (1 | g), as acat_cs: matrix[Kcs, nthres] bcs (identity), standata Kcs = 1 and Xcs (x, not centred), X has w only; unordered thresholds vector[nthres] Intercept; linpred is draws x N x nthres (one per threshold), epred draws x N x 4",
+ "seed": 632,
+ "n_points": 8,
+ "data": {
+  "generator": "tier_d",
+  "seed": 532,
+  "n": 36,
+  "newdata": {
+   "seed": 632,
+   "n": 5
+  }
+ },
+ "brms": {
+  "formula": "ord ~ w + cs(x) + (1 | g)",
+  "family": {
+   "family": "cratio",
+   "link": "logit"
+  },
+  "factors": {
+   "g": [
+    "a",
+    "b",
+    "c",
+    "d",
+    "e",
+    "f"
+   ]
+  },
+  "priors": [
+   {
+    "prior": "normal(0, 3)",
+    "class": "Intercept"
+   },
+   {
+    "prior": "normal(0, 1.5)",
+    "class": "b"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "sd",
+    "group": "g"
+   }
+  ]
+ },
+ "autobayes": {
+  "constructor": "cratio",
+  "formula": "ord ~ w + cs(x) + (1 | g)",
+  "kwargs": {},
+  "priors": {
+   "intercept": [
+    "Normal",
+    0,
+    3
+   ],
+   "b": [
+    "Normal",
+    0,
+    1.5
+   ],
+   "sd": [
+    "HalfNormal",
+    1
+   ]
+  }
+ }
+}

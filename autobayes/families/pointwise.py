@@ -133,6 +133,17 @@ def ordered_logistic(y, eta, thresholds):
     return out
 
 
+def ordinal(y, d, kind: str):
+    """``log P(y | d)`` of the ordinal model ``kind`` (D04: ``cumulative_probit``, ``sratio_logit``, ``cratio_logit``,
+    ``acat_logit``) for 1-based categories ``y``, from the gaps ``d = tau - eta`` (``(..., K - 1)``): the row's entry of
+    ``likelihoods.ordinal_log_probabilities``, the stable forms of ``likelihoods.ordinal_logp_rows``."""
+    from autobayes.likelihoods import ordinal_log_probabilities
+
+    logp = ordinal_log_probabilities(kind, d)
+    idx = np.broadcast_to(np.asarray(y, dtype=np.int64) - 1, logp.shape[:-1])
+    return np.take_along_axis(logp, idx[..., None], axis=-1)[..., 0]
+
+
 def gaussian_mixture(y, mu, sigma, theta):
     """``log sum_k theta_k Normal(y | mu_k, sigma_k)`` of brms's ``mixture(gaussian, ..., gaussian)`` (its ``log_mix`` of
     ``normal_lpdf``): ``mu`` is ``(..., K)``, the components' linear predictors, ``sigma`` and ``theta`` broadcast against it
