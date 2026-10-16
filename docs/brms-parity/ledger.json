@@ -1390,9 +1390,9 @@
    "depends_on": [
     "C07_post_processing"
    ],
-   "status": "gates_green",
+   "status": "merged",
    "summary": "waic(), loo_compare() and model weights",
-   "pr": null,
+   "pr": 58,
    "attempts": 1,
    "gates": {
     "sha": "caa0ef015214",
@@ -1410,8 +1410,13 @@
      }
     }
    },
-   "divergences": [],
-   "next_action": "agent (opus), wave D1",
+   "divergences": [
+    "D92",
+    "D93",
+    "D94",
+    "D95"
+   ],
+   "next_action": "stacking, BMA and kfold not offered (D92-D95)",
    "fixtures": {
     "pr": 57,
     "cases": [
@@ -1427,13 +1432,13 @@
    "depends_on": [
     "C07_post_processing"
    ],
-   "status": "fixtures_frozen",
+   "status": "implementing",
    "summary": "hypothesis() and conditional_effects() (deterministic given the draws)",
    "pr": null,
-   "attempts": 0,
+   "attempts": 1,
    "gates": {},
    "divergences": [],
-   "next_action": "implementation",
+   "next_action": "agent (opus), wave D2",
    "fixtures": {
     "pr": 57,
     "cases": [
