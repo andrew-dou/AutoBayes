@@ -8,10 +8,10 @@ log-scale location, which ``kind="linear"`` returns).
 ``kind="response"`` also returns draws of a new observation ``y``: ``Normal(mu, sigma)``,
 ``Bernoulli(p)`` or ``Binomial(n, p)``, so ``y`` is an integer for the discrete families and
 carries the outcome's own variability (brms ``posterior_predict``). ``kind="probability"``
-(binomial only) returns ``p`` alone and needs no trials (brms ``posterior_linpred(transform =
-TRUE)``). Binomial predictions are computed in this layer from the posterior; for
-``newdata``, ``mean`` and ``response`` need the trials column named in the formula, and a row
-with zero trials gives ``expected = 0`` and ``y = 0``.
+(binomial, and since D02 beta-binomial) returns the success probability alone (``p``; the beta-binomial's mean ``mu``) and
+needs no trials (brms ``posterior_linpred(transform = TRUE)``). Binomial predictions are computed in this layer from the
+posterior; for ``newdata``, ``mean`` and ``response`` need the trials column named in the formula, and a row with zero
+trials gives ``expected = 0`` and ``y = 0``.
 
 A model with response addition terms (B02, docs/addition-terms.md) is predicted in this layer: ``weights()`` and
 ``cens()`` change nothing here (brms's ``posterior_epred`` and ``posterior_predict`` ignore them, and new rows need
@@ -258,7 +258,7 @@ def _check_newdata(model, newdata: pd.DataFrame, *, need_trials: bool = False, i
         if s.trials not in newdata.columns:
             raise FormulaError(
                 f"newdata lacks the trials column {s.trials!r}, which kind='mean' and kind='response' need "
-                "for a binomial model (kind='probability' does not)."
+                "for a model with trials, binomial or beta-binomial (kind='probability' does not)."
             )
         cols.append(s.trials)
     missing = [c for c in cols if c not in newdata.columns]

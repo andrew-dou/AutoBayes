@@ -251,3 +251,12 @@ brms's `posterior_epred`, response draws, `log_lik()` and brms's default priors.
 `exponential_varint`, `skew_normal_varint`, `shifted_lognormal_varint` and `exgaussian_varint` (log densities within 1.4e-15
 relative); other links, distributional formulas, addition terms, `mo()`, `me()`/`mi()`, autocorrelation terms, multivariate and
 mixture use are refused (D76-D79); see [continuous families](continuous-families.md).
+
+Beta-binomial, geometric and `negbinomial2` responses (D02, brms's `beta_binomial()`, `geometric()`, `negbinomial2()`):
+`ab.beta_binomial` (`k | trials(n) ~ ...`, the logit link on the mean success probability and the precision `phi`, trials handled
+as the binomial's), `ab.geometric` (the negative binomial of shape 1) and `ab.negbinomial2` (the negative binomial of shape
+`1 / sigma`, `Priors(sigma=...)`), each with brms's link; brms's `posterior_epred` (`expected = n mu` for the beta-binomial),
+response draws, `log_lik()` and brms's default priors. Verified against `beta_binomial_varint`, `geometric_varint` and
+`negbinomial2_varint` (log densities within 8.8e-16 relative); other links, distributional formulas, addition terms, `mo()`,
+`me()`/`mi()`, `mm()`, autocorrelation terms, multivariate, mixture and non-linear use are refused (D80-D82); see
+[discrete families](discrete-families.md).

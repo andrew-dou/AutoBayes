@@ -286,7 +286,8 @@ class Model:
     ----------
     family : str               a registered family name: "gaussian", "student", "poisson", "negbinomial", "gamma", "lognormal", "beta", "bernoulli", "binomial",
                                "zero_inflated_poisson", "hurdle_poisson", "cumulative", "categorical", "mixture", and (D01) "weibull",
-                               "exponential", "skew_normal", "shifted_lognormal", "exgaussian"
+                               "exponential", "skew_normal", "shifted_lognormal", "exgaussian", and (D02) "beta_binomial", "geometric",
+                               "negbinomial2"
     categories : tuple[str]    the response's categories in order (the cumulative and categorical families, B05); () otherwise
     family_spec : FamilySpec   the specification of that family under the model's link (autobayes/families/; the registered spec unless ``link`` names another of the family's links)
     link : str                 the link: the family's own, or the ``link`` given ("probit" for the Bernoulli and binomial families)
@@ -1386,7 +1387,8 @@ class Model:
         value is Bambi's variable name, ``alpha``) and ``"phi"`` for the Beta family (the precision); ``"nu"`` for a Student-t
         model that learns its degrees of freedom (``learned_parameters``); ``"zi"`` or ``"hu"`` for the zero-inflated and
         hurdle families (B06), whose linear predictor is ``"log_mu"`` and whose ``"mean"`` is the expected count; ``"alpha"``,
-        ``"beta"`` or ``"ndt"`` for the skew-normal, ex-Gaussian and shifted lognormal families (D01). ``"b:<term>"`` is the
+        ``"beta"`` or ``"ndt"`` for the skew-normal, ex-Gaussian and shifted lognormal families (D01); ``"phi"`` for the
+        beta-binomial (its precision) and ``"sigma"`` for ``negbinomial2`` (its dispersion, brms's ``1 / shape``; D02). ``"b:<term>"`` is the
         coefficient variable of each population-level term (scalar for a numeric term, a vector
         over the coefficient levels otherwise); with exactly one group-level term its ``sd``,
         ``offset`` and ``group_effect`` roles are included here as well, and ``sd:x``, ``offset:x``,
@@ -2919,6 +2921,43 @@ def exgaussian(formula: str, data: pd.DataFrame, priors: Priors, *,
     ``mu``. No distributional formula, ``weights()``, ``cens()`` or ``trunc()`` (D79).
     """
     return Model(formula, data, priors, family="exgaussian", center_predictors=center_predictors, categorical=categorical)
+
+
+def beta_binomial(formula: str, data: pd.DataFrame, priors: Priors, *,
+                  center_predictors: bool = True, categorical: Mapping[str, object] | None = None) -> Model:
+    """Beta-binomial response (brms ``beta_binomial()``, D02, docs/discrete-families.md): ``successes | trials(n) ~ ...`` with the
+    logit link on the mean success probability ``mu`` and the precision ``phi``, ``k ~ BetaBinomial(n, mu phi, (1 - mu) phi)``.
+
+    Successes and trials as for the binomial family (whole numbers up to 1e6, zero-trial rows dropped). ``phi`` takes a
+    positive-support prior, ``Priors(phi=ab.Gamma(0.01, 0.01))`` (brms class ``phi``; brms's default, on request through
+    ``ab.default_priors``). ``predict(kind="mean")`` returns ``mu`` and ``expected = n mu`` (brms's ``posterior_epred``),
+    ``kind="probability"`` ``mu`` alone. No distributional formula, ``weights()`` or other link (D80, D81).
+    """
+    return Model(formula, data, priors, family="beta_binomial", center_predictors=center_predictors, categorical=categorical)
+
+
+def geometric(formula: str, data: pd.DataFrame, priors: Priors, *,
+              center_predictors: bool = True, categorical: Mapping[str, object] | None = None) -> Model:
+    """Geometric count response (brms ``geometric()``, D02, docs/discrete-families.md): log link on the mean,
+    ``y ~ NegativeBinomial(mu, 1)``, ``Var[y] = mu + mu^2``; no auxiliary parameter.
+
+    Counts as for Poisson (integers in [0, 1e6], zero rows retained). ``predict(kind="mean")`` returns ``mu``. No
+    ``weights()`` or other link (D80, D81).
+    """
+    return Model(formula, data, priors, family="geometric", center_predictors=center_predictors, categorical=categorical)
+
+
+def negbinomial2(formula: str, data: pd.DataFrame, priors: Priors, *,
+                 center_predictors: bool = True, categorical: Mapping[str, object] | None = None) -> Model:
+    """Negative binomial count response parameterised by its dispersion (brms ``negbinomial2()``, D02,
+    docs/discrete-families.md): log link on the mean, ``y ~ NegativeBinomial(mu, shape = 1 / sigma)``,
+    ``Var[y] = mu + sigma mu^2``.
+
+    Counts as for Poisson. The dispersion ``sigma`` (brms's ``1 / shape`` of ``negbinomial``) takes a positive-support prior,
+    ``Priors(sigma=ab.Gamma(0.4, 0.3))`` (brms class ``sigma``; brms's default, on request through ``ab.default_priors``).
+    ``predict(kind="mean")`` returns ``mu``. No distributional formula, ``weights()`` or other link (D80, D81).
+    """
+    return Model(formula, data, priors, family="negbinomial2", center_predictors=center_predictors, categorical=categorical)
 
 
 def zero_inflated_poisson(formula: str, data: pd.DataFrame, priors: Priors, *,

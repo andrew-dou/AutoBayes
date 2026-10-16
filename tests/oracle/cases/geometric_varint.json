@@ -65,9 +65,5 @@
     1
    ]
   }
- },
- "gate": {
-  "expect": "fail",
-  "reason": "D02_discrete_families not implemented; remove this field when it lands"
  }
 }

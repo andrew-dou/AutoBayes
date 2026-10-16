@@ -160,6 +160,22 @@ prior (`ExtraParameter.bambi_prior`, which reads `min(y)` for `ndt`); every othe
 | Addition terms, distributional formulas, mo(), multivariate, non-linear, autocorrelation, me()/mi() | none (D79) | none (D79) | none (D79) | none (D79) | none (D79) |
 | Post-processing (C07) | `log_likelihood`: Weibull | exponential | skew normal | shifted lognormal | ex-Gaussian |
 
+The beta-binomial, geometric and `negbinomial2` families (D02, docs/discrete-families.md) are discrete families built from the
+fields above. The beta-binomial is the second family with trials (`response_kind` `"binomial"`, so `has_trials`): its response,
+trials, zero-trial rows, `kind="probability"` and `expected = n mu` follow the binomial's paths. `negbinomial2`'s `sigma` is a
+`scale_parameter` named as the Gaussian's, with brms's meaning for this family: the dispersion, `1 / shape` of `negbinomial`.
+
+| Group | beta-binomial | geometric | negbinomial2 |
+| --- | --- | --- | --- |
+| Names | `logit_mu` / logit (logit scale) / `mu` | `mu` / log (log scale) / `mu` | `mu` / log (log scale) / `mu` |
+| Response | binomial (trials), int64, `binomial_counts`, the binomial's separation warning | count, int64, counts in [0, 1e6], all-zero warning | count, int64, counts in [0, 1e6], all-zero warning |
+| Parameters | phi / phi | none | sigma / sigma |
+| Graph | `likelihoods.beta_binomial_logit_family` (PyMC's `BetaBinomial` with alpha = expit(eta) phi, beta = expit(-eta) phi; the trials as the binomial's) | `likelihoods.geometric_family` (PyMC's `NegativeBinomial(mu, 1)`) | `likelihoods.negbinomial2_family` (PyMC's `NegativeBinomial(mu, 1 / sigma)`) |
+| Prediction | expit, Binomial(n, Beta(mu phi, (1 - mu) phi)), by hand, `probability` kind, `expected = n mu`, bound = trials | exp with overflow check, NegBinomial(mu, 1), by hand | exp with overflow check, NegBinomial(mu, 1 / sigma), by hand |
+| Default priors | none (logit); phi `Gamma(0.01, 0.01)` | log | log; sigma `Gamma(0.4, 0.3)` |
+| Addition terms, distributional formulas, mo(), multivariate, non-linear, autocorrelation, me()/mi(), mm() and gr(by = ), other links | none (D80, D81) | none (D80, D81) | none (D80, D81) |
+| Post-processing (C07) | `log_likelihood`: the beta-binomial log mass | NegBinomial2-log at shape 1 | NegBinomial2-log at shape 1 / sigma |
+
 ## Adding a family
 
 1. Write `autobayes/families/<name>.py` building one `FamilySpec`; keep the response validation primitives in
