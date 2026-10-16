@@ -1476,9 +1476,9 @@
    "depends_on": [
     "A02_correlated_slopes"
    ],
-   "status": "gates_green",
+   "status": "merged",
    "summary": "category-specific effects cs(), multi-membership mm(), gr(by =) and |ID| correlations",
-   "pr": null,
+   "pr": 59,
    "attempts": 1,
    "gates": {
     "sha": "4e106fe50b11",
@@ -1496,8 +1496,13 @@
      }
     }
    },
-   "divergences": [],
-   "next_action": "agent (opus), wave D1",
+   "divergences": [
+    "D104",
+    "D105",
+    "D106",
+    "D107"
+   ],
+   "next_action": "acat_cs (cs()) parked until D04's acat family; mm() slopes, by with slopes, IDs within a formula not offered",
    "fixtures": {
     "pr": 57,
     "cases": [
