@@ -1335,13 +1335,13 @@
    "depends_on": [
     "A08_negbinomial"
    ],
-   "status": "fixtures_frozen",
+   "status": "implementing",
    "summary": "beta_binomial, geometric, negbinomial2 families",
    "pr": null,
-   "attempts": 0,
+   "attempts": 1,
    "gates": {},
    "divergences": [],
-   "next_action": "implementation",
+   "next_action": "agent (opus), wave D2",
    "fixtures": {
     "pr": 57,
     "cases": [
@@ -1358,13 +1358,13 @@
    "depends_on": [
     "B06_zero_inflated_hurdle"
    ],
-   "status": "fixtures_frozen",
+   "status": "implementing",
    "summary": "zero_inflated_negbinomial/binomial/beta, hurdle_negbinomial/gamma/lognormal; weights() for these families",
    "pr": null,
-   "attempts": 0,
+   "attempts": 1,
    "gates": {},
    "divergences": [],
-   "next_action": "implementation",
+   "next_action": "agent (opus), wave D3",
    "fixtures": {
     "pr": 57,
     "cases": [
@@ -1386,13 +1386,13 @@
    "depends_on": [
     "B05_ordinal_categorical"
    ],
-   "status": "fixtures_frozen",
+   "status": "implementing",
    "summary": "cumulative probit, sratio, cratio, acat",
    "pr": null,
-   "attempts": 0,
+   "attempts": 1,
    "gates": {},
    "divergences": [],
-   "next_action": "implementation",
+   "next_action": "agent (opus), wave D2",
    "fixtures": {
     "pr": 57,
     "cases": [
@@ -1452,9 +1452,9 @@
    "depends_on": [
     "C07_post_processing"
    ],
-   "status": "gates_green",
+   "status": "merged",
    "summary": "hypothesis() and conditional_effects() (deterministic given the draws)",
-   "pr": null,
+   "pr": 61,
    "attempts": 1,
    "gates": {
     "sha": "3bc1d079220d",
@@ -1472,8 +1472,13 @@
      }
     }
    },
-   "divergences": [],
-   "next_action": "agent reported gates green at cc16fe9 (eb63ec5); merge queue after D01",
+   "divergences": [
+    "D96",
+    "D97",
+    "D98",
+    "D99"
+   ],
+   "next_action": "Savage-Dickey ratios, other classes, interaction effects and conditional_effects options not offered (D96-D99)",
    "fixtures": {
     "pr": 57,
     "cases": [
@@ -1489,13 +1494,13 @@
    "depends_on": [
     "A07_default_priors"
    ],
-   "status": "fixtures_frozen",
+   "status": "implementing",
    "summary": "horseshoe() and R2D2() priors on b",
    "pr": null,
-   "attempts": 0,
+   "attempts": 1,
    "gates": {},
    "divergences": [],
-   "next_action": "implementation",
+   "next_action": "agent (opus), wave D3",
    "fixtures": {
     "pr": 57,
     "cases": [
