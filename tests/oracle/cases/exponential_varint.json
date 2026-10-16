@@ -65,9 +65,5 @@
     1
    ]
   }
- },
- "gate": {
-  "expect": "fail",
-  "reason": "D01_continuous_families not implemented; remove this field when it lands"
  }
 }

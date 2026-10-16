@@ -82,6 +82,11 @@ correlation ID shared with a distributional formula is one brms group whose coef
 (`groups[*].dpar`, `Z_m_<dpar>_c`, `r_m_<dpar>_c`) map to `Model.dpar_group_names` (`GroupMap.dpar_cn`), its `L_m` over all of
 them in the order `correlation_order` gives (three coefficients: the probe calls the later `cholesky_corr` coordinates
 'joint', each still recomputed from `L_m` and checked against `u`).
+
+D01: a family's extra parameter (`FamilySpec.extra_parameters`) is brms's parameter of that name: `alpha` (unbounded, sampled as
+it is), `beta` (`real<lower=0>`, on the log scale) and `ndt` (`real<lower=0,upper=min_Y>`, `min_Y` the smallest `Y`: Stan's
+lower-upper coordinate `log(ndt / (min_Y - ndt))`, recomputed from `ndt` at every point and checked against the fixture's `u`,
+and the probe's step checked, as for `zi`, before it is mapped to `ndt_interval__`).
 """
 from __future__ import annotations
 
@@ -145,7 +150,9 @@ def priors_from_spec(spec: dict) -> ab.Priors:
                      nlpars=_prior(spec.get("nlpars")),                                 # C02: {nlpar: {"b": ..., "sd": ...}}
                      ar=_prior(spec.get("ar")), ma=_prior(spec.get("ma")),
                      # C06: a measurement-error term's latent values, {"meanme": [...], "sdme": [...]} (bare, or by column)
-                     meanme=_prior(spec.get("meanme")), sdme=_prior(spec.get("sdme")))
+                     meanme=_prior(spec.get("meanme")), sdme=_prior(spec.get("sdme")),
+                     # D01: a family's extra parameter, {"alpha": [...]}, {"beta": [...]} or {"ndt": [...]}
+                     alpha=_prior(spec.get("alpha")), beta=_prior(spec.get("beta")), ndt=_prior(spec.get("ndt")))
 
 
 def build_model(case: dict, data: pd.DataFrame) -> ab.Model:
@@ -659,6 +666,7 @@ def natural_point(model: ab.Model, point: Point, cmap: ColumnMap, gmap: GroupMap
     ``phi`` are brms's parameters of those names (the Gaussian/Student-t/lognormal scale; the negative binomial/Gamma
     shape; the Beta precision); ``nu`` is brms's ``nu`` when the model learns it (a fixed nu is no value variable here,
     though brms reports it among its parameters); ``zi`` and ``hu`` are brms's zero-inflation and hurdle probabilities (B06);
+    ``alpha``, ``beta`` and ``ndt`` a family's extra parameter of that name (D01);
     ``bsp`` and ``simo`` each monotonic term's coefficient and simplex, by column (B03); ``ar`` and ``ma`` an autocorrelation
     term's coefficients, brms's vectors of those names (C04)."""
     if is_multivariate(model):                                 # C01: each response's arguments from its view of the point, and Lrescor
@@ -743,8 +751,9 @@ def natural_point(model: ab.Model, point: Point, cmap: ColumnMap, gmap: GroupMap
     if cmap.measurement:                                   # C06: an me() term's meanme_k, sdme_k and zme_k, by noisy column
         special = {cls: {x: (np.atleast_1d(pars[f"{cls}_{k}"]).astype(float) if cls == "zme" else float(np.atleast_1d(pars[f"{cls}_{k}"])[0]))
                          for x, k in cmap.measurement.items()} for cls in ("meanme", "sdme", "zme")}
+    extras = {e.name: float(pars[e.name]) for e in model.family_spec.extra_parameters}   # D01: brms's alpha, beta or ndt
     return dict(intercept=intercept, b=b, sd=sd or None, z=z or None, L=L or None, sigma=sigma, shape=shape, phi=phi, nu=nu,
-                zi=zi, hu=hu, bsp=bsp, simo=simo, theta=theta, sdgp=sdgp, lscale=lscale, zgp=zgp, ar=ar, ma=ma, **special)
+                zi=zi, hu=hu, bsp=bsp, simo=simo, theta=theta, sdgp=sdgp, lscale=lscale, zgp=zgp, ar=ar, ma=ma, **special, **extras)
 
 
 def value_point(model: ab.Model, point: Point, cmap: ColumnMap, gmap: GroupMap) -> dict:
@@ -909,6 +918,21 @@ def coordinate_map(fixture: Fixture, model: ab.Model, cmap: ColumnMap, gmap: Gro
                 if abs(math.log(p / (1.0 - p)) - pt_.u[idx]) > 1e-10:
                     raise OracleMismatch(f"point {q}: logit({par}) is {math.log(p / (1.0 - p))!r}; brms's unconstrained value is {pt_.u[idx]!r}")
             target, expect = (f"{names[par]}_logodds__", 0), "other"
+        elif par in {e.name for e in model.family_spec.extra_parameters}:   # D01: brms's alpha, beta or ndt
+            extra = next(e for e in model.family_spec.extra_parameters if e.name == par)
+            if extra.support == "below_min_y":                 # real<lower=0,upper=min_Y>: Stan's lower-upper coordinate
+                top = float(np.min(fixture.standata["Y"]))
+                v0 = top / (1.0 + math.exp(-0.3))              # the probe moves the value at u = 0.3 to 1.5 times itself
+                step = math.log(1.5 * v0 / (top - 1.5 * v0)) - 0.3
+                if abs(float(e["du"]) - step) > 1e-9:
+                    raise OracleMismatch(f"brms's probe moved the coordinate of {par} by {e['du']!r}; log({par} / (min_Y - {par})) "
+                                         f"moves it by {step!r}")
+                for q, pt_ in enumerate(fixture.points):      # and at every point, brms's coordinate is that of its value
+                    v = float(pt_.pars[par])
+                    if abs(math.log(v / (top - v)) - pt_.u[idx]) > 1e-10:
+                        raise OracleMismatch(f"point {q}: log({par} / (min_Y - {par})) is {math.log(v / (top - v))!r}; brms's "
+                                             f"unconstrained value is {pt_.u[idx]!r}")
+            target, expect = (extra.coordinate, 0), {"real": "identity", "positive": "log", "below_min_y": "other"}[extra.support]
         elif par.startswith("sd_") and int(par[3:]) in by_id:
             g = by_id[int(par[3:])]
             M = int(fixture.standata[f"M_{par[3:]}"])
@@ -1118,6 +1142,8 @@ def draws(fixture: Fixture, model: ab.Model, cmap: ColumnMap, gmap: GroupMap) ->
     for par in ("zi", "hu"):                                    # the zero-inflation / hurdle probability (B06)
         if par in names and par in pts[0].pars:
             data[names[par]] = (("chain", "draw"), np.array([float(p.pars[par]) for p in pts])[None, :])
+    for extra in model.family_spec.extra_parameters:            # D01: brms's alpha, beta or ndt
+        data[names[extra.name]] = (("chain", "draw"), np.array([float(p.pars[extra.name]) for p in pts])[None, :])
     for part, order in (model.spec.autocor.parts if model.spec.autocor is not None else ()):   # C04: brms's ar and ma
         roles = model.autocor_names
         data[roles[part]] = (("chain", "draw", roles[f"{part}_coordinate"]), np.stack([np.atleast_1d(p.pars[part]) for p in pts])[None])

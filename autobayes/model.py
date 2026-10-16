@@ -285,7 +285,8 @@ class Model:
     Attributes
     ----------
     family : str               a registered family name: "gaussian", "student", "poisson", "negbinomial", "gamma", "lognormal", "beta", "bernoulli", "binomial",
-                               "zero_inflated_poisson", "hurdle_poisson", "cumulative", "categorical"
+                               "zero_inflated_poisson", "hurdle_poisson", "cumulative", "categorical", "mixture", and (D01) "weibull",
+                               "exponential", "skew_normal", "shifted_lognormal", "exgaussian"
     categories : tuple[str]    the response's categories in order (the cumulative and categorical families, B05); () otherwise
     family_spec : FamilySpec   the specification of that family under the model's link (autobayes/families/; the registered spec unless ``link`` names another of the family's links)
     link : str                 the link: the family's own, or the ``link`` given ("probit" for the Bernoulli and binomial families)
@@ -465,6 +466,8 @@ class Model:
         for name in fam.fixed_parameters:                    # Bambi takes a fixed nu through the prior dict; a learned
             if name not in self.learned_parameters:          # one's truncated prior came from Priors.to_bambi (A13)
                 bambi_priors[name] = np.float64(getattr(self, name))   # PyTensor makes a Python 4.0 a float32 constant
+        for extra in fam.extra_parameters:                   # D01: alpha, beta, ndt; ndt truncated to (0, min y) of these rows
+            bambi_priors[extra.name] = extra.bambi_prior(getattr(priors, extra.name), self.data[self.spec.response])
         bambi_formula = self.spec.bambi_formula
         # Bambi centres every formula that has an intercept, or none. Without a distributional formula that is the
         # response formula's centring as it has always been; with one (B01), brms centres each formula that has an
@@ -535,6 +538,7 @@ class Model:
             variable_names += [self.family_spec.bambi_scale_parameter]   # the PyMC variable: "sigma", or "alpha" for "shape"
         if self.family_spec.zero_parameter is not None:
             variable_names += [self.family_spec.zero_parameter]          # the zero-inflation / hurdle probability, "zi" or "hu" (B06)
+        variable_names += [e.name for e in self.family_spec.extra_parameters]   # alpha, beta or ndt (D01)
         variable_names += list(self.family_spec.fixed_parameters)   # Bambi uses "nu" as an auxiliary-prior key even when fixed.
         if self.family_spec.thresholds:                     # B05: the raw thresholds' deterministic and their coordinate
             variable_names += [self.names["thresholds"], self.names["threshold_dim"]]
@@ -1381,7 +1385,8 @@ class Model:
         Gaussian, Student-t and lognormal families, ``"shape"`` for the negative binomial and Gamma families (its
         value is Bambi's variable name, ``alpha``) and ``"phi"`` for the Beta family (the precision); ``"nu"`` for a Student-t
         model that learns its degrees of freedom (``learned_parameters``); ``"zi"`` or ``"hu"`` for the zero-inflated and
-        hurdle families (B06), whose linear predictor is ``"log_mu"`` and whose ``"mean"`` is the expected count. ``"b:<term>"`` is the
+        hurdle families (B06), whose linear predictor is ``"log_mu"`` and whose ``"mean"`` is the expected count; ``"alpha"``,
+        ``"beta"`` or ``"ndt"`` for the skew-normal, ex-Gaussian and shifted lognormal families (D01). ``"b:<term>"`` is the
         coefficient variable of each population-level term (scalar for a numeric term, a vector
         over the coefficient levels otherwise); with exactly one group-level term its ``sd``,
         ``offset`` and ``group_effect`` roles are included here as well, and ``sd:x``, ``offset:x``,
@@ -1406,6 +1411,8 @@ class Model:
             out[fam.scale_parameter] = fam.bambi_scale_parameter
         if fam.zero_parameter is not None:                    # "zi" or "hu" (B06): the PyMC variable keeps brms's name
             out[fam.zero_parameter] = fam.zero_parameter
+        for extra in fam.extra_parameters:                    # "alpha", "beta" or "ndt" (D01): brms's name
+            out[extra.name] = extra.name
         for name in self.learned_parameters:                  # a learned nu (A13): the PyMC variable of that name
             out[name] = name
         if fam.thresholds:                                    # B05: brms's b_Intercept, the thresholds of the raw design, and
@@ -1569,7 +1576,7 @@ class Model:
                     shape=None, phi=None, nu: float | None = None,
                     zi: float | None = None, hu: float | None = None, bsp=None, simo=None, theta=None,
                     sdgp=None, lscale=None, zgp=None, ar=None, ma=None, meanme=None, sdme=None, zme=None,
-                    Ymi=None) -> dict[str, np.ndarray]:
+                    Ymi=None, alpha=None, beta=None, ndt=None) -> dict[str, np.ndarray]:
         """A point in PyMC's sampled (value) space, from natural-scale quantities.
 
         ``intercept`` is the *model* intercept (at the predictor means when centred),
@@ -1613,9 +1620,17 @@ class Model:
         ``sdme`` (the location and the positive scale of the latent values, ``sdme`` stored on the log scale) and ``zme`` (the
         standardised latent values, one per fitted row), each keyed by the noisy column or bare; ``Ymi`` gives the missing
         values of each column this model holds (``missing_names``: the response's under ``| mi()`` and each ``mi()`` term's
-        column), ``Ymi={"xm": array(Nmi)}`` in the order of the missing rows.
+        column), ``Ymi={"xm": array(Nmi)}`` in the order of the missing rows. ``alpha``, ``beta`` and ``ndt`` are the extra
+        parameters of the skew-normal, ex-Gaussian and shifted lognormal families (D01, ``FamilySpec.extra_parameters``), given
+        exactly for them: the skewness ``alpha`` (any finite number, stored as given), the exponential component's mean ``beta``
+        (positive, stored as its log) and the non-decision time ``ndt`` (strictly between 0 and the smallest response, stored
+        as ``log(ndt / (min(y) - ndt))``, PyMC's interval coordinate and Stan's).
         """
+        extras = {"alpha": alpha, "beta": beta, "ndt": ndt}                  # D01
         if self.family_spec.mixture:                          # C05: the components' parameters and theta
+            if any(v is not None for v in extras.values()):   # D01: a mixture's Gaussian components have none
+                raise ValueError("alpha, beta and ndt are the skew_normal, exgaussian and shifted_lognormal families' parameters; "
+                                 "a mixture has none")
             if ar is not None or ma is not None:              # C04: a mixture has no autocorrelation term
                 raise ValueError("ar and ma are an autocorrelation term's coefficients; a mixture has none")
             if sdgp is not None or lscale is not None or zgp is not None:   # C03: a mixture has no Gaussian process
@@ -1708,6 +1723,13 @@ class Model:
                 raise ValueError(f"the {self.family} family has no zero-inflation or hurdle probability; omit zi and hu")
             raise ValueError(f"{zero} (the {AUXILIARY[zero]}) is required for the {self.family} family; "
                              f"{' and '.join(k for k in probabilities if k != zero)} does not apply")
+        own = {e.name: e for e in self.family_spec.extra_parameters}         # D01: alpha, beta or ndt, exactly the family's own
+        for name, value in extras.items():
+            if name in own and value is None:
+                raise ValueError(f"{name} (the {own[name].meaning}) is required for the {self.family} family")
+            if name not in own and value is not None:
+                raise ValueError(f"the {self.family} family has no {AUXILIARY[name]}; omit {name}"
+                                 + "".join(f" (its {e.meaning} is {e.name})" for e in own.values()))
         n = self.names
         if self.spec.intercept and intercept is None:
             raise ValueError("intercept is required for a model with a population intercept")
@@ -1759,6 +1781,8 @@ class Model:
             if p.shape != () or not np.isfinite(p) or not 0 < p < 1:
                 raise ValueError(f"{zero} must be a finite scalar strictly between 0 and 1")
             point[f"{n[zero]}_logodds__"] = np.asarray(np.log(p) - np.log1p(-p))
+        for name, extra in own.items():                        # D01: on its coordinate (as is, log, Stan's lower-upper)
+            point[extra.coordinate] = extra.value(extras[name], self.design.y, self.family)
         learned = self.learned_parameters
         if "nu" in learned:                                    # learned (A13): sampled as log(nu - lower), the interval coordinate
             if nu is None:
@@ -2004,6 +2028,7 @@ class Model:
             fixed.append(f"{n[fam.scale_parameter]}_log__")
         if fam.zero_parameter is not None:
             fixed.append(f"{n[fam.zero_parameter]}_logodds__")
+        fixed += [e.coordinate for e in fam.extra_parameters]   # D01: brms's sigma before alpha, beta or ndt
         fixed += [f"{n[name]}_interval__" for name in self.learned_parameters]
         present = [name for name in fixed if name in names]
         for i, name in zip([i for i, v in enumerate(names) if v in present], present):
@@ -2416,6 +2441,8 @@ class Model:
                     roles[var] = f"b_{var}[{shown}] (vector; dims {var}_dim, posterior rows {', '.join(f'{var}[{l}]' for l in t.levels)})"
         if fam.zero_parameter is not None:
             roles[f"{n[fam.zero_parameter]}_logodds__"] = f"logit({fam.zero_parameter})"
+        for extra in fam.extra_parameters:                   # D01: alpha, log(beta), ndt on Stan's lower-upper coordinate
+            roles[extra.coordinate] = extra.coordinate_meaning
         for name, lower in self.learned_parameters.items():
             roles[f"{n[name]}_interval__"] = f"log({name} - {lower:g})"
         for t in s.mo_terms:                                 # B03: the coefficient and the simplex of each monotonic term
@@ -2673,6 +2700,7 @@ class Model:
             found.append((fam.scale_parameter, getattr(pr, fam.scale_parameter)))
         if fam.zero_parameter is not None:
             found.append((fam.zero_parameter, getattr(pr, fam.zero_parameter)))
+        found += [(e.name, getattr(pr, e.name)) for e in fam.extra_parameters]   # alpha, beta, ndt (D01)
         if pr.nu is not None:
             found.append(("nu", pr.nu))
         return [label for label, prior in found if getattr(prior, "source", "user") == "default"]
@@ -2830,6 +2858,67 @@ def beta(formula: str | list[str], data: pd.DataFrame, priors: Priors, *,
     """
     return Model(formula, data, priors, family="beta",
                  center_predictors=center_predictors, categorical=categorical)
+
+
+def weibull(formula: str, data: pd.DataFrame, priors: Priors, *,
+            center_predictors: bool = True, categorical: Mapping[str, object] | None = None) -> Model:
+    """Weibull response (brms ``weibull()``, D01, docs/continuous-families.md): log link on the mean, ``E[y] = mu = exp(eta)``,
+    ``y ~ Weibull(shape, scale = mu / Gamma(1 + 1 / shape))``.
+
+    Responses are strictly positive finite reals. The shape takes its own positive-support prior,
+    ``Priors(shape=ab.Gamma(0.01, 0.01))`` (brms class ``shape``; brms's default, on request through ``ab.default_priors``).
+    ``predict(kind="mean")`` returns ``mu``. No distributional formula, ``weights()``, ``cens()`` or ``trunc()`` (D79).
+    """
+    return Model(formula, data, priors, family="weibull", center_predictors=center_predictors, categorical=categorical)
+
+
+def exponential(formula: str, data: pd.DataFrame, priors: Priors, *,
+                center_predictors: bool = True, categorical: Mapping[str, object] | None = None) -> Model:
+    """Exponential response (brms ``exponential()``, D01, docs/continuous-families.md): log link on the mean,
+    ``E[y] = mu = exp(eta)``, ``y ~ Exponential(rate = 1 / mu)``; no auxiliary parameter.
+
+    Responses are strictly positive finite reals. ``predict(kind="mean")`` returns ``mu``. No ``weights()``, ``cens()`` or
+    ``trunc()`` (D79).
+    """
+    return Model(formula, data, priors, family="exponential", center_predictors=center_predictors, categorical=categorical)
+
+
+def skew_normal(formula: str, data: pd.DataFrame, priors: Priors, *,
+                center_predictors: bool = True, categorical: Mapping[str, object] | None = None) -> Model:
+    """Skew-normal response (brms ``skew_normal()``, D01, docs/continuous-families.md): identity link on the mean ``mu``,
+    standard deviation ``sigma`` and skewness ``alpha`` (Azzalini's skew normal in brms's mean parameterisation).
+
+    ``sigma`` takes a positive-support prior, ``Priors(sigma=ab.HalfNormal(1))``, and ``alpha`` a location prior,
+    ``Priors(alpha=ab.Normal(0, 4))`` (brms class ``alpha``; its default, on request through ``ab.default_priors``).
+    ``predict(kind="mean")`` returns ``mu``. No distributional formula, ``weights()``, ``cens()`` or ``trunc()`` (D79).
+    """
+    return Model(formula, data, priors, family="skew_normal", center_predictors=center_predictors, categorical=categorical)
+
+
+def shifted_lognormal(formula: str, data: pd.DataFrame, priors: Priors, *,
+                      center_predictors: bool = True, categorical: Mapping[str, object] | None = None) -> Model:
+    """Shifted lognormal response (brms ``shifted_lognormal()``, D01, docs/continuous-families.md): ``log(y - ndt) ~
+    Normal(mu, sigma)`` with the identity link on ``mu`` and the non-decision time ``0 < ndt < min(y)``;
+    ``E[y] = exp(mu + sigma^2 / 2) + ndt``.
+
+    Responses are strictly positive finite reals. ``sigma`` takes a positive-support prior; ``ndt`` a prior truncated to
+    (0, min(y)) and renormalised there, as brms does (``Priors(ndt=ab.Normal(0, 0.3))``), or brms's default
+    ``uniform(0, min_Y)``, ``Priors(ndt=ab.Uniform(0, "min_Y"))``. ``predict(kind="mean")`` returns brms's ``posterior_epred``
+    as ``mean``; ``kind="linear"`` returns ``mu``. No distributional formula, ``weights()``, ``cens()`` or ``trunc()`` (D79).
+    """
+    return Model(formula, data, priors, family="shifted_lognormal", center_predictors=center_predictors, categorical=categorical)
+
+
+def exgaussian(formula: str, data: pd.DataFrame, priors: Priors, *,
+               center_predictors: bool = True, categorical: Mapping[str, object] | None = None) -> Model:
+    """Ex-Gaussian response (brms ``exgaussian()``, D01, docs/continuous-families.md): ``Normal(mu - beta, sigma)`` plus an
+    exponential of mean ``beta``, with the identity link on the mean ``mu``.
+
+    ``sigma`` and ``beta`` take positive-support priors, ``Priors(sigma=ab.HalfNormal(1), beta=ab.Gamma(1, 0.1))`` (brms
+    classes ``sigma`` and ``beta``; ``gamma(1, 0.1)`` is brms's default for ``beta``). ``predict(kind="mean")`` returns
+    ``mu``. No distributional formula, ``weights()``, ``cens()`` or ``trunc()`` (D79).
+    """
+    return Model(formula, data, priors, family="exgaussian", center_predictors=center_predictors, categorical=categorical)
 
 
 def zero_inflated_poisson(formula: str, data: pd.DataFrame, priors: Priors, *,

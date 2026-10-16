@@ -6,7 +6,9 @@ LKJ prior on the correlation matrix of the coefficients of ``(1 + x | g)``, brms
 family's auxiliary parameter: ``sigma`` for Gaussian/Student-t (residual SD/scale respectively) and for the
 lognormal (the SD of ``log y``), ``shape`` for the negative binomial and Gamma families, ``phi`` for the Beta family
 (the precision), and ``nu`` for a Student-t model that learns its degrees of freedom (``nu=None``; brms class ``nu``,
-truncated to ``nu > 1``); ``zi`` or ``hu``, the zero-inflation or hurdle probability (B06, a ``Beta`` prior). An
+truncated to ``nu > 1``); ``zi`` or ``hu``, the zero-inflation or hurdle probability (B06, a ``Beta`` prior); ``alpha``,
+``beta`` or ``ndt``, the skewness, exponential component's mean or non-decision time of the skew-normal, ex-Gaussian and shifted
+lognormal families (D01; ``ndt``'s ``Uniform(0, "min_Y")`` is brms's ``uniform(0, min_Y)``). An
 auxiliary parameter with its own formula (B01, ``["y ~ x", "sigma ~ z"]``) takes the priors of that formula's intercept
 and coefficients instead, ``sigma={"intercept": ..., "b": ...}`` (brms's ``Intercept`` and ``b`` with ``dpar = sigma``).
 Every class the model has must be given, and a class the model does
@@ -26,6 +28,7 @@ the two shapes of Stan's ``beta(alpha, beta)``, on (0, 1).
 """
 from __future__ import annotations
 
+import math
 import re
 from collections.abc import Mapping
 from dataclasses import dataclass, field, replace
@@ -39,11 +42,20 @@ _UNIT = {"Beta"}                                 # priors on (0, 1): the zero-in
 _SIMPLEX = {"Dirichlet"}                         # priors on a simplex: a monotonic term's simo (B03)
 # The Priors fields a family's scale_parameter can name, and (B06) the probabilities a family's zero_parameter can name
 AUXILIARY = {"sigma": "residual SD", "shape": "shape parameter", "phi": "precision parameter",
-             "zi": "zero-inflation probability", "hu": "hurdle probability"}
+             "zi": "zero-inflation probability", "hu": "hurdle probability",
+             # D01: a family's extra parameters (FamilySpec.extra_parameters): skew_normal, exgaussian, shifted_lognormal
+             "alpha": "skewness", "beta": "mean of the exponential component", "ndt": "non-decision time"}
 # The priors of a learned parameter with a lower bound (the Student-t nu, A13): the positive-support priors whose
 # truncation at the bound PyMC can renormalise (it needs their CDF; PyMC has none for HalfStudentT).
 TRUNCATABLE = frozenset({"Gamma", "Exponential", "HalfNormal", "HalfCauchy"})
 _NO_CDF = frozenset({"HalfStudentT"})            # positive-support priors whose CDF PyMC lacks, so no truncation of them
+# D01: the priors of a parameter bounded on both sides by brms (the shifted lognormal's real<lower=0,upper=min_Y> ndt), each
+# truncated to the interval and renormalised there as brms does, the log of its mass there computed with SciPy
+# (``bounded_log_mass``); and ``Uniform(0, "min_Y")``, brms's default, the uniform distribution on the interval itself.
+BOUNDABLE = frozenset({"Normal", "StudentT", "HalfNormal", "HalfCauchy", "Exponential", "Gamma", "InverseGamma", "Uniform"})
+MIN_Y = "min_Y"                                  # brms's name of the smallest response, the upper bound of ndt
+# D01: the priors each support of a family's extra parameter takes (families.spec.EXTRA_SUPPORTS)
+EXTRA_PRIORS = {"real": frozenset({"Normal", "StudentT"}), "positive": frozenset(_SCALE), "below_min_y": BOUNDABLE}
 
 
 class PriorError(ValueError):
@@ -60,7 +72,7 @@ class Prior:
     source: str = field(default="user", compare=False, repr=False)
 
     def __str__(self) -> str:
-        inside = ", ".join(f"{k}={v:g}" for k, v in self.params.items())
+        inside = ", ".join(f"{k}={v}" if isinstance(v, str) else f"{k}={v:g}" for k, v in self.params.items())   # D01: min_Y
         return f"{self.name}({inside})"
 
     def to_bambi(self):
@@ -87,6 +99,54 @@ class Prior:
             return pm.Truncated(name, base.dist(**params), lower=lower)
 
         return bmb.Prior(f"Truncated{self.name}", dist=truncated, **dict(self.params))
+
+    def to_bambi_bounded(self, lower: float, upper: float):
+        """Bambi's prior for a parameter bounded to ``(lower, upper)`` (D01: the shifted lognormal's ``ndt``, brms's
+        ``real<lower=0,upper=min_Y>``): this distribution truncated to the interval and renormalised there, as brms's
+        ``lprior`` does (the density minus ``log_diff_exp`` of the CDF at the bounds), or for ``Uniform(0, "min_Y")`` the
+        uniform density ``-log(upper - lower)``. It is a ``pm.CustomDist`` sampled on PyMC's interval coordinate (Stan's
+        lower-upper transform, ``log((x - lower) / (upper - x))``), whose log density is PyMC's own density of the
+        distribution minus the log of its mass between the bounds, a float64 constant computed with SciPy
+        (``bounded_log_mass``): PyMC's ``Truncated`` would compute it through PyMC's normal log-CDF, whose float32 constant
+        ``sqrt(2.0)`` costs 1e-8 (measured on the frozen case ``shifted_lognormal_varint``). Draws are SciPy's inverse CDF
+        between the bounds; the support point is the interval's midpoint."""
+        import bambi as bmb
+        import pymc as pm
+        import pytensor.tensor as pt
+        from pymc.distributions.transforms import Interval
+
+        lower, upper = np.float64(lower), np.float64(upper)
+        if not (np.isfinite(lower) and np.isfinite(upper) and lower < upper):
+            raise PriorError(f"the bounds of a bounded parameter must be finite with lower < upper, got ({lower}, {upper})")
+        if self.name == "Uniform":
+            log_density = np.float64(-np.log(upper - lower))
+            base = log_mass = dist = None
+        else:
+            log_density = None
+            log_mass = np.float64(bounded_log_mass(self, lower, upper))
+            params = {k: np.float64(v) for k, v in self.params.items()}
+            base = getattr(pm, self.name)
+            dist = _scipy_distribution(self)
+        middle = np.float64(0.5) * (lower + upper)
+
+        def logp(value):
+            inside = pt.and_(pt.ge(value, lower), pt.le(value, upper))
+            body = pt.zeros_like(value) + log_density if base is None else pm.logp(base.dist(**params), value) - log_mass
+            return pt.switch(inside, body, -np.inf)
+
+        def random(rng=None, size=None):
+            if dist is None:
+                return rng.uniform(lower, upper, size=size)
+            return np.clip(dist.ppf(rng.uniform(dist.cdf(lower), dist.cdf(upper), size=size)), lower, upper)
+
+        def support_point(rv, size):
+            return pt.full_like(rv, middle)
+
+        def bounded(name, **_):
+            return pm.CustomDist(name, logp=logp, random=random, support_point=support_point, transform=Interval(lower, upper),
+                                 dtype="float64")
+
+        return bmb.Prior(f"Bounded{self.name}", dist=bounded)
 
 
 def _positive(name: str, value: float) -> float:
@@ -176,6 +236,55 @@ def dirichlet_concentration(prior: Prior, D: int) -> np.ndarray:
     return np.asarray(values, dtype=float)
 
 
+def Uniform(lower: float, upper) -> Prior:
+    """brms's ``uniform(lower, upper)``, the prior of the shifted lognormal's non-decision time ``ndt`` (D01,
+    ``Priors(ndt=...)``): brms's default ``uniform(0, min_Y)`` is ``Uniform(0, "min_Y")``, the uniform distribution on ndt's
+    own support (0, min y), whose upper bound is the smallest response of the data the model is built on (brms's Stan data
+    ``min_Y``). Only that form is accepted, and only for ``ndt`` (a narrower interval would put the density at -inf on part
+    of the parameter's support, where brms's sampler cannot start; divergence D78)."""
+    if not (isinstance(lower, (int, float, np.integer, np.floating)) and float(lower) == 0.0 and isinstance(upper, str)
+            and upper == MIN_Y):
+        raise PriorError(f'Uniform is brms\'s uniform(0, min_Y), the default prior of ndt: write Uniform(0, "min_Y"); got '
+                         f"Uniform({lower!r}, {upper!r}) (another interval is not offered, divergence D78)")
+    return Prior("Uniform", {"lower": 0.0, "upper": MIN_Y})
+
+
+def _scipy_distribution(prior: Prior):
+    """The SciPy distribution of a prior of ``BOUNDABLE`` (but ``Uniform``), with Stan's (and PyMC's) parameterisation."""
+    from scipy import stats
+
+    p = {k: float(v) for k, v in prior.params.items()}
+    if prior.name == "Normal":
+        return stats.norm(p["mu"], p["sigma"])
+    if prior.name == "StudentT":
+        return stats.t(p["nu"], p["mu"], p["sigma"])
+    if prior.name == "HalfNormal":
+        return stats.halfnorm(scale=p["sigma"])
+    if prior.name == "HalfCauchy":
+        return stats.halfcauchy(scale=p["beta"])
+    if prior.name == "Exponential":
+        return stats.expon(scale=1.0 / p["lam"])
+    if prior.name == "Gamma":
+        return stats.gamma(p["alpha"], scale=1.0 / p["beta"])
+    if prior.name == "InverseGamma":
+        return stats.invgamma(p["alpha"], scale=p["beta"])
+    raise PriorError(f"{prior} cannot be truncated to an interval here; use one of {sorted(BOUNDABLE)}")
+
+
+def bounded_log_mass(prior: Prior, lower: float, upper: float) -> float:
+    """``log P(lower < X < upper)`` under ``prior`` (D01): the log of brms's ``log_diff_exp(lcdf(upper), lcdf(lower))``,
+    from the lower tail's CDF, or from the upper tail's survival function where the interval lies above the median, so that
+    no difference of two numbers near 1 is formed. Refused when the prior puts no mass on the interval."""
+    d = _scipy_distribution(prior)
+    if d.cdf(lower) > 0.5:
+        hi, lo = float(d.logsf(lower)), float(d.logsf(upper))
+    else:
+        hi, lo = float(d.logcdf(upper)), float(d.logcdf(lower))
+    if not hi > lo:
+        raise PriorError(f"{prior} puts no mass on ({lower:g}, {upper:g}), the support of the parameter it is the prior of")
+    return hi + (math.log1p(-math.exp(lo - hi)) if np.isfinite(lo) else 0.0)
+
+
 _BRMS = {   # prior name -> (brms's distribution, its arguments in Stan's order: a parameter name, or a literal number)
     "Normal": ("normal", ("mu", "sigma")), "StudentT": ("student_t", ("nu", "mu", "sigma")),
     "HalfNormal": ("normal", (0, "sigma")), "HalfStudentT": ("student_t", ("nu", 0, "sigma")),
@@ -197,6 +306,8 @@ def brms_prior(prior: Prior) -> str:
 
     if prior.name == "Dirichlet":                         # its concentrations in order, or brms's one-number shorthand
         return f"dirichlet({', '.join(r_number(float(v)) for v in prior.params.values())})"
+    if prior.name == "Uniform":                           # D01: brms's uniform(0, min_Y), ndt's default
+        return f"uniform({r_number(float(prior.params['lower']))}, {prior.params['upper']})"
     if prior.name not in _BRMS:
         raise PriorError(f"{prior} has no brms spelling")
     fn, args = _BRMS[prior.name]
@@ -292,6 +403,14 @@ class Priors:
     positive half line), each keyed by the noisy column (``meanme={"x": Normal(0, 2)}``, brms ``class = meanme, coef = mex``)
     or bare for the model's one ``me()`` term; refused without one. A missing-value term ``mi(col)`` has a coefficient of
     class ``b`` (brms's ``bsp``, coefficient ``micol``) and nothing else: the missing values have brms's flat prior.
+
+    ``alpha``, ``beta`` and ``ndt`` are the extra auxiliary parameters of the skew-normal, ex-Gaussian and shifted lognormal
+    families (D01, ``FamilySpec.extra_parameters``, docs/continuous-families.md), required exactly for their family and refused
+    for every other: ``alpha``, the skewness, a location prior (``Normal``, ``StudentT``; brms class ``alpha``, default
+    ``normal(0, 4)``); ``beta``, the mean of the ex-Gaussian's exponential component, a positive-support prior (brms class
+    ``beta``, default ``gamma(1, 0.1)``); ``ndt``, the non-decision time, brms's ``real<lower=0,upper=min_Y>``: one of
+    ``BOUNDABLE``, truncated to (0, min y) and renormalised there as brms does, or ``Uniform(0, "min_Y")``, brms's default
+    ``uniform(0, min_Y)``. None takes a formula of its own (D79).
     """
 
     intercept: Prior | None = None
@@ -323,13 +442,19 @@ class Priors:
     # values, by noisy column (brms classes ``meanme`` and ``sdme``, coefficient ``mex``); a single me() term takes the bare prior
     meanme: Prior | Mapping[str, Prior] | None = None
     sdme: Prior | Mapping[str, Prior] | None = None
+    # D01, a family's extra parameters (FamilySpec.extra_parameters, docs/continuous-families.md): the skew normal's skewness
+    # (brms class ``alpha``, a location prior), the ex-Gaussian's exponential component's mean (class ``beta``, a positive-support prior)
+    # and the shifted lognormal's non-decision time (class ``ndt``, truncated to (0, min y)); refused for every other family
+    alpha: Prior | None = None
+    beta: Prior | None = None
+    ndt: Prior | None = None
 
     def __post_init__(self):
         if isinstance(self.components, list):                         # one value for equal component lists (C05)
             object.__setattr__(self, "components", tuple(self.components))
 
     # -- multivariate models (C01, docs/multivariate.md) ---------------------------------------------
-    _RESPONSE_CLASSES = ("intercept", "b", "sd", "sigma", "shape", "phi", "nu", "zi", "hu", "simo")
+    _RESPONSE_CLASSES = ("intercept", "b", "sd", "sigma", "shape", "phi", "nu", "zi", "hu", "simo", "alpha", "beta", "ndt")
 
     def response_priors(self, response: str) -> "Priors":
         """The priors of one response of a multivariate model (C01): its entry of ``resp`` as a ``Priors`` (a mapping of
@@ -869,6 +994,7 @@ class Priors:
         self.me_priors(spec, "sdme")
         scale = fam.scale_parameter                                   # "sigma", "shape", "phi" or None
         zero = fam.zero_parameter                                     # "zi", "hu" or None (B06)
+        extras = {e.name: e for e in fam.extra_parameters}            # alpha, beta or ndt (D01)
         auxiliary = {name: getattr(self, name) for name in AUXILIARY}
         predicted = scale is not None and scale in getattr(spec, "dpar_names", ())   # the scale parameter has its own formula (B01)
         if scale is not None and auxiliary[scale] is None and not predicted:
@@ -876,12 +1002,15 @@ class Priors:
         if zero is not None and auxiliary[zero] is None:
             raise PriorError(f"the {fam.name} family needs a prior on the {AUXILIARY[zero]} {zero}: pass {zero}=..., "
                              "a prior on (0, 1) such as ab.Beta(1, 1)")
+        for name, extra in extras.items():                            # D01: each is required, with a prior its support takes
+            self._validate_extra(fam, extra, auxiliary[name])
         for name, prior in auxiliary.items():
-            if prior is not None and name not in (scale, zero):
+            if prior is not None and name not in (scale, zero, *extras):
                 raise PriorError(
                     f"the {fam.name} family has no {AUXILIARY[name]}; do not pass {name}."
                     + (f" Its auxiliary parameter is {scale}: pass {scale}=..." if scale is not None else "")
                     + (f" Its {AUXILIARY[zero]} is {zero}: pass {zero}=..." if zero is not None else "")
+                    + "".join(f" Its {e.meaning} is {e.name}: pass {e.name}=..." for e in extras.values())
                     + (f" Its intercept and slope priors are on the {fam.link_scale} scale." if fam.link_scale is not None else "")
                 )
         if self.nu is not None:                                       # the learned Student-t degrees of freedom (A13)
@@ -941,12 +1070,33 @@ class Priors:
                 raise PriorError(f"prior for {zero!r} must be a prior on (0, 1) ({sorted(_UNIT)}; the {AUXILIARY[zero]} "
                                  f"is brms's real<lower=0,upper=1> {zero}), got {prior}")
 
+    @staticmethod
+    def _validate_extra(fam, extra, prior) -> None:
+        """D01: the prior of one of the family's extra parameters (``FamilySpec.extra_parameters``): given, one ``Prior``, and
+        one its support takes (``EXTRA_PRIORS``)."""
+        if prior is None:
+            example = {"real": "ab.Normal(0, 4)", "positive": "ab.Gamma(1, 0.1)", "below_min_y": 'ab.Uniform(0, "min_Y")'}
+            raise PriorError(f"the {fam.name} family needs a prior on its {extra.meaning} {extra.name}: pass {extra.name}=..., "
+                             f"such as {example[extra.support]} (brms's default is {brms_prior(extra.default_prior())})")
+        if not isinstance(prior, Prior):
+            raise PriorError(f"prior for {extra.name!r} must be a Prior, got {type(prior).__name__} (the {extra.name} of the "
+                             f"{fam.name} family takes no formula of its own, divergence D79)")
+        allowed = EXTRA_PRIORS[extra.support]
+        if prior.name not in allowed:
+            what = {"real": "a location prior (brms's real " + extra.name + ")",
+                    "positive": "a positive-support prior (brms's real<lower=0> " + extra.name + ")",
+                    "below_min_y": "a prior truncated to (0, min(y)) and renormalised there (brms's real<lower=0,upper=min_Y> "
+                                   + extra.name + "; HalfStudentT(nu, s) is StudentT(nu, 0, s) there)"}[extra.support]
+            raise PriorError(f"prior for {extra.name!r} must be {what}, one of {sorted(allowed)}; got {prior}")
+
     def to_bambi(self, spec, family="gaussian") -> dict:
         """Bambi's prior dict: one prior per term (array-valued parameters for the levels of a
         categorical term). Each group-level coefficient (``1|g``, and ``x|g`` for a varying slope) gets
         Normal(0, sd) with its own ``sd`` as hyperprior; without a group term no group prior is emitted
         (Bambi would accept a stray ``1|g`` entry silently). ``family`` as for ``validate``. An auxiliary parameter with its
-        own formula (B01) gets the dict of its formula's term priors, which Bambi reads for that distributional component."""
+        own formula (B01) gets the dict of its formula's term priors, which Bambi reads for that distributional component.
+        A family's extra parameters (D01, ``alpha``, ``beta``, ``ndt``) are not in it: the model adds them
+        (``ExtraParameter.bambi_prior``), because ``ndt``'s bound is the data's smallest response."""
         import bambi as bmb
         from autobayes.families import FamilySpec, get_family
         from autobayes.formula import ModelSpec, bambi_group_name
@@ -1006,7 +1156,8 @@ class Priors:
 
         form = ("Priors(components=[ab.Priors(intercept=..., b=..., sigma=...), ...], theta=ab.Dirichlet(...)), one Priors per "
                 "component (brms's dpar = mu<k> and class sigma<k>; docs/mixtures.md)")
-        top = [name for name in ("intercept", "b", "sd", "sigma", "shape", "phi", "cor", "nu", "zi", "hu", "simo", "meanme", "sdme")
+        top = [name for name in ("intercept", "b", "sd", "sigma", "shape", "phi", "cor", "nu", "zi", "hu", "simo", "meanme", "sdme",
+                                 "alpha", "beta", "ndt")
                if getattr(self, name) is not None]
         if top:
             raise PriorError(f"a mixture's priors are per component, {form}; {top} at the top level do not apply")

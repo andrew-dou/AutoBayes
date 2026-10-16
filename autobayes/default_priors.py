@@ -19,7 +19,10 @@ brms's rules (``default_prior()``, ``def_dpar_prior``, ``def_scale_prior``, ``pr
   (``FamilySpec.default_scale_prior``, ``FamilySpec.default_learned_priors``): negative binomial ``shape``
   ``inv_gamma(0.4, 0.3)``, Gamma ``shape`` and Beta ``phi`` ``gamma(0.01, 0.01)``, Student-t ``nu`` ``gamma(2, 0.1)``.
   The zero-inflation or hurdle probability of the zero-inflated and hurdle families (B06): ``beta(1, 1)`` with bounds 0
-  and 1 (``FamilySpec.default_zero_prior``).
+  and 1 (``FamilySpec.default_zero_prior``). A family's extra parameters (D01, ``FamilySpec.extra_parameters``): the skew
+  normal's ``alpha`` ``normal(0, 4)``, the ex-Gaussian's ``beta`` ``gamma(1, 0.1)`` with ``lb`` 0 and the shifted lognormal's
+  ``ndt`` ``uniform(0, min_Y)`` with ``lb`` 0 and ``ub`` ``min_Y`` (``Uniform(0, "min_Y")``), none of them data-dependent
+  (checked against brms on rescaled responses); the Weibull ``shape`` ``gamma(0.01, 0.01)``.
 - A monotonic term ``mo(x)`` (B03): its coefficient is flat like every ``b``; its simplex ``dirichlet(1)`` (brms's
   ``eval_dirichlet`` default, the uniform distribution on the simplex), ``Dirichlet(1)``, on the class ``simo`` row of
   coefficient ``mox1``.
@@ -350,6 +353,8 @@ def default_priors(formula: str | list[str], data: pd.DataFrame, *, family: str 
             raise PriorError(f"no brms default prior is recorded for the {fam.name} family's {fam.zero_parameter}; "
                              f"give the priors explicitly (ab.Priors(..., {fam.zero_parameter}=...))")
         auxiliary[fam.zero_parameter] = fam.default_zero_prior()
+    for extra in fam.extra_parameters:                                # D01: alpha normal(0, 4), beta gamma(1, 0.1), ndt uniform(0, min_Y)
+        auxiliary[extra.name] = extra.default_prior()
     for name, make in learned.items():
         if make is None:
             raise PriorError(f"no brms default prior is recorded for the {fam.name} family's learned {name}; "
@@ -564,6 +569,9 @@ def prior_table(priors: Priors, spec, family="gaussian", *, center_predictors: b
         add(getattr(priors, fam.scale_parameter), fam.scale_parameter, lb="0")
     if fam.zero_parameter is not None:                                # brms's real<lower=0,upper=1> zi / hu (B06)
         add(getattr(priors, fam.zero_parameter), fam.zero_parameter, lb="0", ub="1")
+    for extra in fam.extra_parameters:                                # D01: brms's alpha, beta (lb 0), ndt (lb 0, ub min_Y)
+        lb, ub = extra.bounds
+        add(getattr(priors, extra.name), extra.name, lb=lb, ub=ub)
     if priors.nu is not None:
         add(priors.nu, "nu", lb=r_number(fam.learnable_parameters["nu"]))
     sd = priors.sd_priors(spec)

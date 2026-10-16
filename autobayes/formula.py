@@ -2118,16 +2118,17 @@ def _parse_formulas(formulas, data: pd.DataFrame | None, family: str, categorica
             raise FormulaError(f"{text!r}: {name!r} has two formulas; give each distributional parameter one")
         if name != fam.scale_parameter or fam.distributional_link is None:
             nl_hint = ""
-            if name in (fam.scale_parameter, fam.zero_parameter, *fam.fixed_parameters, *fam.learnable_parameters):
+            extras = [e.name for e in fam.extra_parameters]            # D01: alpha, beta, ndt take no formula here (D79)
+            if name in (fam.scale_parameter, fam.zero_parameter, *fam.fixed_parameters, *fam.learnable_parameters, *extras):
                 why = f"brms's {name} ~ ... is not offered here"
             else:
-                own = [p for p in (fam.scale_parameter, fam.zero_parameter, *fam.fixed_parameters) if p is not None]
+                own = [p for p in (fam.scale_parameter, fam.zero_parameter, *fam.fixed_parameters, *extras) if p is not None]
                 why = (f"the {fam.name} family has no parameter {name!r}"
                        + (f" (its parameters besides the mean are {own})" if own else " (it has no parameter besides the mean)"))
                 from autobayes.families import FAMILIES
 
-                if not any(name in (o.scale_parameter, o.zero_parameter, *o.fixed_parameters, *o.learnable_parameters)
-                           for o in FAMILIES.values()):              # C01: most likely a second response
+                if not any(name in (o.scale_parameter, o.zero_parameter, *o.fixed_parameters, *o.learnable_parameters,
+                                    *(e.name for e in o.extra_parameters)) for o in FAMILIES.values()):   # C01: a second response
                     why += (f"; if {name!r} is a second response, a formula of its own per response (brms's bf(y ~ ...) + "
                             f"bf({name} ~ ...)) is not supported: a multivariate model's responses share one right-hand side, "
                             f"'mvbind(y, {name}) ~ ...' (docs/multivariate.md, divergence D56)")
