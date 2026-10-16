@@ -232,3 +232,14 @@ the response formula's term and log sigma's varying intercept, `Priors(sigma={"i
 `mm()` and `by`, the terms next to other special terms, in multivariate and non-linear models, other IDs and new levels of `by`
 and shared-ID factors are refused (D104-D106); `cs()` and the case `acat_cs` wait for D04's acat family (D107); see
 [multi-membership and by](multi-membership-and-by.md).
+
+Weibull, exponential, skew-normal, shifted lognormal and ex-Gaussian responses (D01, brms's `weibull()`, `exponential()`,
+`skew_normal()`, `shifted_lognormal()`, `exgaussian()`): `ab.weibull` and `ab.exponential` with a log link on the mean,
+`ab.skew_normal` and `ab.exgaussian` with the identity link on the mean (brms's mean parameterisations), `ab.shifted_lognormal`
+with the identity link on the location of `log(y - ndt)`; the extra parameters `alpha` (skewness, a location prior), `beta` (the
+exponential component's mean, a positive-support prior) and `ndt` (the non-decision time below the smallest response, its prior
+truncated to (0, min y) as brms does, or brms's default `ab.Uniform(0, "min_Y")`) under `Priors(alpha=..., beta=..., ndt=...)`;
+brms's `posterior_epred`, response draws, `log_lik()` and brms's default priors. Verified against `weibull_varint`,
+`exponential_varint`, `skew_normal_varint`, `shifted_lognormal_varint` and `exgaussian_varint` (log densities within 1.4e-15
+relative); other links, distributional formulas, addition terms, `mo()`, `me()`/`mi()`, autocorrelation terms, multivariate and
+mixture use are refused (D76-D79); see [continuous families](continuous-families.md).

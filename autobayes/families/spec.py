@@ -3,7 +3,8 @@
 Everything the library once decided by comparing a family name against a string is a field of
 the spec. A family is one module in this package that builds its spec (``gaussian.py``,
 ``student.py``, ``poisson.py``, ``negbinomial.py``, ``gamma.py``, ``lognormal.py``, ``beta.py``, ``bernoulli.py``,
-``binomial.py``, ``zero_inflated_poisson.py``, ``hurdle_poisson.py``, ``cumulative.py``, ``categorical.py``, ``mixture.py``);
+``binomial.py``, ``zero_inflated_poisson.py``, ``hurdle_poisson.py``, ``cumulative.py``, ``categorical.py``, ``mixture.py``,
+``weibull.py``, ``exponential.py``, ``skew_normal.py``, ``shifted_lognormal.py``, ``exgaussian.py``);
 ``autobayes.families.FAMILIES`` is the registry and ``get_family(name)`` the lookup. Callable fields
 take the built ``Model`` (or the frame being validated) because that is what the call sites have in
 hand; none of them is called before ``Model.__init__`` has resolved the spec.
@@ -81,6 +82,105 @@ def scale_line(model) -> str:
     return f"  {name} ~ {describe_prior(getattr(model.priors, name), lb=0)}"
 
 
+# -- a family's auxiliary parameters beside its scale parameter (D01, docs/continuous-families.md) ----------------------
+# How brms bounds such a parameter decides how it is sampled and which priors it takes (``priors.EXTRA_PRIORS``):
+#   "real"         unbounded, brms's ``real alpha`` (the skew-normal skewness): a location prior, sampled as it is;
+#   "positive"     ``real<lower=0>`` (the ex-Gaussian ``beta``): a positive-support prior, sampled as its log;
+#   "below_min_y"  ``real<lower=0,upper=min_Y>`` with brms's ``min_Y = min(Y)`` (the shifted lognormal's ``ndt``): a prior
+#                  truncated to (0, min y) and renormalised there, as brms does, sampled on Stan's lower-upper coordinate
+#                  ``log(ndt / (min_Y - ndt))``, PyMC's interval transform.
+EXTRA_SUPPORTS = ("real", "positive", "below_min_y")
+
+
+@dataclass(frozen=True)
+class ExtraParameter:
+    """An auxiliary parameter a family has beside its ``scale_parameter`` (D01): brms's ``alpha`` (skew_normal), ``beta``
+    (exgaussian) and ``ndt`` (shifted_lognormal). Its brms name is its ``Priors`` field, its ``Model.value_point`` keyword,
+    its ``model.names`` key and its PyMC variable's name; it takes one prior (no distributional formula, D79)."""
+
+    name: str                                    # brms's name of the parameter and its prior class
+    meaning: str                                 # what it is, for describe() and the messages: "skewness", ...
+    support: str                                 # one of EXTRA_SUPPORTS
+    default_prior: Callable[[], object]          # brms's default prior (A07): normal(0, 4), gamma(1, 0.1), uniform(0, min_Y)
+
+    def __post_init__(self):
+        if self.support not in EXTRA_SUPPORTS:
+            raise ValueError(f"support must be one of {EXTRA_SUPPORTS}, got {self.support!r}")
+
+    @property
+    def coordinate(self) -> str:
+        """The PyMC value variable it is sampled as: ``alpha``, ``beta_log__``, ``ndt_interval__``."""
+        return {"real": self.name, "positive": f"{self.name}_log__", "below_min_y": f"{self.name}_interval__"}[self.support]
+
+    @property
+    def bounds(self) -> tuple[str, str]:
+        """brms's ``lb`` and ``ub`` of its class in the prior table."""
+        return {"real": ("", ""), "positive": ("0", ""), "below_min_y": ("0", "min_Y")}[self.support]
+
+    @property
+    def coordinate_meaning(self) -> str:
+        """``describe()``'s words for its value variable."""
+        return {"real": f"{self.name}, the {self.meaning} (unconstrained)",
+                "positive": f"log({self.name}), the {self.meaning}",
+                "below_min_y": f"log({self.name} / (min(y) - {self.name})), the {self.meaning} on Stan's lower-upper coordinate"
+                }[self.support]
+
+    def upper(self, response) -> float | None:
+        """The upper bound the data give it: ``min(y)`` over the fitted rows for ``"below_min_y"`` (brms's ``min_Y``), else
+        None."""
+        return float(np.min(np.asarray(response, dtype=float))) if self.support == "below_min_y" else None
+
+    def bambi_prior(self, prior, response):
+        """Bambi's prior of the parameter: the prior with float64 parameters (PyTensor would make a Python 4.0 a float32
+        constant), or for ``"below_min_y"`` the prior truncated to (0, min y) and renormalised (``Prior.to_bambi_bounded``)."""
+        if self.support == "below_min_y":
+            return prior.to_bambi_bounded(0.0, self.upper(response))
+        import bambi as bmb
+
+        return bmb.Prior(prior.name, **{k: np.float64(v) for k, v in prior.params.items()})
+
+    def value(self, value, response, family: str) -> np.ndarray:
+        """The value of the parameter on its PyMC coordinate (``Model.value_point``), refused outside its support."""
+        arr = np.asarray(value, dtype=float)
+        if arr.shape != () or not np.isfinite(arr):
+            raise ValueError(f"{self.name} (the {self.meaning} of the {family} family) must be a finite scalar")
+        if self.support == "real":
+            return np.asarray(arr)
+        if self.support == "positive":
+            if not arr > 0:
+                raise ValueError(f"{self.name} (the {self.meaning} of the {family} family) must be positive")
+            return np.asarray(np.log(arr))
+        top = self.upper(response)
+        if not 0 < arr < top:
+            raise ValueError(f"{self.name} (the {self.meaning} of the {family} family) must lie strictly between 0 and min(y) = "
+                             f"{top!r}")
+        return np.asarray(np.log(arr) - np.log(top - arr))
+
+    def prior_line(self, model) -> str:
+        """``describe()``'s prior line of the parameter, with its bounds."""
+        from autobayes.priors import describe_prior
+
+        prior = getattr(model.priors, self.name)
+        if self.support == "real":
+            return f"  {self.name} ~ {describe_prior(prior)}   ({self.meaning})"
+        if self.support == "positive":
+            return f"  {self.name} ~ {describe_prior(prior, lb=0)}   ({self.meaning}, > 0)"
+        top = self.upper(model.design.y)
+        if prior.name == "Uniform":                       # brms's uniform(0, min_Y): the parameter's own support
+            return f"  {self.name} ~ {describe_prior(prior)}, uniform on (0, min(y) = {top:g})   ({self.meaning})"
+        return (f"  {self.name} ~ {describe_prior(prior)}, truncated to (0, min(y) = {top:g}) and renormalised there, as brms's "
+                f"real<lower=0,upper=min_Y> {self.name}   ({self.meaning})")
+
+
+NO_EXTRA_PARAMETERS: tuple[ExtraParameter, ...] = ()
+
+
+def extra_draws(model, post, name: str):
+    """The posterior draws of the family's extra parameter ``name`` (``alpha``, ``beta``, ``ndt``) with a row axis, to
+    broadcast against the linear predictor's ``(chain, draw, row)``."""
+    return post[model.names[name]].to_numpy()[..., None]
+
+
 @dataclass(frozen=True, eq=False)
 class FamilySpec:
     """One response family. Fields in the order the model consults them."""
@@ -130,6 +230,10 @@ class FamilySpec:
     # negative binomial's shape) would keep. None for every other family.
     zero_parameter: str | None = None
     default_zero_prior: Callable[[], object] | None = None   # brms's default prior of the zero_parameter: beta(1, 1), ``Beta(1, 1)`` (A07)
+    # The family's auxiliary parameters beside scale_parameter and zero_parameter (D01, docs/continuous-families.md): the
+    # skew normal's alpha, the ex-Gaussian's beta, the shifted lognormal's ndt, each an ``ExtraParameter`` with its own prior
+    # (``Priors(alpha=...)``), required exactly for its family and refused for every other. Empty for every other family.
+    extra_parameters: tuple[ExtraParameter, ...] = NO_EXTRA_PARAMETERS
     # brms's response addition terms (B02, docs/addition-terms.md):
     addition_terms: frozenset[str] = frozenset()   # the addition terms besides trials() the family's likelihood takes: "weights" where a frozen brms case verifies it; "cens" and "trunc" where the family has tails (Gaussian; accepted against two references since P6); "mi" where the response's missing values may be parameters (Gaussian, C06)
     tails: Callable[[], object] | None = None      # () -> likelihoods.Tails: the log-CDF, log-CCDF and log mass between bounds (PyTensor, finite with a finite gradient) and the truncated mean and draws (NumPy) that cens() and trunc() need; None without them

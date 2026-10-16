@@ -139,6 +139,27 @@ when `mixture` is set; every other family has `mixture=False`.
 | Autocorrelation (C04) | no (D70) |
 | Missing values and measurement error (C06) | no |
 
+The Weibull, exponential, skew-normal, shifted lognormal and ex-Gaussian families (D01, docs/continuous-families.md) are
+continuous families built from the fields above. Three of them have a second auxiliary parameter beside `scale_parameter`:
+`extra_parameters`, a tuple of `ExtraParameter` (`autobayes/families/spec.py`), each with its brms name (its `Priors` field,
+its `Model.value_point` keyword, its `model.names` key and its PyMC variable's name), its meaning, its support and brms's
+default prior. The support decides the coordinate and the priors it takes (`priors.EXTRA_PRIORS`): `"real"` (the skew
+normal's `alpha`, a location prior, sampled as it is), `"positive"` (the ex-Gaussian's `beta`, a positive-support prior,
+`beta_log__`) and `"below_min_y"` (the shifted lognormal's `ndt`, brms's `real<lower=0,upper=min_Y>`: a prior truncated to
+(0, min y) and renormalised there, `ndt_interval__`, Stan's lower-upper coordinate). `Model.__init__` hands Bambi each one's
+prior (`ExtraParameter.bambi_prior`, which reads `min(y)` for `ndt`); every other family has none.
+
+| Group | Weibull | exponential | skew normal | shifted lognormal | ex-Gaussian |
+| --- | --- | --- | --- | --- | --- |
+| Names | `mu` / log (log scale) / `mu` | `mu` / log (log scale) / `mu` | `mu` / identity / `mu` | `mu` / identity (log scale: `mu` is the location of `log(y - ndt)`) / `mean` | `mu` / identity / `mu` |
+| Response | continuous, finite and strictly positive | continuous, finite and strictly positive | continuous, numeric | continuous, finite and strictly positive | continuous, numeric |
+| Parameters | shape / alpha | none | sigma / sigma; `extra_parameters`: alpha (real) | sigma / sigma; ndt (below min y) | sigma / sigma; beta (positive) |
+| Graph | Bambi's `weibull` (`beta = mu / gamma(1 + 1 / alpha)` to PyMC's `Weibull`) | Bambi's `exponential` (`lam = 1 / mu`) | `likelihoods.skew_normal_family` (`CustomDist`, stable `log Phi`) | `likelihoods.shifted_lognormal_family` (PyMC's `LogNormal` at `y - ndt`) | `likelihoods.exgaussian_family` (`CustomDist`, stable `log Phi`) |
+| Prediction | exp, Weibull draws, by hand | exp, exponential draws, by hand | identity, skew-normal draws, by hand | `expected_response` `exp(mu + sigma^2 / 2) + ndt`, `ndt + LogNormal` draws, by hand | identity, Normal plus exponential draws, by hand |
+| Default priors | log; shape `Gamma(0.01, 0.01)` | log | identity; sigma `HalfStudentT(3, scale)`; alpha `Normal(0, 4)` | log; sigma `HalfStudentT(3, scale)`; ndt `Uniform(0, "min_Y")` | identity; sigma `HalfStudentT(3, scale)`; beta `Gamma(1, 0.1)` |
+| Addition terms, distributional formulas, mo(), multivariate, non-linear, autocorrelation, me()/mi() | none (D79) | none (D79) | none (D79) | none (D79) | none (D79) |
+| Post-processing (C07) | `log_likelihood`: Weibull | exponential | skew normal | shifted lognormal | ex-Gaussian |
+
 ## Adding a family
 
 1. Write `autobayes/families/<name>.py` building one `FamilySpec`; keep the response validation primitives in
@@ -149,7 +170,8 @@ when `mixture` is set; every other family has `mixture=False`.
    it (`default_prior_link`, `default_scale_prior`, `default_learned_priors`, `default_zero_prior`; docs/default-priors.md), read from
    brms's `def_dpar_prior` and the family's own `prior` function; gate G6 checks them against the new fixture. A new fixed parameter
    needs a keyword on `Model.__init__`; a new auxiliary parameter needs a `Priors` field, an entry in
-   `priors.AUXILIARY` and a keyword on `Model.value_point`. Give it a `log_likelihood` (C07) and a case in
+   `priors.AUXILIARY` and a keyword on `Model.value_point` (a second one beside the scale parameter is an `ExtraParameter` in
+   `extra_parameters`, which the model, the priors, the default priors and the oracle adapter read; D01). Give it a `log_likelihood` (C07) and a case in
    `tests/test_post_processing.py`'s cross-check against the model's own pointwise log density.
 3. Add its row to `EXPECTED` and `EXAMPLES` in `tests/test_family_registry.py`, its family tests, and an
    oracle case under `tests/oracle/cases/` with a frozen brms fixture (`oracle/README.md`).

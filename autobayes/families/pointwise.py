@@ -153,3 +153,39 @@ def categorical_logit(y, eta):
     picked = np.take_along_axis(full, idx[..., None], axis=-1)[..., 0]
     m = full.max(axis=-1)
     return picked - (m + np.log(np.exp(full - m[..., None]).sum(axis=-1)))
+
+
+# -- D01, docs/continuous-families.md ------------------------------------------------------------------------------------------
+def weibull(y, eta, shape):
+    """brms's ``weibull_lpdf(y | shape, mu / Gamma(1 + 1 / shape))`` with ``mu = exp(eta)``: the Weibull of shape ``shape``
+    and scale ``s``, ``log shape - log s + (shape - 1) log(y / s) - (y / s)^shape``, ``log s = eta - lgamma(1 + 1 / shape)``."""
+    log_scale = eta - gammaln(1.0 + 1.0 / shape)
+    log_ratio = np.log(y) - log_scale
+    return np.log(shape) - log_scale + (shape - 1.0) * log_ratio - np.exp(shape * log_ratio)
+
+
+def exponential_log(y, eta):
+    """brms's ``exponential_lpdf(y | 1 / mu)`` with ``mu = exp(eta)``: ``-eta - y exp(-eta)``."""
+    return -eta - y * np.exp(-eta)
+
+
+def skew_normal(y, mu, sigma, alpha):
+    """brms's ``skew_normal``, mean ``mu``, SD ``sigma``, skewness ``alpha``: Azzalini's ``log 2 - log omega + log phi(z) +
+    log Phi(alpha z)`` with ``z = (y - xi) / omega`` (``likelihoods.skew_normal_location_scale``)."""
+    from autobayes.likelihoods import skew_normal_location_scale
+
+    xi, omega, _ = skew_normal_location_scale(np.asarray(mu, dtype=float), np.asarray(sigma, dtype=float), np.asarray(alpha, dtype=float))
+    z = (y - xi) / omega
+    return math.log(2.0) - np.log(omega) - 0.5 * z * z - _HALF_LOG_2PI + log_ndtr(alpha * z)
+
+
+def exgaussian(y, mu, sigma, beta):
+    """brms's ``exgaussian``, mean ``mu`` (Stan's ``exp_mod_normal_lpdf(y | mu - beta, sigma, 1 / beta)``): ``-log beta +
+    (mu - beta - y) / beta + sigma^2 / (2 beta^2) + log Phi((y - mu + beta) / sigma - sigma / beta)``."""
+    r = sigma / beta
+    return -np.log(beta) + (mu - beta - y) / beta + 0.5 * r * r + log_ndtr((y - mu + beta) / sigma - r)
+
+
+def shifted_lognormal(y, mu, sigma, ndt):
+    """brms's ``lognormal_lpdf(y - ndt | mu, sigma)``."""
+    return lognormal(y - ndt, mu, sigma)

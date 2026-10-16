@@ -1290,11 +1290,26 @@
    "depends_on": [
     "A08_negbinomial"
    ],
-   "status": "implementing",
+   "status": "gates_green",
    "summary": "weibull, exponential, skew_normal, shifted_lognormal, exgaussian families",
    "pr": null,
    "attempts": 1,
-   "gates": {},
+   "gates": {
+    "sha": "9d20a0dfa10d",
+    "dirty_tree": false,
+    "base": "origin/main",
+    "when": "2026-10-16T03:07Z",
+    "results": {
+     "immutability": {
+      "status": "pass",
+      "seconds": 0.0
+     },
+     "oracle": {
+      "status": "pass",
+      "seconds": 273.0
+     }
+    }
+   },
    "divergences": [],
    "next_action": "agent (opus), wave D1",
    "fixtures": {

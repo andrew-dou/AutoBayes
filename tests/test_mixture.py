@@ -267,7 +267,8 @@ def test_refusals():
     df = data()
     two = ["gaussian", "gaussian"]
     for families, message in ((None, "needs its component families"), ("gaussian", "must be a list of family names"),
-                              (["gaussian"], "at least two components"), (["gaussian", "weibull"], "family must be one of"),
+                              (["gaussian"], "at least two components"), (["gaussian", "tweedie"], "family must be one of"),
+                              (["gaussian", "weibull"], "a weibull mixture component is not offered.*D52"),   # a family since D01
                               (["gaussian", "student"], "a student mixture component is not offered.*D52"),
                               (["poisson", "poisson"], "a poisson mixture component is not offered")):
         with pytest.raises(ValueError, match=message):

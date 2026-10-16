@@ -85,6 +85,7 @@ def _summary_rows(model, idata) -> dict:
     names += [v for k, v in getattr(model, "autocor_names", {}).items() if not k.endswith("_coordinate")]   # ar and ma (C04)
     zero = family_of(model).zero_parameter                      # the zero-inflation / hurdle probability (B06)
     names += [n[zero]] if zero is not None else []
+    names += [n[e.name] for e in family_of(model).extra_parameters]   # alpha, beta or ndt (D01)
     s = az.summary(idata, var_names=names, hdi_prob=0.94, round_to="none")
     rows = {}
     for name, r in s.iterrows():
@@ -171,6 +172,7 @@ def fit_record(model, fit, *, panel: dict | None = None, max_treedepth: int = 10
                        **{f"{cls}:{x}": str(prior) for cls in ("meanme", "sdme") for x, prior in pr.me_priors(s, cls).items()},   # C06
                        **(_scale_priors(model) if fam.scale_parameter is not None else {}),
                        **({fam.zero_parameter: str(getattr(pr, fam.zero_parameter))} if fam.zero_parameter is not None else {}),
+                       **{e.name: str(getattr(pr, e.name)) for e in fam.extra_parameters},          # alpha, beta or ndt (D01)
                        **({"nu": str(pr.nu)} if pr.nu is not None else {}),
                        **({label: str(prior) for label, prior in prior_labels(model).items()} if mixture else {}),
                        **{part: str(prior) for part, prior in pr.autocor_priors(s).items()}},   # an ARMA term's ar and ma (C04)

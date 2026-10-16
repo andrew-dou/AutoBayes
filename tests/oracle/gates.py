@@ -69,7 +69,8 @@ from tests.oracle.tolerances import DESIGN_ABS, GRAD_REL, LOGP_REL, PRED_REL, ab
 
 def prior_names(model) -> list[str]:
     """The free variables whose densities brms sums into ``lprior``: intercept, coefficients, sigma, shape or phi, a learned nu,
-    zi or hu (B06), the SD of every group-level coefficient (not the standardised offsets, which brms adds in the model block) and the
+    zi or hu (B06), a family's alpha, beta or ndt (D01; ndt's prior truncated to (0, min_Y), its normalising constant in
+    lprior as in brms's), the SD of every group-level coefficient (not the standardised offsets, which brms adds in the model block) and the
     correlation Cholesky factor of every correlated group term (``lkj_corr_cholesky_lpdf(L_m | eta)``); for an auxiliary
     parameter with its own formula (B01), that formula's intercept and coefficients (brms's ``Intercept_sigma``, ``b_sigma``);
     the simplex of every monotonic term (``dirichlet_lpdf(simo_k | con_simo_k)``; its coefficient is among the terms, B03);
@@ -100,6 +101,7 @@ def prior_names(model) -> list[str]:
     if "nu" in names:                                      # a learned Student-t nu, its prior truncated to nu > 1 (A13)
         out.append(names["nu"])
     out += [names[par] for par in ("zi", "hu") if par in names]   # the zero-inflation / hurdle probability (B06)
+    out += [names[e.name] for e in model.family_spec.extra_parameters]   # D01: alpha, beta, ndt (ndt's truncation constant included)
     out += [roles["sd"] for roles in model.group_coefficient_names.values()]
     out += [roles["sd"] for roles in getattr(model, "dpar_group_names", {}).values()]   # D08: a shared ID's distributional SDs
     # D08: brms's normalisation constant of gr(by = )'s SDs (a potential of the graph, where brms's lprior has it)
@@ -535,6 +537,7 @@ def check_default_prior(b: Bundle) -> None:
     if "nu" in b.model.names:
         expected.add("nu")
     expected |= {par for par in ("zi", "hu") if par in b.model.names}     # B06
+    expected |= {e.name for e in b.model.family_spec.extra_parameters}     # D01: alpha, beta, ndt
     mixture = getattr(b.model, "mixture_names", {})        # C05: each component's sigma<k> and theta (Intercept, b above)
     expected |= {*mixture["sigma"], "theta"} if mixture else set()
     expected |= {part for part in ("ar", "ma") if part in getattr(b.model, "autocor_names", {})}   # C04: an ARMA term's ar and ma

@@ -40,7 +40,9 @@ CROSS_CHECK = ["gauss_weighted", "gauss_distributional_sigma", "gauss_slope_corr
                "poisson_offset", "negbinomial_distributional_shape", "gamma_weighted", "lognormal_varint", "beta_distributional_phi",
                "bernoulli_probit", "bernoulli_weighted", "binomial_monotonic", "binomial_probit", "zero_inflated_poisson_varint",
                "hurdle_poisson_varint", "cumulative_monotonic", "categorical_poponly_categorical", "mixture_gauss_gauss",
-               "mixture_gauss3_categorical", "mixture_gauss_default_priors"]
+               "mixture_gauss3_categorical", "mixture_gauss_default_priors",
+               # D01: the Weibull, exponential, skew-normal, shifted lognormal and ex-Gaussian families
+               "weibull_varint", "exponential_varint", "skew_normal_varint", "shifted_lognormal_varint", "exgaussian_varint"]
 
 
 def _bundle(case_id):

@@ -6,7 +6,9 @@ counts and Gamma responses with a log link, lognormal responses with the identit
 link on the log-scale location, Beta proportions with a logit link and precision ``phi``, and zero-inflated and hurdle
 Poisson counts with the zero-inflation or hurdle probability ``zi`` / ``hu`` under a ``Beta`` prior, ordinal responses with
 brms's cumulative logit model and unordered categorical responses with one linear predictor per non-reference category,
-and finite mixtures of Gaussian components with ordered intercepts and Dirichlet mixing proportions.
+and finite mixtures of Gaussian components with ordered intercepts and Dirichlet mixing proportions; Weibull and
+exponential responses with a log link on the mean, skew-normal and ex-Gaussian responses parameterised by their mean, and
+shifted lognormal responses with a non-decision time below the smallest response (D01).
 Supported formulas combine numeric and declared categorical predictors,
 numeric-by-categorical interactions, intercept controls, and optional multiple
 independent varying-intercept factors with independent or correlated varying slopes, and a formula of its own for the
@@ -57,6 +59,7 @@ from autobayes.priors import (
     PriorError,
     Priors,
     StudentT,
+    Uniform,
 )
 from autobayes.default_priors import default_priors
 from autobayes.model import (Model, bernoulli, beta, binomial, categorical, cumulative, gamma, gaussian, hurdle_poisson, lognormal,
@@ -70,6 +73,7 @@ from autobayes.post_processing import Waic, loo_compare, model_weights, waic   #
 from autobayes.diagnostics import panel
 from autobayes.session import compare_records, environment, fit_record, format_comparison, format_environment
 from autobayes.nonlinear import NonlinearModel, NonlinearSpec        # non-linear formulas, nl=True (C02, docs/nonlinear.md)
+from autobayes.model import exgaussian, exponential, shifted_lognormal, skew_normal, weibull   # D01, docs/continuous-families.md
 
 __all__ = [
     "Beta", "Categorical", "DeviceError", "Dirichlet", "Exponential", "FitResult", "Flat", "FormulaError", "Gamma", "GroupTerm", "HalfCauchy",
@@ -82,4 +86,5 @@ __all__ = [
 ]
 __all__ += ["NonlinearModel", "NonlinearSpec"]         # C02
 __all__ += ["Waic", "loo_compare", "model_weights", "waic"]   # D05
+__all__ += ["Uniform", "exgaussian", "exponential", "shifted_lognormal", "skew_normal", "weibull"]   # D01
 __version__ = "0.8.0"

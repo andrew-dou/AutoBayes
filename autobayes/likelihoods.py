@@ -531,6 +531,119 @@ def hurdle_poisson_family():
     return bmb.Family("hurdle_poisson_log", likelihood, link={"log_mu": "identity", "hu": "logit"})
 
 
+# ---- skew normal, ex-Gaussian and shifted lognormal (brms-parity D01, docs/continuous-families.md) --------------------
+# brms 2.23 parameterises the skew normal and the ex-Gaussian by their mean mu (the linear predictor, identity link) and the
+# shifted lognormal by the location of log(y - ndt); the densities are the published ones (brms's vignette
+# "Parameterization of Response Distributions in brms"; Azzalini 1985 for the skew normal) in those parameters, checked
+# against brms's log_prob on the frozen cases skew_normal_varint, exgaussian_varint and shifted_lognormal_varint:
+#   skew_normal(mu, sigma, alpha): Azzalini's SN(xi, omega, alpha) with mean mu and standard deviation sigma,
+#     delta = alpha / sqrt(1 + alpha^2), omega = sigma / sqrt(1 - 2 delta^2 / pi), xi = mu - omega delta sqrt(2 / pi),
+#     log f(y) = log 2 - log omega + log phi(z) + log Phi(alpha z) with z = (y - xi) / omega;
+#   exgaussian(mu, sigma, beta): Normal(mu - beta, sigma) plus an independent exponential of mean beta, so E[y] = mu,
+#     log f(y) = -log beta + (mu - beta - y) / beta + sigma^2 / (2 beta^2) + log Phi((y - mu + beta) / sigma - sigma / beta);
+#   shifted_lognormal(mu, sigma, ndt): log(y - ndt) ~ Normal(mu, sigma) with 0 < ndt < min(y), PyMC's LogNormal density
+#     at y - ndt.
+# log Phi is log_normal_cdf above, exact with a finite gradient for every finite argument on both paths; brms (Stan) writes
+# it log(erfc(-x / sqrt 2)) - log 2, which is -inf once erfc underflows (x below about -37.5) and equal to it elsewhere to
+# rounding. PyMC's own SkewNormal (log(1 + erf(.)), which cancels in the lower tail) and ExGaussian (which switches to a
+# Normal approximation when nu < 0.05 sigma, through a log-CDF that has no JAX lowering here) are not used. Every constant
+# is a float64 (PyTensor would make a Python 2.0 a float32 constant).
+_LOG_2_OVER_SQRT_2PI = np.float64(math.log(2.0) - 0.5 * math.log(2.0 * math.pi))
+_TWO_OVER_PI = np.float64(2.0 / math.pi)
+_SQRT_2_OVER_PI = np.float64(math.sqrt(2.0 / math.pi))
+_ONE, _HALF = np.float64(1.0), np.float64(0.5)
+
+
+def skew_normal_location_scale(mu, sigma, alpha):
+    """Azzalini's location ``xi`` and scale ``omega`` of the skew normal with mean ``mu``, SD ``sigma`` and skewness ``alpha``
+    (works on PyTensor variables and NumPy arrays alike)."""
+    sqrt = np.sqrt if all(isinstance(a, (int, float, np.ndarray, np.generic)) for a in (mu, sigma, alpha)) else pt.sqrt
+    delta = alpha / sqrt(_ONE + alpha * alpha)
+    omega = sigma / sqrt(_ONE - _TWO_OVER_PI * delta * delta)
+    return mu - omega * delta * _SQRT_2_OVER_PI, omega, delta
+
+
+def skew_normal_logp(value, mu, sigma, alpha):
+    """brms's ``skew_normal`` log density at ``value`` (mean ``mu``, SD ``sigma``, skewness ``alpha``)."""
+    xi, omega, _ = skew_normal_location_scale(mu, sigma, alpha)
+    z = (value - xi) / omega
+    return _LOG_2_OVER_SQRT_2PI - pt.log(omega) - _HALF * z * z + log_normal_cdf(alpha * z)
+
+
+def skew_normal_random(mu, sigma, alpha, rng=None, size=None):
+    """Skew-normal draws: ``xi + omega (delta |u0| + sqrt(1 - delta^2) u1)`` with ``u0``, ``u1`` standard normal."""
+    xi, omega, delta = skew_normal_location_scale(np.asarray(mu, dtype=float), np.asarray(sigma, dtype=float),
+                                                  np.asarray(alpha, dtype=float))
+    shape = size if size is not None else np.broadcast_shapes(np.shape(xi), np.shape(omega))
+    u0, u1 = np.abs(rng.standard_normal(shape)), rng.standard_normal(shape)
+    return xi + omega * (delta * u0 + np.sqrt(1.0 - delta * delta) * u1)
+
+
+def exgaussian_logp(value, mu, sigma, beta):
+    """brms's ``exgaussian`` log density at ``value``: Stan's ``exp_mod_normal_lpdf(value | mu - beta, sigma, 1 / beta)``."""
+    r = sigma / beta
+    return -pt.log(beta) + (mu - beta - value) / beta + _HALF * r * r + log_normal_cdf((value - mu + beta) / sigma - r)
+
+
+def exgaussian_random(mu, sigma, beta, rng=None, size=None):
+    """Ex-Gaussian draws: ``Normal(mu - beta, sigma)`` plus an exponential of mean ``beta``."""
+    shape = size if size is not None else np.broadcast_shapes(np.shape(mu), np.shape(sigma), np.shape(beta))
+    return rng.normal(np.asarray(mu) - np.asarray(beta), sigma, size=shape) + rng.exponential(beta, size=shape)
+
+
+def shifted_lognormal_logp(value, mu, sigma, ndt):
+    """brms's ``shifted_lognormal`` log density at ``value``: PyMC's ``LogNormal(mu, sigma)`` at ``value - ndt`` (``-inf``
+    where ``value <= ndt``, which the bound ``ndt < min(y)`` excludes for the fitted rows)."""
+    return pm.logp(pm.LogNormal.dist(mu, sigma), value - ndt)
+
+
+def shifted_lognormal_random(mu, sigma, ndt, rng=None, size=None):
+    """Shifted lognormal draws: ``ndt + exp(Normal(mu, sigma))``."""
+    shape = size if size is not None else np.broadcast_shapes(np.shape(mu), np.shape(sigma), np.shape(ndt))
+    return np.asarray(ndt) + rng.lognormal(mu, sigma, size=shape)
+
+
+def _mean_family(name: str, label: str, params: tuple[str, ...], links: dict, logp, random):
+    """A Bambi family whose likelihood is ``logp`` / ``random`` (a ``pm.CustomDist``) of the parent ``mu`` and the
+    auxiliary parameters ``params[1:]``, each with its prior from the prior dict."""
+    import bambi as bmb
+
+    class Dist:
+        def __new__(cls, name_, **kwargs):
+            args = [kwargs.pop(p) for p in params]
+            return pm.CustomDist(name_, *args, logp=logp, random=random, **kwargs)
+
+        @staticmethod
+        def dist(**kwargs):
+            args = [kwargs.pop(p) for p in params]
+            return pm.CustomDist.dist(*args, logp=logp, random=random, **kwargs)
+
+    Dist.__name__ = label
+    likelihood = bmb.Likelihood(label, params=list(params), parent=params[0], dist=Dist)
+    return bmb.Family(name, likelihood, link=links)
+
+
+def skew_normal_family():
+    """Bambi family of brms's ``skew_normal()``: the identity link on the mean ``mu``, ``sigma`` and ``alpha`` with their
+    priors."""
+    return _mean_family("skew_normal", "SkewNormalMean", ("mu", "sigma", "alpha"),
+                        {"mu": "identity", "sigma": "log", "alpha": "identity"}, skew_normal_logp, skew_normal_random)
+
+
+def exgaussian_family():
+    """Bambi family of brms's ``exgaussian()``: the identity link on the mean ``mu``, ``sigma`` and ``beta`` with their
+    priors."""
+    return _mean_family("exgaussian", "ExGaussianMean", ("mu", "sigma", "beta"),
+                        {"mu": "identity", "sigma": "log", "beta": "log"}, exgaussian_logp, exgaussian_random)
+
+
+def shifted_lognormal_family():
+    """Bambi family of brms's ``shifted_lognormal()``: the identity link on the log-scale location ``mu``, ``sigma`` and the
+    shift ``ndt`` with their priors (``ndt``'s bounded by the model, ``ExtraParameter.bambi_prior``)."""
+    return _mean_family("shifted_lognormal", "ShiftedLogNormal", ("mu", "sigma", "ndt"),
+                        {"mu": "identity", "sigma": "log", "ndt": "log"}, shifted_lognormal_logp, shifted_lognormal_random)
+
+
 # ---- brms's response addition terms (brms-parity B02, docs/addition-terms.md) --------------------------------------
 # weights(w): brms adds weights[n] * family_lpdf(Y[n] | ...) row by row (its stan_log_lik_weights), so the likelihood here
 # is the family's own elementwise log density times the row's weight, whatever the family's likelihood is (PyMC's own
