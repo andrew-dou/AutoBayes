@@ -1,0 +1,74 @@
+{
+  "brms": "2.23.0",
+  "R": "4.5.2",
+  "links": {
+    "zero_inflated_negbinomial": {
+      "default": "log",
+      "accepted": ["identity", "log", "sqrt", "softplus", "squareplus"]
+    },
+    "hurdle_negbinomial": {
+      "default": "log",
+      "accepted": ["identity", "log", "sqrt", "softplus", "squareplus"]
+    },
+    "zero_inflated_binomial": {
+      "default": "logit",
+      "accepted": ["identity", "log", "logit", "probit", "probit_approx", "cloglog", "cauchit"]
+    },
+    "zero_inflated_beta": {
+      "default": "logit",
+      "accepted": ["identity", "log", "logit", "probit", "probit_approx", "cloglog", "cauchit"]
+    },
+    "hurdle_gamma": {
+      "default": "log",
+      "accepted": ["identity", "log", "inverse", "softplus", "squareplus"]
+    },
+    "hurdle_lognormal": {
+      "default": "identity",
+      "accepted": ["identity", "inverse"]
+    },
+    "zero_inflated_poisson": {
+      "default": "log",
+      "accepted": ["identity", "log", "sqrt", "softplus", "squareplus"]
+    },
+    "hurdle_poisson": {
+      "default": "log",
+      "accepted": ["identity", "log", "sqrt", "softplus", "squareplus"]
+    }
+  },
+  "responses": {
+    "zero_inflated_beta_one": "Family 'zero_inflated_beta' requires response smaller than 1.",
+    "hurdle_gamma_negative": "Family 'hurdle_gamma' requires response greater than or equal to 0.",
+    "zero_inflated_negbinomial_fraction": "Family 'zero_inflated_negbinomial' requires integer responses.",
+    "zero_inflated_binomial_zero_trials": "accepted",
+    "zero_inflated_poisson_zero_weight": "accepted"
+  },
+  "hurdle_negbinomial_draws": [
+    {
+      "mu": 0.5,
+      "shape": 0.5,
+      "hu": 0.050000000000000003,
+      "n": 100000,
+      "max": 11,
+      "counts": [4911, 77680, 12216, 3398, 1119, 416, 170, 52, 28, 7, 1, 2],
+      "epred": "1.6217514421272203"
+    },
+    {
+      "mu": 3,
+      "shape": 2,
+      "hu": 0.050000000000000003,
+      "n": 100000,
+      "max": 31,
+      "counts": [4884, 24980, 22117, 16324, 11299, 7410, 4741, 3043, 1975, 1258, 774, 458, 278, 191, 96, 59, 44, 27, 16, 11, 7, 2, 2, 1, 1, 0, 1, 0, 0, 0, 0, 1],
+      "epred": "3.3928571428571432"
+    },
+    {
+      "mu": 0.050000000000000003,
+      "shape": 0.20000000000000001,
+      "hu": 0.050000000000000003,
+      "n": 100000,
+      "max": 5,
+      "counts": [4889, 92895, 2034, 164, 15, 3],
+      "epred": "1.088263927407179"
+    }
+  ]
+}

@@ -3120,7 +3120,8 @@ def zero_inflated_poisson(formula: str, data: pd.DataFrame, priors: Priors, *,
     (0, 1), ``Priors(zi=ab.Beta(1, 1))`` (brms class ``zi``; brms's default ``beta(1, 1)`` is not filled in silently,
     ``ab.default_priors(..., family="zero_inflated_poisson")`` returns it); the intercept and slope priors act on the
     log of the Poisson part's mean. ``predict(kind="mean")`` returns ``(1 - zi) mu`` as ``mean``; ``kind="linear"``
-    returns ``eta``. No overdispersion or distributional (``zi ~ ...``) formula (docs/zero-inflated-hurdle.md).
+    returns ``eta``. ``weights()`` is taken (D03). No overdispersion or distributional (``zi ~ ...``) formula
+    (docs/zero-inflated-hurdle.md).
     """
     return Model(formula, data, priors, family="zero_inflated_poisson",
                  center_predictors=center_predictors, categorical=categorical)
@@ -3134,10 +3135,90 @@ def hurdle_poisson(formula: str, data: pd.DataFrame, priors: Priors, *,
     Counts as for Poisson. The hurdle probability takes its own prior on (0, 1), ``Priors(hu=ab.Beta(1, 1))`` (brms class
     ``hu``, brms's default ``beta(1, 1)`` on request through ``ab.default_priors``); the intercept and slope priors act on
     the log of the untruncated Poisson part's mean. ``predict(kind="mean")`` returns brms's expected count as ``mean``;
-    ``kind="linear"`` returns ``eta``. No overdispersion or distributional (``hu ~ ...``) formula
-    (docs/zero-inflated-hurdle.md).
+    ``kind="linear"`` returns ``eta``. ``weights()`` is taken (D03). No overdispersion or distributional (``hu ~ ...``)
+    formula (docs/zero-inflated-hurdle.md).
     """
     return Model(formula, data, priors, family="hurdle_poisson",
+                 center_predictors=center_predictors, categorical=categorical)
+
+
+# -- D03: more zero-inflated and hurdle families (docs/zero-inflated-hurdle.md) ---------------------------------------------
+_D03_CONTEXTS = ("No distributional formula, cens(), trunc(), mo(), me(), mi(), mm(), gr(by = ), autocorrelation term, multivariate "
+                 "or non-linear formula (divergence D84).")
+
+
+def zero_inflated_negbinomial(formula: str, data: pd.DataFrame, priors: Priors, *,
+                              center_predictors: bool = True, categorical: Mapping[str, object] | None = None) -> Model:
+    """Zero-inflated negative binomial counts (brms ``zero_inflated_negbinomial``, D03): a structural zero with probability
+    ``zi``, a ``NB(mu, shape)`` count otherwise (mean ``mu = exp(eta)``, variance ``mu + mu^2 / shape``); ``E[y] = (1 - zi) mu``.
+
+    Counts as for Poisson. ``Priors(shape=..., zi=ab.Beta(...))`` (brms classes ``shape`` and ``zi``; brms's defaults
+    ``inv_gamma(0.4, 0.3)`` and ``beta(1, 1)`` on request through ``ab.default_priors``); the intercept and slope priors act on
+    the log of the negative binomial part's mean. ``predict(kind="mean")`` returns ``(1 - zi) mu`` as ``mean``;
+    ``kind="linear"`` returns ``eta``. ``weights()`` is taken. """ + _D03_CONTEXTS
+    return Model(formula, data, priors, family="zero_inflated_negbinomial",
+                 center_predictors=center_predictors, categorical=categorical)
+
+
+def hurdle_negbinomial(formula: str, data: pd.DataFrame, priors: Priors, *,
+                       center_predictors: bool = True, categorical: Mapping[str, object] | None = None) -> Model:
+    """Hurdle negative binomial counts (brms ``hurdle_negbinomial``, D03): zero with probability ``hu``, a zero-truncated
+    ``NB(mu, shape)`` count otherwise, ``mu = exp(eta)``; ``E[y] = (1 - hu) mu / (1 - (shape / (mu + shape))^shape)``.
+
+    Counts as for Poisson. ``Priors(shape=..., hu=ab.Beta(...))``; the intercept and slope priors act on the log of the
+    untruncated negative binomial part's mean. ``predict(kind="mean")`` returns brms's expected count as ``mean``;
+    ``kind="response"`` draws exact zero-truncated negative binomial counts (D86). ``weights()`` is taken. """ + _D03_CONTEXTS
+    return Model(formula, data, priors, family="hurdle_negbinomial",
+                 center_predictors=center_predictors, categorical=categorical)
+
+
+def zero_inflated_binomial(formula: str, data: pd.DataFrame, priors: Priors, *,
+                           center_predictors: bool = True, categorical: Mapping[str, object] | None = None) -> Model:
+    """Zero-inflated binomial successes (brms ``zero_inflated_binomial``, D03): ``successes | trials(n) ~ ...``, a structural
+    zero with probability ``zi``, a ``Binomial(n, p)`` count otherwise, ``p = expit(eta)``; ``E[y] = (1 - zi) n p``.
+
+    Trials as for the binomial family (zero-trial rows dropped, D4). ``Priors(zi=ab.Beta(...))``; the intercept and slope
+    priors are on the logit scale. ``predict(kind="mean")`` returns brms's expected count ``(1 - zi) n p`` as ``expected``
+    (new rows need the trials column); ``kind="linear"`` returns ``eta``. The logit link only. ``weights()`` is taken (after
+    ``trials()``: ``k | trials(n) + weights(w) ~ ...``). """ + _D03_CONTEXTS
+    return Model(formula, data, priors, family="zero_inflated_binomial",
+                 center_predictors=center_predictors, categorical=categorical)
+
+
+def zero_inflated_beta(formula: str, data: pd.DataFrame, priors: Priors, *,
+                       center_predictors: bool = True, categorical: Mapping[str, object] | None = None) -> Model:
+    """Zero-inflated Beta proportions (brms ``zero_inflated_beta``, D03): responses in [0, 1), an exact zero with probability
+    ``zi``, a ``Beta(mu phi, (1 - mu) phi)`` proportion otherwise, ``mu = expit(eta)``; ``E[y] = (1 - zi) mu``.
+
+    ``Priors(phi=..., zi=ab.Beta(...))`` (brms's defaults ``gamma(0.01, 0.01)`` and ``beta(1, 1)`` on request); the intercept
+    and slope priors are on the logit scale. ``predict(kind="mean")`` returns ``(1 - zi) mu`` as ``mean``; ``kind="linear"``
+    returns ``eta``. An exact 1 is refused; the logit link only. ``weights()`` is taken. """ + _D03_CONTEXTS
+    return Model(formula, data, priors, family="zero_inflated_beta",
+                 center_predictors=center_predictors, categorical=categorical)
+
+
+def hurdle_gamma(formula: str, data: pd.DataFrame, priors: Priors, *,
+                 center_predictors: bool = True, categorical: Mapping[str, object] | None = None) -> Model:
+    """Hurdle Gamma responses (brms ``hurdle_gamma``, D03): non-negative reals, an exact zero with probability ``hu``, a
+    ``Gamma(shape, shape / mu)`` value otherwise, ``mu = exp(eta)``; ``E[y] = (1 - hu) mu``.
+
+    ``Priors(shape=..., hu=ab.Beta(...))`` (brms's defaults ``gamma(0.01, 0.01)`` and ``beta(1, 1)`` on request); the intercept
+    and slope priors act on the log of the Gamma part's mean. ``predict(kind="mean")`` returns ``(1 - hu) mu`` as ``mean``;
+    ``kind="linear"`` returns ``eta``. ``weights()`` is taken. """ + _D03_CONTEXTS
+    return Model(formula, data, priors, family="hurdle_gamma",
+                 center_predictors=center_predictors, categorical=categorical)
+
+
+def hurdle_lognormal(formula: str, data: pd.DataFrame, priors: Priors, *,
+                     center_predictors: bool = True, categorical: Mapping[str, object] | None = None) -> Model:
+    """Hurdle lognormal responses (brms ``hurdle_lognormal``, D03): non-negative reals, an exact zero with probability ``hu``,
+    ``LogNormal(mu, sigma)`` otherwise with the identity link on the log-scale location ``mu``; ``E[y] = (1 - hu) exp(mu +
+    sigma^2 / 2)``.
+
+    ``Priors(sigma=..., hu=ab.Beta(...))``; the intercept and slope priors act on log y in the lognormal part.
+    ``predict(kind="mean")`` returns brms's ``posterior_epred`` as ``mean``; ``kind="linear"`` returns ``mu``. ``weights()`` is
+    taken. """ + _D03_CONTEXTS
+    return Model(formula, data, priors, family="hurdle_lognormal",
                  center_predictors=center_predictors, categorical=categorical)
 
 

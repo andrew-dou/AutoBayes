@@ -6,7 +6,9 @@ the spec. A family is one module in this package that builds its spec (``gaussia
 ``binomial.py``, ``zero_inflated_poisson.py``, ``hurdle_poisson.py``, ``cumulative.py``, ``categorical.py``, ``mixture.py``,
 ``weibull.py``, ``exponential.py``, ``skew_normal.py``, ``shifted_lognormal.py``, ``exgaussian.py``, ``beta_binomial.py``,
 ``geometric.py``, ``negbinomial2.py``; D04's ``ordinal.py`` builds
-the three sequential and adjacent-category ordinal families, ``sratio``, ``cratio`` and ``acat``);
+the three sequential and adjacent-category ordinal families, ``sratio``, ``cratio`` and ``acat``; D03's
+``zero_inflated_negbinomial.py``, ``hurdle_negbinomial.py``, ``zero_inflated_binomial.py``, ``zero_inflated_beta.py``,
+``hurdle_gamma.py``, ``hurdle_lognormal.py``);
 ``autobayes.families.FAMILIES`` is the registry and ``get_family(name)`` the lookup. Callable fields
 take the built ``Model`` (or the frame being validated) because that is what the call sites have in
 hand; none of them is called before ``Model.__init__`` has resolved the spec.
@@ -228,8 +230,8 @@ class FamilySpec:
     # zero with probability zi, the count part otherwise) or "hu" (a hurdle: zero with probability hu, the zero-truncated
     # count part otherwise), real<lower=0,upper=1> with its own prior on (0, 1) (``Priors(zi=...)``, ``Priors(hu=...)``),
     # sampled as logit(zi) (PyMC's ``zi_logodds__``); the PyMC variable keeps brms's name. It sits beside
-    # ``scale_parameter``, which the zero-inflated or hurdle form of a count family with its own auxiliary parameter (the
-    # negative binomial's shape) would keep. None for every other family.
+    # ``scale_parameter``, which the zero-inflated or hurdle form of a family with its own auxiliary parameter keeps (D03:
+    # the negative binomial's and the Gamma's shape, the Beta's phi, the lognormal's sigma). None for every other family.
     zero_parameter: str | None = None
     default_zero_prior: Callable[[], object] | None = None   # brms's default prior of the zero_parameter: beta(1, 1), ``Beta(1, 1)`` (A07)
     # The family's auxiliary parameters beside scale_parameter and zero_parameter (D01, docs/continuous-families.md): the

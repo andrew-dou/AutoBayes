@@ -11,7 +11,9 @@ and finite mixtures of Gaussian components with ordered intercepts and Dirichlet
 exponential responses with a log link on the mean, skew-normal and ex-Gaussian responses parameterised by their mean, and
 shifted lognormal responses with a non-decision time below the smallest response (D01); beta-binomial responses with
 trials, a logit link on the mean success probability and a precision ``phi``, and geometric and dispersion-parameterised
-negative binomial counts (``negbinomial2``, ``sigma = 1 / shape``) with a log link (D02).
+negative binomial counts (``negbinomial2``, ``sigma = 1 / shape``) with a log link (D02); zero-inflated and hurdle
+negative binomial counts, zero-inflated binomial successes and Beta proportions, and hurdle Gamma and lognormal
+responses (D03).
 Supported formulas combine numeric and declared categorical predictors,
 numeric-by-categorical interactions, intercept controls, and optional multiple
 independent varying-intercept factors with independent or correlated varying slopes, and a formula of its own for the
@@ -82,6 +84,8 @@ from autobayes.model import exgaussian, exponential, shifted_lognormal, skew_nor
 from autobayes.model import beta_binomial, geometric, negbinomial2   # D02, docs/discrete-families.md
 from autobayes.shrinkage import Horseshoe, R2D2   # D07: brms's horseshoe() and R2D2() on b, docs/shrinkage-priors.md
 from autobayes.model import acat, cratio, sratio                    # D04, docs/ordinal-categorical.md
+from autobayes.model import (hurdle_gamma, hurdle_lognormal, hurdle_negbinomial, zero_inflated_beta,   # D03, docs/zero-inflated-hurdle.md
+                             zero_inflated_binomial, zero_inflated_negbinomial)
 
 __all__ = [
     "Beta", "Categorical", "DeviceError", "Dirichlet", "Exponential", "FitResult", "Flat", "FormulaError", "Gamma", "GroupTerm", "HalfCauchy",
@@ -99,4 +103,6 @@ __all__ += ["Hypothesis", "conditional_effects", "hypothesis"]   # D06
 __all__ += ["beta_binomial", "geometric", "negbinomial2"]   # D02
 __all__ += ["Horseshoe", "R2D2"]                       # D07
 __all__ += ["acat", "cratio", "sratio"]                             # D04
+__all__ += ["hurdle_gamma", "hurdle_lognormal", "hurdle_negbinomial", "zero_inflated_beta", "zero_inflated_binomial",
+            "zero_inflated_negbinomial"]   # D03
 __version__ = "0.8.0"

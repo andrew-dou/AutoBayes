@@ -21,6 +21,9 @@ from autobayes.families.exponential import EXPONENTIAL
 from autobayes.families.gamma import GAMMA
 from autobayes.families.gaussian import GAUSSIAN
 from autobayes.families.geometric import GEOMETRIC
+from autobayes.families.hurdle_gamma import HURDLE_GAMMA
+from autobayes.families.hurdle_lognormal import HURDLE_LOGNORMAL
+from autobayes.families.hurdle_negbinomial import HURDLE_NEGBINOMIAL
 from autobayes.families.hurdle_poisson import HURDLE_POISSON
 from autobayes.families.lognormal import LOGNORMAL
 from autobayes.families.mixture import MIXTURE
@@ -33,13 +36,18 @@ from autobayes.families.skew_normal import SKEW_NORMAL
 from autobayes.families.spec import FamilySpec
 from autobayes.families.student import STUDENT
 from autobayes.families.weibull import WEIBULL
+from autobayes.families.zero_inflated_beta import ZERO_INFLATED_BETA
+from autobayes.families.zero_inflated_binomial import ZERO_INFLATED_BINOMIAL
+from autobayes.families.zero_inflated_negbinomial import ZERO_INFLATED_NEGBINOMIAL
 from autobayes.families.zero_inflated_poisson import ZERO_INFLATED_POISSON
 
 FAMILIES = MappingProxyType({spec.name: spec for spec in (GAUSSIAN, STUDENT, POISSON, NEGBINOMIAL, GAMMA, LOGNORMAL, BETA, BERNOULLI, BINOMIAL,
                                                           ZERO_INFLATED_POISSON, HURDLE_POISSON, CUMULATIVE, CATEGORICAL, MIXTURE,
                                                           WEIBULL, EXPONENTIAL, SKEW_NORMAL, SHIFTED_LOGNORMAL, EXGAUSSIAN,   # D01
                                                           BETA_BINOMIAL, GEOMETRIC, NEGBINOMIAL2,                             # D02
-                                                          SRATIO, CRATIO, ACAT)})                                             # D04
+                                                          SRATIO, CRATIO, ACAT,                                               # D04
+                                                          ZERO_INFLATED_NEGBINOMIAL, HURDLE_NEGBINOMIAL, ZERO_INFLATED_BINOMIAL,   # D03
+                                                          ZERO_INFLATED_BETA, HURDLE_GAMMA, HURDLE_LOGNORMAL)})
 
 
 def get_family(name: str, link: str | None = None) -> FamilySpec:

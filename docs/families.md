@@ -76,8 +76,9 @@ The zero-inflated and hurdle families (B06, docs/zero-inflated-hurdle.md) have a
 `priors.AUXILIARY` lists both). Exactly the family's own must be given to `Priors` and to `Model.value_point`;
 `model.names[zero_parameter]` is its PyMC variable, which keeps brms's name and is sampled as `zi_logodds__` (Stan's
 logit); `default_zero_prior` is brms's `beta(1, 1)`, written with `lb` 0 and `ub` 1. It sits beside `scale_parameter`,
-so that the zero-inflated or hurdle form of a family with its own auxiliary parameter (the negative binomial's `shape`)
-would keep both; every other family has `zero_parameter=None`. Their mean needs the `zi` / `hu` draws, so they set
+so that the zero-inflated or hurdle form of a family with its own auxiliary parameter keeps both, as D03's do (the
+negative binomial's `shape`, the Beta's `phi`, the Gamma's `shape`, the lognormal's `sigma`); every other family has
+`zero_parameter=None`. Their mean needs the `zi` / `hu` draws, so they set
 `expected_response`, as the lognormal does for `sigma`.
 
 | Group | zero-inflated Poisson | hurdle Poisson |
@@ -88,11 +89,27 @@ would keep both; every other family has `zero_parameter=None`. Their mean needs 
 | Graph | `likelihoods.zero_inflated_poisson_family` (the linear predictor as the parent `log_mu` under the identity link; `zi` by brms's name, not PyMC's `psi = 1 - zi`) | `likelihoods.hurdle_poisson_family` (the same, with `hu`) |
 | Prediction | `inverse_link` exp with overflow check (the Poisson part's mean); `expected_response` `(1 - zi) mu`; a structural zero below `zi`, else Poisson; by hand | `expected_response` `(1 - hu) mu / (1 - exp(-mu))`; zero below `hu`, else a zero-truncated Poisson; by hand |
 | Default priors | log (zeros read as 0.1); zi `Beta(1, 1)` | log (zeros read as 0.1); hu `Beta(1, 1)` |
+| Addition terms (B02) | weights (D03, verified against `zero_inflated_poisson_weighted`) | weights (D03, `hurdle_poisson_weighted`) |
 | Monotonic effects (B03) | yes | yes |
 | Post-processing (C07) | `log_likelihood`: the zero-inflated Poisson log mass (D28's stable form) | `log_likelihood`: the hurdle Poisson log mass |
 | Multivariate (C01) | no | no |
 | Autocorrelation (C04) | no (D70) | no (D70) |
 | Missing values and measurement error (C06) | no | no |
+
+D03 (docs/zero-inflated-hurdle.md) adds six such families, each with both a `scale_parameter` and the `zero_parameter`; their
+likelihoods are `pm.CustomDist`s built by `likelihoods._zero_family` (the linear predictor as Bambi's parent under the identity
+link, the auxiliary parameters by Bambi's names), and every one takes `weights()` and nothing else among the addition terms.
+
+| Group | zero-inflated negative binomial | hurdle negative binomial | zero-inflated binomial | zero-inflated Beta | hurdle Gamma | hurdle lognormal |
+| --- | --- | --- | --- | --- | --- | --- |
+| Names | `log_mu` / log / `mean` | `log_mu` / log / `mean` | `logit_p` / logit / `expected` | `logit_mu` / logit / `mean` | `log_mu` / log / `mean` | `mu` / identity (log scale) / `mean` |
+| Response | counts in [0, 1e6] | counts in [0, 1e6] | binomial (trials), `binomial_counts` | continuous, in [0, 1) | continuous, finite and >= 0 | continuous, finite and >= 0 |
+| Parameters | shape / alpha; zi | shape / alpha; hu | none; zi | phi / phi; zi | shape / alpha; hu | sigma / sigma; hu |
+| Prediction (`expected_response`) | `(1 - zi) mu` | `(1 - hu) mu / (1 - NB(0))` | `(1 - zi) p`, times the trials as `expected` | `(1 - zi) mu` | `(1 - hu) mu` | `(1 - hu) exp(mu + sigma^2 / 2)` |
+| Default priors | log; shape `InverseGamma(0.4, 0.3)`; zi `Beta(1, 1)` | log; shape `InverseGamma(0.4, 0.3)`; hu `Beta(1, 1)` | none (logit); zi `Beta(1, 1)` | none (logit); phi `Gamma(0.01, 0.01)`; zi `Beta(1, 1)` | log; shape `Gamma(0.01, 0.01)`; hu `Beta(1, 1)` | log; sigma `HalfStudentT(3, scale)`; hu `Beta(1, 1)` |
+| Addition terms (B02) | weights | weights | weights | weights | weights | weights |
+| Post-processing (C07) | `log_likelihood` | `log_likelihood` | `log_likelihood` | `log_likelihood` | `log_likelihood` | `log_likelihood` |
+| Distributional formulas, mo(), multivariate, non-linear, autocorrelation, me()/mi(), mixtures | no (D84) | no (D84) | no (D84) | no (D84) | no (D84) | no (D84) |
 
 The ordinal and categorical families (B05, docs/ordinal-categorical.md) have a response of K categories, which
 `FamilySpec.response_categories` turns into brms's `Y`, each row's 1-based category, keeping the labels as

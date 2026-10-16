@@ -98,10 +98,10 @@ Zero-inflated and hurdle Poisson counts (B06, `ab.zero_inflated_poisson` and `ab
 densities in a stable form, never NaN and finite wherever the true value is a double, where brms's are NaN or
 infinite at some extreme linear predictors, D28; `predict(kind="mean")` returning brms's `posterior_epred` as `mean`)
 followed, verified against `zero_inflated_poisson_varint` and `hurdle_poisson_varint`; only Beta priors on `zi` / `hu`
-(D29), and brms's other zero-inflated and hurdle families and formulas on `zi` / `hu` are not offered (D30); see
-[zero-inflated and hurdle counts](zero-inflated-hurdle.md).
+(D29), and formulas on `zi` / `hu` are not offered (D30); D03 (at the end of this file) adds six more such families; see
+[zero-inflated and hurdle families](zero-inflated-hurdle.md).
 
-brms's response addition terms (B02): `weights(w)` multiplies each row's log likelihood by its weight for every Tier A family (not yet the zero-inflated and hurdle families)
+brms's response addition terms (B02): `weights(w)` multiplies each row's log likelihood by its weight for every Tier A family (and, since D03, the eight zero-inflated and hurdle families)
 (`y | weights(w) ~ ...`, `k | trials(n) + weights(w) ~ ...`), verified against `gauss_weighted` and one frozen weighted
 case per family; brms's `cens()` and `trunc()` were parsed and implemented for the Gaussian family but withheld, because
 brms's own gradients (Stan's `normal_lcdf` derivative approximations, `normal_lccdf`'s `1 - erf`) and truncated mean
@@ -281,3 +281,18 @@ default priors. Verified against `sratio_varint`, `cratio_varint`, `acat_varint`
 links, `disc`, `mo()`, addition terms and the other forms of `cs()` are refused (D38, D89). The cumulative probit link is built
 but withheld: brms's own gradient of `cumulative_probit_varint` is off the exact value by up to 6.5e-5 relative, and the case
 waits for a two-reference (P6) reference of the model (D88); see [ordinal and categorical responses](ordinal-categorical.md).
+
+Six more zero-inflated and hurdle families (D03, brms's `zero_inflated_negbinomial()`, `hurdle_negbinomial()`,
+`zero_inflated_binomial()`, `zero_inflated_beta()`, `hurdle_gamma()`, `hurdle_lognormal()`): `ab.zero_inflated_negbinomial` and
+`ab.hurdle_negbinomial` (log link, `shape` and `zi` / `hu`), `ab.zero_inflated_binomial` (`k | trials(n)`, logit link, `zi`),
+`ab.zero_inflated_beta` (proportions in [0, 1), logit link, `phi` and `zi`), `ab.hurdle_gamma` (log link, `shape` and `hu`) and
+`ab.hurdle_lognormal` (identity link on the log-scale location, `sigma` and `hu`), each with brms's density in a stable form (the
+negative binomial coefficient through Stirling's remainder, the hurdle truncation `log(1 - NB(0))` exact at small means),
+brms's `posterior_epred`, response draws (the hurdle negative binomial's exactly zero-truncated, where brms's are not, D86),
+`log_lik()`, brms's default priors and `describe()`; and `weights()` for these and the zero-inflated and hurdle Poisson.
+Verified against `zero_inflated_negbinomial_varint`, `hurdle_negbinomial_varint`, `zero_inflated_binomial_varint`,
+`zero_inflated_beta_varint`, `hurdle_gamma_varint`, `hurdle_lognormal_varint`, `zero_inflated_poisson_weighted` and
+`hurdle_poisson_weighted` (log densities within 4.4e-16 relative); `gp()` and the term model are taken, while other links,
+formulas on `zi` / `hu` and the auxiliary parameters, `cens()`, `trunc()`, `mo()`, `me()`/`mi()`, `mm()`, `gr(by = )`,
+autocorrelation terms, multivariate, non-linear and mixture use are refused (D84); see
+[zero-inflated and hurdle families](zero-inflated-hurdle.md).
