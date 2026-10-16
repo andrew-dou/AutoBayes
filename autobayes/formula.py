@@ -68,6 +68,12 @@ missing values are parameters of the model, which another formula of a multivari
 group-level and distributional formulas, with brms's ``gr`` and ``idx`` arguments, next to another kind of special term,
 and for families that do not take them.
 
+brms's multi-membership term ``(1 | mm(g, g2, weights = cbind(w1, w2)))``, ``(1 | gr(g, by = gby))`` (one SD per level of
+``gby``) and a correlation ID ``(1 + x |p| g)`` shared with a distributional formula's ``sigma ~ 1 + (1 |p| g)`` (D08,
+docs/multi-membership-and-by.md) are ``GroupTerm`` fields (``members``/``weights``, ``by``, ``id``); the first two are built by the
+model itself (``GroupTerm.custom``), the third by Bambi and then correlated across the formulas (``ModelSpec.shared_ids``).
+brms's category-specific ``cs()`` is refused until the acat, sratio and cratio families exist (D107).
+
 Group-level terms are optional and additive across distinct factors (M3c-3): a formula without them is a population-only
 model, as in brms ``brmsformula`` where group-level terms are optional; ``y ~ 1`` is intercept-only. ``(1 + x || g)``
 is brms's independent varying intercept and slope (A01): each numeric population-level term named varies by level
@@ -104,6 +110,7 @@ _TRANSFORM_FN_RE = re.compile(rf"^(log|exp|sqrt)\s*\(\s*({_IDENT})\s*\)$", re.S)
 _TRANSFORM_POW_RE = re.compile(rf"^I\s*\(\s*({_IDENT})\s*\^\s*([+-]?\d+)\s*\)$", re.S)               # I(col^k), integer k
 _TRANSFORM_OP_RE = re.compile(rf"^I\s*\(\s*({_IDENT})\s*([*+-])\s*({_NUMBER})\s*\)$", re.S)          # I(col * k), I(col + k), I(col - k)
 _TRANSFORM_OP_FIRST_RE = re.compile(rf"^I\s*\(\s*({_NUMBER})\s*([*+])\s*({_IDENT})\s*\)$", re.S)     # I(k * col), I(k + col)
+_CS_RE = re.compile(r"^cs\s*\((.*)\)$", re.S)                                                        # cs(<inside>), brms's category-specific effect (D08, parked)
 _MO_RE = re.compile(r"^mo\s*\((.*)\)$", re.S)                                                        # mo(<inside>), brms's monotonic effect (B03)
 _MO_TERM_RE = re.compile(rf"^mo\(({_IDENT})\)$")                                                    # the canonical spelling mo(col)
 _ME_RE = re.compile(r"^me\s*\((.*)\)$", re.S)                                                        # me(<inside>), brms's measurement error (C06)
@@ -777,9 +784,19 @@ class GroupTerm:
     factor: str
     coefs: tuple[str, ...] = ("Intercept",)
     correlated: bool = True
+    # D08 (docs/multi-membership-and-by.md): brms's multi-membership grouping (1 | mm(g, g2, weights = cbind(w1, w2))): the
+    # member columns, in order, and their weight columns (empty: equal weights); the factor is then brms's group name "mmgg2"
+    members: tuple[str, ...] = ()
+    weights: tuple[str, ...] = ()
+    # D08: brms's (1 | gr(g, by = gby)): one SD per level of the column ``by``, in which the levels of g are nested
+    by: str | None = None
+    # D08: brms's correlation ID of (1 + x |p| g), shared with a distributional formula's (1 |p| g): one correlation matrix
+    id: str | None = None
 
     def __post_init__(self):
         object.__setattr__(self, "coefs", tuple(self.coefs))
+        object.__setattr__(self, "members", tuple(self.members))
+        object.__setattr__(self, "weights", tuple(self.weights))
 
     @property
     def slopes(self) -> tuple[str, ...]:
@@ -789,36 +806,73 @@ class GroupTerm:
     @property
     def has_correlation(self) -> bool:
         """Whether the term carries a correlation matrix: ``|`` with two or more coefficients (brms's ``L_m``,
-        ``NC_m > 0`` with ``cor = TRUE``). A single coefficient has nothing to correlate with."""
-        return self.correlated and len(self.coefs) > 1
+        ``NC_m > 0`` with ``cor = TRUE``). A single coefficient has nothing to correlate with. A term whose ID it shares
+        with a distributional formula (D08) has its correlation matrix through ``ModelSpec.shared_ids`` instead."""
+        return self.correlated and len(self.coefs) > 1 and self.id is None
+
+    @property
+    def is_mm(self) -> bool:
+        """Whether the term is brms's multi-membership term ``(1 | mm(g, g2, ...))`` (D08)."""
+        return bool(self.members)
+
+    @property
+    def custom(self) -> bool:
+        """Whether this library builds the term itself (a multi-membership term, or one with ``by``; D08) rather than Bambi."""
+        return self.is_mm or self.by is not None
+
+    @property
+    def grouping(self) -> str:
+        """The grouping as written inside the term: ``g``, ``g:h``, ``mm(g, g2, weights = cbind(w1, w2))`` or
+        ``gr(g, by = gby)`` (D08)."""
+        if self.is_mm:
+            weights = f", weights = cbind({', '.join(self.weights)})" if self.weights else ""
+            return f"mm({', '.join(self.members)}{weights})"
+        if self.by is not None:
+            return f"gr({self.factor}, by = {self.by})"
+        return self.factor
 
     @property
     def canonical(self) -> str:
         """The term as the canonical formula writes it: ``(1 | g)``, ``(1 + x || g)`` for independent slopes,
-        ``(1 + x | g)`` for correlated ones."""
+        ``(1 + x | g)`` for correlated ones; ``(1 + x |p| g)`` with a correlation ID, ``(1 | mm(g, g2))`` and
+        ``(1 | gr(g, by = gby))`` (D08)."""
         inner = " + ".join("1" if c == "Intercept" else c for c in self.coefs)
         bar = "|" if self.correlated or len(self.coefs) == 1 else "||"
-        return f"({inner} {bar} {self.factor})"
+        if self.id is not None:
+            bar = f"|{self.id}|"
+        return f"({inner} {bar} {self.grouping})"
 
     @property
     def operands(self) -> tuple[str, ...]:
-        """The data columns the factor is read from: ``("g",)``, or ``("g", "h")`` for the derived factor ``g:h``."""
+        """The data columns the factor's labels are read from: ``("g",)``, ``("g", "h")`` for the derived factor ``g:h``,
+        the member columns of a multi-membership term (D08)."""
+        if self.is_mm:
+            return self.members
         return tuple(self.factor.split(":"))
+
+    @property
+    def data_columns(self) -> tuple[str, ...]:
+        """Every data column the term reads: its ``operands``, then a multi-membership term's weight columns and the
+        ``by`` column (D08)."""
+        return (*self.operands, *self.weights, *((self.by,) if self.by is not None else ()))
 
     @property
     def derived(self) -> bool:
         """Whether the factor is built from two columns (``g:h``) rather than read from one."""
-        return len(self.operands) > 1
+        return not self.is_mm and len(self.operands) > 1
 
     @property
     def column(self) -> str:
-        """The fitted-frame column holding the factor's labels, which is also the name Bambi sees (``factor_column``)."""
+        """The fitted-frame column holding the factor's labels, which is also the name Bambi sees (``factor_column``).
+        A multi-membership term (D08) has none: its labels are its member columns; this is its group name."""
         return factor_column(self.factor)
 
     @property
     def bambi_canonical(self) -> str:
-        """``canonical`` as handed to Bambi: the factor under its column name and ``||`` as ``|`` (formulae has no ``||``)."""
-        return self.canonical.replace(f" {self.factor})", f" {self.column})").replace("||", "|")
+        """``canonical`` as handed to Bambi: the factor under its column name and ``||`` as ``|`` (formulae has no ``||``);
+        a correlation ID is dropped (D08: the model correlates the coefficients across formulas after Bambi builds them)."""
+        inner = " + ".join("1" if c == "Intercept" else c for c in self.coefs)
+        return f"({inner} | {self.column})"
 
 
 def factor_column(factor: str) -> str:
@@ -845,6 +899,58 @@ def group_labels(factor: str, df: pd.DataFrame) -> pd.Series:
                 "(labels are joined with '_', as brms does); rename the levels so that the labels are distinct"
             )
     return labels
+
+
+@dataclass(frozen=True)
+class SharedId:
+    """D08: a correlation ID shared by the response formula's term ``(1 + x |p| g)`` and distributional formulas' terms
+    ``sigma ~ (1 |p| g)``: brms's one group with one correlation matrix over every coefficient. ``coefs`` are ``(dpar,
+    coefficient)`` pairs in brms's order, ``dpar`` empty for the response formula's; ``labels`` are brms's names of them
+    (``Intercept``, ``x``, ``sigma_Intercept``), the coordinates of the correlation matrix."""
+    id: str
+    factor: str
+    coefs: tuple[tuple[str, str], ...]
+
+    @property
+    def labels(self) -> tuple[str, ...]:
+        return tuple(c if not dpar else f"{dpar}_{c}" for dpar, c in self.coefs)
+
+
+def mm_weights(term: GroupTerm, df: pd.DataFrame, *, where: str = "column") -> np.ndarray:
+    """D08: the ``(rows, members)`` weights of a multi-membership term on ``df``, as brms's ``W_m_k``: the weight columns
+    divided by their sum on each row (brms's default ``scale = TRUE``), or ``1 / members`` each without weight columns.
+    A weight must be a finite number at least 0 and each row's weights must have a positive sum, or the frame is refused."""
+    k = len(term.members)
+    if not term.weights:
+        return np.full((len(df), k), 1.0 / k)
+    cols = []
+    for c in term.weights:
+        reject_complex(f"{where} {c!r}", df[c])
+        if not _is_numeric(df[c]):
+            raise FormulaError(f"{where} {c!r}, a weight of {term.canonical}, must be numeric")
+        cols.append(df[c].to_numpy(dtype=float))
+    w = np.column_stack(cols) if cols else np.zeros((len(df), 0))
+    if not np.isfinite(w).all() or (w < 0).any():
+        raise FormulaError(f"the weights {list(term.weights)} of {term.canonical} must be finite and at least 0 on every row "
+                           "(brms's scale = TRUE; negative weights need scale = FALSE, which is not offered: divergence D104)")
+    total = w.sum(axis=1)
+    if (total <= 0).any():
+        raise FormulaError(f"the weights {list(term.weights)} of {term.canonical} sum to 0 on row(s) "
+                           f"{np.flatnonzero(total <= 0)[:5].tolist()}; each row needs a positive total (brms divides by it)")
+    return w / total[:, None]
+
+
+def by_levels_of(term: GroupTerm, df: pd.DataFrame, *, where: str = "column") -> dict[str, str]:
+    """D08: the level of ``term.by`` of each level of a ``gr(g, by = gby)`` term's factor on ``df`` (labels as text), refused
+    when a level of ``g`` meets two levels of ``by`` (brms: "Some levels of 'g' correspond to multiple levels of 'gby'")."""
+    labels, by = group_labels(term.factor, df).to_numpy(), group_labels(term.by, df).to_numpy()
+    out: dict[str, str] = {}
+    for lab, b in zip(labels, by):
+        if out.setdefault(lab, b) != b:
+            raise FormulaError(f"{where}s {term.factor!r} and {term.by!r}: the level {lab!r} of {term.factor!r} meets the levels "
+                               f"{out[lab]!r} and {b!r} of {term.by!r}; gr({term.factor}, by = {term.by}) needs each level of "
+                               f"{term.factor!r} within one level of {term.by!r} (brms refuses it too)")
+    return out
 
 
 @dataclass(frozen=True)
@@ -1494,6 +1600,35 @@ class ModelSpec:
         return tuple(t for t in self.group_terms if t.has_correlation)
 
     @property
+    def bambi_group_terms(self) -> tuple[GroupTerm, ...]:
+        """The group-level terms Bambi builds: all but the multi-membership and ``by`` terms (D08), which the model adds to
+        the linear predictor itself."""
+        return tuple(t for t in self.group_terms if not t.custom)
+
+    @property
+    def custom_group_terms(self) -> tuple[GroupTerm, ...]:
+        """The group-level terms the model builds itself (D08): ``(1 | mm(g, g2, ...))`` and ``(1 | gr(g, by = gby))``."""
+        return tuple(t for t in self.group_terms if t.custom)
+
+    @property
+    def shared_ids(self) -> tuple["SharedId", ...]:
+        """D08: each correlation ID the response formula shares with distributional formulas, ``(1 + x |p| g)`` and
+        ``sigma ~ (1 |p| g)``: one group of brms (one ``sd``, ``z``, ``L``) whose coefficients are the response formula's
+        term's, then each distributional formula's, in the order of the list. Empty without one."""
+        out = []
+        for t in self.group_terms:
+            if t.id is None or not self.dpars:                # a distributional formula's own spec lists none: its ID is the response's
+                continue
+            coefs = [("", c) for c in t.coefs]
+            coefs += [(d.response, c) for d in self.dpars for u in d.group_terms if u.id == t.id for c in u.coefs]
+            out.append(SharedId(t.id, t.factor, tuple(coefs)))
+        return tuple(out)
+
+    def shared_id_of(self, factor: str) -> "SharedId | None":
+        """The shared correlation ID of ``factor`` (D08), or None."""
+        return next((s for s in self.shared_ids if s.factor == factor), None)
+
+    @property
     def has_group(self) -> bool:
         return bool(self.group_terms)
 
@@ -1596,7 +1731,7 @@ class ModelSpec:
         as ``<parameter> ~ <bambi_rhs>`` under Bambi's name for the parameter (``alpha`` for brms's ``shape``). A monotonic
         term (B03) is not handed to Bambi: the model adds it to the linear predictor Bambi builds."""
         parts = ([] if self.intercept else ["0"]) + [t.bambi_name for t in self.bambi_terms]
-        parts += ([self.offset.term] if self.offset is not None else []) + [t.bambi_canonical for t in self.group_terms]
+        parts += ([self.offset.term] if self.offset is not None else []) + [t.bambi_canonical for t in self.bambi_group_terms]
         return " + ".join(parts) if parts else "1"
 
 
@@ -1629,16 +1764,52 @@ def _parse_group_term(inner: str, bars: str, factor: str, piece: str, response: 
     the derived factor ``g:h`` (the observed combinations of two columns: one term) or brms's nesting shorthand
     ``g/h`` (``(1 | g) + (1 | g:h)``: two terms, in that order). Everything else brms accepts here is refused
     with a message naming the construct. Whether a slope is a numeric population-level term of the formula is
-    checked by ``parse_formula`` once every term is read."""
-    if "|" in factor:
-        raise FormulaError(f"{piece!r}: correlation IDs are not supported")
-    if factor.startswith("mm("):
-        raise FormulaError(f"{piece!r}: multimembership grouping is not supported")
-    if re.match(r"gr\s*\(", factor):                             # brms's gr(g, cor = FALSE, by = ..., ...)
-        raise FormulaError(
-            f"{piece!r}: brms's gr() grouping options are not supported; write the grouping column itself, with "
-            "'||' for independent effects (gr(g, cor = FALSE)) or '|' for correlated ones"
-        )
+    checked by ``parse_formula`` once every term is read.
+
+    D08: brms's correlation ID ``(1 + x |p| g)`` (``id``), the multi-membership term ``(1 | mm(g, g2, weights = cbind(w1,
+    w2)))`` and ``(1 | gr(g, by = gby))``, each in the subset docs/multi-membership-and-by.md describes (divergences
+    D104-D106); ``gr(g)`` alone is ``g``."""
+    term_id = None
+    if "|" in factor:                                            # D08: brms's correlation ID, (1 + x |p| g)
+        term_id, factor = (p.strip() for p in factor.split("|", 1))
+        if bars == "||":
+            raise FormulaError(f"{piece!r}: a correlation ID is written '(1 + x |{term_id}| g)'; '||' with an ID is not brms "
+                               "syntax ('Invalid syntax used in group-level terms')")
+        if not re.fullmatch(_IDENT, term_id) or "|" in factor:
+            raise FormulaError(f"{piece!r}: a correlation ID is a name between two bars, '(1 + x |p| g)'")
+        if "(" in factor:
+            raise FormulaError(f"{piece!r}: a correlation ID with mm() or gr() is not supported in this slice; the ID's grouping "
+                               "factor is a column (docs/multi-membership-and-by.md, divergence D106)")
+    if re.match(r"mm\s*\(", factor):                              # D08: brms's multi-membership grouping
+        return [_parse_mm_term(inner, bars, factor, piece, response, trials)]
+    by = None
+    gm = re.fullmatch(r"gr\s*\((.*)\)", factor, re.S)
+    if gm:                                                       # D08: brms's gr(g) and gr(g, by = gby); its other options refused
+        args = [a.strip() for a in _split_top_level(gm.group(1), ",")]
+        named = {}
+        for a in args[1:]:
+            na = re.fullmatch(rf"({_IDENT})\s*=\s*(.+)", a, re.S)
+            if not na:
+                raise FormulaError(f"{piece!r}: gr() takes the grouping column and by = <column> here (docs/multi-membership-and-by.md)")
+            named[na.group(1)] = na.group(2).strip()
+        other = [k for k in named if k != "by"]
+        if other or not args or not re.fullmatch(_IDENT, args[0]):
+            raise FormulaError(
+                f"{piece!r}: brms's gr() options {other or ''} are not supported; gr() takes one grouping column and by = <column> "
+                "here (gr(g, cor = FALSE) is '||', gr(g, id = 'p') is '|p|'; cov, dist and a grouping expression are not "
+                "offered; docs/multi-membership-and-by.md, divergence D105)"
+            )
+        factor = args[0]
+        if "by" in named:
+            by = named["by"]
+            if not re.fullmatch(_IDENT, by):
+                raise FormulaError(f"{piece!r}: by = takes a column name here, got {by!r}")
+            if by == factor:
+                raise FormulaError(f"{piece!r}: the grouping column {factor!r} cannot be its own by column")
+            if by in (response, trials):
+                raise FormulaError(f"{piece!r}: the {'response' if by == response else 'trials column'} {by!r} cannot be the by column")
+            if term_id is not None:
+                raise FormulaError(f"{piece!r}: a correlation ID with gr(by = ) is not supported in this slice (divergence D106)")
     if "(" in factor:
         raise FormulaError(f"{piece!r}: transformed grouping factors are not supported; use a column name")
     if "/" in factor and ":" in factor:
@@ -1716,11 +1887,69 @@ def _parse_group_term(inner: str, bars: str, factor: str, piece: str, response: 
         )
     if tokens.count("1") > 1:
         raise FormulaError(f"{piece!r}: '1' appears more than once in the group term")
+    if (by is not None or term_id is not None) and sep is not None:
+        raise FormulaError(f"{piece!r}: {'gr(by = )' if by is not None else 'a correlation ID'} with a combined grouping factor "
+                           f"({factor!r}) is not supported in this slice (docs/multi-membership-and-by.md)")
+    if by is not None and slopes:
+        raise FormulaError(
+            f"{piece!r}: varying slopes with gr(by = ) are not supported in this slice: brms gives each level of {by!r} its own "
+            "SD of every coefficient and, with '|', its own correlation matrix, which no frozen case verifies; "
+            f"'(1 | gr({factor}, by = {by}))' is offered (docs/multi-membership-and-by.md, divergence D105)"
+        )
     if not slopes:
-        return [GroupTerm(f, ("Intercept",), correlated=True) for f in factors]
+        return [GroupTerm(f, ("Intercept",), correlated=True, by=by, id=term_id) for f in factors]
     # '|' is brms's correlated form (A02): the intercept and slope(s) share a correlation matrix under an LKJ prior;
     # '||' the independent form (A01). '(1 + x | g/h)' gives '(1 + x | g) + (1 + x | g:h)', both correlated, as brms.
-    return [GroupTerm(f, ("Intercept", *slopes), correlated=(bars == "|")) for f in factors]
+    return [GroupTerm(f, ("Intercept", *slopes), correlated=(bars == "|"), id=term_id) for f in factors]
+
+
+def _parse_mm_term(inner: str, bars: str, factor: str, piece: str, response: str, trials: str | None) -> GroupTerm:
+    """D08: brms's multi-membership term ``(1 | mm(g, g2, ...))`` or ``(1 | mm(g, g2, ..., weights = cbind(w1, w2, ...)))``:
+    each row belongs to the levels of its member columns with the weights given (brms's default ``scale = TRUE`` divides
+    each row's weights by their sum; no weights: equal weights), and the group's levels are the union of the members'
+    labels. brms's group name is ``mm`` followed by the member columns (``mmgg2``), which is the term's factor here. The
+    varying intercept only: slopes (brms's ``mmc()`` and covariates that vary by membership) and ``scale = FALSE`` are
+    refused (divergence D104)."""
+    m = re.fullmatch(r"mm\s*\((.*)\)", factor, re.S)
+    args = [a.strip() for a in _split_top_level(m.group(1), ",")] if m and m.group(1).strip() else []
+    members, weights = [], []
+    for a in args:
+        na = re.fullmatch(rf"({_IDENT})\s*=\s*(.+)", a, re.S)
+        if na is None:
+            if weights:
+                raise FormulaError(f"{piece!r}: the member columns of mm() come before weights = ")
+            if not re.fullmatch(_IDENT, a):
+                raise FormulaError(f"{piece!r}: mm() takes column names here, not {a!r} (docs/multi-membership-and-by.md)")
+            members.append(a)
+            continue
+        key, value = na.group(1), na.group(2).strip()
+        if key != "weights":
+            raise FormulaError(
+                f"{piece!r}: mm()'s argument {key!r} is not supported in this slice; mm(g, g2, ..., weights = cbind(w1, w2, ...)) "
+                "with brms's default scale = TRUE is offered (docs/multi-membership-and-by.md, divergence D104)")
+        cm = re.fullmatch(r"cbind\s*\((.*)\)", value, re.S)
+        cols = [c.strip() for c in _split_top_level(cm.group(1), ",")] if cm else []
+        if not cols or any(not re.fullmatch(_IDENT, c) for c in cols):
+            raise FormulaError(f"{piece!r}: weights = takes cbind(<column>, <column>, ...), one weight column per member")
+        weights = cols
+    if len(members) < 2:
+        raise FormulaError(f"{piece!r}: mm() takes two or more member columns, mm(g, g2)")
+    if len(set(members)) != len(members):
+        raise FormulaError(f"{piece!r}: a member column appears twice in mm()")
+    if weights and len(weights) != len(members):
+        raise FormulaError(f"{piece!r}: mm() has {len(members)} member columns and {len(weights)} weight columns; give one weight "
+                           "column per member")
+    for c in (*members, *weights):
+        if c in (response, trials):
+            raise FormulaError(f"{piece!r}: the {'response' if c == response else 'trials column'} {c!r} cannot be read by mm()")
+    if set(members) & set(weights):
+        raise FormulaError(f"{piece!r}: a column cannot be both a member and a weight of mm()")
+    tokens = [t.strip() for t in _split_top_level(inner)]
+    if tokens != ["1"]:
+        raise FormulaError(
+            f"{piece!r}: only the varying intercept '(1 | mm(...))' is supported for a multi-membership term in this slice; varying "
+            "slopes (and brms's mmc()) are not verified by a frozen case (docs/multi-membership-and-by.md, divergence D104)")
+    return GroupTerm("mm" + "".join(members), ("Intercept",), correlated=True, members=tuple(members), weights=tuple(weights))
 
 
 def _normalise_categorical(categorical, terms: list[str], response: str, groups: list[str], trials: str | None,
@@ -1910,13 +2139,13 @@ def _parse_formulas(formulas, data: pd.DataFrame | None, family: str, categorica
     # Route the declared categorical columns: each formula receives the declarations of its own main effects (read
     # without the data); a declaration that names no formula's main effect stays with the response formula, which
     # refuses it as it always has.
-    main0 = parse_formula(main, None, family, None)
+    main0 = parse_formula(main, None, family, None, _ids=True)
     if main0.autocor is not None:                             # C04: not next to a distributional formula (D70)
         raise FormulaError(
             f"{main!r}: the autocorrelation term {main0.autocor.term!r} with a distributional formula is not supported in this "
             "slice (brms accepts bf(y ~ x + ar(...), sigma ~ z); docs/autocorrelation.md, divergence D70)"
         )
-    dpar0 = [parse_formula(f"{name} ~ {rhs}", None, family, None) for name, rhs, _ in parsed]
+    dpar0 = [parse_formula(f"{name} ~ {rhs}", None, family, None, _ids=True) for name, rhs, _ in parsed]
     mains = [{t.name for t in s.pop_terms if t.kind == "numeric"} for s in (main0, *dpar0)]
     if isinstance(categorical, Mapping):                    # a declared column is categorical in every formula
         for t in (t for s in (main0, *dpar0) for t in s.transform_terms):
@@ -1931,17 +2160,31 @@ def _parse_formulas(formulas, data: pd.DataFrame | None, family: str, categorica
         dpar_cat = [{k: v for k, v in categorical.items() if k in m} for m in mains[1:]]
     else:
         main_cat, dpar_cat = categorical, [None] * len(parsed)
-    spec = parse_formula(main, data, family, main_cat)
+    spec = parse_formula(main, data, family, main_cat, _ids=True)
     operands = {c for t in spec.group_terms for c in t.operands}
     dpars = []
     for (name, rhs, text), cat in zip(parsed, dpar_cat):
-        d = parse_formula(f"{name} ~ {rhs}", None, family, cat or None)
-        if d.group_terms:
+        d = parse_formula(f"{name} ~ {rhs}", None, family, cat or None, _ids=True)
+        unshared = [t for t in d.group_terms if t.id is None]
+        if unshared:
             raise FormulaError(
-                f"{text!r}: group-level terms in a distributional formula ({', '.join(t.canonical for t in d.group_terms)}) are "
+                f"{text!r}: group-level terms in a distributional formula ({', '.join(t.canonical for t in unshared)}) are "
                 f"not supported in this slice: brms would give {name} its own varying effects; a distributional formula "
-                "takes population-level terms only here (docs/distributional.md, divergence D32)"
+                "takes population-level terms only here, and group-level terms only with a correlation ID shared with the "
+                f"response formula's term of the same factor, '{name} ~ ... + (1 |p| g)' next to '... + (1 + x |p| g)' "
+                "(docs/distributional.md, divergence D32; docs/multi-membership-and-by.md, D106)"
             )
+        for t in d.group_terms:                              # D08: the ID's term in the response formula, same factor
+            partner = next((u for u in spec.group_terms if u.id == t.id), None)
+            if partner is None:
+                raise FormulaError(f"{text!r}: the correlation ID {t.id!r} of '{t.canonical}' names no group-level term of the response "
+                                   f"formula {main!r}; an ID shares a correlation matrix with that formula's term here (divergence D106)")
+            if partner.factor != t.factor:
+                raise FormulaError(f"{text!r}: the correlation ID {t.id!r} joins '{partner.canonical}' and '{t.canonical}', two grouping "
+                                   "factors; brms refuses it too ('Can only combine group-level terms of the same grouping factors')")
+            if t.slopes:
+                raise FormulaError(f"{text!r}: '{t.canonical}': varying slopes in a distributional formula are not supported in this "
+                                   f"slice; '(1 |{t.id}| {t.factor})' is offered (docs/multi-membership-and-by.md, divergence D106)")
         if d.offset is not None:
             raise FormulaError(
                 f"{text!r}: {d.offset.term!r} in a distributional formula is not supported in this slice; an offset belongs "
@@ -1981,6 +2224,16 @@ def _parse_formulas(formulas, data: pd.DataFrame | None, family: str, categorica
         if data is not None:
             d = validate_data(d, data, family, dpar=True)
         dpars.append(d)
+    shared = {t.id for d in dpars for t in d.group_terms}
+    for t in spec.group_terms:                               # D08: an ID of the response formula is shared, or refused
+        if t.id is not None and t.id not in shared:
+            raise FormulaError(f"{main!r}: the correlation ID {t.id!r} of '{t.canonical}' is used by no distributional formula of the "
+                               "list; an ID shares one correlation matrix between the response formula and a distributional formula's "
+                               f"term of {t.factor!r} here (write '{t.canonical.replace(f'|{t.id}|', '|')}' without one; divergence D106)")
+    custom = [t for t in spec.group_terms if t.custom]
+    if custom:                                               # D08: mm() and gr(by = ) are verified without distributional formulas
+        raise FormulaError(f"{main!r}: '{custom[0].canonical}' next to a distributional formula is not supported in this slice: no "
+                           "frozen brms case verifies the pair (docs/multi-membership-and-by.md, divergences D104, D105)")
     return replace(spec, dpars=tuple(dpars))
 
 
@@ -2055,12 +2308,14 @@ def check_imputation(spec: ModelSpec, imputed=()) -> None:
 
 
 def parse_formula(formula: str | list[str], data: pd.DataFrame | None = None, family: str = "gaussian",
-                  categorical: Mapping[str, object] | None = None) -> ModelSpec:
+                  categorical: Mapping[str, object] | None = None, *, _ids: bool = False) -> ModelSpec:
     """Parse and validate a formula in the supported subset, optionally against a data frame.
 
     ``categorical`` maps a predictor column to its reference level (treatment coding); every
     other predictor term must be numeric. ``formula`` may also be a list (B01): the response formula, then one formula
     per distributional parameter, ``["y ~ x + (1 | g)", "sigma ~ z"]`` (``_parse_formulas``, docs/distributional.md).
+    ``_ids`` is set by ``_parse_formulas`` alone: a correlation ID ``(1 + x |p| g)`` (D08) is taken in a list of formulas,
+    where a distributional formula shares it, and refused in a formula on its own.
     """
     from autobayes.families import get_family
 
@@ -2265,6 +2520,12 @@ def parse_formula(formula: str | list[str], data: pd.DataFrame | None = None, fa
                 _main(right, piece)
             raw_interactions.append((left, right, piece))
             continue
+        if _CS_RE.match(piece):                                 # D08: brms's category-specific effects, parked with acat_cs (D107)
+            raise FormulaError(
+                f"{piece!r}: brms's category-specific effect cs() is not supported: brms takes it in the acat, sratio and cratio families "
+                "only (one coefficient per threshold, brms's bcs), which this library does not have yet (D04); the frozen case acat_cs "
+                "waits for them (divergence D107)"
+            )
         gpm = _GP_RE.match(piece)
         if gpm:                                                 # brms's Gaussian process gp(x), gp(x, k = 10, c = 5/4) (C03)
             gp = _parse_gp(piece, gpm.group(1), response, trials)
@@ -2416,6 +2677,36 @@ def parse_formula(formula: str | list[str], data: pd.DataFrame | None = None, fa
         if (col in predictors or col in transform_columns or col in mo_columns or col in gp_columns or col in special_cols
                 or col == response):
             raise FormulaError(f"{col!r}: the grouping factor cannot also be a predictor or the response")
+    for term, piece in zip(group_terms, group_pieces):       # D08: an mm() term's weights and a gr() term's by column
+        for col in (*term.weights, *((term.by,) if term.by is not None else ())):
+            if (col in predictors or col in transform_columns or col in mo_columns or col in gp_columns or col in special_cols
+                    or col in operands_all):
+                raise FormulaError(f"{piece!r}: {col!r} is a {'weight' if col in term.weights else 'by'} column of the group term and "
+                                   "cannot also be a predictor or a grouping column in this slice")
+    ids: dict[str, GroupTerm] = {}
+    for term, piece in zip(group_terms, group_pieces):       # D08: one grouping factor per correlation ID, as brms requires
+        if term.id is None:
+            continue
+        if term.id in ids:
+            raise FormulaError(f"{formula!r}: the correlation ID {term.id!r} is used by '{ids[term.id].canonical}' and '{piece}' in one "
+                               "formula; brms writes the coefficients of one factor in one term ('Can only combine group-level terms "
+                               "of the same grouping factors' for different factors); docs/multi-membership-and-by.md, divergence D106")
+        ids[term.id] = term
+    custom = [(t, p) for t, p in zip(group_terms, group_pieces) if t.custom]
+    if custom:                                               # D08: mm() and gr(by = ) next to the terms no frozen case verifies with them
+        t, p = custom[0]
+        what = "the multi-membership term" if t.is_mm else "the term with gr(by = )"
+        others = ([f"the monotonic term {next(iter(monotonics))!r}"] if monotonics else []) + [f"the Gaussian process {g.term!r}" for g, _ in gps]
+        others += [f"the term {name!r}" for name in special_columns] + [f"the autocorrelation term {a.term!r}" for a, _ in autocors]
+        others += [f"the addition term {a.term!r}" for a in additions]
+        if others:
+            raise FormulaError(f"{formula!r}: {what} '{p}' next to {others[0]} is not supported in this slice: no frozen brms case "
+                               "verifies the pair (docs/multi-membership-and-by.md, divergences D104, D105)")
+        if fam.link not in ("identity", "log") or not fam.monotonic or fam.per_category or fam.thresholds or fam.mixture:
+            raise FormulaError(
+                f"{formula!r}: {what} '{p}' is not available for the {fam.name} family ({fam.link} link): it is added to the linear "
+                "predictor as the library builds it and checked there under the identity and log links, for the families whose "
+                "linear predictor takes such terms (docs/multi-membership-and-by.md, divergences D104, D105)")
     if trials is not None and (trials in predictors or trials in operands_all):
         raise FormulaError(f"{trials!r}: the trials column cannot also be a predictor or the grouping factor")
     offset = offsets[0][0] if offsets else None
@@ -2556,6 +2847,12 @@ def parse_formula(formula: str | list[str], data: pd.DataFrame | None = None, fa
         )
     if fam.check_formula is not None:                        # a family that does not take every formula (B05)
         fam.check_formula(spec)
+    with_id = next((t for t in spec.group_terms if t.id is not None), None)
+    if with_id is not None and not _ids:                     # D08: an ID is shared with a distributional formula of a list
+        raise FormulaError(
+            f"{formula!r}: the correlation ID {with_id.id!r} of '{with_id.canonical}' is offered between the response formula and a "
+            f"distributional formula of a list, ['y ~ x + (1 + x |{with_id.id}| g)', 'sigma ~ (1 |{with_id.id}| g)'] (brms's bf(...)); "
+            f"in a formula on its own it is not supported here (docs/multi-membership-and-by.md, divergence D106)")
     if data is not None:
         spec = validate_data(spec, data, family)
     return spec
@@ -2812,8 +3109,8 @@ def validate_data(spec: ModelSpec, data: pd.DataFrame, family: str = "gaussian",
     fam = get_family(family)
     if not dpar and (spec.trials is not None) != fam.has_trials:
         raise FormulaError("a trials column is present exactly for the binomial family")
-    operands = [c for t in spec.group_terms for c in t.operands]   # the columns the grouping factors are read from
-    needed = (([] if dpar else [spec.response]) + [*spec.pop_columns] + operands
+    operands = [c for t in spec.group_terms for c in t.data_columns]   # the columns the grouping factors are read from (D08: and
+    needed = (([] if dpar else [spec.response]) + [*spec.pop_columns] + operands   # mm()'s weights, gr()'s by column)
               + ([spec.trials] if spec.trials else []) + ([spec.offset.column] if spec.offset is not None else [])
               + [c for a in spec.additions for c in a.columns])
     needed = list(dict.fromkeys(needed))                         # the offset column may also be a predictor
@@ -2866,9 +3163,15 @@ def validate_data(spec: ModelSpec, data: pd.DataFrame, family: str = "gaussian",
         series_layout(spec.autocor, data)
     levels_by_group = {}
     for t in spec.group_terms:                                    # a derived factor's levels: the observed combinations
-        levels = tuple(sorted(group_labels(t.factor, data).unique()))
+        if t.is_mm:                                               # D08: the union of the member columns' labels, sorted
+            levels = tuple(sorted(set().union(*(group_labels(c, data).unique() for c in t.members))))
+            mm_weights(t, data)                                   # finite, non-negative, a positive sum on every row, or refused
+        else:
+            levels = tuple(sorted(group_labels(t.factor, data).unique()))
         if len(levels) < 2:
             raise FormulaError(f"grouping factor {t.factor!r} has a single level; a varying intercept needs at least two.")
+        if t.by is not None:                                      # D08: each level of g within one level of by, as brms requires
+            by_levels_of(t, data)
         levels_by_group[t.factor] = levels
     for c in spec.predictors:
         if np.isclose(np.std(data[c].to_numpy(dtype=float)), 0.0):

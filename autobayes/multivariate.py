@@ -198,6 +198,9 @@ def parse_multivariate(formula, data: pd.DataFrame | None = None, family: str = 
             s = parse_formula(f"{r} ~ {rhs}", data, family, categorical)
         except FormulaError as e:
             raise FormulaError(f"{formula!r}, the formula of the response {r!r} ('{r} ~ {rhs}'): {e}") from None
+        if s.custom_group_terms:                                         # D08: verified in univariate models only
+            raise FormulaError(f"{formula!r}: '{s.custom_group_terms[0].canonical}' in a multivariate formula is not supported in this "
+                               "slice (docs/multi-membership-and-by.md, divergences D104, D105)")
         reads = {*s.pop_columns, *(c for t in s.group_terms for c in t.operands), *([s.offset.column] if s.offset is not None else [])}
         others = sorted(reads & set(responses))
         if others:
@@ -255,6 +258,9 @@ def _parse_imputation(formulas, data, family, categorical, *, rescor) -> Multiva
             specs0.append(parse_formula(text, None, family, None))     # the structure, before the data and the declarations
         except FormulaError as e:
             raise FormulaError(f"{formulas!r}, the formula {text!r}: {e}") from None
+        if specs0[-1].custom_group_terms:                               # D08: verified in univariate models only
+            raise FormulaError(f"{formulas!r}, the formula {text!r}: '{specs0[-1].custom_group_terms[0].canonical}' in a multivariate "
+                               "model is not supported in this slice (docs/multi-membership-and-by.md, divergences D104, D105)")
     responses = tuple(s.response for s in specs0)
     dup = sorted({r for r in responses if responses.count(r) > 1})
     if dup:

@@ -583,6 +583,8 @@ class Priors:
         (``||``) or intercept-only has no correlation matrix and is refused here, as is a missing or non-LKJ prior."""
         group_terms = tuple(getattr(spec, "group_terms", ()))
         terms = [t for t in group_terms if t.has_correlation]
+        # D08: a correlation ID shared with a distributional formula has one correlation matrix too, keyed by its factor
+        terms += [t for t in group_terms if t.id is not None and any(s.factor == t.factor for s in getattr(spec, "shared_ids", ()))]
         factors = [t.factor for t in terms]
         if not terms:
             if self.cor is not None:
@@ -779,10 +781,15 @@ class Priors:
             raise PriorError(
                 f"{name} has its own formula '{dspec.formula}': its priors are a mapping {{'intercept': prior, 'b': prior}} over "
                 f"that formula's intercept and coefficients ({brms}), not {type(entry).__name__} {entry}")
-        extra = [k for k in entry if k not in ("intercept", "b")]
+        keys = ("intercept", "b", "sd") if dspec.group_terms else ("intercept", "b")   # D08: a shared ID's terms have an sd
+        extra = [k for k in entry if k not in keys]
         if extra:
-            raise PriorError(f"the priors of {name}'s formula '{dspec.formula}' take the keys 'intercept' and 'b' ({brms}); "
-                             f"unexpected {extra}")
+            keys_text = "'intercept', 'b' and 'sd'" if dspec.group_terms else "'intercept' and 'b'"
+            raise PriorError(f"the priors of {name}'s formula '{dspec.formula}' take the keys {keys_text} ({brms}"
+                             f"{', and class sd with dpar = ' + name if dspec.group_terms else ''}); unexpected {extra}")
+        if dspec.group_terms and entry.get("sd") is None:
+            raise PriorError(f"'{dspec.formula}' has the group-level term(s) {[t.canonical for t in dspec.group_terms]}, whose SDs need "
+                             f"priors: pass {name}={{..., 'sd': ...}} (brms class sd with dpar = {name}; docs/multi-membership-and-by.md)")
         if dspec.intercept and entry.get("intercept") is None:
             raise PriorError(f"'{dspec.formula}' has an intercept, which needs a prior: pass {name}={{'intercept': ..., ...}}")
         if not dspec.intercept and entry.get("intercept") is not None:
@@ -790,7 +797,7 @@ class Priors:
         if dspec.pop_terms and entry.get("b") is None:
             raise PriorError(f"'{dspec.formula}' has the population-level term(s) {list(dspec.terms)}, which need priors: pass "
                              f"{name}={{..., 'b': ...}} (one prior, or a mapping by term as for the response formula's b)")
-        return Priors(intercept=entry.get("intercept"), b=entry.get("b"))
+        return Priors(intercept=entry.get("intercept"), b=entry.get("b"), sd=entry.get("sd") if dspec.group_terms else None)
 
     def table(self, spec, family="gaussian", *, center_predictors: bool = True, categories=None) -> list[dict[str, str]]:
         """These priors in brms's table form, the rows of brms's ``default_prior()`` (prior, class, coef, group, resp,
@@ -897,10 +904,12 @@ class Priors:
                 )
         location = ([("intercept", self.intercept)] if has_intercept else []) + list(self.coefficient_priors(spec).items())
         location += list(self.autocor_priors(spec).items())          # an ARMA term's ar and ma, unbounded (C04)
+        dpar_sds = []
         if predicted:                                                 # its formula's intercept and coefficients (B01): location priors
             dspec, sub = spec.dpar(scale), self.dpar_priors(spec, scale)
             location += (([(f"{scale}:intercept", sub.intercept)] if dspec.intercept else [])
                          + [(f"{scale}:b:{col}", p) for col, p in sub.coefficient_priors(dspec).items()])
+            dpar_sds = [(f"{scale}:sd:{g}", p) for (g, c), p in sub.sd_priors(dspec).items()]   # D08: a shared ID's terms
         elif scale is not None and isinstance(auxiliary[scale], Mapping):
             raise PriorError(
                 f"prior for {scale!r} is a mapping, the form of the priors of {scale}'s own formula ('{scale} ~ ...', B01); "
@@ -916,6 +925,7 @@ class Priors:
         from autobayes.formula import sd_tag
 
         scales = [(f"sd:{sd_tag(g, c)}", prior) for (g, c), prior in sd_priors.items()] + ([(scale, auxiliary[scale])] if scale is not None and not predicted else [])
+        scales += dpar_sds
         for label, prior in scales:
             if not isinstance(prior, Prior):
                 raise PriorError(f"prior for {label!r} must be a Prior, got {type(prior).__name__}")
@@ -951,7 +961,10 @@ class Priors:
         if fam.scale_parameter in spec.dpar_names:         # its own formula (B01): Bambi's distributional component's priors
             sub, dspec = self.dpar_priors(spec, fam.scale_parameter), spec.dpar(fam.scale_parameter)
             out[fam.bambi_scale_parameter] = {**({"Intercept": sub.intercept.to_bambi()} if dspec.intercept else {}),
-                                              **sub._bambi_terms(dspec)}
+                                              **sub._bambi_terms(dspec),
+                                              # D08: a shared correlation ID's terms, Normal(0, sd) with their own sd prior
+                                              **{bambi_group_name(g, c): bmb.Prior("Normal", mu=0.0, sigma=p.to_bambi())
+                                                 for (g, c), p in sub.sd_priors(dspec).items()}}
         elif fam.scale_parameter is not None:              # under Bambi's name: "sigma", or "alpha" for brms's "shape"
             out[fam.bambi_scale_parameter] = getattr(self, fam.scale_parameter).to_bambi()
         if fam.zero_parameter is not None:                  # the zero-inflation / hurdle probability, under brms's name (B06)

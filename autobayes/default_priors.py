@@ -328,6 +328,7 @@ def default_priors(formula: str | list[str], data: pd.DataFrame, *, family: str 
     for t in spec.group_terms:
         sd[t.factor] = HalfStudentT(DF, scale) if not t.slopes else {c: HalfStudentT(DF, scale) for c in t.coefs}
     cor = {t.factor: LKJ(1) for t in spec.correlated_terms}
+    cor.update({s.factor: LKJ(1) for s in spec.shared_ids})          # D08: a correlation ID shared with a distributional formula
     auxiliary = {}
     if fam.scale_parameter in spec.dpar_names:                       # its own formula (B01): brms's def_dpar_prior, log link
         ds = spec.dpar(fam.scale_parameter)
@@ -336,7 +337,9 @@ def default_priors(formula: str | list[str], data: pd.DataFrame, *, family: str 
                              f"{fam.name} family; give the priors explicitly")
         _, log_scale = location_scale(y, "log")                      # brms's def_scale_prior with the formula's log link
         auxiliary[fam.scale_parameter] = {**({"intercept": fam.default_distributional_intercept(log_scale)} if ds.intercept else {}),
-                                          **({"b": Flat()} if ds.pop_terms else {})}
+                                          **({"b": Flat()} if ds.pop_terms else {}),
+                                          # D08: a shared ID's terms: brms's def_scale_prior of the parameter, its log link
+                                          **({"sd": {t.factor: HalfStudentT(DF, log_scale) for t in ds.group_terms}} if ds.group_terms else {})}
     elif fam.scale_parameter is not None:
         if fam.default_scale_prior is None:
             raise PriorError(f"no brms default prior is recorded for the {fam.name} family's {fam.scale_parameter}; "
@@ -522,6 +525,17 @@ def prior_table(priors: Priors, spec, family="gaussian", *, center_predictors: b
         if ds.intercept:                                              # brms's centred Intercept_<dpar>, class Intercept
             add(sub.intercept, "Intercept", dpar=ds.response)
         add_coefficients([(dnames[col], p) for col, p in sub.coefficient_priors(ds).items()], dpar=ds.response)
+        dsd = sub.sd_priors(ds) if ds.group_terms else {}             # D08: a shared ID's terms, class sd with dpar = <parameter>
+        if dsd:
+            ps = list(dsd.values())
+            add(ps[0] if same(ps) else None, "sd", lb="0", dpar=ds.response, source=None if same(ps) else "default")
+            for t in ds.group_terms:
+                mine = [dsd[(t.factor, c)] for c in t.coefs]
+                top = same(ps) or same(mine)
+                add(None if same(ps) or not same(mine) else mine[0], "sd", group=t.factor, dpar=ds.response,
+                    source=mine[0].source if same(ps) else None)
+                for c, p in zip(t.coefs, mine):
+                    add(None if top else p, "sd", coef=brms_rename(c), group=t.factor, dpar=ds.response, source=p.source if top else None)
     for column, prior in priors.simo_priors(spec).items():           # a monotonic term's simplex (B03): brms's class simo,
         add(prior, "simo", coef=f"{brms_rename(spec.monotonic(column).term)}1")   # coefficient mox1, no class row
     for cls, by_column in (("sdgp", priors.sdgp_priors(spec)), ("lscale", priors.lscale_priors(spec))):   # C03, coefficient gpx

@@ -63,7 +63,7 @@
   "constructor": "gaussian",
   "formula": [
    "y ~ x + (1 + x |p| g)",
-   "sigma ~ (1 |p| g)"
+   "sigma ~ 1 + (1 |p| g)"
   ],
   "kwargs": {},
   "priors": {
@@ -77,10 +77,18 @@
     0,
     2
    ],
-   "sd": [
-    "HalfNormal",
-    1
-   ],
+   "sd": {
+    "g": {
+     "Intercept": [
+      "HalfNormal",
+      1
+     ],
+     "x": [
+      "HalfNormal",
+      1
+     ]
+    }
+   },
    "cor": {
     "g": [
      "LKJ",
@@ -92,12 +100,13 @@
      "Normal",
      0,
      1
+    ],
+    "sd": [
+     "HalfStudentT",
+     3,
+     2.5
     ]
    }
   }
- },
- "gate": {
-  "expect": "fail",
-  "reason": "D08_cs_mm_gr not implemented; remove this field when it lands"
  }
 }

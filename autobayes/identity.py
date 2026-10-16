@@ -44,7 +44,11 @@ def _dpar_payload(model, ds):
             'categorical': [{'name': c.name, 'reference': c.reference, 'levels': c.levels, 'coefficients': c.coefficients,
                              'full_rank': c.full_rank} for c in ds.categoricals],
             'priors': {'intercept': _prior(sub.intercept) if ds.intercept else None,
-                       'coefficients': {k: _prior(v) for k, v in sub.coefficient_priors(ds).items()}}}
+                       'coefficients': {k: _prior(v) for k, v in sub.coefficient_priors(ds).items()}},
+            # D08: a shared correlation ID's terms of the formula, only when it has one (every other identity is unchanged)
+            **({'groups': [{'factor': g, 'coef': c, 'id': ds.group_term_of(g).id, 'levels': block.levels, 'index': block.group_index,
+                            'Z': block.Z, 'prior': _prior(sub.sd_priors(ds)[(g, c)])} for (g, c), block in dd.group_blocks.items()]}
+               if ds.group_terms else {})}
 
 
 def _monotonic_payload(model):
@@ -140,6 +144,17 @@ def freeze_target(model):
                               'prior': prior(sd_priors[(g, c)])} for g, c, block in slopes]} if slopes else {}),
         **({'correlations': [{'factor': g, 'coefs': list(s.group_term_of(g).coefs), 'prior': prior(p)}
                              for g, p in cor_priors.items()]} if cor_priors else {}),
+        # D08: a multi-membership term's memberships and weights, a gr(by = ) term's by levels, and a correlation ID shared with
+        # a distributional formula likewise enter only when the formula has one.
+        **({'multi_membership': [{'factor': t.factor, 'members': list(t.members), 'weights': list(t.weights),
+                                  'index': list(d.group_blocks[(t.factor, 'Intercept')].memberships),
+                                  'W': list(d.group_blocks[(t.factor, 'Intercept')].weights)} for t in s.group_terms if t.is_mm]}
+           if any(t.is_mm for t in s.group_terms) else {}),
+        **({'group_by': [{'factor': t.factor, 'by': t.by, 'by_levels': list(d.group_blocks[(t.factor, 'Intercept')].by_levels),
+                          'by_index': d.group_blocks[(t.factor, 'Intercept')].by_index} for t in s.group_terms if t.by is not None]}
+           if any(t.by is not None for t in s.group_terms) else {}),
+        **({'shared_ids': [{'factor': sh.factor, 'id': sh.id, 'coefs': list(sh.labels)} for sh in s.shared_ids]}
+           if getattr(s, 'shared_ids', ()) else {}),
         # The offset term (A06) likewise enters only when the formula has one.
         **({'offset': {'term': s.offset.term, 'values': d.offset}} if d.offset is not None else {}),
         # So do the response addition terms (B02): the terms as the canonical formula writes them (trunc()'s bounds are
