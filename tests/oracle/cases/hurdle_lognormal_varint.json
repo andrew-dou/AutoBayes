@@ -1,0 +1,90 @@
+{
+ "id": "hurdle_lognormal_varint",
+ "tier": "D",
+ "feature": "D03_more_zero_inflated_hurdle",
+ "note": "brms hurdle_lognormal on tier_d's zpos: mu on the log scale, sigma (log), hu (other); epred = (1 - hu) exp(linpred + sigma^2 / 2)",
+ "seed": 614,
+ "n_points": 8,
+ "data": {
+  "generator": "tier_d",
+  "seed": 514,
+  "n": 36,
+  "newdata": {
+   "seed": 614,
+   "n": 5
+  }
+ },
+ "brms": {
+  "formula": "zpos ~ x + (1 | g)",
+  "family": {
+   "family": "hurdle_lognormal"
+  },
+  "factors": {
+   "g": [
+    "a",
+    "b",
+    "c",
+    "d",
+    "e",
+    "f"
+   ]
+  },
+  "priors": [
+   {
+    "prior": "normal(0, 2)",
+    "class": "Intercept"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "b"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "sd",
+    "group": "g"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "sigma"
+   },
+   {
+    "prior": "beta(2, 2)",
+    "class": "hu"
+   }
+  ]
+ },
+ "autobayes": {
+  "constructor": "hurdle_lognormal",
+  "formula": "zpos ~ x + (1 | g)",
+  "kwargs": {},
+  "priors": {
+   "intercept": [
+    "Normal",
+    0,
+    2
+   ],
+   "b": [
+    "Normal",
+    0,
+    1
+   ],
+   "sd": [
+    "HalfNormal",
+    1
+   ],
+   "sigma": [
+    "HalfNormal",
+    1
+   ],
+   "hu": [
+    "Beta",
+    2,
+    2
+   ]
+  }
+ },
+ "gate": {
+  "expect": "fail",
+  "reason": "D03_more_zero_inflated_hurdle not implemented; remove this field when it lands"
+ }
+}

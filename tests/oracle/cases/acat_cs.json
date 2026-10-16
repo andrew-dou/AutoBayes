@@ -1,0 +1,74 @@
+{
+ "id": "acat_cs",
+ "tier": "D",
+ "feature": "D08_cs_mm_gr",
+ "note": "D08: cs(x) in acat(logit) with a population-level w and (1 | g) (brms also accepts x + cs(x)): matrix[Kcs, nthres] bcs (identity), standata Kcs = 1 and Xcs (x, not centred), X has w only; linpred is draws x N x nthres (one per threshold), epred draws x N x 4",
+ "seed": 627,
+ "n_points": 8,
+ "data": {
+  "generator": "tier_d",
+  "seed": 527,
+  "n": 36,
+  "newdata": {
+   "seed": 627,
+   "n": 5
+  }
+ },
+ "brms": {
+  "formula": "ord ~ w + cs(x) + (1 | g)",
+  "family": {
+   "family": "acat",
+   "link": "logit"
+  },
+  "factors": {
+   "g": [
+    "a",
+    "b",
+    "c",
+    "d",
+    "e",
+    "f"
+   ]
+  },
+  "priors": [
+   {
+    "prior": "normal(0, 3)",
+    "class": "Intercept"
+   },
+   {
+    "prior": "normal(0, 1.5)",
+    "class": "b"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "sd",
+    "group": "g"
+   }
+  ]
+ },
+ "autobayes": {
+  "constructor": "acat",
+  "formula": "ord ~ w + cs(x) + (1 | g)",
+  "kwargs": {},
+  "priors": {
+   "intercept": [
+    "Normal",
+    0,
+    3
+   ],
+   "b": [
+    "Normal",
+    0,
+    1.5
+   ],
+   "sd": [
+    "HalfNormal",
+    1
+   ]
+  }
+ },
+ "gate": {
+  "expect": "fail",
+  "reason": "D08_cs_mm_gr not implemented; remove this field when it lands"
+ }
+}

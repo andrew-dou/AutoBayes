@@ -1,0 +1,82 @@
+{
+ "id": "negbinomial2_varint",
+ "tier": "D",
+ "feature": "D02_discrete_families",
+ "note": "brms negbinomial2: log link on mu and dispersion sigma (log), sigma = 1 / shape of negbinomial; sigma prior gamma(0.4, 0.3) (brms's default); epred = exp(linpred)",
+ "seed": 608,
+ "n_points": 8,
+ "data": {
+  "generator": "tier_d",
+  "seed": 508,
+  "n": 36,
+  "newdata": {
+   "seed": 608,
+   "n": 5
+  }
+ },
+ "brms": {
+  "formula": "ynb ~ x + (1 | g)",
+  "family": {
+   "family": "negbinomial2"
+  },
+  "factors": {
+   "g": [
+    "a",
+    "b",
+    "c",
+    "d",
+    "e",
+    "f"
+   ]
+  },
+  "priors": [
+   {
+    "prior": "normal(0, 2)",
+    "class": "Intercept"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "b"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "sd",
+    "group": "g"
+   },
+   {
+    "prior": "gamma(0.4, 0.3)",
+    "class": "sigma"
+   }
+  ]
+ },
+ "autobayes": {
+  "constructor": "negbinomial2",
+  "formula": "ynb ~ x + (1 | g)",
+  "kwargs": {},
+  "priors": {
+   "intercept": [
+    "Normal",
+    0,
+    2
+   ],
+   "b": [
+    "Normal",
+    0,
+    1
+   ],
+   "sd": [
+    "HalfNormal",
+    1
+   ],
+   "sigma": [
+    "Gamma",
+    0.4,
+    0.3
+   ]
+  }
+ },
+ "gate": {
+  "expect": "fail",
+  "reason": "D02_discrete_families not implemented; remove this field when it lands"
+ }
+}

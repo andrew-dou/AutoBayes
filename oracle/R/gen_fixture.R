@@ -33,6 +33,19 @@
 #                   and loo() of the fixed-parameter fit)
 #   point_halfwidth the seeded points are uniform on (-h, h) in every unconstrained coordinate (default 1.2)
 #
+# Opt-in per case (Tier D), each adding to the `post` block; a case without these keys is generated exactly as before:
+#
+#   extras          "waic": waic() of the fixed-parameter fit (pointwise elpd_waic, p_waic, waic; estimates)
+#   loo_compare     the frozen brms section of another case on the same data (its id, seed, n_points, formula, family,
+#                   factors, priors): that model is compiled and evaluated on its own seeded points exactly as its own
+#                   fixture is, and `post$loo_compare` records loo_compare() of the two fits by "loo" and by "waic", each
+#                   model's pointwise elpd_loo and elpd_waic, model_weights() by "loo" and by "pseudobma" (BB = FALSE), and
+#                   the other model's log density at its points (to tie it to its own fixture)
+#   hypothesis      a list of hypothesis strings: hypothesis() of the fit (class "b", alpha 0.05), its table and draws
+#                   (brms evaluates each hypothesis on the draws' coefficient columns, as it parses a prior string)
+#   conditional_effects   a list of effects: conditional_effects() of the fit (brms's defaults: posterior_epred,
+#                   re_formula = NA, robust summaries, 100 grid points), one table per effect
+#
 # Nothing here samples, and nothing here evaluates code from the case: the formula is parsed with
 # as.formula(), the family is built with brms::brmsfamily() from named arguments, priors with set_prior().
 # Everything is deterministic given the case, the data and the package versions; a prediction or
@@ -109,13 +122,15 @@ sdat <- standata(fit0)
 code <- stancode(fit0)
 
 # -- encoders ---------------------------------------------------------------------------------------------
-enc <- function(x, dims = NULL, allow_infinite = FALSE) {
+enc <- function(x, dims = NULL, allow_infinite = FALSE, allow_na = FALSE) {
   if (is.null(dims)) dims <- if (is.null(dim(x))) (if (length(x) == 1) integer(0) else length(x)) else dim(x)
   v <- as.numeric(as.vector(x))                       # column-major, as R stores it
-  if (any(is.na(v))) stop("missing value in a fixture array")
+  na <- is.na(v)
+  if (any(na) && !allow_na) stop("missing value in a fixture array")
   if (any(!is.finite(v))) {
-    if (!allow_infinite) stop("non-finite value in a fixture array")
-    v <- ifelse(is.finite(v), sprintf("%.17g", v), ifelse(v > 0, "Inf", "-Inf"))   # truncation bounds: strings
+    if (any(!is.finite(v) & !na) && !allow_infinite) stop("non-finite value in a fixture array")
+    # truncation bounds: strings; a missing value (Tier D, allow_na: hypothesis()'s evidence ratio without prior draws) is "NaN"
+    v <- ifelse(na, "NaN", ifelse(is.finite(v), sprintf("%.17g", v), ifelse(v > 0, "Inf", "-Inf")))
   }
   out <- list(dims = I(as.integer(dims)), values = I(v))
   cn <- if (length(dim(x)) == 2) dimnames(x)[[2]] else NULL    # colnames() errors on a 1-d array with names
@@ -221,6 +236,72 @@ if ("loo" %in% extras) {
                    estimates = enc(lo$estimates), estimate_rows = I(rownames(lo$estimates)),
                    pareto_k = enc(lo$diagnostics$pareto_k, allow_infinite = TRUE),
                    n_eff = enc(lo$diagnostics$n_eff, allow_infinite = TRUE))
+}
+
+# -- opt-in post-processing (Tier D): WAIC, a comparison with another case's model, hypotheses, conditional effects --------
+enc_frame <- function(df) {                           # a table column by column: numbers as arrays (NA as "NaN"), the rest as text
+  df <- as.data.frame(df)
+  list(columns = I(names(df)), values = lapply(setNames(names(df), names(df)), function(nm) {
+    v <- df[[nm]]
+    if (is.numeric(v)) enc(v, dims = length(v), allow_infinite = TRUE, allow_na = TRUE) else I(as.character(v))
+  }))
+}
+if ("waic" %in% extras) {                             # D05: waic() of the fixed-parameter fit
+  wa <- deterministic(function() { w <- waic(fit1); w[c("pointwise", "estimates")] })
+  post$waic <- list(pointwise = enc(wa$pointwise), estimates = enc(wa$estimates), estimate_rows = I(rownames(wa$estimates)))
+}
+if (!is.null(case$loo_compare)) {                     # D05: the other case's model on this data, on its own seeded points
+  other <- case$loo_compare
+  if (!identical(other$factors, case$factors) || length(other$na_columns))
+    stop("loo_compare: the other case must declare the same factors and no missing-value columns (it reads the same data)")
+  oparts <- lapply(as.list(unlist(other$formula)), as.formula)
+  ofml <- if (length(oparts) == 1 && is.null(other$bf_args)) oparts[[1]] else do.call(brms::bf, c(unname(oparts), other$bf_args %||% list()))
+  opri <- if (length(other$priors)) do.call(c, lapply(other$priors, function(p) do.call(brms::set_prior, p))) else NULL
+  ofit0 <- do.call(brm, c(list(formula = ofml, data = d, family = do.call(brms::brmsfamily, other$family), prior = opri,
+                               chains = 0, backend = "rstan", silent = 2, refresh = 0), other$brm_args %||% list()))
+  osf <- ofit0$fit
+  on <- get_num_upars(osf)
+  set.seed(other$seed)                                # as the other case's own fixture draws its points
+  ohw <- other$point_halfwidth %||% 1.2
+  opts <- lapply(seq_len(other$n_points), function(k) runif(on, -ohw, ohw))
+  oinits <- lapply(opts, function(u) constrain_pars(osf, u))
+  ofit1 <- ofit0
+  ofit1$fit <- sampling(osf@stanmodel, data = standata(ofit0), algorithm = "Fixed_param", chains = other$n_points, iter = 1,
+                        warmup = 0, init = oinits, refresh = 0, seed = 1, cores = 1)
+  ofit1 <- rename_pars(ofit1)
+  odm <- posterior::as_draws_matrix(ofit1)
+  for (k in seq_len(other$n_points)) {
+    for (nm in intersect(intersect(c("lprior", "b_Intercept", "sigma"), colnames(odm)), names(oinits[[k]]))) {
+      if (abs(odm[k, nm] - oinits[[k]][[nm]]) > 1e-12) stop(sprintf("loo_compare: draw %d of the other model does not reproduce its point %d", k, k))
+    }
+  }
+  ids <- c(case$id, other$id)
+  cmp <- deterministic(function() {
+    a <- add_criterion(fit1, c("loo", "waic"), model_name = ids[1])
+    b <- add_criterion(ofit1, c("loo", "waic"), model_name = ids[2])
+    list(loo = loo_compare(a, b, criterion = "loo", model_names = ids),
+         waic = loo_compare(a, b, criterion = "waic", model_names = ids),
+         elpd_loo = cbind(a$criteria$loo$pointwise[, "elpd_loo"], b$criteria$loo$pointwise[, "elpd_loo"]),
+         elpd_waic = cbind(a$criteria$waic$pointwise[, "elpd_waic"], b$criteria$waic$pointwise[, "elpd_waic"]),
+         weights_loo = model_weights(a, b, weights = "loo", model_names = ids),
+         weights_pseudobma = model_weights(a, b, weights = "pseudobma", BB = FALSE, model_names = ids))
+  })
+  enc_compare <- function(m) list(table = enc(unclass(m)), rows = I(rownames(m)))   # brms's table: best model first
+  colnames(cmp$elpd_loo) <- colnames(cmp$elpd_waic) <- ids                         # (rows, 2): this case, then the other
+  post$loo_compare <- list(
+    models = I(ids), loo = enc_compare(cmp$loo), waic = enc_compare(cmp$waic),
+    elpd_loo = enc(cmp$elpd_loo), elpd_waic = enc(cmp$elpd_waic),
+    weights_loo = enc(cmp$weights_loo, dims = 2L), weights_pseudobma = enc(cmp$weights_pseudobma, dims = 2L),
+    weights_models = I(names(cmp$weights_loo)),
+    other_lp = enc(vapply(opts, function(u) as.numeric(log_prob(osf, u, adjust_transform = TRUE)), 0.0), dims = length(opts)))
+}
+if (length(case$hypothesis)) {                        # D06: brms's defaults (class "b", alpha 0.05, robust = FALSE)
+  hy <- deterministic(function() { h <- hypothesis(fit1, unlist(case$hypothesis)); h[c("hypothesis", "samples")] })
+  post$hypothesis <- list(table = enc_frame(hy$hypothesis), samples = enc(as.matrix(hy$samples)))   # samples: (draws, hypotheses)
+}
+if (length(case$conditional_effects)) {               # D06: one table per effect, in the order given
+  ce <- deterministic(function() conditional_effects(fit1, effects = unlist(case$conditional_effects)))
+  post$conditional_effects <- lapply(ce, enc_frame)
 }
 
 # -- tables ------------------------------------------------------------------------------------------------

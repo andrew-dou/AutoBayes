@@ -12,6 +12,13 @@ Tier C cases may add opt-in keys to the brms section (documented in `oracle/R/ge
 `mixture` list, `point_halfwidth` (the box the seeded points are drawn from), and `extras`, which add
 `groups[*].resp/dpar/nlpar`, a top-level `responses` list (the last axis of a multivariate model's predictions)
 and a `post` block (brms's `log_lik`, `bayes_R2` and `loo` of the fixed-parameter fit) to `fixture.json`.
+
+Tier D cases may add to that `post` block: `extras` "waic" (brms's `waic`), `loo_compare` (another case's frozen brms
+section on the same data: brms's `loo_compare` of the two fits by loo and by waic, both models' pointwise elpd and
+`model_weights`), `hypothesis` (a list of hypotheses: brms's table and draws) and `conditional_effects` (a list of
+effects: one table each). A table is `{"columns": [...], "values": {column: array or list of strings}}`; an array entry
+"NaN" is brms's NA (a point hypothesis's evidence ratio without prior draws), and a missing text value is `null` (the
+grouping factor's column of a conditional_effects table, which leaves out the group-level effects).
 """
 from __future__ import annotations
 

@@ -1,0 +1,74 @@
+{
+ "id": "sratio_varint",
+ "tier": "D",
+ "feature": "D04_more_ordinal",
+ "note": "brms sratio(logit): unordered thresholds vector[nthres] Intercept (identity), nthres = 3, disc in standata; epred is draws x N x 4",
+ "seed": 618,
+ "n_points": 8,
+ "data": {
+  "generator": "tier_d",
+  "seed": 518,
+  "n": 36,
+  "newdata": {
+   "seed": 618,
+   "n": 5
+  }
+ },
+ "brms": {
+  "formula": "ord ~ x + (1 | g)",
+  "family": {
+   "family": "sratio",
+   "link": "logit"
+  },
+  "factors": {
+   "g": [
+    "a",
+    "b",
+    "c",
+    "d",
+    "e",
+    "f"
+   ]
+  },
+  "priors": [
+   {
+    "prior": "normal(0, 3)",
+    "class": "Intercept"
+   },
+   {
+    "prior": "normal(0, 1.5)",
+    "class": "b"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "sd",
+    "group": "g"
+   }
+  ]
+ },
+ "autobayes": {
+  "constructor": "sratio",
+  "formula": "ord ~ x + (1 | g)",
+  "kwargs": {},
+  "priors": {
+   "intercept": [
+    "Normal",
+    0,
+    3
+   ],
+   "b": [
+    "Normal",
+    0,
+    1.5
+   ],
+   "sd": [
+    "HalfNormal",
+    1
+   ]
+  }
+ },
+ "gate": {
+  "expect": "fail",
+  "reason": "D04_more_ordinal not implemented; remove this field when it lands"
+ }
+}

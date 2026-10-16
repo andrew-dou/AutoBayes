@@ -1,0 +1,82 @@
+{
+ "id": "zero_inflated_binomial_varint",
+ "tier": "D",
+ "feature": "D03_more_zero_inflated_hurdle",
+ "note": "brms zero_inflated_binomial with trials(size) on tier_d's zk: logit link, zi (other); standata trials; epred = (1 - zi) trials inv_logit(linpred)",
+ "seed": 610,
+ "n_points": 8,
+ "data": {
+  "generator": "tier_d",
+  "seed": 510,
+  "n": 36,
+  "newdata": {
+   "seed": 610,
+   "n": 5
+  }
+ },
+ "brms": {
+  "formula": "zk | trials(size) ~ x + (1 | g)",
+  "family": {
+   "family": "zero_inflated_binomial"
+  },
+  "factors": {
+   "g": [
+    "a",
+    "b",
+    "c",
+    "d",
+    "e",
+    "f"
+   ]
+  },
+  "priors": [
+   {
+    "prior": "normal(0, 2.5)",
+    "class": "Intercept"
+   },
+   {
+    "prior": "normal(0, 1.5)",
+    "class": "b"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "sd",
+    "group": "g"
+   },
+   {
+    "prior": "beta(2, 2)",
+    "class": "zi"
+   }
+  ]
+ },
+ "autobayes": {
+  "constructor": "zero_inflated_binomial",
+  "formula": "zk | trials(size) ~ x + (1 | g)",
+  "kwargs": {},
+  "priors": {
+   "intercept": [
+    "Normal",
+    0,
+    2.5
+   ],
+   "b": [
+    "Normal",
+    0,
+    1.5
+   ],
+   "sd": [
+    "HalfNormal",
+    1
+   ],
+   "zi": [
+    "Beta",
+    2,
+    2
+   ]
+  }
+ },
+ "gate": {
+  "expect": "fail",
+  "reason": "D03_more_zero_inflated_hurdle not implemented; remove this field when it lands"
+ }
+}

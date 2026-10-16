@@ -1,0 +1,30 @@
+{
+ "factors": {
+  "z": [
+   "p",
+   "q",
+   "r"
+  ]
+ },
+ "family": {
+  "family": "gaussian"
+ },
+ "formula": "y ~ x + w + z + xpos",
+ "id": "gauss_horseshoe",
+ "n_points": 8,
+ "priors": [
+  {
+   "class": "Intercept",
+   "prior": "normal(0, 5)"
+  },
+  {
+   "class": "sigma",
+   "prior": "normal(0, 1)"
+  },
+  {
+   "class": "b",
+   "prior": "horseshoe(df = 3, scale_global = 0.5, df_global = 1, scale_slab = 2, df_slab = 4)"
+  }
+ ],
+ "seed": 625
+}

@@ -1,0 +1,90 @@
+{
+ "id": "shifted_lognormal_varint",
+ "tier": "D",
+ "feature": "D01_continuous_families",
+ "note": "brms shifted_lognormal: mu on the log scale (identity link), sigma (log), real<lower=0,upper=min_Y> ndt (probed as other; min_Y = min(Y) is transformed data, not standata); brms's lprior adds normal_lpdf(ndt | 0, 0.3) - log_diff_exp(normal_lcdf(min_Y | 0, 0.3), normal_lcdf(0 | 0, 0.3)); epred = exp(linpred + sigma^2 / 2) + ndt",
+ "seed": 604,
+ "n_points": 8,
+ "data": {
+  "generator": "tier_d",
+  "seed": 504,
+  "n": 36,
+  "newdata": {
+   "seed": 604,
+   "n": 5
+  }
+ },
+ "brms": {
+  "formula": "ypos ~ x + (1 | g)",
+  "family": {
+   "family": "shifted_lognormal"
+  },
+  "factors": {
+   "g": [
+    "a",
+    "b",
+    "c",
+    "d",
+    "e",
+    "f"
+   ]
+  },
+  "priors": [
+   {
+    "prior": "normal(0, 2)",
+    "class": "Intercept"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "b"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "sd",
+    "group": "g"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "sigma"
+   },
+   {
+    "prior": "normal(0, 0.3)",
+    "class": "ndt"
+   }
+  ]
+ },
+ "autobayes": {
+  "constructor": "shifted_lognormal",
+  "formula": "ypos ~ x + (1 | g)",
+  "kwargs": {},
+  "priors": {
+   "intercept": [
+    "Normal",
+    0,
+    2
+   ],
+   "b": [
+    "Normal",
+    0,
+    1
+   ],
+   "sd": [
+    "HalfNormal",
+    1
+   ],
+   "sigma": [
+    "HalfNormal",
+    1
+   ],
+   "ndt": [
+    "Normal",
+    0,
+    0.3
+   ]
+  }
+ },
+ "gate": {
+  "expect": "fail",
+  "reason": "D01_continuous_families not implemented; remove this field when it lands"
+ }
+}

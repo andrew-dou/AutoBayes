@@ -6,8 +6,8 @@ in Python.
 Every frame has the same columns: numeric `x`, `w`; categorical `z` (p, q, r); grouping factors `g` (six
 levels) and `h` (four); responses `y` (Gaussian), `yb` (0/1), `k` successes out of `size` trials (never
 zero trials), and `cnt` (Poisson counts). A case uses the columns its formula names. The tier generators add
-columns after these; only `tier_c`'s `xm` has missing values (`NA_COLUMNS`): empty fields in the CSV, NaN in
-Python, and NA in R for a case that declares the column in `brms.na_columns`.
+columns after these; only `tier_c`'s `xm` (which `tier_d` inherits) has missing values (`NA_COLUMNS`): empty fields in
+the CSV, NaN in Python, and NA in R for a case that declares the column in `brms.na_columns`.
 """
 from __future__ import annotations
 
@@ -51,7 +51,7 @@ def baseline(seed: int, n: int = 36) -> pd.DataFrame:
 
 
 def newdata(seed: int, n: int = 5, *, tier_a: bool = False, pairs_from: pd.DataFrame | None = None,
-            tier_b: bool = False, tier_c: bool = False) -> pd.DataFrame:
+            tier_b: bool = False, tier_c: bool = False, tier_d: bool = False) -> pd.DataFrame:
     """Rows to predict on, with fitted levels only (unseen levels need stochastic policies on both sides).
     ``pairs_from`` copies (g, h) from random rows of the fitted frame, so a nested factor ``g:h`` sees only fitted
     combinations (brms refuses new levels of a grouping factor by default)."""
@@ -76,7 +76,17 @@ def newdata(seed: int, n: int = 5, *, tier_a: bool = False, pairs_from: pd.DataF
         df["xm"] = np.round(rng.normal(0.6, 0.7, n), 4)         # last so that every column above stays as it was
         df["xobs"] = np.round(rng.normal(0.0, 1.0, n), 4)
         df["sdx"] = np.round(rng.uniform(0.2, 0.6, n), 4)
+    if tier_d:                                                  # mm() memberships and weights, gr(by =)'s factor; drawn last
+        df["g2"] = rng.choice(LEVELS["g"], size=n).astype(object)
+        df["wmm1"] = np.round(rng.uniform(0.2, 0.8, n), 4)
+        df["wmm2"] = np.round(1.0 - df["wmm1"].to_numpy(), 4)
+        df["gby"] = _by_g(df["g"].to_numpy(dtype=object))
     return df
+
+
+def _by_g(g: np.ndarray) -> np.ndarray:
+    """gr(g, by = gby)'s factor: a function of `g` (brms requires the levels of `g` nested in those of `by`)."""
+    return np.array(["u" if v in ("a", "b", "c") else "v" for v in g], dtype=object)
 
 
 def tier_a(seed: int, n: int = 36) -> pd.DataFrame:
@@ -145,8 +155,29 @@ def tier_c(seed: int, n: int = 36) -> pd.DataFrame:
     return df
 
 
-GENERATORS = {"baseline": baseline, "tier_a": tier_a, "tier_b": tier_b, "tier_c": tier_c}
-NA_COLUMNS = {"tier_c": ("xm",)}                                # the only columns with missing values, by design
+def tier_d(seed: int, n: int = 36) -> pd.DataFrame:
+    """`tier_c` plus the columns Tier D features need: zero-inflated binomial successes `zk` out of `size`, a proportion
+    `zprop` in [0, 1) with exact zeros (zero-inflated Beta), a non-negative `zpos` with exact zeros (hurdle Gamma and
+    lognormal), a second membership `g2` with `g`'s levels and membership weights `wmm1`, `wmm2 = 1 - wmm1` (mm()), and
+    `gby`, a factor of which `g` is nested in (gr(g, by = gby)). Drawn after `tier_c`'s so the shared columns equal
+    `tier_c(seed, n)` exactly (its `xm` keeps its missing values)."""
+    df = tier_c(seed, n)
+    rng = np.random.default_rng(seed + 15485863)
+    eta = 0.3 + 0.5 * df["x"].to_numpy()
+    size = df["size"].to_numpy()
+    successes = rng.binomial(size, expit(eta - 0.2))
+    df["zk"] = np.where(rng.uniform(size=n) < 0.3, 0, successes).astype(np.int64)
+    df["zprop"] = np.where(rng.uniform(size=n) < 0.25, 0.0, df["prop"].to_numpy())
+    df["zpos"] = np.where(rng.uniform(size=n) < 0.25, 0.0, df["ypos"].to_numpy())
+    df["g2"] = _labels(rng, "g", n)
+    df["wmm1"] = np.round(rng.uniform(0.2, 0.8, n), 4)
+    df["wmm2"] = np.round(1.0 - df["wmm1"].to_numpy(), 4)
+    df["gby"] = _by_g(df["g"].to_numpy(dtype=object))
+    return df
+
+
+GENERATORS = {"baseline": baseline, "tier_a": tier_a, "tier_b": tier_b, "tier_c": tier_c, "tier_d": tier_d}
+NA_COLUMNS = {"tier_c": ("xm",), "tier_d": ("xm",)}            # the only columns with missing values, by design
 
 
 def make(spec: dict) -> tuple[pd.DataFrame, pd.DataFrame | None]:
@@ -157,9 +188,9 @@ def make(spec: dict) -> tuple[pd.DataFrame, pd.DataFrame | None]:
     if not nd:
         return data, None
     tier = spec["generator"]
-    return data, newdata(int(nd["seed"]), int(nd.get("n", 5)), tier_a=tier in ("tier_a", "tier_b", "tier_c"),
-                         pairs_from=data if nd.get("pairs_from_data") else None, tier_b=tier in ("tier_b", "tier_c"),
-                         tier_c=tier == "tier_c")
+    return data, newdata(int(nd["seed"]), int(nd.get("n", 5)), tier_a=tier in ("tier_a", "tier_b", "tier_c", "tier_d"),
+                         pairs_from=data if nd.get("pairs_from_data") else None, tier_b=tier in ("tier_b", "tier_c", "tier_d"),
+                         tier_c=tier in ("tier_c", "tier_d"), tier_d=tier == "tier_d")
 
 
 def write_csv(frame: pd.DataFrame, path) -> None:

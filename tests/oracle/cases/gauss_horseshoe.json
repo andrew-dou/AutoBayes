@@ -1,0 +1,76 @@
+{
+ "id": "gauss_horseshoe",
+ "tier": "D",
+ "feature": "D07_shrinkage_priors",
+ "note": "D07: set_prior(horseshoe(df = 3, scale_global = 0.5, df_global = 1, scale_slab = 2, df_slab = 4), class = b), brms's autoscale = TRUE (the residual sigma scales the prior): parameters zb (identity), hs_global, hs_slab, hs_local[Kscales] (log), b a transformed parameter; standata Kscales, hs_df, hs_df_global, hs_df_slab, hs_scale_global, hs_scale_slab; five coefficients (x, w, zq, zr, xpos)",
+ "seed": 625,
+ "n_points": 8,
+ "data": {
+  "generator": "tier_d",
+  "seed": 525,
+  "n": 36,
+  "newdata": {
+   "seed": 625,
+   "n": 5
+  }
+ },
+ "brms": {
+  "formula": "y ~ x + w + z + xpos",
+  "family": {
+   "family": "gaussian"
+  },
+  "factors": {
+   "z": [
+    "p",
+    "q",
+    "r"
+   ]
+  },
+  "priors": [
+   {
+    "prior": "normal(0, 5)",
+    "class": "Intercept"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "sigma"
+   },
+   {
+    "prior": "horseshoe(df = 3, scale_global = 0.5, df_global = 1, scale_slab = 2, df_slab = 4)",
+    "class": "b"
+   }
+  ]
+ },
+ "autobayes": {
+  "constructor": "gaussian",
+  "formula": "y ~ x + w + z + xpos",
+  "kwargs": {
+   "categorical": {
+    "z": "p"
+   }
+  },
+  "priors": {
+   "intercept": [
+    "Normal",
+    0,
+    5
+   ],
+   "sigma": [
+    "HalfNormal",
+    1
+   ],
+   "b": [
+    "Horseshoe",
+    3,
+    0.5,
+    1,
+    2,
+    4
+   ]
+  }
+ },
+ "gate": {
+  "expect": "fail",
+  "reason": "D07_shrinkage_priors not implemented; remove this field when it lands"
+ }
+}

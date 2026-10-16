@@ -1,0 +1,74 @@
+{
+ "id": "gauss_r2d2",
+ "tier": "D",
+ "feature": "D07_shrinkage_priors",
+ "note": "D07: set_prior(R2D2(mean_R2 = 0.4, prec_R2 = 3, cons_D2 = 0.7), class = b), autoscale: parameters zb (identity), R2D2_R2 in (0, 1) (other), simplex[Kscales] R2D2_phi (unreached by the probe: Stan's stick-breaking coordinates), b a transformed parameter; standata Kscales, R2D2_mean_R2, R2D2_prec_R2, R2D2_cons_D2 (a vector of Kscales); five coefficients",
+ "seed": 626,
+ "n_points": 8,
+ "data": {
+  "generator": "tier_d",
+  "seed": 526,
+  "n": 36,
+  "newdata": {
+   "seed": 626,
+   "n": 5
+  }
+ },
+ "brms": {
+  "formula": "y ~ x + w + z + xpos",
+  "family": {
+   "family": "gaussian"
+  },
+  "factors": {
+   "z": [
+    "p",
+    "q",
+    "r"
+   ]
+  },
+  "priors": [
+   {
+    "prior": "normal(0, 5)",
+    "class": "Intercept"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "sigma"
+   },
+   {
+    "prior": "R2D2(mean_R2 = 0.4, prec_R2 = 3, cons_D2 = 0.7)",
+    "class": "b"
+   }
+  ]
+ },
+ "autobayes": {
+  "constructor": "gaussian",
+  "formula": "y ~ x + w + z + xpos",
+  "kwargs": {
+   "categorical": {
+    "z": "p"
+   }
+  },
+  "priors": {
+   "intercept": [
+    "Normal",
+    0,
+    5
+   ],
+   "sigma": [
+    "HalfNormal",
+    1
+   ],
+   "b": [
+    "R2D2",
+    0.4,
+    3,
+    0.7
+   ]
+  }
+ },
+ "gate": {
+  "expect": "fail",
+  "reason": "D07_shrinkage_priors not implemented; remove this field when it lands"
+ }
+}

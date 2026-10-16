@@ -1,0 +1,91 @@
+{
+ "id": "gauss_loo_compare_xw",
+ "tier": "D",
+ "feature": "D05_waic_loo_compare",
+ "note": "D05, the other model of gauss_loo_compare_x's comparison (y ~ x + w + (1 | g) on the same data): its own log_lik, loo and waic",
+ "seed": 622,
+ "n_points": 8,
+ "data": {
+  "generator": "tier_d",
+  "seed": 521,
+  "n": 36,
+  "newdata": {
+   "seed": 621,
+   "n": 5
+  }
+ },
+ "brms": {
+  "formula": "y ~ x + w + (1 | g)",
+  "family": {
+   "family": "gaussian"
+  },
+  "factors": {
+   "g": [
+    "a",
+    "b",
+    "c",
+    "d",
+    "e",
+    "f"
+   ]
+  },
+  "priors": [
+   {
+    "prior": "normal(0, 5)",
+    "class": "Intercept"
+   },
+   {
+    "prior": "normal(0, 2)",
+    "class": "b"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "sd",
+    "group": "g"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "sigma"
+   }
+  ],
+  "extras": [
+   "log_lik",
+   "loo",
+   "waic"
+  ]
+ },
+ "autobayes": {
+  "constructor": "gaussian",
+  "formula": "y ~ x + w + (1 | g)",
+  "kwargs": {},
+  "priors": {
+   "intercept": [
+    "Normal",
+    0,
+    5
+   ],
+   "b": [
+    "Normal",
+    0,
+    2
+   ],
+   "sd": [
+    "HalfNormal",
+    1
+   ],
+   "sigma": [
+    "HalfNormal",
+    1
+   ]
+  },
+  "post": [
+   "log_lik",
+   "loo",
+   "waic"
+  ]
+ },
+ "gate": {
+  "expect": "fail",
+  "reason": "D05_waic_loo_compare not implemented; remove this field when it lands"
+ }
+}
