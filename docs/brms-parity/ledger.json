@@ -1290,9 +1290,9 @@
    "depends_on": [
     "A08_negbinomial"
    ],
-   "status": "gates_green",
+   "status": "merged",
    "summary": "weibull, exponential, skew_normal, shifted_lognormal, exgaussian families",
-   "pr": null,
+   "pr": 60,
    "attempts": 1,
    "gates": {
     "sha": "96544d4f6c27",
@@ -1310,8 +1310,13 @@
      }
     }
    },
-   "divergences": [],
-   "next_action": "agent (opus), wave D1",
+   "divergences": [
+    "D76",
+    "D77",
+    "D78",
+    "D79"
+   ],
+   "next_action": "other links, distributional extra parameters, weights/cens/trunc/mo/me/mi/autocor, mv and mixture components not offered (D76-D79)",
    "fixtures": {
     "pr": 57,
     "cases": [
@@ -1453,7 +1458,7 @@
    "attempts": 1,
    "gates": {},
    "divergences": [],
-   "next_action": "agent (opus), wave D2",
+   "next_action": "agent reported gates green at cc16fe9 (eb63ec5); merge queue after D01",
    "fixtures": {
     "pr": 57,
     "cases": [
