@@ -449,7 +449,9 @@ def check_predictions(b: Bundle) -> None:
     if b.reference is not None and "epred" in b.reference.fallback:         # P6: brms where it is accurate, the reference where not
         return two_reference.check_predictions(b)
     idata = adapter.draws(b.fixture, b.model, b.cmap, b.gmap)
-    mean_var = "expected" if b.model.family == "binomial" else b.model.names["mean"]
+    # brms's posterior_epred of a family with trials is trials * mu, predict()'s "expected" (D5): the binomial's and, since D02,
+    # the beta-binomial's
+    mean_var = "expected" if b.model.family_spec.has_trials else b.model.names["mean"]
     for block, nd in (("fitted", None), ("newdata", b.newdata)):
         if block == "newdata" and nd is None:
             continue

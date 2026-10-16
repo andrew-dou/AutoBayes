@@ -168,9 +168,11 @@ def test_other_refusals_name_the_construct():
 
 
 def test_the_families_that_take_monotonic_terms():
-    # C05: refused for mixtures; D01: refused for the five continuous families, which no frozen mo() case verifies (D79)
+    # C05: refused for mixtures; D01: refused for the five continuous families, which no frozen mo() case verifies (D79); D02:
+    # likewise for the beta-binomial, geometric and negbinomial2 families (D81)
     assert {name for name, spec in FAMILIES.items() if spec.monotonic} == set(FAMILIES) - {
-        "categorical", "mixture", "weibull", "exponential", "skew_normal", "shifted_lognormal", "exgaussian"}
+        "categorical", "mixture", "weibull", "exponential", "skew_normal", "shifted_lognormal", "exgaussian",
+        "beta_binomial", "geometric", "negbinomial2"}
     probit = ab.bernoulli("cnt ~ mo(ord)", FRAME.assign(cnt=[0, 1] * 6), ab.Priors(intercept=ab.Normal(0, 1), b=ab.Normal(0, 1),
                           simo=ab.Dirichlet(1)), link="probit")           # the probit link takes it as the logit does
     assert set(probit.design.monotonic) == {"ord"}

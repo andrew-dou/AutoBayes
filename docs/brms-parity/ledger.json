@@ -1335,11 +1335,26 @@
    "depends_on": [
     "A08_negbinomial"
    ],
-   "status": "implementing",
+   "status": "gates_green",
    "summary": "beta_binomial, geometric, negbinomial2 families",
    "pr": null,
    "attempts": 1,
-   "gates": {},
+   "gates": {
+    "sha": "aa3a905e0485",
+    "dirty_tree": false,
+    "base": "origin/main",
+    "when": "2026-10-16T17:07Z",
+    "results": {
+     "immutability": {
+      "status": "pass",
+      "seconds": 0.0
+     },
+     "oracle": {
+      "status": "pass",
+      "seconds": 371.3
+     }
+    }
+   },
    "divergences": [],
    "next_action": "agent (opus), wave D2",
    "fixtures": {

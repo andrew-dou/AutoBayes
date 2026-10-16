@@ -644,6 +644,92 @@ def shifted_lognormal_family():
                         {"mu": "identity", "sigma": "log", "ndt": "log"}, shifted_lognormal_logp, shifted_lognormal_random)
 
 
+# ---- beta-binomial, geometric and negbinomial2 (brms-parity D02, docs/discrete-families.md) -----------------------------
+# The densities are the published ones in brms's parameterisations (brms's vignette "Parameterization of Response
+# Distributions in brms"), checked against brms's log_prob on the frozen cases beta_binomial_varint, geometric_varint and
+# negbinomial2_varint, not assumed:
+#   beta_binomial(mu, phi) with trials n: BetaBinomial(n, mu phi, (1 - mu) phi), mu = inv_logit(eta), E[y] = n mu; PyMC's
+#     BetaBinomial, with 1 - mu as expit(-eta) as for the Beta family (D13). PyMC's log mass, log C(n, k) + log B(k + a,
+#     n - k + b) - log B(a, b) through gammaln, is within 2e-9 absolute (3e-10 relative) of a 50-digit reference at n = 1e6,
+#     the largest count accepted (formula.COUNT_CAP), and within 1e-15 at the fixture's counts; its log-gamma differences lose
+#     about eps * phi * log(phi) as the precision grows (1.5e-9 at phi = 1e6, 1.4e-7 at 1e8; divergence D82);
+#   geometric(mu): the negative binomial of mean mu and shape 1 (Var[y] = mu + mu^2), brms's neg_binomial_2(mu, 1);
+#   negbinomial2(mu, sigma): the negative binomial of mean mu and shape 1 / sigma (Var[y] = mu + sigma mu^2), brms's
+#     neg_binomial_2(mu, 1 / sigma);
+# the last two through PyMC's NegativeBinomial(mu, alpha), as the negbinomial family (Bambi's) does. Constants are float64.
+class BetaBinomialLogit:
+    """``k ~ BetaBinomial(n, mu phi, (1 - mu) phi)`` with ``mu = expit(logit_mu)``."""
+
+    def __new__(cls, name, logit_mu, phi, n, **kwargs):
+        alpha, beta = _beta_shape_parameters(logit_mu, phi)
+        return pm.BetaBinomial(name, n=n, alpha=alpha, beta=beta, **kwargs)
+
+    @staticmethod
+    def dist(logit_mu, phi, n, **kwargs):
+        alpha, beta = _beta_shape_parameters(logit_mu, phi)
+        return pm.BetaBinomial.dist(n=n, alpha=alpha, beta=beta, **kwargs)
+
+
+def beta_binomial_logit_family():
+    """Bambi family of brms's ``beta_binomial()`` for a two-column ``p(k, n)`` response: the identity link on ``logit_mu``
+    (the linear predictor), the precision ``phi`` with its own prior; ``n`` reaches the likelihood as the binomial's does."""
+    import bambi as bmb
+
+    class BetaBinomialLogitFamily(bmb.Family):
+        @staticmethod
+        def transform_backend_kwargs(kwargs):
+            observed = kwargs.pop("observed")
+            kwargs["observed"] = np.asarray(observed[:, 0]).squeeze().astype(np.int64)
+            kwargs["n"] = np.asarray(observed[:, 1]).squeeze().astype(np.int64)
+            return kwargs
+
+    likelihood = bmb.Likelihood("BetaBinomialLogit", params=["logit_mu", "phi"], parent="logit_mu", dist=BetaBinomialLogit)
+    return BetaBinomialLogitFamily("beta_binomial_logit", likelihood, link={"logit_mu": "identity", "phi": "log"})
+
+
+_UNIT_SHAPE = np.float64(1.0)
+
+
+class Geometric:
+    """``y ~ NegativeBinomial(mu, 1)``: brms's ``geometric()``, PyMC's ``NegativeBinomial`` with ``alpha = 1``."""
+
+    def __new__(cls, name, mu, **kwargs):
+        return pm.NegativeBinomial(name, mu=mu, alpha=_UNIT_SHAPE, **kwargs)
+
+    @staticmethod
+    def dist(mu, **kwargs):
+        return pm.NegativeBinomial.dist(mu=mu, alpha=_UNIT_SHAPE, **kwargs)
+
+
+def geometric_family():
+    """Bambi family of brms's ``geometric()``: the log link on the mean ``mu``, no auxiliary parameter."""
+    import bambi as bmb
+
+    likelihood = bmb.Likelihood("Geometric", params=["mu"], parent="mu", dist=Geometric)
+    return bmb.Family("geometric", likelihood, link={"mu": "log"})
+
+
+class NegBinomial2:
+    """``y ~ NegativeBinomial(mu, 1 / sigma)``: brms's ``negbinomial2()``, PyMC's ``NegativeBinomial`` with
+    ``alpha = 1 / sigma``."""
+
+    def __new__(cls, name, mu, sigma, **kwargs):
+        return pm.NegativeBinomial(name, mu=mu, alpha=_UNIT_SHAPE / sigma, **kwargs)
+
+    @staticmethod
+    def dist(mu, sigma, **kwargs):
+        return pm.NegativeBinomial.dist(mu=mu, alpha=_UNIT_SHAPE / sigma, **kwargs)
+
+
+def negbinomial2_family():
+    """Bambi family of brms's ``negbinomial2()``: the log link on the mean ``mu``, the dispersion ``sigma`` (brms's
+    ``1 / shape``) with its own prior."""
+    import bambi as bmb
+
+    likelihood = bmb.Likelihood("NegBinomial2", params=["mu", "sigma"], parent="mu", dist=NegBinomial2)
+    return bmb.Family("negbinomial2", likelihood, link={"mu": "log", "sigma": "log"})
+
+
 # ---- brms's response addition terms (brms-parity B02, docs/addition-terms.md) --------------------------------------
 # weights(w): brms adds weights[n] * family_lpdf(Y[n] | ...) row by row (its stan_log_lik_weights), so the likelihood here
 # is the family's own elementwise log density times the row's weight, whatever the family's likelihood is (PyMC's own

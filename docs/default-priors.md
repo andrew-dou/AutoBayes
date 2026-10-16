@@ -30,6 +30,8 @@ model only when `ab.default_priors()` is called and its result passed in.
 | `alpha` (skew normal; D01) | `normal(0, 4)`, unbounded | `Normal(0, 4)` |
 | `beta` (ex-Gaussian; D01) | `gamma(1, 0.1)`, lower bound 0 | `Gamma(1, 0.1)` |
 | `ndt` (shifted lognormal; D01) | `uniform(0, min_Y)`, lower bound 0, upper bound `min_Y` (the smallest response) | `Uniform(0, "min_Y")` (docs/continuous-families.md) |
+| `phi` (beta-binomial; D02) | `gamma(0.01, 0.01)`, lower bound 0 | `Gamma(0.01, 0.01)` |
+| `sigma` (`negbinomial2`; D02) | `gamma(0.4, 0.3)`, lower bound 0 (not data-dependent) | `Gamma(0.4, 0.3)` (docs/discrete-families.md) |
 | `Intercept` of the cumulative thresholds, and of each category of a categorical model (B05) | `student_t(3, 0, 2.5)` on the class row, one row per threshold (`coef` `1`, ...) or per category (`dpar` `muc2`, ...); the thresholds keep the class `Intercept` when not centred | `StudentT(3, 0, 2.5)`, one prior for all thresholds or categories (`Model.prior_table()` writes the rows) |
 | `Intercept` of a distributional formula (`dpar = sigma`, B01) | `student_t(3, 0, scale)` with the scale of `log y` (zeros read as 0.1; 2.5 when a response is negative) | `StudentT(3, 0, scale)` in `Priors(sigma={"intercept": ...})` |
 | `Intercept` of `shape ~ ...`, `phi ~ ...` (B01) | `student_t(3, 0, 2.5)` | `StudentT(3, 0, 2.5)` |
@@ -45,8 +47,9 @@ The location and scale are brms's `def_scale_prior` arithmetic on the response r
 (`FamilySpec.default_prior_link`): the response itself for the Gaussian and Student-t families; `log(y)`, zeros read as
 0.1, for the Poisson, negative binomial and Gamma (log link) and the lognormal (brms's log-scale family), and since D01 the
 response itself for the skew-normal and ex-Gaussian families and `log(y)` for the Weibull, exponential and shifted lognormal
-(checked against brms on rescaled responses; the extra parameters' defaults above are constants); and not at
-all under a logit or probit link (Beta, Bernoulli, binomial), where they are 0 and 2.5. Then
+(checked against brms on rescaled responses; the extra parameters' defaults above are constants), and since D02 `log(y)`,
+zeros read as 0.1, for the geometric and `negbinomial2` families (probed on a wide-scale response); and not at
+all under a logit or probit link (Beta, Bernoulli, binomial, and since D02 the beta-binomial), where they are 0 and 2.5. Then
 
 - `location = round(median(y_link), 1)`, minus the mean of the offset term when there is one (not rounded again);
 - `scale = max(2.5, round(mad(y_link), 1))`, shared by the Intercept, `sd` and `sigma`.

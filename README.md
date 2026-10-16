@@ -51,6 +51,9 @@ reviews); the status report with a demonstration and a comparison with brms is
 - **More continuous families** (Tier D, D01): `ab.weibull`, `ab.exponential`, `ab.skew_normal`, `ab.shifted_lognormal` and
   `ab.exgaussian` in brms's parameterisations, with the extra parameters `alpha`, `beta` and `ndt` under their own priors
   ([continuous families](docs/continuous-families.md)).
+- **More discrete families** (Tier D, D02): `ab.beta_binomial` (with trials and a precision `phi`), `ab.geometric` and
+  `ab.negbinomial2` (the negative binomial with dispersion `sigma = 1 / shape`) in brms's parameterisations
+  ([discrete families](docs/discrete-families.md)).
 - **Zero-inflated and hurdle counts** (Tier B, B06): `ab.zero_inflated_poisson` and `ab.hurdle_poisson`, with brms's
   `zi` / `hu` under a `Beta` prior ([zero-inflated and hurdle counts](docs/zero-inflated-hurdle.md)).
 - **Ordinal and categorical responses** (Tier B, B05): `ab.cumulative` (brms's `cumulative("logit")`, ordered thresholds)

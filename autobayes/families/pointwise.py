@@ -189,3 +189,13 @@ def exgaussian(y, mu, sigma, beta):
 def shifted_lognormal(y, mu, sigma, ndt):
     """brms's ``lognormal_lpdf(y - ndt | mu, sigma)``."""
     return lognormal(y - ndt, mu, sigma)
+
+
+# -- D02, docs/discrete-families.md --------------------------------------------------------------------------------------------
+def beta_binomial_logit(y, trials, eta, phi):
+    """brms's ``beta_binomial_lpmf(y | trials, mu phi, (1 - mu) phi)`` with ``mu = expit(eta)`` and ``1 - mu = expit(-eta)``:
+    ``log C(trials, y) + log B(y + a, trials - y + b) - log B(a, b)``."""
+    from scipy.special import expit
+
+    a, b = expit(eta) * phi, expit(-eta) * phi
+    return log_binomial_coefficient(trials, y) + betaln(y + a, trials - y + b) - betaln(a, b)
