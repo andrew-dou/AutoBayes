@@ -1290,13 +1290,23 @@
    "depends_on": [
     "A08_negbinomial"
    ],
-   "status": "queued",
+   "status": "implementing",
    "summary": "weibull, exponential, skew_normal, shifted_lognormal, exgaussian families",
    "pr": null,
-   "attempts": 0,
+   "attempts": 1,
    "gates": {},
    "divergences": [],
-   "next_action": "fixtures first (Tier D fixture agent)"
+   "next_action": "agent (opus), wave D1",
+   "fixtures": {
+    "pr": 57,
+    "cases": [
+     "exgaussian_varint",
+     "exponential_varint",
+     "shifted_lognormal_varint",
+     "skew_normal_varint",
+     "weibull_varint"
+    ]
+   }
   },
   {
    "id": "D02_discrete_families",
@@ -1305,13 +1315,21 @@
    "depends_on": [
     "A08_negbinomial"
    ],
-   "status": "queued",
+   "status": "fixtures_frozen",
    "summary": "beta_binomial, geometric, negbinomial2 families",
    "pr": null,
    "attempts": 0,
    "gates": {},
    "divergences": [],
-   "next_action": "fixtures first (Tier D fixture agent)"
+   "next_action": "implementation",
+   "fixtures": {
+    "pr": 57,
+    "cases": [
+     "beta_binomial_varint",
+     "geometric_varint",
+     "negbinomial2_varint"
+    ]
+   }
   },
   {
    "id": "D03_more_zero_inflated_hurdle",
@@ -1320,13 +1338,26 @@
    "depends_on": [
     "B06_zero_inflated_hurdle"
    ],
-   "status": "queued",
+   "status": "fixtures_frozen",
    "summary": "zero_inflated_negbinomial/binomial/beta, hurdle_negbinomial/gamma/lognormal; weights() for these families",
    "pr": null,
    "attempts": 0,
    "gates": {},
    "divergences": [],
-   "next_action": "fixtures first (Tier D fixture agent)"
+   "next_action": "implementation",
+   "fixtures": {
+    "pr": 57,
+    "cases": [
+     "hurdle_gamma_varint",
+     "hurdle_lognormal_varint",
+     "hurdle_negbinomial_varint",
+     "hurdle_poisson_weighted",
+     "zero_inflated_beta_varint",
+     "zero_inflated_binomial_varint",
+     "zero_inflated_negbinomial_varint",
+     "zero_inflated_poisson_weighted"
+    ]
+   }
   },
   {
    "id": "D04_more_ordinal",
@@ -1335,13 +1366,22 @@
    "depends_on": [
     "B05_ordinal_categorical"
    ],
-   "status": "queued",
+   "status": "fixtures_frozen",
    "summary": "cumulative probit, sratio, cratio, acat",
    "pr": null,
    "attempts": 0,
    "gates": {},
    "divergences": [],
-   "next_action": "fixtures first (Tier D fixture agent)"
+   "next_action": "implementation",
+   "fixtures": {
+    "pr": 57,
+    "cases": [
+     "acat_varint",
+     "cratio_varint",
+     "cumulative_probit_varint",
+     "sratio_varint"
+    ]
+   }
   },
   {
    "id": "D05_waic_loo_compare",
@@ -1350,13 +1390,20 @@
    "depends_on": [
     "C07_post_processing"
    ],
-   "status": "queued",
+   "status": "implementing",
    "summary": "waic(), loo_compare() and model weights",
    "pr": null,
-   "attempts": 0,
+   "attempts": 1,
    "gates": {},
    "divergences": [],
-   "next_action": "fixtures first (Tier D fixture agent)"
+   "next_action": "agent (opus), wave D1",
+   "fixtures": {
+    "pr": 57,
+    "cases": [
+     "gauss_loo_compare_x",
+     "gauss_loo_compare_xw"
+    ]
+   }
   },
   {
    "id": "D06_hypothesis_conditional_effects",
@@ -1365,13 +1412,20 @@
    "depends_on": [
     "C07_post_processing"
    ],
-   "status": "queued",
+   "status": "fixtures_frozen",
    "summary": "hypothesis() and conditional_effects() (deterministic given the draws)",
    "pr": null,
    "attempts": 0,
    "gates": {},
    "divergences": [],
-   "next_action": "fixtures first (Tier D fixture agent)"
+   "next_action": "implementation",
+   "fixtures": {
+    "pr": 57,
+    "cases": [
+     "bernoulli_hypothesis_effects",
+     "gauss_hypothesis_effects"
+    ]
+   }
   },
   {
    "id": "D07_shrinkage_priors",
@@ -1380,13 +1434,20 @@
    "depends_on": [
     "A07_default_priors"
    ],
-   "status": "queued",
+   "status": "fixtures_frozen",
    "summary": "horseshoe() and R2D2() priors on b",
    "pr": null,
    "attempts": 0,
    "gates": {},
    "divergences": [],
-   "next_action": "fixtures first (Tier D fixture agent)"
+   "next_action": "implementation",
+   "fixtures": {
+    "pr": 57,
+    "cases": [
+     "gauss_horseshoe",
+     "gauss_r2d2"
+    ]
+   }
   },
   {
    "id": "D08_cs_mm_gr",
@@ -1395,13 +1456,22 @@
    "depends_on": [
     "A02_correlated_slopes"
    ],
-   "status": "queued",
+   "status": "implementing",
    "summary": "category-specific effects cs(), multi-membership mm(), gr(by =) and |ID| correlations",
    "pr": null,
-   "attempts": 0,
+   "attempts": 1,
    "gates": {},
    "divergences": [],
-   "next_action": "fixtures first (Tier D fixture agent)"
+   "next_action": "agent (opus), wave D1",
+   "fixtures": {
+    "pr": 57,
+    "cases": [
+     "acat_cs",
+     "gauss_gr_by",
+     "gauss_mm",
+     "gauss_shared_id"
+    ]
+   }
   }
  ]
 }
