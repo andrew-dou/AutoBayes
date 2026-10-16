@@ -1447,7 +1447,7 @@
     "D88",
     "D89"
    ],
-   "next_action": "cumulative probit withheld until its P6 reference lands (D88; branch p6/cumulative-probit-reference); other links, disc, mo(), addition terms not offered (D38, D89)",
+   "next_action": "complete: cumulative probit offered since #66 (P6 reference, D88); other links, disc, mo(), addition terms not offered (D38, D89)",
    "fixtures": {
     "pr": 57,
     "cases": [
