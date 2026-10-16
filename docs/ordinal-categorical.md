@@ -1,6 +1,7 @@
 # Ordinal and categorical responses
 
-brms-parity feature B05 (`cumulative("logit")`, `categorical()`).
+brms-parity feature B05 (`cumulative("logit")`, `categorical()`); D04 adds `sratio("logit")`, `cratio("logit")`,
+`acat("logit")` and category-specific effects `cs()` (below).
 
 ```python
 import autobayes as ab
@@ -82,9 +83,9 @@ rounding on the fixture).
 - The term model is shared: the cumulative family takes categorical predictors, interactions, transforms, the offset
   (which enters `mu`), any number of grouping factors and independent or correlated slopes. The categorical family takes
   population-level terms (and `0 +`); group-level terms and the offset are refused in this slice (divergence D37).
-- Not offered: other cumulative links, `disc`, category-specific effects `cs()`, other threshold structures, and brms's
-  `sratio`, `cratio` and `acat` families (divergence D38); a categorical reference category other than the first sorted
-  label (D36).
+- Not offered: other cumulative links (the probit link is built but withheld, D88, below), `disc`, category-specific
+  effects `cs()` in the cumulative family and other threshold structures (divergences D38, D89); a categorical reference
+  category other than the first sorted label (D36). brms's `sratio`, `cratio` and `acat` families are D04's (below).
 
 ## Evidence
 
@@ -107,3 +108,82 @@ sorted prior-predictive thresholds, `describe()`, the target identity, six `defa
 fit record; `tests/oracle/test_harness.py` checks that a corrupted ordered coordinate, threshold gradient,
 `b_Intercept`, category probability, category coefficient's gradient, category linear predictor, raw category intercept
 or category design fails its gate, and that a model of the other kind is not matched to either fixture. Nothing samples.
+
+## More ordinal models: sratio, cratio, acat and cs() (D04)
+
+```python
+pri = ab.Priors(intercept=ab.Normal(0, 3), b=ab.Normal(0, 1.5), sd=ab.HalfNormal(1))
+ab.sratio("rating ~ x + (1 | group)", data, pri)          # brms's sratio("logit"), the stopping ratio
+ab.cratio("rating ~ x + (1 | group)", data, pri)          # cratio("logit"), the continuation ratio
+ab.acat("rating ~ w + cs(x) + (1 | group)", data, pri)    # acat("logit"), adjacent categories; x category-specific
+```
+
+The response, `mu` (no intercept), the K - 1 thresholds and their centring are the cumulative family's (above). With
+`d_k = b_Intercept[k] - mu_i[k]` (`mu_i[k] = mu_i`, plus `x_i bcs_x[k]` for each category-specific term), the published
+definitions (Agresti, *Categorical Data Analysis*, ch. 8; Buerkner and Vuorre 2019):
+
+| family | definition | `log P(y = k)` as evaluated | brms's likelihood |
+| --- | --- | --- | --- |
+| `sratio` | `P(y = k \| y >= k) = expit(d_k)` | `-softplus(-d_k) [k < K] - sum_{j<k} softplus(d_j)` | `sratio_logit_lpmf` |
+| `cratio` | `P(y > k \| y >= k) = expit(-d_k)` | the same: `1 - expit(-d) = expit(d)` | `cratio_logit_lpmf` |
+| `acat` | `log(P(y = k + 1) / P(y = k)) = -d_k` | `s_k - log_sum_exp(s)`, `s_1 = 0`, `s_k = -sum_{j<k} d_j`, the largest `s` factored out | `acat_logit_lpmf` |
+
+Under the logit link `sratio` and `cratio` give the same probabilities (the logistic is symmetric); they are separate
+families, as in brms, and their target identities differ by the family's name. Each row is a sum of stable terms, finite
+with a finite gradient for every finite predictor on the PyTensor path and under JAX's autodiff
+(`likelihoods.ordinal_logp_rows`; `likelihoods.ordinal_log_probabilities` is its NumPy form for `predict()`, `log_lik()` and
+the draws).
+
+**Thresholds.** brms declares them `vector[nthres] Intercept`: unordered, sampled as they are, with the intercept prior on
+each. So does this library (`likelihoods.unordered_thresholds`, `FamilySpec.ordered_thresholds = False`): `Intercept` is a
+free vector over `Intercept_dim`, `b_Intercept = Intercept + sum_p mean(x_p) b_p` the deterministic the likelihood reads,
+`value_point(intercept=...)` takes K - 1 finite numbers in any order, and prior-predictive thresholds are the prior's
+independent draws.
+
+**Category-specific effects** `cs(x)` (brms's `bcs`, a `Kcs x nthres` matrix, and `Xcs`): a population-level term of kind
+`"category_specific"` with no design column and one coefficient per threshold, the free vector `cs(x)` over
+`Intercept_dim` (brms's row of `bcs`), under the class-`b` prior (`Priors(b=...)`, or `b={"x": ..., "cs(x)": ...}`; brms's
+table lists it as class `b`, coefficient `x`); its column is never centred and is not part of the thresholds' centring.
+Each threshold's predictor `mu_i + sum_c x_c,i bcs_c[k]` is the deterministic `mu_cs` (`names["linpred"]`, dims `__obs__` x
+`Intercept_dim`; brms subtracts `Xcs bcs` from the thresholds, which is the same), checked against the data at build;
+`value_point(bcs={"x": [...]})` gives the coefficients, and `predict(kind="linear")` returns `mu_cs` with a `threshold`
+dimension (brms's `posterior_linpred`, one column per threshold). Offered for the `sratio`, `cratio` and `acat` families,
+one numeric column per `cs()`, any number of them; brms's `cs(x + w)`, `cs(1)`, `cs()` of a factor or in an interaction,
+category-specific group-level terms `(cs(1) | g)`, `x + cs(x)` (whose `b_x` and `bcs_x` are not separately identified) and
+`cs()` in the cumulative family (brms: "experimental") are refused naming the construct (D89).
+
+**What combines.** Categorical predictors, interactions, transforms, the offset, any number of grouping factors, independent
+and correlated slopes and Gaussian processes (C03's check at build) enter `mu` as for the cumulative family; `predict()` takes
+both unseen-group policies and `include_group_effects=False`; `log_lik()`, `loo()` and `bayes_R2()` (the expected category, as
+for the cumulative family) work. Refused, naming the construct: `mo()` (no frozen case, D42), `weights()` and the other
+addition terms, a formula for `disc`, `mm()` and `gr(by = )`, autocorrelation, `me()` / `mi()`, multivariate, non-linear and
+mixture models, the intercept's removal (brms refuses it too), and every link but logit (`parked_links`, D38).
+
+**The cumulative probit link** (`cumulative("probit")`, brms's `ordered_probit_lpmf`) is built (`cumulative._probit()`: the
+same graph with `log Phi(d_1)`, `log Phi(-d_{K-1})` and the log Normal mass between `d_{k-1}` and `d_k` from the tail where it
+lies) but withheld (D88): on the frozen case `cumulative_probit_varint` its log density, linear predictor, expected values, JAX
+density and default priors equal brms's (G1, G2's log densities, G3-G6 pass with the park lifted), but brms's own gradient
+there is off the 50-digit value by up to 6.5e-5 relative at 86 of its 88 entries, beyond the oracle's 1e-7, where this
+library's is within 4e-15. Two-reference acceptance (P6) would accept it against a 50-digit reference of the model, which
+`oracle/reference.py` does not implement; `ab.cumulative(..., link="probit")` is refused with that reason until it does.
+Two thresholds closer than about 1e-6 in a far tail keep about `|tau - eta| eps / gap` relative accuracy in the probit row
+(`likelihoods.normal_log_mass`).
+
+### Evidence (D04)
+
+Oracle cases `sratio_varint`, `cratio_varint`, `acat_varint` (`ord ~ x + (1 | g)`), `acat_cs` (D08's parked case, `ord ~ w +
+cs(x) + (1 | g)`) and two frozen with this feature, `sratio_cs` and `cratio_cs` (the same formula), pass gates G1-G6: brms's
+`X`, `Xcs`, `Kcs`, `nthres` and group coding; the log density with and without the Jacobian and every gradient coordinate,
+the unordered `Intercept` and `bcs` mapped entry by entry; the graph's `mu` or `mu_cs` against `posterior_linpred` (36 x 3 per
+point with `cs()`), `b_Intercept`; `predict()` against `posterior_linpred` / `posterior_epred` on fitted and new rows with
+and without group effects; the JAX density; and `ab.default_priors()` against brms's `default_prior()` (the `cs()` column a
+class-`b` row). `sratio_cs_post`, `cratio_cs_post` and `acat_cs_post`, frozen with this feature too, pass C07's post gate:
+`log_lik()`, `bayes_R2()` (the expected category) and `loo()` against brms's. `cumulative_probit_varint` stays gated (D88). `tests/test_more_ordinal.py` checks the rows and their
+gradients against a 50-digit reference written from the definitions on linear predictors from -1000 to 1000 (with an
+unordered threshold vector holding a gap of 1e-9) on both paths, the probit rows likewise, the models' density, graph and
+gradient by hand on both paths (unordered thresholds, two `cs()` terms, an offset) and at 300 rows under JAX, `value_point`,
+16 formula refusals and the data and link refusals, by-hand predictions with the `threshold` dimension and unseen levels,
+`log_lik()` and `bayes_R2()`, unordered prior-predictive draws, `describe()`, the target identity, brms's default prior
+tables, and, with the park lifted for the test, the probit model against `cumulative_probit_varint` with its gradient checked
+by hand; `tests/test_post_processing.py` checks `log_lik()` against the model's pointwise density on the six cases. Nothing
+samples.

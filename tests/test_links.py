@@ -144,9 +144,11 @@ def test_links_offered_parked_and_refused(df):
         assert cloglog.inverse_link is inverse_cloglog and cloglog.with_link("probit") is probit
         assert get_family(family, "probit") is probit and probit.with_link("logit") is spec     # one spec per link
         assert get_family(family, None) is spec and get_family(family, "logit") is spec and probit.with_link("probit") is probit
+    ordinal = {"cumulative", "sratio", "cratio", "acat"}          # D04: brms's other ordinal links are withheld, with reasons (D38, D88)
     for name, spec in FAMILIES.items():
         if name not in ("bernoulli", "binomial"):
-            assert not spec.links and not spec.parked_links and spec.with_link(spec.link) is spec
+            assert not spec.links and spec.with_link(spec.link) is spec
+            assert set(spec.parked_links) == ({"probit", "probit_approx", "cloglog", "cauchit"} if name in ordinal else set())
     with pytest.raises(ValueError, match=r"link must be one of \['cloglog', 'logit', 'probit'\] for the bernoulli family, got 'cauchit'"):
         ab.bernoulli(BERNOULLI, df, PRIORS, link="cauchit")
     with pytest.raises(ValueError, match=r"for the binomial family, got 1$"):

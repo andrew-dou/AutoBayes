@@ -1405,11 +1405,26 @@
    "depends_on": [
     "B05_ordinal_categorical"
    ],
-   "status": "implementing",
+   "status": "gates_green",
    "summary": "cumulative probit, sratio, cratio, acat",
    "pr": null,
    "attempts": 1,
-   "gates": {},
+   "gates": {
+    "sha": "5ad02d0b6db9",
+    "dirty_tree": false,
+    "base": "origin/main",
+    "when": "2026-10-16T21:12Z",
+    "results": {
+     "immutability": {
+      "status": "pass",
+      "seconds": 0.0
+     },
+     "oracle": {
+      "status": "pass",
+      "seconds": 309.9
+     }
+    }
+   },
    "divergences": [],
    "next_action": "agent (opus), wave D2",
    "fixtures": {

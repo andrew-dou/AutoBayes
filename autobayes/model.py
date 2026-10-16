@@ -195,6 +195,7 @@ class Design:
     autocor: object | None = None      # autocor.AutocorDesign: the series of an autocorrelation term on the fitted rows (C04), or None
     measurement_error: Mapping[str, MeasurementBlock] = field(default_factory=lambda: MappingProxyType({}))   # each me() term's block, by noisy column (C06)
     missing: Mapping[str, MissingBlock] = field(default_factory=lambda: MappingProxyType({}))   # each column whose missing values are parameters (C06)
+    category_specific: Mapping[str, np.ndarray] = field(default_factory=lambda: MappingProxyType({}))   # each cs() term's column on the fitted rows (D04; brms's Xcs), by column
 
     def __post_init__(self):
         if not self.columns:
@@ -274,6 +275,8 @@ def _linear_terms(spec: ModelSpec, centered: bool, b: str = "b") -> list[str]:
             parts.append(f"{b}_{term} * Xme_{t.operands[0]},i")
         elif t.kind == "missing":                            # C06: never centred, brms's bsp * Yl (observed or Ymi)
             parts.append(f"{b}_{term} * {t.operands[0]}_i")
+        elif t.kind == "category_specific":                  # D04: one coefficient per threshold, in mu_i[k] (the family's lines)
+            continue
         else:
             parts.append(f"(x_{term} - mean(x_{term})) * {b}_{term}" if centered else f"x_{term} * {b}_{term}")
     return parts
@@ -549,6 +552,8 @@ class Model:
         variable_names += list(self.family_spec.fixed_parameters)   # Bambi uses "nu" as an auxiliary-prior key even when fixed.
         if self.family_spec.thresholds:                     # B05: the raw thresholds' deterministic and their coordinate
             variable_names += [self.names["thresholds"], self.names["threshold_dim"]]
+        if self.spec.cs_terms:                              # D04: Bambi's parent mu beside the thresholds' predictor mu_cs
+            variable_names += [self.family_spec.parent]
         if self.family_spec.per_category:                   # B05: the category coordinates Bambi adds
             variable_names += [self.names["category_dim"], f"{self.spec.response}_dim"]
         if self.family_spec.mixture:                        # C05: each component's sigma, theta and the component coordinates
@@ -829,7 +834,8 @@ class Model:
                       monotonic=MappingProxyType(self._monotonic_design()), gp=MappingProxyType(self._gp_design()),
                       autocor=self._autocor_design,
                       measurement_error=MappingProxyType(self._measurement_design()),   # C06
-                      missing=MappingProxyType(self._missing_design()))
+                      missing=MappingProxyType(self._missing_design()),
+                      category_specific=MappingProxyType(self._category_specific_design()))   # D04
 
     def _dpar_design(self, d: ModelSpec) -> DparDesign:
         """The design of distributional parameter ``d.response``'s formula (B01), as Bambi built its distributional
@@ -974,6 +980,54 @@ class Model:
             if moved.shape != expected.shape or not np.allclose(moved, expected, rtol=1e-10, atol=1e-10):
                 raise RuntimeError(f"the graph's {parent!r} does not move by D * sum(simplex[:Xmo]) per row with the coefficient of "
                                    f"{block.term!r}; largest difference {np.max(np.abs(moved - expected)) if moved.shape == expected.shape else moved.shape}")
+
+    # -- category-specific effects (D04) -------------------------------------------------
+    def _add_category_specific_effects(self, mu):
+        """brms's category-specific effects ``cs(x)`` (D04, docs/ordinal-categorical.md), built inside the model Bambi is
+        building (the ordinal likelihood calls this with the parent ``mu``, ``likelihoods.ordinal_family``): for each term its
+        coefficients, one per threshold (brms's row of ``bcs`` for the column; a free vector named after the term, ``cs(x)``, on
+        the thresholds' dimension, under its ``b`` prior, as brms puts ``bcs`` under class ``b``), and the predictor of every
+        threshold, ``mu_i + sum_c x_c,i bcs_c[k]`` (brms's ``mu`` and ``Xcs bcs``, the column never centred), registered as the
+        deterministic ``names["linpred"]`` (``mu_cs``; dims ``__obs__`` and the thresholds'), which the likelihood reads."""
+        import pymc as pm
+
+        coefficients = self.priors.coefficient_priors(self.spec)
+        dim = self.names["threshold_dim"]
+        eta = mu[:, None]
+        for t in self.spec.cs_terms:
+            prior = coefficients[t.name]
+            coef = getattr(pm, prior.name)(t.name, **{k: np.float64(v) for k, v in prior.params.items()}, dims=dim)
+            eta = eta + np.asarray(self.data[t.operands[0]], dtype=np.float64)[:, None] * coef[None, :]
+        return pm.Deterministic(self.names["linpred"], eta, dims=("__obs__", dim))
+
+    def _category_specific_design(self) -> dict[str, np.ndarray]:
+        """Each category-specific term's column on the fitted rows (brms's ``Xcs``, by column, in term order), checked against
+        the graph: its coefficients a free vector over the thresholds' dimension, and the thresholds' predictor ``mu_cs`` moving,
+        row by row and threshold by threshold, by exactly ``x_i * c[k]`` from ``mu`` when the coefficients go from 0 to a test
+        vector ``c``. Empty without a ``cs()`` term."""
+        terms = self.spec.cs_terms
+        if not terms:
+            return {}
+        pmm, dim = self.pymc_model, self.names["threshold_dim"]
+        K1 = len(self.categories) - 1
+        blocks = {t.operands[0]: np.asarray(self.data[t.operands[0]], dtype=float) for t in terms}
+        for t in terms:
+            rv = pmm[t.name]
+            if rv not in pmm.free_RVs or tuple(pmm.named_vars_to_dims.get(t.name, ())) != (dim,) or pmm.rvs_to_values[rv].name != t.name:
+                raise RuntimeError(f"{t.name!r} is not a free vector of the graph over {dim!r}, sampled as it is")
+        lin = self.names["linpred"]
+        if pmm[lin] not in pmm.deterministics or tuple(pmm.named_vars_to_dims.get(lin, ())) != ("__obs__", dim):
+            raise RuntimeError(f"{lin!r} is not the per-row and per-threshold deterministic of the graph")
+        fn = pmm.compile_fn(pmm.replace_rvs_by_values([pmm[self.family_spec.parent], pmm[lin]]), inputs=pmm.value_vars,
+                            point_fn=True, on_unused_input="ignore", mode="FAST_COMPILE")
+        tests = {t.name: np.cos(np.arange(1.0, K1 + 1.0) * (j + 1.0)) for j, t in enumerate(terms)}
+        point = pmm.initial_point()
+        point.update(tests)
+        mu, mu_cs = (np.asarray(v, dtype=float) for v in fn(point))
+        expected = mu[:, None] + sum(blocks[t.operands[0]][:, None] * tests[t.name][None, :] for t in terms)
+        if mu_cs.shape != expected.shape or not np.allclose(mu_cs, expected, rtol=1e-12, atol=1e-12):
+            raise RuntimeError(f"the graph's {lin!r} is not mu plus the cs() columns times their coefficients")
+        return blocks
 
     # -- Gaussian processes (C03) --------------------------------------------------------
     def _add_gp_effects(self, eta):
@@ -1429,6 +1483,8 @@ class Model:
         if fam.thresholds:                                    # B05: brms's b_Intercept, the thresholds of the raw design, and
             out["thresholds"] = "b_Intercept"                 # the coordinate of the thresholds ("1", ..., "K - 1")
             out["threshold_dim"] = "Intercept_dim"
+        if self.spec.cs_terms:                                # D04: each threshold's predictor, mu plus Xcs bcs (brms's
+            out["linpred"] = "mu_cs"                          # posterior_linpred of a model with cs() terms)
         if fam.per_category:                                  # B05: the coordinate of the non-reference categories
             out["category_dim"] = f"{self.spec.response}_reduced_dim"
         if fam.mixture:                                       # C05: each component's sigma<k>, theta and the component coordinate
@@ -1598,7 +1654,7 @@ class Model:
                     shape=None, phi=None, nu: float | None = None,
                     zi: float | None = None, hu: float | None = None, bsp=None, simo=None, theta=None,
                     sdgp=None, lscale=None, zgp=None, ar=None, ma=None, meanme=None, sdme=None, zme=None,
-                    Ymi=None, alpha=None, beta=None, ndt=None, shrinkage=None) -> dict[str, np.ndarray]:
+                    Ymi=None, alpha=None, beta=None, ndt=None, shrinkage=None, bcs=None) -> dict[str, np.ndarray]:
         """A point in PyMC's sampled (value) space, from natural-scale quantities.
 
         ``intercept`` is the *model* intercept (at the predictor means when centred),
@@ -1650,6 +1706,11 @@ class Model:
         docs/shrinkage-priors.md) ``b`` is a transformed parameter and is omitted: ``shrinkage`` gives brms's ``zb`` and the
         prior's scales instead (``shrinkage.value_entries``), ``{"zb": ..., "hs_global": ..., "hs_slab": ..., "hs_local": ...}``
         or ``{"zb": ..., "R2D2_R2": ..., "R2D2_phi": ...}``, each vector in design-column order.
+        D04: the sratio, cratio and acat families'
+        ``intercept`` is the K - 1 thresholds in any order (brms's unordered ``Intercept``), stored as given; ``bcs`` gives the
+        coefficients of each category-specific term ``cs(x)``, K - 1 per term (brms's ``bcs`` row of the column), keyed by
+        column (``bcs={"x": [0.2, -0.1, 0.4]}``, or the bare vector for the model's one such term), required exactly when the
+        model has one.
         """
         extras = {"alpha": alpha, "beta": beta, "ndt": ndt}                  # D01
         if self.family_spec.mixture:                          # C05: the components' parameters and theta
@@ -1675,6 +1736,7 @@ class Model:
                              "zb and the prior's scales in shrinkage=...")
         if not shrunk and b is None:
             raise ValueError(f"b is required: {len(self.spec.columns)} coefficients, one per design column {list(self.spec.columns)}")
+        cs_point = self._category_specific_point(bcs)          # D04: each cs() term's coefficients, one per threshold
         b = np.zeros(len(self.spec.columns)) if shrunk else np.atleast_1d(np.asarray(b, dtype=float))
         if self.family_spec.per_category:                     # B05: one coefficient per design column and non-reference category
             others = len(self.categories) - 1
@@ -1773,10 +1835,15 @@ class Model:
         if self.spec.intercept and self.categories:          # B05: K - 1 thresholds, or one intercept per non-reference category
             arr = np.atleast_1d(np.asarray(intercept, dtype=float))
             K = len(self.categories)
-            if self.family_spec.thresholds:
+            if self.family_spec.thresholds and self.family_spec.ordered_thresholds:
                 if arr.shape != (K - 1,) or not np.isfinite(arr).all() or not (np.diff(arr) > 0).all():
                     raise ValueError(f"intercept must be the {K - 1} thresholds, finite and strictly increasing (brms's Intercept)")
                 point[f"{n['intercept']}_ordered__"] = np.r_[arr[0], np.log(np.diff(arr))]     # Stan's ordered coordinates
+            elif self.family_spec.thresholds:                  # D04: brms's unordered vector[nthres] Intercept, as it is
+                if arr.shape != (K - 1,) or not np.isfinite(arr).all():
+                    raise ValueError(f"intercept must be the {K - 1} thresholds, finite (brms's unordered Intercept of the "
+                                     f"{self.family} family)")
+                point[n["intercept"]] = arr
             else:
                 if arr.shape != (K - 1,) or not np.isfinite(arr).all():
                     raise ValueError(f"intercept must have {K - 1} finite entries, one per non-reference category "
@@ -1839,10 +1906,38 @@ class Model:
         point.update(self._gp_point(sdgp, lscale, zgp))      # C03: each Gaussian process's sdgp, lscale and zgp
         point.update(self._autocor_point(ar, ma))            # C04: an autocorrelation term's ar and ma
         point.update(self._measurement_point(None if mo else bsp, meanme, sdme, zme, Ymi))   # C06: me() and mi()
+        point.update(cs_point)                                # D04
         expected = {v.name for v in self.pymc_model.value_vars}
         if set(point) != expected:
             raise RuntimeError(f"value names {sorted(point)} do not match PyMC's {sorted(expected)}")
         return point
+
+    def _category_specific_point(self, bcs) -> dict[str, np.ndarray]:
+        """``value_point``'s entries of the category-specific terms (D04): each term's K - 1 coefficients as given, from ``bcs``
+        keyed by column (a single term also takes the bare vector)."""
+        terms = self.spec.cs_terms
+        if not terms:
+            if bcs is not None:
+                raise ValueError("bcs gives the coefficients of category-specific terms cs(x); this model has none")
+            return {}
+        columns = [t.operands[0] for t in terms]
+        if bcs is None:
+            raise ValueError(f"bcs is required: the coefficients of {[t.name for t in terms]}, one per threshold (brms's bcs)")
+        if isinstance(bcs, Mapping):
+            if set(bcs) != set(columns):
+                raise ValueError(f"bcs must cover exactly the category-specific columns {columns}; got {list(bcs)}")
+            by_column = {c: bcs[c] for c in columns}
+        elif len(columns) == 1:
+            by_column = {columns[0]: bcs}
+        else:
+            raise ValueError(f"bcs requires a mapping by column for the category-specific columns {columns}")
+        K1, out = len(self.categories) - 1, {}
+        for t in terms:
+            arr = np.asarray(by_column[t.operands[0]], dtype=float)
+            if arr.shape != (K1,) or not np.isfinite(arr).all():
+                raise ValueError(f"bcs for {t.operands[0]!r} must be {K1} finite numbers, one per threshold")
+            out[t.name] = arr
+        return out
 
     def _monotonic_point(self, bsp, simo) -> dict[str, np.ndarray]:
         """``value_point``'s entries of the monotonic terms (B03): each coefficient as given and each simplex on Stan's
@@ -2115,7 +2210,8 @@ class Model:
                     + ([f"distributional formula(s) for {', '.join(s.dpar_names)}"] if s.dpars else [])
                     + ([f"autocorrelation term {s.autocor.term}"] if s.autocor is not None else [])
                     + (["measurement-error term(s)"] if s.me_terms else []) + (["missing-value term(s)"] if s.mi_terms else [])
-                    + ([f"a shrinkage prior on b ({brms_spelling(pr.b).split('(')[0]})"] if self.shrinkage_names else []))   # D07
+                    + ([f"a shrinkage prior on b ({brms_spelling(pr.b).split('(')[0]})"] if self.shrinkage_names else [])   # D07
+                    + (["category-specific effect(s) cs()"] if s.cs_terms else []))                      # D04
         lines = [
             f"AutoBayes {fam.tag} model" + (" with " + " and ".join(features) if features else "")
             + (" (population-level only)" if not s.has_group else ""),
@@ -2380,6 +2476,9 @@ class Model:
             lines += describe_lines(self)
         else:
             lines += [f"  b_{col}{each} ~ {describe_prior(coef[col])}" for col in s.columns]
+        for t in s.cs_terms:                                 # D04: one coefficient per threshold (brms's bcs, class b)
+            lines += [f"  bcs_{t.operands[0]}[k] ~ {describe_prior(coef[t.name])}, for each of the {len(self.categories) - 1} thresholds k "
+                      f"(brms's bcs, class b, coefficient {t.operands[0]})"]
         if s.mo_terms:                                       # a monotonic term's coefficient (brms bsp, class b) and simplex (B03)
             from autobayes.default_priors import brms_rename
             from autobayes.priors import dirichlet_concentration
@@ -2450,10 +2549,16 @@ class Model:
         lines += ["", "PyMC variables sampled (value space)"]
         n = self.names
         roles = {n["intercept"]: "a_c" if d.centered else "a"} if s.intercept else {}
-        if s.intercept and fam.thresholds:                    # B05: Stan's ordered coordinates of the thresholds
+        if s.intercept and fam.thresholds and fam.ordered_thresholds:   # B05: Stan's ordered coordinates of the thresholds
             roles = {f"{n['intercept']}_ordered__": f"Intercept[1..{len(self.categories) - 1}], the thresholds"
                      + (" of the centred design" if d.centered else "") + ", on Stan's ordered coordinates "
                      "(Intercept[1], log(Intercept[k] - Intercept[k - 1]))"}
+        elif s.intercept and fam.thresholds:                  # D04: brms's unordered thresholds, sampled as they are
+            roles = {n["intercept"]: f"Intercept[1..{len(self.categories) - 1}], the thresholds"
+                     + (" of the centred design" if d.centered else "") + f" (vector; dims {n['threshold_dim']}, unordered, as brms's)"}
+        for t in s.cs_terms:                                  # D04: each cs() term's coefficients, one per threshold
+            roles[t.name] = (f"bcs_{t.operands[0]}[1..{len(self.categories) - 1}], the coefficients of {t.name}, one per threshold "
+                             f"(brms's bcs; vector, dims {n['threshold_dim']})")
         if fam.per_category:                                  # B05: one entry per non-reference category
             others = ", ".join(self.categories[1:])
             roles = {n["intercept"]: f"{'a_c' if d.centered else 'a'}[{others}] (vector; dims {n['category_dim']})"} if s.intercept else {}
@@ -2531,7 +2636,8 @@ class Model:
                      + "".join(f"{names['cor']} = Cor_{g} = L_{g} L_{g}^T, " for g, names in self.correlation_names.items()) + fam.deterministic_note
                      + "".join(f"; {dn['value']} = exp(eta_{name}), one {name} per row (B01)" for name, dn in self.dpar_names.items())
                      + "".join(f"; {me['latent']} = meanme_{x} + sdme_{x} * zme_{x}, one per row (brms's Xme)" for x, me in self.me_names.items())
-                     + shrinkage_note)
+                     + shrinkage_note
+                     + (f"; {n['linpred']} = mu_i[k], one per row and threshold (D04)" if s.cs_terms else ""))
         return "\n".join(lines)
 
     def _measurement_data_lines(self) -> list[str]:
@@ -3035,7 +3141,7 @@ def hurdle_poisson(formula: str, data: pd.DataFrame, priors: Priors, *,
                  center_predictors=center_predictors, categorical=categorical)
 
 
-def cumulative(formula: str, data: pd.DataFrame, priors: Priors, *,
+def cumulative(formula: str, data: pd.DataFrame, priors: Priors, *, link: str = "logit",
                center_predictors: bool = True, categorical: Mapping[str, object] | None = None) -> Model:
     """Ordinal response (brms ``cumulative("logit")``): K ordered categories, ``P(y <= k) = expit(tau_k - mu)`` with K - 1
     increasing thresholds ``tau`` and the linear predictor ``mu`` without an intercept (docs/ordinal-categorical.md).
@@ -3046,9 +3152,37 @@ def cumulative(formula: str, data: pd.DataFrame, priors: Priors, *,
     the centred design (brms's ``Intercept``), on Stan's ordered coordinates, and the graph's ``b_Intercept`` holds them for
     the raw design. The intercept cannot be removed (brms refuses it too). ``predict(kind="mean")`` returns the category
     probabilities ``p`` with a ``category`` dimension, ``kind="linear"`` returns ``mu``, ``kind="response"`` 1-based
-    categories. No other link, no ``disc``, category-specific effects or threshold structures (divergence D38).
+    categories. ``link`` is ``"logit"``; brms's ``cumulative("probit")`` is implemented but withheld (D04: brms's own gradient
+    of its frozen case is inexact, divergence D88) and its other links are not offered. No ``disc``, category-specific
+    effects or threshold structures (divergences D38, D89).
     """
-    return Model(formula, data, priors, family="cumulative", center_predictors=center_predictors, categorical=categorical)
+    return Model(formula, data, priors, family="cumulative", link=link, center_predictors=center_predictors, categorical=categorical)
+
+
+def _sequential(family: str, meaning: str):
+    def build(formula: str, data: pd.DataFrame, priors: Priors, *, center_predictors: bool = True,
+              categorical: Mapping[str, object] | None = None) -> Model:
+        return Model(formula, data, priors, family=family, center_predictors=center_predictors, categorical=categorical)
+
+    build.__name__ = build.__qualname__ = family
+    build.__doc__ = f"""Ordinal response under brms's ``{family}("logit")`` (D04, docs/ordinal-categorical.md): {meaning}, with K - 1
+    thresholds ``tau`` (brms's ``b_Intercept``; unordered, as brms's ``vector[nthres] Intercept``) and the linear predictor ``mu``
+    without an intercept.
+
+    The response is coded as for ``ab.cumulative`` (positive integers ``1..K`` or an ordered pandas Categorical, fitted as its
+    1-based category). ``Priors(intercept=...)`` applies to every threshold (brms's class ``Intercept``); the thresholds are
+    sampled for the centred design (brms's ``Intercept``) as they are, and the graph's ``b_Intercept`` holds them for the raw
+    design. ``cs(x)`` terms (brms's category-specific effects) give the numeric column ``x`` one coefficient per threshold
+    (brms's ``bcs``, under the ``b`` prior); ``predict(kind="linear")`` then returns every threshold's predictor (a
+    ``threshold`` dimension). ``kind="mean"`` returns the category probabilities ``p`` with a ``category`` dimension,
+    ``kind="response"`` 1-based categories. The logit link only, ``disc = 1``, brms's flexible thresholds (divergence D38).
+    """
+    return build
+
+
+sratio = _sequential("sratio", "the stopping ratio, ``P(y = k | y >= k) = expit(tau_k - mu)``")
+cratio = _sequential("cratio", "the continuation ratio, ``P(y > k | y >= k) = expit(mu - tau_k)``")
+acat = _sequential("acat", "adjacent categories, ``log(P(y = k + 1) / P(y = k)) = mu - tau_k``")
 
 
 def categorical(formula: str, data: pd.DataFrame, priors: Priors, *,

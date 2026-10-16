@@ -55,14 +55,14 @@ to 0, `gr()`'s `cor`, `id`, `cov` and `dist` (D104, D105); `mm()` and `gr(by = )
 autocorrelation term, an addition term or a distributional formula, in multivariate and non-linear models, and for the families
 whose link is not identity or log (D104, D105); new levels of a `gr(by = )` term or of a factor whose ID is shared; an ID in a
 formula on its own, used by two factors, written `||p|` (not brms syntax), with `mm()` or `gr()`, with varying slopes in the
-distributional formula, and group-level terms of a distributional formula without one (D32, D106); `cs()` (D107).
+distributional formula, and group-level terms of a distributional formula without one (D32, D106); `cs()` came with D04 (D107).
 
-## Parked: `cs()` in the acat family
+## `cs()`: parked here, built by D04
 
-The frozen case `acat_cs` (`ord ~ w + cs(x) + (1 | g)`, `acat()`) needs brms's adjacent-category family, which is D04's and
-not built: unordered thresholds, one linear predictor per threshold (`posterior_linpred` is draws x rows x thresholds), its
-likelihood and its default-prior rows, on top of which `cs()` adds a `Kcs x nthres` coefficient matrix `bcs`. That is not a
-small addition to this slice, so the case stays gated with the reason and `cs()` is refused naming it (D107).
+The frozen case `acat_cs` (`ord ~ w + cs(x) + (1 | g)`, `acat()`) needed brms's adjacent-category family, which is D04's:
+unordered thresholds, one linear predictor per threshold (`posterior_linpred` is draws x rows x thresholds), its likelihood
+and its default-prior rows, on top of which `cs()` adds a `Kcs x nthres` coefficient matrix `bcs`. This slice parked the case
+and refused `cs()` naming it (D107); D04 built both, and the case passes (docs/ordinal-categorical.md, D89).
 
 ## Evidence
 

@@ -1,0 +1,80 @@
+{
+ "id": "sratio_cs_post",
+ "tier": "D",
+ "feature": "D04_more_ordinal",
+ "note": "D04: post block of sratio(logit) with cs(x): log_lik is log P(y = k) of the 1-based category, each threshold's predictor mu + x bcs[k]; bayes_R2 of the expected category sum_k k P(y = k) against the category, as for the cumulative family (C07); 8 draws: k-hat Inf and raw importance weights, r_eff of one-draw chains NA (used as 1)",
+ "seed": 633,
+ "n_points": 8,
+ "data": {
+  "generator": "tier_d",
+  "seed": 533,
+  "n": 36,
+  "newdata": {
+   "seed": 633,
+   "n": 5
+  }
+ },
+ "brms": {
+  "formula": "ord ~ w + cs(x) + (1 | g)",
+  "family": {
+   "family": "sratio",
+   "link": "logit"
+  },
+  "factors": {
+   "g": [
+    "a",
+    "b",
+    "c",
+    "d",
+    "e",
+    "f"
+   ]
+  },
+  "priors": [
+   {
+    "prior": "normal(0, 3)",
+    "class": "Intercept"
+   },
+   {
+    "prior": "normal(0, 1.5)",
+    "class": "b"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "sd",
+    "group": "g"
+   }
+  ],
+  "extras": [
+   "log_lik",
+   "bayes_R2",
+   "loo"
+  ]
+ },
+ "autobayes": {
+  "constructor": "sratio",
+  "formula": "ord ~ w + cs(x) + (1 | g)",
+  "kwargs": {},
+  "priors": {
+   "intercept": [
+    "Normal",
+    0,
+    3
+   ],
+   "b": [
+    "Normal",
+    0,
+    1.5
+   ],
+   "sd": [
+    "HalfNormal",
+    1
+   ]
+  },
+  "post": [
+   "log_lik",
+   "bayes_R2",
+   "loo"
+  ]
+ }
+}

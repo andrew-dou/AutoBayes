@@ -5,7 +5,7 @@ The term model, the refusals naming each construct, the design blocks and PyMC n
 against a hand computation (a log-link family too), brms's normalisation constant of the by-level SDs, predictions by hand
 (weights, unseen labels, the shared ID's sigma), the default priors and their table, ``describe()`` and the target identity.
 Build-only; nothing samples. The numbers against brms are the oracle's business (tests/oracle: gauss_mm, gauss_gr_by,
-gauss_shared_id; acat_cs is parked, D107)."""
+gauss_shared_id; acat_cs, parked by D08 (D107), passes since D04, tests/test_more_ordinal.py)."""
 import re
 
 import numpy as np

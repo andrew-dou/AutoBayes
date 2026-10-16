@@ -71,6 +71,6 @@
  },
  "gate": {
   "expect": "fail",
-  "reason": "D04_more_ordinal not implemented; remove this field when it lands"
+  "reason": "D04_more_ordinal parks the probit link (divergence D88): brms's gradient here (Stan's ordered_probit_lpmf) is off the 50-digit value by up to 6.5e-5 relative at 86 of 88 entries, AutoBayes's within 4e-15, and G1, G2's log densities and G3-G6 pass; the case waits for a two-reference (P6) reference of the cumulative probit model, which oracle/reference.py does not implement. Remove this field (and unpark the link) when it lands"
  }
 }

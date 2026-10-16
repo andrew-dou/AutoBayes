@@ -43,6 +43,9 @@ linear predictor, group effects and raw-scale intercept, each response's view of
 model where it is about the joint density (G2, G5: one log density and gradient, the residual correlation's included; G3's
 rescor; G4: the predictions' response axis; G6: brms's table with every response's rows and rescor).
 
+D04: G1 matches brms's Xcs and Kcs to the model's cs() columns (adapter.match_cs), G2 maps the unordered thresholds and bcs, and
+G3 compares the graph's per-threshold predictor mu_cs of a model with cs() terms with brms's (rows, thresholds) posterior_linpred.
+
 D08: G2's prior part includes a shared correlation ID's distributional SDs and the potential that carries brms's normalisation
 constant of gr(by = )'s SDs; G3 adds a shared ID's distributional effects (r_m_<dpar>_c) to brms's linear predictor of the
 parameter and checks the graph's effects against them.
@@ -363,8 +366,9 @@ def check_derived(b: Bundle) -> None:
     ref = b.fixture.prediction("fitted", "epred" if holds_mean else "linpred")
     for k, p, vp in b.points():
         out = fn(vp)
-        # B05: a categorical model's linear predictor has one column per non-reference category, brms's (rows, categories)
-        lin = np.asarray(out[0], dtype=float) if b.cmap.dpars else np.asarray(out[0], dtype=float).ravel()
+        # B05: a categorical model's linear predictor has one column per non-reference category, brms's (rows, categories); D04:
+        # an ordinal model with cs() terms one per threshold, brms's (rows, thresholds)
+        lin = np.asarray(out[0], dtype=float) if (b.cmap.dpars or b.cmap.cs) else np.asarray(out[0], dtype=float).ravel()
         err = rel_err(lin, ref[k])
         if err > PRED_REL:
             raise OracleMismatch(f"point {k}: the graph's {names['linpred']!r} differs from brms by {err}")

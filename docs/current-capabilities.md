@@ -115,8 +115,8 @@ thresholds of the raw design and the intercept prior on every threshold; one lin
 for the categorical family, under one prior per class; `predict(kind="mean")` returning the category probabilities with a
 new `category` dimension) followed, verified against `cumulative_varint`, `categorical_poponly` and two cases with a
 categorical predictor frozen with it; a categorical model takes population-level terms only and its categories are
-sorted labels (D36, D37), and other ordinal links, `disc`, `cs()` and the `sratio` / `cratio` / `acat` families are not
-offered (D38); see [ordinal and categorical responses](ordinal-categorical.md).
+sorted labels (D36, D37), and other ordinal links and `disc` are not offered (D38); see [ordinal and categorical
+responses](ordinal-categorical.md).
 
 Distributional formulas (B01, brms's `bf(y ~ x, sigma ~ z)`): a list of formulas, `["y ~ x + (1 | g)", "sigma ~ z"]`,
 gives the auxiliary parameter its own population-level linear predictor under a log link, with
@@ -238,7 +238,7 @@ member of several levels, brms's group `mmgg2`, weights scaled to sum to 1), `(1
 the response formula's term and log sigma's varying intercept, `Priors(sigma={"intercept": ..., "sd": ...})`); `predict()`,
 `ab.log_lik` and the default priors take them. Verified against `gauss_mm`, `gauss_gr_by` and `gauss_shared_id`; slopes with
 `mm()` and `by`, the terms next to other special terms, in multivariate and non-linear models, other IDs and new levels of `by`
-and shared-ID factors are refused (D104-D106); `cs()` and the case `acat_cs` wait for D04's acat family (D107); see
+and shared-ID factors are refused (D104-D106); `cs()` and the case `acat_cs` came with D04's acat family (D107, below); see
 [multi-membership and by](multi-membership-and-by.md).
 
 Weibull, exponential, skew-normal, shifted lognormal and ex-Gaussian responses (D01, brms's `weibull()`, `exponential()`,
@@ -270,3 +270,14 @@ scales under brms's names on brms's coordinates) and scaled by the residual SD s
 `main = TRUE`, other families, formulas without an intercept or population-level terms, `center_predictors=False`, and
 group-level, offset, addition, distributional, `mo()`, `me()`, `mi()`, `gp()` and autocorrelation terms are refused
 (D100-D103); see [shrinkage priors](shrinkage-priors.md).
+
+More ordinal models (D04, `ab.sratio`, `ab.cratio`, `ab.acat`: brms's `sratio("logit")`, `cratio("logit")` and `acat("logit")`):
+the response, `mu` and the centring of the thresholds as for the cumulative family, the K - 1 thresholds unordered as brms's
+`vector[nthres] Intercept`, each row's probability in a stable log form; category-specific effects `cs(x)` give a numeric column
+one coefficient per threshold (brms's `bcs`, under the class-`b` prior), each threshold's predictor the deterministic `mu_cs`,
+returned by `predict(kind="linear")` with a `threshold` dimension; `predict()`, `log_lik()`, `loo()`, `bayes_R2()` and brms's
+default priors. Verified against `sratio_varint`, `cratio_varint`, `acat_varint`, `acat_cs`, `sratio_cs` and `cratio_cs` (and
+`log_lik()`, `bayes_R2()`, `loo()` against `sratio_cs_post`, `cratio_cs_post`, `acat_cs_post`); other
+links, `disc`, `mo()`, addition terms and the other forms of `cs()` are refused (D38, D89). The cumulative probit link is built
+but withheld: brms's own gradient of `cumulative_probit_varint` is off the exact value by up to 6.5e-5 relative, and the case
+waits for a two-reference (P6) reference of the model (D88); see [ordinal and categorical responses](ordinal-categorical.md).

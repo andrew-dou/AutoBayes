@@ -397,6 +397,51 @@ def test_a_model_of_the_other_kind_does_not_match(cumulative_bundle, categorical
                                                               ab.Priors(intercept=ab.Normal(0, 3), b=ab.Normal(0, 1.5))))
 
 
+# -- D04: unordered thresholds and category-specific effects -------------------------------------------------------------
+@pytest.fixture(scope="module")
+def acat_cs_bundle():
+    if not fx.has_fixture("acat_cs") or fx.load_case("acat_cs").get("gate"):
+        pytest.skip("acat_cs not frozen or still gated")
+    return gates.Bundle("acat_cs")
+
+
+def test_corrupted_unordered_threshold_and_bcs_gradients_fail(acat_cs_bundle):
+    def threshold(raw):
+        raw["points"][0]["grad"]["values"][_coordinates(raw, "Intercept")[1]] *= 1 + 1e-6
+    with pytest.raises(OracleMismatch, match=r"point 0: gradient of Intercept\[1\]"):
+        gates.check_gradient(_corrupted(acat_cs_bundle, threshold))
+    def bcs(raw):
+        raw["points"][4]["grad"]["values"][_coordinates(raw, "bcs")[2]] *= 1 + 1e-6
+    with pytest.raises(OracleMismatch, match=r"point 4: gradient of cs\(x\)\[2\]"):
+        gates.check_gradient(_corrupted(acat_cs_bundle, bcs))
+
+
+def test_corrupted_threshold_predictor_and_design_fail(acat_cs_bundle):
+    def linpred(raw):
+        raw["predictions"]["fitted"]["linpred"]["values"][40] += 1e-8        # point 0, row 5, threshold 1 (column-major)
+    with pytest.raises(OracleMismatch, match="point 0: the graph's 'mu_cs' differs from brms"):
+        gates.check_derived(_corrupted(acat_cs_bundle, linpred))
+    with pytest.raises(OracleMismatch, match="fitted: linear predictor differs"):
+        gates.check_predictions(_corrupted(acat_cs_bundle, linpred))
+    def design(raw):
+        raw["standata"]["Xcs"]["values"][-1] += 1e-11
+    with pytest.raises(OracleMismatch, match="brms's Xcs column 1 matches 0 category-specific columns"):
+        _corrupted(acat_cs_bundle, design)
+
+
+def test_a_model_without_the_fixture_s_thresholds_or_cs_terms_does_not_match(acat_cs_bundle):
+    import autobayes as ab
+
+    data = acat_cs_bundle.data
+    pri = ab.Priors(intercept=ab.Normal(0, 3), b=ab.Normal(0, 1.5), sd=ab.HalfNormal(1))
+    with pytest.raises(OracleMismatch, match="AutoBayes's cumulative model has ordered thresholds but brms declares 'Intercept' as "
+                                             "'vector\\[nthres\\] Intercept;'"):
+        gates.Bundle("acat_varint", model=ab.cumulative("ord ~ x + (1 | g)", fx.read_frame(fx.load_case("acat_varint"),
+                                                                                           fx.fixture_dir("acat_varint") / "data.csv"), pri))
+    with pytest.raises(OracleMismatch, match="brms has Kcs = 1 category-specific columns"):
+        gates.Bundle("acat_cs", model=ab.acat("ord ~ w + (1 | g)", data, pri))
+
+
 # -- two-reference acceptance (P6): brms where it is accurate, the committed 50-digit reference where it is not -----------
 REFERENCE_FILES = sorted(two_reference.REFERENCES.glob("*.json"))
 OPTED_IN = sorted(cid for cid in fx.case_ids() if "reference" in (fx.load_case(cid).get("gate") or {}))

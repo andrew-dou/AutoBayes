@@ -57,7 +57,8 @@ reviews); the status report with a demonstration and a comparison with brms is
 - **Zero-inflated and hurdle counts** (Tier B, B06): `ab.zero_inflated_poisson` and `ab.hurdle_poisson`, with brms's
   `zi` / `hu` under a `Beta` prior ([zero-inflated and hurdle counts](docs/zero-inflated-hurdle.md)).
 - **Ordinal and categorical responses** (Tier B, B05): `ab.cumulative` (brms's `cumulative("logit")`, ordered thresholds)
-  and `ab.categorical` (one linear predictor per non-reference category) ([ordinal and categorical](docs/ordinal-categorical.md)).
+  and `ab.categorical` (one linear predictor per non-reference category); D04: `ab.sratio`, `ab.cratio` and `ab.acat` (logit,
+  unordered thresholds) with category-specific effects `cs(x)` ([ordinal and categorical](docs/ordinal-categorical.md)).
 - **Population-level terms**: numeric and declared categorical predictors; two-way interactions `x:w`, `x:z`, `z:h`
   with their main effects ([interactions](docs/interactions.md)); `log()`, `exp()`, `sqrt()`, `I(x^k)`, `I(x * k)`,
   `I(x + k)`, `I(x - k)` ([transforms](docs/transforms.md)); `offset(col)` and `offset(log(col))` ([offset](docs/offset.md)).
