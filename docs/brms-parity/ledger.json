@@ -1513,9 +1513,9 @@
    "depends_on": [
     "A07_default_priors"
    ],
-   "status": "gates_green",
+   "status": "merged",
    "summary": "horseshoe() and R2D2() priors on b",
-   "pr": null,
+   "pr": 63,
    "attempts": 1,
    "gates": {
     "sha": "799cbf4bf8eb",
@@ -1533,8 +1533,13 @@
      }
     }
    },
-   "divergences": [],
-   "next_action": "agent (opus), wave D3",
+   "divergences": [
+    "D100",
+    "D101",
+    "D102",
+    "D103"
+   ],
+   "next_action": "other classes and formulas, par_ratio, autoscale = FALSE, main = TRUE, other families and contexts not offered (D100-D103)",
    "fixtures": {
     "pr": 57,
     "cases": [
