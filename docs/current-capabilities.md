@@ -165,6 +165,12 @@ degenerate-tail rules were settled against loo's outputs on recorded probe input
 `categorical_poponly_post` and `mixture_gauss3_post` (gate `check_post`); brms's further options are not offered (D48), and brms's `log_lik` at
 extreme linear predictors, loo's MCSE of an observation with `elpd_loo` below about -372 and loo's relative efficiencies
 of very short chains differ (D49-D51); see [post-processing](post-processing.md).
+`ab.waic(model, fit)` (D05, brms's `waic()`) is WAIC with brms's pointwise table and estimates, `ab.loo_compare(results)`
+loo 2.9.0's comparison table of several models' `ab.loo()` or `ab.waic()` results (best first, `elpd_diff`, `se_diff` and each
+model's estimates), and `ab.model_weights(results, weights)` brms's Akaike weights by `"loo"` or `"waic"` and pseudo-BMA weights
+with `BB=False`; verified against `gauss_loo_compare_x` and `gauss_loo_compare_xw` (gate `check_post`) and against loo's and
+brms's outputs on recorded probes; stacking, BMA, K-fold, the Bayesian bootstrap, mixed criteria and a multivariate model's
+WAIC are refused (D92-D95).
 
 Multivariate Gaussian models (C01, brms's `bf(mvbind(y, y2) ~ ...) + set_rescor()`): `ab.gaussian("mvbind(y, y2) ~ x + (1 | g)",
 data, ab.Priors(resp={"y": {...}, "y2": {...}}, rescor=ab.LKJ(eta)), rescor=True)` builds one univariate model per response

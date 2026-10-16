@@ -128,9 +128,5 @@
    "loo_compare"
   ],
   "compare_with": "gauss_loo_compare_xw"
- },
- "gate": {
-  "expect": "fail",
-  "reason": "D05_waic_loo_compare not implemented; remove this field when it lands"
  }
 }

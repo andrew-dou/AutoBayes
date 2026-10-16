@@ -40,11 +40,30 @@ comes from (loo is GPL-3 and none of its source is used here):
   ``relative_eff`` to 1e-13 on the probes with 16 and 1000 draws per chain. Chains of fewer than four draws (the one-draw
   chains of the oracle's fixed-parameter fits among them) give ``r_eff = 1``, as loo replaces its NA by 1 (divergence D51 for
   very short or strongly autocorrelated chains).
+
+D05 adds brms's ``waic()``, ``loo_compare()`` and ``model_weights()``, accepted against brms 2.23 / loo 2.9.0 on the frozen
+cases ``gauss_loo_compare_x`` and ``gauss_loo_compare_xw`` and against loo's and brms's outputs on recorded probe inputs
+(``tests/loo_probes``); no loo or brms source is used:
+
+- ``waic(model, fit)``, the widely applicable information criterion (Watanabe 2010, JMLR 11; the WAIC section of Vehtari,
+  Gelman and Gabry 2017): ``lpd_i = log mean_s p(y_i | theta_s)``, ``p_waic_i`` the sample variance (divisor ``S - 1``)
+  of ``log p(y_i | theta_s)`` over the draws, ``elpd_waic_i = lpd_i - p_waic_i``, ``waic_i = -2 elpd_waic_i``; estimates
+  and SEs as for loo.
+- ``loo_compare(results)``: the models best first (the largest ``elpd``; ties keep the order given), each with ``elpd_diff``,
+  the sum over observations of its pointwise elpd less the best model's, and ``se_diff = sqrt(N var_i)`` of those pointwise
+  differences (Vehtari, Gelman and Gabry 2017, on model comparison), then its own estimates and SEs: loo's eight columns.
+- ``model_weights(results, weights)``: brms's ``weights = "loo"`` and ``"waic"``, Akaike weights ``exp(-dIC_k / 2) / sum_j
+  exp(-dIC_j / 2)`` of the information criteria, which are ``exp(elpd_k) / sum_j exp(elpd_j)``; and ``"pseudobma"`` with
+  ``BB=False``, the pseudo-BMA weights of Yao, Vehtari, Simpson and Gelman (2018, Bayesian Analysis 13(3)), the same formula
+  on ``elpd_loo``.
 """
 from __future__ import annotations
 
+import hashlib
 import math
-from dataclasses import dataclass
+import warnings
+from collections.abc import Mapping
+from dataclasses import dataclass, replace
 
 import numpy as np
 import pandas as pd
@@ -206,7 +225,8 @@ class Loo:
     """brms's ``loo()`` of a fit (loo 2.9.0's ``psis_loo``): ``pointwise`` one row per fitted row with brms's columns
     ``elpd_loo``, ``mcse_elpd_loo``, ``p_loo``, ``looic`` and ``influence_pareto_k``; ``estimates`` brms's rows ``elpd_loo``,
     ``p_loo``, ``looic`` with columns ``Estimate`` and ``SE``; ``pareto_k`` and ``n_eff`` the diagnostics; ``r_eff`` the
-    relative efficiencies used; ``n_draws`` the number of posterior draws ``S``."""
+    relative efficiencies used; ``n_draws`` the number of posterior draws ``S``; ``response`` a fingerprint of the response
+    the model was fit to (D05: ``loo_compare`` warns when they differ, as brms's does), ``None`` for a bare log-likelihood."""
 
     pointwise: pd.DataFrame
     estimates: pd.DataFrame
@@ -214,6 +234,7 @@ class Loo:
     n_eff: np.ndarray
     r_eff: np.ndarray
     n_draws: int
+    response: str | None = None
 
     @property
     def elpd_loo(self) -> float:
@@ -290,4 +311,197 @@ def loo(model, fit_result, *, r_eff=None) -> Loo:
     """brms's ``loo()``: PSIS-LOO cross-validation of the fitted rows from ``log_lik(model, fit_result)`` (module docstring).
     ``r_eff``: ``None`` (brms's default) computes each observation's relative efficiency from the chains; a number, or one
     per observation, is used as given (``r_eff=1`` is loo's own default for a log-likelihood matrix)."""
-    return loo_from_log_lik(log_lik(model, fit_result), r_eff=r_eff)
+    return replace(loo_from_log_lik(log_lik(model, fit_result), r_eff=r_eff), response=response_fingerprint(model))
+
+
+# -- D05: WAIC, model comparison and model weights -----------------------------------------------------------------
+WAIC_COLUMNS = ("elpd_waic", "p_waic", "waic")      # brms's waic()$pointwise columns, and its $estimates rows
+P_WAIC_LIMIT = 0.4                                  # loo flags p_waic_i above this and recommends PSIS-LOO there
+MODEL_WEIGHTS = ("loo", "waic", "pseudobma")        # brms's model_weights(weights = ...) offered here
+
+
+def response_fingerprint(model) -> str | None:
+    """A fingerprint (SHA-256) of the response the model was fit to: its fitted rows' values and, for a binomial model, their
+    trials. ``loo_compare`` and ``model_weights`` warn when the models' fingerprints differ, as brms's ``loo_compare`` does
+    when the fits' ``yhash`` attributes differ (probed); ``None`` when the model holds no single response."""
+    design = getattr(model, "design", None)
+    parts = [getattr(design, "y", None), getattr(design, "trials", None)]
+    if parts[0] is None:
+        return None
+    h = hashlib.sha256()
+    for part in parts:
+        if part is None:
+            h.update(b"none;")
+            continue
+        a = np.asarray(part)
+        if a.dtype.kind in "biuf":
+            h.update(np.ascontiguousarray(a, dtype="<f8").tobytes())
+        else:
+            h.update("\x1f".join(map(str, a.ravel().tolist())).encode("utf-8"))
+        h.update(f";{a.shape};".encode())
+    return h.hexdigest()
+
+
+def _refuse_unsupported(model, what: str) -> None:
+    """What ``log_lik()`` does not take here is refused naming ``what``: a model with ``me()`` or ``mi()`` (D74) and a
+    multivariate model (C01), whose log-likelihood brms sums over the responses or keeps per response."""
+    _refuse_measurement(model, what)
+    if getattr(model, "responses", None):
+        raise ValueError(f"{what} of a multivariate model is not offered in this slice (docs/post-processing.md, divergence D95)")
+
+
+def _estimates(pw: pd.DataFrame, rows) -> pd.DataFrame:
+    """loo's estimates table: each column's sum and ``SE = sqrt(N var)`` (NaN for a single observation, loo's NA)."""
+    n = len(pw)
+
+    def se(column):
+        return math.sqrt(n * float(np.var(pw[column].to_numpy(), ddof=1))) if n > 1 else math.nan
+
+    return pd.DataFrame({"Estimate": [float(pw[r].sum()) for r in rows], "SE": [se(r) for r in rows]}, index=list(rows))
+
+
+@dataclass(frozen=True)
+class Waic:
+    """brms's ``waic()`` of a fit (loo 2.9.0's ``waic``): ``pointwise`` one row per fitted row with brms's columns
+    ``elpd_waic``, ``p_waic``, ``waic``; ``estimates`` brms's rows ``elpd_waic``, ``p_waic``, ``waic`` with columns ``Estimate``
+    and ``SE``; ``n_draws`` the number of posterior draws ``S``; ``response`` as ``Loo.response``."""
+
+    pointwise: pd.DataFrame
+    estimates: pd.DataFrame
+    n_draws: int
+    response: str | None = None
+
+    @property
+    def elpd_waic(self) -> float:
+        return float(self.estimates.loc["elpd_waic", "Estimate"])
+
+    @property
+    def se_elpd_waic(self) -> float:
+        return float(self.estimates.loc["elpd_waic", "SE"])
+
+    @property
+    def p_waic(self) -> float:
+        return float(self.estimates.loc["p_waic", "Estimate"])
+
+    @property
+    def waic(self) -> float:
+        return float(self.estimates.loc["waic", "Estimate"])
+
+    def __str__(self) -> str:
+        high = int(np.sum(self.pointwise["p_waic"].to_numpy() > P_WAIC_LIMIT))
+        lines = [f"WAIC of {len(self.pointwise)} observations from {self.n_draws} posterior draws",
+                 self.estimates.to_string(float_format=lambda v: f"{v:.1f}")]
+        if high:
+            lines.append(f"p_waic above {P_WAIC_LIMIT}: {high} of {len(self.pointwise)} (loo recommends PSIS-LOO there)")
+        return "\n".join(lines)
+
+
+def waic_from_log_lik(log_lik: xr.DataArray) -> Waic:
+    """``waic()`` of a pointwise log-likelihood ``(chain, draw, __obs__)`` (``log_lik()``'s output; module docstring)."""
+    ll = log_lik.transpose("chain", "draw", "__obs__")
+    chains, draws, n = ll.shape
+    S = chains * draws
+    if S < 2:
+        raise ValueError("waic() needs at least two posterior draws: p_waic is the variance of the log-likelihood across them")
+    values = ll.to_numpy().reshape(S, n)
+    if not np.isfinite(values).all():
+        raise ValueError("waic() needs a finite log-likelihood at every draw and row")
+    lpd = logsumexp(values, axis=0) - math.log(S)
+    p_waic = np.var(values, axis=0, ddof=1)
+    elpd = lpd - p_waic
+    pw = pd.DataFrame({"elpd_waic": elpd, "p_waic": p_waic, "waic": -2.0 * elpd}, index=pd.RangeIndex(n, name="row"))
+    return Waic(pointwise=pw, estimates=_estimates(pw, WAIC_COLUMNS), n_draws=S)
+
+
+def waic(model, fit_result) -> Waic:
+    """brms's ``waic()``: the widely applicable information criterion of the fitted rows from ``log_lik(model, fit_result)``
+    (module docstring)."""
+    _refuse_unsupported(model, "waic()")
+    return replace(waic_from_log_lik(log_lik(model, fit_result)), response=response_fingerprint(model))
+
+
+def _criterion_results(results, what: str) -> tuple[list[str], list, str]:
+    """The names, results and criterion (``"loo"`` or ``"waic"``) of ``loo_compare``'s and ``model_weights``' argument: a
+    mapping ``{name: result}`` or a sequence of results, named ``model1``, ``model2``, ... as loo names them; at least two,
+    all ``Loo`` or all ``Waic``, on the same number of observations."""
+    if isinstance(results, (Loo, Waic)):
+        raise ValueError(f"{what} needs at least two models: pass a mapping {{name: result}} or a list of results")
+    if isinstance(results, Mapping):
+        names, items = [str(k) for k in results], list(results.values())
+    else:
+        items = list(results)
+        names = [f"model{i}" for i in range(1, len(items) + 1)]
+    if len(items) < 2:
+        raise ValueError(f"{what} needs at least two models (loo: \"'loo_compare' requires at least two models\")")
+    bad = [name for name, r in zip(names, items) if not isinstance(r, (Loo, Waic))]
+    if bad:
+        raise ValueError(f"{what} takes the results of ab.loo() or ab.waic(); {bad} are not (compute each model's criterion first)")
+    kinds = {type(r) for r in items}
+    if len(kinds) > 1:
+        raise ValueError(f"{what} of PSIS-LOO and WAIC results together is refused: compare like with like (divergence D93)")
+    counts = {name: len(r.pointwise) for name, r in zip(names, items)}
+    if len(set(counts.values())) > 1:
+        raise ValueError(f"{what}: all models must have the same number of observations, but they have {counts}")
+    if next(iter(counts.values())) < 2:
+        raise ValueError(f"{what} needs at least two observations: se_diff is a variance across them")
+    fingerprints = {r.response for r in items}
+    if None not in fingerprints and len(fingerprints) > 1:
+        warnings.warn(f"{what}: not all models have the same response (their fingerprints differ); the comparison is likely "
+                      "invalid", UserWarning, stacklevel=3)
+    return names, items, ("loo" if kinds == {Loo} else "waic")
+
+
+def loo_compare(results) -> pd.DataFrame:
+    """brms's (and loo 2.9.0's) ``loo_compare()`` of several models' ``ab.loo()`` or ``ab.waic()`` results, given as a mapping
+    ``{name: result}`` (or a sequence, named ``model1``, ``model2``, ... as loo names them): one row per model, best first
+    (the largest ``elpd``; ties keep the order given), with loo's columns ``elpd_diff``, ``se_diff``, ``elpd_<c>``,
+    ``se_elpd_<c>``, ``p_<c>``, ``se_p_<c>``, ``<ic>``, ``se_<ic>`` (``<c>`` ``loo`` or ``waic``, ``<ic>`` ``looic`` or
+    ``waic``); ``elpd_diff`` and ``se_diff`` are those of each model's pointwise elpd less the best model's (module
+    docstring). Results of both criteria together, models on different numbers of observations and a single model are
+    refused; models fit to different responses are compared with a warning, as brms compares them."""
+    names, items, crit = _criterion_results(results, "loo_compare()")
+    ic = "looic" if crit == "loo" else "waic"
+    elpd = f"elpd_{crit}"
+    pointwise = np.column_stack([r.pointwise[elpd].to_numpy() for r in items])
+    totals = np.array([r.estimates.loc[elpd, "Estimate"] for r in items], dtype=float)
+    order = np.argsort(-totals, kind="stable")
+    best = pointwise[:, order[0]]
+    n = pointwise.shape[0]
+    rows = []
+    for k in order:
+        diff = pointwise[:, k] - best
+        est = items[k].estimates
+        rows.append([float(diff.sum()), math.sqrt(n * float(np.var(diff, ddof=1))),
+                     est.loc[elpd, "Estimate"], est.loc[elpd, "SE"], est.loc[f"p_{crit}", "Estimate"], est.loc[f"p_{crit}", "SE"],
+                     est.loc[ic, "Estimate"], est.loc[ic, "SE"]])
+    columns = ["elpd_diff", "se_diff", elpd, f"se_{elpd}", f"p_{crit}", f"se_p_{crit}", ic, f"se_{ic}"]
+    return pd.DataFrame(rows, columns=columns, index=pd.Index([names[k] for k in order], name="model"), dtype=float)
+
+
+def model_weights(results, weights: str, *, BB: bool | None = None) -> pd.Series:
+    """brms's ``model_weights()`` of several models' results (a mapping ``{name: result}`` or a sequence, as ``loo_compare``
+    takes them), in the order given: ``weights="loo"`` (``ab.loo()`` results) and ``weights="waic"`` (``ab.waic()``
+    results) are brms's Akaike weights of looic and WAIC, ``exp(elpd_k) / sum_j exp(elpd_j)``; ``weights="pseudobma"`` with
+    ``BB=False`` the pseudo-BMA weights of ``ab.loo()`` results, the same numbers (module docstring). brms's default
+    ``"stacking"``, ``"bma"``, ``"kfold"`` and pseudo-BMA with the Bayesian bootstrap (brms's default ``BB = TRUE``, which
+    draws random numbers) are refused (divergence D92); there is no default."""
+    if weights in ("stacking", "bma", "kfold"):
+        raise ValueError(f"model_weights(weights={weights!r}) is not offered (divergence D92): brms's "
+                         + {"stacking": "stacking weights are an optimisation no frozen case verifies",
+                            "bma": "Bayesian model averaging needs the marginal likelihood (bridge sampling)",
+                            "kfold": "K-fold cross-validation refits the model"}[weights]
+                         + f"; offered: {', '.join(MODEL_WEIGHTS)}")
+    if weights not in MODEL_WEIGHTS:
+        raise ValueError(f"model_weights(weights=...) must be one of {MODEL_WEIGHTS}, got {weights!r}")
+    if weights == "pseudobma" and BB is not False:
+        raise ValueError("model_weights(weights='pseudobma') needs BB=False: pseudo-BMA with the Bayesian bootstrap (brms's "
+                         "default BB = TRUE) draws random numbers (divergence D92)")
+    if weights != "pseudobma" and BB is not None:
+        raise ValueError("BB applies to weights='pseudobma' only")
+    names, items, crit = _criterion_results(results, "model_weights()")
+    if crit != ("waic" if weights == "waic" else "loo"):
+        raise ValueError(f"model_weights(weights={weights!r}) takes the results of "
+                         f"{'ab.waic()' if weights == 'waic' else 'ab.loo()'}, not of {'ab.loo()' if crit == 'loo' else 'ab.waic()'}")
+    elpd = np.array([r.estimates.loc[f"elpd_{crit}", "Estimate"] for r in items], dtype=float)
+    w = np.exp(elpd - elpd.max())
+    return pd.Series(w / w.sum(), index=pd.Index(names, name="model"), name=weights)

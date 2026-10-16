@@ -66,6 +66,7 @@ from autobayes.inference import DeviceError, FitResult, fit
 from autobayes.predict import predict
 from autobayes.prior_predictive import prior_predictive
 from autobayes.post_processing import Loo, bayes_R2, log_lik, loo
+from autobayes.post_processing import Waic, loo_compare, model_weights, waic   # D05, docs/post-processing.md
 from autobayes.diagnostics import panel
 from autobayes.session import compare_records, environment, fit_record, format_comparison, format_environment
 from autobayes.nonlinear import NonlinearModel, NonlinearSpec        # non-linear formulas, nl=True (C02, docs/nonlinear.md)
@@ -80,4 +81,5 @@ __all__ = [
     "Loo", "bayes_R2", "log_lik", "loo",
 ]
 __all__ += ["NonlinearModel", "NonlinearSpec"]         # C02
+__all__ += ["Waic", "loo_compare", "model_weights", "waic"]   # D05
 __version__ = "0.8.0"
