@@ -108,6 +108,19 @@ def test_rows_are_exact_and_never_nan_on_both_paths(mode):
                 assert np.all(np.abs(got - ref) <= 1e-10 * np.maximum(1.0, np.abs(ref))), (mode, y, mu, got, ref)
 
 
+def test_pointwise_rows_are_exact():
+    """The NumPy form of the row density that ``ab.log_lik`` evaluates (C07, ``pointwise.gaussian_mixture``) on the same
+    rows, all at once: finite and within 1e-12 relative of the reference."""
+    from autobayes.families.pointwise import gaussian_mixture
+
+    y, mu = np.array([r[0] for r in ROWS]), np.array([r[1] for r in ROWS])
+    for sigma, theta in SETS:
+        got = gaussian_mixture(y, mu, sigma, theta)
+        want = np.array([exact_mixture_row(r[0], r[1], sigma, theta)[0] for r in ROWS])
+        assert got.shape == y.shape and np.isfinite(got).all()
+        assert np.all(np.abs(got - want) <= 1e-12 * np.maximum(1.0, np.abs(want))), (got, want)
+
+
 def test_draws_and_mean_are_the_mixture():
     mu, sigma, theta = np.array([[-2.0, 0.5, 4.0]]), np.array([0.3, 0.2, 0.4]), np.array([0.2, 0.5, 0.3])
     draws = pm.draw(pm.CustomDist.dist(mu, sigma, theta, logp=lk.gaussian_mixture_logp, random=lk.gaussian_mixture_random,
@@ -350,6 +363,28 @@ def test_predictions_by_hand():
         m.predict(post, kind="probability")
 
 
+def test_log_lik_bayes_R2_and_loo_by_hand():
+    """C07 for a mixture: ``log_lik`` is each row's ``log sum_k theta_k Normal(y_i | mu_k,i, sigma_k)`` per draw (brms's
+    log_lik_mixture), ``bayes_R2`` the R-squared of the mixture's mean ``sum_k theta_k mu_k,i`` (brms's posterior_epred) and
+    ``loo`` PSIS-LOO of that log_lik; the frozen case mixture_gauss3_post checks the three against brms."""
+    from autobayes.post_processing import loo_from_log_lik
+
+    m = mixture_model("y ~ x + z", K=3, categorical={"z": "p"})
+    post = mixture_draws(3, z=True)
+    P = post.posterior
+    eta = m.predict(post, kind="linear").eta.transpose("chain", "draw", "__obs__", "component").values
+    theta = P["theta"].values[..., None, :]
+    sigma = np.stack([P[f"sigma{k}"].values for k in (1, 2, 3)], -1)[..., None, :]
+    y = np.asarray(Y)
+    ll = ab.log_lik(m, post)
+    assert ll.dims == ("chain", "draw", "__obs__") and ll.shape == (2, 4, 12)
+    np.testing.assert_allclose(ll.values, np.log((theta * norm.pdf(y[:, None], eta, sigma)).sum(-1)), rtol=1e-12)
+    yhat = (theta * eta).sum(-1)
+    r2 = np.var(yhat, axis=-1, ddof=1) / (np.var(yhat, axis=-1, ddof=1) + np.var(y - yhat, axis=-1, ddof=1))
+    np.testing.assert_allclose(ab.bayes_R2(m, post).values, r2, rtol=1e-12)
+    pd.testing.assert_frame_equal(ab.loo(m, post, r_eff=1.0).pointwise, loo_from_log_lik(ll, r_eff=1.0).pointwise)
+
+
 def test_a_fits_posterior_holds_the_raw_intercepts():
     """What fit() returns: Bambi's result cleaning uncentres the intercept of every component (brms's b_mu<k>_Intercept =
     Intercept_mu<k> - sum_p mean(x_p) b_mu<k>[p]), which is what predict() reads with the raw design."""
@@ -579,3 +614,26 @@ def test_a_model_of_another_kind_does_not_match(mixture_bundle):
         frame = fx.read_frame(case, fx.fixture_dir("gauss_varint") / "data.csv")
         with pytest.raises(OracleMismatch, match=r"brms has the designs \[\]"):
             gates.Bundle("gauss_varint", model=ab.mixture("y ~ x", frame, mixture_priors(2), families=["gaussian"] * 2))
+
+
+def test_corrupted_mixture_post_fixture_fails():
+    """The post gate (C07) passes on the frozen mixture_gauss3_post and fails on one log_lik entry or one R-squared draw
+    moved."""
+    from tests.oracle import fixture as fx
+    from tests.oracle import gates
+    from tests.oracle.adapter import OracleMismatch
+
+    if not fx.has_fixture("mixture_gauss3_post"):
+        pytest.skip("mixture post fixture not frozen")
+    b = gates.Bundle("mixture_gauss3_post")
+    gates.check_post(b)
+
+    def log_lik(raw):
+        raw["post"]["log_lik"]["values"][100] += 1e-7                     # brms's log_lik is above -40 here: above 1e-9 relative
+    with pytest.raises(OracleMismatch, match="log_lik differs from brms"):
+        gates.check_post(_corrupted(b, log_lik))
+
+    def r2(raw):
+        raw["post"]["bayes_R2"]["values"][5] += 1e-8
+    with pytest.raises(OracleMismatch, match="bayes_R2 differs from brms"):
+        gates.check_post(_corrupted(b, r2))

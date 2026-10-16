@@ -133,6 +133,17 @@ def ordered_logistic(y, eta, thresholds):
     return out
 
 
+def gaussian_mixture(y, mu, sigma, theta):
+    """``log sum_k theta_k Normal(y | mu_k, sigma_k)`` of brms's ``mixture(gaussian, ..., gaussian)`` (its ``log_mix`` of
+    ``normal_lpdf``): ``mu`` is ``(..., K)``, the components' linear predictors, ``sigma`` and ``theta`` broadcast against it
+    and ``y`` against its leading axes; the form of ``likelihoods.gaussian_mixture_logp``, the sum over the components with
+    the largest term factored out."""
+    z = (np.asarray(y, dtype=float)[..., None] - mu) / sigma
+    terms = np.log(theta) - 0.5 * z * z - np.log(sigma) - _HALF_LOG_2PI
+    m = terms.max(axis=-1, keepdims=True)
+    return m[..., 0] + np.log(np.exp(terms - m).sum(axis=-1))
+
+
 def categorical_logit(y, eta):
     """``log P(y | eta)`` of brms's ``categorical()`` for 1-based categories ``y``: ``eta`` is ``(..., K - 1)``, the linear
     predictors of the non-reference categories; ``eta_y - log_sum_exp(0, eta)``."""

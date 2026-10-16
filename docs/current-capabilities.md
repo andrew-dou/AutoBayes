@@ -84,7 +84,8 @@ relative where AutoBayes's form is exact (D18), until P6 (below), and its cauchi
 non-default links are not offered (D19); see [links](links.md). Student-t with learned degrees of freedom (A13, `ab.student(..., nu=None)` with
 `Priors(nu=...)`: the prior truncated to `nu > 1` and renormalised there as brms's `real<lower=1> nu`, sampled as
 `log(nu - 1)`; Gamma, Exponential, HalfNormal and HalfCauchy priors, D22) followed, verified against
-`student_learned_nu`; see [Student-t learned nu](student-learned-nu.md).
+`student_learned_nu`; its `describe()` lists `sigma_log__` before `nu_interval__` whatever `PYTHONHASHSEED` makes PyMC's
+order; see [Student-t learned nu](student-learned-nu.md).
 brms's default priors (A07, `ab.default_priors(formula, data, ...)`: brms 2.23's `default_prior()` for the formula, data
 and family as a `Priors` to pass to a constructor, with brms's data-dependent Intercept location and scales; flat `b` as
 `ab.Flat()`, the negative binomial shape's `inv_gamma(0.4, 0.3)` as `ab.InverseGamma`) are available on request and
@@ -149,6 +150,9 @@ on Stan's stick-breaking simplex), under `Priors(components=[...one Priors per c
 component. Verified against `mixture_gauss_gauss` and two cases frozen with it (three components with a categorical
 predictor and a prior per component; brms's default priors); other component families, `order = "none"`, formulas per
 component or on `theta`, group-level terms and offsets are refused (D52-D55); see [mixtures](mixtures.md).
+`ab.log_lik`, `ab.bayes_R2` and `ab.loo` (C07) take a mixture: each row's `log_mix` of the components' Normal
+densities (brms's `log_lik_mixture`) and the R-squared of the mixture's mean, verified against the frozen case
+`mixture_gauss3_post`.
 
 Post-processing (C07, brms's `log_lik()`, `bayes_R2()` and `loo()` with loo 2.9.0): `ab.log_lik(model, fit)` is each
 fitted row's log density per draw (times its weight under `weights()`) for every family, `ab.bayes_R2(model, fit)` the
@@ -157,8 +161,8 @@ categorical family, as brms refuses it), and `ab.loo(model, fit)` PSIS-LOO with 
 k and `n_eff`, the relative efficiencies computed from the chains as brms computes them; PSIS is implemented from the
 published algorithm with ArviZ's `psislw` as the reference (loo is GPL-3 and none of its source is used), and its tie and
 degenerate-tail rules were settled against loo's outputs on recorded probe inputs (`tests/loo_probes`). Verified against
-`gauss_varint_post`, `poisson_varint_post`, `gauss_varint_post_psis`, `cumulative_varint_post`, `binomial_weighted_post`
-and `categorical_poponly_post` (gate `check_post`); brms's further options are not offered (D48), and brms's `log_lik` at
+`gauss_varint_post`, `poisson_varint_post`, `gauss_varint_post_psis`, `cumulative_varint_post`, `binomial_weighted_post`,
+`categorical_poponly_post` and `mixture_gauss3_post` (gate `check_post`); brms's further options are not offered (D48), and brms's `log_lik` at
 extreme linear predictors, loo's MCSE of an observation with `elpd_loo` below about -372 and loo's relative efficiencies
 of very short chains differ (D49-D51); see [post-processing](post-processing.md).
 

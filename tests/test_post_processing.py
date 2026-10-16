@@ -3,7 +3,7 @@ them with brms on the frozen cases ``gauss_varint_post``, ``poisson_varint_post`
 
 - ``log_lik`` at the frozen brms points is the model's own pointwise log density (the per-row terms of the likelihood whose
   sum gate G2 checks against brms's ``log_prob``), on one case of every family and of each feature (weights, distributional
-  formulas, monotonic terms, offsets, correlated and nested group terms);
+  formulas, monotonic terms, offsets, correlated and nested group terms) and on the three mixture cases (C05);
 - PSIS-LOO and the relative efficiencies against loo 2.9.0's outputs on the deterministic inputs of ``tests/loo_probes``
   (ties at the Pareto tail's cutoff, tails whose fit does not exist, log ratios beyond the double range, ``r_eff`` given,
   NA and computed), and the PSIS steps against ArviZ's ``psislw`` where the two take the same tail;
@@ -39,7 +39,8 @@ INPUT_PRINTS = json.loads(FINGERPRINTS.read_text())   # platform-independent: th
 CROSS_CHECK = ["gauss_weighted", "gauss_distributional_sigma", "gauss_slope_correlated", "gauss_nested_colon", "student_learned_nu",
                "poisson_offset", "negbinomial_distributional_shape", "gamma_weighted", "lognormal_varint", "beta_distributional_phi",
                "bernoulli_probit", "bernoulli_weighted", "binomial_monotonic", "binomial_probit", "zero_inflated_poisson_varint",
-               "hurdle_poisson_varint", "cumulative_monotonic", "categorical_poponly_categorical"]
+               "hurdle_poisson_varint", "cumulative_monotonic", "categorical_poponly_categorical", "mixture_gauss_gauss",
+               "mixture_gauss3_categorical", "mixture_gauss_default_priors"]
 
 
 def _bundle(case_id):

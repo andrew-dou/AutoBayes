@@ -17,6 +17,8 @@ Refused, naming the construct: other component families (divergence D52), ``orde
 or on ``sigma<k>`` and ``theta`` (D54), group-level terms, offsets, addition terms and ``mo()`` (D55); ``0 +`` and
 ``center_predictors=False``, which leave no intercept to order, as brms refuses them. Checked against brms in the oracle
 cases ``mixture_gauss_gauss``, ``mixture_gauss3_categorical`` and ``mixture_gauss_default_priors``, not assumed.
+``log_lik()``, ``loo()`` and ``bayes_R2()`` (C07) take a mixture: ``FamilySpec.log_likelihood`` is each row's ``log_mix``
+of the components' Normal densities (brms's ``log_lik_mixture``), checked against the frozen case ``mixture_gauss3_post``.
 """
 from __future__ import annotations
 
@@ -254,6 +256,15 @@ def _draw_response(model, post, eta, mean, df, rng):
     return gaussian_mixture_random(eta, sigma[..., None, :], theta[..., None, :], rng)
 
 
+def _log_likelihood(model, post, eta):
+    """brms's ``log_lik`` (C07, docs/post-processing.md): each row's ``log_mix(theta, normal_lpdf(y_i | mu_1,i, sigma_1), ...,
+    normal_lpdf(y_i | mu_K,i, sigma_K))`` per draw, ``eta`` the components' linear predictors ``(chain, draw, row, K)``."""
+    from autobayes.families.pointwise import gaussian_mixture
+
+    theta, sigma = _draws(model, post)
+    return gaussian_mixture(model.design.y, eta, sigma[..., None, :], theta[..., None, :])
+
+
 # -- description ----------------------------------------------------------------------------------------------------------
 def default_prior_labels(model) -> list[str]:
     """``Model.default_prior_labels`` of a mixture: ``mu<k>:intercept``, ``mu<k>:b:<column>`` and ``sigma<k>`` per component,
@@ -395,4 +406,5 @@ MIXTURE = FamilySpec(
     bambi_setup=_bambi_setup,
     check_formula=_check_formula,
     mixture=True,
+    log_likelihood=_log_likelihood,                                 # C07: log_lik(), checked against the graph's own density and the frozen mixture_gauss3_post
 )

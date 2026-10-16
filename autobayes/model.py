@@ -1713,6 +1713,28 @@ class Model:
         return point
 
     # -- description -------------------------------------------------------------------
+    def _described_value_names(self) -> list[str]:
+        """PyMC's value variables in the order ``describe()`` lists them: PyMC's order, except that the family's auxiliary
+        parameters without a formula of their own take the places PyMC gives them in one fixed order: the scale parameter
+        (``sigma_log__``, ...), then the zero parameter (``zi_logodds__``, ``hu_logodds__``), then the learned parameters
+        (``nu_interval__``), so ``sigma_log__`` before ``nu_interval__``, the order of brms's ``real<lower=0> sigma`` and
+        ``real<lower=1> nu``. Bambi creates these variables in the iteration order of a set of their names
+        (``Family.auxiliary_parameters``), which depends on ``PYTHONHASHSEED``: with two of them (a Student-t model that
+        learns nu) PyMC's order of the two varies from process to process, while the model, its density and its target
+        identity do not."""
+        names = [v.name for v in self.pymc_model.value_vars]
+        fam, n = self.family_spec, self.names
+        fixed = []
+        if fam.scale_parameter is not None and fam.scale_parameter not in self.spec.dpar_names:
+            fixed.append(f"{n[fam.scale_parameter]}_log__")
+        if fam.zero_parameter is not None:
+            fixed.append(f"{n[fam.zero_parameter]}_logodds__")
+        fixed += [f"{n[name]}_interval__" for name in self.learned_parameters]
+        present = [name for name in fixed if name in names]
+        for i, name in zip([i for i, v in enumerate(names) if v in present], present):
+            names[i] = name
+        return names
+
     def describe(self) -> str:
         if self.family_spec.mixture:                          # C05: the components, theta and their priors
             from autobayes.families.mixture import describe
@@ -2114,8 +2136,8 @@ class Model:
             acn = self.autocor_names
             roles[acn[part]] = (f"{part}[1..{order}], the {_AUTOCOR_MEANING[part]} coefficients (brms's {part}; vector, dims "
                                 f"{acn[part + '_coordinate']}, unconstrained)")
-        for v in self.pymc_model.value_vars:
-            lines.append(f"  {v.name:<24} {roles.get(v.name, f'b_{v.name}')}")
+        for name in self._described_value_names():
+            lines.append(f"  {name:<24} {roles.get(name, f'b_{name}')}")
         lines.append("Deterministic: " + "".join(f"{names['group_effect']} = {effect(g) if c == 'Intercept' else slope_effect(g, c)}, "
                                                  for (g, c), names in self.group_coefficient_names.items())
                      + "".join(f"{names['cor']} = Cor_{g} = L_{g} L_{g}^T, " for g, names in self.correlation_names.items()) + fam.deterministic_note

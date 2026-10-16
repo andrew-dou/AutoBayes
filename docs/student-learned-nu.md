@@ -40,6 +40,13 @@ Student-t family, docs/families.md); a model built with `nu=None` lists it in `m
 - `describe()` gives the prior, the truncation and the sampled coordinate `log(nu - 1)`; the target identity records the
   nu prior only when there is one; `fit_record` carries it under `priors` (with no `family_parameters`) and the nu
   posterior row; `prior_predictive()` draws nu from the truncated prior.
+- The order of the sampled variables. Bambi creates `sigma` and `nu` in the iteration order of a set of their names
+  (`Family.auxiliary_parameters`), which depends on `PYTHONHASHSEED`, so PyMC's order of `sigma_log__` and `nu_interval__`
+  (`model.pymc_model.value_vars`) varies from one Python process to the next; the model, its density and its target identity
+  do not. `describe()` lists them in one fixed order whatever PyMC's is: `sigma_log__`, then `nu_interval__` (the order of
+  brms's `real<lower=0> sigma` and `real<lower=1> nu`), in the places PyMC gives the two (`Model._described_value_names`:
+  generally, a family's scale parameter, then its zero parameter, then its learned parameters).
+  `tests/test_student_learned_nu.py` builds the model under two hash seeds that order the set differently and compares.
 
 ## Evidence
 
