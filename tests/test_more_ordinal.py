@@ -1,5 +1,5 @@
 """More ordinal models (brms-parity D04, docs/ordinal-categorical.md): brms's ``sratio``, ``cratio`` and ``acat`` families under
-the logit link, category-specific effects ``cs(x)``, and the cumulative family's probit link, built but withheld (D88).
+the logit link, category-specific effects ``cs(x)``, and the cumulative family's probit link, accepted with P6's reference (D88).
 
 The row densities and their gradients against a 50-digit reference written from the published definitions, on both paths
 (PyTensor's gradient and JAX's autodiff of the jaxified graph, what NumPyro differentiates); the models' graph, density and
@@ -10,7 +10,6 @@ default prior tables, and the probit link's park. No MCMC; the brms comparison i
 import json
 import re
 from decimal import Context, Decimal, localcontext
-from types import MappingProxyType
 
 import arviz as az
 import numpy as np
@@ -188,7 +187,7 @@ def test_rows_are_exact_and_never_nan_on_both_paths(kind, mode):
 
 @pytest.mark.parametrize("mode", ["pytensor", "jax"])
 def test_probit_rows_are_exact_and_never_nan_on_both_paths(mode):
-    """The withheld cumulative probit link's rows (D88): exact to 1e-12 for thresholds 1.5 apart and more. Two thresholds
+    """The cumulative probit link's rows (D88): exact to 1e-12 for thresholds 1.5 apart and more. Two thresholds
     closer than about 1e-6 in a far tail keep about ``|tau - eta| eps / gap`` relative accuracy, the log Normal mass between
     them being a difference of two log tail probabilities (likelihoods.normal_log_mass); Stan's is no better there."""
     y, eta = _grid(len(TAU_PROBIT) + 1)
@@ -557,28 +556,21 @@ def test_registry():
     assert not any(FAMILIES[f].category_specific for f in FAMILIES if f not in FAMS)
 
 
-# -- the withheld cumulative probit link (D88) -------------------------------------------------------------------------------
-def test_the_probit_link_is_withheld_with_its_reason():
-    for call in (lambda: ab.cumulative("y ~ x", data(), priors(False), link="probit"),
-                 lambda: ab.default_priors("y ~ x", data(), family="cumulative", link="probit")):
-        with pytest.raises(ValueError, match="the probit link of the cumulative family is withheld: brms's gradient of the frozen case "
-                                             "cumulative_probit_varint .* divergence D88"):
-            call()
+# -- the cumulative probit link (D88): accepted with two-reference acceptance (P6) ---------------------------------------------
+def test_the_probit_link_is_offered():
+    m = ab.cumulative("y ~ x", data(), priors(False), link="probit")
+    assert m.link == "probit" and m.family_spec.ordered_thresholds
+    assert ab.default_priors("y ~ x", data(), family="cumulative", link="probit") is not None
 
 
-def test_the_withheld_probit_link_equals_brms_but_for_brms_s_gradient(monkeypatch):
-    """With the park lifted (the registry patched for this test), the model of the frozen case cumulative_probit_varint passes
-    G1, G2's log densities and G3-G6 against brms; its gradient equals the exact one (by hand, the derivative in b of the
-    probit likelihood and b's prior) where brms's is off by 6.5e-5 relative (D88)."""
-    from dataclasses import replace
-
-    import autobayes.families as families
-    from autobayes.families.cumulative import CUMULATIVE, _probit
+def test_the_probit_link_equals_brms_but_for_brms_s_gradient():
+    """The model of the frozen case cumulative_probit_varint passes G1, G2's log densities and G3-G6 against brms; its gradient
+    equals the exact one (by hand, the derivative in b of the probit likelihood and b's prior) where brms's is off by 6.5e-5
+    relative (D88), which is why the case opts in to P6's reference for the gradient."""
+    from autobayes.families.cumulative import _probit
     from tests.oracle import gates
     from tests.oracle.adapter import natural_point, value_layout
 
-    unparked = replace(CUMULATIVE, links=MappingProxyType({"probit": _probit}))
-    monkeypatch.setattr(families, "FAMILIES", MappingProxyType({**FAMILIES, "cumulative": unparked}))
     b = gates.Bundle("cumulative_probit_varint")
     assert b.model.link == "probit" and b.model.family_spec is _probit() and b.model.family_spec.ordered_thresholds
     for check in (gates.check_design, gates.check_logp, gates.check_derived, gates.check_predictions, gates.check_jax,
