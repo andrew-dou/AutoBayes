@@ -1,0 +1,35 @@
+{
+ "factors": {
+  "g": [
+   "a",
+   "b",
+   "c",
+   "d",
+   "e",
+   "f"
+  ]
+ },
+ "family": {
+  "family": "acat",
+  "link": "logit"
+ },
+ "formula": "ord ~ w + cs(x) + (1 | g)",
+ "id": "acat_cs",
+ "n_points": 8,
+ "priors": [
+  {
+   "class": "Intercept",
+   "prior": "normal(0, 3)"
+  },
+  {
+   "class": "b",
+   "prior": "normal(0, 1.5)"
+  },
+  {
+   "class": "sd",
+   "group": "g",
+   "prior": "normal(0, 1)"
+  }
+ ],
+ "seed": 627
+}

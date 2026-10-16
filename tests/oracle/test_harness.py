@@ -58,6 +58,46 @@ def test_frozen_data_regenerates_byte_for_byte(case_id, tmp_path):
     assert (data["size"] >= 1).all()
 
 
+LOO_COMPARE = [cid for cid in FROZEN if "loo_compare" in fx.load_case(cid)["brms"]]
+
+
+@pytest.mark.parametrize("case_id", LOO_COMPARE)
+def test_loo_compare_is_with_a_frozen_case_on_the_same_data(case_id):
+    """D05: a case whose fixture compares its model with another (``brms.loo_compare``, the other case's frozen brms section)
+    names a frozen case on the same data, and the comparison's other model is that case's fixture: the same points (its
+    log density there) and the same pointwise elpd_loo and elpd_waic as its own ``post`` block; this case's column is its own."""
+    case = fx.load_case(case_id)
+    other = fx.load_case(case["brms"]["loo_compare"]["id"])
+    assert fx.has_fixture(other["id"]) and case["autobayes"].get("compare_with") == other["id"]
+    assert case["brms"]["loo_compare"] == fx.frozen_section(other)
+    assert case["data"] == other["data"]
+    assert (fx.fixture_dir(case_id) / "data.csv").read_bytes() == (fx.fixture_dir(other["id"]) / "data.csv").read_bytes()
+    ours, theirs = fx.Fixture.load(case_id), fx.Fixture.load(other["id"])
+    cmp = ours.raw["post"]["loo_compare"]
+    assert list(cmp["models"]) == list(cmp["elpd_loo"]["colnames"]) == [case_id, other["id"]]
+    np.testing.assert_allclose(fx.decode(cmp["other_lp"]), [p.lp for p in theirs.points], rtol=1e-12, atol=0)
+    for criterion in ("loo", "waic"):
+        elpd = fx.decode(cmp[f"elpd_{criterion}"])
+        for column, fixture in enumerate((ours, theirs)):
+            block = fixture.raw["post"][criterion]["pointwise"]
+            pointwise = fx.decode(block)[:, list(block["colnames"]).index(f"elpd_{criterion}")]
+            np.testing.assert_allclose(elpd[:, column], pointwise, rtol=1e-12, atol=0)
+
+
+@pytest.mark.parametrize("case_id", [cid for cid in FROZEN if {"hypothesis", "conditional_effects"} & set(fx.load_case(cid)["brms"])])
+def test_hypothesis_and_conditional_effects_are_recorded_as_asked(case_id):
+    """D06: one row and one column of draws per hypothesis, one table per effect (its grid, estimate__, se__, lower__, upper__)."""
+    case = fx.load_case(case_id)
+    brms, post = case["brms"], fx.Fixture.load(case_id).raw["post"]
+    if "hypothesis" in brms:
+        assert len(post["hypothesis"]["table"]["values"]["Hypothesis"]) == len(brms["hypothesis"])
+        assert fx.decode(post["hypothesis"]["samples"]).shape == (fx.frozen_section(case)["n_points"], len(brms["hypothesis"]))
+    if "conditional_effects" in brms:
+        assert list(post["conditional_effects"]) == brms["conditional_effects"]
+        for effect, table in post["conditional_effects"].items():
+            assert {effect, "estimate__", "se__", "lower__", "upper__"} <= set(table["columns"])
+
+
 def _sorted_levels(fixture, group):
     (grp,) = [g for g in fixture.groups if g["group"] == group]
     assert list(grp["levels"]) == sorted(grp["levels"]), "the direct indexing below needs sorted brms levels"

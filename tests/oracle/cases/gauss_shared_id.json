@@ -1,0 +1,103 @@
+{
+ "id": "gauss_shared_id",
+ "tier": "D",
+ "feature": "D08_cs_mm_gr",
+ "note": "D08: bf(y ~ x + (1 + x |p| g), sigma ~ (1 |p| g)): one group of three correlated coefficients (mu's Intercept and x, sigma's Intercept; groups[*].dpar via extras group_scope), cholesky_factor_corr[3] L_1 under lkj(2), z_1 a matrix; standata Z_1_1, Z_1_2, Z_1_sigma_3, X_sigma; brms writes (1 + x |p| g) + (1 |p| h) off as \"Can only combine group-level terms of the same grouping factors\"",
+ "seed": 630,
+ "n_points": 8,
+ "data": {
+  "generator": "tier_d",
+  "seed": 530,
+  "n": 36,
+  "newdata": {
+   "seed": 630,
+   "n": 5
+  }
+ },
+ "brms": {
+  "formula": [
+   "y ~ x + (1 + x |p| g)",
+   "sigma ~ (1 |p| g)"
+  ],
+  "family": {
+   "family": "gaussian"
+  },
+  "factors": {
+   "g": [
+    "a",
+    "b",
+    "c",
+    "d",
+    "e",
+    "f"
+   ]
+  },
+  "priors": [
+   {
+    "prior": "normal(0, 5)",
+    "class": "Intercept"
+   },
+   {
+    "prior": "normal(0, 2)",
+    "class": "b"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "sd"
+   },
+   {
+    "prior": "lkj(2)",
+    "class": "cor"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "Intercept",
+    "dpar": "sigma"
+   }
+  ],
+  "extras": [
+   "group_scope"
+  ]
+ },
+ "autobayes": {
+  "constructor": "gaussian",
+  "formula": [
+   "y ~ x + (1 + x |p| g)",
+   "sigma ~ (1 |p| g)"
+  ],
+  "kwargs": {},
+  "priors": {
+   "intercept": [
+    "Normal",
+    0,
+    5
+   ],
+   "b": [
+    "Normal",
+    0,
+    2
+   ],
+   "sd": [
+    "HalfNormal",
+    1
+   ],
+   "cor": {
+    "g": [
+     "LKJ",
+     2
+    ]
+   },
+   "sigma": {
+    "intercept": [
+     "Normal",
+     0,
+     1
+    ]
+   }
+  }
+ },
+ "gate": {
+  "expect": "fail",
+  "reason": "D08_cs_mm_gr not implemented; remove this field when it lands"
+ }
+}

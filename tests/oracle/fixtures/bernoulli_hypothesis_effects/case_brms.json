@@ -1,0 +1,35 @@
+{
+ "conditional_effects": [
+  "x",
+  "z"
+ ],
+ "factors": {
+  "z": [
+   "p",
+   "q",
+   "r"
+  ]
+ },
+ "family": {
+  "family": "bernoulli"
+ },
+ "formula": "yb ~ x + z",
+ "hypothesis": [
+  "Intercept < 0",
+  "x > 0",
+  "zq - zr = 0"
+ ],
+ "id": "bernoulli_hypothesis_effects",
+ "n_points": 8,
+ "priors": [
+  {
+   "class": "Intercept",
+   "prior": "normal(0, 2.5)"
+  },
+  {
+   "class": "b",
+   "prior": "normal(0, 1.5)"
+  }
+ ],
+ "seed": 624
+}

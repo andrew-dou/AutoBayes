@@ -1,0 +1,82 @@
+{
+ "id": "beta_binomial_varint",
+ "tier": "D",
+ "feature": "D02_discrete_families",
+ "note": "brms beta_binomial with trials(size): logit link on the success probability mu, precision phi (log); standata trials; epred = trials * inv_logit(linpred)",
+ "seed": 606,
+ "n_points": 8,
+ "data": {
+  "generator": "tier_d",
+  "seed": 506,
+  "n": 36,
+  "newdata": {
+   "seed": 606,
+   "n": 5
+  }
+ },
+ "brms": {
+  "formula": "k | trials(size) ~ x + (1 | g)",
+  "family": {
+   "family": "beta_binomial"
+  },
+  "factors": {
+   "g": [
+    "a",
+    "b",
+    "c",
+    "d",
+    "e",
+    "f"
+   ]
+  },
+  "priors": [
+   {
+    "prior": "normal(0, 2.5)",
+    "class": "Intercept"
+   },
+   {
+    "prior": "normal(0, 1.5)",
+    "class": "b"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "sd",
+    "group": "g"
+   },
+   {
+    "prior": "gamma(0.01, 0.01)",
+    "class": "phi"
+   }
+  ]
+ },
+ "autobayes": {
+  "constructor": "beta_binomial",
+  "formula": "k | trials(size) ~ x + (1 | g)",
+  "kwargs": {},
+  "priors": {
+   "intercept": [
+    "Normal",
+    0,
+    2.5
+   ],
+   "b": [
+    "Normal",
+    0,
+    1.5
+   ],
+   "sd": [
+    "HalfNormal",
+    1
+   ],
+   "phi": [
+    "Gamma",
+    0.01,
+    0.01
+   ]
+  }
+ },
+ "gate": {
+  "expect": "fail",
+  "reason": "D02_discrete_families not implemented; remove this field when it lands"
+ }
+}

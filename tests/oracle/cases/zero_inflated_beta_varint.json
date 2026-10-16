@@ -1,0 +1,91 @@
+{
+ "id": "zero_inflated_beta_varint",
+ "tier": "D",
+ "feature": "D03_more_zero_inflated_hurdle",
+ "note": "brms zero_inflated_beta on tier_d's zprop (exact zeros): logit link on mu, phi (log), zi (other); epred = (1 - zi) inv_logit(linpred)",
+ "seed": 611,
+ "n_points": 8,
+ "data": {
+  "generator": "tier_d",
+  "seed": 511,
+  "n": 36,
+  "newdata": {
+   "seed": 611,
+   "n": 5
+  }
+ },
+ "brms": {
+  "formula": "zprop ~ x + (1 | g)",
+  "family": {
+   "family": "zero_inflated_beta"
+  },
+  "factors": {
+   "g": [
+    "a",
+    "b",
+    "c",
+    "d",
+    "e",
+    "f"
+   ]
+  },
+  "priors": [
+   {
+    "prior": "normal(0, 2)",
+    "class": "Intercept"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "b"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "sd",
+    "group": "g"
+   },
+   {
+    "prior": "gamma(0.01, 0.01)",
+    "class": "phi"
+   },
+   {
+    "prior": "beta(2, 2)",
+    "class": "zi"
+   }
+  ]
+ },
+ "autobayes": {
+  "constructor": "zero_inflated_beta",
+  "formula": "zprop ~ x + (1 | g)",
+  "kwargs": {},
+  "priors": {
+   "intercept": [
+    "Normal",
+    0,
+    2
+   ],
+   "b": [
+    "Normal",
+    0,
+    1
+   ],
+   "sd": [
+    "HalfNormal",
+    1
+   ],
+   "phi": [
+    "Gamma",
+    0.01,
+    0.01
+   ],
+   "zi": [
+    "Beta",
+    2,
+    2
+   ]
+  }
+ },
+ "gate": {
+  "expect": "fail",
+  "reason": "D03_more_zero_inflated_hurdle not implemented; remove this field when it lands"
+ }
+}

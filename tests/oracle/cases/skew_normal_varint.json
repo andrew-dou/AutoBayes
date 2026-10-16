@@ -1,0 +1,90 @@
+{
+ "id": "skew_normal_varint",
+ "tier": "D",
+ "feature": "D01_continuous_families",
+ "note": "brms skew_normal: identity link on the mean mu, sigma (log), skewness alpha (unbounded, identity), alpha prior normal(0, 4) (brms's default); epred = linpred",
+ "seed": 603,
+ "n_points": 8,
+ "data": {
+  "generator": "tier_d",
+  "seed": 503,
+  "n": 36,
+  "newdata": {
+   "seed": 603,
+   "n": 5
+  }
+ },
+ "brms": {
+  "formula": "y ~ x + (1 | g)",
+  "family": {
+   "family": "skew_normal"
+  },
+  "factors": {
+   "g": [
+    "a",
+    "b",
+    "c",
+    "d",
+    "e",
+    "f"
+   ]
+  },
+  "priors": [
+   {
+    "prior": "normal(0, 5)",
+    "class": "Intercept"
+   },
+   {
+    "prior": "normal(0, 2)",
+    "class": "b"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "sd",
+    "group": "g"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "sigma"
+   },
+   {
+    "prior": "normal(0, 4)",
+    "class": "alpha"
+   }
+  ]
+ },
+ "autobayes": {
+  "constructor": "skew_normal",
+  "formula": "y ~ x + (1 | g)",
+  "kwargs": {},
+  "priors": {
+   "intercept": [
+    "Normal",
+    0,
+    5
+   ],
+   "b": [
+    "Normal",
+    0,
+    2
+   ],
+   "sd": [
+    "HalfNormal",
+    1
+   ],
+   "sigma": [
+    "HalfNormal",
+    1
+   ],
+   "alpha": [
+    "Normal",
+    0,
+    4
+   ]
+  }
+ },
+ "gate": {
+  "expect": "fail",
+  "reason": "D01_continuous_families not implemented; remove this field when it lands"
+ }
+}

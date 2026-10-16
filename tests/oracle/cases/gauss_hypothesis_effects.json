@@ -1,0 +1,114 @@
+{
+ "id": "gauss_hypothesis_effects",
+ "tier": "D",
+ "feature": "D06_hypothesis_conditional_effects",
+ "note": "D06: hypothesis() on class b with brms's defaults (alpha 0.05, robust = FALSE): Estimate mean, Est.Error sd, CI the 2.5/97.5 % quantiles of a point hypothesis and the 5/95 % of a one-sided one, Evid.Ratio P(H)/P(not H) over the draws of a one-sided hypothesis and NA (stored NaN) for a point hypothesis without prior draws, Post.Prob likewise; samples are (draws, hypotheses). conditional_effects() for x (100 grid points from min to max) and z (its levels): the other numeric predictors at their means, z at its first level, the group term left out (g is null), the response column at the response's mean; estimate__ median, se__ mad (x 1.4826), lower__/upper__ 2.5/97.5 % quantiles (type 7) of posterior_epred over the draws (checked on the frozen points)",
+ "seed": 623,
+ "n_points": 8,
+ "data": {
+  "generator": "tier_d",
+  "seed": 523,
+  "n": 36,
+  "newdata": {
+   "seed": 623,
+   "n": 5
+  }
+ },
+ "brms": {
+  "formula": "y ~ x + w + z + (1 | g)",
+  "family": {
+   "family": "gaussian"
+  },
+  "factors": {
+   "g": [
+    "a",
+    "b",
+    "c",
+    "d",
+    "e",
+    "f"
+   ],
+   "z": [
+    "p",
+    "q",
+    "r"
+   ]
+  },
+  "priors": [
+   {
+    "prior": "normal(0, 5)",
+    "class": "Intercept"
+   },
+   {
+    "prior": "normal(0, 2)",
+    "class": "b"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "sd",
+    "group": "g"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "sigma"
+   }
+  ],
+  "hypothesis": [
+   "x > 0",
+   "x + w = 0",
+   "zr < zq"
+  ],
+  "conditional_effects": [
+   "x",
+   "z"
+  ]
+ },
+ "autobayes": {
+  "constructor": "gaussian",
+  "formula": "y ~ x + w + z + (1 | g)",
+  "kwargs": {
+   "categorical": {
+    "z": "p"
+   }
+  },
+  "priors": {
+   "intercept": [
+    "Normal",
+    0,
+    5
+   ],
+   "b": [
+    "Normal",
+    0,
+    2
+   ],
+   "sd": [
+    "HalfNormal",
+    1
+   ],
+   "sigma": [
+    "HalfNormal",
+    1
+   ]
+  },
+  "post": [
+   "hypothesis",
+   "conditional_effects"
+  ],
+  "post_args": {
+   "hypothesis": [
+    "x > 0",
+    "x + w = 0",
+    "zr < zq"
+   ],
+   "conditional_effects": [
+    "x",
+    "z"
+   ]
+  }
+ },
+ "gate": {
+  "expect": "fail",
+  "reason": "D06_hypothesis_conditional_effects not implemented; remove this field when it lands"
+ }
+}

@@ -1,0 +1,88 @@
+{
+ "id": "gauss_mm",
+ "tier": "D",
+ "feature": "D08_cs_mm_gr",
+ "note": "D08: (1 | mm(g, g2, weights = cbind(wmm1, wmm2))): brms's group mmgg2 with the union of the levels; standata J_1_1, J_1_2 (memberships), W_1_1, W_1_2 (wmm1 and wmm2, which sum to 1 on every row), Z_1_1_1, Z_1_1_2; mu += W_1_1 r_1_1[J_1_1] + W_1_2 r_1_1[J_1_2]",
+ "seed": 628,
+ "n_points": 8,
+ "data": {
+  "generator": "tier_d",
+  "seed": 528,
+  "n": 36,
+  "newdata": {
+   "seed": 628,
+   "n": 5
+  }
+ },
+ "brms": {
+  "formula": "y ~ x + (1 | mm(g, g2, weights = cbind(wmm1, wmm2)))",
+  "family": {
+   "family": "gaussian"
+  },
+  "factors": {
+   "g": [
+    "a",
+    "b",
+    "c",
+    "d",
+    "e",
+    "f"
+   ],
+   "g2": [
+    "a",
+    "b",
+    "c",
+    "d",
+    "e",
+    "f"
+   ]
+  },
+  "priors": [
+   {
+    "prior": "normal(0, 5)",
+    "class": "Intercept"
+   },
+   {
+    "prior": "normal(0, 2)",
+    "class": "b"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "sd"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "sigma"
+   }
+  ]
+ },
+ "autobayes": {
+  "constructor": "gaussian",
+  "formula": "y ~ x + (1 | mm(g, g2, weights = cbind(wmm1, wmm2)))",
+  "kwargs": {},
+  "priors": {
+   "intercept": [
+    "Normal",
+    0,
+    5
+   ],
+   "b": [
+    "Normal",
+    0,
+    2
+   ],
+   "sd": [
+    "HalfNormal",
+    1
+   ],
+   "sigma": [
+    "HalfNormal",
+    1
+   ]
+  }
+ },
+ "gate": {
+  "expect": "fail",
+  "reason": "D08_cs_mm_gr not implemented; remove this field when it lands"
+ }
+}

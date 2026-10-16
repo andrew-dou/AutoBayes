@@ -1,0 +1,82 @@
+{
+ "id": "weibull_varint",
+ "tier": "D",
+ "feature": "D01_continuous_families",
+ "note": "brms weibull: log link on the mean mu, shape (log transform); epred = exp(linpred) (checked on the frozen points)",
+ "seed": 601,
+ "n_points": 8,
+ "data": {
+  "generator": "tier_d",
+  "seed": 501,
+  "n": 36,
+  "newdata": {
+   "seed": 601,
+   "n": 5
+  }
+ },
+ "brms": {
+  "formula": "ypos ~ x + (1 | g)",
+  "family": {
+   "family": "weibull"
+  },
+  "factors": {
+   "g": [
+    "a",
+    "b",
+    "c",
+    "d",
+    "e",
+    "f"
+   ]
+  },
+  "priors": [
+   {
+    "prior": "normal(0, 2)",
+    "class": "Intercept"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "b"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "sd",
+    "group": "g"
+   },
+   {
+    "prior": "gamma(0.01, 0.01)",
+    "class": "shape"
+   }
+  ]
+ },
+ "autobayes": {
+  "constructor": "weibull",
+  "formula": "ypos ~ x + (1 | g)",
+  "kwargs": {},
+  "priors": {
+   "intercept": [
+    "Normal",
+    0,
+    2
+   ],
+   "b": [
+    "Normal",
+    0,
+    1
+   ],
+   "sd": [
+    "HalfNormal",
+    1
+   ],
+   "shape": [
+    "Gamma",
+    0.01,
+    0.01
+   ]
+  }
+ },
+ "gate": {
+  "expect": "fail",
+  "reason": "D01_continuous_families not implemented; remove this field when it lands"
+ }
+}

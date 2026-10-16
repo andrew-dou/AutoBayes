@@ -1,0 +1,38 @@
+{
+ "factors": {
+  "g": [
+   "a",
+   "b",
+   "c",
+   "d",
+   "e",
+   "f"
+  ]
+ },
+ "family": {
+  "family": "hurdle_poisson"
+ },
+ "formula": "zcnt | weights(w) ~ x + (1 | g)",
+ "id": "hurdle_poisson_weighted",
+ "n_points": 8,
+ "priors": [
+  {
+   "class": "Intercept",
+   "prior": "normal(0, 2)"
+  },
+  {
+   "class": "b",
+   "prior": "normal(0, 1)"
+  },
+  {
+   "class": "sd",
+   "group": "g",
+   "prior": "normal(0, 1)"
+  },
+  {
+   "class": "hu",
+   "prior": "beta(2, 2)"
+  }
+ ],
+ "seed": 616
+}

@@ -1,0 +1,89 @@
+{
+ "id": "bernoulli_hypothesis_effects",
+ "tier": "D",
+ "feature": "D06_hypothesis_conditional_effects",
+ "note": "D06 on a logit model: hypothesis() as in gauss_hypothesis_effects ('Intercept' is b_Intercept, the raw-scale intercept); conditional_effects() summarises posterior_epred, the probability inv_logit(eta), over the draws",
+ "seed": 624,
+ "n_points": 8,
+ "data": {
+  "generator": "tier_d",
+  "seed": 524,
+  "n": 36,
+  "newdata": {
+   "seed": 624,
+   "n": 5
+  }
+ },
+ "brms": {
+  "formula": "yb ~ x + z",
+  "family": {
+   "family": "bernoulli"
+  },
+  "factors": {
+   "z": [
+    "p",
+    "q",
+    "r"
+   ]
+  },
+  "priors": [
+   {
+    "prior": "normal(0, 2.5)",
+    "class": "Intercept"
+   },
+   {
+    "prior": "normal(0, 1.5)",
+    "class": "b"
+   }
+  ],
+  "hypothesis": [
+   "Intercept < 0",
+   "x > 0",
+   "zq - zr = 0"
+  ],
+  "conditional_effects": [
+   "x",
+   "z"
+  ]
+ },
+ "autobayes": {
+  "constructor": "bernoulli",
+  "formula": "yb ~ x + z",
+  "kwargs": {
+   "categorical": {
+    "z": "p"
+   }
+  },
+  "priors": {
+   "intercept": [
+    "Normal",
+    0,
+    2.5
+   ],
+   "b": [
+    "Normal",
+    0,
+    1.5
+   ]
+  },
+  "post": [
+   "hypothesis",
+   "conditional_effects"
+  ],
+  "post_args": {
+   "hypothesis": [
+    "Intercept < 0",
+    "x > 0",
+    "zq - zr = 0"
+   ],
+   "conditional_effects": [
+    "x",
+    "z"
+   ]
+  }
+ },
+ "gate": {
+  "expect": "fail",
+  "reason": "D06_hypothesis_conditional_effects not implemented; remove this field when it lands"
+ }
+}
