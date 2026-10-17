@@ -1636,12 +1636,12 @@
     "D03_more_zero_inflated_hurdle",
     "D04_more_ordinal"
    ],
-   "status": "fixtures_frozen",
+   "status": "implementing",
    "summary": "zero_one_inflated_beta, zero_inflated_beta_binomial, hurdle_cumulative, xbeta",
    "pr": null,
-   "attempts": 0,
+   "attempts": 1,
    "divergences": [],
-   "next_action": "implementation",
+   "next_action": "agent (opus), wave E1",
    "reserved_divergences": "D108-D111",
    "fixtures": {
     "pr": 70,
@@ -1660,12 +1660,12 @@
    "depends_on": [
     "D01_continuous_families"
    ],
-   "status": "fixtures_frozen",
+   "status": "implementing",
    "summary": "inverse.gaussian, von_mises, asym_laplace, frechet, gen_extreme_value",
    "pr": null,
-   "attempts": 0,
+   "attempts": 1,
    "divergences": [],
-   "next_action": "implementation",
+   "next_action": "agent (opus), wave E1",
    "reserved_divergences": "D112-D115",
    "fixtures": {
     "pr": 70,
@@ -1694,7 +1694,7 @@
    "pr": null,
    "attempts": 0,
    "divergences": [],
-   "next_action": "implementation",
+   "next_action": "wave E2, after E1 merges (shares family modules with E01/E02/E06)",
    "reserved_divergences": "D116-D119",
    "fixtures": {
     "pr": 70,
@@ -1722,7 +1722,7 @@
    "pr": null,
    "attempts": 0,
    "divergences": [],
-   "next_action": "implementation",
+   "next_action": "wave E2, after E1 merges (shares family modules with E01/E02/E06)",
    "reserved_divergences": "D120-D123",
    "fixtures": {
     "pr": 70,
@@ -1743,12 +1743,12 @@
     "D05_waic_loo_compare",
     "D06_hypothesis_conditional_effects"
    ],
-   "status": "fixtures_frozen",
+   "status": "implementing",
    "summary": "prior draws and Savage-Dickey evidence ratios in hypothesis(), interaction conditional_effects(), stacking weights",
    "pr": null,
-   "attempts": 0,
+   "attempts": 1,
    "divergences": [],
-   "next_action": "implementation",
+   "next_action": "agent (opus), wave E1",
    "reserved_divergences": "D124-D127",
    "fixtures": {
     "pr": 70,
@@ -1766,12 +1766,12 @@
    "depends_on": [
     "A12_links"
    ],
-   "status": "fixtures_frozen",
+   "status": "implementing",
    "summary": "further brms links for the Tier A families (e.g. poisson sqrt, Gamma inverse/identity, Beta probit/cloglog, cumulative cloglog)",
    "pr": null,
-   "attempts": 0,
+   "attempts": 1,
    "divergences": [],
-   "next_action": "implementation",
+   "next_action": "agent (opus), wave E1",
    "reserved_divergences": "D128-D131",
    "fixtures": {
     "pr": 70,
