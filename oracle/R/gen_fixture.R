@@ -46,6 +46,27 @@
 #   conditional_effects   a list of effects: conditional_effects() of the fit (brms's defaults: posterior_epred,
 #                   re_formula = NA, robust summaries, 100 grid points), one table per effect
 #
+# Opt-in per case (Tier E), each adding to the `post` block; a case without these keys is generated exactly as before:
+#
+#   prior_draws     true, with brm_args sample_prior = "yes": prior_draws() of the fixed-parameter fit, whose prior_* generated
+#                   quantities are drawn by Stan's RNG in the fixed-parameter run (seed 1, one chain per point); that run is made
+#                   twice and must give the same draws. The seeded points' `pars` leave the prior_* quantities out, because
+#                   constrain_pars() draws them anew on every call (everything else it returns must not change between calls).
+#                   hypothesis() of such a fit has Savage-Dickey evidence ratios for point hypotheses (brms's density_ratio()
+#                   of the posterior and prior draws); a point hypothesis on more than one parameter pairs its parameters'
+#                   prior draws through a random permutation (R's RNG), which the two-seed check catches
+#   hypothesis_seed hypothesis()'s seed argument (brms calls set.seed() with it): brms permutes the prior draws of every point
+#                   hypothesis, which moves a one-parameter evidence ratio (a kernel density at the point, order-free) only in its
+#                   last bit; the seed makes that bit reproducible. It would also make a many-parameter point hypothesis
+#                   reproducible, but its ratio would then depend on R's RNG, so a case lists one-parameter point hypotheses only
+#   extras          "loo_model_weights", with loo_compare: loo_model_weights() of the two fits (stacking, loo's default method)
+#                   and model_weights(weights = "stacking"), which must be the same weights
+#   dpar_epred      a list of distributional parameters: posterior_epred(dpar = ) of each on the fitted rows, (draws, rows), for a
+#                   parameter the points do not carry (gen_extreme_value's xi, which brms derives from tmp_xi, the data, mu and
+#                   sigma in the model block)
+#   conditional_effects   an interaction effect "x:z" or "x:w" is computed as any effect (brms's default int_conditions: the
+#                   levels of a factor, the mean and mean +/- sd of a numeric moderator)
+#
 # Nothing here samples, and nothing here evaluates code from the case: the formula is parsed with
 # as.formula(), the family is built with brms::brmsfamily() from named arguments, priors with set_prior().
 # Everything is deterministic given the case, the data and the package versions; a prediction or
@@ -178,12 +199,19 @@ for (i in which(vapply(upar_map, is.null, TRUE))) {    # a jointly constrained b
 }
 
 # -- seeded points: constrained values, log density, gradient --------------------------------------------
+prior_gq <- isTRUE(case$prior_draws)                  # opt-in (Tier E): a fit with sample_prior = "yes"
+if (prior_gq && !identical(case$brm_args$sample_prior, "yes")) stop("prior_draws needs brm_args sample_prior = \"yes\"")
 set.seed(case$seed)
 n_points <- case$n_points %||% 8L
 halfwidth <- case$point_halfwidth %||% 1.2            # opt-in: the box (-h, h) the points are drawn from
 pts <- lapply(seq_len(n_points), function(k) runif(n, -halfwidth, halfwidth))
 points <- lapply(pts, function(u) {
   cp <- constrain_pars(sf, u)
+  if (prior_gq) {                                     # Tier E: the prior_* generated quantities are drawn anew on every call
+    keep <- !startsWith(names(cp), "prior_")
+    if (!identical(cp[keep], constrain_pars(sf, u)[keep])) stop("constrain_pars() changes between calls beyond the prior draws")
+    cp <- cp[keep]
+  }
   lj <- log_prob(sf, u, adjust_transform = TRUE, gradient = TRUE)
   ln <- log_prob(sf, u, adjust_transform = FALSE, gradient = TRUE)
   vals <- c(lj, ln, attr(lj, "gradient"), attr(ln, "gradient"))
@@ -228,6 +256,17 @@ if (!is.null(nd)) predictions$newdata <- pred_block(nd)
 # brms's loo() on this fit: the relative efficiencies of one-draw chains are NA, which loo() ignores (r_eff = 1),
 # and a Pareto tail too short to fit (fewer than five draws in it) leaves raw importance weights and k-hat Inf.
 post <- list()
+if (prior_gq) {                                       # Tier E: the prior draws of the fixed-parameter run, made twice
+  sf3 <- sampling(sf@stanmodel, data = sdat, algorithm = "Fixed_param", chains = n_points, iter = 1, warmup = 0,
+                  init = inits, refresh = 0, seed = 1, cores = 1)
+  fit1b <- fit0
+  fit1b$fit <- sf3
+  fit1b <- rename_pars(fit1b)
+  pd <- prior_draws(fit1)
+  if (!identical(pd, prior_draws(fit1b))) stop("two fixed-parameter runs with the same seed give different prior draws")
+  if (!nrow(pd) || nrow(pd) != n_points) stop("prior_draws(): expected one row per point")
+  post$prior_draws <- enc(as.matrix(pd))              # (draws, variables), brms's names (b for a prior shared by class b)
+}
 if ("log_lik" %in% extras) post$log_lik <- enc(deterministic(function() log_lik(fit1)))           # (draws, rows)
 if ("bayes_R2" %in% extras) post$bayes_R2 <- enc(deterministic(function() bayes_R2(fit1, summary = FALSE)))
 if ("loo" %in% extras) {
@@ -294,10 +333,26 @@ if (!is.null(case$loo_compare)) {                     # D05: the other case's mo
     weights_loo = enc(cmp$weights_loo, dims = 2L), weights_pseudobma = enc(cmp$weights_pseudobma, dims = 2L),
     weights_models = I(names(cmp$weights_loo)),
     other_lp = enc(vapply(opts, function(u) as.numeric(log_prob(osf, u, adjust_transform = TRUE)), 0.0), dims = length(opts)))
+  if ("loo_model_weights" %in% extras) {              # Tier E: stacking weights of the two fits
+    sw <- deterministic(function() {
+      a <- add_criterion(fit1, "loo", model_name = ids[1])
+      b <- add_criterion(ofit1, "loo", model_name = ids[2])
+      list(lmw = loo_model_weights(a, b, model_names = ids), mw = model_weights(a, b, weights = "stacking", model_names = ids))
+    })
+    nm <- if (!is.null(names(sw$lmw))) names(sw$lmw) else rownames(sw$lmw)
+    if (!identical(as.character(nm), ids)) stop("loo_model_weights(): the weights are not named by the two models in order")
+    if (max(abs(as.numeric(sw$lmw) - as.numeric(sw$mw))) > 0) stop("loo_model_weights() and model_weights(weights = \"stacking\") differ")
+    post$loo_model_weights <- list(models = I(ids), method = "stacking", weights = enc(as.numeric(sw$lmw), dims = 2L))
+  }
 }
+if ("loo_model_weights" %in% extras && is.null(case$loo_compare)) stop("extras loo_model_weights needs loo_compare")
 if (length(case$hypothesis)) {                        # D06: brms's defaults (class "b", alpha 0.05, robust = FALSE)
-  hy <- deterministic(function() { h <- hypothesis(fit1, unlist(case$hypothesis)); h[c("hypothesis", "samples")] })
+  hy <- deterministic(function() { h <- hypothesis(fit1, unlist(case$hypothesis), seed = case$hypothesis_seed); h[c("hypothesis", "samples")] })
   post$hypothesis <- list(table = enc_frame(hy$hypothesis), samples = enc(as.matrix(hy$samples)))   # samples: (draws, hypotheses)
+}
+if (length(case$dpar_epred)) {                        # Tier E: a distributional parameter on the fitted rows, (draws, rows)
+  dps <- unlist(case$dpar_epred)
+  post$dpar_epred <- lapply(setNames(dps, dps), function(dp) enc(deterministic(function() posterior_epred(fit1, dpar = dp))))
 }
 if (length(case$conditional_effects)) {               # D06: one table per effect, in the order given
   ce <- deterministic(function() conditional_effects(fit1, effects = unlist(case$conditional_effects)))

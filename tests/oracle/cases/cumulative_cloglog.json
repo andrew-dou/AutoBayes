@@ -1,0 +1,77 @@
+{
+ "id": "cumulative_cloglog",
+ "tier": "E",
+ "feature": "E06_more_links",
+ "note": "E06: brms cumulative('cloglog'): P(y <= j) = 1 - exp(-exp(b_Intercept[j] - linpred)), ordered thresholds Intercept[nthres] (joint), nthres = 3, disc = 1; point_halfwidth 0.6: on the default box a middle category's probability underflows to 0 at a seeded point (a non-finite log density); epred is draws x N x 4 (likelihood and epred checked on the frozen points)",
+ "seed": 832,
+ "n_points": 8,
+ "data": {
+  "generator": "tier_e",
+  "seed": 732,
+  "n": 36,
+  "newdata": {
+   "seed": 832,
+   "n": 5
+  }
+ },
+ "brms": {
+  "formula": "ord ~ x + (1 | g)",
+  "family": {
+   "family": "cumulative",
+   "link": "cloglog"
+  },
+  "factors": {
+   "g": [
+    "a",
+    "b",
+    "c",
+    "d",
+    "e",
+    "f"
+   ]
+  },
+  "priors": [
+   {
+    "prior": "normal(0, 3)",
+    "class": "Intercept"
+   },
+   {
+    "prior": "normal(0, 1.5)",
+    "class": "b"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "sd",
+    "group": "g"
+   }
+  ],
+  "point_halfwidth": 0.6
+ },
+ "autobayes": {
+  "constructor": "cumulative",
+  "formula": "ord ~ x + (1 | g)",
+  "kwargs": {
+   "link": "cloglog"
+  },
+  "priors": {
+   "intercept": [
+    "Normal",
+    0,
+    3
+   ],
+   "b": [
+    "Normal",
+    0,
+    1.5
+   ],
+   "sd": [
+    "HalfNormal",
+    1
+   ]
+  }
+ },
+ "gate": {
+  "expect": "fail",
+  "reason": "E06_more_links not implemented; remove this field when it lands"
+ }
+}

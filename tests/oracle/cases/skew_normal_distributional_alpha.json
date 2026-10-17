@@ -1,0 +1,118 @@
+{
+ "id": "skew_normal_distributional_alpha",
+ "tier": "E",
+ "feature": "E03_contexts_newer_families",
+ "note": "E03: brms skew_normal with alpha ~ z (identity link): standata K_alpha, Kc_alpha, X_alpha (36 x 3); Intercept_alpha and b_alpha (identity); sigma (log); epred = linpred, the mean (checked on the frozen points)",
+ "seed": 816,
+ "n_points": 8,
+ "data": {
+  "generator": "tier_e",
+  "seed": 716,
+  "n": 36,
+  "newdata": {
+   "seed": 816,
+   "n": 5
+  }
+ },
+ "brms": {
+  "formula": [
+   "y ~ x + (1 | g)",
+   "alpha ~ z"
+  ],
+  "family": {
+   "family": "skew_normal"
+  },
+  "factors": {
+   "g": [
+    "a",
+    "b",
+    "c",
+    "d",
+    "e",
+    "f"
+   ],
+   "z": [
+    "p",
+    "q",
+    "r"
+   ]
+  },
+  "priors": [
+   {
+    "prior": "normal(0, 5)",
+    "class": "Intercept"
+   },
+   {
+    "prior": "normal(0, 2)",
+    "class": "b"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "sd",
+    "group": "g"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "sigma"
+   },
+   {
+    "prior": "normal(0, 2)",
+    "class": "Intercept",
+    "dpar": "alpha"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "b",
+    "dpar": "alpha"
+   }
+  ]
+ },
+ "autobayes": {
+  "constructor": "skew_normal",
+  "formula": [
+   "y ~ x + (1 | g)",
+   "alpha ~ z"
+  ],
+  "kwargs": {
+   "categorical": {
+    "z": "p"
+   }
+  },
+  "priors": {
+   "intercept": [
+    "Normal",
+    0,
+    5
+   ],
+   "b": [
+    "Normal",
+    0,
+    2
+   ],
+   "sd": [
+    "HalfNormal",
+    1
+   ],
+   "sigma": [
+    "HalfNormal",
+    1
+   ],
+   "alpha": {
+    "intercept": [
+     "Normal",
+     0,
+     2
+    ],
+    "b": [
+     "Normal",
+     0,
+     1
+    ]
+   }
+  }
+ },
+ "gate": {
+  "expect": "fail",
+  "reason": "E03_contexts_newer_families not implemented; remove this field when it lands"
+ }
+}

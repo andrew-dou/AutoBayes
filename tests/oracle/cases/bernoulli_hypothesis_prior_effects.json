@@ -1,0 +1,114 @@
+{
+ "id": "bernoulli_hypothesis_prior_effects",
+ "tier": "E",
+ "feature": "E05_post_prior_effects_stacking",
+ "note": "E05: as gauss_hypothesis_prior_effects on a logit model: post.prior_draws (8, 3) with columns Intercept, b, sd_g; point hypotheses x = 0, zq = 0.5 and x:w = 0 with Savage-Dickey evidence ratios (density_ratio of the hypothesis's posterior draws against the prior draw of b minus the point, reproduced from the recorded draws), and the one-sided x < 0; conditional_effects() of x:z and x:w summarise posterior_epred, the probability inv_logit(eta), over the draws",
+ "seed": 825,
+ "n_points": 8,
+ "data": {
+  "generator": "tier_e",
+  "seed": 725,
+  "n": 36,
+  "newdata": {
+   "seed": 825,
+   "n": 5
+  }
+ },
+ "brms": {
+  "formula": "yb ~ x * z + x * w + (1 | g)",
+  "family": {
+   "family": "bernoulli"
+  },
+  "factors": {
+   "g": [
+    "a",
+    "b",
+    "c",
+    "d",
+    "e",
+    "f"
+   ],
+   "z": [
+    "p",
+    "q",
+    "r"
+   ]
+  },
+  "priors": [
+   {
+    "prior": "normal(0, 2.5)",
+    "class": "Intercept"
+   },
+   {
+    "prior": "normal(0, 1.5)",
+    "class": "b"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "sd",
+    "group": "g"
+   }
+  ],
+  "brm_args": {
+   "sample_prior": "yes"
+  },
+  "prior_draws": true,
+  "hypothesis_seed": 1,
+  "hypothesis": [
+   "x = 0",
+   "zq = 0.5",
+   "x:w = 0",
+   "x < 0"
+  ],
+  "conditional_effects": [
+   "x:z",
+   "x:w"
+  ]
+ },
+ "autobayes": {
+  "constructor": "bernoulli",
+  "formula": "yb ~ x + z + w + x:z + x:w + (1 | g)",
+  "kwargs": {
+   "categorical": {
+    "z": "p"
+   }
+  },
+  "priors": {
+   "intercept": [
+    "Normal",
+    0,
+    2.5
+   ],
+   "b": [
+    "Normal",
+    0,
+    1.5
+   ],
+   "sd": [
+    "HalfNormal",
+    1
+   ]
+  },
+  "post": [
+   "hypothesis",
+   "conditional_effects",
+   "prior_draws"
+  ],
+  "post_args": {
+   "hypothesis": [
+    "x = 0",
+    "zq = 0.5",
+    "x:w = 0",
+    "x < 0"
+   ],
+   "conditional_effects": [
+    "x:z",
+    "x:w"
+   ]
+  }
+ },
+ "gate": {
+  "expect": "fail",
+  "reason": "E05_post_prior_effects_stacking not implemented; remove this field when it lands"
+ }
+}

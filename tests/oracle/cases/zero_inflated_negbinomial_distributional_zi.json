@@ -1,0 +1,119 @@
+{
+ "id": "zero_inflated_negbinomial_distributional_zi",
+ "tier": "E",
+ "feature": "E03_contexts_newer_families",
+ "note": "E03: brms zero_inflated_negbinomial with zi ~ z (logit link): standata K_zi, Kc_zi, X_zi (36 x 3); Intercept_zi and b_zi (identity) on brms's centred X_zi; shape (log), prior inv_gamma(0.4, 0.3); epred = (1 - inv_logit(Intercept_zi + Xc_zi b_zi)) exp(linpred) row by row (checked on the frozen points)",
+ "seed": 814,
+ "n_points": 8,
+ "data": {
+  "generator": "tier_e",
+  "seed": 714,
+  "n": 36,
+  "newdata": {
+   "seed": 814,
+   "n": 5
+  }
+ },
+ "brms": {
+  "formula": [
+   "zcnt ~ x + (1 | g)",
+   "zi ~ z"
+  ],
+  "family": {
+   "family": "zero_inflated_negbinomial"
+  },
+  "factors": {
+   "g": [
+    "a",
+    "b",
+    "c",
+    "d",
+    "e",
+    "f"
+   ],
+   "z": [
+    "p",
+    "q",
+    "r"
+   ]
+  },
+  "priors": [
+   {
+    "prior": "normal(0, 2)",
+    "class": "Intercept"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "b"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "sd",
+    "group": "g"
+   },
+   {
+    "prior": "inv_gamma(0.4, 0.3)",
+    "class": "shape"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "Intercept",
+    "dpar": "zi"
+   },
+   {
+    "prior": "normal(0, 0.5)",
+    "class": "b",
+    "dpar": "zi"
+   }
+  ]
+ },
+ "autobayes": {
+  "constructor": "zero_inflated_negbinomial",
+  "formula": [
+   "zcnt ~ x + (1 | g)",
+   "zi ~ z"
+  ],
+  "kwargs": {
+   "categorical": {
+    "z": "p"
+   }
+  },
+  "priors": {
+   "intercept": [
+    "Normal",
+    0,
+    2
+   ],
+   "b": [
+    "Normal",
+    0,
+    1
+   ],
+   "sd": [
+    "HalfNormal",
+    1
+   ],
+   "shape": [
+    "InverseGamma",
+    0.4,
+    0.3
+   ],
+   "zi": {
+    "intercept": [
+     "Normal",
+     0,
+     1
+    ],
+    "b": [
+     "Normal",
+     0,
+     0.5
+    ]
+   }
+  }
+ },
+ "gate": {
+  "expect": "fail",
+  "reason": "E03_contexts_newer_families not implemented; remove this field when it lands"
+ }
+}

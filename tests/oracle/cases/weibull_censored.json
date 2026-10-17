@@ -1,0 +1,82 @@
+{
+ "id": "weibull_censored",
+ "tier": "E",
+ "feature": "E04_cens_trunc_families",
+ "note": "E04: brms weibull with cens(cens_r) on tier_e's right-censoring indicator (0 none, 1 right; survival style): standata cens; a right-censored row contributes log(1 - F(y)) with F the Weibull CDF of shape and scale mu / Gamma(1 + 1/shape) (checked on the frozen points); epred = exp(linpred), the uncensored mean; newdata carries cens_r = 0",
+ "seed": 819,
+ "n_points": 8,
+ "data": {
+  "generator": "tier_e",
+  "seed": 719,
+  "n": 36,
+  "newdata": {
+   "seed": 819,
+   "n": 5
+  }
+ },
+ "brms": {
+  "formula": "ypos | cens(cens_r) ~ x + (1 | g)",
+  "family": {
+   "family": "weibull"
+  },
+  "factors": {
+   "g": [
+    "a",
+    "b",
+    "c",
+    "d",
+    "e",
+    "f"
+   ]
+  },
+  "priors": [
+   {
+    "prior": "normal(0, 2)",
+    "class": "Intercept"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "b"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "sd",
+    "group": "g"
+   },
+   {
+    "prior": "gamma(0.01, 0.01)",
+    "class": "shape"
+   }
+  ]
+ },
+ "autobayes": {
+  "constructor": "weibull",
+  "formula": "ypos | cens(cens_r) ~ x + (1 | g)",
+  "kwargs": {},
+  "priors": {
+   "intercept": [
+    "Normal",
+    0,
+    2
+   ],
+   "b": [
+    "Normal",
+    0,
+    1
+   ],
+   "sd": [
+    "HalfNormal",
+    1
+   ],
+   "shape": [
+    "Gamma",
+    0.01,
+    0.01
+   ]
+  }
+ },
+ "gate": {
+  "expect": "fail",
+  "reason": "E04_cens_trunc_families not implemented; remove this field when it lands"
+ }
+}

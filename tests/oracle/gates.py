@@ -146,7 +146,8 @@ class Bundle:
         self.fixture = adapter.in_data_order(self.case, self.fixture, self.model, self.data)
         # C07: the post-processing functions a case names (``"post": ["log_lik", "bayes_R2", "loo"]`` in its autobayes
         # section, each proposed as ``ab.<name>(model, idata)``) must exist, so that such a case fails until they do; the
-        # gate that compares them with the fixture's ``post`` block (brms's log_lik(), bayes_R2(), loo()) lands with them
+        # gate that compares them with the fixture's ``post`` block (brms's log_lik(), bayes_R2(), loo()) lands with them; the
+        # same holds for the names Tier E cases propose (``prior_draws``, ``loo_model_weights``)
         self.post = {name: getattr(ab, name) for name in self.case.get("autobayes", {}).get("post", ())}
         self.cmap = adapter.match_columns(self.fixture, self.model)
         self.gmap = adapter.match_groups(self.fixture, self.model)

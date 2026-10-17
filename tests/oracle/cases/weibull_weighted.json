@@ -1,0 +1,82 @@
+{
+ "id": "weibull_weighted",
+ "tier": "E",
+ "feature": "E03_contexts_newer_families",
+ "note": "E03: brms weibull with weights(w): standata weights; each row's log likelihood is multiplied by its weight (checked on the frozen points, scale mu / Gamma(1 + 1/shape)); epred = exp(linpred)",
+ "seed": 817,
+ "n_points": 8,
+ "data": {
+  "generator": "tier_e",
+  "seed": 717,
+  "n": 36,
+  "newdata": {
+   "seed": 817,
+   "n": 5
+  }
+ },
+ "brms": {
+  "formula": "ypos | weights(w) ~ x + (1 | g)",
+  "family": {
+   "family": "weibull"
+  },
+  "factors": {
+   "g": [
+    "a",
+    "b",
+    "c",
+    "d",
+    "e",
+    "f"
+   ]
+  },
+  "priors": [
+   {
+    "prior": "normal(0, 2)",
+    "class": "Intercept"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "b"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "sd",
+    "group": "g"
+   },
+   {
+    "prior": "gamma(0.01, 0.01)",
+    "class": "shape"
+   }
+  ]
+ },
+ "autobayes": {
+  "constructor": "weibull",
+  "formula": "ypos | weights(w) ~ x + (1 | g)",
+  "kwargs": {},
+  "priors": {
+   "intercept": [
+    "Normal",
+    0,
+    2
+   ],
+   "b": [
+    "Normal",
+    0,
+    1
+   ],
+   "sd": [
+    "HalfNormal",
+    1
+   ],
+   "shape": [
+    "Gamma",
+    0.01,
+    0.01
+   ]
+  }
+ },
+ "gate": {
+  "expect": "fail",
+  "reason": "E03_contexts_newer_families not implemented; remove this field when it lands"
+ }
+}

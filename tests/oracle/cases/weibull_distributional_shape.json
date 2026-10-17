@@ -1,0 +1,110 @@
+{
+ "id": "weibull_distributional_shape",
+ "tier": "E",
+ "feature": "E03_contexts_newer_families",
+ "note": "E03: brms weibull with shape ~ z (log link): standata K_shape, Kc_shape, X_shape (36 x 3: Intercept, zq, zr); Intercept_shape and b_shape (identity), b_shape_Intercept among the points' quantities; epred = exp(linpred), the mean (checked on the frozen points)",
+ "seed": 812,
+ "n_points": 8,
+ "data": {
+  "generator": "tier_e",
+  "seed": 712,
+  "n": 36,
+  "newdata": {
+   "seed": 812,
+   "n": 5
+  }
+ },
+ "brms": {
+  "formula": [
+   "ypos ~ x + (1 | g)",
+   "shape ~ z"
+  ],
+  "family": {
+   "family": "weibull"
+  },
+  "factors": {
+   "g": [
+    "a",
+    "b",
+    "c",
+    "d",
+    "e",
+    "f"
+   ],
+   "z": [
+    "p",
+    "q",
+    "r"
+   ]
+  },
+  "priors": [
+   {
+    "prior": "normal(0, 2)",
+    "class": "Intercept"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "b"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "sd",
+    "group": "g"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "Intercept",
+    "dpar": "shape"
+   },
+   {
+    "prior": "normal(0, 0.5)",
+    "class": "b",
+    "dpar": "shape"
+   }
+  ]
+ },
+ "autobayes": {
+  "constructor": "weibull",
+  "formula": [
+   "ypos ~ x + (1 | g)",
+   "shape ~ z"
+  ],
+  "kwargs": {
+   "categorical": {
+    "z": "p"
+   }
+  },
+  "priors": {
+   "intercept": [
+    "Normal",
+    0,
+    2
+   ],
+   "b": [
+    "Normal",
+    0,
+    1
+   ],
+   "sd": [
+    "HalfNormal",
+    1
+   ],
+   "shape": {
+    "intercept": [
+     "Normal",
+     0,
+     1
+    ],
+    "b": [
+     "Normal",
+     0,
+     0.5
+    ]
+   }
+  }
+ },
+ "gate": {
+  "expect": "fail",
+  "reason": "E03_contexts_newer_families not implemented; remove this field when it lands"
+ }
+}

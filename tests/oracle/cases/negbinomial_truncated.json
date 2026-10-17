@@ -1,0 +1,82 @@
+{
+ "id": "negbinomial_truncated",
+ "tier": "E",
+ "feature": "E04_cens_trunc_families",
+ "note": "E04: brms negbinomial with trunc(lb = 1) on tier_e's zero-truncated ytr (>= 1): standata lb (1) and ub (Inf); the likelihood subtracts log P(Y >= 1) = log(1 - P(0)) on every row (checked on the frozen points), but brms's posterior_epred is E[Y | Y >= 2] = (mu - P(1)) / (1 - P(0) - P(1)) (checked on the frozen points): brms 2.23's expected value treats a discrete lower bound as exclusive where its likelihood treats it as inclusive",
+ "seed": 823,
+ "n_points": 8,
+ "data": {
+  "generator": "tier_e",
+  "seed": 723,
+  "n": 36,
+  "newdata": {
+   "seed": 823,
+   "n": 5
+  }
+ },
+ "brms": {
+  "formula": "ytr | trunc(lb = 1) ~ x + (1 | g)",
+  "family": {
+   "family": "negbinomial"
+  },
+  "factors": {
+   "g": [
+    "a",
+    "b",
+    "c",
+    "d",
+    "e",
+    "f"
+   ]
+  },
+  "priors": [
+   {
+    "prior": "normal(0, 2)",
+    "class": "Intercept"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "b"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "sd",
+    "group": "g"
+   },
+   {
+    "prior": "gamma(0.01, 0.01)",
+    "class": "shape"
+   }
+  ]
+ },
+ "autobayes": {
+  "constructor": "negbinomial",
+  "formula": "ytr | trunc(lb = 1) ~ x + (1 | g)",
+  "kwargs": {},
+  "priors": {
+   "intercept": [
+    "Normal",
+    0,
+    2
+   ],
+   "b": [
+    "Normal",
+    0,
+    1
+   ],
+   "sd": [
+    "HalfNormal",
+    1
+   ],
+   "shape": [
+    "Gamma",
+    0.01,
+    0.01
+   ]
+  }
+ },
+ "gate": {
+  "expect": "fail",
+  "reason": "E04_cens_trunc_families not implemented; remove this field when it lands"
+ }
+}

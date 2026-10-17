@@ -1,0 +1,91 @@
+{
+ "id": "zero_inflated_beta_binomial_varint",
+ "tier": "E",
+ "feature": "E01_more_families_bounded",
+ "note": "E01: brms zero_inflated_beta_binomial with trials(size) on tier_d's zk: logit link on mu, phi (log), zi (other); standata trials; the mass is zi + (1 - zi) BetaBinomial(0 | trials, mu phi, (1 - mu) phi) at 0 and (1 - zi) BetaBinomial elsewhere, epred = (1 - zi) trials inv_logit(linpred) (both checked on the frozen points)",
+ "seed": 802,
+ "n_points": 8,
+ "data": {
+  "generator": "tier_e",
+  "seed": 702,
+  "n": 36,
+  "newdata": {
+   "seed": 802,
+   "n": 5
+  }
+ },
+ "brms": {
+  "formula": "zk | trials(size) ~ x + (1 | g)",
+  "family": {
+   "family": "zero_inflated_beta_binomial"
+  },
+  "factors": {
+   "g": [
+    "a",
+    "b",
+    "c",
+    "d",
+    "e",
+    "f"
+   ]
+  },
+  "priors": [
+   {
+    "prior": "normal(0, 2.5)",
+    "class": "Intercept"
+   },
+   {
+    "prior": "normal(0, 1.5)",
+    "class": "b"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "sd",
+    "group": "g"
+   },
+   {
+    "prior": "gamma(0.01, 0.01)",
+    "class": "phi"
+   },
+   {
+    "prior": "beta(2, 2)",
+    "class": "zi"
+   }
+  ]
+ },
+ "autobayes": {
+  "constructor": "zero_inflated_beta_binomial",
+  "formula": "zk | trials(size) ~ x + (1 | g)",
+  "kwargs": {},
+  "priors": {
+   "intercept": [
+    "Normal",
+    0,
+    2.5
+   ],
+   "b": [
+    "Normal",
+    0,
+    1.5
+   ],
+   "sd": [
+    "HalfNormal",
+    1
+   ],
+   "phi": [
+    "Gamma",
+    0.01,
+    0.01
+   ],
+   "zi": [
+    "Beta",
+    2,
+    2
+   ]
+  }
+ },
+ "gate": {
+  "expect": "fail",
+  "reason": "E01_more_families_bounded not implemented; remove this field when it lands"
+ }
+}

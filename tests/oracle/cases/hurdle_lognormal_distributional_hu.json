@@ -1,0 +1,118 @@
+{
+ "id": "hurdle_lognormal_distributional_hu",
+ "tier": "E",
+ "feature": "E03_contexts_newer_families",
+ "note": "E03: brms hurdle_lognormal on tier_d's zpos with hu ~ z (logit link): standata K_hu, Kc_hu, X_hu (36 x 3); Intercept_hu and b_hu (identity); sigma (log); epred = (1 - hu_n) exp(linpred + sigma^2 / 2) with hu_n = inv_logit(Intercept_hu + Xc_hu b_hu) (checked on the frozen points)",
+ "seed": 815,
+ "n_points": 8,
+ "data": {
+  "generator": "tier_e",
+  "seed": 715,
+  "n": 36,
+  "newdata": {
+   "seed": 815,
+   "n": 5
+  }
+ },
+ "brms": {
+  "formula": [
+   "zpos ~ x + (1 | g)",
+   "hu ~ z"
+  ],
+  "family": {
+   "family": "hurdle_lognormal"
+  },
+  "factors": {
+   "g": [
+    "a",
+    "b",
+    "c",
+    "d",
+    "e",
+    "f"
+   ],
+   "z": [
+    "p",
+    "q",
+    "r"
+   ]
+  },
+  "priors": [
+   {
+    "prior": "normal(0, 2)",
+    "class": "Intercept"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "b"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "sd",
+    "group": "g"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "sigma"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "Intercept",
+    "dpar": "hu"
+   },
+   {
+    "prior": "normal(0, 0.5)",
+    "class": "b",
+    "dpar": "hu"
+   }
+  ]
+ },
+ "autobayes": {
+  "constructor": "hurdle_lognormal",
+  "formula": [
+   "zpos ~ x + (1 | g)",
+   "hu ~ z"
+  ],
+  "kwargs": {
+   "categorical": {
+    "z": "p"
+   }
+  },
+  "priors": {
+   "intercept": [
+    "Normal",
+    0,
+    2
+   ],
+   "b": [
+    "Normal",
+    0,
+    1
+   ],
+   "sd": [
+    "HalfNormal",
+    1
+   ],
+   "sigma": [
+    "HalfNormal",
+    1
+   ],
+   "hu": {
+    "intercept": [
+     "Normal",
+     0,
+     1
+    ],
+    "b": [
+     "Normal",
+     0,
+     0.5
+    ]
+   }
+  }
+ },
+ "gate": {
+  "expect": "fail",
+  "reason": "E03_contexts_newer_families not implemented; remove this field when it lands"
+ }
+}

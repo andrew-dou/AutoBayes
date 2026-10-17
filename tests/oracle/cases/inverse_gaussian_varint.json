@@ -1,0 +1,82 @@
+{
+ "id": "inverse_gaussian_varint",
+ "tier": "E",
+ "feature": "E02_more_families_continuous",
+ "note": "E02: brms inverse.gaussian with its default link 1/mu^2 (mu = 1 / sqrt(linpred)) and shape (log); the link needs a positive linear predictor, so the formula carries offset(eoff) (tier_e's eoff in (9, 10), standata offsets): linpred is in (5.8, 12.6) at the frozen points; density inverse Gaussian(mean mu, shape), epred = 1 / sqrt(linpred) (both checked on the frozen points)",
+ "seed": 805,
+ "n_points": 8,
+ "data": {
+  "generator": "tier_e",
+  "seed": 705,
+  "n": 36,
+  "newdata": {
+   "seed": 805,
+   "n": 5
+  }
+ },
+ "brms": {
+  "formula": "ypos ~ x + offset(eoff) + (1 | g)",
+  "family": {
+   "family": "inverse.gaussian"
+  },
+  "factors": {
+   "g": [
+    "a",
+    "b",
+    "c",
+    "d",
+    "e",
+    "f"
+   ]
+  },
+  "priors": [
+   {
+    "prior": "normal(0, 2)",
+    "class": "Intercept"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "b"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "sd",
+    "group": "g"
+   },
+   {
+    "prior": "gamma(0.01, 0.01)",
+    "class": "shape"
+   }
+  ]
+ },
+ "autobayes": {
+  "constructor": "inverse_gaussian",
+  "formula": "ypos ~ x + offset(eoff) + (1 | g)",
+  "kwargs": {},
+  "priors": {
+   "intercept": [
+    "Normal",
+    0,
+    2
+   ],
+   "b": [
+    "Normal",
+    0,
+    1
+   ],
+   "sd": [
+    "HalfNormal",
+    1
+   ],
+   "shape": [
+    "Gamma",
+    0.01,
+    0.01
+   ]
+  }
+ },
+ "gate": {
+  "expect": "fail",
+  "reason": "E02_more_families_continuous not implemented; remove this field when it lands"
+ }
+}

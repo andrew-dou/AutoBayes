@@ -1,0 +1,82 @@
+{
+ "id": "hurdle_cumulative_varint",
+ "tier": "E",
+ "feature": "E01_more_families_bounded",
+ "note": "E01: brms hurdle_cumulative (logit) on tier_e's ordh in 0..4: 0 is the hurdle category, with probability hu (other), and 1..4 are cumulative-logit categories with ordered thresholds Intercept[nthres] (joint), nthres = 3, disc = 1 in standata: P(y = 0) = hu, P(y = j) = (1 - hu) (F(b_Intercept[j] - linpred) - F(b_Intercept[j - 1] - linpred)) for j = 1..4 with F the logistic CDF; epred is draws x N x 5 in category order 0..4 (both checked on the frozen points; the points' Intercept are the centred thresholds, b_Intercept the raw-scale ones that go with linpred)",
+ "seed": 803,
+ "n_points": 8,
+ "data": {
+  "generator": "tier_e",
+  "seed": 703,
+  "n": 36,
+  "newdata": {
+   "seed": 803,
+   "n": 5
+  }
+ },
+ "brms": {
+  "formula": "ordh ~ x + (1 | g)",
+  "family": {
+   "family": "hurdle_cumulative"
+  },
+  "factors": {
+   "g": [
+    "a",
+    "b",
+    "c",
+    "d",
+    "e",
+    "f"
+   ]
+  },
+  "priors": [
+   {
+    "prior": "normal(0, 3)",
+    "class": "Intercept"
+   },
+   {
+    "prior": "normal(0, 1.5)",
+    "class": "b"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "sd",
+    "group": "g"
+   },
+   {
+    "prior": "beta(2, 2)",
+    "class": "hu"
+   }
+  ]
+ },
+ "autobayes": {
+  "constructor": "hurdle_cumulative",
+  "formula": "ordh ~ x + (1 | g)",
+  "kwargs": {},
+  "priors": {
+   "intercept": [
+    "Normal",
+    0,
+    3
+   ],
+   "b": [
+    "Normal",
+    0,
+    1.5
+   ],
+   "sd": [
+    "HalfNormal",
+    1
+   ],
+   "hu": [
+    "Beta",
+    2,
+    2
+   ]
+  }
+ },
+ "gate": {
+  "expect": "fail",
+  "reason": "E01_more_families_bounded not implemented; remove this field when it lands"
+ }
+}

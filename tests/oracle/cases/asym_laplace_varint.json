@@ -1,0 +1,90 @@
+{
+ "id": "asym_laplace_varint",
+ "tier": "E",
+ "feature": "E02_more_families_continuous",
+ "note": "E02: brms asym_laplace: identity link on mu, sigma (log), quantile p in (0, 1) (other); density p (1 - p) / sigma exp(-rho_p((y - mu) / sigma)) with rho_p(u) = u (p - I(u < 0)), epred = mu + sigma (1 - 2 p) / (p (1 - p)) (both checked on the frozen points)",
+ "seed": 808,
+ "n_points": 8,
+ "data": {
+  "generator": "tier_e",
+  "seed": 708,
+  "n": 36,
+  "newdata": {
+   "seed": 808,
+   "n": 5
+  }
+ },
+ "brms": {
+  "formula": "y ~ x + (1 | g)",
+  "family": {
+   "family": "asym_laplace"
+  },
+  "factors": {
+   "g": [
+    "a",
+    "b",
+    "c",
+    "d",
+    "e",
+    "f"
+   ]
+  },
+  "priors": [
+   {
+    "prior": "normal(0, 5)",
+    "class": "Intercept"
+   },
+   {
+    "prior": "normal(0, 2)",
+    "class": "b"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "sd",
+    "group": "g"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "sigma"
+   },
+   {
+    "prior": "beta(2, 2)",
+    "class": "quantile"
+   }
+  ]
+ },
+ "autobayes": {
+  "constructor": "asym_laplace",
+  "formula": "y ~ x + (1 | g)",
+  "kwargs": {},
+  "priors": {
+   "intercept": [
+    "Normal",
+    0,
+    5
+   ],
+   "b": [
+    "Normal",
+    0,
+    2
+   ],
+   "sd": [
+    "HalfNormal",
+    1
+   ],
+   "sigma": [
+    "HalfNormal",
+    1
+   ],
+   "quantile": [
+    "Beta",
+    2,
+    2
+   ]
+  }
+ },
+ "gate": {
+  "expect": "fail",
+  "reason": "E02_more_families_continuous not implemented; remove this field when it lands"
+ }
+}

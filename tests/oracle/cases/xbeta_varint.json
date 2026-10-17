@@ -1,0 +1,91 @@
+{
+ "id": "xbeta_varint",
+ "tier": "E",
+ "feature": "E01_more_families_bounded",
+ "note": "E01: brms xbeta (extended-support beta, Kosmidis & Zeileis 2024) on tier_e's zoprop: logit link on mu, phi and kappa (log); B ~ Beta(mu phi, (1 - mu) phi) stretched to (1 + 2 kappa) B - kappa and censored to [0, 1]: P(0) = BetaCDF(kappa / (1 + 2 kappa)), P(1) = 1 - BetaCDF((1 + kappa) / (1 + 2 kappa)), density BetaPDF((y + kappa) / (1 + 2 kappa)) / (1 + 2 kappa) inside; epred is the mean of that censored variable, not mu (the density checked on the frozen points, the mean by quadrature to 1e-9); deterministic (brms's epred passed the two-seed check)",
+ "seed": 804,
+ "n_points": 8,
+ "data": {
+  "generator": "tier_e",
+  "seed": 704,
+  "n": 36,
+  "newdata": {
+   "seed": 804,
+   "n": 5
+  }
+ },
+ "brms": {
+  "formula": "zoprop ~ x + (1 | g)",
+  "family": {
+   "family": "xbeta"
+  },
+  "factors": {
+   "g": [
+    "a",
+    "b",
+    "c",
+    "d",
+    "e",
+    "f"
+   ]
+  },
+  "priors": [
+   {
+    "prior": "normal(0, 2)",
+    "class": "Intercept"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "b"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "sd",
+    "group": "g"
+   },
+   {
+    "prior": "gamma(0.01, 0.01)",
+    "class": "phi"
+   },
+   {
+    "prior": "gamma(0.01, 0.01)",
+    "class": "kappa"
+   }
+  ]
+ },
+ "autobayes": {
+  "constructor": "xbeta",
+  "formula": "zoprop ~ x + (1 | g)",
+  "kwargs": {},
+  "priors": {
+   "intercept": [
+    "Normal",
+    0,
+    2
+   ],
+   "b": [
+    "Normal",
+    0,
+    1
+   ],
+   "sd": [
+    "HalfNormal",
+    1
+   ],
+   "phi": [
+    "Gamma",
+    0.01,
+    0.01
+   ],
+   "kappa": [
+    "Gamma",
+    0.01,
+    0.01
+   ]
+  }
+ },
+ "gate": {
+  "expect": "fail",
+  "reason": "E01_more_families_bounded not implemented; remove this field when it lands"
+ }
+}

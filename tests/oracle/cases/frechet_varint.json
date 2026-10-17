@@ -1,0 +1,82 @@
+{
+ "id": "frechet_varint",
+ "tier": "E",
+ "feature": "E02_more_families_continuous",
+ "note": "E02: brms frechet: log link on the mean mu, nu > 1 (real<lower=1>, probed as other; prior gamma(2, 0.1), brms's default, truncated at 1); scale s = mu / Gamma(1 - 1/nu), density nu / s (y / s)^(-1 - nu) exp(-(y / s)^(-nu)), epred = exp(linpred) (both checked on the frozen points)",
+ "seed": 810,
+ "n_points": 8,
+ "data": {
+  "generator": "tier_e",
+  "seed": 710,
+  "n": 36,
+  "newdata": {
+   "seed": 810,
+   "n": 5
+  }
+ },
+ "brms": {
+  "formula": "ypos ~ x + (1 | g)",
+  "family": {
+   "family": "frechet"
+  },
+  "factors": {
+   "g": [
+    "a",
+    "b",
+    "c",
+    "d",
+    "e",
+    "f"
+   ]
+  },
+  "priors": [
+   {
+    "prior": "normal(0, 2)",
+    "class": "Intercept"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "b"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "sd",
+    "group": "g"
+   },
+   {
+    "prior": "gamma(2, 0.1)",
+    "class": "nu"
+   }
+  ]
+ },
+ "autobayes": {
+  "constructor": "frechet",
+  "formula": "ypos ~ x + (1 | g)",
+  "kwargs": {},
+  "priors": {
+   "intercept": [
+    "Normal",
+    0,
+    2
+   ],
+   "b": [
+    "Normal",
+    0,
+    1
+   ],
+   "sd": [
+    "HalfNormal",
+    1
+   ],
+   "nu": [
+    "Gamma",
+    2,
+    0.1
+   ]
+  }
+ },
+ "gate": {
+  "expect": "fail",
+  "reason": "E02_more_families_continuous not implemented; remove this field when it lands"
+ }
+}

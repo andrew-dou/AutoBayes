@@ -1,0 +1,100 @@
+{
+ "id": "zero_one_inflated_beta_varint",
+ "tier": "E",
+ "feature": "E01_more_families_bounded",
+ "note": "E01: brms zero_one_inflated_beta on tier_e's zoprop (exact 0s and 1s): logit link on mu, phi (log), zoi and coi in (0, 1) (probed as other); the density is zoi (1 - coi) at 0, zoi coi at 1 and (1 - zoi) Beta(mu phi, (1 - mu) phi) inside, and epred = zoi coi + (1 - zoi) inv_logit(linpred) (both checked on the frozen points)",
+ "seed": 801,
+ "n_points": 8,
+ "data": {
+  "generator": "tier_e",
+  "seed": 701,
+  "n": 36,
+  "newdata": {
+   "seed": 801,
+   "n": 5
+  }
+ },
+ "brms": {
+  "formula": "zoprop ~ x + (1 | g)",
+  "family": {
+   "family": "zero_one_inflated_beta"
+  },
+  "factors": {
+   "g": [
+    "a",
+    "b",
+    "c",
+    "d",
+    "e",
+    "f"
+   ]
+  },
+  "priors": [
+   {
+    "prior": "normal(0, 2)",
+    "class": "Intercept"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "b"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "sd",
+    "group": "g"
+   },
+   {
+    "prior": "gamma(0.01, 0.01)",
+    "class": "phi"
+   },
+   {
+    "prior": "beta(2, 2)",
+    "class": "zoi"
+   },
+   {
+    "prior": "beta(2, 2)",
+    "class": "coi"
+   }
+  ]
+ },
+ "autobayes": {
+  "constructor": "zero_one_inflated_beta",
+  "formula": "zoprop ~ x + (1 | g)",
+  "kwargs": {},
+  "priors": {
+   "intercept": [
+    "Normal",
+    0,
+    2
+   ],
+   "b": [
+    "Normal",
+    0,
+    1
+   ],
+   "sd": [
+    "HalfNormal",
+    1
+   ],
+   "phi": [
+    "Gamma",
+    0.01,
+    0.01
+   ],
+   "zoi": [
+    "Beta",
+    2,
+    2
+   ],
+   "coi": [
+    "Beta",
+    2,
+    2
+   ]
+  }
+ },
+ "gate": {
+  "expect": "fail",
+  "reason": "E01_more_families_bounded not implemented; remove this field when it lands"
+ }
+}

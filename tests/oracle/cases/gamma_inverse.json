@@ -1,0 +1,85 @@
+{
+ "id": "gamma_inverse",
+ "tier": "E",
+ "feature": "E06_more_links",
+ "note": "E06: brms Gamma('inverse'): mu = 1 / linpred, which needs a positive linear predictor: offset(eoff) (tier_e's eoff in (9, 10), standata offsets) keeps linpred in (5.8, 12.2) at the frozen points; shape (log); density Gamma(shape, rate shape / mu), epred = 1 / linpred (both checked on the frozen points)",
+ "seed": 828,
+ "n_points": 8,
+ "data": {
+  "generator": "tier_e",
+  "seed": 728,
+  "n": 36,
+  "newdata": {
+   "seed": 828,
+   "n": 5
+  }
+ },
+ "brms": {
+  "formula": "ypos ~ x + offset(eoff) + (1 | g)",
+  "family": {
+   "family": "Gamma",
+   "link": "inverse"
+  },
+  "factors": {
+   "g": [
+    "a",
+    "b",
+    "c",
+    "d",
+    "e",
+    "f"
+   ]
+  },
+  "priors": [
+   {
+    "prior": "normal(0, 2)",
+    "class": "Intercept"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "b"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "sd",
+    "group": "g"
+   },
+   {
+    "prior": "gamma(0.01, 0.01)",
+    "class": "shape"
+   }
+  ]
+ },
+ "autobayes": {
+  "constructor": "gamma",
+  "formula": "ypos ~ x + offset(eoff) + (1 | g)",
+  "kwargs": {
+   "link": "inverse"
+  },
+  "priors": {
+   "intercept": [
+    "Normal",
+    0,
+    2
+   ],
+   "b": [
+    "Normal",
+    0,
+    1
+   ],
+   "sd": [
+    "HalfNormal",
+    1
+   ],
+   "shape": [
+    "Gamma",
+    0.01,
+    0.01
+   ]
+  }
+ },
+ "gate": {
+  "expect": "fail",
+  "reason": "E06_more_links not implemented; remove this field when it lands"
+ }
+}
