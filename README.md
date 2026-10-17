@@ -1,490 +1,158 @@
 # AutoBayes
 
-Pre-research and scaffolding for running a long Bayesian model-iteration program with a
-coding agent in the loop, on hardware you pay for by the hour.
+brms in Python. You write the model as you would in brms — a formula, a family and priors — and AutoBayes builds the
+same model in PyMC (through Bambi where Bambi covers it), samples it with NUTS on the CPU or through JAX/NumPyro on a
+CPU or GPU you choose, and gives back brms's post-processing: expected values and predictions, `log_lik`, PSIS-LOO,
+WAIC, `bayes_R2`, `hypothesis()` and conditional effects.
 
-Three parts:
-
-- **`reference/`** — a pre-research pack that ships populated. The fixed cost of
-  entering the field, paid once: sampler theory and its citations, how each library in
-  the stack actually works, `brms`→PyMC porting, the JAX/NumPyro GPU path, diagnostic
-  thresholds, and a failure atlas keyed by symptom.
-- **`scaffold/`** — what gets laid down in your project: an agent contract, a decision
-  gate, a compiled wiki, a `research/` tier, and cluster templates with the expensive
-  failures already encoded.
-
-- **`autobayes/`** — the library: a brms-like Python interface that builds an
-  inspectable PyMC model through Bambi, requires explicit priors, samples on the CPU
-  with PyMC's NUTS or through JAX/NumPyro with an explicit device choice, and returns
-  posterior and predictive draws. Seven families on one formula subset
-  `y ~ x + z + x:z [+ (1 | group)]` with numeric and declared categorical predictors (M3a-1)
-  and distinct numeric-by-categorical interactions with their main effects (M3a-3); varying intercepts are optional
-  and may have multiple independent grouping factors (M3c-3), and a formula without it is a population-only model:
-  Gaussian (M0), Bernoulli with a logit link for a 0/1
-  outcome (M1), binomial counts `successes | trials(n)` with a logit link (M2),
-  and [Student-t responses](docs/student-responses.md) with explicit fixed finite `nu > 1`
-  and a scale prior, plus [Poisson count responses](docs/poisson-responses.md),
-  [negative binomial counts](docs/negbinomial.md) and [Gamma responses](docs/gamma.md) with a log link.
-  Student-t, Poisson, negative binomial and Gamma have deterministic CPU/JAX checks; new recovery fits and
-  GPU execution are not yet validated;
-  anything else is refused with an error naming the construct. See
-  [Library](#library-milestones-m0-m1-and-m2) below. (Superseded since Tier A of the brms-parity loop: see
-  [Current status](#current-status-brms-parity-after-tier-c).)
-
-It came out of a multi-month hierarchical-modelling program that fit roughly sixty
-successive model versions on GPU, each conditional on the last. The modelling was the
-research; this is what made the modelling survivable once an agent was doing most of
-the typing.
-
-## Current status: brms parity after Tier D
-
-AutoBayes is being built out as brms in Python by an oracle-gated loop: a feature merges only when the model it
-builds reproduces brms's own Stan data, log density and gradient (with and without the Jacobian) and predictions on
-fixtures frozen from brms 2.23.0 with rstan ([loop rules](docs/brms-parity/LOOP.md), [oracle](oracle/README.md)).
-Tiers A, B, C and D are complete (October 2026), except smooth terms `s()`, which are not offered yet (see the Tier B to D
-reviews); 30 of brms 2.23's 45 response families are offered. The status report with a demonstration and a comparison with brms is
-[autobayes-status.pdf](docs/brms-parity/reports/autobayes-status.pdf):
-
-- **Families**: Gaussian; Student-t with a fixed or learned `nu`; Poisson; negative binomial; Gamma (log link);
-  lognormal; Beta; Bernoulli and binomial with a logit, probit or cloglog link (the cloglog link accepted against two
-  references since P6, see [links](docs/links.md)).
-- **More continuous families** (Tier D, D01): `ab.weibull`, `ab.exponential`, `ab.skew_normal`, `ab.shifted_lognormal` and
-  `ab.exgaussian` in brms's parameterisations, with the extra parameters `alpha`, `beta` and `ndt` under their own priors
-  ([continuous families](docs/continuous-families.md)).
-- **More discrete families** (Tier D, D02): `ab.beta_binomial` (with trials and a precision `phi`), `ab.geometric` and
-  `ab.negbinomial2` (the negative binomial with dispersion `sigma = 1 / shape`) in brms's parameterisations
-  ([discrete families](docs/discrete-families.md)).
-- **Zero-inflated and hurdle counts** (Tier B, B06): `ab.zero_inflated_poisson` and `ab.hurdle_poisson`, with brms's
-  `zi` / `hu` under a `Beta` prior; D03: `ab.zero_inflated_negbinomial`, `ab.zero_inflated_binomial`, `ab.zero_inflated_beta`,
-  `ab.hurdle_negbinomial`, `ab.hurdle_gamma` and `ab.hurdle_lognormal`, and `weights()` for all of them
-  ([zero-inflated and hurdle families](docs/zero-inflated-hurdle.md)). The hurdle negative binomial's response draws are
-  exact, where brms 2.23's `posterior_predict()` is not (divergence D86).
-- **Ordinal and categorical responses** (Tier B, B05): `ab.cumulative` (brms's `cumulative("logit")`, ordered thresholds)
-  and `ab.categorical` (one linear predictor per non-reference category); D04: `ab.sratio`, `ab.cratio` and `ab.acat` (logit,
-  unordered thresholds) with category-specific effects `cs(x)`, and `ab.cumulative(..., link="probit")`, accepted against two
-  references because brms's own gradient of its fixture is not exact ([ordinal and categorical](docs/ordinal-categorical.md)).
-- **Population-level terms**: numeric and declared categorical predictors; two-way interactions `x:w`, `x:z`, `z:h`
-  with their main effects ([interactions](docs/interactions.md)); `log()`, `exp()`, `sqrt()`, `I(x^k)`, `I(x * k)`,
-  `I(x + k)`, `I(x - k)` ([transforms](docs/transforms.md)); `offset(col)` and `offset(log(col))` ([offset](docs/offset.md)).
-- **Group-level terms**: any number of factors; `(1 | g)`; independent slopes `(1 + x || g)`
-  ([varying slopes](docs/varying-slopes.md)); correlated slopes `(1 + x | g)` with an LKJ prior
-  ([correlated slopes](docs/correlated-slopes.md)); grouping by `g:h` and `g/h` ([grouping syntax](docs/grouping-syntax.md));
-  D08: multi-membership `(1 | mm(g, g2, weights = cbind(w1, w2)))`, `(1 | gr(g, by = gby))` and a correlation ID shared with
-  `sigma`'s formula ([multi-membership and by](docs/multi-membership-and-by.md)).
-- **Priors**: explicit by default; brms's defaults on request with `ab.default_priors()` ([default priors](docs/default-priors.md));
-  D07: the shrinkage priors `Priors(b=ab.Horseshoe(...))` and `Priors(b=ab.R2D2(...))`, built as brms builds them
-  ([shrinkage priors](docs/shrinkage-priors.md)).
-- **Response addition terms** (Tier B, B02): `weights()` for the nine Tier A families; brms's `cens()` and `trunc()` for the
-  Gaussian family, accepted since P6 against two references because brms's own gradients of their fixtures are not
-  exact everywhere ([addition terms](docs/addition-terms.md)).
-- **Distributional formulas** (Tier B, B01): `["y ~ x", "sigma ~ z"]` gives `sigma` (Gaussian, Student-t, lognormal),
-  `shape` (negative binomial, Gamma) or `phi` (Beta) its own linear predictor under a log link
-  ([distributional formulas](docs/distributional.md)).
-- **Monotonic effects** (Tier B, B03): `mo(x)` of an ordinal predictor with a Dirichlet prior on its simplex
-  (`Priors(simo={"x": ab.Dirichlet(...)})`), for every family but the categorical one ([monotonic effects](docs/monotonic.md)).
-- **Finite mixtures** (Tier C, C05): `ab.mixture(formula, data, priors, families=["gaussian", "gaussian"])`, brms's
-  `mixture()` of Gaussian components with ordered intercepts and Dirichlet mixing proportions, one `Priors` per component
-  ([mixtures](docs/mixtures.md)).
-- **Post-processing** (Tier C, C07): `ab.log_lik` (pointwise log-likelihood) and `ab.loo` (PSIS-LOO with loo 2.9.0's
-  tables) for every family, and `ab.bayes_R2` for all but the categorical one, as in brms, from a fit's draws; D05:
-  `ab.waic`, `ab.loo_compare` and `ab.model_weights`; D06: `ab.hypothesis` (brms's table, the hypothesis read by the library's
-  own parser, never evaluated) and `ab.conditional_effects` ([post-processing](docs/post-processing.md)).
-- **Multivariate Gaussian models** (Tier C, C01): `ab.gaussian("mvbind(y, y2) ~ ...", data, priors, rescor=True)` with
-  priors by response, `Priors(resp={...}, rescor=ab.LKJ(eta))`, and brms's residual correlation, or `rescor=False`
-  ([multivariate models](docs/multivariate.md)).
-- **Missing values and measurement error** (Tier C, C06): `ab.gaussian(["y ~ mi(xm) + w", "xm | mi() ~ w"], data, priors,
-  rescor=False)` imputes `xm`'s missing values as parameters of the model, and `ab.gaussian("y ~ me(xobs, sdx)", ...)` gives a
-  predictor observed with known noise latent values under `Priors(meanme=..., sdme=...)`
-  ([missing values and measurement error](docs/missing-and-measurement-error.md)).
-
-Every known difference from brms is listed in [divergences](docs/brms-parity/divergences.md), and the feature ledger
-is [ledger.json](docs/brms-parity/ledger.json) (`python tools/parity_status.py`). The tier reviews are
-[tier-a-review.pdf](docs/brms-parity/reports/tier-a-review.pdf),
-[tier-b-review.pdf](docs/brms-parity/reports/tier-b-review.pdf),
-[tier-c-review.pdf](docs/brms-parity/reports/tier-c-review.pdf) and
-[tier-d-review.pdf](docs/brms-parity/reports/tier-d-review.pdf). The sections below are the
-earlier milestone record and are kept as written; where they call one of the constructs above unsupported, this
-section supersedes them.
-
-## The problem
-
-An agent on a long research codebase has three failure modes that compound.
-
-**It forgets.** Context is finite. By week three the agent no longer knows that AR(1)
-on the year slopes was tried and abandoned, so it proposes AR(1) on the year slopes.
-
-**It is confidently wrong about the past.** Asked "did we test this?", an agent with no
-durable record reconstructs a plausible answer. Plausible is worse than absent, because
-you act on it.
-
-**It burns real money doing it.** A wrong batch script fails seven seconds into a
-queued GPU allocation, and you find out an hour later.
-
-And before any of that, there is a fourth cost that is not a failure mode at all, just
-waste: **every project pays the same entry fee.** An agent starting cold spends its
-first sessions on literature discovery and API archaeology — which sampler, what the
-diagnostics mean, how a `brms` formula becomes a PyMC model, why JAX will not
-differentiate the likelihood. That work is high-variance and it is not your research.
-Two agents asked the same question return different papers and different confidence,
-and you pay full token price each time for an answer that was already known.
-
-`reference/` is the answer to the fourth. The scaffold is the answer to the first three.
+"The same model" is checked, not assumed. Every feature is accepted only when the model AutoBayes builds reproduces
+brms's own Stan program on frozen brms 2.23 fixtures: the design matrices of `standata()`, the log density and its
+gradient at seeded points (with and without the Jacobian), the derived quantities, and `posterior_linpred` /
+`posterior_epred` on fitted and new rows. Where AutoBayes knowingly differs from brms, the difference is a numbered row
+in [divergences](docs/brms-parity/divergences.md).
 
 ## Install
 
-```bash
-git clone https://github.com/andrew-dou/AutoBayes && cd AutoBayes
-./install.sh
-```
-
-Symlinks the skills into `~/.claude/skills/` so `git pull` keeps them current.
-`--copy` pins them instead; `--uninstall` reverses it. The Python library and its tests
-are installed separately from the lock file; see [Install and test](#install-and-test-the-pinned-tested-stack).
-
-Or use it without installing:
-
-```bash
-bin/autobayes-init /path/to/project
-```
-
-## Use
-
-Ask your agent to set up a Bayesian modelling project, and it runs four phases:
-
-**Research** → read `reference/`, search for prior art specific to your problem, write
-`research/01_*.md`, seed `wiki/concepts/`. No model code yet.
-
-**Scope** → data provenance and column dictionary into `wiki/data/`; state the quantity
-of interest and the success criteria, with thresholds.
-
-**Decide** → a `DECISIONS.md` entry. No entry, no job.
-
-**Build** → model, preflight, batch script, submit.
-
-Mid-project, the skills are symptom-triggered. When a gradient comes back `nan` or a
-likelihood will not differentiate, `autobayes-custom-op` loads on its own and — before
-showing you the pattern — tries to talk you out of needing it.
-
-## Library (milestones M0, M1, M2, M3a-1, M3a-2, M3a-3, M3c-1, M3c-2 and M3c-3)
-
-### Install and test (the pinned, tested stack)
-
-`pyproject.toml` pins the versions that the fit records under `docs/` name (Python 3.11;
-pymc 5.28.5, pytensor 2.38.3, bambi 0.17.2, formulae 0.6.2, arviz 0.23.4, jax/jaxlib 0.10.2,
-numpyro 0.21.0, numpy 2.4.6). `uv.lock` was frozen on 2026-09-10 from the environment that
-produced the foundation results; the earlier M0 and M1 records did not record transitive
-versions, so the lock is evidence for the new environment, not a reconstruction of the old
-one. Anything else is untested.
+Python 3.11. The tested stack is pinned in `pyproject.toml` and frozen in `uv.lock` (PyMC 5.28.5, PyTensor 2.38.3, Bambi
+0.17.2, ArviZ 0.23.4, JAX 0.10.2, NumPyro 0.21.0):
 
 ```bash
 git clone https://github.com/andrew-dou/AutoBayes && cd AutoBayes
-uv sync --locked --extra jax --extra dev                 # creates .venv from uv.lock; nothing is resolved anew
-uv run --no-sync python -c "import autobayes as ab; print(ab.format_environment(ab.environment()))"
-uv run --no-sync pytest tests -q -m "not slow"           # fast checks, a few minutes
-uv run --no-sync pytest tests -q -m slow                 # stochastic validation; inspect the current bounded run plan first
-uv run --no-sync python examples/m0_varying_intercept.py --backend numpyro --device cpu --record fits/m0.json
+uv sync --locked --extra jax --extra dev                 # .venv from uv.lock; nothing is resolved anew
+uv run --no-sync pytest tests -q -m "not slow and not sampling"   # the deterministic suite, including the brms oracle
 ```
 
-If `~/.pytensor` is not writable (sandboxes), set `PYTENSOR_FLAGS=base_compiledir=<writable dir>`.
-Each test run allocates its own directory `evidence-runs/<UTC time>-<git head>-p<pid>-<token>/`
-(gitignored; `run.json` records the environment and commit; files are written once, never
-replaced). `AUTOBAYES_EVIDENCE_DIR` names another *parent* for such directories (CI passes
-one); anything that resolves into `docs/` or into an existing run is refused before a byte is
-written, so reruns and retries cannot touch the committed `docs/m*-evidence/` history.
+If `~/.pytensor` is not writable (sandboxes), set `PYTENSOR_FLAGS=base_compiledir=<writable dir>`. Nothing needs R;
+R with brms is needed only to freeze new oracle fixtures ([oracle](oracle/README.md)).
 
-### Supported paths
-
-See the [current capability and test map](docs/current-capabilities.md) for the
-September 27 merged baseline, family extensions, provenance checks and remaining gaps.
-
-"CPU-validated" means the checks in `docs/m0-decision.md` / `docs/m1-decision.md` passed on
-the pinned stack: the fast suite in hosted CI (`.github/workflows/ci.yml`, every push and
-pull request) and the three sampling checks locally in the locked environment (2026-09-10;
-`docs/coordination/STATUS.md` records each run). The manual slow workflow (`slow.yml`)
-exists; its execution status is recorded in STATUS, not assumed here. "GPU-validated" means
-one executed run on a GPU matched the CPU posterior. Nothing here is a claim about other
-versions.
-
-| Family, formula | PyMC NUTS, CPU | JAX/NumPyro, CPU | JAX/NumPyro, GPU | Status |
-| --- | --- | --- | --- | --- |
-| Gaussian, `y ~ [1 +] x… + (1 \| g)` | CPU-validated | CPU-validated | GPU-validated once, H100 (`docs/m0-gpu-validation.md`) | M0, merged |
-| Bernoulli (logit), `y ~ [1 +] x… + (1 \| g)`, y strictly 0/1 | CPU-validated | CPU-validated | **pending** (same code path, not run on a GPU) | M1, merged (PR #3) |
-| Binomial (logit), `k \| trials(n) ~ [1 +] x… + (1 \| g)`, integer counts up to 1e6 per row | CPU-validated | CPU-validated | **pending** (same code path, not run on a GPU) | M2 |
-| Declared categorical predictors `z` (treatment coding, `categorical={"z": reference}`), all three families | CPU-validated (`docs/m3a1-decision.md`) | CPU-validated | **pending** | M3a-1, merged (PR #6) |
-| One numeric-by-categorical interaction `x:z` (`x*z`) with both main effects, all three families | CPU-validated (`docs/m3a2-decision.md`) | CPU-validated | **pending** | M3a-2, merged (PR #7) |
-| Multiple numeric-by-categorical interactions, shared or disjoint sides; existing families, intercept controls and multiple groups | deterministic checks; one Gaussian CPU example independently accepted | same deterministic coverage and Gaussian CPU example | **pending** | M3a-3, merged (PR #12); [evidence summary](docs/current-capabilities.md#validation-boundaries) |
-| Population-only models, no group-level term: `y ~ 1`, `y ~ x`, `y ~ x + z + x:z`, `k \| trials(n) ~ x`, all three families | deterministic density/gradient/design/prediction checks for all three families; Gaussian example CPU sampling accepted after explicit finite-statistic policy correction ([review](docs/m3c1-decision.md#independent-acceptance-review-2026-09-19)) | same deterministic coverage; Gaussian example CPU sampling and seven-mean agreement accepted in the same review | **pending** | M3c-1, PR #9; merged; one Gaussian development example, not calibration |
-| One independent varying slope `(1 + x \|\| g)` | under independent review, not merged | same | same | M3b-1, PR #8 open (superseded: A01, #29, merged; PR #8 closed) |
-| No population intercept: `0 + x`, `x - 1`, categorical and one interaction, optional group | three-family deterministic checks; one Gaussian CPU example accepted at `target_accept=0.99` | same deterministic coverage and Gaussian CPU acceptance | **pending** | M3c-2, PR #10; [review and preserved initial failures](docs/m3c2-decision.md#independent-acceptance-review-2026-09-20-utc) |
-| Multiple independent intercepts `(1 \| county) + (1 \| year)`, all three families | three-family deterministic checks; one crossed Gaussian CPU example independently accepted | same deterministic coverage and Gaussian CPU acceptance | **pending** | M3c-3, merged (PR #11); [decision](docs/m3c3-decision.md) |
-| Fixed-nu Student-t, identity link | deterministic graph/density/gradient/prediction checks | deterministic CPU JAX checks; recovery sampling pending | **pending** | merged (PR #14); [semantics](docs/student-responses.md) |
-| Poisson, log link | deterministic graph/density/gradient/prediction checks | deterministic CPU JAX checks; recovery sampling pending | **pending** | merged (PR #15); [semantics](docs/poisson-responses.md) |
-| Correlated effects, grouping `/` or `:`, varying slopes, additional families and links | refused with an error naming the construct | same | same | later slices, `docs/coordination/NEXT_MILESTONES_PROPOSAL.md` (superseded: supported since Tier A, see Current status) |
-
-Device rules on every path: `device="gpu"` without a visible GPU raises `DeviceError`
-(no silent CPU fallback); the fit report states the actual device, dtype (float64) and
-chain method; if JAX is not installed, `backend="numpyro"` raises `DeviceError` naming
-the `[jax]` extra.
-
-### Multiple numeric-by-categorical interactions
-
-Use explicit main effects and distinct pairs, for example
-`y ~ x + w + z + v + x:z + w:z + x:v`, with `z` and `v` declared in
-`categorical=`. Canonical terms keep first-appearance order, main effects before
-interaction pairs, always numeric first. `Priors.b` still accepts one explicit prior
-or exact per-term mappings, with optional per-level priors for each vector term.
-Variables, coordinates and columns are `x:z`, `x:z_dim` and `x:z[level]`.
-
-The contrast for level `l` of `z` is `b_z[l] + x*b_x:z[l] + w*b_w:z[l]`;
-the slope in `x` is `b_x + b_x:z[z_i] + b_x:v[v_i]`, with reference contributions zero.
-Other predictors and group effects are held fixed. With centering enabled and a
-population intercept, each expanded product column is centered at its own fitted-row mean.
-Without one, common centering is disabled, the first categorical main is full-level,
-and all interaction terms still encode non-reference slope differences. The full-level
-factor contrast uses `b_z[l] - b_z[reference]` as its baseline difference.
-
-Both main effects are required. Strict duplicate rules remain: `x*z + w*z` repeats
-`z`; write `x + w + z + x:z + w:z`. Numeric-by-numeric, categorical-by-categorical,
-higher-order interactions and transforms remain unsupported (superseded: two-way interactions of every kind and
-the transforms in `docs/transforms.md` are supported since A04/A05; three-way interactions are still refused). Changing a reference
-can change independent-prior meaning; the library does not transport priors.
-Unseen categorical levels are always refused, independently of any new-group policy.
-See the build-only [example](examples/m3a3_multiple_interactions.py) and
-[decision/test matrix](docs/m3a3-decision.md) and [execution evidence](docs/m3a3-evidence/README.md).
-The focused checks passed; the one local fast suite was interrupted after a wall-deadline
-supervision failure and was not rerun. Hosted checks remain required. New-feature CPU sampling, calibration
-and GPU validation remain separate future work.
-
-### Multiple independent varying intercepts
-
-```python
-priors = ab.Priors(intercept=ab.Normal(0, 2), b=ab.Normal(0, 1),
-                   sd={"county": ab.HalfNormal(1), "year": ab.Exponential(2)},
-                   sigma=ab.HalfNormal(1))
-model = ab.gaussian("y ~ x + (1 | county) + (1 | year)", df, priors)
-```
-
-Every factor needs its own SD prior. A scalar `sd` remains valid for a single factor;
-multiple factors require a mapping covering exactly their names. Group effects have
-independent Normal priors with separate scales; posterior effects need not be independent.
-Use `model.spec.groups`, `levels_by_group`, `model.design.group_designs`, and
-`model.group_names`. Factors follow formula order; levels use sorted fitted string labels.
-`design.Z` concatenates one-hot blocks, located by `design.group_slices`.
-Singular `group`, `levels`, `group_term`, `J` and `group_index` access is ambiguous with
-multiple groups and raises. Existing zero/one-group access remains valid.
-
-`value_point(sd={"county": .5, "year": .2}, z={"county": [...], "year": [...]}, ...)`
-requires exact keys and one offset per fitted level. Predictions accept a policy string
-for every factor or `new_groups={"county": "population", "year": "error"}`.
-Unseen effects are shared per factor/label, independent across factors. RNG traversal is
-factor formula order then sorted unseen labels; changing factor order can change unseen
-draws with the same seed. Per-factor prediction attributes are JSON strings that can be
-saved to netCDF. Fit records list every factor and SD; multiple groups omit ambiguous
-legacy `group`/`J` entries. Common centering and intercept back-transformation are unchanged.
-
-Distinct additive factors can describe crossed or observationally nested memberships;
-the library never expands nesting syntax or combines labels with their parent. Slopes,
-duplicate factors, correlation IDs, `||`, grouping `/` or `:` and multimembership remain
-refused. (Superseded: `||`, `/` and `:` are supported since A01/A03;
-correlation IDs and multimembership are still refused.) See the build-only [example](examples/m3c3_multiple_intercepts.py) and
-[decision](docs/m3c3-decision.md). One crossed Gaussian CPU example passed independent
-validation on PyMC and NumPyro at `target_accept=0.99`; see the [evidence and limits](docs/m3c3-evidence/cpu-validation/README.md).
-Other-family sampling, calibration and GPU validation remain pending.
-
-### Removing the population intercept
-
-Write `y ~ 0 + x` or `y ~ x - 1` and omit the intercept prior:
-
-```python
-priors = ab.Priors(b=ab.Normal(0, 2), sigma=ab.HalfNormal(1))
-model = ab.gaussian("y ~ 0 + x + arm + x:arm", df, priors,
-                    categorical={"arm": "control"})
-print(model.describe())
-```
-
-The first categorical main effect has one coefficient per level (reference first),
-including `arm[control]`. Later categorical main effects use treatment coding. The
-interaction still estimates non-reference slope differences. Per-level priors must
-cover those actual coefficient labels; reordering factors can change independent
-prior meaning. The raw design is used for either `center_predictors` request,
-because centering without a free intercept changes the model. Fit records show
-requested and effective centering separately. There is no hidden intercept prior,
-posterior variable, or back-transformation. Supplying an intercept prior/value is
-an error; `value_point(b=..., sigma=...)` omits it.
-
-At least one population predictor is required. Conflicting `1` and intercept-removal
-tokens, general subtraction, and group-only/zero-only models remain refused. See
-[the decision and test map](docs/m3c2-decision.md) and the
-[build-only example](examples/m3c2_no_intercept.py). Its Gaussian model passed a bounded
-two-backend CPU check at `target_accept=0.99`; the initial `0.9` run had divergences.
-The library default is unchanged. Inspect diagnostics for each fitted model; this one
-example does not establish calibration, rare-tail accuracy or GPU coverage.
-
-### Using it
+## Quick start
 
 ```python
 import autobayes as ab
-from autobayes.diagnostics import panel, format_panel
 
-priors = ab.Priors(intercept=ab.Normal(0, 5), b=ab.Normal(0, 2),
-                   sd=ab.HalfNormal(1), sigma=ab.HalfNormal(1))
-model = ab.gaussian("y ~ x + (1 | school)", df, priors)
-print(model.describe())          # the density that is actually sampled, centring included
-model.pymc_model                 # the PyMC model; inspect it directly
-fit = model.fit(backend="numpyro", device="cpu", chains=4, seed=7)   # or backend="pymc"; device="gpu"
-print(fit.report())              # backend, requested and actual device, dtype, chain method, seed
-print(format_panel(panel(fit.idata)))                       # divergences, R-hat, ESS, E-BFMI, tree depth
-draws = model.predict(fit, newdata=new_df, new_groups="population")
-rec = ab.fit_record(model, fit)                             # one JSON record per fit, for the handoff
-ab.compare_records(rec, earlier_rec)                        # same posterior? (4 combined MCSE)
+# brms: brm(y ~ x + (1 + x | g), family = bernoulli(), prior = ...)
+priors = ab.Priors(intercept=ab.Normal(0, 2.5), b=ab.Normal(0, 1),
+                   sd={"g": {"Intercept": ab.HalfNormal(1), "x": ab.HalfNormal(1)}}, cor={"g": ab.LKJ(2)})
+model = ab.bernoulli("y ~ x + (1 + x | g)", df, priors)
+print(model.describe())                         # the density that is sampled, written out
+fit = ab.fit(model, backend="numpyro", chains=4, seed=1)    # NumPyro NUTS on the CPU; device="gpu" for a GPU
 
-# binary outcome nested in groups: Bernoulli likelihood, logit link, logit-scale priors, no sigma
-bpriors = ab.Priors(intercept=ab.Normal(0, 1.5), b=ab.Normal(0, 1), sd=ab.HalfNormal(1))
-bmodel = ab.bernoulli("y ~ x + (1 | clinic)", df01, bpriors)   # y must be exactly 0/1
-bfit = bmodel.fit(backend="pymc", seed=7)
-probs = bmodel.predict(bfit, newdata=new_df, kind="mean")        # p = P(y = 1)
-draws = bmodel.predict(bfit, newdata=new_df, kind="response", new_groups="population")  # p and 0/1 y
+model.predict(fit, kind="mean")                 # brms's posterior_epred
+ab.loo(model, fit)                              # PSIS-LOO, with loo's tables
+ab.hypothesis(model, fit, "x > 0")              # brms's hypothesis() table
+ab.conditional_effects(model, fit, ["x"])       # the data of brms's conditional_effects()
 
-# a categorical predictor: declare the column and its reference level; one coefficient per other level
-cpriors = ab.Priors(intercept=ab.Normal(0, 5), b={"x": ab.Normal(0, 2), "arm": ab.Normal(0, 2)},
-                    sd=ab.HalfNormal(1), sigma=ab.HalfNormal(1))     # or "arm": {"low": ..., "high": ...}
-amodel = ab.gaussian("y ~ x + arm + (1 | site)", df, cpriors, categorical={"arm": "control"})
-amodel.coefficients                                               # (("x","x",None), ("arm[high]","arm",0), ("arm[low]","arm",1))
-amodel.predict(afit, newdata=new_df, kind="mean")                 # an arm that was not fitted is refused
-
-# a population-only model (no group-level term): the same priors without sd; predictions need no grouping column
-ppriors = ab.Priors(intercept=ab.Normal(0, 5), b=ab.Normal(0, 2), sigma=ab.HalfNormal(1))
-pmodel = ab.gaussian("y ~ x + arm", df, ppriors, categorical={"arm": "control"})    # sd= here would be refused
-pmodel.predict(pfit, newdata=new_df_without_site, kind="mean")                   # new_groups does not apply
-
-# a numeric-by-categorical interaction: each arm gets its own dose slope (x*z is x + z + x:z)
-ipriors = ab.Priors(intercept=ab.Normal(0, 5), b={"dose": ab.Normal(0, 2), "arm": ab.Normal(0, 2), "dose:arm": ab.Normal(0, 1)},
-                    sd=ab.HalfNormal(1), sigma=ab.HalfNormal(1))
-imodel = ab.gaussian("y ~ dose + arm + dose:arm + (1 | site)", df, ipriors, categorical={"arm": "control"})
-print(imodel.describe())                                          # prints the actual product-column means used for centring
-
-# counts with known denominators: k successes of n trials per row, brms syntax
-cmodel = ab.binomial("deaths | trials(patients) ~ x + (1 | clinic)", counts_df, bpriors)
-cfit = cmodel.fit(backend="pymc", seed=7)
-cmodel.predict(cfit, kind="probability")                          # p only, no trials needed
-cmodel.predict(cfit, newdata=new_counts, kind="mean")             # p and expected = n p (needs the trials column)
-cmodel.predict(cfit, newdata=new_counts, kind="response")         # ... and integer Binomial(n, p) draws
+# brms's default priors instead of explicit ones
+f = "rating ~ x + (1 | g)"
+ordinal = ab.cumulative(f, df, ab.default_priors(f, df, family="cumulative"))
 ```
 
-`SKILL.md` is the researcher workflow for these families, step by step with the checks,
-failure recovery and the session handoff. What Bambi supplies and what this layer adds,
-with the reason for each addition, is in `docs/m0-decision.md` (Gaussian) and
-`docs/m1-decision.md` (Bernoulli, including why its likelihood is written by hand: Bambi's
-built-in one is floored at machine epsilon for large logits, and the obvious PyMC and
-PyTensor alternatives have NaN gradients on one path or the other) and `docs/m2-decision.md`
-(binomial: accepted data policies, the log-sigmoid density chosen after measuring the
-built-ins, the high-precision reference and its error budget, the validated count and
-logit domain) and `docs/m3a1-decision.md` (categorical predictors: declaration, level
-order, reference validation, prior forms, the naming map, what the centred intercept is
-with dummies, and what a change of reference level does and does not preserve) and
-`docs/m3a2-decision.md` (the interaction: canonical expansion, both main effects required,
-expanded-column centring and the reported-intercept transformation, the reference change
-with slopes) and `docs/m3c1-decision.md` (population-only models: the optional group term,
-the `sd` prior refused without one and required with one, `new_groups` not applicable, the
-deterministic checks and the independently reviewed two-backend Gaussian CPU example); the acceptance checks and
-their evidence are in those records and `docs/m0-evidence/`, `docs/m1-evidence/`,
-`docs/m2-evidence/`, `docs/m3a1-evidence/`, `docs/m3a2-evidence/`, `docs/m3c1-evidence/`.
-`docs/coordination/STATUS.md` is the live milestone status; the roadmap is
-`docs/coordination/NEXT_MILESTONES_PROPOSAL.md`. No speed claim is made anywhere.
+Priors are explicit unless you ask for brms's defaults. Anything AutoBayes does not support, or has not verified
+against brms, is refused with an error that names the construct, never silently accepted or approximated.
 
-## The decision gate
+## What it covers
 
-**Before submitting any job that costs real compute, append an entry to
-`DECISIONS.md`.**
+30 of the 45 response families brms 2.23 documents, and most of brms's formula language:
 
-Four questions: what and why; how we will know it worked, with a threshold chosen
-beforehand; the kill criterion that would end this direction; and the concrete next
-action if it fails.
+| Area | What you can write | Docs |
+|---|---|---|
+| Families | Gaussian, Student-t (fixed or learned `nu`), Poisson, negative binomial (`negbinomial`, `negbinomial2`), geometric, Gamma, lognormal, Beta, Bernoulli and binomial (logit, probit, cloglog), beta-binomial, Weibull, exponential, skew-normal, shifted lognormal, ex-Gaussian | [families](docs/families.md), [continuous](docs/continuous-families.md), [discrete](docs/discrete-families.md), [links](docs/links.md) |
+| Zero-inflated and hurdle | zero-inflated Poisson, negative binomial, binomial and Beta; hurdle Poisson, negative binomial, Gamma and lognormal | [zero-inflated and hurdle](docs/zero-inflated-hurdle.md) |
+| Ordinal and categorical | `cumulative` (logit, probit), `sratio`, `cratio`, `acat`, category-specific effects `cs(x)`, `categorical` | [ordinal and categorical](docs/ordinal-categorical.md) |
+| Population-level terms | numeric and categorical predictors, interactions, `log()`, `exp()`, `sqrt()`, `I(...)`, `offset()`, monotonic effects `mo(x)` | [interactions](docs/interactions.md), [transforms](docs/transforms.md), [offset](docs/offset.md), [monotonic](docs/monotonic.md) |
+| Group-level terms | any number of factors, `(1 \| g)`, `(1 + x \|\| g)`, `(1 + x \| g)` with LKJ, `g:h`, `g/h`, `mm(g, g2)`, `gr(g, by = )`, shared correlation IDs | [varying slopes](docs/varying-slopes.md), [correlated slopes](docs/correlated-slopes.md), [grouping syntax](docs/grouping-syntax.md), [multi-membership and by](docs/multi-membership-and-by.md) |
+| Other terms | Gaussian processes `gp(x)` (exact and Hilbert-space), `ar()`, `ma()`, `arma()`, `me(x, sdx)`, `mi(x)` | [Gaussian processes](docs/gaussian-processes.md), [autocorrelation](docs/autocorrelation.md), [missing values and measurement error](docs/missing-and-measurement-error.md) |
+| Model structure | distributional formulas (`sigma ~ z`), multivariate Gaussian models with residual correlation, non-linear formulas (`nl = TRUE`), finite mixtures | [distributional](docs/distributional.md), [multivariate](docs/multivariate.md), [non-linear](docs/nonlinear.md), [mixtures](docs/mixtures.md) |
+| Addition terms | `weights()`; `cens()` and `trunc()` for the Gaussian family | [addition terms](docs/addition-terms.md) |
+| Priors | explicit priors on every class; brms's defaults with `ab.default_priors()`; `horseshoe()` and `R2D2()` on `b` | [default priors](docs/default-priors.md), [shrinkage priors](docs/shrinkage-priors.md) |
+| Post-processing | `predict()` (`posterior_linpred`, `posterior_epred`, `posterior_predict`), `log_lik`, `loo`, `waic`, `loo_compare`, `model_weights`, `bayes_R2`, `hypothesis`, `conditional_effects` | [post-processing](docs/post-processing.md), [prediction](docs/linear-prediction.md) |
 
-It is a forcing function, not bureaucracy. Writing "how will we know it worked" before
-the run regularly reveals that the run as specified *cannot produce that diagnostic* —
-the output it saves does not contain the quantity, or the comparison needs a baseline
-nobody has fit. That costs nothing to discover on a login node and half a day in the
-queue. In the original program this changed the run more often than it changed the
-record.
+Not yet: smooth terms `s()` and `t2()`, the fifteen remaining families (among them `zero_one_inflated_beta`,
+`von_mises`, `wiener` and `cox`), spatial and other correlation structures (`car`, `sar`, `fcor`), K-fold
+cross-validation and stacking. Many combinations of the features above are refused because no frozen brms case checks
+them yet; each refusal names the construct and the divergence row that explains it. The full map is
+[current capabilities](docs/current-capabilities.md).
 
-The separate kill criterion exists because "try something else" is how a research
-program becomes a random walk.
+## Speed versus brms
 
-`scripts/new_decision.py` refuses to write an entry with an empty field.
+Ten models fitted by both libraries with the same formula, family, priors and data, and the same sampler settings (four
+chains in parallel, 1000 warm-up and 1000 kept draws, target acceptance 0.9): brms 2.23.0 with rstan 2.32.7 against
+AutoBayes with NumPyro on the CPU, on an Apple M1 Pro laptop, one run each (17 October 2026):
 
-## Two kinds of memory
+| Model | Rows | brms: compile + sample (s) | AutoBayes (s) | Faster |
+|---|---:|---:|---:|---:|
+| Bernoulli, `(1 + x \| g)` | 2,000 | 36.2 + 5.8 = 42.0 | 5.3 | 7.9× |
+| Gaussian, `(1 + x \| g)` | 20,000 | 35.5 + 87.0 = 122.5 | 29.6 | 4.1× |
+| cumulative, five categories | 1,500 | 27.0 + 33.4 = 60.4 | 7.1 | 8.5× |
+| zero-inflated Poisson | 2,000 | 26.2 + 15.0 = 41.2 | 5.9 | 7.0× |
+| Weibull | 2,000 | 27.1 + 6.4 = 33.5 | 6.0 | 5.6× |
+| zero-inflated negative binomial | 2,000 | 26.6 + 16.4 = 43.0 | 14.7 | 2.9× |
+| sratio, five categories | 1,500 | 26.1 + 17.6 = 43.6 | 7.1 | 6.2× |
+| Gaussian, horseshoe on 20 predictors | 400 | 26.6 + 3.0 = 29.6 | 5.3 | 5.6× |
+| beta-binomial with trials | 2,000 | 27.7 + 24.4 = 52.1 | 22.3 | 2.3× |
+| Gaussian, `(1 \| mm(g1, g2))` | 1,000 | 26.8 + 3.2 = 30.0 | 2.4 | 12.7× |
 
-`wiki/` is compiled state for an agent to retrieve: short pages, cross-referenced,
-edited in place, always current. `research/` is long-form and dated: the investigation
-with its reasoning intact, never revised — superseded.
+- **From scratch to a posterior** AutoBayes was 2.3 to 12.7 times faster (median 5.9). Most of the difference on small
+  models is brms compiling its Stan program, 26 to 36 seconds per model, against 2 to 4 seconds of JAX compilation.
+- **Sampling alone** was 1.2 to 7.9 times faster (median 3.9), and the effective sample size per second of sampling was
+  higher for AutoBayes on nine of the ten models; the beta-binomial was the exception (9 against 11 per second).
+- **The posteriors agree:** every compared mean is within 2.8 combined Monte Carlo standard errors.
+- **brms's post-processing on the same fits** took longer: medians of 2.8× (`posterior_epred`), 2.3× (`log_lik`), 2.0×
+  (`loo`), 5.1× (`waic`), 4.0× (`bayes_R2`) and 6.9× (`conditional_effects`).
 
-Using one for the other's job degrades both. A real investigation compressed into a
-wiki page loses the reasoning that made it checkable; an investigation left only in
-`research/` is never found.
+Caveats:
+- brms compiles once per model and can refit new data without recompiling, so for many fits of one model only the
+  sampling comparison matters.
+- cmdstanr was not tested, and neither were GPUs.
+- These are single runs on a laptop in use.
 
-Raw sources — model code, logs, data, fitted objects — are read-only to the agent.
+The write-up is [benchmark-2026-10-17.pdf](docs/brms-parity/reports/benchmark-2026-10-17.pdf); the scripts are in
+[examples/brms_parity](examples/brms_parity/README.md).
 
-The highest-value file in either is `wiki/hypotheses/ruled-out.md`. The knowledge that
-matters most in a long program is negative: the twelve parameterizations that did not
-fix the funnel, the covariate indistinguishable from zero, the sampler setting that was
-a measurement artifact. Negative results are exactly what an agent will not
-reconstruct, and `AGENTS.md` makes reading that file a precondition for proposing
-anything.
+## How it is checked
 
-The rule that matters most in practice: **write to the wiki before context runs out,
-not at the end of the session.**
+The library is built by an oracle-gated loop ([loop rules](docs/brms-parity/LOOP.md)). Each brms feature gets frozen
+cases: a formula, family, priors and simulated data that brms 2.23.0 with rstan 2.32.7 turns into a fixture
+(`oracle/R/gen_fixture.R`) holding its Stan data, eight seeded points with the log density and gradient, derived
+quantities and predictions. A feature merges only when every case passes six gates: the design (G1), the log density
+and gradient (G2, relative tolerances 1e-8 and 1e-7), the derived quantities (G3), predictions (G4, 1e-9), the JAX
+density against the PyTensor one (G5) and brms's default-prior table (G6). The tolerances are never loosened for a
+feature, fixtures are immutable once frozen, and `python oracle/regen.py check --all` regenerates every fixture from R
+and compares it with the committed one. Where brms's own arithmetic is inexact (the cloglog link, `cens()`, `trunc()`,
+the cumulative probit gradient), a case may be accepted against a committed 50-digit reference computed by an
+independent standard-library implementation, but only at the entries where brms is off it.
 
-## What is not here
+Nothing in the gates samples. That the sampler converges on these models is checked separately, by the sampling tests
+and the benchmark above, not by the oracle.
 
-No workflow engine, no DAG, no scheduler abstraction, no tracker. Every layer of that
-sits between the agent and the thing that failed, and the debugging loop is long
-enough. The templates are shell scripts you can read in one screen; the scripts are
-single files with no dependencies outside the standard library.
+## Documentation
 
-This is also not MLflow or W&B. Those record what a run did. This is upstream: it
-constrains what gets run, and keeps what was learned somewhere an agent will find it.
+- [Current capabilities](docs/current-capabilities.md): every supported construct and what checks it.
+- [Divergences from brms](docs/brms-parity/divergences.md): every known difference, with the evidence.
+- Tier reviews: [A](docs/brms-parity/reports/tier-a-review.pdf), [B](docs/brms-parity/reports/tier-b-review.pdf),
+  [C](docs/brms-parity/reports/tier-c-review.pdf), [D](docs/brms-parity/reports/tier-d-review.pdf); the
+  [status report](docs/brms-parity/reports/autobayes-status.pdf) with demonstrations.
+- [Examples](examples/brms_parity/README.md): a tour of model classes and the brms benchmark.
+- The feature ledger, [ledger.json](docs/brms-parity/ledger.json) (`python tools/parity_status.py`).
 
-## Honest limits
+## Limits
 
-- The `reference/` pack is opinionated where one program had evidence and thin where it
-  did not. Thresholds are conventions, not laws; check them against your model.
-- `bibliography.md` tags every entry **[USED]** (in that program's written record, with
-  the result taken from it) or **[STANDARD]** (the canonical reference for a technique
-  used here, recommended but not a provenance claim). Do not report the second kind as
-  something this project verified.
-- The PyMC/JAX material covers **both PyMC 5 and 6**, because the sampling API differs
-  between them and the published docs are not internally consistent about their own
-  version. `pymc-to-jax.md` gives a two-second runtime check to determine which you are
-  on, and a snippet for each. Verified against an installed 5.28.2. The porting and
-  diagnostic material is stack-agnostic.
-- The custom-`Op` pattern in `pymc-to-jax.md` is **executed, not just written** —
-  `reference/examples/custom_op_verification.py` runs it end to end against `scipy`,
-  finite differences, both PyTensor backends, and a live PyMC model. Running it is also
-  how the quadrature accuracy limit documented there was measured.
-- Where official documentation does not exist, the pack says so rather than guessing.
-  `bibliography.md` ends with six such gaps — including that no systematic brms→PyMC
-  mapping reference exists anywhere, which is most of the reason this pack does.
-- Numbers are traced to their own tables. `acceleration.md` carries a claims audit of
-  the published sampler speedups, most of which shrink sharply or turn out to measure
-  something else — a GPU-versus-CPU comparison, a lattice-physics benchmark, a toy
-  target, or warmup charged to one side only. On realistic hierarchical models the
-  honest figure for modern samplers versus NUTS is about 2×.
-- No third-party PDFs are redistributed here — citations and summaries only.
+- Beyond the benchmark models, the features added in October 2026 have not been fitted; the gates check the model, not
+  the sampler.
+- GPU sampling has been validated for the first milestones only.
+- Hosted CI is not running at the moment; every merge since 11 October 2026 was verified locally (the deterministic
+  suite and the oracle).
+- A refused combination is refused on purpose: it waits for a frozen brms case that verifies it.
+
+## Origins
+
+AutoBayes began as a skill and pre-research pack for running a long Bayesian model-iteration program with a coding
+agent in the loop: a reference pack on samplers and brms-to-PyMC porting, a project scaffold with a decision gate and a
+wiki, and cluster templates. That material is still in the repository (`reference/`, `scaffold/`, `skills/`,
+`SKILL.md`), and its description is [the agent scaffold](docs/agent-scaffold.md). The library's milestone record before
+the brms-parity loop is [library milestones](docs/milestones.md).
 
 ## Licence
 
 MIT. The `wiki/` pattern is adapted from
 [Karpathy's LLM Wiki gist](https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f).
-
-Fit comparisons now require a [frozen target identity](docs/record-identity.md). Historical records remain readable; metadata-only comparison requires explicit `allow_legacy=True` and is labeled unverified.
-
-New results carry [fit provenance](docs/fit-binding.md) through saved draws. Record creation rejects mismatched or unbound fits unless the documented unverified legacy mode is explicitly selected.
-
-### Prior-predictive checks
-
-Use `model.prior_predictive(draws=100, seed=42)` for graph-native CPU forward draws before fitting. See [semantics and validation](docs/prior-predictive.md).
-
-Use `model.predict(fit, kind="linear")` for draws before inverse-link transformation; see [linear prediction](docs/linear-prediction.md).
-
-Set `include_group_effects=False` in predictions to set all group contributions to zero; see [semantics](docs/group-exclusion.md). This does not marginalize over groups.
