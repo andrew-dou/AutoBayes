@@ -1636,13 +1636,22 @@
     "D03_more_zero_inflated_hurdle",
     "D04_more_ordinal"
    ],
-   "status": "queued",
+   "status": "fixtures_frozen",
    "summary": "zero_one_inflated_beta, zero_inflated_beta_binomial, hurdle_cumulative, xbeta",
    "pr": null,
    "attempts": 0,
    "divergences": [],
-   "next_action": "fixtures (wave E0)",
-   "reserved_divergences": "D108-D111"
+   "next_action": "implementation",
+   "reserved_divergences": "D108-D111",
+   "fixtures": {
+    "pr": 70,
+    "cases": [
+     "hurdle_cumulative_varint",
+     "xbeta_varint",
+     "zero_inflated_beta_binomial_varint",
+     "zero_one_inflated_beta_varint"
+    ]
+   }
   },
   {
    "id": "E02_more_families_continuous",
@@ -1651,13 +1660,25 @@
    "depends_on": [
     "D01_continuous_families"
    ],
-   "status": "queued",
+   "status": "fixtures_frozen",
    "summary": "inverse.gaussian, von_mises, asym_laplace, frechet, gen_extreme_value",
    "pr": null,
    "attempts": 0,
    "divergences": [],
-   "next_action": "fixtures (wave E0)",
-   "reserved_divergences": "D112-D115"
+   "next_action": "implementation",
+   "reserved_divergences": "D112-D115",
+   "fixtures": {
+    "pr": 70,
+    "cases": [
+     "asym_laplace_quantile",
+     "asym_laplace_varint",
+     "frechet_varint",
+     "gen_extreme_value_varint",
+     "inverse_gaussian_log",
+     "inverse_gaussian_varint",
+     "von_mises_varint"
+    ]
+   }
   },
   {
    "id": "E03_contexts_newer_families",
@@ -1668,13 +1689,25 @@
     "D02_discrete_families",
     "D03_more_zero_inflated_hurdle"
    ],
-   "status": "queued",
+   "status": "fixtures_frozen",
    "summary": "distributional formulas and weights() for the Tier D families (shape, phi, sigma, zi, hu formulas)",
    "pr": null,
    "attempts": 0,
    "divergences": [],
-   "next_action": "fixtures (wave E0)",
-   "reserved_divergences": "D116-D119"
+   "next_action": "implementation",
+   "reserved_divergences": "D116-D119",
+   "fixtures": {
+    "pr": 70,
+    "cases": [
+     "beta_binomial_distributional_phi",
+     "beta_binomial_weighted",
+     "hurdle_lognormal_distributional_hu",
+     "skew_normal_distributional_alpha",
+     "weibull_distributional_shape",
+     "weibull_weighted",
+     "zero_inflated_negbinomial_distributional_zi"
+    ]
+   }
   },
   {
    "id": "E04_cens_trunc_families",
@@ -1684,13 +1717,23 @@
     "B02_cens_trunc_weights",
     "D01_continuous_families"
    ],
-   "status": "queued",
+   "status": "fixtures_frozen",
    "summary": "cens() and trunc() beyond the Gaussian family (Weibull, lognormal, Gamma, Poisson, negative binomial)",
    "pr": null,
    "attempts": 0,
    "divergences": [],
-   "next_action": "fixtures (wave E0)",
-   "reserved_divergences": "D120-D123"
+   "next_action": "implementation",
+   "reserved_divergences": "D120-D123",
+   "fixtures": {
+    "pr": 70,
+    "cases": [
+     "gamma_censored_interval",
+     "lognormal_censored",
+     "negbinomial_truncated",
+     "poisson_truncated",
+     "weibull_censored"
+    ]
+   }
   },
   {
    "id": "E05_post_prior_effects_stacking",
@@ -1700,13 +1743,21 @@
     "D05_waic_loo_compare",
     "D06_hypothesis_conditional_effects"
    ],
-   "status": "queued",
+   "status": "fixtures_frozen",
    "summary": "prior draws and Savage-Dickey evidence ratios in hypothesis(), interaction conditional_effects(), stacking weights",
    "pr": null,
    "attempts": 0,
    "divergences": [],
-   "next_action": "fixtures (wave E0)",
-   "reserved_divergences": "D124-D127"
+   "next_action": "implementation",
+   "reserved_divergences": "D124-D127",
+   "fixtures": {
+    "pr": 70,
+    "cases": [
+     "bernoulli_hypothesis_prior_effects",
+     "gauss_hypothesis_prior_effects",
+     "gauss_loo_compare_x_stacking"
+    ]
+   }
   },
   {
    "id": "E06_more_links",
@@ -1715,13 +1766,25 @@
    "depends_on": [
     "A12_links"
    ],
-   "status": "queued",
+   "status": "fixtures_frozen",
    "summary": "further brms links for the Tier A families (e.g. poisson sqrt, Gamma inverse/identity, Beta probit/cloglog, cumulative cloglog)",
    "pr": null,
    "attempts": 0,
    "divergences": [],
-   "next_action": "fixtures (wave E0)",
-   "reserved_divergences": "D128-D131"
+   "next_action": "implementation",
+   "reserved_divergences": "D128-D131",
+   "fixtures": {
+    "pr": 70,
+    "cases": [
+     "beta_cloglog",
+     "beta_probit",
+     "cumulative_cloglog",
+     "gamma_identity",
+     "gamma_inverse",
+     "negbinomial_identity",
+     "poisson_sqrt"
+    ]
+   }
   }
  ]
 }
