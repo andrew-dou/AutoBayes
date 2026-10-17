@@ -5,7 +5,8 @@
 
 Reads <out_dir>/autobayes_<model>.json and brms_<model>.json and writes <out_dir>/comparison.json. Both libraries'
 draws go through the same ArviZ estimators (rank-normalised bulk ESS, R-hat, MCSE of the mean), so the numbers are
-comparable. A parameter's posterior means agree when |mean_AutoBayes - mean_brms| is within 4 combined MCSE.
+comparable. A parameter's posterior means agree when |mean_AutoBayes - mean_brms| is within 4 combined MCSE. Also
+carries each side's divergent transitions and the post-processing timings (median of three calls after the first).
 """
 import json
 import sys
@@ -48,7 +49,10 @@ def main(out_dir: str) -> None:
                          brms=dict(compile=br_rec["compile_seconds"], sample=br_rec["sample_seconds"], total=total_b,
                                    min_ess=min_ess_b, ess_per_s_sampling=min_ess_b / br_rec["sample_seconds"],
                                    ess_per_s_total=min_ess_b / total_b),
-                         max_abs_z=max(abs(v["z"]) for v in per.values())))
+                         max_abs_z=max(abs(v["z"]) for v in per.values()),
+                         divergent=dict(autobayes=ab_rec.get("divergent"), brms=br_rec.get("divergent")),
+                         post={fn: dict(autobayes=ab_rec.get("post", {}).get(fn), brms=br_rec.get("post", {}).get(fn))
+                               for fn in ab_rec.get("post", {})}))
         r = rows[-1]
         print(f"{name}: AutoBayes total {total_a:.1f} s (sampling ~{sample_a:.1f}), brms total {total_b:.1f} s "
               f"(compile {br_rec['compile_seconds']:.1f}, sampling {br_rec['sample_seconds']:.1f}); min ESS {min_ess_a:.0f} vs "
