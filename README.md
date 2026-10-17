@@ -36,13 +36,13 @@ successive model versions on GPU, each conditional on the last. The modelling wa
 research; this is what made the modelling survivable once an agent was doing most of
 the typing.
 
-## Current status: brms parity after Tier C
+## Current status: brms parity after Tier D
 
 AutoBayes is being built out as brms in Python by an oracle-gated loop: a feature merges only when the model it
 builds reproduces brms's own Stan data, log density and gradient (with and without the Jacobian) and predictions on
 fixtures frozen from brms 2.23.0 with rstan ([loop rules](docs/brms-parity/LOOP.md), [oracle](oracle/README.md)).
-Tiers A, B and C are complete (October 2026), except smooth terms `s()`, which are not offered yet (see the Tier B and C
-reviews); the status report with a demonstration and a comparison with brms is
+Tiers A, B, C and D are complete (October 2026), except smooth terms `s()`, which are not offered yet (see the Tier B to D
+reviews); 30 of brms 2.23's 45 response families are offered. The status report with a demonstration and a comparison with brms is
 [autobayes-status.pdf](docs/brms-parity/reports/autobayes-status.pdf):
 
 - **Families**: Gaussian; Student-t with a fixed or learned `nu`; Poisson; negative binomial; Gamma (log link);
@@ -55,17 +55,25 @@ reviews); the status report with a demonstration and a comparison with brms is
   `ab.negbinomial2` (the negative binomial with dispersion `sigma = 1 / shape`) in brms's parameterisations
   ([discrete families](docs/discrete-families.md)).
 - **Zero-inflated and hurdle counts** (Tier B, B06): `ab.zero_inflated_poisson` and `ab.hurdle_poisson`, with brms's
-  `zi` / `hu` under a `Beta` prior ([zero-inflated and hurdle counts](docs/zero-inflated-hurdle.md)).
+  `zi` / `hu` under a `Beta` prior; D03: `ab.zero_inflated_negbinomial`, `ab.zero_inflated_binomial`, `ab.zero_inflated_beta`,
+  `ab.hurdle_negbinomial`, `ab.hurdle_gamma` and `ab.hurdle_lognormal`, and `weights()` for all of them
+  ([zero-inflated and hurdle families](docs/zero-inflated-hurdle.md)). The hurdle negative binomial's response draws are
+  exact, where brms 2.23's `posterior_predict()` is not (divergence D86).
 - **Ordinal and categorical responses** (Tier B, B05): `ab.cumulative` (brms's `cumulative("logit")`, ordered thresholds)
   and `ab.categorical` (one linear predictor per non-reference category); D04: `ab.sratio`, `ab.cratio` and `ab.acat` (logit,
-  unordered thresholds) with category-specific effects `cs(x)` ([ordinal and categorical](docs/ordinal-categorical.md)).
+  unordered thresholds) with category-specific effects `cs(x)`, and `ab.cumulative(..., link="probit")`, accepted against two
+  references because brms's own gradient of its fixture is not exact ([ordinal and categorical](docs/ordinal-categorical.md)).
 - **Population-level terms**: numeric and declared categorical predictors; two-way interactions `x:w`, `x:z`, `z:h`
   with their main effects ([interactions](docs/interactions.md)); `log()`, `exp()`, `sqrt()`, `I(x^k)`, `I(x * k)`,
   `I(x + k)`, `I(x - k)` ([transforms](docs/transforms.md)); `offset(col)` and `offset(log(col))` ([offset](docs/offset.md)).
 - **Group-level terms**: any number of factors; `(1 | g)`; independent slopes `(1 + x || g)`
   ([varying slopes](docs/varying-slopes.md)); correlated slopes `(1 + x | g)` with an LKJ prior
-  ([correlated slopes](docs/correlated-slopes.md)); grouping by `g:h` and `g/h` ([grouping syntax](docs/grouping-syntax.md)).
-- **Priors**: explicit by default; brms's defaults on request with `ab.default_priors()` ([default priors](docs/default-priors.md)).
+  ([correlated slopes](docs/correlated-slopes.md)); grouping by `g:h` and `g/h` ([grouping syntax](docs/grouping-syntax.md));
+  D08: multi-membership `(1 | mm(g, g2, weights = cbind(w1, w2)))`, `(1 | gr(g, by = gby))` and a correlation ID shared with
+  `sigma`'s formula ([multi-membership and by](docs/multi-membership-and-by.md)).
+- **Priors**: explicit by default; brms's defaults on request with `ab.default_priors()` ([default priors](docs/default-priors.md));
+  D07: the shrinkage priors `Priors(b=ab.Horseshoe(...))` and `Priors(b=ab.R2D2(...))`, built as brms builds them
+  ([shrinkage priors](docs/shrinkage-priors.md)).
 - **Response addition terms** (Tier B, B02): `weights()` for the nine Tier A families; brms's `cens()` and `trunc()` for the
   Gaussian family, accepted since P6 against two references because brms's own gradients of their fixtures are not
   exact everywhere ([addition terms](docs/addition-terms.md)).
@@ -78,8 +86,9 @@ reviews); the status report with a demonstration and a comparison with brms is
   `mixture()` of Gaussian components with ordered intercepts and Dirichlet mixing proportions, one `Priors` per component
   ([mixtures](docs/mixtures.md)).
 - **Post-processing** (Tier C, C07): `ab.log_lik` (pointwise log-likelihood) and `ab.loo` (PSIS-LOO with loo 2.9.0's
-  tables) for every family, and `ab.bayes_R2` for all but the categorical one, as in brms, from a fit's draws
-  ([post-processing](docs/post-processing.md)).
+  tables) for every family, and `ab.bayes_R2` for all but the categorical one, as in brms, from a fit's draws; D05:
+  `ab.waic`, `ab.loo_compare` and `ab.model_weights`; D06: `ab.hypothesis` (brms's table, the hypothesis read by the library's
+  own parser, never evaluated) and `ab.conditional_effects` ([post-processing](docs/post-processing.md)).
 - **Multivariate Gaussian models** (Tier C, C01): `ab.gaussian("mvbind(y, y2) ~ ...", data, priors, rescor=True)` with
   priors by response, `Priors(resp={...}, rescor=ab.LKJ(eta))`, and brms's residual correlation, or `rescor=False`
   ([multivariate models](docs/multivariate.md)).
@@ -91,8 +100,9 @@ reviews); the status report with a demonstration and a comparison with brms is
 Every known difference from brms is listed in [divergences](docs/brms-parity/divergences.md), and the feature ledger
 is [ledger.json](docs/brms-parity/ledger.json) (`python tools/parity_status.py`). The tier reviews are
 [tier-a-review.pdf](docs/brms-parity/reports/tier-a-review.pdf),
-[tier-b-review.pdf](docs/brms-parity/reports/tier-b-review.pdf) and
-[tier-c-review.pdf](docs/brms-parity/reports/tier-c-review.pdf). The sections below are the
+[tier-b-review.pdf](docs/brms-parity/reports/tier-b-review.pdf),
+[tier-c-review.pdf](docs/brms-parity/reports/tier-c-review.pdf) and
+[tier-d-review.pdf](docs/brms-parity/reports/tier-d-review.pdf). The sections below are the
 earlier milestone record and are kept as written; where they call one of the constructs above unsupported, this
 section supersedes them.
 

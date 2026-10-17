@@ -1,0 +1,203 @@
+\documentclass[11pt]{article}
+\usepackage[margin=1in]{geometry}
+\usepackage[T1]{fontenc}
+\usepackage{amsmath,amssymb,mathtools}
+\usepackage{booktabs,array,enumitem,caption}
+\usepackage{xcolor,hyperref}
+\sloppy
+\hypersetup{colorlinks=true, linkcolor=blue!50!black, urlcolor=blue!50!black}
+\newcommand{\code}[1]{\texttt{#1}}
+\newcommand{\file}[1]{\texttt{#1}}
+\setlist{nosep, leftmargin=1.4em}
+
+\title{AutoBayes brms-parity loop: Tier D review}
+\author{Status at the Tier D boundary, prepared for Andrew}
+\date{17 October 2026}
+
+\begin{document}
+\maketitle
+
+\noindent This is the Tier D boundary review, in the same form as the earlier ones. All eight Tier D features are on
+\code{main}, together with the cumulative probit link that D04 had to withhold until a 50-digit reference of it existed.
+Each feature was merged as \code{andrew-dou} on local verification, as you allowed: GitHub Actions still refuses to start
+any job on your account (``recent account payments have failed or your spending limit needs to be increased'', checked
+again on the last merge). Section~\ref{sec:brms} lists two places where brms itself is wrong or inexact, and
+Section~\ref{sec:decisions} is the part that needs you.
+
+\section{What was built}
+\label{sec:built}
+
+Table~\ref{tab:built} lists the features.
+
+\begin{table}[tbp]
+\small
+\begin{center}\begin{tabular}{@{}>{\raggedright\arraybackslash}p{0.17\textwidth}>{\raggedright\arraybackslash}p{0.05\textwidth}>{\raggedright\arraybackslash}p{0.37\textwidth}>{\raggedright\arraybackslash}p{0.21\textwidth}>{\raggedright\arraybackslash}p{0.09\textwidth}@{}}
+\toprule
+Feature & PR & What a user can now write & Frozen brms cases it passes & Diverg. \\
+\midrule
+D05 model comparison & \#58 & \code{ab.waic}, \code{ab.loo\_compare(\{...\})}, \code{ab.model\_weights(results, "loo"|"waic"|"pseudobma")} & \code{gauss\_\allowbreak{}loo\_\allowbreak{}compare\_\allowbreak{}x}, \code{\_xw} & D92--D95 \\
+D08 grouping terms & \#59 & \code{(1 | mm(g, g2, weights = cbind(w1, w2)))}, \code{(1 | gr(g, by = gby))}, a correlation ID shared with \code{sigma}'s formula & \code{gauss\_\allowbreak{}mm}, \code{gauss\_\allowbreak{}gr\_\allowbreak{}by}, \code{gauss\_\allowbreak{}shared\_\allowbreak{}id} & D104--D107 \\
+D01 continuous families & \#60 & \code{ab.weibull}, \code{ab.exponential}, \code{ab.skew\_normal}, \code{ab.shifted\_lognormal} (\code{ndt}, brms's \code{Uniform(0, min\_Y)}), \code{ab.exgaussian} & five \code{*\_varint} & D76--D79 \\
+D06 hypothesis tests and effects & \#61 & \code{ab.hypothesis(m, fit, "x - w > 0")} (own parser, never evaluated), \code{ab.conditional\_effects(m, fit, ["x"])} & \code{gauss\_\allowbreak{}hypothesis\_\allowbreak{}effects}, \code{bernoulli\_\ldots} & D96--D99 \\
+D02 discrete families & \#62 & \code{ab.beta\_binomial} (trials, \code{phi}), \code{ab.geometric}, \code{ab.negbinomial2} (\code{sigma} $= 1/$shape) & three \code{*\_varint} & D80--D82 \\
+D07 shrinkage priors & \#63 & \code{Priors(b=ab.Horseshoe(df, scale\_global, ...))}, \code{Priors(b=ab.R2D2(mean\_R2, prec\_R2, cons\_D2))} & \code{gauss\_\allowbreak{}horseshoe}, \code{gauss\_\allowbreak{}r2d2} & D100--D103 \\
+D04 ordinal models & \#64, \#66 & \code{ab.sratio}, \code{ab.cratio}, \code{ab.acat}; \code{cs(x)}; \code{ab.cumulative(..., link="probit")} & four \code{*\_varint}, \code{acat\_cs}, five new & D88, D89 \\
+D03 zero-inflated and hurdle & \#65 & \code{ab.zero\_inflated\_negbinomial}, \code{\_binomial}, \code{\_beta}, \code{ab.hurdle\_negbinomial}, \code{\_gamma}, \code{\_lognormal}; \code{weights()} for all of them & eight cases & D84, D86 \\
+\bottomrule
+\end{tabular}\end{center}
+\caption{\small The Tier D features, in merge order. \#56 (mixture \code{log\_lik}, a \code{describe()} order) and \#57 (the
+30 Tier D fixtures) merged before them.}\label{tab:built}
+\end{table}
+
+\noindent AutoBayes now covers 30 of the 45 response families brms 2.23 documents.\footnote{The count comes from
+\code{brmsfamily()}'s documentation plus \code{Gamma} and \code{negbinomial2}, checked by calling \code{brmsfamily()} on
+each name. AutoBayes registers 31 family names; \code{mixture} is not one of brms's families.} The fifteen it lacks are
+\code{asym\_laplace}, \code{cox}, \code{dirichlet}, \code{dirichlet\_multinomial}, \code{frechet},
+\code{gen\_extreme\_value}, \code{hurdle\_cumulative}, \code{inverse.gaussian}, \code{logistic\_normal},
+\code{multinomial}, \code{von\_mises}, \code{wiener}, \code{xbeta}, \code{zero\_inflated\_beta\_binomial} and
+\code{zero\_one\_inflated\_beta}. As before, every agent wrote from brms's documentation, the published densities and
+papers, and brms's outputs on probe inputs, never from brms's or loo's GPL source.
+
+\paragraph{How close.} Measured with the gates' own comparisons on \code{main} after the last merge (\code{0fb9649}): all 133 ungated
+cases pass, 35 of them new in Tier D. Over the Tier D cases the worst relative errors are $1.3\times10^{-9}$ in G2,
+$9.7\times10^{-16}$ in G3, $5.3\times10^{-15}$ in predictions (\code{hurdle\_negbinomial\_varint}), $1.9\times10^{-15}$
+between the JAX and PyTensor densities, and $1.1\times10^{-14}$ in the post-processing tables
+(\code{gauss\_loo\_compare\_x}); G1's designs are exact. Their log densities are within $5\times10^{-16}$ of brms's except
+\code{gauss\_horseshoe}, at $1.3\times10^{-10}$: PyMC's float32 $\log 2$ in its six half-Student-$t$ scales (D103). The
+gradients above $10^{-12}$ are the precision and shape gradients of \code{beta\_binomial\_varint} ($1.3\times10^{-9}$),
+\code{hurdle\_gamma\_varint} ($9.4\times10^{-10}$) and \code{weibull\_varint} ($9.2\times10^{-10}$), which go through
+PyTensor's digamma (Section~\ref{sec:brms}). Over all 133 cases the worst G2 error is still Tier C's
+$7.2\times10^{-9}$ (\code{gamma\_distributional\_shape}'s gradient). Every value is inside the unchanged tolerances:
+$10^{-8}$ for log densities, $10^{-7}$ for gradients, $10^{-9}$ for predictions.
+
+\section{What brms gets wrong}
+\label{sec:brms}
+
+\begin{itemize}
+\item \textbf{\code{hurdle\_negbinomial} response draws (D86).} brms 2.23's \code{posterior\_predict()} does not draw the
+  positive part from the zero-truncated negative binomial. At a fixed point ($\mu = 0.5$, shape $0.5$, $\mathit{hu} = 0.05$,
+  a fixed-parameter fit, $1.9\times10^{5}$ positive draws) 81.6\% of its positive draws are 1 where the distribution gives
+  60.4\%, and their mean is 1.27 where it is 1.71; at $\mu = 3$, shape 2 the means are 3.15 and 3.57. brms's own
+  \code{posterior\_epred()} reports the correct mean (1.6218 $= 0.95 \times 1.7071$), so its draws contradict its expected
+  value. D03 found this and recorded it in \file{tests/zero\_hurdle\_probes}; I reproduced it independently, with another
+  seed, against rejection sampling from R's own \code{rnbinom}. AutoBayes draws exactly (the Gamma--Poisson rate given a
+  positive count in closed form, then a zero-truncated Poisson), checked against the mass function for shapes from
+  $10^{-12}$ to $10^{8}$. I am fairly confident this is a bug in brms rather than a choice, since the draws disagree with
+  brms's own expected value; I have not checked whether a later brms fixes it.
+\item \textbf{Stan's \code{ordered\_probit\_lpmf} gradient (D88).} On \code{cumulative\_probit\_varint} brms's log density
+  equals the 50-digit value to $3.6\times10^{-16}$, but its gradient is off by up to $6.5\times10^{-5}$ relative, at 173 of
+  the 176 entries (with and without the Jacobian). \code{oracle/reference.py} now implements the cumulative probit model
+  (Stan's ordered transform and its Jacobian, each row's Normal mass from the tail it lies in), and the case is accepted
+  under P6 against it: AutoBayes is within $4\times10^{-15}$ of the reference.
+\end{itemize}
+
+\noindent Two numerical limits are ours, not brms's, and are documented: PyMC's \code{BetaBinomial} loses about
+$\epsilon\,\phi\log\phi$ as the precision grows ($1.4\times10^{-7}$ at $\phi = 10^{8}$, where Stan's is within
+$9\times10^{-9}$; D82), and PyTensor's digamma is about $1.5\times10^{-10}$ off for arguments between 1 and 12, which
+reaches the shape gradients on the PyTensor path ($9.2\times10^{-10}$ on \code{weibull\_varint}, $9.4\times10^{-10}$ on
+\code{hurdle\_gamma\_varint}, both inside the $10^{-7}$ tolerance). JAX's digamma is exact, and NumPyro samples on JAX.
+
+\section{What combining the features found}
+\label{sec:integration}
+
+The eight features were written against \code{main}s that lacked one another. I merged them one at a time, rebasing each
+onto the last, re-running the gate tool on the tree that would merge and the whole non-sampling suite: 3{,}061 tests
+passed after D01, 3{,}174 after D06, 3{,}280 after D02, 3{,}345 after D07, 3{,}487 after D04, 3{,}725 after D03 and 3{,}734
+after the probit link. What the combinations turned up:
+\begin{itemize}
+\item D06's post-processing refused the new ordinal families' thresholds correctly, but its tests listed the refusals
+  they expected, and the monotonic-term test listed the families that refuse \code{mo()}; both were extended for D04.
+\item D04's own suite had never run (its agent was stopped by your pause). Running it found a test that used
+  \code{sratio} as an example of an unregistered family, and an error message that called every ordinal family
+  ``the cumulative family''.
+\item Offering the cumulative probit link made the \code{link=} refusal claim that the cumulative family takes the
+  cloglog link; it now lists each multi-link family with its own links.
+\item \code{ab.log\_lik}, \code{ab.bayes\_R2} and \code{ab.loo} raised an \code{AttributeError} on a multivariate model;
+  they now refuse it by name (D06).
+\end{itemize}
+
+\paragraph{The pause.} When you paused the loop, four agents stopped mid-way. D02, D04 and D07 had finished implementing
+and were running their final suites, so I committed their work as it stood and verified it myself, re-taking the
+snapshot of every earlier case model (unchanged in all three). D03 was mid-implementation; a fresh agent reviewed the
+uncommitted work before building on it and found four real problems: a sampler that hung for over 40 minutes at
+shape $10^{-300}$, an underflow that voided the whole zero-inflated Beta likelihood at $|\eta| > 745$, a $+\infty$ log
+density at an observed $y = 1$ where brms gives $-\infty$, and a divergence row that paraphrased brms's source, now
+replaced by output-based evidence.
+
+\section{Where AutoBayes knowingly differs from brms (Tier D rows)}
+\label{sec:divergences}
+
+\small
+\begin{center}\begin{tabular}{@{}>{\raggedright\arraybackslash}p{0.10\textwidth}>{\raggedright\arraybackslash}p{0.18\textwidth}>{\raggedright\arraybackslash}p{0.50\textwidth}>{\raggedright\arraybackslash}p{0.11\textwidth}@{}}
+\toprule
+& area & what differs & status \\
+\midrule
+D76--D79 & continuous families & other links; formulas on \code{shape}, \code{alpha}, \code{beta}, \code{ndt}; addition, special and autocorrelation terms; multivariate and mixture use & kept \\
+D80--D82 & discrete families & the same contexts; beta-binomial precision at very large $\phi$ & kept / documented \\
+D84, D86 & zero-inflated, hurdle & other links, formulas on \code{zi}/\code{hu}, \code{cens()}/\code{trunc()}, special terms; brms's hurdle NB draws are wrong, ours exact & kept / documented \\
+D88, D89 & ordinal & cumulative probit accepted on P6's reference; other links, \code{disc}, \code{mo()}, other forms of \code{cs()} & accepted / kept \\
+D92--D95 & model comparison & stacking, BMA, \code{kfold}, the Bayesian bootstrap; mixed criteria refused & kept \\
+D96--D99 & \code{hypothesis()}, effects & Savage--Dickey ratios (need prior draws), other classes, interaction effects, most options & kept \\
+D100--D103 & shrinkage priors & other classes and formulas, \code{par\_ratio}, \code{autoscale = FALSE}, \code{main = TRUE}; PyMC's float32 $\log 2$ & kept / documented \\
+D104--D107 & grouping terms & \code{mm()} slopes and \code{scale = FALSE}, \code{by} with slopes, IDs within one formula & kept \\
+\bottomrule
+\end{tabular}\end{center}
+\normalsize
+
+\section{How the claims were checked, and their limits}
+\label{sec:verification}
+
+\begin{itemize}
+\item Each feature: the gate tool on the tree that merged; the full non-sampling suite on it; the adapter and gate changes
+  read for weakening (all extensions: \code{cs()} matching, shrinkage parameters, \code{hypothesis} and
+  \code{conditional\_effects} checks, G4 reading \code{expected} for every family with trials); every earlier case model
+  unchanged (snapshots of \code{target\_identity}, \code{describe()}, names and coefficients).
+\item Reproducibility: \code{oracle/regen.py check --all} regenerated all 134 frozen fixtures from R on \code{main} after the last
+  merge and compared them with the committed files: all 134 identical. The four committed 50-digit references,
+  the new cumulative probit one included, regenerate byte for byte (a harness test).
+\end{itemize}
+
+\paragraph{Limits I know of.} Nothing in the loop samples, so no Tier D model has been fitted; the hosted sampling tests
+have not run on anything since C05. \code{conditional\_effects()} is checked against brms on the two frozen cases only;
+on every other frozen model it takes it is checked for consistency with \code{predict()}, which G4 checks against
+  brms.
+D06's names for brms's per-response, per-component and per-category coefficients, quoted in D99, were not probed.
+
+\section{Process and cost}
+\label{sec:cost}
+
+Agent tokens reported by the agents that finished: D01 0.67M, D08 0.65M, D03 (the resumed agent) 0.59M, D06 0.41M, D05
+0.35M, about 2.7M. The four agents stopped at your pause, and the fixtures agent, which died on a network error after
+finishing its work, do not report their usage. Finishing D02, D04 and D07 myself, and doing every rebase myself, kept
+the rest of Tier D out of agent spend. The merge queue ran one suite at a time.
+
+\section{Decisions}
+\label{sec:decisions}
+
+\begin{enumerate}
+\item \textbf{Reporting the brms bug.} Do you want D86 reported upstream (an issue on brms's GitHub with the
+  reproducible R script)? It would go out under your account, so I will not post it unless you say so. I can draft it
+  for you to post instead.
+\item \textbf{What Tier E covers.} The candidates, roughly in order of value for the effort:
+  (a) the simpler missing families (\code{zero\_one\_inflated\_beta}, \code{zero\_inflated\_beta\_binomial},
+  \code{hurdle\_cumulative}, \code{inverse.gaussian}, \code{von\_mises}, \code{asym\_laplace}, \code{frechet},
+  \code{gen\_extreme\_value}, \code{xbeta});
+  (b) contexts refused today across families: distributional formulas, \code{cens()}/\code{trunc()} and \code{weights()} for
+  the newer families, and their other links;
+  (c) the multi-category families (\code{multinomial}, \code{dirichlet}, \code{dirichlet\_multinomial},
+  \code{logistic\_normal});
+  (d) post-processing: prior draws (\code{sample\_prior}) and Savage--Dickey ratios, \code{kfold}, stacking weights,
+  interaction effects;
+  (e) the other correlation structures (\code{car}, \code{sar}, \code{fcor}, \code{unstr}, \code{cosy});
+  (f) \code{wiener} and \code{cox}, the hardest.
+  Unless you say otherwise I would take (a), (b) and (d) next.
+\item \textbf{Splines} (open since Tier B). My recommendation is unchanged: a clean-room rewrite of the spline module
+  from Wood's published algorithms, keeping the tests against mgcv's output.
+\item \textbf{CI.} Still refused for billing. Separately, GitHub notes that \code{ubuntu-latest} moves to Ubuntu 26 from
+  19 October.
+\item \textbf{Attribution.} The ArviZ \file{NOTICE} question from Tier C is still open.
+\item \textbf{A first real fit.} A sampling run of each Tier D family on the GPU or the cluster would test what no gate
+  can. It needs your approval for the compute.
+\end{enumerate}
+
+\end{document}
