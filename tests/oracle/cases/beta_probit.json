@@ -1,0 +1,85 @@
+{
+ "id": "beta_probit",
+ "tier": "E",
+ "feature": "E06_more_links",
+ "note": "E06: brms Beta('probit'): mu = Phi(linpred), phi (log); linpred in (-4.6, 5.4) at the frozen points (1 - mu >= 4e-8); epred = Phi(linpred) (likelihood and epred checked on the frozen points)",
+ "seed": 830,
+ "n_points": 8,
+ "data": {
+  "generator": "tier_e",
+  "seed": 730,
+  "n": 36,
+  "newdata": {
+   "seed": 830,
+   "n": 5
+  }
+ },
+ "brms": {
+  "formula": "prop ~ x + (1 | g)",
+  "family": {
+   "family": "Beta",
+   "link": "probit"
+  },
+  "factors": {
+   "g": [
+    "a",
+    "b",
+    "c",
+    "d",
+    "e",
+    "f"
+   ]
+  },
+  "priors": [
+   {
+    "prior": "normal(0, 2)",
+    "class": "Intercept"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "b"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "sd",
+    "group": "g"
+   },
+   {
+    "prior": "gamma(0.01, 0.01)",
+    "class": "phi"
+   }
+  ]
+ },
+ "autobayes": {
+  "constructor": "beta",
+  "formula": "prop ~ x + (1 | g)",
+  "kwargs": {
+   "link": "probit"
+  },
+  "priors": {
+   "intercept": [
+    "Normal",
+    0,
+    2
+   ],
+   "b": [
+    "Normal",
+    0,
+    1
+   ],
+   "sd": [
+    "HalfNormal",
+    1
+   ],
+   "phi": [
+    "Gamma",
+    0.01,
+    0.01
+   ]
+  }
+ },
+ "gate": {
+  "expect": "fail",
+  "reason": "E06_more_links not implemented; remove this field when it lands"
+ }
+}

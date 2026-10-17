@@ -1,0 +1,86 @@
+{
+ "id": "asym_laplace_quantile",
+ "tier": "E",
+ "feature": "E02_more_families_continuous",
+ "note": "E02: brms asym_laplace with the quantile fixed, bf(quantile = 0.25) (bf_args): standata quantile = 0.25, no quantile parameter or prior row; density and epred as in asym_laplace_varint with p = 0.25 (checked on the frozen points); proposed as kwargs quantile = 0.25",
+ "seed": 809,
+ "n_points": 8,
+ "data": {
+  "generator": "tier_e",
+  "seed": 709,
+  "n": 36,
+  "newdata": {
+   "seed": 809,
+   "n": 5
+  }
+ },
+ "brms": {
+  "formula": "y ~ x + (1 | g)",
+  "family": {
+   "family": "asym_laplace"
+  },
+  "factors": {
+   "g": [
+    "a",
+    "b",
+    "c",
+    "d",
+    "e",
+    "f"
+   ]
+  },
+  "priors": [
+   {
+    "prior": "normal(0, 5)",
+    "class": "Intercept"
+   },
+   {
+    "prior": "normal(0, 2)",
+    "class": "b"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "sd",
+    "group": "g"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "sigma"
+   }
+  ],
+  "bf_args": {
+   "quantile": 0.25
+  }
+ },
+ "autobayes": {
+  "constructor": "asym_laplace",
+  "formula": "y ~ x + (1 | g)",
+  "kwargs": {
+   "quantile": 0.25
+  },
+  "priors": {
+   "intercept": [
+    "Normal",
+    0,
+    5
+   ],
+   "b": [
+    "Normal",
+    0,
+    2
+   ],
+   "sd": [
+    "HalfNormal",
+    1
+   ],
+   "sigma": [
+    "HalfNormal",
+    1
+   ]
+  }
+ },
+ "gate": {
+  "expect": "fail",
+  "reason": "E02_more_families_continuous not implemented; remove this field when it lands"
+ }
+}

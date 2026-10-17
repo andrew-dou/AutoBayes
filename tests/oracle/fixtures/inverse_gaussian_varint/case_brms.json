@@ -1,0 +1,38 @@
+{
+ "factors": {
+  "g": [
+   "a",
+   "b",
+   "c",
+   "d",
+   "e",
+   "f"
+  ]
+ },
+ "family": {
+  "family": "inverse.gaussian"
+ },
+ "formula": "ypos ~ x + offset(eoff) + (1 | g)",
+ "id": "inverse_gaussian_varint",
+ "n_points": 8,
+ "priors": [
+  {
+   "class": "Intercept",
+   "prior": "normal(0, 2)"
+  },
+  {
+   "class": "b",
+   "prior": "normal(0, 1)"
+  },
+  {
+   "class": "sd",
+   "group": "g",
+   "prior": "normal(0, 1)"
+  },
+  {
+   "class": "shape",
+   "prior": "gamma(0.01, 0.01)"
+  }
+ ],
+ "seed": 805
+}

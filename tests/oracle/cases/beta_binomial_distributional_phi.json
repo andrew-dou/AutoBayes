@@ -1,0 +1,110 @@
+{
+ "id": "beta_binomial_distributional_phi",
+ "tier": "E",
+ "feature": "E03_contexts_newer_families",
+ "note": "E03: brms beta_binomial with trials(size) and phi ~ z (log link): standata trials, K_phi, Kc_phi, X_phi (36 x 3); Intercept_phi and b_phi (identity); epred = trials inv_logit(linpred) (checked on the frozen points)",
+ "seed": 813,
+ "n_points": 8,
+ "data": {
+  "generator": "tier_e",
+  "seed": 713,
+  "n": 36,
+  "newdata": {
+   "seed": 813,
+   "n": 5
+  }
+ },
+ "brms": {
+  "formula": [
+   "k | trials(size) ~ x + (1 | g)",
+   "phi ~ z"
+  ],
+  "family": {
+   "family": "beta_binomial"
+  },
+  "factors": {
+   "g": [
+    "a",
+    "b",
+    "c",
+    "d",
+    "e",
+    "f"
+   ],
+   "z": [
+    "p",
+    "q",
+    "r"
+   ]
+  },
+  "priors": [
+   {
+    "prior": "normal(0, 2.5)",
+    "class": "Intercept"
+   },
+   {
+    "prior": "normal(0, 1.5)",
+    "class": "b"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "sd",
+    "group": "g"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "Intercept",
+    "dpar": "phi"
+   },
+   {
+    "prior": "normal(0, 0.5)",
+    "class": "b",
+    "dpar": "phi"
+   }
+  ]
+ },
+ "autobayes": {
+  "constructor": "beta_binomial",
+  "formula": [
+   "k | trials(size) ~ x + (1 | g)",
+   "phi ~ z"
+  ],
+  "kwargs": {
+   "categorical": {
+    "z": "p"
+   }
+  },
+  "priors": {
+   "intercept": [
+    "Normal",
+    0,
+    2.5
+   ],
+   "b": [
+    "Normal",
+    0,
+    1.5
+   ],
+   "sd": [
+    "HalfNormal",
+    1
+   ],
+   "phi": {
+    "intercept": [
+     "Normal",
+     0,
+     1
+    ],
+    "b": [
+     "Normal",
+     0,
+     0.5
+    ]
+   }
+  }
+ },
+ "gate": {
+  "expect": "fail",
+  "reason": "E03_contexts_newer_families not implemented; remove this field when it lands"
+ }
+}

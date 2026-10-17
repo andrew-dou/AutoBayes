@@ -19,6 +19,14 @@ section on the same data: brms's `loo_compare` of the two fits by loo and by wai
 effects: one table each). A table is `{"columns": [...], "values": {column: array or list of strings}}`; an array entry
 "NaN" is brms's NA (a point hypothesis's evidence ratio without prior draws), and a missing text value is `null` (the
 grouping factor's column of a conditional_effects table, which leaves out the group-level effects).
+
+Tier E cases may add: `prior_draws` (with `brm_args` sample_prior "yes"; brms's `prior_draws()` of the fixed-parameter fit as
+`post.prior_draws`, (draws, variables) with brms's names; the seeded points' `pars` then leave out the prior_* generated quantities,
+which Stan draws anew on every constrain_pars() call; a point hypothesis of such a fit has brms's Savage-Dickey evidence ratio),
+`hypothesis_seed` (hypothesis()'s seed, which fixes the last bit of a Savage-Dickey ratio), `dpar_epred` (brms's
+`posterior_epred(dpar = )` of distributional parameters the points do not carry, as `post.dpar_epred`, (draws, rows) each),
+`extras` "loo_model_weights" (with `loo_compare`: brms's stacking weights of the two fits as `post.loo_model_weights`) and
+interaction effects ("x:z") in `conditional_effects`, whose tables have each variable of the effect and `effect2__`.
 """
 from __future__ import annotations
 

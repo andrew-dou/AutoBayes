@@ -1,0 +1,138 @@
+{
+ "id": "gauss_loo_compare_x_stacking",
+ "tier": "E",
+ "feature": "E05_post_prior_effects_stacking",
+ "note": "E05: D05's gauss_loo_compare_x (the same data, model, points and comparison with gauss_loo_compare_xw; its fixture equals that one's apart from this case's id in the comparison) with extras loo_model_weights: post.loo_model_weights is brms's loo_model_weights() of the two fits, loo's stacking (the default method), equal to model_weights(weights = 'stacking'): 0.562, 0.438, where the loo and pseudo-BMA weights put 1 - 4e-115 on this model. The weights are loo 2.9.0's constrained optimum (stats::constrOptim) of the stacking objective on the pointwise elpd_loo, exact only to that optimiser's tolerance",
+ "seed": 621,
+ "n_points": 8,
+ "data": {
+  "generator": "tier_d",
+  "seed": 521,
+  "n": 36,
+  "newdata": {
+   "seed": 621,
+   "n": 5
+  }
+ },
+ "brms": {
+  "formula": "y ~ x + (1 | g)",
+  "family": {
+   "family": "gaussian"
+  },
+  "factors": {
+   "g": [
+    "a",
+    "b",
+    "c",
+    "d",
+    "e",
+    "f"
+   ]
+  },
+  "priors": [
+   {
+    "prior": "normal(0, 5)",
+    "class": "Intercept"
+   },
+   {
+    "prior": "normal(0, 2)",
+    "class": "b"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "sd",
+    "group": "g"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "sigma"
+   }
+  ],
+  "extras": [
+   "log_lik",
+   "loo",
+   "waic",
+   "loo_model_weights"
+  ],
+  "loo_compare": {
+   "id": "gauss_loo_compare_xw",
+   "seed": 622,
+   "n_points": 8,
+   "formula": "y ~ x + w + (1 | g)",
+   "family": {
+    "family": "gaussian"
+   },
+   "factors": {
+    "g": [
+     "a",
+     "b",
+     "c",
+     "d",
+     "e",
+     "f"
+    ]
+   },
+   "priors": [
+    {
+     "prior": "normal(0, 5)",
+     "class": "Intercept"
+    },
+    {
+     "prior": "normal(0, 2)",
+     "class": "b"
+    },
+    {
+     "prior": "normal(0, 1)",
+     "class": "sd",
+     "group": "g"
+    },
+    {
+     "prior": "normal(0, 1)",
+     "class": "sigma"
+    }
+   ],
+   "extras": [
+    "log_lik",
+    "loo",
+    "waic"
+   ]
+  }
+ },
+ "autobayes": {
+  "constructor": "gaussian",
+  "formula": "y ~ x + (1 | g)",
+  "kwargs": {},
+  "priors": {
+   "intercept": [
+    "Normal",
+    0,
+    5
+   ],
+   "b": [
+    "Normal",
+    0,
+    2
+   ],
+   "sd": [
+    "HalfNormal",
+    1
+   ],
+   "sigma": [
+    "HalfNormal",
+    1
+   ]
+  },
+  "post": [
+   "log_lik",
+   "loo",
+   "waic",
+   "loo_compare",
+   "loo_model_weights"
+  ],
+  "compare_with": "gauss_loo_compare_xw"
+ },
+ "gate": {
+  "expect": "fail",
+  "reason": "E05_post_prior_effects_stacking not implemented; remove this field when it lands"
+ }
+}

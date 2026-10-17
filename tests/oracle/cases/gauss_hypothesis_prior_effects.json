@@ -1,0 +1,122 @@
+{
+ "id": "gauss_hypothesis_prior_effects",
+ "tier": "E",
+ "feature": "E05_post_prior_effects_stacking",
+ "note": "E05: fitted with sample_prior = 'yes' (brm_args). post.prior_draws is brms's prior_draws() of the fixed-parameter fit, (8, 4) with columns Intercept, b (one draw shared by every coefficient of class b), sigma, sd_g: Stan's RNG draws them in the fixed-parameter run (seed 1, one chain per point), identically in two runs; the points leave the prior_* quantities out. hypothesis(): a point hypothesis's Evid.Ratio is brms's Savage-Dickey ratio, density_ratio(posterior draws of the hypothesis, prior draw of b minus the point, point = 0) (stats::density, n = 4096; reproduced from the recorded draws to the last bit), Post.Prob = ER / (1 + ER); hypothesis_seed 1 fixes the order in which brms permutes the prior draws, which moves that ratio only in its last bit. The one-sided hypothesis is as in D06. A point hypothesis on two or more parameters is left out: brms pairs their prior draws through a random permutation (R's RNG). conditional_effects() of the interactions x:z (each level of z) and x:w (w at mean - sd, mean, mean + sd: effect2__ is that value as brms labels it, rounded text, w the exact value), 100 x grid points each, 300 rows, the other columns as in D06. The AutoBayes formula spells out x * z + x * w (AutoBayes refuses a predictor repeated by two products)",
+ "seed": 824,
+ "n_points": 8,
+ "data": {
+  "generator": "tier_e",
+  "seed": 724,
+  "n": 36,
+  "newdata": {
+   "seed": 824,
+   "n": 5
+  }
+ },
+ "brms": {
+  "formula": "y ~ x * z + x * w + (1 | g)",
+  "family": {
+   "family": "gaussian"
+  },
+  "factors": {
+   "g": [
+    "a",
+    "b",
+    "c",
+    "d",
+    "e",
+    "f"
+   ],
+   "z": [
+    "p",
+    "q",
+    "r"
+   ]
+  },
+  "priors": [
+   {
+    "prior": "normal(0, 5)",
+    "class": "Intercept"
+   },
+   {
+    "prior": "normal(0, 2)",
+    "class": "b"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "sd",
+    "group": "g"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "sigma"
+   }
+  ],
+  "brm_args": {
+   "sample_prior": "yes"
+  },
+  "prior_draws": true,
+  "hypothesis_seed": 1,
+  "hypothesis": [
+   "x = 0",
+   "w = 0.5",
+   "x:zq = 0",
+   "x > 0"
+  ],
+  "conditional_effects": [
+   "x:z",
+   "x:w"
+  ]
+ },
+ "autobayes": {
+  "constructor": "gaussian",
+  "formula": "y ~ x + z + w + x:z + x:w + (1 | g)",
+  "kwargs": {
+   "categorical": {
+    "z": "p"
+   }
+  },
+  "priors": {
+   "intercept": [
+    "Normal",
+    0,
+    5
+   ],
+   "b": [
+    "Normal",
+    0,
+    2
+   ],
+   "sd": [
+    "HalfNormal",
+    1
+   ],
+   "sigma": [
+    "HalfNormal",
+    1
+   ]
+  },
+  "post": [
+   "hypothesis",
+   "conditional_effects",
+   "prior_draws"
+  ],
+  "post_args": {
+   "hypothesis": [
+    "x = 0",
+    "w = 0.5",
+    "x:zq = 0",
+    "x > 0"
+   ],
+   "conditional_effects": [
+    "x:z",
+    "x:w"
+   ]
+  }
+ },
+ "gate": {
+  "expect": "fail",
+  "reason": "E05_post_prior_effects_stacking not implemented; remove this field when it lands"
+ }
+}

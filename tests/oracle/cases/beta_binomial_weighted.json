@@ -1,0 +1,82 @@
+{
+ "id": "beta_binomial_weighted",
+ "tier": "E",
+ "feature": "E03_contexts_newer_families",
+ "note": "E03: brms beta_binomial with trials(size) + weights(w): standata trials and weights; each row's log likelihood is multiplied by its weight (checked on the frozen points); epred = trials inv_logit(linpred)",
+ "seed": 818,
+ "n_points": 8,
+ "data": {
+  "generator": "tier_e",
+  "seed": 718,
+  "n": 36,
+  "newdata": {
+   "seed": 818,
+   "n": 5
+  }
+ },
+ "brms": {
+  "formula": "k | trials(size) + weights(w) ~ x + (1 | g)",
+  "family": {
+   "family": "beta_binomial"
+  },
+  "factors": {
+   "g": [
+    "a",
+    "b",
+    "c",
+    "d",
+    "e",
+    "f"
+   ]
+  },
+  "priors": [
+   {
+    "prior": "normal(0, 2.5)",
+    "class": "Intercept"
+   },
+   {
+    "prior": "normal(0, 1.5)",
+    "class": "b"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "sd",
+    "group": "g"
+   },
+   {
+    "prior": "gamma(0.01, 0.01)",
+    "class": "phi"
+   }
+  ]
+ },
+ "autobayes": {
+  "constructor": "beta_binomial",
+  "formula": "k | trials(size) + weights(w) ~ x + (1 | g)",
+  "kwargs": {},
+  "priors": {
+   "intercept": [
+    "Normal",
+    0,
+    2.5
+   ],
+   "b": [
+    "Normal",
+    0,
+    1.5
+   ],
+   "sd": [
+    "HalfNormal",
+    1
+   ],
+   "phi": [
+    "Gamma",
+    0.01,
+    0.01
+   ]
+  }
+ },
+ "gate": {
+  "expect": "fail",
+  "reason": "E03_contexts_newer_families not implemented; remove this field when it lands"
+ }
+}

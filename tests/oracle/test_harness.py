@@ -94,8 +94,45 @@ def test_hypothesis_and_conditional_effects_are_recorded_as_asked(case_id):
         assert fx.decode(post["hypothesis"]["samples"]).shape == (fx.frozen_section(case)["n_points"], len(brms["hypothesis"]))
     if "conditional_effects" in brms:
         assert list(post["conditional_effects"]) == brms["conditional_effects"]
-        for effect, table in post["conditional_effects"].items():
-            assert {effect, "estimate__", "se__", "lower__", "upper__"} <= set(table["columns"])
+        for effect, table in post["conditional_effects"].items():   # an interaction "x:z" (Tier E): each variable and effect2__
+            variables = effect.split(":")
+            assert {*variables, "estimate__", "se__", "lower__", "upper__"} <= set(table["columns"])
+            assert ("effect2__" in table["columns"]) == (len(variables) == 2)
+
+
+PRIOR_DRAWS = [cid for cid in FROZEN if fx.load_case(cid)["brms"].get("prior_draws")]
+
+
+@pytest.mark.parametrize("case_id", PRIOR_DRAWS)
+def test_prior_draws_are_recorded_with_the_fit_that_drew_them(case_id):
+    """Tier E: a case with ``prior_draws`` is fitted with sample_prior = "yes"; its fixture has brms's prior_draws(), one finite row
+    per point under brms's names, its seeded points leave out the prior_* generated quantities (constrain_pars() draws them anew on
+    every call), and each point hypothesis has a Savage-Dickey evidence ratio, a number where a fit without prior draws has NA."""
+    case = fx.load_case(case_id)
+    assert case["brms"]["brm_args"]["sample_prior"] == "yes"
+    fixture = fx.Fixture.load(case_id)
+    block = fixture.raw["post"]["prior_draws"]
+    draws = fx.decode(block)
+    assert draws.shape == (len(fixture.points), len(block["colnames"])) and np.isfinite(draws).all()
+    assert not [name for p in fixture.points for name in p.pars if name.startswith("prior_")]
+    if "hypothesis" in case["brms"]:
+        table = fixture.raw["post"]["hypothesis"]["table"]["values"]
+        point = [" = " in h for h in table["Hypothesis"]]
+        assert any(point) and np.isfinite(fx.decode(table["Evid.Ratio"])[point]).all()
+
+
+STACKING = [cid for cid in LOO_COMPARE if "loo_model_weights" in fx.load_case(cid)["brms"].get("extras", [])]
+
+
+@pytest.mark.parametrize("case_id", STACKING)
+def test_stacking_weights_are_recorded_for_the_two_models(case_id):
+    """Tier E: a comparison case with ``extras`` "loo_model_weights" records brms's stacking weights of its two models, in the
+    comparison's order, non-negative and summing to one."""
+    post = fx.Fixture.load(case_id).raw["post"]
+    block = post["loo_model_weights"]
+    assert list(block["models"]) == list(post["loo_compare"]["models"]) and block["method"] == "stacking"
+    w = fx.decode(block["weights"])
+    assert w.shape == (2,) and (w >= 0).all() and abs(w.sum() - 1.0) < 1e-12
 
 
 def _sorted_levels(fixture, group):
