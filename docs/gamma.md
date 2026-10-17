@@ -23,7 +23,8 @@ predictor means.
 **Link (divergence D9).** brms's default link for `Gamma` is `inverse` (`mu = 1 / eta`); this library offers the
 `log` link only, which keeps `mu > 0` for every `eta` and puts the coefficients on the same scale as the Poisson
 and negative binomial families. The fixture `gamma_varint` was frozen with `link = "log"`, so the oracle compares
-like with like; the inverse link is not offered.
+like with like. The default stays `log`; since E06 brms's `inverse` and `identity` links are offered on request,
+`ab.gamma(..., link="inverse")` and `link="identity"`, each needing a positive linear predictor ([links](links.md)).
 
 ## Using it
 

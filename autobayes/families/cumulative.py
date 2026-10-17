@@ -18,7 +18,13 @@ log density, predictions and defaults equal brms's on the oracle case ``cumulati
 there (Stan's ``ordered_probit_lpmf``) is off the 50-digit value by up to 6.5e-5 relative at 86 of its 88 entries, where this
 one is within 4e-15. The case is accepted by two-reference acceptance (P6) against the 50-digit reference of the model
 (``oracle/reference.py``, ``tests/oracle/references/cumulative_probit_varint.json``), so the link is offered (``links``,
-divergence D88). brms's other cumulative links are withheld (divergence D38).
+divergence D88). E06: brms's ``cumulative("cloglog")``, ``P(y <= k) = 1 - exp(-exp(tau_k - mu))``, is built by ``_cloglog()``, the
+same graph with the likelihood ``likelihoods.ordinal_family("cumulative_cloglog", ...)`` (``likelihoods.cloglog_log_mass``), but
+withheld: on the frozen case ``cumulative_cloglog`` its design, predictions, JAX density and defaults equal brms's and its log
+density and gradient equal the 50-digit value (to 2.4e-16 and 7e-17 relative), while brms's own log density there is off by
+5.9e-7 relative at one point (it forms the last category's probability 1 - inv_cloglog by subtraction), which no gate accepts:
+log densities never fall back to a reference (docs/links.md, divergences D38, D132). brms's other cumulative links are withheld
+too (divergence D38).
 """
 from __future__ import annotations
 
@@ -36,6 +42,12 @@ from autobayes.formula import FormulaError, ordinal_categories, pop_term_design
 PARKED_ORDINAL_LINKS = MappingProxyType({
     link: f"brms's {link} link of the ordinal families is not verified against a frozen brms case here (docs/ordinal-categorical.md, "
           "divergence D38)" for link in ("probit_approx", "cloglog", "cauchit")})
+# the cumulative family's own: its cloglog link is built (E06, _cloglog) but withheld with the numbers of its frozen case
+_CUMULATIVE_PARKED_LINKS = MappingProxyType({
+    **PARKED_ORDINAL_LINKS,
+    "cloglog": "it is implemented (E06), but brms's own log density of the frozen case cumulative_cloglog is 5.9e-7 relative off "
+               "the 50-digit value at one point (brms forms P(y = K) = 1 - inv_cloglog by subtraction; this library's is within "
+               "2.4e-16), and log densities never fall back to a reference (docs/links.md, divergences D38, D132)"})
 
 
 def _validate_response(spec, data) -> None:
@@ -170,7 +182,7 @@ CUMULATIVE = FamilySpec(
     monotonic=True,                                                 # B03: mo(x), verified against cumulative_monotonic
     log_likelihood=_log_likelihood,                                 # C07: log_lik(), verified against cumulative_varint_post
     links=MappingProxyType({"probit": lambda: _probit()}),          # D04: the probit link, accepted against brms and P6's reference (D88)
-    parked_links=PARKED_ORDINAL_LINKS,
+    parked_links=_CUMULATIVE_PARKED_LINKS,                          # E06: the cloglog link is built (_cloglog) but withheld (D132)
 )
 
 
@@ -205,4 +217,49 @@ def _probit() -> FamilySpec:
         bambi_setup=ordinal_bambi_setup("cumulative_probit", ordered=True),
         log_likelihood=ordinal_log_likelihood("cumulative_probit"),
         links=MappingProxyType({"logit": lambda: CUMULATIVE}),
+    )
+
+
+# -- E06: the cloglog link -----------------------------------------------------------------------------------------------------
+def _cloglog_mean_lines(model) -> list[str]:
+    K = len(model.categories)
+    return [f"  P(y_i <= k) = 1 - exp(-exp(b_Intercept[k] - mu_i)), k = 1..{K - 1}, the inverse complementary log-log, for the {K} "
+            f"ordered categories {_categories(model)};",
+            "  P(y_i = k) is the difference of consecutive ones (brms's posterior_epred). mu has no intercept: the thresholds",
+            "  b_Intercept[k] take its place, and a larger mu moves probability towards the higher categories."]
+
+
+def _cloglog_likelihood_lines(model) -> list[str]:
+    return ["", "Likelihood",
+            "  y_i ~ cumulative(\"cloglog\")(mu_i, b_Intercept), disc = 1: with F(x) = 1 - exp(-exp(x)) and d_k = b_Intercept[k] - mu_i,",
+            "  log F(d_1) for the first category, -exp(d_{K-1}) for the last and log(exp(-exp(d_{y-1})) (1 - exp(-(exp(d_y) -",
+            "  exp(d_{y-1}))))) otherwise (likelihoods.cloglog_log_mass), never a difference of probabilities: finite with a",
+            "  finite gradient for every finite mu (autobayes/likelihoods.py). The response is fitted as its 1-based category",
+            "  (brms's Y)."]
+
+
+def _cloglog_check_formula(spec) -> None:
+    from autobayes.families.links import check_link_formula
+
+    _check_formula(spec)
+    check_link_formula(spec, _cloglog())
+
+
+@lru_cache(maxsize=None)
+def _cloglog() -> FamilySpec:
+    """The cumulative family's spec under brms's cloglog link (E06): CUMULATIVE's, with the cloglog likelihood, probabilities and
+    words. Withheld (``CUMULATIVE.parked_links["cloglog"]``, divergence D132): no ``links`` entry reaches it, so a model cannot be
+    built with it; ``tests/test_links_more.py`` checks it against brms's frozen case and a 50-digit reference all the same.
+    ``mo()`` and the other special terms would be refused under it (``check_formula``, divergence D133)."""
+    from autobayes.families.links import inverse_cloglog
+    from autobayes.families.ordinal import ordinal_bambi_setup, ordinal_expected_response, ordinal_log_likelihood
+
+    return replace(
+        CUMULATIVE, link="cloglog", link_scale="cloglog", inverse_link=inverse_cloglog,   # P(y <= k) = 1 - exp(-exp(tau_k - mu))
+        expected_response=ordinal_expected_response("cumulative_cloglog"),
+        scale_phrase="complementary log-log (latent)", mean_lines=_cloglog_mean_lines, likelihood_lines=_cloglog_likelihood_lines,
+        bambi_setup=ordinal_bambi_setup("cumulative_cloglog", ordered=True),
+        log_likelihood=ordinal_log_likelihood("cumulative_cloglog"),
+        monotonic=False, check_formula=_cloglog_check_formula,       # D133
+        links=MappingProxyType({"logit": lambda: CUMULATIVE, "probit": lambda: _probit()}),
     )

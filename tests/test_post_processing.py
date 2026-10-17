@@ -50,7 +50,9 @@ CROSS_CHECK = ["gauss_weighted", "gauss_distributional_sigma", "gauss_slope_corr
                # D03: six more zero-inflated and hurdle families, and weights() for B06's two
                "zero_inflated_negbinomial_varint", "hurdle_negbinomial_varint", "zero_inflated_binomial_varint",
                "zero_inflated_beta_varint", "hurdle_gamma_varint", "hurdle_lognormal_varint", "zero_inflated_poisson_weighted",
-               "hurdle_poisson_weighted"]
+               "hurdle_poisson_weighted",
+               # E06: the Poisson sqrt, negative binomial identity, Gamma inverse and identity, Beta probit and cloglog links
+               "poisson_sqrt", "negbinomial_identity", "gamma_inverse", "gamma_identity", "beta_probit", "beta_cloglog"]
 
 
 def _bundle(case_id):

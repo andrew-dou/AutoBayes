@@ -78,9 +78,5 @@
     0.01
    ]
   }
- },
- "gate": {
-  "expect": "fail",
-  "reason": "E06_more_links not implemented; remove this field when it lands"
  }
 }

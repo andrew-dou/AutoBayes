@@ -10,6 +10,12 @@ the PyTensor and the JAX path); here are the inverse links ``predict()`` applies
 Under every link the graph keeps the linear predictor as the parent ``<link>_p`` (``logit_p``, ``probit_p``,
 ``cloglog_p``) under Bambi's identity link, so the deterministic the oracle compares with brms's ``posterior_linpred`` is
 ``eta`` itself.
+
+E06 (docs/links.md) adds links of other Tier A families, each spec built in its family's module: ``poisson("sqrt")``,
+``negbinomial("identity")``, ``Gamma("inverse")`` and ``Gamma("identity")``, ``Beta("probit")`` and ``Beta("cloglog")``, and
+``cumulative("cloglog")``. Here are what they share: the inverse links of the mean (``square_mean``, ``positive_mean``), the
+complement ``1 - mu`` of a probability link computed directly (``COMPLEMENTS``), and ``check_link_formula``, the refusal of
+the constructs no frozen case verifies under such a link (divergence D133).
 """
 from __future__ import annotations
 
@@ -65,3 +71,68 @@ LINKS = MappingProxyType({link.name: link for link in (
 # Links brms offers for these families that this library does not build a model with, and why (docs/links.md): none since
 # P6, which lifted the cloglog link's park (divergence D18).
 PARKED_LINKS = MappingProxyType({})
+
+
+# -- E06: the links of the Poisson, negative binomial, Gamma, Beta and cumulative families -------------------------------------
+COMPLEMENTS = MappingProxyType({                           # eta -> 1 - P(y = 1) (or 1 - mu), NumPy, never by subtraction
+    "logit": lambda eta: expit(-np.asarray(eta, dtype=float)),
+    "probit": lambda eta: ndtr(-np.asarray(eta, dtype=float)),
+    "cloglog": lambda eta: np.exp(-np.exp(np.asarray(eta, dtype=float))),
+})
+
+
+def square_mean(eta, what: str):
+    """``eta^2``, the mean under the sqrt link (brms squares the linear predictor; every real ``eta`` gives a valid mean),
+    refused rather than clipped when it overflows."""
+    with np.errstate(over="ignore", invalid="ignore"):
+        mean = np.square(np.asarray(eta, dtype=float))
+    if not np.isfinite(mean).all():
+        raise ValueError(f"{what} overflow/nonfinite prediction; inspect the square-root-mean draws")
+    return mean
+
+
+def positive_mean(eta, link: str, what: str):
+    """The mean under the identity (``eta``) or the inverse (``1 / eta``) link, refused where it is not a positive finite
+    number: brms's ``posterior_epred`` returns such a mean unchecked and its ``posterior_predict`` draws NaN there, while the
+    model's log density is ``-inf`` (brms's Stan rejects it); here ``predict()`` names the rows (divergence D134)."""
+    eta = np.asarray(eta, dtype=float)
+    bad = ~(eta > 0) | ~np.isfinite(eta)
+    if bad.any():
+        rows = np.unique(np.nonzero(bad)[-1])
+        raise ValueError(f"{what}: the {link} link gives a non-positive or nonfinite mean (linear predictor <= 0) for some draws at "
+                         f"{rows.size} row(s), the first {rows[:5].tolist()}; the {link} link needs a positive linear predictor "
+                         "(brms's posterior_epred returns that mean unchecked and posterior_predict draws NaN there; divergence D134)")
+    with np.errstate(divide="ignore", over="ignore"):
+        mean = 1.0 / eta if link == "inverse" else eta
+    if not (np.isfinite(mean).all() and (mean > 0).all()):
+        raise ValueError(f"{what}: the {link} link's mean underflows or overflows for some draws; inspect the linear predictor")
+    return mean
+
+
+# The constructs a formula may hold under an E06 link, and what is refused: the term model's population- and group-level terms
+# (numeric and categorical predictors, interactions, transforms, varying intercepts and slopes, correlated or not, nested) and
+# offset() enter the linear predictor as under the family's own link, and the frozen cases check (1 | g) and offset(); the
+# special terms, the addition terms and a distributional formula are refused, since no frozen case verifies them under the
+# link (divergence D133).
+def check_link_formula(spec, fam) -> None:
+    """Refuse, naming the construct and the link, what no frozen brms case verifies under the E06 link of ``fam``: ``mo()``,
+    ``gp()``, ``mm()``, ``gr(by = )``, ``me()``, ``mi()``, ``cs()``, an autocorrelation term, an addition term (``weights()``,
+    ``cens()``, ``trunc()``) and a distributional formula (divergence D133). ``spec`` is the parsed ``ModelSpec``."""
+    from autobayes.families import FAMILIES
+    from autobayes.formula import FormulaError
+
+    found = []
+    found += [f"the monotonic term {t.name!r}" for t in getattr(spec, "mo_terms", ())]
+    found += [f"the Gaussian process {g.term!r}" for g in getattr(spec, "gp_terms", ())]
+    found += [f"the group term '{t.canonical}'" for t in getattr(spec, "custom_group_terms", ())]
+    found += [f"the measurement-error term {t.name!r}" for t in getattr(spec, "me_terms", ())]
+    found += [f"the missing-value term {t.name!r}" for t in getattr(spec, "mi_terms", ())]
+    found += [f"the category-specific term {t.name!r}" for t in getattr(spec, "cs_terms", ())]
+    found += [f"the autocorrelation term {spec.autocor.term!r}"] if getattr(spec, "autocor", None) is not None else []
+    found += [f"the addition term {a.term!r}" for a in getattr(spec, "additions", ())]
+    found += [f"the distributional formula '{d.formula}'" for d in getattr(spec, "dpars", ())]
+    if found:
+        raise FormulaError(
+            f"{spec.formula!r}: {found[0]} is not available under the {fam.link} link of the {fam.name} family: no frozen brms case "
+            f"verifies it with that link (the link's formula takes population- and group-level terms and offset(); its "
+            f"{FAMILIES[fam.name].link} link takes more; docs/links.md, divergence D133)")

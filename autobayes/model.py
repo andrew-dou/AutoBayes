@@ -4,7 +4,8 @@ The families of ``autobayes.families``, including Poisson and negative binomial 
 Student-t responses (``nu`` fixed or learned). ``"gaussian"`` (M0): identity link, residual SD ``sigma``. ``"bernoulli"``
 (M1): logit link, ``p = expit(eta)``, no residual scale. ``"binomial"`` (M2): logit link on
 ``successes | trials(n)``, counts. The Bernoulli and binomial families also take ``link="probit"`` (A12) and
-``link="cloglog"`` (P6; docs/links.md). All share the right-hand side ``[1 +] x1 [+ x2 ...] [+ offset(log(col))]
+``link="cloglog"`` (P6; docs/links.md), and the Poisson (``"sqrt"``), negative binomial (``"identity"``), Gamma (``"inverse"``,
+``"identity"``) and Beta (``"probit"``, ``"cloglog"``) families brms's further links (E06). All share the right-hand side ``[1 +] x1 [+ x2 ...] [+ offset(log(col))]
 [+ (1 | factor) | (1 + x || factor) | (1 + x | factor) ...]`` with numeric terms and, since M3a-1, treatment-coded categorical
 terms declared with ``categorical={column: reference}``; an optional offset term (A06, docs/offset.md), added to
 the linear predictor with no coefficient; centring; non-centred group effects (varying
@@ -351,6 +352,8 @@ class Model:
             raise ValueError(f"families= and order= are a mixture's (ab.mixture, docs/mixtures.md); the {family} family takes neither")
 
         spec0 = parse_formula(formula, None, family, categorical)
+        if fam is not get_family(family) and fam.check_formula is not None:   # a link's own refusals (E06, divergence D133)
+            fam.check_formula(spec0)
         self.imputed: tuple[str, ...] = tuple(imputed)        # C06: the columns a multivariate model imputes by their own formula
         check_imputation(spec0, self.imputed)
         self.effective_center_predictors = self.center_predictors and spec0.intercept
@@ -2948,40 +2951,43 @@ def student(formula: str | list[str], data: pd.DataFrame, priors: Priors, *, nu:
                  center_predictors=center_predictors, categorical=categorical)
 
 
-def poisson(formula: str, data: pd.DataFrame, priors: Priors, *,
+def poisson(formula: str, data: pd.DataFrame, priors: Priors, *, link: str = "log",
             center_predictors: bool = True, categorical: Mapping[str, object] | None = None) -> Model:
     """Poisson count response with log link and explicit coefficient/group priors.
 
     Retains zero rows. Input counts must be integers in [0, 1e6]. An exposure enters as
     ``offset(log(exposure))`` (docs/offset.md). No sigma, nu or overdispersion parameter
-    is supported in this slice.
+    is supported in this slice. ``link="sqrt"`` is brms's ``poisson("sqrt")``, ``mu = eta^2`` (E06, docs/links.md).
     """
-    return Model(formula, data, priors, family="poisson",
+    return Model(formula, data, priors, family="poisson", link=link,
                  center_predictors=center_predictors, categorical=categorical)
 
 
-def negbinomial(formula: str | list[str], data: pd.DataFrame, priors: Priors, *,
+def negbinomial(formula: str | list[str], data: pd.DataFrame, priors: Priors, *, link: str = "log",
                 center_predictors: bool = True, categorical: Mapping[str, object] | None = None) -> Model:
     """Negative binomial count response (brms ``negbinomial``): log link, ``Var[y] = mu + mu^2 / shape``.
 
     Counts as for Poisson (integers in [0, 1e6], zero rows retained). The overdispersion parameter ``shape``
     takes its own positive-support prior, ``Priors(shape=ab.Gamma(0.01, 0.01))``, or its own formula under a log link (B01,
     ``["y ~ x", "shape ~ z"]``, docs/distributional.md); no sigma, nu, offset/exposure or zero-inflation.
+    ``link="identity"`` is brms's ``negbinomial("identity")``, ``mu = eta``, which needs a positive linear predictor (E06,
+    docs/links.md).
     """
-    return Model(formula, data, priors, family="negbinomial",
+    return Model(formula, data, priors, family="negbinomial", link=link,
                  center_predictors=center_predictors, categorical=categorical)
 
 
-def gamma(formula: str | list[str], data: pd.DataFrame, priors: Priors, *,
+def gamma(formula: str | list[str], data: pd.DataFrame, priors: Priors, *, link: str = "log",
           center_predictors: bool = True, categorical: Mapping[str, object] | None = None) -> Model:
     """Gamma response with a log link (brms ``Gamma(link = "log")``): ``E[y] = mu = exp(eta)``, ``Var[y] = mu^2 / shape``.
 
     Responses are strictly positive finite reals. The shape parameter takes its own positive-support prior,
     ``Priors(shape=ab.Gamma(0.01, 0.01))``, or its own formula under a log link (B01, ``["y ~ x", "shape ~ z"]``,
-    docs/distributional.md); no sigma, nu, offset or other link (brms's default Gamma link is inverse;
-    docs/brms-parity/divergences.md, D9).
+    docs/distributional.md); no sigma or nu. ``link`` is ``"log"`` by default (brms's default Gamma link is inverse;
+    docs/brms-parity/divergences.md, D9); ``"inverse"`` (``mu = 1 / eta``) and ``"identity"`` (``mu = eta``) are brms's
+    ``Gamma("inverse")`` and ``Gamma("identity")``, which need a positive linear predictor (E06, docs/links.md).
     """
-    return Model(formula, data, priors, family="gamma",
+    return Model(formula, data, priors, family="gamma", link=link,
                  center_predictors=center_predictors, categorical=categorical)
 
 
@@ -3000,17 +3006,18 @@ def lognormal(formula: str | list[str], data: pd.DataFrame, priors: Priors, *,
                  center_predictors=center_predictors, categorical=categorical)
 
 
-def beta(formula: str | list[str], data: pd.DataFrame, priors: Priors, *,
+def beta(formula: str | list[str], data: pd.DataFrame, priors: Priors, *, link: str = "logit",
          center_predictors: bool = True, categorical: Mapping[str, object] | None = None) -> Model:
     """Beta response with a logit link (brms ``Beta()``): proportions strictly inside (0, 1), ``E[y] = mu = expit(eta)``,
     ``Var[y] = mu (1 - mu) / (1 + phi)``.
 
     The precision ``phi`` takes its own positive-support prior, ``Priors(phi=ab.Gamma(0.01, 0.01))`` (brms class
     ``phi``), or its own formula under a log link (B01, ``["y ~ x", "phi ~ z"]``, docs/distributional.md); the intercept and
-    slope priors are on the logit scale. ``predict(kind="mean")`` returns ``mu``; no sigma, shape, nu, other link or
-    zero/one inflation.
+    slope priors are on the logit scale. ``predict(kind="mean")`` returns ``mu``; no sigma, shape, nu or zero/one inflation.
+    ``link="probit"`` (``mu = Phi(eta)``) and ``link="cloglog"`` (``mu = 1 - exp(-exp(eta))``) are brms's ``Beta("probit")`` and
+    ``Beta("cloglog")``, the priors then on that link's scale (E06, docs/links.md).
     """
-    return Model(formula, data, priors, family="beta",
+    return Model(formula, data, priors, family="beta", link=link,
                  center_predictors=center_predictors, categorical=categorical)
 
 
@@ -3234,9 +3241,10 @@ def cumulative(formula: str, data: pd.DataFrame, priors: Priors, *, link: str = 
     the centred design (brms's ``Intercept``), on Stan's ordered coordinates, and the graph's ``b_Intercept`` holds them for
     the raw design. The intercept cannot be removed (brms refuses it too). ``predict(kind="mean")`` returns the category
     probabilities ``p`` with a ``category`` dimension, ``kind="linear"`` returns ``mu``, ``kind="response"`` 1-based
-    categories. ``link`` is ``"logit"``; brms's ``cumulative("probit")`` is implemented but withheld (D04: brms's own gradient
-    of its frozen case is inexact, divergence D88) and its other links are not offered. No ``disc``, category-specific
-    effects or threshold structures (divergences D38, D89).
+    categories. ``link`` is ``"logit"`` or ``"probit"`` (D04, accepted against P6's reference, divergence D88); brms's
+    ``cumulative("cloglog")`` is implemented but withheld (E06: brms's own log density of its frozen case is inexact, divergence
+    D132; docs/links.md) and its other links are not offered. No ``disc``, category-specific effects or threshold structures
+    (divergences D38, D89).
     """
     return Model(formula, data, priors, family="cumulative", link=link, center_predictors=center_predictors, categorical=categorical)
 

@@ -12,7 +12,7 @@ test or `match`.
 
 | Group | Fields | Gaussian | Student-t | Poisson | negative binomial | Gamma | lognormal | Beta | Bernoulli | binomial |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| Names | `name`, `tag`, `parent`, `link`, `link_scale`, `mean_name`, `links`, `parked_links` | mu / identity / mu | mu / identity / mu | mu / log (log scale) / mu | mu / log (log scale) / mu | mu / log (log scale) / mu | mu / identity (log scale: mu is the location of log y) / mean | logit_mu / logit (logit scale) / mu | logit_p / logit (logit scale) / p; `links`: probit (probit_p / probit scale / p), cloglog (cloglog_p / cloglog scale / p); `parked_links`: none | logit_p / logit (logit scale) / p; `links`: probit, cloglog; `parked_links`: none |
+| Names | `name`, `tag`, `parent`, `link`, `link_scale`, `mean_name`, `links`, `parked_links` | mu / identity / mu | mu / identity / mu | mu / log (log scale) / mu; `links` (E06): sqrt (sqrt_mu / sqrt scale / mu) | mu / log (log scale) / mu; `links` (E06): identity (mu / response scale / mu) | mu / log (log scale) / mu; `links` (E06): inverse (inverse_mu / inverse scale / mu), identity (mu / response scale / mu) | mu / identity (log scale: mu is the location of log y) / mean | logit_mu / logit (logit scale) / mu; `links` (E06): probit (probit_mu), cloglog (cloglog_mu) | logit_p / logit (logit scale) / p; `links`: probit (probit_p / probit scale / p), cloglog (cloglog_p / cloglog scale / p); `parked_links`: none | logit_p / logit (logit scale) / p; `links`: probit, cloglog; `parked_links`: none |
 | Response | `response_kind`, `response_dtype`, `validate_response`, `response_warnings` | continuous, numeric | continuous, numeric | count, int64, counts in [0, 1e6], all-zero warning | count, int64, counts in [0, 1e6], all-zero warning | continuous, numeric, finite and strictly positive | continuous, numeric, finite and strictly positive | continuous, numeric, strictly inside (0, 1) | binary, int64, strict 0/1 | binomial (trials), int64, `binomial_counts`, separation warning |
 | Parameters | `scale_parameter` (brms name; prior required), `bambi_scale_parameter` (Bambi's/PyMC's name), `fixed_parameters` (user scalar with its check), `learnable_parameters` (fixed parameters a model may learn instead, with their lower bound) | sigma / sigma | sigma / sigma; nu > 1 fixed, or learned (`learnable_parameters`: nu > 1) | none | shape / alpha | shape / alpha | sigma / sigma | phi / phi | none | none |
 | Graph | `bambi_family` | `"gaussian"` | `"t"` | `"poisson"` | `"negativebinomial"` | Bambi's `gamma` with `link = "log"` | `likelihoods.lognormal_family` (PyMC's `LogNormal`) | `likelihoods.beta_logit_family` (PyMC's `Beta` with alpha = expit(eta) phi, beta = expit(-eta) phi) | `likelihoods.bernoulli_logit_family`; under probit `likelihoods.bernoulli_link_family("probit")` | `likelihoods.binomial_logit_family`; under probit `likelihoods.binomial_link_family("probit")` |
@@ -56,7 +56,11 @@ link and refusing anything else by name, `get_family(name, link)` and `family_of
 family and link, and `Model(..., link=...)` is the only place a link is chosen. `parked_links` names the links brms
 offers for the family that this library withholds, with the reason the refusal carries (none since P6 lifted the
 Bernoulli and binomial cloglog link's park, docs/links.md). Everything downstream reads the resolved spec, so a link is
-never compared by name outside this package either.
+never compared by name outside this package either. E06 gave the Poisson (sqrt), negative binomial (identity), Gamma
+(inverse, identity) and Beta (probit, cloglog) families further links and built the cumulative cloglog link, which stays in
+`parked_links` (D132). A spec under an E06 link sets `check_formula` to `families.links.check_link_formula`, which `Model` and
+`ab.default_priors` call for any spec other than the registered one, so the constructs no frozen case verifies under the
+link are refused by name (D133; docs/links.md).
 
 The auxiliary parameter is one of `Priors`' fields `sigma`, `shape` or `phi` (`priors.AUXILIARY`), named by
 `scale_parameter`; exactly the family's own must be given to `Priors` and to `Model.value_point`, and

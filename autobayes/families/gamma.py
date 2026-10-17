@@ -8,8 +8,16 @@ rounding is inside the oracle tolerance, checked against brms in the case ``gamm
 sampled variable is ``alpha_log__`` (``model.names["shape"]`` is ``"alpha"``). This library's Gamma link is ``log``;
 brms's default is ``inverse`` (docs/brms-parity/divergences.md, D9). ``shape`` may have its own formula under a log link
 (B01, docs/distributional.md; ``gamma_distributional_shape``), Bambi's distributional ``alpha``.
+
+E06 (docs/links.md): brms's ``Gamma("inverse")`` (``mu = 1 / eta``, parent ``inverse_mu``) and ``Gamma("identity")`` (``mu = eta``,
+parent ``mu``), each needing a positive linear predictor, are ``_link("inverse")`` and ``_link("identity")``, reached through
+``GAMMA.links`` (``ab.gamma(..., link="inverse")``); the default stays ``log`` (D9).
 """
 from __future__ import annotations
+
+from dataclasses import replace
+from functools import lru_cache, partial
+from types import MappingProxyType
 
 from autobayes.families.spec import NO_FIXED_PARAMETERS, STANDARD_PREDICTION_KINDS, FamilySpec, auxiliary, exp_mean, scale_line, scale_symbol
 from autobayes.formula import validate_positive_response
@@ -82,4 +90,70 @@ GAMMA = FamilySpec(
     default_distributional_intercept=lambda scale: StudentT(3, 0, 2.5),   # brms Intercept_shape: student_t(3, 0, 2.5) under the log link
     monotonic=True,                                                 # B03: mo(x), verified against gamma_monotonic
     log_likelihood=_log_likelihood,                                 # C07: log_lik(), checked against the model's own density (test_post_processing.py)
+    links=MappingProxyType({"inverse": lambda: _link("inverse"), "identity": lambda: _link("identity")}),   # E06 (gamma_inverse, gamma_identity)
 )
+
+
+# -- E06: the inverse and identity links --------------------------------------------------------------------------------------
+_LINK_WORDS = {   # link -> (parent, mean as a formula in eta, what eta is, the rate as a formula)
+    "inverse": ("inverse_mu", "1 / eta_i", "the inverse of the expected response", "shape eta_i"),
+    "identity": ("mu", "eta_i", "the expected response", "shape / eta_i"),
+}
+
+
+def _link_bambi_family(link: str):
+    from autobayes.likelihoods import gamma_link_family
+
+    return gamma_link_family(link)
+
+
+def _link_inverse(link: str, eta):
+    from autobayes.families.links import positive_mean
+
+    return positive_mean(eta, link, "Gamma expected response")
+
+
+def _link_log_likelihood(link: str, model, post, eta):
+    """brms's log_lik (C07): ``log Gamma(y_i | shape, shape / mu_i)`` under the link, ``-inf`` where ``eta_i <= 0``."""
+    from autobayes.families.pointwise import gamma_link
+
+    return gamma_link(model.design.y, eta, auxiliary(model, post, "shape"), link)
+
+
+def _link_likelihood_lines(link: str, model) -> list[str]:
+    _, mean, _, rate = _LINK_WORDS[link]
+    return [scale_line(model), "", "Likelihood",
+            f"  y_i ~ Gamma(shape, rate = shape / mu_i); mu_i = {mean} (brms's Gamma(\"{link}\")); E[y_i] = mu_i, Var[y_i] = mu_i^2 / shape",
+            f"  brms's parameterisation gamma_lpdf(y | shape, shape / mu), written with the rate {rate} (autobayes/likelihoods.py),",
+            "  sampled as log(shape); a row with eta_i <= 0 has no valid mean and the log density is -inf there (brms's Stan",
+            "  rejects it). Responses are strictly positive finite reals."]
+
+
+def _link_check_formula(link: str, spec) -> None:
+    from autobayes.families.links import check_link_formula
+
+    check_link_formula(spec, _link(link))
+
+
+@lru_cache(maxsize=None)
+def _link(link: str) -> FamilySpec:
+    """The Gamma family's spec under brms's inverse or identity link (E06): the mean ``1 / eta`` or ``eta``, positive where the
+    model is defined; verified against the frozen cases ``gamma_inverse`` and ``gamma_identity``. ``weights()``, a formula on
+    ``shape``, ``mo()`` and the other special terms are refused under them (``check_formula``, divergence D133)."""
+    parent, mean, meaning, _ = _LINK_WORDS[link]
+    others = {"log": lambda: GAMMA, **{o: partial(_link, o) for o in _LINK_WORDS if o != link}}
+    return replace(
+        GAMMA, parent=parent, link=link, link_scale=None if link == "identity" else link,
+        bambi_family=partial(_link_bambi_family, link), inverse_link=partial(_link_inverse, link),
+        scale_phrase="expected response" if link == "identity" else "inverse mean",
+        intercept_meaning=meaning.replace("the ", "", 1),
+        mean_lines=lambda model: [f"  E[y_i] = mu_i = {mean}; eta is {meaning}, which must be positive; Var[y_i] = mu_i^2 / shape."],
+        likelihood_lines=partial(_link_likelihood_lines, link),
+        deterministic_note=(f"{parent} = linear predictor; mu = 1 / {parent}, the expected response, is computed by predict()"
+                            if link == "inverse" else "mu = linear predictor = the expected response"),
+        default_prior_link=link,                                    # brms reads 1 / y (zeros as 0.1) or y as it is
+        addition_terms=frozenset(), distributional_link=None, default_distributional_intercept=None, monotonic=False,   # D133
+        log_likelihood=partial(_link_log_likelihood, link),
+        check_formula=partial(_link_check_formula, link),
+        links=MappingProxyType(others),
+    )

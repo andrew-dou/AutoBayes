@@ -1520,10 +1520,39 @@ def cumulative_logit_family(terms, means, dim: str):
 #     log(1 - expit(-d_k)) [k < K] + sum_{j<k} log expit(-d_j): the same row as sratio's, the logistic being symmetric;
 #   acat("logit"), adjacent categories: log(P(y = k + 1) / P(y = k)) = eta_k - tau_k = -d_k, so log P(y = k) = s_k -
 #     log_sum_exp(s_1, ..., s_K) with s_1 = 0, s_k = -sum_{j<k} d_j, the largest s factored out of the sum.
+#   cumulative("cloglog") (E06): P(y <= k) = F(d_k) with F(x) = 1 - exp(-exp(x)), so the first row is log F(d_1) =
+#     cloglog_log_p1(d_1), the last log(1 - F(d_{K-1})) = -exp(d_{K-1}) = cloglog_log_p0(d_{K-1}) and a middle one the log of
+#     F(d_y) - F(d_{y-1}) = exp(-exp(lo)) (1 - exp(-t)), t = exp(hi) - exp(lo), written cloglog_log_mass(lo, hi) below, never a
+#     difference of probabilities (brms subtracts two inv_cloglog values, which loses the mass where both are near 1; D132).
 # Each is a sum of stable non-positive terms, finite with a finite gradient for every finite eta and tau on the PyTensor path
 # and under JAX's autodiff; a row's thresholds are selected by the one-hot switch of _select, as for the cumulative logit row.
-ORDINAL_KINDS = ("cumulative_probit", "sratio_logit", "cratio_logit", "acat_logit")
+ORDINAL_KINDS = ("cumulative_probit", "sratio_logit", "cratio_logit", "acat_logit", "cumulative_cloglog")
 _ZERO, _ONE = np.float64(0.0), np.float64(1.0)
+_CLOGLOG_MASS_LOWER = -20.0
+
+
+def cloglog_log_mass(lower, upper):
+    """``log(F(upper) - F(lower))`` with ``F(x) = 1 - exp(-exp(x))`` (the cumulative cloglog model's probability of a middle
+    category, E06) for ``lower < upper``, finite with a finite gradient for every finite pair. From ``upper = -20`` to 700:
+    ``-exp(lower) + log(1 - exp(-t))`` with ``t = exp(upper) - exp(lower)`` formed as ``exp(upper) (-expm1(lower - upper))``
+    (never a difference of two exponentials) and ``log(1 - exp(-t))`` as ``log1mexp(-t)``; above ``upper = 700``, where ``exp``
+    overflows, ``t`` exceeds 745 for every ``lower < upper`` that double precision can hold, so that term is exactly 0 and the
+    row is ``-exp(lower)``, with ``lower`` taken at 700 at most (the finite stand-in ``cloglog_log_p0`` uses). Below ``upper =
+    -20``: ``upper + log(1 - exp(lower - upper)) + log1p(-(exp(upper) + exp(lower)) / 2)``, from ``F(x) = e^x - e^2x / 2 + ...``
+    (the omitted term is below 1e-17 relative there). Every branch is evaluated on arguments moved into its own range where
+    it is not taken."""
+    lower, upper = pt.as_tensor_variable(lower), pt.as_tensor_variable(upper)
+    low = upper < _CLOGLOG_MASS_LOWER
+    cap = upper > _CLOGLOG_EXP_CAP
+    skip = pt.or_(low, cap)
+    hi = pt.switch(skip, _ONE, upper)
+    lo = pt.switch(skip, _ZERO, lower)
+    t = pt.exp(hi) * -pt.expm1(lo - hi)
+    regular = -pt.exp(pt.switch(lower > _CLOGLOG_EXP_CAP, _CLOGLOG_EXP_CAP, lower)) + pt.switch(cap, _ZERO, pt.log1mexp(-t))
+    u_lo = pt.switch(low, upper, _CLOGLOG_MASS_LOWER - _ONE)
+    l_lo = pt.switch(low, lower, _CLOGLOG_MASS_LOWER - 2.0)
+    tail = u_lo + pt.log1mexp(l_lo - u_lo) + pt.log1p(-_F64_HALF * (pt.exp(u_lo) + pt.exp(l_lo)))
+    return pt.switch(low, tail, regular)
 
 
 def ordinal_logp_rows(kind: str, value, d):
@@ -1545,6 +1574,9 @@ def ordinal_logp_rows(kind: str, value, d):
         full = pt.concatenate([pt.zeros_like(d[..., :1]), -pt.cumsum(d, axis=-1)], axis=-1)       # s_1 = 0, s_k
         m = pt.max(full, axis=-1, keepdims=True)
         out = (_select(full, pt.clip(y - 1, 0, k)) - m[..., 0]) - pt.log(pt.sum(pt.exp(full - m), axis=-1))
+    elif kind == "cumulative_cloglog":                                    # E06
+        middle = cloglog_log_mass(pt.switch(both, lower, -1.0), pt.switch(both, upper, 1.0))
+        out = pt.switch(both, middle, pt.switch(has_upper, cloglog_log_p1(upper), cloglog_log_p0(lower)))
     else:
         raise ValueError(f"kind must be one of {ORDINAL_KINDS}, got {kind!r}")
     return pt.switch(pt.and_(pt.ge(y, 1), pt.le(y, k + 1)), out, -np.inf)
@@ -1577,6 +1609,18 @@ def ordinal_log_probabilities(kind: str, d):
             full = np.concatenate([0.0 * end, -np.cumsum(d, axis=-1)], axis=-1)
             m = full.max(axis=-1, keepdims=True)
             return (full - m) - np.log(np.exp(full - m).sum(axis=-1, keepdims=True))
+        if kind == "cumulative_cloglog":                                    # E06: cloglog_log_mass's forms, row by row
+            hi = np.concatenate([d, np.inf * end], axis=-1)                # d_k, d_K = inf
+            lo = np.concatenate([-np.inf * end, d], axis=-1)               # d_{k-1}, d_0 = -inf
+            first = np.where(hi < -20.0, hi + np.log1p(-0.5 * np.exp(np.minimum(hi, -20.0))),
+                             np.log(-np.expm1(-np.exp(np.clip(hi, -20.0, 40.0)))))           # log F(d_1), cloglog_log_p1
+            last = -np.exp(np.minimum(lo, 700.0))                                             # log(1 - F(d_{K-1}))
+            skip = (hi < -20.0) | (hi > 700.0)
+            h, l = np.where(skip, 1.0, hi), np.where(skip, 0.0, lo)
+            regular = -np.exp(np.minimum(lo, 700.0)) + np.where(hi > 700.0, 0.0, log1mexp(np.exp(h) * np.expm1(l - h)))
+            tail = hi + log1mexp(lo - hi) + np.log1p(-0.5 * (np.exp(hi) + np.exp(lo)))
+            middle = np.where(hi < -20.0, tail, regular)
+            return np.where(np.isneginf(lo), first, np.where(np.isposinf(hi), last, middle))
     raise ValueError(f"kind must be one of {ORDINAL_KINDS}, got {kind!r}")
 
 
@@ -1804,3 +1848,179 @@ def gaussian_mixture_family(labels, dim: str, scales, theta_name: str, concentra
 
     likelihood = bmb.Likelihood("GaussianMixture", params=["mu"], parent="mu", dist=GaussianMixture)
     return GaussianMixtureFamily("gaussian_mixture", likelihood, link={"mu": "identity"})
+
+
+# ---- more links for the Tier A families (brms-parity E06, docs/links.md) ----------------------------------------------------
+# brms 2.23 under the links its documentation lists for these families (brmsfamily()), with eta the linear predictor (the offset
+# included) and the densities of brms's vignette "Parameterization of Response Distributions in brms":
+#   poisson("sqrt")          y ~ Poisson(mu), mu = eta^2 for every real eta (brms squares the linear predictor)
+#   negbinomial("identity")  y ~ NegBinomial2(mu, shape), mu = eta
+#   Gamma("inverse")         y ~ Gamma(shape, rate = shape / mu), mu = 1 / eta
+#   Gamma("identity")        the same with mu = eta
+#   Beta("probit")           y ~ Beta(mu phi, (1 - mu) phi), mu = Phi(eta)
+#   Beta("cloglog")          the same with mu = 1 - exp(-exp(eta))
+#   cumulative("cloglog")    P(y <= k) = 1 - exp(-exp(tau_k - eta))   (ORDINAL_KINDS above)
+# Each family keeps eta itself as Bambi's parent under the identity link (sqrt_mu, inverse_mu, probit_mu, cloglog_mu; mu under
+# the identity links, where the linear predictor is the mean), as the Beta logit family keeps logit_mu, so that the graph's
+# deterministic is brms's posterior_linpred. The forms:
+# - Poisson: y log(eta^2) - eta^2 - lgamma(y + 1) as 2 y log|eta| - eta^2 - lgamma(y + 1), the first term 0 on y = 0 rows
+#   (evaluated at eta = 1 there, so that eta = 0 never reaches log); -inf at eta = 0 for y > 0, as Stan's poisson_lpmf(y | 0).
+# - The identity and inverse links need eta > 0 (a positive mean): a row with eta <= 0 has log density -inf and gradient 0
+#   (its terms evaluated at eta = 1), where brms's Stan rejects the draw (gamma_lpdf and neg_binomial_2_lpmf throw on a
+#   non-positive rate or mean; brms's log_prob raises there). Elsewhere the Gamma density is shape log(rate) - lgamma(shape) +
+#   (shape - 1) log y - rate y with log(rate) = log(shape) + log(eta) and rate = shape eta (inverse), or log(shape) - log(eta)
+#   and shape / eta (identity); the negative binomial is neg_binomial_2_log_lpmf above at log(mu) = log(eta), its stable
+#   softplus form and Stirling coefficient.
+# - Beta: log Beta(y | a, b) = (a - 1) log y + (b - 1) log1p(-y) - (lgamma(a) + lgamma(b) - lgamma(a + b)) with a = mu phi and
+#   b = (1 - mu) phi, mu and 1 - mu each computed directly, never by subtraction: Phi(eta) = erfc(-eta / sqrt 2) / 2 and
+#   Phi(-eta) for probit, -expm1(-exp(eta)) and exp(-exp(eta)) for cloglog. Where a shape parameter is below 1e-10 (1 - mu
+#   underflows at eta of about 6.6 under cloglog and 38 under probit) its lgamma is -log(x) - Euler's gamma x from log(x) =
+#   log(phi) + log(mu) or log(phi) + log(1 - mu) (log_normal_cdf, cloglog_log_p1, cloglog_log_p0), so the density stays finite
+#   with a finite gradient for every finite eta (cloglog: below exp's cap of 700) on both paths; brms forms 1 - mu by
+#   subtraction, which is exactly 0 above eta = 8.25 (probit) and about 3.6 (cloglog), where its beta_lpdf rejects (D132).
+_EULER_GAMMA = np.float64(0.5772156649015329)
+_LOG_TINY_SHAPE = np.float64(math.log(1e-10))
+
+
+def poisson_sqrt_logp(value, sqrt_mu):
+    """brms's ``poisson_lpmf(y | square(eta))`` as ``2 y log|eta| - eta^2 - lgamma(y + 1)``."""
+    y = pt.cast(value, "float64")
+    positive = pt.gt(y, 0.0)
+    eta_pos = pt.switch(positive, sqrt_mu, _F64_ONE)
+    return pt.switch(positive, 2.0 * y * pt.log(pt.abs(eta_pos)), 0.0) - pt.sqr(sqrt_mu) - pt.gammaln(y + _F64_ONE)
+
+
+def poisson_sqrt_random(sqrt_mu, rng=None, size=None):
+    mu = np.square(np.asarray(sqrt_mu, dtype=float))
+    return rng.poisson(mu, size=size).astype(np.int64)
+
+
+def _positive_mean(eta):
+    """(whether ``eta > 0``, ``eta`` there and 1 elsewhere): the identity and inverse links' rows outside the support are
+    evaluated at a valid value and replaced by ``-inf`` afterwards."""
+    ok = pt.gt(eta, 0.0)
+    return ok, pt.switch(ok, eta, _F64_ONE)
+
+
+def gamma_link_logp(link: str):
+    """``log Gamma(y | shape, shape / mu)`` under the inverse (``mu = 1 / eta``) or the identity (``mu = eta``) link, for
+    ``pm.CustomDist`` with the parameters (``eta``, ``alpha``); ``-inf`` where ``eta <= 0``."""
+    sign = {"inverse": 1.0, "identity": -1.0}[link]
+
+    def logp(value, eta, alpha):
+        ok, e = _positive_mean(eta)
+        rate = alpha * e if link == "inverse" else alpha / e
+        body = (alpha * (pt.log(alpha) + sign * pt.log(e)) - pt.gammaln(alpha) + (alpha - _F64_ONE) * pt.log(value)
+                - rate * value)
+        return pt.switch(ok, body, -np.inf)
+
+    return logp
+
+
+def _check_positive_draw_mean(eta, link: str):
+    """Forward draws (``prior_predictive()``) at a linear predictor that gives no valid mean are refused naming the link (D134)."""
+    if not np.all(np.asarray(eta) > 0):
+        raise ValueError(f"the {link} link gives a non-positive mean (linear predictor <= 0) for some draws and rows; it needs a "
+                         "positive linear predictor (divergence D134)")
+
+
+def gamma_link_random(link: str):
+    def random(eta, alpha, rng=None, size=None):
+        eta, alpha = np.asarray(eta, dtype=float), np.asarray(alpha, dtype=float)
+        _check_positive_draw_mean(eta, link)
+        mu = 1.0 / eta if link == "inverse" else eta
+        return rng.gamma(alpha, mu / alpha, size=size)
+
+    return random
+
+
+def negbinomial_identity_logp(value, mu, alpha):
+    """brms's ``neg_binomial_2_lpmf(y | eta, shape)`` (mean ``eta``) as ``neg_binomial_2_log_lpmf`` at ``log(eta)``; ``-inf``
+    where ``eta <= 0``."""
+    ok, e = _positive_mean(mu)
+    return pt.switch(ok, neg_binomial_2_log_lpmf(value, pt.log(e), alpha), -np.inf)
+
+
+def negbinomial_identity_random(mu, alpha, rng=None, size=None):
+    mu, alpha = np.asarray(mu, dtype=float), np.asarray(alpha, dtype=float)
+    _check_positive_draw_mean(mu, "identity")
+    return rng.negative_binomial(alpha, alpha / (alpha + mu), size=size).astype(np.int64)
+
+
+BETA_LINKS = ("probit", "cloglog")
+
+
+def _beta_link_parts(link: str, eta):
+    """(``mu``, ``1 - mu``, ``log mu``, ``log(1 - mu)``) of the Beta family under ``link`` (PyTensor), each computed directly."""
+    if link == "probit":
+        return (_F64_HALF * pt.erfc(-eta / _SQRT2), _F64_HALF * pt.erfc(eta / _SQRT2), log_normal_cdf(eta), log_normal_cdf(-eta))
+    if link == "cloglog":
+        e = pt.exp(pt.switch(eta > _CLOGLOG_EXP_CAP, _CLOGLOG_EXP_CAP, eta))
+        return -pt.expm1(-e), pt.exp(-e), cloglog_log_p1(eta), cloglog_log_p0(eta)
+    raise ValueError(f"link must be one of {BETA_LINKS}, got {link!r}")
+
+
+def _lgamma_of_shape(x, log_x):
+    """``lgamma(x)`` of a Beta shape parameter ``x > 0`` given also as ``log_x``: ``gammaln(x)`` from 1e-10 up, and below it
+    ``-log_x - gamma x`` (``lgamma(x) = -log x - gamma x + pi^2 x^2 / 12 - ...``, the omitted term below 1e-20), which stays
+    finite where ``x`` itself has underflowed to 0."""
+    tiny = log_x < _LOG_TINY_SHAPE
+    x_reg = pt.switch(tiny, _F64_ONE, x)
+    log_tiny = pt.switch(tiny, log_x, _LOG_TINY_SHAPE)
+    return pt.switch(tiny, -log_tiny - _EULER_GAMMA * pt.exp(log_tiny), pt.gammaln(x_reg))
+
+
+def beta_link_logp(link: str):
+    """``log Beta(y | mu phi, (1 - mu) phi)`` under the probit or the cloglog link, for ``pm.CustomDist`` with the parameters
+    (``eta``, ``phi``): finite with a finite gradient for every finite ``eta`` (the comment above); ``-inf`` outside (0, 1)."""
+    def logp(value, eta, phi):
+        mu, cm, log_mu, log_cm = _beta_link_parts(link, eta)
+        a, b = mu * phi, cm * phi
+        log_phi = pt.log(phi)
+        inside = pt.and_(pt.gt(value, 0.0), pt.lt(value, 1.0))
+        y = pt.switch(inside, value, _F64_HALF)
+        body = ((a - _F64_ONE) * pt.log(y) + (b - _F64_ONE) * pt.log1p(-y)
+                - (_lgamma_of_shape(a, log_phi + log_mu) + _lgamma_of_shape(b, log_phi + log_cm) - pt.gammaln(a + b)))
+        return pt.switch(inside, body, -np.inf)
+
+    return logp
+
+
+def beta_link_random(link: str):
+    from autobayes.families.links import INVERSE_LINKS, COMPLEMENTS
+
+    def random(eta, phi, rng=None, size=None):
+        eta, phi = np.asarray(eta, dtype=float), np.asarray(phi, dtype=float)
+        return rng.beta(INVERSE_LINKS[link](eta) * phi, COMPLEMENTS[link](eta) * phi, size=size)
+
+    return random
+
+
+def poisson_sqrt_family():
+    """Bambi family of brms's ``poisson("sqrt")``: the identity link on ``sqrt_mu`` (the linear predictor), no auxiliary
+    parameter."""
+    return _zero_family("poisson_sqrt", "PoissonSqrt", ("sqrt_mu",), {"sqrt_mu": "identity"}, poisson_sqrt_logp,
+                        poisson_sqrt_random, dtype="int64")             # _zero_family's builder: a CustomDist with an int64 dtype
+
+
+def negbinomial_identity_family():
+    """Bambi family of brms's ``negbinomial("identity")``: the identity link on the mean ``mu`` (the linear predictor), the
+    shape (Bambi's ``alpha``) with its prior."""
+    return _zero_family("negbinomial_identity", "NegBinomialIdentity", ("mu", "alpha"), {"mu": "identity", "alpha": "log"},
+                        negbinomial_identity_logp, negbinomial_identity_random, dtype="int64")
+
+
+def gamma_link_family(link: str):
+    """Bambi family of brms's ``Gamma("inverse")`` (parent ``inverse_mu``) or ``Gamma("identity")`` (parent ``mu``): the identity
+    link on the parent (the linear predictor), the shape (Bambi's ``alpha``) with its prior."""
+    parent = {"inverse": "inverse_mu", "identity": "mu"}[link]
+    return _mean_family(f"gamma_{link}", f"Gamma{link.capitalize()}", (parent, "alpha"), {parent: "identity", "alpha": "log"},
+                        gamma_link_logp(link), gamma_link_random(link))
+
+
+def beta_link_family(link: str):
+    """Bambi family of brms's ``Beta("probit")`` or ``Beta("cloglog")``: the identity link on ``<link>_mu`` (the linear
+    predictor), the precision ``phi`` with its prior."""
+    parent = f"{link}_mu"
+    return _mean_family(f"beta_{link}", f"Beta{link.capitalize()}", (parent, "phi"), {parent: "identity", "phi": "log"},
+                        beta_link_logp(link), beta_link_random(link))
