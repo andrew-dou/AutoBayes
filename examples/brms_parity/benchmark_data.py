@@ -12,6 +12,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 from scipy.special import expit
+from scipy.special import gamma as gamma_fn
 
 
 def _std(v):
@@ -57,8 +58,74 @@ def zip_glmm(rng, n=2000, J=40):
     return pd.DataFrame({"y": y, "x": x, "g": [f"g{k:03d}" for k in g]})
 
 
+def weibull_glmm(rng, n=2000, J=40):
+    """B5: y ~ x + (1 | g), Weibull with shape 1.5 and brms's mean parameterisation (log link on the mean)."""
+    g = rng.integers(0, J, n)
+    x = _std(rng.normal(size=n))
+    mu = np.exp(1.0 + 0.4 * x + rng.normal(0, 0.4, J)[g])
+    shape = 1.5
+    scale = mu / gamma_fn(1 + 1 / shape)
+    return pd.DataFrame({"y": scale * rng.weibull(shape, n), "x": x, "g": [f"g{k:03d}" for k in g]})
+
+
+def zinb_glmm(rng, n=2000, J=40):
+    """B6: y ~ x + (1 | g), zero-inflated negative binomial with shape 2 and zi = 0.25."""
+    g = rng.integers(0, J, n)
+    x = _std(rng.normal(size=n))
+    mu = np.exp(0.8 + 0.5 * x + rng.normal(0, 0.5, J)[g])
+    counts = rng.negative_binomial(2.0, 2.0 / (2.0 + mu))
+    return pd.DataFrame({"y": np.where(rng.random(n) < 0.25, 0, counts), "x": x, "g": [f"g{k:03d}" for k in g]})
+
+
+def sratio_glmm(rng, n=1500, J=30, cuts=(-1.0, -0.2, 0.5, 1.2)):
+    """B7: y ~ x + (1 | g), the sequential-ratio (stopping) model with five categories: stop at k with probability
+    inv_logit(cut_k - eta)."""
+    g = rng.integers(0, J, n)
+    x = _std(rng.normal(size=n))
+    eta = 0.7 * x + rng.normal(0, 0.6, J)[g]
+    y = np.full(n, len(cuts) + 1)
+    alive = np.ones(n, dtype=bool)
+    for k, c in enumerate(cuts, start=1):
+        stop = alive & (rng.random(n) < expit(c - eta))
+        y[stop] = k
+        alive &= ~stop
+    return pd.DataFrame({"y": y, "x": x, "g": [f"g{k:03d}" for k in g]})
+
+
+def horseshoe_regression(rng, n=400, p=20):
+    """B8: y ~ x1 + ... + x20, Gaussian, three non-zero coefficients, under a horseshoe prior."""
+    X = np.column_stack([_std(rng.normal(size=n)) for _ in range(p)])
+    beta = np.zeros(p)
+    beta[:3] = (1.0, -0.7, 0.5)
+    out = pd.DataFrame(X, columns=[f"x{j + 1}" for j in range(p)])
+    out.insert(0, "y", 0.5 + X @ beta + rng.normal(0, 1.0, n))
+    return out
+
+
+def betabinomial_glmm(rng, n=2000, J=40):
+    """B9: k | trials(size) ~ x + (1 | g), beta-binomial with precision phi = 20."""
+    g = rng.integers(0, J, n)
+    x = _std(rng.normal(size=n))
+    mu = expit(-0.3 + 0.6 * x + rng.normal(0, 0.5, J)[g])
+    size = rng.integers(5, 31, n)
+    k = rng.binomial(size, rng.beta(mu * 20.0, (1 - mu) * 20.0))
+    return pd.DataFrame({"k": k, "size": size, "x": x, "g": [f"g{k_:03d}" for k_ in g]})
+
+
+def multimembership(rng, n=1000, J=30):
+    """B10: y ~ x + (1 | mm(g1, g2)), Gaussian, each row a member of two groups with equal weights."""
+    g1, g2 = rng.integers(0, J, n), rng.integers(0, J, n)
+    x = _std(rng.normal(size=n))
+    u = rng.normal(0, 0.8, J)
+    y = 1.0 + 0.5 * x + 0.5 * (u[g1] + u[g2]) + rng.normal(0, 1.0, n)
+    return pd.DataFrame({"y": y, "x": x, "g1": [f"g{k:03d}" for k in g1], "g2": [f"g{k:03d}" for k in g2]})
+
+
 MODELS = {"B1_logistic_glmm": logistic_glmm, "B2_gaussian_glmm": gaussian_glmm,
-          "B3_ordinal_glmm": ordinal_glmm, "B4_zip_glmm": zip_glmm}
+          "B3_ordinal_glmm": ordinal_glmm, "B4_zip_glmm": zip_glmm,
+          "B5_weibull_glmm": weibull_glmm, "B6_zinb_glmm": zinb_glmm, "B7_sratio_glmm": sratio_glmm,
+          "B8_horseshoe_regression": horseshoe_regression, "B9_betabinomial_glmm": betabinomial_glmm,
+          "B10_multimembership": multimembership}
 
 
 def main(out_dir: str) -> None:
