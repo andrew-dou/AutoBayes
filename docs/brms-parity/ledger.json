@@ -1627,6 +1627,101 @@
      "gauss_shared_id"
     ]
    }
+  },
+  {
+   "id": "E01_more_families_bounded",
+   "tier": "E",
+   "lane": "families",
+   "depends_on": [
+    "D03_more_zero_inflated_hurdle",
+    "D04_more_ordinal"
+   ],
+   "status": "queued",
+   "summary": "zero_one_inflated_beta, zero_inflated_beta_binomial, hurdle_cumulative, xbeta",
+   "pr": null,
+   "attempts": 0,
+   "divergences": [],
+   "next_action": "fixtures (wave E0)",
+   "reserved_divergences": "D108-D111"
+  },
+  {
+   "id": "E02_more_families_continuous",
+   "tier": "E",
+   "lane": "families",
+   "depends_on": [
+    "D01_continuous_families"
+   ],
+   "status": "queued",
+   "summary": "inverse.gaussian, von_mises, asym_laplace, frechet, gen_extreme_value",
+   "pr": null,
+   "attempts": 0,
+   "divergences": [],
+   "next_action": "fixtures (wave E0)",
+   "reserved_divergences": "D112-D115"
+  },
+  {
+   "id": "E03_contexts_newer_families",
+   "tier": "E",
+   "lane": "families",
+   "depends_on": [
+    "D01_continuous_families",
+    "D02_discrete_families",
+    "D03_more_zero_inflated_hurdle"
+   ],
+   "status": "queued",
+   "summary": "distributional formulas and weights() for the Tier D families (shape, phi, sigma, zi, hu formulas)",
+   "pr": null,
+   "attempts": 0,
+   "divergences": [],
+   "next_action": "fixtures (wave E0)",
+   "reserved_divergences": "D116-D119"
+  },
+  {
+   "id": "E04_cens_trunc_families",
+   "tier": "E",
+   "lane": "families",
+   "depends_on": [
+    "B02_cens_trunc_weights",
+    "D01_continuous_families"
+   ],
+   "status": "queued",
+   "summary": "cens() and trunc() beyond the Gaussian family (Weibull, lognormal, Gamma, Poisson, negative binomial)",
+   "pr": null,
+   "attempts": 0,
+   "divergences": [],
+   "next_action": "fixtures (wave E0)",
+   "reserved_divergences": "D120-D123"
+  },
+  {
+   "id": "E05_post_prior_effects_stacking",
+   "tier": "E",
+   "lane": "post",
+   "depends_on": [
+    "D05_waic_loo_compare",
+    "D06_hypothesis_conditional_effects"
+   ],
+   "status": "queued",
+   "summary": "prior draws and Savage-Dickey evidence ratios in hypothesis(), interaction conditional_effects(), stacking weights",
+   "pr": null,
+   "attempts": 0,
+   "divergences": [],
+   "next_action": "fixtures (wave E0)",
+   "reserved_divergences": "D124-D127"
+  },
+  {
+   "id": "E06_more_links",
+   "tier": "E",
+   "lane": "families",
+   "depends_on": [
+    "A12_links"
+   ],
+   "status": "queued",
+   "summary": "further brms links for the Tier A families (e.g. poisson sqrt, Gamma inverse/identity, Beta probit/cloglog, cumulative cloglog)",
+   "pr": null,
+   "attempts": 0,
+   "divergences": [],
+   "next_action": "fixtures (wave E0)",
+   "reserved_divergences": "D128-D131"
   }
  ]
 }
