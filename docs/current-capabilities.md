@@ -316,3 +316,17 @@ addition terms, formulas on `shape` / `phi`, `mo()`, `gp()`, `mm()`, `gr(by = )`
 refused naming the link (D133). The cumulative cloglog link is built but withheld: brms's own log density of
 `cumulative_cloglog` is 5.9e-7 relative off the exact value at one point, which no gate accepts (D38, D132); see
 [links](links.md).
+
+Four bounded and hurdle families (E01, brms's `zero_one_inflated_beta()`, `zero_inflated_beta_binomial()`, `xbeta()` and
+`hurdle_cumulative()`, logit link): `ab.zero_one_inflated_beta` (proportions in [0, 1], `phi`, `zoi` and `coi`),
+`ab.zero_inflated_beta_binomial` (`k | trials(n)`, `phi` and `zi`), `ab.xbeta` (Kosmidis and Zeileis's extended-support Beta:
+proportions in [0, 1] from one censored stretched Beta, `phi` and `kappa`; its masses through an incomplete Beta function
+differentiable in its shapes on both paths, a custom JAX derivative where JAX has none) and `ab.hurdle_cumulative` (brms's codes
+0..K, the hurdle category 0 with probability `hu` and a cumulative logit model above it), each with brms's density in a stable
+form, `posterior_epred` (xbeta's the censored mean), response draws, `log_lik()`, brms's default priors and `describe()`; `weights()`
+for the three that are not ordinal. Verified against `zero_one_inflated_beta_varint`, `zero_inflated_beta_binomial_varint`,
+`xbeta_varint` and `hurdle_cumulative_varint` (log densities within 7.1e-16 relative, gradients within 1.5e-9); `gp()` and the
+term model are taken, while other links, formulas on the auxiliary parameters, `cens()`, `trunc()`, `mo()`, `me()`/`mi()`,
+`mm()`, `gr(by = )`, `cs()`, autocorrelation terms, shrinkage priors, multivariate, non-linear and mixture use are refused (D108),
+and `hurdle_cumulative`'s other links, `disc`, threshold options and `bayes_R2()` too (D109); see
+[bounded and hurdle families](bounded-families.md).

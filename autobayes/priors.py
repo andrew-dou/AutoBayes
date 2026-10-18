@@ -8,7 +8,9 @@ lognormal (the SD of ``log y``), ``shape`` for the negative binomial and Gamma f
 (the precision), and ``nu`` for a Student-t model that learns its degrees of freedom (``nu=None``; brms class ``nu``,
 truncated to ``nu > 1``); ``zi`` or ``hu``, the zero-inflation or hurdle probability (B06, a ``Beta`` prior); ``alpha``,
 ``beta`` or ``ndt``, the skewness, exponential component's mean or non-decision time of the skew-normal, ex-Gaussian and shifted
-lognormal families (D01; ``ndt``'s ``Uniform(0, "min_Y")`` is brms's ``uniform(0, min_Y)``). An
+lognormal families (D01; ``ndt``'s ``Uniform(0, "min_Y")`` is brms's ``uniform(0, min_Y)``); ``zoi`` and ``coi``, the
+zero-one-inflated Beta's two probabilities (E01, ``Beta`` priors), and ``kappa``, the extended-support Beta's (``xbeta``) kappa (E01).
+An
 auxiliary parameter with its own formula (B01, ``["y ~ x", "sigma ~ z"]``) takes the priors of that formula's intercept
 and coefficients instead, ``sigma={"intercept": ..., "b": ...}`` (brms's ``Intercept`` and ``b`` with ``dpar = sigma``).
 Every class the model has must be given, and a class the model does
@@ -44,7 +46,9 @@ _SIMPLEX = {"Dirichlet"}                         # priors on a simplex: a monoto
 AUXILIARY = {"sigma": "residual SD", "shape": "shape parameter", "phi": "precision parameter",
              "zi": "zero-inflation probability", "hu": "hurdle probability",
              # D01: a family's extra parameters (FamilySpec.extra_parameters): skew_normal, exgaussian, shifted_lognormal
-             "alpha": "skewness", "beta": "mean of the exponential component", "ndt": "non-decision time"}
+             "alpha": "skewness", "beta": "mean of the exponential component", "ndt": "non-decision time",
+             # E01: the zero-one-inflated Beta's two probabilities and the extended-support Beta's kappa (docs/bounded-families.md)
+             "zoi": "zero-one-inflation probability", "coi": "conditional one-inflation probability", "kappa": "kappa parameter"}
 # The priors of a learned parameter with a lower bound (the Student-t nu, A13): the positive-support priors whose
 # truncation at the bound PyMC can renormalise (it needs their CDF; PyMC has none for HalfStudentT).
 TRUNCATABLE = frozenset({"Gamma", "Exponential", "HalfNormal", "HalfCauchy"})
@@ -55,7 +59,8 @@ _NO_CDF = frozenset({"HalfStudentT"})            # positive-support priors whose
 BOUNDABLE = frozenset({"Normal", "StudentT", "HalfNormal", "HalfCauchy", "Exponential", "Gamma", "InverseGamma", "Uniform"})
 MIN_Y = "min_Y"                                  # brms's name of the smallest response, the upper bound of ndt
 # D01: the priors each support of a family's extra parameter takes (families.spec.EXTRA_SUPPORTS)
-EXTRA_PRIORS = {"real": frozenset({"Normal", "StudentT"}), "positive": frozenset(_SCALE), "below_min_y": BOUNDABLE}
+EXTRA_PRIORS = {"real": frozenset({"Normal", "StudentT"}), "positive": frozenset(_SCALE), "below_min_y": BOUNDABLE,
+                "unit": frozenset(_UNIT)}                       # E01: brms's real<lower=0,upper=1> zoi and coi, a Beta prior
 
 
 class PriorError(ValueError):
@@ -414,7 +419,11 @@ class Priors:
     ``normal(0, 4)``); ``beta``, the mean of the ex-Gaussian's exponential component, a positive-support prior (brms class
     ``beta``, default ``gamma(1, 0.1)``); ``ndt``, the non-decision time, brms's ``real<lower=0,upper=min_Y>``: one of
     ``BOUNDABLE``, truncated to (0, min y) and renormalised there as brms does, or ``Uniform(0, "min_Y")``, brms's default
-    ``uniform(0, min_Y)``. None takes a formula of its own (D79).
+    ``uniform(0, min_Y)``. None takes a formula of its own (D79). E01 (docs/bounded-families.md): ``zoi`` and ``coi``, the
+    zero-one-inflated Beta's zero-one-inflation probability and conditional one-inflation probability (brms classes ``zoi`` and
+    ``coi``, ``real<lower=0,upper=1>``: a ``Beta`` prior, brms's default ``beta(1, 1)``), and ``kappa``, the extended-support
+    Beta's kappa (brms class ``kappa`` of ``xbeta()``, ``real<lower=0>``: a positive-support prior, brms's default
+    ``gamma(0.01, 0.01)``), each required exactly for its family and refused for every other.
     """
 
     intercept: Prior | None = None
@@ -452,6 +461,12 @@ class Priors:
     alpha: Prior | None = None
     beta: Prior | None = None
     ndt: Prior | None = None
+    # E01 (docs/bounded-families.md): the zero-one-inflated Beta's zero-one-inflation probability and conditional one-inflation
+    # probability (brms classes ``zoi`` and ``coi``, real<lower=0,upper=1>, a Beta prior) and the extended-support Beta's kappa
+    # (brms class ``kappa`` of ``xbeta()``, real<lower=0>, a positive-support prior); refused for every other family
+    zoi: Prior | None = None
+    coi: Prior | None = None
+    kappa: Prior | None = None
 
     def __post_init__(self):
         if isinstance(self.components, list):                         # one value for equal component lists (C05)
@@ -1089,7 +1104,8 @@ class Priors:
         """D01: the prior of one of the family's extra parameters (``FamilySpec.extra_parameters``): given, one ``Prior``, and
         one its support takes (``EXTRA_PRIORS``)."""
         if prior is None:
-            example = {"real": "ab.Normal(0, 4)", "positive": "ab.Gamma(1, 0.1)", "below_min_y": 'ab.Uniform(0, "min_Y")'}
+            example = {"real": "ab.Normal(0, 4)", "positive": "ab.Gamma(1, 0.1)", "below_min_y": 'ab.Uniform(0, "min_Y")',
+                       "unit": "ab.Beta(1, 1)"}
             raise PriorError(f"the {fam.name} family needs a prior on its {extra.meaning} {extra.name}: pass {extra.name}=..., "
                              f"such as {example[extra.support]} (brms's default is {brms_prior(extra.default_prior())})")
         if not isinstance(prior, Prior):
@@ -1100,7 +1116,8 @@ class Priors:
             what = {"real": "a location prior (brms's real " + extra.name + ")",
                     "positive": "a positive-support prior (brms's real<lower=0> " + extra.name + ")",
                     "below_min_y": "a prior truncated to (0, min(y)) and renormalised there (brms's real<lower=0,upper=min_Y> "
-                                   + extra.name + "; HalfStudentT(nu, s) is StudentT(nu, 0, s) there)"}[extra.support]
+                                   + extra.name + "; HalfStudentT(nu, s) is StudentT(nu, 0, s) there)",
+                    "unit": "a prior on (0, 1) (brms's real<lower=0,upper=1> " + extra.name + ")"}[extra.support]
             raise PriorError(f"prior for {extra.name!r} must be {what}, one of {sorted(allowed)}; got {prior}")
 
     def to_bambi(self, spec, family="gaussian") -> dict:
@@ -1177,7 +1194,7 @@ class Priors:
         form = ("Priors(components=[ab.Priors(intercept=..., b=..., sigma=...), ...], theta=ab.Dirichlet(...)), one Priors per "
                 "component (brms's dpar = mu<k> and class sigma<k>; docs/mixtures.md)")
         top = [name for name in ("intercept", "b", "sd", "sigma", "shape", "phi", "cor", "nu", "zi", "hu", "simo", "meanme", "sdme",
-                                 "alpha", "beta", "ndt")
+                                 "alpha", "beta", "ndt", "zoi", "coi", "kappa")
                if getattr(self, name) is not None]
         if top:
             raise PriorError(f"a mixture's priors are per component, {form}; {top} at the top level do not apply")

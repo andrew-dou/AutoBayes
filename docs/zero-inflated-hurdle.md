@@ -73,8 +73,9 @@ overflows to `-inf`, and its zero weight times `-inf` is NaN); a hurdle `y > 0` 
   and so are `loo()` and `waic()`, which read it; the expected value and the response draws ignore the weights, as brms's
   `posterior_epred` and `posterior_predict` do. Weights must be positive (D26).
 
-Not modeled: `zi ~ x` / `hu ~ x` (distributional formulas, B01), and brms's `zero_inflated_beta_binomial`,
-`zero_one_inflated_beta`, `zero_inflated_asym_laplace` and `hurdle_cumulative` (divergence D30); D03 adds the other six.
+Not modeled: `zi ~ x` / `hu ~ x` (distributional formulas, B01), and brms's `zero_inflated_asym_laplace` (divergence D30); D03
+adds six more families, and E01 `zero_inflated_beta_binomial`, `zero_one_inflated_beta` and `hurdle_cumulative`
+([bounded and hurdle families](bounded-families.md)).
 
 ## More families (D03)
 
@@ -116,7 +117,7 @@ negative binomial rows are exact to 1e-12 relative (value, and gradient in `eta`
 
 **Using it.** Responses: counts as for the Poisson family; `successes | trials(n)` as for the binomial (zero-trial rows
 dropped, D4); proportions in [0, 1) for `zero_inflated_beta` (an exact 1 is refused, as brms refuses it: brms's
-`zero_one_inflated_beta` models it and is not offered); non-negative finite reals for the hurdle Gamma and lognormal. An all-zero
+`zero_one_inflated_beta` and `xbeta` model it, offered since E01); non-negative finite reals for the hurdle Gamma and lognormal. An all-zero
 response is accepted with a warning. Priors: the family's auxiliary parameter and `zi` / `hu` are required; brms's defaults on
 request (`ab.default_priors`): `inv_gamma(0.4, 0.3)` for the negative binomial shape, `gamma(0.01, 0.01)` for `phi` and the
 hurdle Gamma's shape, `student_t(3, 0, scale)` for the hurdle lognormal's `sigma` (brms's scale of `log y`), `beta(1, 1)` for

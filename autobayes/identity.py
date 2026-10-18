@@ -164,6 +164,8 @@ def freeze_target(model):
                           **({'cens': d.cens} if d.cens is not None else {})}} if s.additions else {}),
         # The response's categories (B05: cumulative, categorical), whose 1-based codes are y, likewise
         **({'categories': list(model.categories)} if getattr(model, 'categories', ()) else {}),
+        # and hurdle_cumulative's hurdle category (E01), brms's Y = 0
+        **({'hurdle_category': model.hurdle_category} if getattr(model, 'hurdle_category', None) is not None else {}),
         # So do distributional formulas (B01): each parameter's canonical formula, link, design and priors; its own
         # entry under 'priors' is then None.
         **({'distributional': [_dpar_payload(model, ds) for ds in s.dpars]} if s.dpars else {}),
@@ -202,7 +204,9 @@ def freeze_target(model):
                    **({'zi': prior(pr.zi)} if pr.zi is not None else {}),
                    **({'hu': prior(pr.hu)} if pr.hu is not None else {}),
                    # a family's extra parameter's prior (D01: alpha, beta, ndt) likewise
-                   **{name: prior(getattr(pr, name)) for name in ('alpha', 'beta', 'ndt') if getattr(pr, name, None) is not None}},
+                   **{name: prior(getattr(pr, name)) for name in ('alpha', 'beta', 'ndt') if getattr(pr, name, None) is not None},
+                   # and E01's zoi, coi (zero_one_inflated_beta) and kappa (xbeta)
+                   **{name: prior(getattr(pr, name)) for name in ('zoi', 'coi', 'kappa') if getattr(pr, name, None) is not None}},
     }
     encoded = json.dumps(_canonical(payload), sort_keys=True, separators=(',', ':'),
                          ensure_ascii=False, allow_nan=False).encode('utf-8')

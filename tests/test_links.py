@@ -144,7 +144,8 @@ def test_links_offered_parked_and_refused(df):
         assert cloglog.inverse_link is inverse_cloglog and cloglog.with_link("probit") is probit
         assert get_family(family, "probit") is probit and probit.with_link("logit") is spec     # one spec per link
         assert get_family(family, None) is spec and get_family(family, "logit") is spec and probit.with_link("probit") is probit
-    ordinal = {"cumulative", "sratio", "cratio", "acat"}          # D04: brms's other ordinal links are withheld, with reasons (D38)
+    ordinal = {"cumulative", "sratio", "cratio", "acat",          # D04: brms's other ordinal links are withheld, with reasons (D38)
+               "hurdle_cumulative"}                               # E01: and hurdle_cumulative's (D109)
     more = {"poisson": {"sqrt"}, "negbinomial": {"identity"}, "gamma": {"inverse", "identity"}, "beta": {"probit", "cloglog"}}   # E06
     for name, spec in FAMILIES.items():
         if name in more:

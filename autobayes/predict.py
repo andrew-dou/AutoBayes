@@ -349,6 +349,13 @@ def _predict_dpar(model, idata, df: pd.DataFrame | None, kind: str, name: str, *
     return ds
 
 
+def outcome_categories(model) -> list[str]:
+    """The labels of the category axis of ``predict(kind="mean")``: the response's categories (B05), preceded by
+    hurdle_cumulative's hurdle category (E01, ``model.hurdle_category``, brms's ``Y = 0``)."""
+    hurdle = getattr(model, "hurdle_category", None)
+    return ([hurdle] if hurdle is not None else []) + list(model.categories)
+
+
 def _predict_by_hand(model, idata, df: pd.DataFrame | None, kind: str, seed, policies: dict[str, str], *, include_group_effects=True) -> xr.Dataset:
     """Linear predictor by hand from the posterior, with one effect per distinct unseen label.
 
@@ -455,7 +462,7 @@ def _predict_by_hand(model, idata, df: pd.DataFrame | None, kind: str, seed, pol
             mean = fam.tails().truncated_mean(model, post, mu, lb, ub)
         if model.categories:                                     # B05: the probability of every category
             out = {fam.mean_name: (dims + ("category",), mean)}
-            coords["category"] = list(model.categories)
+            coords["category"] = outcome_categories(model)   # E01: the hurdle category first
         else:
             out = {fam.mean_name: (dims, mean)}
         if fam.has_trials and kind in ("mean", "response"):      # binomial: expected = n p beside p
@@ -466,6 +473,8 @@ def _predict_by_hand(model, idata, df: pd.DataFrame | None, kind: str, seed, pol
     ds = xr.Dataset(out, coords=coords)
     if model.categories:                                         # what the 1-based categories of y are (B05)
         ds.attrs["categories_json"] = json.dumps(list(model.categories))
+        if getattr(model, "hurdle_category", None) is not None:  # E01: and what y = 0 is (hurdle_cumulative)
+            ds.attrs["hurdle_category"] = model.hurdle_category
     _prediction_attrs(model, ds, policies, new_levels, in_sample=False, manual=True, include_group_effects=include_group_effects)
     return ds
 

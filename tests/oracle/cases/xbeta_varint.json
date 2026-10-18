@@ -83,9 +83,5 @@
     0.01
    ]
   }
- },
- "gate": {
-  "expect": "fail",
-  "reason": "E01_more_families_bounded not implemented; remove this field when it lands"
  }
 }

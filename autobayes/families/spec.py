@@ -8,7 +8,8 @@ the spec. A family is one module in this package that builds its spec (``gaussia
 ``geometric.py``, ``negbinomial2.py``; D04's ``ordinal.py`` builds
 the three sequential and adjacent-category ordinal families, ``sratio``, ``cratio`` and ``acat``; D03's
 ``zero_inflated_negbinomial.py``, ``hurdle_negbinomial.py``, ``zero_inflated_binomial.py``, ``zero_inflated_beta.py``,
-``hurdle_gamma.py``, ``hurdle_lognormal.py``);
+``hurdle_gamma.py``, ``hurdle_lognormal.py``; E01's ``zero_one_inflated_beta.py``, ``zero_inflated_beta_binomial.py``,
+``hurdle_cumulative.py``, ``xbeta.py``);
 ``autobayes.families.FAMILIES`` is the registry and ``get_family(name)`` the lookup. Callable fields
 take the built ``Model`` (or the frame being validated) because that is what the call sites have in
 hand; none of them is called before ``Model.__init__`` has resolved the spec.
@@ -92,8 +93,10 @@ def scale_line(model) -> str:
 #   "positive"     ``real<lower=0>`` (the ex-Gaussian ``beta``): a positive-support prior, sampled as its log;
 #   "below_min_y"  ``real<lower=0,upper=min_Y>`` with brms's ``min_Y = min(Y)`` (the shifted lognormal's ``ndt``): a prior
 #                  truncated to (0, min y) and renormalised there, as brms does, sampled on Stan's lower-upper coordinate
-#                  ``log(ndt / (min_Y - ndt))``, PyMC's interval transform.
-EXTRA_SUPPORTS = ("real", "positive", "below_min_y")
+#                  ``log(ndt / (min_Y - ndt))``, PyMC's interval transform;
+#   "unit"         ``real<lower=0,upper=1>`` (E01: the zero-one-inflated Beta's ``zoi`` and ``coi``): a prior on (0, 1) (``Beta``),
+#                  sampled on Stan's logit coordinate, PyMC's ``logodds`` transform, as the zero-inflation probability ``zi`` is.
+EXTRA_SUPPORTS = ("real", "positive", "below_min_y", "unit")
 
 
 @dataclass(frozen=True)
@@ -114,20 +117,21 @@ class ExtraParameter:
     @property
     def coordinate(self) -> str:
         """The PyMC value variable it is sampled as: ``alpha``, ``beta_log__``, ``ndt_interval__``."""
-        return {"real": self.name, "positive": f"{self.name}_log__", "below_min_y": f"{self.name}_interval__"}[self.support]
+        return {"real": self.name, "positive": f"{self.name}_log__", "below_min_y": f"{self.name}_interval__",
+                "unit": f"{self.name}_logodds__"}[self.support]
 
     @property
     def bounds(self) -> tuple[str, str]:
         """brms's ``lb`` and ``ub`` of its class in the prior table."""
-        return {"real": ("", ""), "positive": ("0", ""), "below_min_y": ("0", "min_Y")}[self.support]
+        return {"real": ("", ""), "positive": ("0", ""), "below_min_y": ("0", "min_Y"), "unit": ("0", "1")}[self.support]
 
     @property
     def coordinate_meaning(self) -> str:
         """``describe()``'s words for its value variable."""
         return {"real": f"{self.name}, the {self.meaning} (unconstrained)",
                 "positive": f"log({self.name}), the {self.meaning}",
-                "below_min_y": f"log({self.name} / (min(y) - {self.name})), the {self.meaning} on Stan's lower-upper coordinate"
-                }[self.support]
+                "below_min_y": f"log({self.name} / (min(y) - {self.name})), the {self.meaning} on Stan's lower-upper coordinate",
+                "unit": f"logit({self.name}), the {self.meaning}"}[self.support]
 
     def upper(self, response) -> float | None:
         """The upper bound the data give it: ``min(y)`` over the fitted rows for ``"below_min_y"`` (brms's ``min_Y``), else
@@ -154,6 +158,10 @@ class ExtraParameter:
             if not arr > 0:
                 raise ValueError(f"{self.name} (the {self.meaning} of the {family} family) must be positive")
             return np.asarray(np.log(arr))
+        if self.support == "unit":                           # E01: Stan's logit, PyMC's log-odds coordinate
+            if not 0 < arr < 1:
+                raise ValueError(f"{self.name} (the {self.meaning} of the {family} family) must lie strictly between 0 and 1")
+            return np.asarray(np.log(arr) - np.log1p(-arr))
         top = self.upper(response)
         if not 0 < arr < top:
             raise ValueError(f"{self.name} (the {self.meaning} of the {family} family) must lie strictly between 0 and min(y) = "
@@ -169,6 +177,8 @@ class ExtraParameter:
             return f"  {self.name} ~ {describe_prior(prior)}   ({self.meaning})"
         if self.support == "positive":
             return f"  {self.name} ~ {describe_prior(prior, lb=0)}   ({self.meaning}, > 0)"
+        if self.support == "unit":
+            return f"  {self.name} ~ {describe_prior(prior, lb=0, ub=1)}   ({self.meaning}, in (0, 1))"
         top = self.upper(model.design.y)
         if prior.name == "Uniform":                       # brms's uniform(0, min_Y): the parameter's own support
             return f"  {self.name} ~ {describe_prior(prior)}, uniform on (0, min(y) = {top:g})   ({self.meaning})"
@@ -234,6 +244,12 @@ class FamilySpec:
     # the negative binomial's and the Gamma's shape, the Beta's phi, the lognormal's sigma). None for every other family.
     zero_parameter: str | None = None
     default_zero_prior: Callable[[], object] | None = None   # brms's default prior of the zero_parameter: beta(1, 1), ``Beta(1, 1)`` (A07)
+    # E01, brms's hurdle_cumulative (docs/bounded-families.md): the response's lowest value is a hurdle category outside the
+    # ordinal part, brms's Y = 0, whose probability is the zero_parameter hu. (ModelSpec, column) -> its label ("0" for whole
+    # numbers, the first declared category of an ordered Categorical); the model keeps it as ``model.hurdle_category``, beside
+    # ``model.categories`` (the ordinal part's categories, whose thresholds are K - 1 as for the cumulative family), and
+    # ``predict(kind="mean")`` puts it first on the category axis. None for every other family.
+    hurdle_category: Callable[[object, object], str] | None = None
     # The family's auxiliary parameters beside scale_parameter and zero_parameter (D01, docs/continuous-families.md): the
     # skew normal's alpha, the ex-Gaussian's beta, the shifted lognormal's ndt, each an ``ExtraParameter`` with its own prior
     # (``Priors(alpha=...)``), required exactly for its family and refused for every other. Empty for every other family.

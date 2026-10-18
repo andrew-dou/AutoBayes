@@ -207,6 +207,24 @@ trials, zero-trial rows, `kind="probability"` and `expected = n mu` follow the b
 | Addition terms, distributional formulas, mo(), multivariate, non-linear, autocorrelation, me()/mi(), mm() and gr(by = ), other links | none (D80, D81) | none (D80, D81) | none (D80, D81) |
 | Post-processing (C07) | `log_likelihood`: the beta-binomial log mass | NegBinomial2-log at shape 1 | NegBinomial2-log at shape 1 / sigma |
 
+E01 (docs/bounded-families.md) adds four bounded and hurdle families, each with the logit link only. `ExtraParameter` gains the
+support `"unit"`, brms's `real<lower=0,upper=1>` (a `Beta` prior, sampled as `<name>_logodds__`), for the zero-one-inflated Beta's
+`zoi` and `coi`; `xbeta`'s `kappa` is a `"positive"` one. `FamilySpec.hurdle_category` (`hurdle_cumulative` only) reads the label of
+brms's hurdle category `Y = 0` from the response, which the model keeps as `model.hurdle_category` beside `model.categories` (the
+ordinal part's), and `predict(kind="mean")` puts it first on the category axis.
+
+| Group | zero-one-inflated Beta | zero-inflated beta-binomial | xbeta | hurdle cumulative |
+| --- | --- | --- | --- | --- |
+| Names | `logit_mu` / logit / `mean` | `logit_mu` / logit / `expected` | `logit_mu` / logit / `mean` | `mu` / logit / `p` |
+| Response | continuous, in [0, 1] | binomial (trials), `binomial_counts` | continuous, in [0, 1] | ordinal, int64: brms's codes `0..K` (`formula.hurdle_ordinal_categories`) |
+| Parameters | phi / phi; `extra_parameters`: zoi, coi (unit) | phi / phi; zi | phi / phi; kappa (positive) | thresholds `Intercept` (ordered, centred design) and `b_Intercept`; hu |
+| Graph | `likelihoods.zero_one_inflated_beta_family` | `likelihoods.zero_inflated_beta_binomial_family` (PyMC's `BetaBinomial`) | `likelihoods.xbeta_family` (`likelihoods.shape_betainc`, differentiable in its shapes on both paths) | `likelihoods.hurdle_cumulative_logit_family`, built per model by `bambi_setup` |
+| Prediction (`expected_response`) | `zoi coi + (1 - zoi) mu` | `(1 - zi) mu`, times the trials as `expected` | the censored mean (`xbeta.censored_mean`) | `(hu, (1 - hu) P(y = k))`, `k = 1..K` |
+| Default priors | none (logit); phi `Gamma(0.01, 0.01)`; zoi, coi `Beta(1, 1)` | none (logit); phi `Gamma(0.01, 0.01)`; zi `Beta(1, 1)` | none (logit); phi, kappa `Gamma(0.01, 0.01)` | none (logit): `student_t(3, 0, 2.5)` on the thresholds; hu `Beta(1, 1)` |
+| Addition terms (B02) | weights | weights | weights | none |
+| Post-processing (C07) | `log_likelihood` | `log_likelihood` | `log_likelihood` | `log_likelihood`; `bayes_R2()` refused (D109) |
+| Other links, distributional formulas, mo(), cs(), multivariate, non-linear, autocorrelation, me()/mi(), mm(), gr(by = ), mixtures, shrinkage priors | no (D108) | no (D108) | no (D108) | no (D108; links D109) |
+
 ## Adding a family
 
 1. Write `autobayes/families/<name>.py` building one `FamilySpec`; keep the response validation primitives in

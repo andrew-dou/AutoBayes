@@ -1636,12 +1636,12 @@
     "D03_more_zero_inflated_hurdle",
     "D04_more_ordinal"
    ],
-   "status": "implementing",
+   "status": "gates_green",
    "summary": "zero_one_inflated_beta, zero_inflated_beta_binomial, hurdle_cumulative, xbeta",
    "pr": null,
-   "attempts": 1,
+   "attempts": 0,
    "divergences": [],
-   "next_action": "agent (opus), wave E1",
+   "next_action": "implementation",
    "reserved_divergences": "D108-D111",
    "fixtures": {
     "pr": 70,
@@ -1651,6 +1651,22 @@
      "zero_inflated_beta_binomial_varint",
      "zero_one_inflated_beta_varint"
     ]
+   },
+   "gates": {
+    "sha": "90db35926c9d",
+    "dirty_tree": false,
+    "base": "origin/main",
+    "when": "2026-10-18T23:01Z",
+    "results": {
+     "immutability": {
+      "status": "pass",
+      "seconds": 0.0
+     },
+     "oracle": {
+      "status": "pass",
+      "seconds": 717.4
+     }
+    }
    }
   },
   {

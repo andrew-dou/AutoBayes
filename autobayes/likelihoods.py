@@ -2024,3 +2024,284 @@ def beta_link_family(link: str):
     parent = f"{link}_mu"
     return _mean_family(f"beta_{link}", f"Beta{link.capitalize()}", (parent, "phi"), {parent: "identity", "phi": "log"},
                         beta_link_logp(link), beta_link_random(link))
+
+
+# ---- bounded families (brms-parity E01, docs/bounded-families.md) ---------------------------------------------------------
+# brms 2.23's densities ("Parameterization of Response Distributions in brms"; Kosmidis and Zeileis 2024 for xbeta), with eta the
+# linear predictor, mu = inv_logit(eta) under the logit link, the Beta shapes a = mu phi and b = (1 - mu) phi (1 - mu computed as
+# expit(-eta), D13), and the probabilities in (0, 1):
+#   zero_one_inflated_beta(eta, phi, zoi, coi)   y = 0: log(zoi) + log1m(coi); y = 1: log(zoi) + log(coi);
+#                                                0 < y < 1: log1m(zoi) + log Beta(y | a, b)
+#   zero_inflated_beta_binomial(eta, phi, zi; n) y = 0: log(zi + (1 - zi) BetaBinomial(0 | n, a, b));
+#                                                y > 0: log1m(zi) + log BetaBinomial(y | n, a, b)
+#   xbeta(eta, phi, kappa)                       Y = (1 + 2 kappa) B - kappa censored to [0, 1], B ~ Beta(a, b): with
+#                                                c = kappa / (1 + 2 kappa), y = 0: log I_c(a, b); y = 1: log I_c(b, a) (the
+#                                                upper tail 1 - I_{1-c}(a, b) by the Beta's symmetry, never a subtraction);
+#                                                0 < y < 1: log Beta((y + kappa) / (1 + 2 kappa) | a, b) - log1p(2 kappa)
+#   hurdle_cumulative(eta, tau, hu)              y = 0: log(hu); y = k in 1..K: log1m(hu) + the cumulative logit row of B05
+# where I_x(a, b) is the regularized incomplete Beta function. Each term of a branch is evaluated on its own rows only (the
+# others at fixed interior arguments: shapes 1, x = 1/2), so that a branch a switch does not take is finite with a finite
+# gradient (an underflowed I_c on a row that is not a zero row would otherwise turn a zero adjoint into 0 * inf = NaN). The
+# zero-inflated beta-binomial's zero row is B06's two-term log-sum-exp; its BetaBinomial is PyMC's, as the beta-binomial
+# family's (D02). Checked against brms in the oracle cases zero_one_inflated_beta_varint, zero_inflated_beta_binomial_varint,
+# xbeta_varint and hurdle_cumulative_varint; in tests/test_bounded_families.py against SciPy and a 50-digit reference.
+#
+# I_x(a, b) and its gradient in a and b: PyTensor's betainc (Cephes' incbet in C) with PyTensor's gradient (Boik and
+# Robison-Cox's continued fraction for the shape derivatives, a scalar loop with C code) on the PyTensor path. JAX's betainc
+# has no derivative in a and b and PyTensor lowers no scalar loop to JAX, so ``shape_betainc`` is a distinct op (as
+# ``stable_softplus`` is) whose JAX lowering is ``jax.scipy.special.betainc`` with a custom JVP: the derivative in x is the
+# Beta density, those in a and b the continued fraction of Boik and Robison-Cox (1998, Journal of Statistical Software 3(1)),
+# I_x(p, q) = K A_n / B_n with K = x^p (1 - x)^(q - 1) / (p B(p, q)), differentiated through the recurrences of A_n and B_n,
+# with the coefficients' own derivatives by forward-mode autodiff, rescaled every step and stopped when both derivatives change
+# by less than 1e-14 relative (at most 1000 steps; NaN if they do not converge), for x <= p / (p + q), and through I_x(a, b) =
+# 1 - I_{1-x}(b, a) above. B(p, q) is formed from gammaln: jax.scipy.special.betaln is off by 7e-8 relative at B(10, 3.3).
+from pytensor.scalar.basic import upgrade_to_float_no_complex  # noqa: E402
+from pytensor.scalar.math import BetaInc  # noqa: E402
+
+
+class ShapeDifferentiableBetaInc(BetaInc):
+    """PyTensor's regularized incomplete Beta function ``betainc(a, b, x)`` (same value, C code and gradient) as a distinct op
+    whose JAX lowering is differentiable in ``a`` and ``b`` as well as in ``x``."""
+
+    nfunc_spec = None
+
+
+shape_betainc = Elemwise(ShapeDifferentiableBetaInc(upgrade_to_float_no_complex, name="shape_betainc"))
+
+_BETAINC_MAX_STEPS = 1000
+_BETAINC_TOL = 1e-14
+
+try:  # the JAX lowering; absent JAX, the PyTensor path is all there is
+    import jax
+    import jax.numpy as jnp
+    from jax.scipy.special import betainc as _jax_betainc, digamma as _jax_digamma, gammaln as _jax_gammaln
+    from pytensor.link.jax.dispatch import jax_funcify
+
+    def _jax_betaln(a, b):
+        return _jax_gammaln(a) + _jax_gammaln(b) - _jax_gammaln(a + b)
+
+    def _cf_coefficients(p, q, x, n):
+        """The n-th numerator and denominator coefficients of Boik and Robison-Cox's continued fraction for I_x(p, q)."""
+        f = q * x / (p * (1.0 - x))
+        p2n = p + 2.0 * n
+        first = p * f * (q - 1.0) / (q * (p + 1.0))
+        later = ((p * p * f * f * (n - 1.0) / (q * q)) * (p + q + n - 2.0) * (p + n - 1.0) * (q - n)
+                 / ((p2n - 3.0) * (p2n - 2.0) ** 2 * (p2n - 1.0)))
+        a = jnp.where(n == 1.0, first, later)
+        b = (2.0 * (p * f + 2.0 * q) * n * (n + p - 1.0) + p * q * (p - 2.0 - p * f)) / (q * (p2n - 2.0) * p2n)
+        return a, b
+
+    def _cf_shape_derivatives(p, q, x):
+        """``(dI/dp, dI/dq)`` of ``I_x(p, q)`` for ``x <= p / (p + q)``, by the continued fraction above."""
+        one, zero = jnp.ones_like(p), jnp.zeros_like(p)
+        K = jnp.exp(p * jnp.log(x) + (q - 1.0) * jnp.log1p(-x) - jnp.log(p) - _jax_betaln(p, q))
+        dlogK_p = jnp.log(x) - 1.0 / p + _jax_digamma(p + q) - _jax_digamma(p)
+        dlogK_q = jnp.log1p(-x) + _jax_digamma(p + q) - _jax_digamma(q)
+        keys = ("A2", "A1", "B2", "B1", "Ap2", "Ap1", "Bp2", "Bp1", "Aq2", "Aq1", "Bq2", "Bq1")
+        start = dict(zip(keys, (one, one, zero, one, zero, zero, zero, zero, zero, zero, zero, zero)))
+        state = dict(n=jnp.asarray(1.0, dtype=p.dtype), dp=zero, dq=zero, done=jnp.zeros(p.shape, dtype=bool), **start)
+
+        def more(s):
+            return (s["n"] <= _BETAINC_MAX_STEPS) & ~jnp.all(s["done"])
+
+        def step(s):
+            n = s["n"]
+            (a, b), (ap, bp) = jax.jvp(lambda v: _cf_coefficients(v, q, x, n), (p,), (one,))
+            (_, _), (aq, bq) = jax.jvp(lambda v: _cf_coefficients(p, v, x, n), (q,), (one,))
+            A, B = a * s["A2"] + b * s["A1"], a * s["B2"] + b * s["B1"]
+            Ap = ap * s["A2"] + a * s["Ap2"] + bp * s["A1"] + b * s["Ap1"]
+            Bp = ap * s["B2"] + a * s["Bp2"] + bp * s["B1"] + b * s["Bp1"]
+            Aq = aq * s["A2"] + a * s["Aq2"] + bq * s["A1"] + b * s["Aq1"]
+            Bq = aq * s["B2"] + a * s["Bq2"] + bq * s["B1"] + b * s["Bq1"]
+            F = A / B
+            dp = K * (F * dlogK_p + (Ap - F * Bp) / B)
+            dq = K * (F * dlogK_q + (Aq - F * Bq) / B)
+            close = ((n >= 3.0) & (jnp.abs(dp - s["dp"]) <= _BETAINC_TOL * jnp.maximum(jnp.abs(dp), 1e-300))
+                     & (jnp.abs(dq - s["dq"]) <= _BETAINC_TOL * jnp.maximum(jnp.abs(dq), 1e-300)))
+            r = 1.0 / B                                   # rescaled: A / B and its derivatives are unchanged
+            new = dict(A2=s["A1"] * r, A1=A * r, B2=s["B1"] * r, B1=one, Ap2=s["Ap1"] * r, Ap1=Ap * r, Bp2=s["Bp1"] * r,
+                       Bp1=Bp * r, Aq2=s["Aq1"] * r, Aq1=Aq * r, Bq2=s["Bq1"] * r, Bq1=Bq * r, dp=dp, dq=dq)
+            out = {k: jnp.where(s["done"], s[k], v) for k, v in new.items()}
+            return dict(n=n + 1.0, done=s["done"] | close, **out)
+
+        s = jax.lax.while_loop(more, step, state)
+        return jnp.where(s["done"], s["dp"], jnp.nan), jnp.where(s["done"], s["dq"], jnp.nan)
+
+    def betainc_shape_derivatives(a, b, x):
+        """``(dI_x(a, b)/da, dI_x(a, b)/db)`` in JAX, for ``0 < x < 1``: the continued fraction on ``x <= a / (a + b)``, and
+        through ``I_x(a, b) = 1 - I_{1-x}(b, a)`` above (the derivative in ``a`` is then minus the one in the second argument
+        there)."""
+        a, b, x = jnp.broadcast_arrays(jnp.asarray(a), jnp.asarray(b), jnp.asarray(x))
+        flip = x > a / (a + b)
+        dp, dq = _cf_shape_derivatives(jnp.where(flip, b, a), jnp.where(flip, a, b), jnp.where(flip, 1.0 - x, x))
+        return jnp.where(flip, -dq, dp), jnp.where(flip, -dp, dq)
+
+    @jax.custom_jvp
+    def jax_shape_betainc(a, b, x):
+        """``jax.scipy.special.betainc`` differentiable in all three arguments."""
+        return _jax_betainc(a, b, x)
+
+    @jax_shape_betainc.defjvp
+    def _jax_shape_betainc_jvp(primals, tangents):
+        a, b, x = primals
+        ta, tb, tx = tangents
+        da, db = betainc_shape_derivatives(a, b, x)
+        dx = jnp.exp((a - 1.0) * jnp.log(x) + (b - 1.0) * jnp.log1p(-x) - _jax_betaln(a, b))
+        return jax_shape_betainc(a, b, x), da * ta + db * tb + dx * tx
+
+    @jax_funcify.register(ShapeDifferentiableBetaInc)
+    def _jax_funcify_shape_betainc(op, **kwargs):
+        return jax_shape_betainc
+except ImportError:  # pragma: no cover
+    pass
+
+
+_UNIT_SHAPE_HALF = np.float64(0.5)
+
+
+def _beta_shapes_on(rows, logit_mu, phi):
+    """The Beta shapes ``(expit(eta) phi, expit(-eta) phi)`` on ``rows``, and 1 on every other row."""
+    a, b = _beta_shape_parameters(logit_mu, phi)
+    return pt.switch(rows, a, _F64_ONE), pt.switch(rows, b, _F64_ONE)
+
+
+def zero_one_inflated_beta_logp(value, logit_mu, phi, zoi, coi):
+    """brms's ``zero_one_inflated_beta_lpdf(value | mu, phi, zoi, coi)`` with ``mu = inv_logit(logit_mu)``: ``log(zoi) +
+    log1m(coi)`` at 0, ``log(zoi) + log(coi)`` at 1, ``log1m(zoi)`` plus the Beta family's density inside; ``-inf`` outside
+    [0, 1]."""
+    is_zero, is_one = pt.eq(value, 0), pt.eq(value, 1)
+    inside = pt.and_(pt.gt(value, 0), pt.lt(value, 1))
+    a, b = _beta_shapes_on(inside, logit_mu, phi)
+    positive = pt.log1p(-zoi) + pm.logp(pm.Beta.dist(alpha=a, beta=b), pt.switch(inside, value, _UNIT_SHAPE_HALF))
+    return pt.switch(is_zero, pt.log(zoi) + pt.log1p(-coi),
+                     pt.switch(is_one, pt.log(zoi) + pt.log(coi), pt.switch(inside, positive, -np.inf)))
+
+
+def zero_one_inflated_beta_random(logit_mu, phi, zoi, coi, rng=None, size=None):
+    """A 0 or 1 where a uniform draw falls below zoi (a 1 where a second one falls below coi), a ``Beta(mu phi, (1 - mu) phi)``
+    draw otherwise."""
+    shape = size if size is not None else np.broadcast_shapes(np.shape(logit_mu), np.shape(phi), np.shape(zoi), np.shape(coi))
+    edge = _zero_part(zoi, shape, rng)
+    one = rng.uniform(size=shape) < coi
+    inner = rng.beta(expit(logit_mu) * phi, expit(-np.asarray(logit_mu)) * phi, size=shape)
+    return np.where(edge, np.where(one, 1.0, 0.0), inner)
+
+
+def zero_inflated_beta_binomial_logp(value, logit_mu, phi, zi, n):
+    """brms's ``zero_inflated_beta_binomial_lpmf(value | n, mu, phi, zi)`` with ``mu = inv_logit(logit_mu)``: the zero row
+    ``log(zi + (1 - zi) BetaBinomial(0 | n, a, b))`` as B06's log-sum-exp, the others ``log1m(zi)`` plus PyMC's BetaBinomial
+    (``-inf`` outside 0..n)."""
+    a, b = _beta_shape_parameters(logit_mu, phi)
+    mass = pm.logp(pm.BetaBinomial.dist(n=n, alpha=a, beta=b), value)
+    zero = _log_sum_exp2(pt.log(zi), pt.log1p(-zi) + mass)
+    return pt.switch(pt.eq(value, 0), zero, pt.log1p(-zi) + mass)
+
+
+def zero_inflated_beta_binomial_random(logit_mu, phi, zi, n, rng=None, size=None):
+    shape = size if size is not None else np.broadcast_shapes(np.shape(logit_mu), np.shape(phi), np.shape(zi), np.shape(n))
+    zero = _zero_part(zi, shape, rng)
+    p = rng.beta(expit(logit_mu) * phi, expit(-np.asarray(logit_mu)) * phi, size=shape)
+    return np.where(zero, 0, rng.binomial(n, p)).astype(np.int64)
+
+
+def xbeta_logp(value, logit_mu, phi, kappa):
+    """brms's ``xbeta_lpdf(value | mu, phi, kappa)`` (Kosmidis and Zeileis 2024): with ``c = kappa / (1 + 2 kappa)``, ``log
+    I_c(a, b)`` at 0, ``log I_c(b, a)`` at 1 and ``log Beta((value + kappa) / (1 + 2 kappa) | a, b) - log1p(2 kappa)`` inside;
+    ``-inf`` outside [0, 1]."""
+    is_zero, is_one = pt.eq(value, 0), pt.eq(value, 1)
+    inside = pt.and_(pt.gt(value, 0), pt.lt(value, 1))
+    c = kappa / (_F64_ONE + 2.0 * kappa)
+    a0, b0 = _beta_shapes_on(is_zero, logit_mu, phi)
+    a1, b1 = _beta_shapes_on(is_one, logit_mu, phi)
+    zero = pt.log(shape_betainc(a0, b0, pt.switch(is_zero, c, _UNIT_SHAPE_HALF)))
+    one = pt.log(shape_betainc(b1, a1, pt.switch(is_one, c, _UNIT_SHAPE_HALF)))
+    a, b = _beta_shapes_on(inside, logit_mu, phi)
+    u = (pt.switch(inside, value, _UNIT_SHAPE_HALF) + kappa) / (_F64_ONE + 2.0 * kappa)
+    density = pm.logp(pm.Beta.dist(alpha=a, beta=b), u) - pt.log1p(2.0 * kappa)
+    return pt.switch(is_zero, zero, pt.switch(is_one, one, pt.switch(inside, density, -np.inf)))
+
+
+def xbeta_random(logit_mu, phi, kappa, rng=None, size=None):
+    """``(1 + 2 kappa) B - kappa`` censored to [0, 1], ``B ~ Beta(mu phi, (1 - mu) phi)``."""
+    shape = size if size is not None else np.broadcast_shapes(np.shape(logit_mu), np.shape(phi), np.shape(kappa))
+    draws = rng.beta(expit(logit_mu) * phi, expit(-np.asarray(logit_mu)) * phi, size=shape)
+    return np.clip((1.0 + 2.0 * np.asarray(kappa)) * draws - kappa, 0.0, 1.0)
+
+
+def zero_one_inflated_beta_family():
+    """Bambi family of brms's ``zero_one_inflated_beta()``: the identity link on ``logit_mu`` (the linear predictor), the precision
+    ``phi`` and the probabilities ``zoi`` and ``coi`` with their priors."""
+    return _zero_family("zero_one_inflated_beta_logit", "ZeroOneInflatedBetaLogit", ("logit_mu", "phi", "zoi", "coi"),
+                        {"logit_mu": "identity", "phi": "log", "zoi": "logit", "coi": "logit"}, zero_one_inflated_beta_logp,
+                        zero_one_inflated_beta_random)
+
+
+def zero_inflated_beta_binomial_family():
+    """Bambi family of brms's ``zero_inflated_beta_binomial()`` for a two-column ``p(k, n)`` response: the identity link on
+    ``logit_mu`` (the linear predictor), the precision ``phi`` and ``zi`` with their priors."""
+    return _zero_family("zero_inflated_beta_binomial_logit", "ZeroInflatedBetaBinomialLogit", ("logit_mu", "phi", "zi"),
+                        {"logit_mu": "identity", "phi": "log", "zi": "logit"}, zero_inflated_beta_binomial_logp,
+                        zero_inflated_beta_binomial_random, dtype="int64", trials=True)
+
+
+def xbeta_family():
+    """Bambi family of brms's ``xbeta()``: the identity link on ``logit_mu`` (the linear predictor), the precision ``phi`` and
+    ``kappa`` with their priors."""
+    return _zero_family("xbeta_logit", "XBetaLogit", ("logit_mu", "phi", "kappa"),
+                        {"logit_mu": "identity", "phi": "log", "kappa": "log"}, xbeta_logp, xbeta_random)
+
+
+def hurdle_ordered_logistic_logp(value, eta, thresholds, hu):
+    """brms's ``hurdle_cumulative_logit_lpmf(value | eta, hu, thresholds)``: ``log(hu)`` at 0 and ``log1m(hu)`` plus the
+    cumulative logit row (``ordered_logistic_logp``, read at category 1 on the zero rows) at the categories ``1..K``; ``-inf``
+    outside ``0..K``."""
+    y = pt.cast(value, "int64")
+    is_zero = pt.eq(y, 0)
+    ordinal = ordered_logistic_logp(pt.switch(is_zero, 1, y), eta, thresholds)
+    return pt.switch(pt.lt(y, 0), -np.inf, pt.switch(is_zero, pt.log(hu), pt.log1p(-hu) + ordinal))
+
+
+def hurdle_cumulative_probabilities(eta, thresholds, hu):
+    """``P(y = k)``, ``k = 0..K``: ``hu`` for the hurdle category and ``(1 - hu)`` times the cumulative logit probabilities
+    (``cumulative_probabilities``) of ``1..K``; ``(..., K + 1)``."""
+    ordinal = cumulative_probabilities(eta, thresholds)
+    hu = np.broadcast_to(np.asarray(hu, dtype=float), ordinal.shape[:-1])[..., None]
+    return np.concatenate([hu, (1.0 - hu) * ordinal], axis=-1)
+
+
+def hurdle_ordered_logistic_random(eta, thresholds, hu, rng=None, size=None):
+    """0 where a uniform draw falls below hu, otherwise a category ``1..K`` of the cumulative logit model."""
+    shape = tuple(size) if size is not None else np.broadcast_shapes(np.shape(eta), np.shape(thresholds)[:-1], np.shape(hu))
+    zero = _zero_part(hu, shape, rng)
+    return np.where(zero, 0, draw_categories(cumulative_probabilities(eta, thresholds), rng, shape)).astype(np.int64)
+
+
+def hurdle_cumulative_logit_family(terms, means, dim: str):
+    """Bambi family for brms's ``hurdle_cumulative("logit")``, built as ``cumulative_logit_family`` is (the linear predictor
+    ``mu`` as the parent under the identity link, the thresholds ``Intercept`` an auxiliary parameter and ``b_Intercept =
+    Intercept + sum_p means[p] b_p`` the deterministic the likelihood reads), with the hurdle probability ``hu`` (brms's name,
+    its own prior, sampled as ``hu_logodds__``) and the likelihood ``hurdle_ordered_logistic_logp``."""
+    import bambi as bmb
+
+    means = np.asarray(means, dtype=np.float64)
+    names = tuple(terms)
+
+    class HurdleCumulativeLogit:
+        """``y ~ HurdleOrderedLogistic(mu, b_Intercept, hu)``, ``b_Intercept = Intercept + sum_p mean(x_p) b_p``."""
+
+        def __new__(cls, name, mu, Intercept, hu, **kwargs):
+            model = pm.modelcontext(None)
+            thresholds = Intercept
+            if names:
+                b = pt.concatenate([pt.atleast_1d(model[term]) for term in names])
+                thresholds = Intercept + pt.dot(means, b)
+            thresholds = pm.Deterministic("b_Intercept", thresholds, dims=dim)
+            return pm.CustomDist(name, mu, thresholds, hu, logp=hurdle_ordered_logistic_logp, random=hurdle_ordered_logistic_random,
+                                 signature="(),(k),()->()", dtype="int64", **kwargs)
+
+    class HurdleCumulativeLogitFamily(bmb.Family):
+        SUPPORTED_LINKS = {"mu": ["identity"], "Intercept": ["identity"], "hu": ["logit"]}
+
+    likelihood = bmb.Likelihood("HurdleCumulativeLogit", params=["mu", "Intercept", "hu"], parent="mu", dist=HurdleCumulativeLogit)
+    return HurdleCumulativeLogitFamily("hurdle_cumulative_logit", likelihood,
+                                       link={"mu": "identity", "Intercept": "identity", "hu": "logit"})

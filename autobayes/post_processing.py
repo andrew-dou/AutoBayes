@@ -137,6 +137,9 @@ def bayes_R2(model, fit_result) -> xr.DataArray:
     if fam.per_category:
         raise ValueError(f"bayes_R2() is not defined for the {model.family} family's unordered categories (brms: \"'bayes_R2' is "
                          "not defined for unordered categorical models\")")
+    if fam.hurdle_category is not None:                        # E01: no frozen case records brms's R2 of a hurdle ordinal model
+        raise ValueError(f"bayes_R2() of the {model.family} family is not offered: how brms scores the hurdle category against the "
+                         "ordered ones is not verified by a frozen case (docs/bounded-families.md, divergence D109)")
     ds = predict(model, fit_result, kind="mean")
     if fam.thresholds:                                         # B05: the expected 1-based category against the category
         p = ds[fam.mean_name].transpose("chain", "draw", "__obs__", "category").to_numpy()
