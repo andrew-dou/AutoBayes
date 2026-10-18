@@ -38,7 +38,7 @@ INPUT_PRINTS = json.loads(FINGERPRINTS.read_text())   # platform-independent: th
 # One frozen case per family and per feature the log-likelihood has to carry.
 CROSS_CHECK = ["gauss_weighted", "gauss_distributional_sigma", "gauss_slope_correlated", "gauss_nested_colon", "student_learned_nu",
                "poisson_offset", "negbinomial_distributional_shape", "gamma_weighted", "lognormal_varint", "beta_distributional_phi",
-               "bernoulli_probit", "bernoulli_weighted", "binomial_monotonic", "binomial_probit", "zero_inflated_poisson_varint",
+               "bernoulli_probit", "bernoulli_weighted", "binomial_monotonic", "binomial_probit", "bernoulli_cloglog", "binomial_cloglog", "zero_inflated_poisson_varint",
                "hurdle_poisson_varint", "cumulative_monotonic", "categorical_poponly_categorical", "mixture_gauss_gauss",
                "mixture_gauss3_categorical", "mixture_gauss_default_priors",
                # D01: the Weibull, exponential, skew-normal, shifted lognormal and ex-Gaussian families
