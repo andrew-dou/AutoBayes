@@ -1766,12 +1766,16 @@
    "depends_on": [
     "A12_links"
    ],
-   "status": "gates_green",
+   "status": "merged",
    "summary": "further brms links for the Tier A families (e.g. poisson sqrt, Gamma inverse/identity, Beta probit/cloglog, cumulative cloglog)",
-   "pr": null,
+   "pr": 71,
    "attempts": 1,
-   "divergences": [],
-   "next_action": "implementation",
+   "divergences": [
+    "D132",
+    "D133",
+    "D134"
+   ],
+   "next_action": "cumulative cloglog withheld: brms log density inexact on cumulative_cloglog (5.9e-7); needs a new case on a narrower point box",
    "reserved_divergences": "D132-D135",
    "fixtures": {
     "pr": 70,
