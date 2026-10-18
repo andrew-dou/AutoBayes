@@ -38,7 +38,14 @@ def log_binomial_coefficient(n, k):
 LINK_LOG_PROBABILITIES = {
     "logit": (lambda eta: -softplus(-eta), lambda eta: -softplus(eta)),
     "probit": (log_ndtr, lambda eta: log_ndtr(-eta)),
+    # P6's cloglog link (D18): log P(y = 1) = log(1 - exp(-exp(eta))), log P(y = 0) = -exp(eta)
+    "cloglog": (lambda eta: _cloglog_log_p1(eta), lambda eta: _neg_exp(eta)),
 }
+
+
+def _neg_exp(eta):
+    with np.errstate(over="ignore"):
+        return -np.exp(np.asarray(eta, dtype=float))
 
 
 def normal(y, mu, sigma):
