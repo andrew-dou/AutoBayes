@@ -191,8 +191,8 @@ class FamilySpec:
 
     name: str                                    # the registry key and ``model.family``
     tag: str                                     # the ``describe()`` heading: "M0", "M1", "M2", "Student-t", "Poisson"
-    parent: str                                  # Bambi's parent parameter, the linear predictor's name: "mu", "logit_p", "probit_p"
-    link: str                                    # "identity", "logit", "log" or "probit"
+    parent: str                                  # Bambi's parent parameter, the linear predictor's name: "mu", "logit_p", "probit_p"; E06: "sqrt_mu", "inverse_mu", "probit_mu", "cloglog_mu"
+    link: str                                    # "identity", "logit", "log", "probit", "cloglog"; E06: "sqrt", "inverse"
     link_scale: str | None                       # the scale the location priors live on when it is not the response ("logit", "log", "probit")
     mean_name: str                               # the name ``predict()`` gives the expected response: "mu" or "p"
     response_kind: str                           # "continuous", "binary", "count" or "binomial" (successes with trials)
@@ -220,7 +220,7 @@ class FamilySpec:
     centred_intercept_note: tuple[str, ...]      # ``describe()`` lines after a centred intercept with categorical predictors
     deterministic_note: str                      # the tail of ``describe()``'s "Deterministic:" line
     # brms's default priors (A07, ``ab.default_priors``, docs/default-priors.md):
-    default_prior_link: str | None               # how brms reads the response for its data-dependent defaults (def_scale_prior): "identity", "log" (zeros read as 0.1; also the lognormal's log scale), or None for a link it does not read the response through (logit, probit), whose defaults are student_t(3, 0, 2.5)
+    default_prior_link: str | None               # how brms reads the response for its data-dependent defaults (def_scale_prior): "identity", "log" (zeros read as 0.1; also the lognormal's log scale), E06's "inverse" (zeros read as 0.1) and "sqrt", or None for a link it does not read the response through (logit, probit, cloglog), whose defaults are student_t(3, 0, 2.5)
     default_scale_prior: Callable[[float], object] | None   # (brms's data-dependent scale) -> brms's default prior of the auxiliary parameter (sigma: HalfStudentT(3, scale); shape, phi: the family's constant); None without one
     links: Mapping[str, Callable[[], "FamilySpec"]] = field(default_factory=lambda: NO_OTHER_LINKS)   # the family's other links by name, each building this family's spec under that link (Bernoulli, binomial: probit); empty for a one-link family
     parked_links: Mapping[str, str] = field(default_factory=lambda: NO_PARKED_LINKS)   # links brms offers for this family that this library withholds, each with the reason ``with_link`` reports (none since P6 lifted the cloglog link's; docs/links.md)

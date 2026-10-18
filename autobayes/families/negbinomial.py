@@ -6,8 +6,15 @@ grows. Bambi's ``negativebinomial`` family is PyMC's ``NegativeBinomial(mu, alph
 ``alpha_log__`` (``model.names["shape"]`` is ``"alpha"``). Equality of the two densities and their gradients is
 checked against brms in the oracle case ``negbinomial_varint``, not assumed. ``shape`` may have its own formula under a log
 link (B01, docs/distributional.md; ``negbinomial_distributional_shape``), Bambi's distributional ``alpha``.
+
+E06 (docs/links.md): brms's ``negbinomial("identity")``, ``mu = eta`` (a positive linear predictor), is ``_identity()``, reached
+through ``NEGBINOMIAL.links`` (``ab.negbinomial(..., link="identity")``).
 """
 from __future__ import annotations
+
+from dataclasses import replace
+from functools import lru_cache
+from types import MappingProxyType
 
 import numpy as np
 
@@ -85,4 +92,58 @@ NEGBINOMIAL = FamilySpec(
     default_distributional_intercept=lambda scale: StudentT(3, 0, 2.5),   # brms Intercept_shape: student_t(3, 0, 2.5) under the log link
     monotonic=True,                                                 # B03: mo(x), verified against negbinomial_monotonic
     log_likelihood=_log_likelihood,                                 # C07: log_lik(), checked against the model's own density (test_post_processing.py)
+    links=MappingProxyType({"identity": lambda: _identity()}),      # E06: brms's identity link (negbinomial_identity)
 )
+
+
+# -- E06: the identity link ---------------------------------------------------------------------------------------------------
+def _identity_bambi_family():
+    from autobayes.likelihoods import negbinomial_identity_family
+
+    return negbinomial_identity_family()
+
+
+def _identity_inverse_link(eta):
+    from autobayes.families.links import positive_mean
+
+    return positive_mean(eta, "identity", "negative binomial expected count")
+
+
+def _identity_log_likelihood(model, post, eta):
+    """brms's log_lik (C07): ``log NegBinomial2(y_i | eta_i, shape)``, ``-inf`` where ``eta_i <= 0``."""
+    from autobayes.families.pointwise import neg_binomial_2_identity
+
+    return neg_binomial_2_identity(model.design.y, eta, auxiliary(model, post, "shape"))
+
+
+def _identity_likelihood_lines(model) -> list[str]:
+    return [scale_line(model), "", "Likelihood",
+            "  y_i ~ NegativeBinomial(mu_i, shape); mu_i = eta_i (brms's negbinomial(\"identity\")); Var[y_i] = mu_i + mu_i^2 / shape",
+            "  brms's neg_binomial_2 parameterisation, written as its log form at log(mu_i) (autobayes/likelihoods.py); a row",
+            "  with eta_i <= 0 has no valid mean and the log density is -inf there (brms's Stan rejects it).",
+            "  Input counts are integers from 0 through 1e6; zero-count rows are retained."]
+
+
+def _identity_check_formula(spec) -> None:
+    from autobayes.families.links import check_link_formula
+
+    check_link_formula(spec, _identity())
+
+
+@lru_cache(maxsize=None)
+def _identity() -> FamilySpec:
+    """The negative binomial family's spec under brms's identity link (E06): ``mu = eta``, positive where the model is defined;
+    verified against the frozen case ``negbinomial_identity``. ``weights()``, a formula on ``shape``, ``mo()`` and the other special
+    terms are refused under it (``check_formula``, divergence D133)."""
+    return replace(
+        NEGBINOMIAL, link="identity", link_scale=None, bambi_family=_identity_bambi_family, inverse_link=_identity_inverse_link,
+        scale_phrase="expected count", intercept_meaning="expected count",
+        mean_lines=lambda model: ["  E[y_i] = mu_i = eta_i, which must be positive; Var[y_i] = mu_i + mu_i^2 / shape."],
+        likelihood_lines=_identity_likelihood_lines,
+        deterministic_note="mu = linear predictor = the expected count",
+        default_prior_link="identity",                              # brms reads y as it is
+        addition_terms=frozenset(), distributional_link=None, default_distributional_intercept=None, monotonic=False,   # D133
+        log_likelihood=_identity_log_likelihood,
+        check_formula=_identity_check_formula,
+        links=MappingProxyType({"log": lambda: NEGBINOMIAL}),
+    )

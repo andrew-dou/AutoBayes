@@ -50,4 +50,5 @@ on both paths at responses 1e−6, 0.5 and 1 − 1e−6 and logits −30, 0 and 
 `log(phi)` and the intercept against their closed forms), the refusals, `value_point`, seeded predictions under both
 new-group policies, `describe()`, prior-predictive shapes and the fit record. Nothing samples.
 
-No probit or cloglog link, `link_phi`, zero/one inflation or distributional (`phi ~ ...`) formula is modeled.
+No `link_phi` or zero/one inflation is modeled. brms's probit and cloglog links are offered since E06,
+`ab.beta(..., link="probit")` and `link="cloglog"`, without a formula on `phi` ([links](links.md)).

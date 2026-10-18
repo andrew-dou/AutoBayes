@@ -1766,13 +1766,13 @@
    "depends_on": [
     "A12_links"
    ],
-   "status": "implementing",
+   "status": "gates_green",
    "summary": "further brms links for the Tier A families (e.g. poisson sqrt, Gamma inverse/identity, Beta probit/cloglog, cumulative cloglog)",
    "pr": null,
    "attempts": 1,
    "divergences": [],
-   "next_action": "agent (opus), wave E1",
-   "reserved_divergences": "D128-D131",
+   "next_action": "implementation",
+   "reserved_divergences": "D132-D135",
    "fixtures": {
     "pr": 70,
     "cases": [
@@ -1784,6 +1784,22 @@
      "negbinomial_identity",
      "poisson_sqrt"
     ]
+   },
+   "gates": {
+    "sha": "3e80c0a5922a",
+    "dirty_tree": false,
+    "base": "origin/main",
+    "when": "2026-10-18T20:38Z",
+    "results": {
+     "immutability": {
+      "status": "pass",
+      "seconds": 0.0
+     },
+     "oracle": {
+      "status": "pass",
+      "seconds": 431.3
+     }
+    }
    }
   }
  ]

@@ -145,8 +145,11 @@ def test_links_offered_parked_and_refused(df):
         assert get_family(family, "probit") is probit and probit.with_link("logit") is spec     # one spec per link
         assert get_family(family, None) is spec and get_family(family, "logit") is spec and probit.with_link("probit") is probit
     ordinal = {"cumulative", "sratio", "cratio", "acat"}          # D04: brms's other ordinal links are withheld, with reasons (D38)
+    more = {"poisson": {"sqrt"}, "negbinomial": {"identity"}, "gamma": {"inverse", "identity"}, "beta": {"probit", "cloglog"}}   # E06
     for name, spec in FAMILIES.items():
-        if name not in ("bernoulli", "binomial", "cumulative"):
+        if name in more:
+            assert set(spec.links) == more[name] and spec.with_link(spec.link) is spec
+        elif name not in ("bernoulli", "binomial", "cumulative"):
             assert not spec.links and spec.with_link(spec.link) is spec
         if name in ordinal:
             assert set(spec.parked_links) == ({"probit_approx", "cloglog", "cauchit"} if name == "cumulative"
@@ -164,10 +167,12 @@ def test_links_offered_parked_and_refused(df):
         assert ctor(formula, df, PRIORS, link="cloglog").link == "cloglog"
     gpriors = ab.Priors(intercept=ab.Normal(0, 2.5), b=ab.Normal(0, 1.5), sd=ab.HalfNormal(1), sigma=ab.HalfNormal(1))
     with pytest.raises(ValueError, match=r"the gaussian family has the identity link only; link='probit' is not available "
-                                         r"\(link= applies to the families with more than one link: bernoulli \['cloglog', 'logit', 'probit'\], "
-                                         r"binomial \['cloglog', 'logit', 'probit'\], cumulative \['logit', 'probit'\]\)"):
+                                         r"\(link= applies to the families with more than one link: poisson \['log', 'sqrt'\], negbinomial "
+                                         r"\['identity', 'log'\], gamma \['identity', 'inverse', 'log'\], beta \['cloglog', 'logit', 'probit'\], "
+                                         r"bernoulli \['cloglog', 'logit', 'probit'\], binomial \['cloglog', 'logit', 'probit'\], cumulative "
+                                         r"\['logit', 'probit'\]\)"):                    # E06 added the Poisson, NB, Gamma and Beta links
         ab.Model(BERNOULLI, df, gpriors, family="gaussian", link="probit")
-    with pytest.raises(ValueError, match="the poisson family has the log link only; link='identity' is not available"):
+    with pytest.raises(ValueError, match=r"link must be one of \['log', 'sqrt'\] for the poisson family, got 'identity'"):   # E06: sqrt
         ab.Model("k ~ x + (1 | g)", df, PRIORS, family="poisson", link="identity")
     with pytest.raises(ab.PriorError, match="has no residual SD; do not pass sigma. Its intercept and slope priors are on the probit scale"):
         ab.bernoulli(BERNOULLI, df, gpriors, link="probit")

@@ -297,3 +297,15 @@ Verified against `zero_inflated_negbinomial_varint`, `hurdle_negbinomial_varint`
 formulas on `zi` / `hu` and the auxiliary parameters, `cens()`, `trunc()`, `mo()`, `me()`/`mi()`, `mm()`, `gr(by = )`,
 autocorrelation terms, multivariate, non-linear and mixture use are refused (D84); see
 [zero-inflated and hurdle families](zero-inflated-hurdle.md).
+
+More links for the Tier A families (E06, `link=` on `ab.poisson`, `ab.negbinomial`, `ab.gamma` and `ab.beta`): brms's
+`poisson("sqrt")` (`mu = eta^2`), `negbinomial("identity")`, `Gamma("inverse")` and `Gamma("identity")` (each needing a positive
+linear predictor), `Beta("probit")` and `Beta("cloglog")`, each with the linear predictor kept as the graph's parent, its
+likelihood in a stable form (the Beta's `1 - mu` computed directly, D132), `predict()`, `log_lik()`, brms's default priors under
+the link and `describe()`; a non-positive mean under the identity and inverse links is refused in `predict()` and
+`prior_predictive()` (D134). Verified against `poisson_sqrt`, `negbinomial_identity`, `gamma_inverse`, `gamma_identity`,
+`beta_probit` and `beta_cloglog`; under these links the term model and `offset()` are taken, while `weights()` and the other
+addition terms, formulas on `shape` / `phi`, `mo()`, `gp()`, `mm()`, `gr(by = )`, `me()`/`mi()` and autocorrelation terms are
+refused naming the link (D133). The cumulative cloglog link is built but withheld: brms's own log density of
+`cumulative_cloglog` is 5.9e-7 relative off the exact value at one point, which no gate accepts (D38, D132); see
+[links](links.md).

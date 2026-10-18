@@ -275,3 +275,59 @@ def hurdle_lognormal(y, mu, sigma, hu):
     """brms's ``hurdle_lognormal_lpdf``: ``log hu`` at zero, ``log(1 - hu) + log LogNormal(y | mu, sigma)`` above."""
     positive = np.log1p(-hu) + lognormal(np.where(y == 0, 1.0, y), mu, sigma)
     return np.where(y == 0, np.log(hu) + 0.0 * mu, positive)
+
+
+# -- E06, docs/links.md --------------------------------------------------------------------------------------------------------
+def poisson_sqrt(y, eta):
+    """``log Poisson(y | eta^2)`` (brms's ``poisson("sqrt")``): ``2 y log|eta| - eta^2 - log(y!)``, the first term 0 at ``y = 0``."""
+    eta = np.asarray(eta, dtype=float)
+    with np.errstate(divide="ignore"):
+        log_term = np.where(y > 0, 2.0 * y * np.log(np.abs(np.where(y > 0, eta, 1.0))), 0.0)
+    return log_term - eta * eta - gammaln(y + 1.0)
+
+
+def neg_binomial_2_identity(y, eta, shape):
+    """``log NegBinomial2(y | eta, shape)`` (brms's ``negbinomial("identity")``): ``neg_binomial_2_log`` at ``log(eta)``, ``-inf``
+    where ``eta <= 0``."""
+    eta = np.asarray(eta, dtype=float)
+    ok = eta > 0
+    return np.where(ok, neg_binomial_2_log(y, np.log(np.where(ok, eta, 1.0)), shape), -np.inf)
+
+
+def gamma_link(y, eta, shape, link: str):
+    """``log Gamma(y | shape, rate)`` under brms's ``Gamma("inverse")`` (``rate = shape eta``) or ``Gamma("identity")`` (``rate =
+    shape / eta``), ``-inf`` where ``eta <= 0``."""
+    eta = np.asarray(eta, dtype=float)
+    ok = eta > 0
+    e = np.where(ok, eta, 1.0)
+    log_rate, rate = (np.log(shape) + np.log(e), shape * e) if link == "inverse" else (np.log(shape) - np.log(e), shape / e)
+    return np.where(ok, shape * log_rate - gammaln(shape) + (shape - 1.0) * np.log(y) - rate * y, -np.inf)
+
+
+def _log_cloglog_complement(eta):
+    """``log(1 - (1 - exp(-exp(eta)))) = -exp(eta)``, at ``eta`` capped at 700 (as ``likelihoods.cloglog_log_p0``)."""
+    return -np.exp(np.minimum(eta, 700.0))
+
+
+def _lgamma_of_shape(x, log_x):
+    """``likelihoods._lgamma_of_shape``: ``gammaln(x)`` from 1e-10 up, ``-log_x - gamma x`` below."""
+    tiny = log_x < math.log(1e-10)
+    return np.where(tiny, -log_x - 0.5772156649015329 * np.exp(np.minimum(log_x, 0.0)), gammaln(np.where(tiny, 1.0, x)))
+
+
+def beta_link(y, eta, phi, link: str):
+    """``log Beta(y | mu phi, (1 - mu) phi)`` under brms's ``Beta("probit")`` or ``Beta("cloglog")``, ``mu`` and ``1 - mu`` each
+    computed directly and the log-gamma of a shape parameter below 1e-10 from its logarithm (``likelihoods.beta_link_logp``)."""
+    from scipy.special import ndtr
+
+    eta = np.asarray(eta, dtype=float)
+    if link == "probit":
+        mu, cm, log_mu, log_cm = ndtr(eta), ndtr(-eta), log_ndtr(eta), log_ndtr(-eta)
+    else:
+        e = np.exp(np.minimum(eta, 700.0))
+        mu, cm = -np.expm1(-e), np.exp(-e)
+        log_mu, log_cm = _cloglog_log_p1(eta), _log_cloglog_complement(eta)
+    a, b = mu * phi, cm * phi
+    log_phi = np.log(phi)
+    lbeta = _lgamma_of_shape(a, log_phi + log_mu) + _lgamma_of_shape(b, log_phi + log_cm) - gammaln(a + b)
+    return (a - 1.0) * np.log(y) + (b - 1.0) * np.log1p(-y) - lbeta

@@ -25,7 +25,8 @@ from autobayes import likelihoods as lk
 from autobayes.families import FAMILIES, get_family
 
 FAMS = ("sratio", "cratio", "acat")
-KIND_FAMILY = {"sratio_logit": "sratio", "cratio_logit": "cratio", "acat_logit": "acat", "cumulative_probit": "probit"}
+KIND_FAMILY = {"sratio_logit": "sratio", "cratio_logit": "cratio", "acat_logit": "acat", "cumulative_probit": "probit",
+               "cumulative_cloglog": "cloglog"}                     # E06: built, withheld (tests/test_links_more.py)
 
 # -- data -------------------------------------------------------------------------------------------------------------
 X = [-1.0, 0.5, 2.0, 0.3, -0.2, 1.1, 0.0, -0.7, 0.9, -1.4, 0.2, 1.6]
@@ -49,7 +50,8 @@ def model(family, formula="y ~ x + (1 | g)", frame=None, pri=None, **kw):
 def reference_log_probabilities(family, eta, tau):
     """``log P(y = k)``, ``(..., K)``, from the definitions (NumPy): ``eta`` ``(..., K - 1)`` (one predictor per threshold),
     ``tau`` ``(K - 1,)``. sratio: P(y = k | y >= k) = expit(tau_k - eta_k); cratio: P(y > k | y >= k) = expit(eta_k - tau_k);
-    acat: log P(y = k + 1) / P(y = k) = eta_k - tau_k; cumulative probit: P(y <= k) = Phi(tau_k - eta_k)."""
+    acat: log P(y = k + 1) / P(y = k) = eta_k - tau_k; cumulative probit: P(y <= k) = Phi(tau_k - eta_k); cumulative cloglog
+    (E06): P(y <= k) = 1 - exp(-exp(tau_k - eta_k))."""
     eta = np.asarray(eta, dtype=float)
     K1 = eta.shape[-1]
     if family in ("sratio", "cratio"):
@@ -62,6 +64,11 @@ def reference_log_probabilities(family, eta, tau):
     if family == "acat":
         s = np.concatenate([np.zeros(eta.shape[:-1] + (1,)), np.cumsum(eta - tau, axis=-1)], axis=-1)
         return s - np.log(np.exp(s - s.max(-1, keepdims=True)).sum(-1, keepdims=True)) - s.max(-1, keepdims=True)
+    if family == "cloglog":                    # differences of the survival exp(-exp(tau - eta)), the first as -expm1(-exp(.))
+        surv = np.concatenate([np.ones(eta.shape[:-1] + (1,)), np.exp(-np.exp(tau - eta)), np.zeros(eta.shape[:-1] + (1,))], axis=-1)
+        p = surv[..., :-1] - surv[..., 1:]
+        p[..., 0] = -np.expm1(-np.exp(tau[0] - eta[..., 0]))
+        return np.log(p)
     c = np.concatenate([np.zeros(eta.shape[:-1] + (1,)), ndtr(tau - eta), np.ones(eta.shape[:-1] + (1,))], axis=-1)
     return np.log(np.diff(c, axis=-1))
 
@@ -207,7 +214,7 @@ def test_probit_rows_are_exact_and_never_nan_on_both_paths(mode):
 
 def test_rows_outside_the_categories_have_no_mass_and_match_the_probabilities():
     for kind in lk.ORDINAL_KINDS:
-        tau = TAU_PROBIT if kind == "cumulative_probit" else TAU_UNORDERED
+        tau = TAU_PROBIT if kind.startswith("cumulative_") else TAU_UNORDERED     # the cumulative kinds' thresholds are ordered
         K = len(tau) + 1
         value, _, _ = _rows(kind, "pytensor", np.array([0, K + 1, -1], dtype=np.int64), np.zeros(3), tau)
         assert (value == -np.inf).all()
@@ -218,7 +225,7 @@ def test_rows_outside_the_categories_have_no_mass_and_match_the_probabilities():
         np.testing.assert_allclose(lk.ordinal_log_probabilities(kind, tau - eta), reference_log_probabilities(KIND_FAMILY[kind], eta, tau),
                                    rtol=1e-12)
     with pytest.raises(ValueError, match="kind must be one of"):
-        lk.ordinal_log_probabilities("cumulative_cloglog", np.zeros(3))
+        lk.ordinal_log_probabilities("cumulative_cauchit", np.zeros(3))          # E06 added cumulative_cloglog
 
 
 def test_likelihood_objects_draw_their_distribution():

@@ -9,7 +9,7 @@ explicitly, ``ab.gaussian(f, df, ab.default_priors(f, df))``. Each prior it retu
 brms's rules (``default_prior()``, ``def_dpar_prior``, ``def_scale_prior``, ``prior_re``, ``prior_fe`` in brms 2.23):
 
 - ``Intercept`` (the centred intercept): ``student_t(3, location, scale)``. When brms reads the response through its
-  family's link (identity; log, where zeros count as 0.1; the lognormal's log scale), ``location`` is
+  family's link (identity; log, where zeros count as 0.1; the lognormal's log scale; E06's inverse, zeros as 0.1, and sqrt), ``location`` is
   ``round(median(y_link), 1)`` minus the mean of the offset, and ``scale`` is ``max(2.5, round(mad(y_link), 1))``; for
   any other link (logit, probit) they are 0 and 2.5. ``FamilySpec.default_prior_link`` says which.
 - ``b``: flat (an empty prior string), ``Flat()``. Without centring (``center_predictors=False``) the intercept is one
@@ -189,7 +189,9 @@ def r_number(x: float) -> str:
 # -- brms's data-dependent location and scale -------------------------------------------------------------------------
 def _on_link(y: Sequence[float], link: str) -> list[float]:
     """The response as brms's ``def_scale_prior`` reads it: as given under ``"identity"``; under ``"log"`` with zeros
-    read as 0.1 (``ifelse(y == 0, y + 0.1, y)``) and logged (a negative value is NaN, as in R)."""
+    read as 0.1 (``ifelse(y == 0, y + 0.1, y)``) and logged (a negative value is NaN, as in R); E06: under ``"inverse"`` with
+    zeros read as 0.1 and inverted, under ``"sqrt"`` as its square root with zeros as they are (a negative value is NaN, as R's
+    ``sqrt``); checked against brms's ``default_prior()`` on data with zeros (docs/links.md)."""
     if link == "identity":
         return [float(v) for v in y]
     if link == "log":
@@ -198,7 +200,11 @@ def _on_link(y: Sequence[float], link: str) -> list[float]:
             v = 0.1 if float(v) == 0.0 else float(v)
             out.append(math.log(v) if v > 0 else math.nan)
         return out
-    raise ValueError(f"brms reads the response for its default priors through 'identity' or 'log', not {link!r}")
+    if link == "inverse":
+        return [1.0 / (0.1 if float(v) == 0.0 else float(v)) for v in y]
+    if link == "sqrt":
+        return [math.sqrt(float(v)) if float(v) >= 0 else math.nan for v in y]
+    raise ValueError(f"brms reads the response for its default priors through 'identity', 'log', 'inverse' or 'sqrt', not {link!r}")
 
 
 def location_scale(y: Sequence[float], link: str | None, offset: Sequence[float] | None = None) -> tuple[float, float]:
@@ -319,6 +325,8 @@ def default_priors(formula: str | list[str], data: pd.DataFrame, *, family: str 
     if families is not None or order is not None:
         raise ValueError(f"families= and order= are a mixture's (family='mixture'); the {fam.name} family takes neither")
     spec = parse_formula(formula, data, family, categorical)
+    if fam is not get_family(family) and fam.check_formula is not None:   # a link's own refusals (E06, divergence D133)
+        fam.check_formula(spec)
     check_imputation(spec, imputed)                                   # C06: mi() belongs to a multivariate model
     # B05: brms never reads an ordinal or categorical response for its defaults (no identity or log link: 0 and 2.5), and
     # its labels need not be numbers

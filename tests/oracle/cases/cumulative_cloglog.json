@@ -72,6 +72,6 @@
  },
  "gate": {
   "expect": "fail",
-  "reason": "E06_more_links not implemented; remove this field when it lands"
+  "reason": "E06: the cloglog link is implemented but withheld: brms's log density is 5.9e-7 relative off the 50-digit value at point 7 and its gradient up to 1.3e-4 at points 1 and 7 (1 - inv_cloglog by subtraction), and log densities never fall back (D132)"
  }
 }

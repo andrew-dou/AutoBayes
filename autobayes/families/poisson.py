@@ -1,5 +1,10 @@
-"""Poisson count response: log link on ``mu``, no auxiliary parameter."""
+"""Poisson count response: log link on ``mu``, no auxiliary parameter; or brms's ``poisson("sqrt")`` (E06, docs/links.md),
+``mu = eta^2``, whose spec ``_sqrt()`` is reached through ``POISSON.links`` (``ab.poisson(..., link="sqrt")``)."""
 from __future__ import annotations
+
+from dataclasses import replace
+from functools import lru_cache
+from types import MappingProxyType
 
 import numpy as np
 
@@ -64,4 +69,56 @@ POISSON = FamilySpec(
     addition_terms=frozenset({"weights"}),                      # B02: weights(), verified against the frozen case poisson_weighted
     monotonic=True,                                                 # B03: mo(x), verified against poisson_monotonic
     log_likelihood=_log_likelihood,                                 # C07: log_lik(), verified against poisson_varint_post
+    links=MappingProxyType({"sqrt": lambda: _sqrt()}),              # E06: brms's sqrt link (poisson_sqrt)
 )
+
+
+# -- E06: the sqrt link -------------------------------------------------------------------------------------------------------
+def _sqrt_bambi_family():
+    from autobayes.likelihoods import poisson_sqrt_family
+
+    return poisson_sqrt_family()
+
+
+def _sqrt_inverse_link(eta):
+    from autobayes.families.links import square_mean
+
+    return square_mean(eta, "Poisson expected count")
+
+
+def _sqrt_log_likelihood(model, post, eta):
+    """brms's log_lik (C07): ``log Poisson(y_i | eta_i^2)``."""
+    from autobayes.families.pointwise import poisson_sqrt
+
+    return poisson_sqrt(model.design.y, eta)
+
+
+def _sqrt_check_formula(spec) -> None:
+    from autobayes.families.links import check_link_formula
+
+    check_link_formula(spec, _sqrt())
+
+
+@lru_cache(maxsize=None)
+def _sqrt() -> FamilySpec:
+    """The Poisson family's spec under brms's sqrt link (E06): ``mu = eta^2`` for every real ``eta``, the linear predictor kept as
+    the parent ``sqrt_mu``; verified against the frozen case ``poisson_sqrt``. ``weights()``, ``mo()`` and the other special terms
+    are refused under it (``check_formula``, divergence D133)."""
+    return replace(
+        POISSON, parent="sqrt_mu", link="sqrt", link_scale="sqrt", bambi_family=_sqrt_bambi_family, inverse_link=_sqrt_inverse_link,
+        scale_phrase="square-root mean", intercept_meaning="square root of the expected count",
+        mean_lines=lambda model: ["  E[y_i] = mu_i = eta_i^2; eta is the square root of the expected count (brms's sqrt link: any real",
+                                  "  eta gives a valid mean, and eta and -eta the same one)."],
+        likelihood_lines=lambda model: ["", "Likelihood", "  y_i ~ Poisson(mu_i); mu_i = eta_i^2 (brms's poisson(\"sqrt\"))",
+                                        "  sampled as 2 y_i log|eta_i| - eta_i^2 - log(y_i!) (autobayes/likelihoods.py; -inf at eta_i = 0",
+                                        "  for y_i > 0, as Stan's poisson_lpmf(y | 0)).",
+                                        "  Input counts are integers from 0 through 1e6; zero-count rows are retained.",
+                                        ("  The offset enters the linear predictor eta, under the square root."
+                                         if model.spec.offset is not None else "  No offset, overdispersion or zero-inflation is modeled.")],
+        deterministic_note="sqrt_mu = linear predictor; mu = sqrt_mu^2, the expected count, is computed by predict()",
+        default_prior_link="sqrt",                                  # brms reads sqrt(y) (zeros as they are)
+        addition_terms=frozenset(), monotonic=False,                # D133: not verified under the sqrt link
+        log_likelihood=_sqrt_log_likelihood,
+        check_formula=_sqrt_check_formula,
+        links=MappingProxyType({"log": lambda: POISSON}),
+    )
