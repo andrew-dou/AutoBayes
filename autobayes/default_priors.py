@@ -191,9 +191,13 @@ def _on_link(y: Sequence[float], link: str) -> list[float]:
     """The response as brms's ``def_scale_prior`` reads it: as given under ``"identity"``; under ``"log"`` with zeros
     read as 0.1 (``ifelse(y == 0, y + 0.1, y)``) and logged (a negative value is NaN, as in R); E06: under ``"inverse"`` with
     zeros read as 0.1 and inverted, under ``"sqrt"`` as its square root with zeros as they are (a negative value is NaN, as R's
-    ``sqrt``); checked against brms's ``default_prior()`` on data with zeros (docs/links.md)."""
+    ``sqrt``); checked against brms's ``default_prior()`` on data with zeros (docs/links.md); E02: under ``"1/mu^2"`` (the inverse
+    Gaussian's default link) as ``1 / y^2`` (probed with brms 2.23's ``default_prior()`` on rescaled responses: the Intercept's
+    location and the scale follow the median and MAD of ``1 / y^2``)."""
     if link == "identity":
         return [float(v) for v in y]
+    if link == "1/mu^2":
+        return [1.0 / (float(v) * float(v)) for v in y]
     if link == "log":
         out = []
         for v in y:
@@ -204,7 +208,7 @@ def _on_link(y: Sequence[float], link: str) -> list[float]:
         return [1.0 / (0.1 if float(v) == 0.0 else float(v)) for v in y]
     if link == "sqrt":
         return [math.sqrt(float(v)) if float(v) >= 0 else math.nan for v in y]
-    raise ValueError(f"brms reads the response for its default priors through 'identity', 'log', 'inverse' or 'sqrt', not {link!r}")
+    raise ValueError(f"brms reads the response for its default priors through 'identity', 'log', '1/mu^2', 'inverse' or 'sqrt', not {link!r}")
 
 
 def location_scale(y: Sequence[float], link: str | None, offset: Sequence[float] | None = None) -> tuple[float, float]:
@@ -261,7 +265,8 @@ def default_lscale(gp) -> Prior:
 def default_priors(formula: str | list[str], data: pd.DataFrame, *, family: str = "gaussian", categorical: Mapping[str, object] | None = None,
                    nu: float | None = None, link: str | None = None, center_predictors: bool = True,
                    families: list[str] | None = None, order: str | bool | None = None,
-                   rescor: bool | None = None, nl: bool = False, imputed: tuple[str, ...] = ()) -> Priors:
+                   rescor: bool | None = None, nl: bool = False, imputed: tuple[str, ...] = (),
+                   quantile: float | None = None) -> Priors:
     """brms's default priors for ``formula`` on ``data`` under ``family`` (brms 2.23's ``default_prior()``), as a
     ``Priors`` the constructors accept: ``ab.gaussian(f, df, ab.default_priors(f, df))``. ``formula`` may be a list with a
     distributional formula (B01, ``["y ~ x", "sigma ~ z"]``), whose priors are its intercept's and coefficients'.
@@ -289,11 +294,17 @@ def default_priors(formula: str | list[str], data: pd.DataFrame, *, family: str 
     ``sdme`` (``Flat()``, on the positive half line for ``sdme``).
 
     ``nl=True`` gives the defaults of a non-linear model (C02, ``nonlinear.nonlinear_default_priors``, docs/nonlinear.md),
-    which takes neither a mixture's ``families``/``order`` nor a multivariate formula or ``rescor`` (divergence D62)."""
+    which takes neither a mixture's ``families``/``order`` nor a multivariate formula or ``rescor`` (divergence D62).
+
+    ``quantile`` (E02) is the asymmetric Laplace family's fixed quantile, as its constructor takes it: brms's ``bf(quantile =
+    p)`` has no quantile prior, so none is returned; left ``None`` the quantile gets brms's ``beta(1, 1)``."""
     from autobayes.families import FAMILIES, get_family
     from autobayes.formula import check_imputation, parse_formula
     from autobayes.multivariate import is_multivariate_formula, multivariate_default_priors
 
+    if quantile is not None and (nl or rescor is not None or is_multivariate_formula(formula)):   # E02: asym_laplace's own
+        raise ValueError("quantile= fixes the asym_laplace family's quantile in a univariate linear model; a non-linear or "
+                         "multivariate asym_laplace model is not offered (divergence D112)")
     if nl:                                                            # a non-linear model (C02): its parameters' defaults; it refuses
         from autobayes.nonlinear import nonlinear_default_priors     # a mixture's and a multivariate model's arguments itself
 
@@ -304,6 +315,10 @@ def default_priors(formula: str | list[str], data: pd.DataFrame, *, family: str 
                                            center_predictors=center_predictors, rescor=rescor)
 
     fam = get_family(family, link)                                    # an unknown family, or a withheld link, is refused here
+    if quantile is not None or fam.fixable:                           # E02: a fixed quantile, checked as the constructor checks it
+        fam = fam.with_fixed("quantile", quantile)
+        if quantile is not None:
+            fam.fixed_parameters["quantile"](quantile)
     learned = {}
     if "nu" in fam.fixed_parameters:
         if nu is None and "nu" in fam.learnable_parameters:           # learned under brms's default prior
@@ -335,6 +350,8 @@ def default_priors(formula: str | list[str], data: pd.DataFrame, *, family: str 
     intercept = None
     if spec.intercept:                                                # the cumulative thresholds keep brms's Intercept class (B05)
         intercept = StudentT(DF, location, scale) if center_predictors or fam.thresholds else Flat()
+        if fam.default_intercept_prior is not None and (center_predictors or fam.thresholds):   # E02: von Mises student_t(1, 0, 1)
+            intercept = fam.default_intercept_prior(location, scale)
     sd = {}
     for t in spec.group_terms:
         sd[t.factor] = HalfStudentT(DF, scale) if not t.slopes else {c: HalfStudentT(DF, scale) for c in t.coefs}

@@ -9,8 +9,9 @@ lognormal (the SD of ``log y``), ``shape`` for the negative binomial and Gamma f
 truncated to ``nu > 1``); ``zi`` or ``hu``, the zero-inflation or hurdle probability (B06, a ``Beta`` prior); ``alpha``,
 ``beta`` or ``ndt``, the skewness, exponential component's mean or non-decision time of the skew-normal, ex-Gaussian and shifted
 lognormal families (D01; ``ndt``'s ``Uniform(0, "min_Y")`` is brms's ``uniform(0, min_Y)``); ``zoi`` and ``coi``, the
-zero-one-inflated Beta's two probabilities (E01, ``Beta`` priors), and ``kappa``, the extended-support Beta's (``xbeta``) kappa (E01).
-An
+zero-one-inflated Beta's two probabilities (E01, ``Beta`` priors); ``kappa``, the extended-support Beta's (``xbeta``, E01) or
+the von Mises precision (E02); ``quantile`` or ``xi``, the quantile or shape of the asymmetric Laplace and generalized extreme
+value families (E02; ``xi`` is the prior of brms's unscaled ``tmp_xi``). An
 auxiliary parameter with its own formula (B01, ``["y ~ x", "sigma ~ z"]``) takes the priors of that formula's intercept
 and coefficients instead, ``sigma={"intercept": ..., "b": ...}`` (brms's ``Intercept`` and ``b`` with ``dpar = sigma``).
 Every class the model has must be given, and a class the model does
@@ -47,8 +48,10 @@ AUXILIARY = {"sigma": "residual SD", "shape": "shape parameter", "phi": "precisi
              "zi": "zero-inflation probability", "hu": "hurdle probability",
              # D01: a family's extra parameters (FamilySpec.extra_parameters): skew_normal, exgaussian, shifted_lognormal
              "alpha": "skewness", "beta": "mean of the exponential component", "ndt": "non-decision time",
-             # E01: the zero-one-inflated Beta's two probabilities and the extended-support Beta's kappa (docs/bounded-families.md)
-             "zoi": "zero-one-inflation probability", "coi": "conditional one-inflation probability", "kappa": "kappa parameter"}
+             # E01: the zero-one-inflated Beta's two probabilities; E01, E02: kappa (xbeta's, von_mises's precision); E02:
+             # asym_laplace's quantile, gen_extreme_value's xi (the prior of brms's tmp_xi)
+             "zoi": "zero-one-inflation probability", "coi": "conditional one-inflation probability", "kappa": "kappa parameter",
+             "quantile": "quantile", "xi": "extreme value shape"}
 # The priors of a learned parameter with a lower bound (the Student-t nu, A13): the positive-support priors whose
 # truncation at the bound PyMC can renormalise (it needs their CDF; PyMC has none for HalfStudentT).
 TRUNCATABLE = frozenset({"Gamma", "Exponential", "HalfNormal", "HalfCauchy"})
@@ -60,7 +63,7 @@ BOUNDABLE = frozenset({"Normal", "StudentT", "HalfNormal", "HalfCauchy", "Expone
 MIN_Y = "min_Y"                                  # brms's name of the smallest response, the upper bound of ndt
 # D01: the priors each support of a family's extra parameter takes (families.spec.EXTRA_SUPPORTS)
 EXTRA_PRIORS = {"real": frozenset({"Normal", "StudentT"}), "positive": frozenset(_SCALE), "below_min_y": BOUNDABLE,
-                "unit": frozenset(_UNIT)}                       # E01: brms's real<lower=0,upper=1> zoi and coi, a Beta prior
+                "unit": frozenset(_UNIT)}                       # E01, E02: brms's real<lower=0,upper=1> zoi, coi, quantile
 
 
 class PriorError(ValueError):
@@ -463,17 +466,23 @@ class Priors:
     ndt: Prior | None = None
     # E01 (docs/bounded-families.md): the zero-one-inflated Beta's zero-one-inflation probability and conditional one-inflation
     # probability (brms classes ``zoi`` and ``coi``, real<lower=0,upper=1>, a Beta prior) and the extended-support Beta's kappa
-    # (brms class ``kappa`` of ``xbeta()``, real<lower=0>, a positive-support prior); refused for every other family
+    # (brms class ``kappa`` of ``xbeta()``, real<lower=0>, a positive-support prior); E02 (docs/continuous-families.md): the von
+    # Mises precision (class ``kappa`` too, a positive-support prior), the asymmetric Laplace quantile (class ``quantile``, a
+    # prior on (0, 1); none when the model fixes it) and the generalized extreme value shape (class ``xi``, a location prior on
+    # brms's unscaled tmp_xi); each refused for every other family
     zoi: Prior | None = None
     coi: Prior | None = None
     kappa: Prior | None = None
+    quantile: Prior | None = None
+    xi: Prior | None = None
 
     def __post_init__(self):
         if isinstance(self.components, list):                         # one value for equal component lists (C05)
             object.__setattr__(self, "components", tuple(self.components))
 
     # -- multivariate models (C01, docs/multivariate.md) ---------------------------------------------
-    _RESPONSE_CLASSES = ("intercept", "b", "sd", "sigma", "shape", "phi", "nu", "zi", "hu", "simo", "alpha", "beta", "ndt")
+    _RESPONSE_CLASSES = ("intercept", "b", "sd", "sigma", "shape", "phi", "nu", "zi", "hu", "simo", "alpha", "beta", "ndt",
+                         "kappa", "quantile", "xi")
 
     def response_priors(self, response: str) -> "Priors":
         """The priors of one response of a multivariate model (C01): its entry of ``resp`` as a ``Priors`` (a mapping of
@@ -1030,6 +1039,9 @@ class Priors:
         for name, extra in extras.items():                            # D01: each is required, with a prior its support takes
             self._validate_extra(fam, extra, auxiliary[name])
         for name, prior in auxiliary.items():
+            if prior is not None and name in fam.fixed_parameters:   # E02: a quantile the model fixes (bf(quantile = p))
+                raise PriorError(f"the {fam.name} family's {name} is fixed in this model ({name}=...), not learned: do not pass "
+                                 f"a prior on it (brms's bf({name} = ...) has none); leave {name}=None to learn it under its prior")
             if prior is not None and name not in (scale, zero, *extras):
                 raise PriorError(
                     f"the {fam.name} family has no {AUXILIARY[name]}; do not pass {name}."
@@ -1110,7 +1122,7 @@ class Priors:
                              f"such as {example[extra.support]} (brms's default is {brms_prior(extra.default_prior())})")
         if not isinstance(prior, Prior):
             raise PriorError(f"prior for {extra.name!r} must be a Prior, got {type(prior).__name__} (the {extra.name} of the "
-                             f"{fam.name} family takes no formula of its own, divergence D79)")
+                             f"{fam.name} family takes no formula of its own, divergence {extra.divergence})")
         allowed = EXTRA_PRIORS[extra.support]
         if prior.name not in allowed:
             what = {"real": "a location prior (brms's real " + extra.name + ")",
@@ -1118,6 +1130,8 @@ class Priors:
                     "below_min_y": "a prior truncated to (0, min(y)) and renormalised there (brms's real<lower=0,upper=min_Y> "
                                    + extra.name + "; HalfStudentT(nu, s) is StudentT(nu, 0, s) there)",
                     "unit": "a prior on (0, 1) (brms's real<lower=0,upper=1> " + extra.name + ")"}[extra.support]
+            if extra.derived:                                     # E02: brms's prior of class xi is on its unbounded tmp_xi
+                what = f"a location prior (brms puts the prior of class {extra.name} on its real {extra.variable})"
             raise PriorError(f"prior for {extra.name!r} must be {what}, one of {sorted(allowed)}; got {prior}")
 
     def to_bambi(self, spec, family="gaussian") -> dict:
@@ -1194,7 +1208,7 @@ class Priors:
         form = ("Priors(components=[ab.Priors(intercept=..., b=..., sigma=...), ...], theta=ab.Dirichlet(...)), one Priors per "
                 "component (brms's dpar = mu<k> and class sigma<k>; docs/mixtures.md)")
         top = [name for name in ("intercept", "b", "sd", "sigma", "shape", "phi", "cor", "nu", "zi", "hu", "simo", "meanme", "sdme",
-                                 "alpha", "beta", "ndt", "zoi", "coi", "kappa")
+                                 "alpha", "beta", "ndt", "zoi", "coi", "kappa", "quantile", "xi")
                if getattr(self, name) is not None]
         if top:
             raise PriorError(f"a mixture's priors are per component, {form}; {top} at the top level do not apply")

@@ -225,6 +225,29 @@ ordinal part's), and `predict(kind="mean")` puts it first on the category axis.
 | Post-processing (C07) | `log_likelihood` | `log_likelihood` | `log_likelihood` | `log_likelihood`; `bayes_R2()` refused (D109) |
 | Other links, distributional formulas, mo(), cs(), multivariate, non-linear, autocorrelation, me()/mi(), mm(), gr(by = ), mixtures, shrinkage priors | no (D108) | no (D108) | no (D108) | no (D108; links D109) |
 
+The inverse Gaussian, von Mises, asymmetric Laplace, Frechet and generalized extreme value families (E02,
+docs/continuous-families.md) are continuous families built from the fields above, each likelihood taking the linear predictor as
+Bambi's parent under Bambi's identity link and applying brms's link itself. E02 adds to the spec: `ExtraParameter` support
+`"unit"` (brms's `real<lower=0,upper=1>`, the asymmetric Laplace `quantile`, a prior on (0, 1), `quantile_logodds__`) and
+`ExtraParameter.parameter` (brms's sampled parameter when it is not the class: the GEV's `xi` is derived in the graph, the
+deterministic `xi`, from the free variable `tmp_xi`, which carries the prior of class `xi` and is `value_point`'s keyword);
+`FamilySpec.fixable` with `FamilySpec.with_fixed` (an extra parameter brms's formula may fix, `bf(quantile = 0.25)`: the model's
+spec is then the family's without that extra parameter and with a fixed parameter of that name, which `families.family_of`
+returns as the model's own spec); and `FamilySpec.default_intercept_prior` (the von Mises `student_t(1, 0, 1)`). The inverse
+Gaussian has a second link (`links`, as the Bernoulli's), and its default link `1/mu^2` and the von Mises `tan_half` are links the
+default priors read through (`1 / y^2`) or not at all.
+
+| Group | inverse Gaussian | von Mises | asymmetric Laplace | Frechet | generalized extreme value |
+| --- | --- | --- | --- | --- | --- |
+| Names | `inverse_squared_mu` / 1/mu^2 (default; `links`: log, `log_mu`) / `mu` | `tan_half_mu` / tan_half / `mu` | `mu` / identity / `mean` | `log_mu` / log / `mu` | `mu` / identity / `mean` |
+| Response | continuous, finite and strictly positive | continuous, finite angles in [-pi, pi] | continuous, finite | continuous, finite and strictly positive | continuous, finite |
+| Parameters | shape / alpha | none; `extra_parameters`: kappa (positive) | sigma / sigma; quantile (unit), or fixed (`fixable`) | none; nu > 1 learned (`learnable_parameters`) or fixed | sigma / sigma; xi (real, sampled as `tmp_xi`, the deterministic `xi`) |
+| Graph | `likelihoods.inverse_gaussian_family(link)` (`-inf` where the 1/mu^2 link's `eta <= 0`) | `likelihoods.von_mises_family` (`log_bessel_i0e`, exact for every kappa) | `likelihoods.asym_laplace_family` | `likelihoods.frechet_family` | `likelihoods.gen_extreme_value_family` (brms's xi from `tmp_xi`, the data, mu and sigma) |
+| Prediction | `1 / sqrt(eta)` (refused where `eta <= 0`) or `exp(eta)`; NumPy's `wald` draws | `2 atan(eta)`; NumPy's `vonmises` draws | `expected_response` `mu + sigma (1 - 2 p) / (p (1 - p))`; two exponential halves | exp with overflow check; `s E^(-1/nu)` | `expected_response` `mu + sigma (Gamma(1 - xi) - 1) / xi` (`inf` for xi >= 1); `mu + sigma (E^-xi - 1) / xi` |
+| Default priors | 1/mu^2 (`1 / y^2`) or log; shape `Gamma(0.01, 0.01)` | none (scale 2.5); Intercept `StudentT(1, 0, 1)`; kappa `Gamma(2, 0.01)` | identity; sigma `HalfStudentT(3, scale)`; quantile `Beta(1, 1)` | log; nu `Gamma(2, 0.1)` | identity; sigma `HalfStudentT(3, scale)`; xi `Normal(0, 2.5)` |
+| Addition terms, distributional formulas, mo(), multivariate, non-linear, autocorrelation, me()/mi(), mm() and gr(by = ), shrinkage priors, other links | none (D112) | none (D112) | none (D112) | none (D112) | none (D112) |
+| Post-processing (C07) | `log_likelihood`: inverse Gaussian | von Mises | asymmetric Laplace | Frechet | GEV at the posterior's xi |
+
 ## Adding a family
 
 1. Write `autobayes/families/<name>.py` building one `FamilySpec`; keep the response validation primitives in

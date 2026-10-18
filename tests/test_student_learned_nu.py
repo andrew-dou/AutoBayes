@@ -135,7 +135,7 @@ def test_refusals(df):
     counts = df.assign(k=np.arange(len(df)) % 4)
     with pytest.raises(ab.PriorError, match="the poisson family has no degrees of freedom; do not pass nu"):
         ab.poisson("k ~ x", counts, ab.Priors(intercept=ab.Normal(0, 1), b=ab.Normal(0, 1), nu=ab.Gamma(2, 0.1)))
-    with pytest.raises(ValueError, match="nu applies only to the student family"):
+    with pytest.raises(ValueError, match="nu applies only to the student or frechet family"):   # E02: the Frechet nu
         ab.Model(FORMULA, df, FIXED, family="gaussian", nu=4)
     fixed = ab.student(FORMULA, df, FIXED, nu=4)
     with pytest.raises(ValueError, match=r"nu is fixed at 4 in this model, not sampled; omit it"):

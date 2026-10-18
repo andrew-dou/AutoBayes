@@ -54,7 +54,10 @@ CROSS_CHECK = ["gauss_weighted", "gauss_distributional_sigma", "gauss_slope_corr
                # E06: the Poisson sqrt, negative binomial identity, Gamma inverse and identity, Beta probit and cloglog links
                "poisson_sqrt", "negbinomial_identity", "gamma_inverse", "gamma_identity", "beta_probit", "beta_cloglog",
                # E01: the bounded and hurdle families
-               "zero_one_inflated_beta_varint", "zero_inflated_beta_binomial_varint", "xbeta_varint", "hurdle_cumulative_varint"]
+               "zero_one_inflated_beta_varint", "zero_inflated_beta_binomial_varint", "xbeta_varint", "hurdle_cumulative_varint",
+               # E02: the inverse Gaussian (both links), von Mises, asymmetric Laplace (quantile learned and fixed), Frechet and GEV
+               "inverse_gaussian_varint", "inverse_gaussian_log", "von_mises_varint", "asym_laplace_varint", "asym_laplace_quantile",
+               "frechet_varint", "gen_extreme_value_varint"]
 
 
 def _bundle(case_id):

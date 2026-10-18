@@ -9,7 +9,8 @@ the spec. A family is one module in this package that builds its spec (``gaussia
 the three sequential and adjacent-category ordinal families, ``sratio``, ``cratio`` and ``acat``; D03's
 ``zero_inflated_negbinomial.py``, ``hurdle_negbinomial.py``, ``zero_inflated_binomial.py``, ``zero_inflated_beta.py``,
 ``hurdle_gamma.py``, ``hurdle_lognormal.py``; E01's ``zero_one_inflated_beta.py``, ``zero_inflated_beta_binomial.py``,
-``hurdle_cumulative.py``, ``xbeta.py``);
+``hurdle_cumulative.py``, ``xbeta.py``; E02's ``inverse_gaussian.py``, ``von_mises.py``, ``asym_laplace.py``,
+``frechet.py``, ``gen_extreme_value.py``);
 ``autobayes.families.FAMILIES`` is the registry and ``get_family(name)`` the lookup. Callable fields
 take the built ``Model`` (or the frame being validated) because that is what the call sites have in
 hand; none of them is called before ``Model.__init__`` has resolved the spec.
@@ -27,6 +28,7 @@ NO_OTHER_LINKS: Mapping[str, Callable[[], "FamilySpec"]] = MappingProxyType({})
 NO_PARKED_LINKS: Mapping[str, str] = MappingProxyType({})
 NO_LEARNABLE_PARAMETERS: Mapping[str, float] = MappingProxyType({})
 NO_LEARNED_DEFAULTS: Mapping[str, Callable[[], object]] = MappingProxyType({})
+NO_FIXABLE: Mapping[str, Callable[[], "FamilySpec"]] = MappingProxyType({})
 STANDARD_PREDICTION_KINDS = frozenset({"mean", "response", "linear"})
 
 
@@ -94,31 +96,54 @@ def scale_line(model) -> str:
 #   "below_min_y"  ``real<lower=0,upper=min_Y>`` with brms's ``min_Y = min(Y)`` (the shifted lognormal's ``ndt``): a prior
 #                  truncated to (0, min y) and renormalised there, as brms does, sampled on Stan's lower-upper coordinate
 #                  ``log(ndt / (min_Y - ndt))``, PyMC's interval transform;
-#   "unit"         ``real<lower=0,upper=1>`` (E01: the zero-one-inflated Beta's ``zoi`` and ``coi``): a prior on (0, 1) (``Beta``),
-#                  sampled on Stan's logit coordinate, PyMC's ``logodds`` transform, as the zero-inflation probability ``zi`` is.
+#   "unit"         ``real<lower=0,upper=1>`` (E01: the zero-one-inflated Beta's ``zoi`` and ``coi``; E02: the asymmetric
+#                  Laplace ``quantile``): a prior on (0, 1), sampled on Stan's logit coordinate, PyMC's ``logodds``
+#                  transform, as the zero-inflation probability ``zi`` is.
 EXTRA_SUPPORTS = ("real", "positive", "below_min_y", "unit")
 
 
 @dataclass(frozen=True)
 class ExtraParameter:
     """An auxiliary parameter a family has beside its ``scale_parameter`` (D01): brms's ``alpha`` (skew_normal), ``beta``
-    (exgaussian) and ``ndt`` (shifted_lognormal). Its brms name is its ``Priors`` field, its ``Model.value_point`` keyword,
-    its ``model.names`` key and its PyMC variable's name; it takes one prior (no distributional formula, D79)."""
+    (exgaussian) and ``ndt`` (shifted_lognormal); E02's ``kappa`` (von_mises), ``quantile`` (asym_laplace) and ``xi``
+    (gen_extreme_value). Its brms name is its ``Priors`` field (brms's prior class), its ``model.names`` key and, unless
+    ``parameter`` says otherwise, its ``Model.value_point`` keyword and its PyMC variable's name; it takes one prior (no
+    distributional formula, D79, D112).
+
+    ``parameter`` (E02) is brms's Stan parameter when it is not the class: brms declares the generalized extreme value
+    family's ``real tmp_xi``, puts the prior of class ``xi`` on it and derives ``xi`` from it, the data, ``mu`` and ``sigma``
+    in the model block. ``parameter`` is then the PyMC free variable, its coordinate and the ``value_point`` keyword
+    (``tmp_xi``), and ``name`` (``xi``) the graph's deterministic of the derived value, which a fit's posterior holds."""
 
     name: str                                    # brms's name of the parameter and its prior class
     meaning: str                                 # what it is, for describe() and the messages: "skewness", ...
     support: str                                 # one of EXTRA_SUPPORTS
     default_prior: Callable[[], object]          # brms's default prior (A07): normal(0, 4), gamma(1, 0.1), uniform(0, min_Y)
+    parameter: str = ""                          # E02: brms's sampled parameter when it is not ``name`` ("tmp_xi"); "" for ``name``
+    divergence: str = "D79"                      # the divergence row of the constructs it does not take (D79 for D01's, D112 for E02's)
 
     def __post_init__(self):
         if self.support not in EXTRA_SUPPORTS:
             raise ValueError(f"support must be one of {EXTRA_SUPPORTS}, got {self.support!r}")
+        if self.parameter and self.support != "real":
+            raise ValueError("a derived extra parameter's sampled parameter is unbounded (brms's real tmp_xi)")
+
+    @property
+    def variable(self) -> str:
+        """brms's sampled parameter and the PyMC free variable: ``name``, or ``parameter`` when it is set (``tmp_xi``)."""
+        return self.parameter or self.name
+
+    @property
+    def derived(self) -> bool:
+        """Whether ``name`` is derived in the graph from the sampled ``parameter`` (E02: the GEV's ``xi`` from ``tmp_xi``)."""
+        return bool(self.parameter)
 
     @property
     def coordinate(self) -> str:
-        """The PyMC value variable it is sampled as: ``alpha``, ``beta_log__``, ``ndt_interval__``."""
-        return {"real": self.name, "positive": f"{self.name}_log__", "below_min_y": f"{self.name}_interval__",
-                "unit": f"{self.name}_logodds__"}[self.support]
+        """The PyMC value variable it is sampled as: ``alpha``, ``beta_log__``, ``ndt_interval__``, ``quantile_logodds__``,
+        ``tmp_xi``."""
+        v = self.variable
+        return {"real": v, "positive": f"{v}_log__", "below_min_y": f"{v}_interval__", "unit": f"{v}_logodds__"}[self.support]
 
     @property
     def bounds(self) -> tuple[str, str]:
@@ -128,10 +153,12 @@ class ExtraParameter:
     @property
     def coordinate_meaning(self) -> str:
         """``describe()``'s words for its value variable."""
-        return {"real": f"{self.name}, the {self.meaning} (unconstrained)",
-                "positive": f"log({self.name}), the {self.meaning}",
-                "below_min_y": f"log({self.name} / (min(y) - {self.name})), the {self.meaning} on Stan's lower-upper coordinate",
-                "unit": f"logit({self.name}), the {self.meaning}"}[self.support]
+        v = self.variable
+        return {"real": (f"{v}, the {self.meaning} (unconstrained)" if not self.derived else
+                         f"{v}, brms's unscaled {self.meaning} (unconstrained; {self.name} is derived from it)"),
+                "positive": f"log({v}), the {self.meaning}",
+                "below_min_y": f"log({v} / (min(y) - {v})), the {self.meaning} on Stan's lower-upper coordinate",
+                "unit": f"logit({v}), the {self.meaning}"}[self.support]
 
     def upper(self, response) -> float | None:
         """The upper bound the data give it: ``min(y)`` over the fitted rows for ``"below_min_y"`` (brms's ``min_Y``), else
@@ -158,7 +185,7 @@ class ExtraParameter:
             if not arr > 0:
                 raise ValueError(f"{self.name} (the {self.meaning} of the {family} family) must be positive")
             return np.asarray(np.log(arr))
-        if self.support == "unit":                           # E01: Stan's logit, PyMC's log-odds coordinate
+        if self.support == "unit":                           # E01, E02: Stan's logit, PyMC's log-odds coordinate
             if not 0 < arr < 1:
                 raise ValueError(f"{self.name} (the {self.meaning} of the {family} family) must lie strictly between 0 and 1")
             return np.asarray(np.log(arr) - np.log1p(-arr))
@@ -173,6 +200,8 @@ class ExtraParameter:
         from autobayes.priors import describe_prior
 
         prior = getattr(model.priors, self.name)
+        if self.derived:                                 # E02: brms's prior of class xi is the prior of its tmp_xi
+            return f"  {self.variable} ~ {describe_prior(prior)}   (brms's prior of class {self.name}, on its unscaled {self.meaning})"
         if self.support == "real":
             return f"  {self.name} ~ {describe_prior(prior)}   ({self.meaning})"
         if self.support == "positive":
@@ -319,6 +348,27 @@ class FamilySpec:
     # takes them, set where a frozen brms case verifies it. brms scales them by the residual SD sigma (autoscale = TRUE), which
     # the family's ``bambi_scale_parameter`` names.
     shrinkage: bool = False
+    # E02 (docs/continuous-families.md): the extra parameters brms lets a formula fix to a value instead of learning it,
+    # brms's bf(y ~ x, quantile = 0.25) (written into its Stan data), each with the builder of this family's spec with that
+    # parameter fixed: no extra parameter of that name, and a fixed parameter of that name (``fixed_parameters``, with its
+    # check) that the model holds as an attribute and Bambi takes through the prior dict. Empty for every other family.
+    fixable: Mapping[str, Callable[[], "FamilySpec"]] = field(default_factory=lambda: NO_FIXABLE)
+    # E02: brms's default prior of the centred intercept, (location, scale) -> prior, where it is not student_t(3, location,
+    # scale): the von Mises family's student_t(1, 0, 1) under its tan_half link. None: student_t(3, location, scale) (A07).
+    default_intercept_prior: Callable[[float, float], object] | None = None
+
+    def with_fixed(self, name: str, value) -> "FamilySpec":
+        """E02: this family's spec with the extra parameter ``name`` fixed (``value`` given, brms's bf(name = value)), or this
+        spec for ``value`` None; a ``ValueError`` naming the families that take ``name`` otherwise. The value itself is
+        checked by the returned spec's ``fixed_parameters[name]``."""
+        if value is None:
+            return self
+        if name not in self.fixable:
+            from autobayes.families import FAMILIES
+
+            taking = [n for n, spec in FAMILIES.items() if name in spec.fixable]
+            raise ValueError(f"{name}= fixes the {' or '.join(taking)} family's {name}; the {self.name} family has none")
+        return self.fixable[name]()
 
     def with_link(self, link: str | None) -> "FamilySpec":
         """This family's spec under ``link``: this spec for ``None`` or its own link, the one a ``links`` entry builds

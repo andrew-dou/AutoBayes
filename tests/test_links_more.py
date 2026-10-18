@@ -115,7 +115,7 @@ def test_other_links_are_refused_naming_each_familys_links():
                                          r"to the families with more than one link: poisson \['log', 'sqrt'\], negbinomial \['identity', 'log'\], "
                                          r"gamma \['identity', 'inverse', 'log'\], beta \['cloglog', 'logit', 'probit'\], bernoulli "
                                          r"\['cloglog', 'logit', 'probit'\], binomial \['cloglog', 'logit', 'probit'\], cumulative "
-                                         r"\['logit', 'probit'\]\)"):
+                                         r"\['logit', 'probit'\], inverse_gaussian \['1/mu\^2', 'log'\]\)"):   # E02 added the inverse Gaussian
         ab.Model("ypos ~ x + (1 | g)", FRAME, ab.Priors(**BASE, sigma=ab.HalfNormal(1)), family="lognormal", link="log")
     assert ab.poisson("cnt ~ x + (1 | g)", FRAME, priors, link="log").family_spec is FAMILIES["poisson"]    # the default, explicitly
 

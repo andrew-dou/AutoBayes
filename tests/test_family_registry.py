@@ -104,32 +104,41 @@ EXPECTED = {                               # family -> (Bambi parent, link, pred
     "zero_inflated_beta_binomial": ("logit_mu", "logit", "expected"),
     "hurdle_cumulative": ("mu", "logit", "p"),
     "xbeta": ("logit_mu", "logit", "mean"),
+    "inverse_gaussian": ("inverse_squared_mu", "1/mu^2", "mu"),   # E02: the linear predictor eta = 1 / mu^2 is the parent
+    "von_mises": ("tan_half_mu", "tan_half", "mu"),
+    "asym_laplace": ("mu", "identity", "mean"),
+    "frechet": ("log_mu", "log", "mu"),
+    "gen_extreme_value": ("mu", "identity", "mean"),
 }
 
 
 def test_registry_lists_exactly_the_registered_families():
-    assert set(FAMILIES) == set(EXPECTED) and len(FAMILIES) == 35
+    assert set(FAMILIES) == set(EXPECTED) and len(FAMILIES) == 40
     for name, (parent, link, mean) in EXPECTED.items():
         spec = get_family(name)
         assert isinstance(spec, FamilySpec) and spec is FAMILIES[name]
         assert (spec.name, spec.parent, spec.link, spec.mean_name) == (name, parent, link, mean)
     assert {name for name, spec in FAMILIES.items() if spec.scale_parameter == "sigma"} == {"gaussian", "student", "lognormal", "skew_normal",
                                                                                             "shifted_lognormal", "exgaussian", "negbinomial2",
-                                                                                            "hurdle_lognormal"}
+                                                                                            "hurdle_lognormal", "asym_laplace", "gen_extreme_value"}
     assert {name for name, spec in FAMILIES.items() if spec.scale_parameter == "shape"} == {"negbinomial", "gamma", "weibull",
                                                                                             "zero_inflated_negbinomial", "hurdle_negbinomial",
-                                                                                            "hurdle_gamma"}
+                                                                                            "hurdle_gamma", "inverse_gaussian"}
     assert {name for name, spec in FAMILIES.items() if spec.scale_parameter == "phi"} == {"beta", "beta_binomial", "zero_inflated_beta",
                                                                                           "zero_one_inflated_beta",   # E01
                                                                                           "zero_inflated_beta_binomial", "xbeta"}
     assert {name for name, spec in FAMILIES.items() if spec.continuous} == {"gaussian", "student", "gamma", "lognormal", "beta", "mixture",
                                                                             "weibull", "exponential", "skew_normal", "shifted_lognormal",
                                                                             "exgaussian", "zero_inflated_beta", "hurdle_gamma", "hurdle_lognormal",
-                                                                            "zero_one_inflated_beta", "xbeta"}          # E01
+                                                                            "zero_one_inflated_beta", "xbeta",          # E01
+                                                                            "inverse_gaussian", "von_mises", "asym_laplace", "frechet", "gen_extreme_value"}   # E02
     assert {spec.bambi_scale_parameter for spec in FAMILIES.values() if spec.scale_parameter == "shape"} == {"alpha"}
     assert {spec.bambi_scale_parameter for spec in FAMILIES.values() if spec.scale_parameter == "phi"} == {"phi"}
     assert all((spec.scale_parameter is None) == (spec.bambi_scale_parameter is None) for spec in FAMILIES.values())
-    assert {name for name, spec in FAMILIES.items() if spec.fixed_parameters} == {"student"}
+    assert {name for name, spec in FAMILIES.items() if spec.fixed_parameters} == {"student", "frechet"}   # E02: the Frechet nu
+    assert {name: set(spec.learnable_parameters) for name, spec in FAMILIES.items() if spec.learnable_parameters} == {
+        "student": {"nu"}, "frechet": {"nu"}}
+    assert {name: set(spec.fixable) for name, spec in FAMILIES.items() if spec.fixable} == {"asym_laplace": {"quantile"}}   # E02
     assert {name for name, spec in FAMILIES.items() if spec.has_trials} == {"binomial", "beta_binomial", "zero_inflated_binomial",
                                                                             "zero_inflated_beta_binomial"}             # E01
     assert {name for name, spec in FAMILIES.items() if "probability" in spec.prediction_kinds} == {"binomial", "beta_binomial"}
@@ -141,7 +150,8 @@ def test_registry_lists_exactly_the_registered_families():
                                                                                                "hurdle_gamma", "hurdle_lognormal",
                                                                                                "zero_one_inflated_beta",   # E01
                                                                                                "zero_inflated_beta_binomial",
-                                                                                               "hurdle_cumulative", "xbeta"}
+                                                                                               "hurdle_cumulative", "xbeta",
+                                                                                               "asym_laplace", "gen_extreme_value"}   # E02
     assert {name for name, spec in FAMILIES.items() if spec.mixture} == {"mixture"}
     assert {name for name, spec in FAMILIES.items() if spec.response_categories is not None} == {"cumulative", "categorical", "sratio",
                                                                                                  "cratio", "acat", "hurdle_cumulative"}
@@ -155,8 +165,11 @@ def test_registry_lists_exactly_the_registered_families():
         "hurdle_gamma": "hu", "hurdle_lognormal": "hu", "zero_inflated_beta_binomial": "zi", "hurdle_cumulative": "hu"}   # E01
     assert {name: tuple(e.name for e in spec.extra_parameters) for name, spec in FAMILIES.items() if spec.extra_parameters} == {
         "skew_normal": ("alpha",), "exgaussian": ("beta",), "shifted_lognormal": ("ndt",),          # D01
-        "zero_one_inflated_beta": ("zoi", "coi"), "xbeta": ("kappa",)}                            # E01
-    with pytest.raises(ValueError, match=r"family must be one of \['acat', 'bernoulli', 'beta', 'beta_binomial', 'binomial', 'categorical', 'cratio', 'cumulative', 'exgaussian', 'exponential', 'gamma', 'gaussian', 'geometric', 'hurdle_cumulative', 'hurdle_gamma', 'hurdle_lognormal', 'hurdle_negbinomial', 'hurdle_poisson', 'lognormal', 'mixture', 'negbinomial', 'negbinomial2', 'poisson', 'shifted_lognormal', 'skew_normal', 'sratio', 'student', 'weibull', 'xbeta', 'zero_inflated_beta', 'zero_inflated_beta_binomial', 'zero_inflated_binomial', 'zero_inflated_negbinomial', 'zero_inflated_poisson', 'zero_one_inflated_beta'\], got 'tweedie'"):
+        "zero_one_inflated_beta": ("zoi", "coi"), "xbeta": ("kappa",),                            # E01
+        "von_mises": ("kappa",), "asym_laplace": ("quantile",), "gen_extreme_value": ("xi",)}       # E02
+    assert {name: e.variable for name, spec in FAMILIES.items() for e in spec.extra_parameters if e.derived} == {
+        "gen_extreme_value": "tmp_xi"}                                                               # E02: brms's tmp_xi
+    with pytest.raises(ValueError, match=r"family must be one of \['acat', 'asym_laplace', 'bernoulli', 'beta', 'beta_binomial', 'binomial', 'categorical', 'cratio', 'cumulative', 'exgaussian', 'exponential', 'frechet', 'gamma', 'gaussian', 'gen_extreme_value', 'geometric', 'hurdle_cumulative', 'hurdle_gamma', 'hurdle_lognormal', 'hurdle_negbinomial', 'hurdle_poisson', 'inverse_gaussian', 'lognormal', 'mixture', 'negbinomial', 'negbinomial2', 'poisson', 'shifted_lognormal', 'skew_normal', 'sratio', 'student', 'von_mises', 'weibull', 'xbeta', 'zero_inflated_beta', 'zero_inflated_beta_binomial', 'zero_inflated_binomial', 'zero_inflated_negbinomial', 'zero_inflated_poisson', 'zero_one_inflated_beta'\], got 'tweedie'"):
         get_family("tweedie")
     with pytest.raises(TypeError):
         FAMILIES["tweedie"] = None
@@ -171,7 +184,8 @@ def frame() -> pd.DataFrame:
                          "ypos": rng.gamma(2.0, 1.0, n), "prop": rng.uniform(0.05, 0.95, n),
                          "ord": [1, 2, 3, 4] * (n // 4), "cat": ["a", "b", "c"] * (n // 3),
                          "zprop": np.r_[0.0, rng.uniform(0.05, 0.95, n - 1)], "zpos": np.r_[0.0, rng.gamma(2.0, 1.0, n - 1)],
-                         "zoprop": np.r_[0.0, 1.0, rng.uniform(0.05, 0.95, n - 2)], "ordh": [0, 1, 2, 3] * (n // 4)})   # E01
+                         "zoprop": np.r_[0.0, 1.0, rng.uniform(0.05, 0.95, n - 2)], "ordh": [0, 1, 2, 3] * (n // 4)}   # E01
+                        ).assign(ang=np.linspace(-3.0, 3.0, n))   # E02: von Mises angles in [-pi, pi]
 
 
 EXAMPLES = {                               # family -> (formula, extra prior classes, constructor keywords)
@@ -212,6 +226,11 @@ EXAMPLES = {                               # family -> (formula, extra prior cla
     "zero_inflated_beta_binomial": ("k | trials(n) ~ x", {"phi": ab.Gamma(2, 0.5), "zi": ab.Beta(2, 2)}, {}),
     "hurdle_cumulative": ("ordh ~ x", {"hu": ab.Beta(2, 2)}, {}),
     "xbeta": ("zoprop ~ x", {"phi": ab.Gamma(2, 0.5), "kappa": ab.Gamma(2, 2)}, {}),
+    "inverse_gaussian": ("ypos ~ x + offset(n)", {"shape": ab.Gamma(2, 0.5)}, {}),                  # E02 (eta = 1 / mu^2 > 0)
+    "von_mises": ("ang ~ x", {"kappa": ab.Gamma(2, 0.01)}, {}),
+    "asym_laplace": ("y ~ x", {"sigma": ab.HalfNormal(1), "quantile": ab.Beta(2, 2)}, {}),
+    "frechet": ("ypos ~ x", {"nu": ab.Gamma(2, 0.1)}, {}),
+    "gen_extreme_value": ("y ~ x", {"sigma": ab.HalfNormal(1), "xi": ab.Normal(0, 0.5)}, {}),
 }
 
 
@@ -235,7 +254,8 @@ def test_constructors_agree_with_the_registry(family):
         assert f"{spec.zero_parameter}_logodds__" in {v.name for v in model.pymc_model.value_vars}
     for extra in spec.extra_parameters:                    # D01: alpha, beta, ndt keep brms's names, on their own coordinates
         assert model.names[extra.name] == extra.name and extra.coordinate in {v.name for v in model.pymc_model.value_vars}
-    assert all(getattr(model, name) == kwargs[name] for name in spec.fixed_parameters)
+    # a fixed parameter is the one given (the Student-t nu); a learnable one left None is learned (E02: the Frechet nu)
+    assert all(getattr(model, name) == kwargs.get(name) for name in spec.fixed_parameters)
     assert model.components == tuple(kwargs.get("families", ()))
     same = ab.Model(formula, frame(), priors, family=family, **kwargs)
     assert same.target_identity == model.target_identity and same.describe() == model.describe()

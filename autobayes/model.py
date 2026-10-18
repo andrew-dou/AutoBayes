@@ -291,10 +291,11 @@ class Model:
     family : str               a registered family name: "gaussian", "student", "poisson", "negbinomial", "gamma", "lognormal", "beta", "bernoulli", "binomial",
                                "zero_inflated_poisson", "hurdle_poisson", "cumulative", "categorical", "mixture", and (D01) "weibull",
                                "exponential", "skew_normal", "shifted_lognormal", "exgaussian", and (D02) "beta_binomial", "geometric",
-                               "negbinomial2"
+                               "negbinomial2", and (E02) "inverse_gaussian", "von_mises", "asym_laplace", "frechet", "gen_extreme_value"
     categories : tuple[str]    the response's categories in order (the cumulative and categorical families, B05); () otherwise
     hurdle_category : str      hurdle_cumulative's hurdle category, brms's Y = 0 (E01); None otherwise
-    family_spec : FamilySpec   the specification of that family under the model's link (autobayes/families/; the registered spec unless ``link`` names another of the family's links)
+    family_spec : FamilySpec   the specification of that family under the model's link (autobayes/families/; the registered spec unless ``link`` names another of the family's links, or, E02, ``quantile`` fixes the asymmetric Laplace quantile)
+    quantile : float | None    E02: the asymmetric Laplace family's fixed quantile, or None when it is learned (that family only)
     link : str                 the link: the family's own, or the ``link`` given ("probit" for the Bernoulli and binomial families)
     spec : ModelSpec
     priors : Priors
@@ -310,9 +311,12 @@ class Model:
     def __init__(self, formula: str | list[str], data: pd.DataFrame, priors: Priors, *,
                  family: str = "gaussian", center_predictors: bool = True,
                  categorical: Mapping[str, object] | None = None, nu: float | None = None, link: str | None = None,
-                 families: list[str] | None = None, order: str | bool | None = None, imputed: tuple[str, ...] = ()):
+                 families: list[str] | None = None, order: str | bool | None = None, imputed: tuple[str, ...] = (),
+                 quantile: float | None = None):
         """``imputed`` (C06) is set by ``MultivariateModel`` for the models of its responses: the responses of its
-        ``col | mi() ~ ...`` formulas, whose missing values are parameters (``formula.check_imputation``); empty otherwise."""
+        ``col | mi() ~ ...`` formulas, whose missing values are parameters (``formula.check_imputation``); empty otherwise.
+        ``quantile`` (E02) fixes the asymmetric Laplace family's quantile (brms's ``bf(y ~ ..., quantile = p)``): the model's
+        spec is then the family's with that parameter fixed (``FamilySpec.with_fixed``) and ``self.quantile`` its value."""
         import bambi as bmb
 
         fam = get_family(family)
@@ -325,6 +329,9 @@ class Model:
                         + ", ".join(f"{name} {sorted([FAMILIES[name].link, *FAMILIES[name].links])}" for name in offering)
                         + ")") if not fam.links else ""
                 raise ValueError(f"{e}{hint}") from None
+        if quantile is not None or fam.fixable:                # E02: a parameter brms's formula may fix (bf(quantile = p))
+            fam = fam.with_fixed("quantile", quantile)
+            self.quantile = fam.fixed_parameters["quantile"](quantile) if quantile is not None else None
         if "nu" in fam.fixed_parameters:
             if nu is not None and priors.nu is not None:
                 raise ValueError(f"nu={nu!r} fixes the degrees of freedom and Priors(nu={priors.nu}) learns them: pass one "
@@ -481,8 +488,8 @@ class Model:
         for name in fam.fixed_parameters:                    # Bambi takes a fixed nu through the prior dict; a learned
             if name not in self.learned_parameters:          # one's truncated prior came from Priors.to_bambi (A13)
                 bambi_priors[name] = np.float64(getattr(self, name))   # PyTensor makes a Python 4.0 a float32 constant
-        for extra in fam.extra_parameters:                   # D01: alpha, beta, ndt; ndt truncated to (0, min y) of these rows
-            bambi_priors[extra.name] = extra.bambi_prior(getattr(priors, extra.name), self.data[self.spec.response])
+        for extra in fam.extra_parameters:                   # D01: alpha, beta, ndt; ndt truncated to (0, min y) of these rows;
+            bambi_priors[extra.variable] = extra.bambi_prior(getattr(priors, extra.name), self.data[self.spec.response])   # E02: tmp_xi
         bambi_formula = self.spec.bambi_formula
         # Bambi centres every formula that has an intercept, or none. Without a distributional formula that is the
         # response formula's centring as it has always been; with one (B01), brms centres each formula that has an
@@ -557,6 +564,7 @@ class Model:
         if self.family_spec.zero_parameter is not None:
             variable_names += [self.family_spec.zero_parameter]          # the zero-inflation / hurdle probability, "zi" or "hu" (B06)
         variable_names += [e.name for e in self.family_spec.extra_parameters]   # alpha, beta or ndt (D01)
+        variable_names += [e.variable for e in self.family_spec.extra_parameters if e.derived]   # E02: tmp_xi beside xi
         variable_names += list(self.family_spec.fixed_parameters)   # Bambi uses "nu" as an auxiliary-prior key even when fixed.
         if self.family_spec.thresholds:                     # B05: the raw thresholds' deterministic and their coordinate
             variable_names += [self.names["thresholds"], self.names["threshold_dim"]]
@@ -1486,6 +1494,8 @@ class Model:
             out[fam.zero_parameter] = fam.zero_parameter
         for extra in fam.extra_parameters:                    # "alpha", "beta" or "ndt" (D01): brms's name
             out[extra.name] = extra.name
+            if extra.derived:                                 # E02: "tmp_xi", the sampled variable beside the derived "xi"
+                out[extra.variable] = extra.variable
         for name in self.learned_parameters:                  # a learned nu (A13): the PyMC variable of that name
             out[name] = name
         if fam.thresholds:                                    # B05: brms's b_Intercept, the thresholds of the raw design, and
@@ -1663,7 +1673,7 @@ class Model:
                     zi: float | None = None, hu: float | None = None, bsp=None, simo=None, theta=None,
                     sdgp=None, lscale=None, zgp=None, ar=None, ma=None, meanme=None, sdme=None, zme=None,
                     Ymi=None, alpha=None, beta=None, ndt=None, shrinkage=None, bcs=None, zoi=None, coi=None,
-                    kappa=None) -> dict[str, np.ndarray]:
+                    kappa=None, quantile=None, tmp_xi=None) -> dict[str, np.ndarray]:
         """A point in PyMC's sampled (value) space, from natural-scale quantities.
 
         ``intercept`` is the *model* intercept (at the predictor means when centred),
@@ -1721,16 +1731,17 @@ class Model:
         ``intercept`` is the K - 1 thresholds in any order (brms's unordered ``Intercept``), stored as given; ``bcs`` gives the
         coefficients of each category-specific term ``cs(x)``, K - 1 per term (brms's ``bcs`` row of the column), keyed by
         column (``bcs={"x": [0.2, -0.1, 0.4]}``, or the bare vector for the model's one such term), required exactly when the
-        model has one.
+        model has one. E02: ``kappa`` (the von Mises precision, positive, stored as its log), ``quantile`` (the asymmetric
+        Laplace quantile, in (0, 1), stored as its logit; omitted when the model fixes it) and ``tmp_xi`` (brms's unscaled
+        generalized extreme value shape, any finite number, stored as given; the graph derives ``xi`` from it) likewise.
         """
-        extras = {"alpha": alpha, "beta": beta, "ndt": ndt,                 # D01
-                  "zoi": zoi, "coi": coi, "kappa": kappa}                   # E01: zero_one_inflated_beta's zoi, coi; xbeta's kappa
+        extras = {"alpha": alpha, "beta": beta, "ndt": ndt, "zoi": zoi, "coi": coi,   # D01, E01 (zero_one_inflated_beta)
+                  "kappa": kappa, "quantile": quantile, "tmp_xi": tmp_xi}             # E01 (xbeta), E02
         if self.family_spec.mixture:                          # C05: the components' parameters and theta
-            if any(extras[k] is not None for k in ("alpha", "beta", "ndt")):   # D01: a mixture's Gaussian components have none
-                raise ValueError("alpha, beta and ndt are the skew_normal, exgaussian and shifted_lognormal families' parameters; "
-                                 "a mixture has none")
-            if any(extras[k] is not None for k in ("zoi", "coi", "kappa")):    # E01: nor these
-                raise ValueError("zoi, coi and kappa are the zero_one_inflated_beta and xbeta families' parameters; a mixture has none")
+            if any(v is not None for v in extras.values()):   # D01, E01, E02: a mixture's Gaussian components have none
+                raise ValueError("alpha, beta, ndt, zoi, coi, kappa, quantile and tmp_xi are the skew_normal, exgaussian, "
+                                 "shifted_lognormal, zero_one_inflated_beta, xbeta, von_mises, asym_laplace and gen_extreme_value "
+                                 "families' parameters; a mixture has none")
             if ar is not None or ma is not None:              # C04: a mixture has no autocorrelation term
                 raise ValueError("ar and ma are an autocorrelation term's coefficients; a mixture has none")
             if shrinkage is not None:                         # D07: a mixture takes no shrinkage prior
@@ -1833,13 +1844,16 @@ class Model:
                 raise ValueError(f"the {self.family} family has no zero-inflation or hurdle probability; omit zi and hu")
             raise ValueError(f"{zero} (the {AUXILIARY[zero]}) is required for the {self.family} family; "
                              f"{' and '.join(k for k in probabilities if k != zero)} does not apply")
-        own = {e.name: e for e in self.family_spec.extra_parameters}         # D01: alpha, beta or ndt, exactly the family's own
-        for name, value in extras.items():
+        own = {e.variable: e for e in self.family_spec.extra_parameters}     # D01: alpha, beta or ndt, exactly the family's own
+        for name, value in extras.items():                                 # (E02: kappa, quantile, tmp_xi)
             if name in own and value is None:
                 raise ValueError(f"{name} (the {own[name].meaning}) is required for the {self.family} family")
             if name not in own and value is not None:
-                raise ValueError(f"the {self.family} family has no {AUXILIARY[name]}; omit {name}"
-                                 + "".join(f" (its {e.meaning} is {e.name})" for e in own.values()))
+                if name in self.family_spec.fixed_parameters:              # E02: a quantile the model fixes
+                    raise ValueError(f"{name} is fixed at {getattr(self, name):g} in this model, not sampled; omit it")
+                what = AUXILIARY.get(name) or f"unscaled {AUXILIARY[name.removeprefix('tmp_')]} {name}"
+                raise ValueError(f"the {self.family} family has no {what}; omit {name}"
+                                 + "".join(f" (its {e.meaning} is {e.variable})" for e in own.values()))
         n = self.names
         if self.spec.intercept and intercept is None:
             raise ValueError("intercept is required for a model with a population intercept")
@@ -3130,6 +3144,70 @@ def negbinomial2(formula: str, data: pd.DataFrame, priors: Priors, *,
     ``predict(kind="mean")`` returns ``mu``. No distributional formula, ``weights()`` or other link (D80, D81).
     """
     return Model(formula, data, priors, family="negbinomial2", center_predictors=center_predictors, categorical=categorical)
+
+
+def inverse_gaussian(formula: str, data: pd.DataFrame, priors: Priors, *, link: str = "1/mu^2",
+                     center_predictors: bool = True, categorical: Mapping[str, object] | None = None) -> Model:
+    """Inverse Gaussian response (brms ``inverse.gaussian()``, E02, docs/continuous-families.md): mean ``mu`` and shape
+    ``shape``, ``Var[y] = mu^3 / shape``, under brms's default link ``"1/mu^2"`` (``mu = 1 / sqrt(eta)``, which needs a positive
+    linear predictor: the density is -inf where it is not) or ``link="log"`` (``mu = exp(eta)``).
+
+    Responses are strictly positive finite reals. The shape takes a positive-support prior, ``Priors(shape=ab.Gamma(0.01,
+    0.01))`` (brms class ``shape``; brms's default). ``predict(kind="mean")`` returns ``mu``. No ``inverse`` or ``identity`` link,
+    distributional formula or addition term (D112).
+    """
+    return Model(formula, data, priors, family="inverse_gaussian", link=link, center_predictors=center_predictors,
+                 categorical=categorical)
+
+
+def von_mises(formula: str, data: pd.DataFrame, priors: Priors, *,
+              center_predictors: bool = True, categorical: Mapping[str, object] | None = None) -> Model:
+    """von Mises response (brms ``von_mises()``, E02, docs/continuous-families.md): angles in [-pi, pi], mean direction ``mu =
+    2 atan(eta)`` (brms's ``tan_half`` link) and precision ``kappa``.
+
+    ``kappa`` takes a positive-support prior, ``Priors(kappa=ab.Gamma(2, 0.01))`` (brms class ``kappa``; brms's default).
+    ``predict(kind="mean")`` returns ``mu``. No ``identity`` link, distributional formula or addition term (D112).
+    """
+    return Model(formula, data, priors, family="von_mises", center_predictors=center_predictors, categorical=categorical)
+
+
+def asym_laplace(formula: str, data: pd.DataFrame, priors: Priors, *, quantile: float | None = None,
+                 center_predictors: bool = True, categorical: Mapping[str, object] | None = None) -> Model:
+    """Asymmetric Laplace response (brms ``asym_laplace()``, E02, docs/continuous-families.md): quantile regression, the
+    location ``mu`` (identity link) being the ``p``-quantile of ``y``, with scale ``sigma``.
+
+    ``quantile=None`` learns the quantile under ``Priors(quantile=ab.Beta(...))`` (brms class ``quantile``, default ``beta(1,
+    1)``); ``quantile=0.25`` fixes it (brms's ``bf(y ~ ..., quantile = 0.25)``), with no prior. ``sigma`` takes a
+    positive-support prior. ``predict(kind="mean")`` returns brms's ``posterior_epred``, ``mu + sigma (1 - 2 p) / (p (1 - p))``,
+    as ``mean``; ``kind="linear"`` returns ``mu``. No distributional formula or addition term (D112).
+    """
+    return Model(formula, data, priors, family="asym_laplace", quantile=quantile, center_predictors=center_predictors,
+                 categorical=categorical)
+
+
+def frechet(formula: str, data: pd.DataFrame, priors: Priors, *, nu: float | None = None,
+            center_predictors: bool = True, categorical: Mapping[str, object] | None = None) -> Model:
+    """Frechet response (brms ``frechet()``, E02, docs/continuous-families.md): log link on the mean, ``E[y] = mu = exp(eta)``,
+    scale ``mu / Gamma(1 - 1 / nu)`` and shape ``nu > 1``.
+
+    Responses are strictly positive finite reals. ``nu=None`` learns the shape under ``Priors(nu=...)`` truncated to ``nu > 1``
+    (brms's ``real<lower=1> nu``, default ``gamma(2, 0.1)``), as the Student-t family's ``nu``; ``nu=3`` fixes it.
+    ``predict(kind="mean")`` returns ``mu``. No other link, distributional formula or addition term (D112).
+    """
+    return Model(formula, data, priors, family="frechet", nu=nu, center_predictors=center_predictors, categorical=categorical)
+
+
+def gen_extreme_value(formula: str, data: pd.DataFrame, priors: Priors, *,
+                      center_predictors: bool = True, categorical: Mapping[str, object] | None = None) -> Model:
+    """Generalized extreme value response (brms ``gen_extreme_value()``, E02, docs/continuous-families.md): location ``mu``
+    (identity link), scale ``sigma`` and shape ``xi``, derived as brms derives it from its unscaled ``tmp_xi`` so that every
+    fitted row lies inside the support.
+
+    ``sigma`` takes a positive-support prior, ``xi`` a location prior on ``tmp_xi``, ``Priors(xi=ab.Normal(0, 2.5))`` (brms class
+    ``xi``; brms's default). ``predict(kind="mean")`` returns ``mu + sigma (Gamma(1 - xi) - 1) / xi`` as ``mean`` (infinite for
+    ``xi >= 1``, D114); ``kind="linear"`` returns ``mu``. No other link, distributional formula or addition term (D112).
+    """
+    return Model(formula, data, priors, family="gen_extreme_value", center_predictors=center_predictors, categorical=categorical)
 
 
 def zero_inflated_poisson(formula: str, data: pd.DataFrame, priors: Priors, *,

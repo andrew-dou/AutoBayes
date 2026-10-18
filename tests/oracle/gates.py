@@ -61,6 +61,10 @@ covariates C_k, each parameter's X_<nlpar> (K_<nlpar>, never centred) and group 
 b_<nlpar> coordinate; G3 the graph's non-linear predictor, each parameter's values against brms's own X_<nlpar> b_<nlpar> plus
 its group effects, the group effects and correlation matrices (`check_nonlinear_derived`); G4 predict(); G6 the nlpar rows.
 
+E02: G1 checks a parameter brms's formula fixes (`bf(quantile = p)`, in its Stan data) against the model's fixed value
+(`check_fixed_parameters`); G2 maps kappa, quantile (Stan's logit) and the GEV's tmp_xi; G3 compares the graph's derived xi with
+the fixture's record of brms's `posterior_epred(dpar = "xi")` (`check_derived_parameters`), which G4's draws also carry.
+
 D07, a shrinkage prior on b (brms's horseshoe() or R2D2()): G1 checks brms's Kscales and the prior's data (hs_df, hs_df_global,
 hs_df_slab, hs_scale_global, hs_scale_slab; R2D2_mean_R2, R2D2_prec_R2, R2D2_cons_D2) against the model's prior
 (`check_shrinkage_data`); G2's prior part is brms's lprior, which holds hs_global and hs_slab (or R2D2_R2) and not the coefficients,
@@ -123,7 +127,8 @@ def prior_names(model) -> list[str]:
     if "nu" in names:                                      # a learned Student-t nu, its prior truncated to nu > 1 (A13)
         out.append(names["nu"])
     out += [names[par] for par in ("zi", "hu") if par in names]   # the zero-inflation / hurdle probability (B06)
-    out += [names[e.name] for e in model.family_spec.extra_parameters]   # D01: alpha, beta, ndt (ndt's truncation constant included)
+    out += [names[e.variable] for e in model.family_spec.extra_parameters]   # D01: alpha, beta, ndt (ndt's truncation constant
+    # included); E02: kappa, quantile, and the GEV's tmp_xi, which carries brms's prior of class xi
     out += [roles["sd"] for roles in model.group_coefficient_names.values()]
     out += [roles["sd"] for roles in getattr(model, "dpar_group_names", {}).values()]   # D08: a shared ID's distributional SDs
     # D08: brms's normalisation constant of gr(by = )'s SDs (a potential of the graph, where brms's lprior has it)
@@ -282,10 +287,25 @@ def check_design(b: Bundle) -> None:
                 raise OracleMismatch(f"Gaussian process {g.term!r}: brms {key} is {sd.get(key)!r}; AutoBayes has {value!r}")
     adapter.check_autocor_design(b.fixture, b.model)             # C04: Kar, Kma, J_lag and each sorted row's series and position
     check_shrinkage_data(b)                                      # D07: Kscales and a shrinkage prior's data
+    check_fixed_parameters(b)                                    # E02: a parameter the formula fixes (bf(quantile = p))
     # the design columns (every formula's), the group partitions and the monotonic codes were matched by content when the
     # maps were built
     adapter.match_columns(b.fixture, b.model)
     adapter.match_groups(b.fixture, b.model)
+
+
+def check_fixed_parameters(b: Bundle) -> None:
+    """G1 of a parameter brms's formula may fix (E02, ``FamilySpec.fixable``: ``bf(quantile = p)``, which brms writes into its
+    Stan data under the parameter's name): fixed in the model exactly when brms's data holds it, to the same value."""
+    sd, fam = b.fixture.standata, b.model.family_spec
+    for name in getattr(fam, "fixable", {}):
+        fixed = name in fam.fixed_parameters
+        if fixed != (name in sd):
+            raise OracleMismatch(f"brms's Stan data {'lacks' if fixed else 'holds'} {name}"
+                                 + (f" = {float(sd[name])!r}" if name in sd else "") + f"; the AutoBayes model "
+                                 + (f"fixes it at {getattr(b.model, name)!r}" if fixed else f"learns {name}"))
+        if fixed and abs_err(sd[name], getattr(b.model, name)) > DESIGN_ABS:
+            raise OracleMismatch(f"brms fixes {name} at {float(sd[name])!r}; the AutoBayes model at {getattr(b.model, name)!r}")
 
 
 def check_response(sd: dict, model) -> None:
@@ -449,6 +469,7 @@ def check_derived(b: Bundle) -> None:
                 raise OracleMismatch(f"point {k}: raw-scale intercept {raw!r} vs brms b_Intercept {float(p.pars['b_Intercept'])!r}")
     check_latent(b)                                                  # C06: an me() term's latent values, brms's Xme_k
     check_shrinkage(b)                                               # D07: b, sdb and R2D2_tau2 of a shrinkage prior on b
+    check_derived_parameters(b)                                      # E02: the GEV's xi against brms's dpar_epred record
 
 
 _SHRINKAGE_DATA = ("Kscales", "hs_df", "hs_df_global", "hs_df_slab", "hs_scale_global", "hs_scale_slab", "R2D2_mean_R2",
@@ -507,6 +528,29 @@ def check_shrinkage(b: Bundle) -> None:
             err = rel_err(mine, theirs.astype(float))
             if err > PRED_REL:
                 raise OracleMismatch(f"point {k}: the graph's {what} differs from brms's {what} by {err}")
+
+
+def check_derived_parameters(b: Bundle) -> None:
+    """G3 of a family parameter brms derives in its model block from a sampled one (E02, ``ExtraParameter.derived``: the GEV's
+    ``xi`` from ``tmp_xi``, the data, ``mu`` and ``sigma``): at every point the graph's deterministic of it equals the fixture's
+    record of brms's ``posterior_epred(dpar = name)`` (``adapter.derived_draws``: one value per point, the same on every row); a
+    record of a parameter the model does not derive is a mismatch."""
+    derived = [e for e in b.model.family_spec.extra_parameters if e.derived]
+    recorded = sorted(((b.fixture.raw.get("post") or {}).get("dpar_epred") or {}))
+    if sorted(e.name for e in derived) != recorded:
+        raise OracleMismatch(f"brms's dpar_epred records {recorded}; the AutoBayes model derives {sorted(e.name for e in derived)}")
+    if not derived:
+        return
+    pmm = b.model.pymc_model
+    fn = pmm.compile_fn(pmm.replace_rvs_by_values([pmm[b.model.names[e.name]] for e in derived]), inputs=pmm.value_vars,
+                        point_fn=True, on_unused_input="ignore")
+    brms = {e.name: adapter.derived_draws(b.fixture, e.name) for e in derived}
+    for k, p, vp in b.points():
+        for e, value in zip(derived, fn(vp)):
+            err = rel_err(np.asarray(value, dtype=float), brms[e.name][k])
+            if err > PRED_REL:
+                raise OracleMismatch(f"point {k}: the graph's {e.name} {float(value)!r} differs from brms's posterior_epred(dpar = "
+                                     f"{e.name!r}) {brms[e.name][k]!r} by {err}")
 
 
 def check_latent(b: Bundle) -> None:

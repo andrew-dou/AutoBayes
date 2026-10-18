@@ -203,10 +203,10 @@ def freeze_target(model):
                    # the zero-inflation / hurdle probability's prior (B06) likewise
                    **({'zi': prior(pr.zi)} if pr.zi is not None else {}),
                    **({'hu': prior(pr.hu)} if pr.hu is not None else {}),
-                   # a family's extra parameter's prior (D01: alpha, beta, ndt) likewise
-                   **{name: prior(getattr(pr, name)) for name in ('alpha', 'beta', 'ndt') if getattr(pr, name, None) is not None},
-                   # and E01's zoi, coi (zero_one_inflated_beta) and kappa (xbeta)
-                   **{name: prior(getattr(pr, name)) for name in ('zoi', 'coi', 'kappa') if getattr(pr, name, None) is not None}},
+                   # a family's extra parameter's prior (D01: alpha, beta, ndt; E01: zoi, coi, kappa; E02: kappa, quantile, xi)
+                   # likewise
+                   **{name: prior(getattr(pr, name)) for name in ('alpha', 'beta', 'ndt', 'zoi', 'coi', 'kappa', 'quantile', 'xi')
+                      if getattr(pr, name, None) is not None}},
     }
     encoded = json.dumps(_canonical(payload), sort_keys=True, separators=(',', ':'),
                          ensure_ascii=False, allow_nan=False).encode('utf-8')

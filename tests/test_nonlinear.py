@@ -775,7 +775,7 @@ def test_nl_is_refused_with_a_multivariate_model_or_a_mixture():
         ab.default_priors(EXP, FRAME, rescor=True, nl=True)
     with pytest.raises(FormulaError, match=r"mvbind\(\) with nl=True"):
         ab.default_priors(["mvbind(ypos, xpos) ~ a * exp(b * x)", "a ~ 1", "b ~ 1"], FRAME, nl=True)
-    with pytest.raises(ValueError, match=r"nu applies only to the student family, which is not offered with nl=True"):
+    with pytest.raises(ValueError, match=r"nu applies only to the student or frechet family, which is not offered with nl=True"):
         ab.default_priors(EXP, FRAME, nu=4, nl=True)
 
 

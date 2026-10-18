@@ -96,6 +96,13 @@ and the probe's step checked, as for `zi`, before it is mapped to `ndt_interval_
 `real<lower=0,upper=1>` `zoi` and `coi`, mapped to `zoi_logodds__` and `coi_logodds__` with the probe's step and Stan's logit at
 every point checked as for `zi`; `kappa` (`xbeta()`) is a `"positive"` one.
 
+E02: `kappa` (`real<lower=0>`, log scale) and `quantile` (`real<lower=0,upper=1>`: Stan's logit, recomputed from `quantile` at every
+point and checked against the fixture's `u`, and the probe's step checked, as for `zi`, before it is mapped to `quantile_logodds__`)
+are extra parameters as D01's are; the generalized extreme value family's extra parameter `xi` is sampled as brms's `tmp_xi`
+(`ExtraParameter.variable`, unbounded) and its derived value, which the points do not carry, is read from the fixture's record of
+brms's `posterior_epred(dpar = "xi")` (`derived_draws`) for the draws `predict()` reads. A fixed quantile (brms's
+`bf(quantile = p)`) is no parameter: G1 compares it with brms's Stan data.
+
 D07: under a shrinkage prior on b (brms's `horseshoe()` or `R2D2()`, `Model.shrinkage_names`) brms's `b` is a transformed parameter
 `zb .* sdb`: the point gives the model `zb` and the prior's scales (`shrinkage_point`, each vector put in AutoBayes's design-column
 order through the column map) and no `b`; `zb[k]` maps to `zb` and `hs_local[k]` to `hs_local_log__` at the AutoBayes column of
@@ -119,7 +126,7 @@ import xarray as xr
 import autobayes as ab
 from autobayes.correlation import cholesky_corr_free
 from autobayes.monotonic import stick_breaking_free
-from tests.oracle.fixture import Fixture, Point
+from tests.oracle.fixture import Fixture, Point, decode
 from tests.oracle.tolerances import DESIGN_ABS, abs_err
 
 
@@ -169,8 +176,10 @@ def priors_from_spec(spec: dict) -> ab.Priors:
                      meanme=_prior(spec.get("meanme")), sdme=_prior(spec.get("sdme")),
                      # D01: a family's extra parameter, {"alpha": [...]}, {"beta": [...]} or {"ndt": [...]}
                      alpha=_prior(spec.get("alpha")), beta=_prior(spec.get("beta")), ndt=_prior(spec.get("ndt")),
-                     # E01: zero_one_inflated_beta's {"zoi": [...], "coi": [...]} and xbeta's {"kappa": [...]}
-                     zoi=_prior(spec.get("zoi")), coi=_prior(spec.get("coi")), kappa=_prior(spec.get("kappa")))
+                     # E01: zero_one_inflated_beta's {"zoi": [...], "coi": [...]} and xbeta's {"kappa": [...]}; E02: {"kappa": [...]},
+                     # {"quantile": ["Beta", a, b]} or {"xi": [...]} (the prior of brms's tmp_xi)
+                     zoi=_prior(spec.get("zoi")), coi=_prior(spec.get("coi")), kappa=_prior(spec.get("kappa")),
+                     quantile=_prior(spec.get("quantile")), xi=_prior(spec.get("xi")))
 
 
 def build_model(case: dict, data: pd.DataFrame) -> ab.Model:
@@ -797,7 +806,8 @@ def natural_point(model: ab.Model, point: Point, cmap: ColumnMap, gmap: GroupMap
     if cmap.measurement:                                   # C06: an me() term's meanme_k, sdme_k and zme_k, by noisy column
         special = {cls: {x: (np.atleast_1d(pars[f"{cls}_{k}"]).astype(float) if cls == "zme" else float(np.atleast_1d(pars[f"{cls}_{k}"])[0]))
                          for x, k in cmap.measurement.items()} for cls in ("meanme", "sdme", "zme")}
-    extras = {e.name: float(pars[e.name]) for e in model.family_spec.extra_parameters}   # D01: brms's alpha, beta or ndt
+    extras = {e.variable: float(pars[e.variable]) for e in model.family_spec.extra_parameters}   # D01: brms's alpha, beta or ndt
+    # (E02: kappa, quantile, and the GEV's sampled tmp_xi under its own name, value_point's keyword)
     shrinkage = shrinkage_point(model, pars, cmap)          # D07: zb and the horseshoe's or R2D2's scales, or None
     if cmap.cs:                                            # D04: brms's bcs, one row per Xcs column, one column per threshold
         bcs = np.atleast_2d(pars["bcs"]).astype(float)
@@ -1008,8 +1018,15 @@ def coordinate_map(fixture: Fixture, model: ab.Model, cmap: ColumnMap, gmap: Gro
                 if abs(math.log(p / (1.0 - p)) - pt_.u[idx]) > 1e-10:
                     raise OracleMismatch(f"point {q}: logit({par}) is {math.log(p / (1.0 - p))!r}; brms's unconstrained value is {pt_.u[idx]!r}")
             target, expect = (f"{names[par]}_logodds__", 0), "other"
-        elif par in {e.name for e in model.family_spec.extra_parameters}:   # D01: brms's alpha, beta or ndt
-            extra = next(e for e in model.family_spec.extra_parameters if e.name == par)
+        elif par in {e.variable for e in model.family_spec.extra_parameters}:   # D01: brms's alpha, beta or ndt (E02: kappa,
+            extra = next(e for e in model.family_spec.extra_parameters if e.variable == par)   # quantile, tmp_xi)
+            if extra.support == "unit":                        # E02: real<lower=0,upper=1> quantile, Stan's logit, as zi (B06)
+                if abs(float(e["du"]) - LOGIT_STEP) > 1e-9:
+                    raise OracleMismatch(f"brms's probe moved the coordinate of {par} by {e['du']!r}; logit({par}) moves it by {LOGIT_STEP!r}")
+                for q, pt_ in enumerate(fixture.points):      # and at every point, brms's coordinate is logit of its value
+                    p = float(pt_.pars[par])
+                    if abs(math.log(p / (1.0 - p)) - pt_.u[idx]) > 1e-10:
+                        raise OracleMismatch(f"point {q}: logit({par}) is {math.log(p / (1.0 - p))!r}; brms's unconstrained value is {pt_.u[idx]!r}")
             if extra.support == "below_min_y":                 # real<lower=0,upper=min_Y>: Stan's lower-upper coordinate
                 top = float(np.min(fixture.standata["Y"]))
                 v0 = top / (1.0 + math.exp(-0.3))              # the probe moves the value at u = 0.3 to 1.5 times itself
@@ -1022,15 +1039,7 @@ def coordinate_map(fixture: Fixture, model: ab.Model, cmap: ColumnMap, gmap: Gro
                     if abs(math.log(v / (top - v)) - pt_.u[idx]) > 1e-10:
                         raise OracleMismatch(f"point {q}: log({par} / (min_Y - {par})) is {math.log(v / (top - v))!r}; brms's "
                                              f"unconstrained value is {pt_.u[idx]!r}")
-            if extra.support == "unit":                        # E01: real<lower=0,upper=1> zoi, coi: Stan's logit, as zi's
-                if abs(float(e["du"]) - LOGIT_STEP) > 1e-9:
-                    raise OracleMismatch(f"brms's probe moved the coordinate of {par} by {e['du']!r}; logit({par}) moves it by {LOGIT_STEP!r}")
-                for q, pt_ in enumerate(fixture.points):
-                    p = float(pt_.pars[par])
-                    if abs(math.log(p / (1.0 - p)) - pt_.u[idx]) > 1e-10:
-                        raise OracleMismatch(f"point {q}: logit({par}) is {math.log(p / (1.0 - p))!r}; brms's unconstrained value is {pt_.u[idx]!r}")
-            target, expect = (extra.coordinate, 0), {"real": "identity", "positive": "log", "below_min_y": "other",
-                                                     "unit": "other"}[extra.support]
+            target, expect = (extra.coordinate, 0), {"real": "identity", "positive": "log", "below_min_y": "other", "unit": "other"}[extra.support]
         elif par.startswith("sd_") and int(par[3:]) in by_id:
             g = by_id[int(par[3:])]
             M = int(fixture.standata[f"M_{par[3:]}"])
@@ -1279,7 +1288,9 @@ def draws(fixture: Fixture, model: ab.Model, cmap: ColumnMap, gmap: GroupMap) ->
         if par in names and par in pts[0].pars:
             data[names[par]] = (("chain", "draw"), np.array([float(p.pars[par]) for p in pts])[None, :])
     for extra in model.family_spec.extra_parameters:            # D01: brms's alpha, beta or ndt
-        data[names[extra.name]] = (("chain", "draw"), np.array([float(p.pars[extra.name]) for p in pts])[None, :])
+        data[names[extra.variable]] = (("chain", "draw"), np.array([float(p.pars[extra.variable]) for p in pts])[None, :])
+        if extra.derived:                                       # E02: the GEV's xi, derived from tmp_xi in brms's model block
+            data[names[extra.name]] = (("chain", "draw"), derived_draws(fixture, extra.name)[None, :])
     for part, order in (model.spec.autocor.parts if model.spec.autocor is not None else ()):   # C04: brms's ar and ma
         roles = model.autocor_names
         data[roles[part]] = (("chain", "draw", roles[f"{part}_coordinate"]), np.stack([np.atleast_1d(p.pars[part]) for p in pts])[None])
@@ -1300,6 +1311,20 @@ def draws(fixture: Fixture, model: ab.Model, cmap: ColumnMap, gmap: GroupMap) ->
             else:
                 data[var] = (("chain", "draw"), vals[:, 0][None, :])
     return az.InferenceData(posterior=xr.Dataset(data, coords=coords))
+
+
+def derived_draws(fixture: Fixture, name: str) -> np.ndarray:
+    """E02: one value per point of a distributional parameter brms derives in its model block (the GEV's ``xi`` from
+    ``tmp_xi``), which the points do not carry: the fixture's record of brms's ``posterior_epred(dpar = name)`` on the fitted
+    rows (``post.dpar_epred``, (points, rows)), required to be one value per point, the same on every row."""
+    record = (fixture.raw.get("post") or {}).get("dpar_epred", {}).get(name)
+    if record is None:
+        raise OracleMismatch(f"brms derives {name} in its model block and the points do not carry it; the fixture has no "
+                             f"dpar_epred record of it")
+    values = np.atleast_2d(decode(record))
+    if values.shape[0] != len(fixture.points) or np.max(np.abs(values - values[:, :1])) > 0:
+        raise OracleMismatch(f"brms's posterior_epred(dpar = {name!r}) is {values.shape}, not one value per point on every row")
+    return values[:, 0]
 
 
 def _category_draws(fixture: Fixture, model: ab.Model, cmap: ColumnMap, data: dict, coords: dict, axis: str | None = None,
