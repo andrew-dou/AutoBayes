@@ -9,8 +9,11 @@ the median and the MAD, ``1.4826 median |v - median v|``); ``CI.Lower`` and ``CI
 / 2`` quantiles (R's type 7) of a point hypothesis (``=``) and the ``alpha`` and ``1 - alpha`` quantiles of a one-sided one;
 for a one-sided hypothesis ``Post.Prob`` the share of draws strictly on its side of zero and ``Evid.Ratio`` the draws on that
 side over the others (zero draws count against it; ``Inf`` when every draw is on its side); for a point hypothesis both are
-NaN, brms's NA without prior draws (divergence D96); ``Star`` is ``*`` when ``Post.Prob > 1 - alpha`` (one-sided) or the
-interval excludes zero (point). The ``Hypothesis`` column is brms's text: whitespace removed, ``(left) op 0`` when ``right``
+NaN, brms's NA without prior draws (divergence D96), and with prior draws (``prior=``, brms's ``sample_prior = "yes"``; E05)
+``Evid.Ratio`` is brms's Savage-Dickey ratio, the posterior density of ``left - right`` at 0 over its prior density there
+(``autobayes.kde.density_ratio``; the prior draws of ``left - right`` are the hypothesis evaluated on each parameter's prior
+draws), and ``Post.Prob = Evid.Ratio / (1 + Evid.Ratio)``; ``Star`` is ``*`` when ``Post.Prob > 1 - alpha`` (one-sided) or
+the interval excludes zero (point). The ``Hypothesis`` column is brms's text: whitespace removed, ``(left) op 0`` when ``right``
 is the text ``0``, else ``(left)-(right) op 0``.
 
 The text is read by the small parser below and never evaluated as code. It takes what a hypothesis on coefficients needs:
@@ -21,6 +24,7 @@ from __future__ import annotations
 
 import math
 import re
+import warnings
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 
@@ -207,7 +211,8 @@ def _mean(v: np.ndarray) -> float:
     return math.fsum(v) / v.size if np.isfinite(v).all() else float(np.mean(v))
 
 
-def _summary(parsed: ParsedHypothesis, v: np.ndarray, alpha: float, robust: bool) -> list:
+def _summary(parsed: ParsedHypothesis, v: np.ndarray, alpha: float, robust: bool, ratio: float = math.nan) -> list:
+    """One row of brms's table; ``ratio`` is a point hypothesis's Savage-Dickey ratio (NaN without prior draws)."""
     S = v.size
     if robust:
         estimate = float(np.median(v))
@@ -223,7 +228,8 @@ def _summary(parsed: ParsedHypothesis, v: np.ndarray, alpha: float, robust: bool
         ratio = math.inf if k == S else k / (S - k)
         star = "*" if prob > 1.0 - alpha else ""
     else:
-        prob = ratio = math.nan
+        with np.errstate(invalid="ignore"):
+            prob = float(np.float64(ratio) / (1.0 + np.float64(ratio)))   # NaN without prior draws, and for Inf as R's Inf / Inf
         star = "*" if lower > 0 or upper < 0 else ""
     return [parsed.label, estimate, error, lower, upper, ratio, prob, star]
 
@@ -242,6 +248,7 @@ class Hypothesis:
     alpha: float
     robust: bool
     fit_binding_status: str = field(default="")
+    prior: bool = field(default=False)           # E05: prior draws were given (point hypotheses have Savage-Dickey ratios)
 
     def __str__(self) -> str:
         level = 1.0 - self.alpha
@@ -255,7 +262,9 @@ class Hypothesis:
             f"Estimate, Est.Error: the {centre} of each hypothesis's draws. CI: the {100 * (1 - 2 * self.alpha):g}% interval "
             f"of a one-sided hypothesis, the {100 * level:g}% interval of a point hypothesis.",
             f"'*': a one-sided hypothesis's posterior probability exceeds {level:g}, or a point hypothesis's interval excludes 0.",
-            "A point hypothesis has no evidence ratio here (no prior draws; divergence D96)."])
+            ("Evid.Ratio of a point hypothesis: the Savage-Dickey ratio, its posterior density at the point over its prior "
+             "density there, from the prior draws given." if self.prior else
+             "A point hypothesis has no evidence ratio here (no prior draws; divergence D96).")])
 
 
 def _check_options(hypotheses, alpha, robust) -> tuple[str, ...]:
@@ -270,12 +279,63 @@ def _check_options(hypotheses, alpha, robust) -> tuple[str, ...]:
     return tuple(hypotheses)
 
 
+def _prior_values(parsed: ParsedHypothesis, prior: Mapping[str, np.ndarray], no_prior: Mapping[str, str], rng) -> np.ndarray | None:
+    """The prior draws of a point hypothesis's ``left - right``: the hypothesis evaluated on each parameter's prior draws, a
+    parameter's own draws permuted independently of the others' when it names several (brms pairs them through a random
+    permutation, R's; so a ratio of several parameters is brms's in distribution, not draw for draw: divergence D125). None,
+    with a warning, when a parameter has no prior draws (brms's NA)."""
+    for name in parsed.names:
+        if name in no_prior or name not in prior:
+            why = no_prior.get(name, f"no prior draws are given for {name!r}")
+            warnings.warn(f"hypothesis {parsed.text!r}: {why}; its Evid.Ratio and Post.Prob are NaN (brms's NA)", stacklevel=4)
+            return None
+    columns = {k: np.asarray(prior[k], dtype=float) for k in parsed.names}
+    if len(columns) > 1:
+        columns = {k: v[rng.permutation(v.size)] for k, v in columns.items()}
+    v = hypothesis_values(parsed, columns)
+    if not np.isfinite(v).all():
+        raise ValueError(f"hypothesis {parsed.text!r} is not finite at {int((~np.isfinite(v)).sum())} of {v.size} prior draws (the "
+                         "log or square root of a negative value?); brms stops there too")
+    return v
+
+
+def _check_prior(prior, what: str) -> dict[str, np.ndarray]:
+    """Prior draws by name (a ``DataFrame`` such as ``ab.prior_draws`` returns, or a mapping), each column finite, with the
+    same number (at least two) of draws."""
+    if isinstance(prior, pd.DataFrame):
+        prior = {str(c): prior[c].to_numpy() for c in prior.columns}
+    if not isinstance(prior, Mapping) or not prior:
+        raise ValueError(f"prior must be the prior draws by name (ab.prior_draws(model) or brms's prior_draws()), got "
+                         f"{type(prior).__name__}")
+    out = {str(k): np.asarray(v, dtype=float).ravel() for k, v in prior.items()}
+    sizes = {v.size for v in out.values()}
+    if len(sizes) != 1 or min(sizes) < 2:
+        raise ValueError(f"the prior draws must have the same number, at least two, of draws for every {what}, got {sorted(sizes)}")
+    bad = [k for k, v in out.items() if not np.isfinite(v).all()]
+    if bad:
+        raise ValueError(f"the prior draws of {bad} are not all finite")
+    return out
+
+
 def hypothesis_from_draws(draws: Mapping[str, np.ndarray], hypotheses, *, alpha: float = 0.05, robust: bool = False,
-                          unavailable: Mapping[str, str] | None = None, what: str = "parameter") -> Hypothesis:
+                          unavailable: Mapping[str, str] | None = None, what: str = "parameter",
+                          prior: Mapping[str, np.ndarray] | None = None, no_prior: Mapping[str, str] | None = None,
+                          seed: int | None = None) -> Hypothesis:
     """brms's ``hypothesis()`` of named draws (its default method on a data frame of draws): ``draws`` maps each parameter
     name to its ``(S,)`` draws; ``unavailable`` maps names that exist but cannot be tested to the reason, quoted when a
-    hypothesis names one; ``what`` names the parameters in messages."""
+    hypothesis names one; ``what`` names the parameters in messages. ``prior`` (E05) maps parameter names to their prior
+    draws, which give each point hypothesis its Savage-Dickey evidence ratio (``_prior_values``); ``no_prior`` maps names
+    that have none to the reason (their point hypotheses keep NaN, with a warning); ``seed`` seeds the permutation that pairs
+    the prior draws of a hypothesis on several parameters."""
+    from autobayes.kde import density_ratio
+
     hypotheses = _check_options(hypotheses, alpha, robust)
+    if seed is not None and (isinstance(seed, (bool, np.bool_)) or not isinstance(seed, (int, np.integer)) or seed < 0):
+        raise ValueError(f"seed must be a nonnegative integer or None, got {seed!r}")
+    if prior is not None and not (isinstance(prior, Mapping) and not prior):   # an empty mapping: no parameter has prior draws
+        prior = _check_prior(prior, what)
+    no_prior = dict(no_prior or {})
+    rng = np.random.default_rng(seed)
     arrays = {k: np.asarray(v, dtype=float).ravel() for k, v in draws.items()}
     sizes = {v.size for v in arrays.values()}
     if len(sizes) != 1 or 0 in sizes:
@@ -294,13 +354,22 @@ def hypothesis_from_draws(draws: Mapping[str, np.ndarray], hypotheses, *, alpha:
         if np.isnan(v).any():
             raise ValueError(f"hypothesis {text!r} is NaN at {int(np.isnan(v).sum())} of {S} draws (the log or square root of a "
                              "negative value?); brms stops there too")
-        rows.append(_summary(parsed, v, float(alpha), bool(robust)))
+        ratio = math.nan
+        if prior is not None and not parsed.one_sided:
+            prior_v = _prior_values(parsed, prior, no_prior, rng)
+            if prior_v is not None:
+                if not np.isfinite(v).all():
+                    raise ValueError(f"hypothesis {text!r} is not finite at every posterior draw; its density at the point is "
+                                     "not defined (brms stops there too)")
+                ratio = density_ratio(v, prior_v, 0.0)
+        rows.append(_summary(parsed, v, float(alpha), bool(robust), ratio))
         samples.append(v)
     table = pd.DataFrame(rows, columns=list(HYPOTHESIS_COLUMNS))
     for c in HYPOTHESIS_COLUMNS[1:-1]:
         table[c] = table[c].astype(float)
     sample_frame = pd.DataFrame(np.column_stack(samples), columns=[f"H{k}" for k in range(1, len(samples) + 1)])
-    return Hypothesis(table=table, samples=sample_frame, hypotheses=hypotheses, alpha=float(alpha), robust=bool(robust))
+    return Hypothesis(table=table, samples=sample_frame, hypotheses=hypotheses, alpha=float(alpha), robust=bool(robust),
+                      prior=prior is not None)
 
 
 # -- on a model's fit ----------------------------------------------------------------------------------------------
@@ -345,19 +414,58 @@ def coefficient_draws(model, posterior) -> tuple[dict[str, np.ndarray], dict[str
     return out, unavailable
 
 
-def hypothesis(model, fit_result, hypotheses, *, alpha: float = 0.05, robust: bool = False) -> Hypothesis:
+INTERCEPT_NO_PRIOR = ("brms has no prior draws of the raw-scale intercept (\"Sampling from the prior of an overall intercept is "
+                      "not possible by default\"; its prior is on the intercept of the centred design)")
+
+
+def _refuse_uncentred_prior():
+    raise ValueError("hypothesis(..., prior=...) of a model with center_predictors=False is not offered: brms's center = FALSE "
+                     "makes the intercept a coefficient of class b, and no probe verifies its prior draws (divergence D124)")
+
+
+def coefficient_prior_draws(model, prior, coefficients) -> tuple[dict[str, np.ndarray], dict[str, str]]:
+    """E05: the prior draws of each coefficient brms names (``coefficients``), from prior draws named as brms's
+    ``prior_draws()`` names them (``ab.prior_draws(model)``): a coefficient's own column ``b_<name>`` if there is one, else
+    the class-wide ``b``; and the names without prior draws, with the reason (``Intercept``: brms samples the prior of the
+    centred intercept, not of the raw-scale one)."""
+    if not model.center_predictors and model.spec.intercept:
+        _refuse_uncentred_prior()
+    columns = _check_prior(prior, "prior column")
+    out, missing = {}, {"Intercept": INTERCEPT_NO_PRIOR}
+    for name in coefficients:
+        if name == "Intercept":
+            continue
+        column = f"b_{name}" if f"b_{name}" in columns else ("b" if "b" in columns else None)
+        if column is None:
+            missing[name] = f"the prior draws have no column b_{name} or b (a flat prior is not sampled)"
+        else:
+            out[name] = columns[column]
+    return out, missing
+
+
+def hypothesis(model, fit_result, hypotheses, *, alpha: float = 0.05, robust: bool = False, prior=None,
+               seed: int | None = None) -> Hypothesis:
     """brms's ``hypothesis(fit, hypotheses)`` with its defaults ``class = "b"``, ``alpha = 0.05``, ``robust = FALSE``: each
     hypothesis (``"x > 0"``, ``"x + w = 0"``, ``"zr < zq"``, ``"Intercept < 0"``; module docstring) over brms's names of the
     population-level coefficients, on the posterior draws of ``fit_result`` (a ``FitResult`` or its ``InferenceData``,
-    checked against the model as ``predict()`` checks it). Returns an ``ab.Hypothesis``: brms's table and the draws."""
+    checked against the model as ``predict()`` checks it). Returns an ``ab.Hypothesis``: brms's table and the draws.
+
+    ``prior`` (E05): prior draws named as brms's ``prior_draws()`` names them (``ab.prior_draws(model)``, or brms's own),
+    brms's ``sample_prior = "yes"``: each point hypothesis then has brms's Savage-Dickey ``Evid.Ratio`` and ``Post.Prob``
+    (``coefficient_prior_draws`` pairs coefficients with columns; a hypothesis on ``Intercept`` keeps NaN, as brms's has NA).
+    ``seed`` is brms's ``seed``: it fixes the random pairing of the prior draws of a hypothesis on several parameters."""
     from autobayes.identity import check_fit_binding
 
     refuse_unsupported(model, "hypothesis()")
     hypotheses = _check_options(hypotheses, alpha, robust)
+    if prior is not None and not model.center_predictors and model.spec.intercept:
+        _refuse_uncentred_prior()
     binding = check_fit_binding(model, fit_result, allow_unverified=True)
     posterior = getattr(fit_result, "idata", fit_result).posterior
     draws, unavailable = coefficient_draws(model, posterior)
+    prior_draws, no_prior = (None, None) if prior is None else coefficient_prior_draws(model, prior, draws)
     result = hypothesis_from_draws(draws, hypotheses, alpha=alpha, robust=robust, unavailable=unavailable,
-                                   what="population-level coefficient (class b)")
+                                   what="population-level coefficient (class b)", prior=prior_draws, no_prior=no_prior,
+                                   seed=seed)
     return Hypothesis(table=result.table, samples=result.samples, hypotheses=result.hypotheses, alpha=result.alpha,
-                      robust=result.robust, fit_binding_status=binding)
+                      robust=result.robust, fit_binding_status=binding, prior=result.prior)

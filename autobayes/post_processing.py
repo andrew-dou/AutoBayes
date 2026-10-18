@@ -56,6 +56,14 @@ cases ``gauss_loo_compare_x`` and ``gauss_loo_compare_xw`` and against loo's and
   exp(-dIC_j / 2)`` of the information criteria, which are ``exp(elpd_k) / sum_j exp(elpd_j)``; and ``"pseudobma"`` with
   ``BB=False``, the pseudo-BMA weights of Yao, Vehtari, Simpson and Gelman (2018, Bayesian Analysis 13(3)), the same formula
   on ``elpd_loo``.
+
+E05 adds the stacking weights of the same paper (its eq. 4, the weights maximising the leave-one-out log score of the
+combined predictive distribution, ``sum_i log sum_k w_k exp(elpd_loo_k,i)`` over the simplex), brms's default
+``model_weights(weights = "stacking")`` and loo's ``loo_model_weights()``: ``stacking_weights`` computes the exact optimum
+(an active-set Newton method on the simplex, to the Karush-Kuhn-Tucker conditions in double precision), where loo's
+``stats::constrOptim`` stops at its tolerance. On the frozen case ``gauss_loo_compare_x_stacking`` brms's weights are off the
+exact optimum by 1.04e-8, more than the oracle's 1e-9, so ``"stacking"`` is implemented and withheld
+(``PARKED_WEIGHTS``, divergence D126) until Andrew decides how it is certified.
 """
 from __future__ import annotations
 
@@ -64,6 +72,7 @@ import math
 import warnings
 from collections.abc import Mapping
 from dataclasses import dataclass, replace
+from types import MappingProxyType
 
 import numpy as np
 import pandas as pd
@@ -318,6 +327,15 @@ def loo(model, fit_result, *, r_eff=None) -> Loo:
 WAIC_COLUMNS = ("elpd_waic", "p_waic", "waic")      # brms's waic()$pointwise columns, and its $estimates rows
 P_WAIC_LIMIT = 0.4                                  # loo flags p_waic_i above this and recommends PSIS-LOO there
 MODEL_WEIGHTS = ("loo", "waic", "pseudobma")        # brms's model_weights(weights = ...) offered here
+# E05: weights implemented and withheld, each with the reason its refusal carries (docs/post-processing.md, divergence D126).
+# Removing the entry offers it (model_weights(..., "stacking") and loo_model_weights); tests/test_loo_compare.py does that
+# under monkeypatch to check the withheld weights against the frozen fixture and loo's outputs.
+PARKED_WEIGHTS = MappingProxyType({
+    "stacking": ("the stacking weights are implemented (the exact optimum of the stacking objective, stacking_weights) and "
+                 "withheld: brms's are loo's constrOptim optimum, which on the frozen case gauss_loo_compare_x_stacking is "
+                 "0.5619733196999603 where the exact optimum is 0.56197330926078805, 1.04e-8 apart against the oracle's 1e-9; "
+                 "how such a weight is certified is Andrew's decision (docs/post-processing.md, divergence D126)"),
+})
 
 
 def response_fingerprint(model) -> str | None:
@@ -478,19 +496,115 @@ def loo_compare(results) -> pd.DataFrame:
     return pd.DataFrame(rows, columns=columns, index=pd.Index([names[k] for k in order], name="model"), dtype=float)
 
 
+_KKT_TOL = 1e-14                 # stacking: the relative KKT residual at which the Newton iterations stop
+
+
+def stacking_weights(lpd) -> np.ndarray:
+    """The stacking weights of Yao, Vehtari, Simpson and Gelman (2018, eq. 4) of a ``(N, K)`` matrix of pointwise elpd (one
+    column per model, loo's ``lpd_point``): the exact maximiser over the simplex of ``F(w) = sum_i log sum_k w_k
+    exp(lpd_ik)``. ``F`` is concave; its gradient is ``g_k = sum_i a_ik / s_i`` (``a_ik = exp(lpd_ik - max_k lpd_ik)``, ``s =
+    a w``), and since ``sum_k w_k g_k = N`` the optimum is where ``g_k = N`` for every model with a positive weight and ``g_k
+    <= N`` for the others (the Karush-Kuhn-Tucker conditions). An active-set Newton method reaches it: Newton steps on the face
+    of the simplex spanned by the models with positive weight (``F``'s Hessian restricted to the face, a backtracking line
+    search, a model leaving the face when its weight reaches 0), then the model with the largest ``g_k > N`` joins the face,
+    until no model does; the iterations stop at a relative residual of ``1e-14`` (or where no step improves ``F`` in double
+    precision). Where the optimum is not unique (models with proportional ``exp(lpd)`` columns), one of the optima is
+    returned."""
+    lpd = np.asarray(lpd, dtype=float)
+    if lpd.ndim != 2 or lpd.shape[0] < 1 or lpd.shape[1] < 1:
+        raise ValueError(f"stacking needs a (observations, models) matrix of pointwise elpd, got shape {lpd.shape}")
+    if not np.isfinite(lpd).all():
+        raise ValueError("stacking needs finite pointwise elpd")
+    N, K = lpd.shape
+    if K == 1:
+        return np.ones(1)
+    a = np.exp(lpd - lpd.max(axis=1, keepdims=True))
+
+    def objective(w):
+        s = a @ w
+        return -math.inf if (s <= 0).any() else math.fsum(np.log(s))
+
+    w = np.full(K, 1.0 / K)
+    active = np.ones(K, dtype=bool)
+
+    def longest(d):                                   # the step to the face's boundary along d, and the weight that reaches it
+        ratios = np.full(K, np.inf)
+        down = (d < 0) & active
+        ratios[down] = -w[down] / d[down]
+        k = int(np.argmin(ratios))
+        return min(1.0, float(ratios[k])), (k if ratios[k] <= 1.0 else None)
+
+    for _ in range(100 * K):
+        s = a @ w
+        g = a.T @ (1.0 / s)
+        idx = np.flatnonzero(active)
+        residual = float(np.max(np.abs(g[idx] - N))) / N
+        if residual <= _KKT_TOL or len(idx) == 1:
+            joining = np.flatnonzero(~active & (g > N * (1.0 + _KKT_TOL)))
+            if not len(joining):
+                break
+            active[joining[np.argmax(g[joining])]] = True
+            idx = np.flatnonzero(active)
+        B = a[:, idx] / s[:, None]
+        m = len(idx)
+        Z = np.vstack([np.eye(m - 1), -np.ones((1, m - 1))])            # directions within the face: weights summing to 0
+        BZ = B @ Z
+        u = np.linalg.lstsq(BZ.T @ BZ, Z.T @ g[idx], rcond=None)[0]     # Newton: -Z'HZ u = Z'g with H = -B'B
+        d = np.zeros(K)
+        d[idx] = Z @ u
+        if not (d @ g > 0):                                               # no ascent (a degenerate face): the projected gradient
+            d[idx] = g[idx] - g[idx].mean()
+        t_max, hit = longest(d)
+        if t_max <= 0.0:                                                  # a weight at 0 that the step would make negative
+            d[idx] = g[idx] - g[idx].mean()
+            t_max, hit = longest(d)
+        f0, t = objective(w), t_max
+        while t > 1e-30 and not objective(w + t * d) >= f0:
+            t /= 2.0
+        if t <= 1e-30:
+            break                                                         # no step improves F: as exact as double precision allows
+        w = w + t * d
+        if hit is not None and t == t_max:                                # that weight reaches 0 and leaves the face
+            w[hit] = 0.0
+            active[hit] = False
+        w = np.maximum(w, 0.0)
+        w /= w.sum()
+    else:
+        raise RuntimeError("stacking: the active-set Newton iterations did not converge")
+    w[~active] = 0.0
+    return w / w.sum()
+
+
+def loo_model_weights(results) -> pd.Series:
+    """loo's ``loo_model_weights()`` with its default ``method = "stacking"`` of several models' ``ab.loo()`` results (as
+    ``model_weights`` takes them), which brms's ``model_weights(weights = "stacking")`` is: ``model_weights(results,
+    "stacking")``. Withheld with it (``PARKED_WEIGHTS``, divergence D126)."""
+    return model_weights(results, "stacking")
+
+
 def model_weights(results, weights: str, *, BB: bool | None = None) -> pd.Series:
     """brms's ``model_weights()`` of several models' results (a mapping ``{name: result}`` or a sequence, as ``loo_compare``
     takes them), in the order given: ``weights="loo"`` (``ab.loo()`` results) and ``weights="waic"`` (``ab.waic()``
     results) are brms's Akaike weights of looic and WAIC, ``exp(elpd_k) / sum_j exp(elpd_j)``; ``weights="pseudobma"`` with
-    ``BB=False`` the pseudo-BMA weights of ``ab.loo()`` results, the same numbers (module docstring). brms's default
-    ``"stacking"``, ``"bma"``, ``"kfold"`` and pseudo-BMA with the Bayesian bootstrap (brms's default ``BB = TRUE``, which
-    draws random numbers) are refused (divergence D92); there is no default."""
-    if weights in ("stacking", "bma", "kfold"):
+    ``BB=False`` the pseudo-BMA weights of ``ab.loo()`` results, the same numbers (module docstring); ``weights="stacking"``
+    (``ab.loo()`` results; E05) the exact stacking weights of their pointwise ``elpd_loo`` (``stacking_weights``), implemented
+    and withheld while it is in ``PARKED_WEIGHTS`` (divergence D126). ``"bma"``, ``"kfold"`` and pseudo-BMA with the Bayesian
+    bootstrap (brms's default ``BB = TRUE``, which draws random numbers) are refused (divergence D92); there is no default."""
+    if weights in PARKED_WEIGHTS:
+        raise ValueError(f"model_weights(weights={weights!r}) is withheld: {PARKED_WEIGHTS[weights]}")
+    if weights in ("bma", "kfold"):
         raise ValueError(f"model_weights(weights={weights!r}) is not offered (divergence D92): brms's "
-                         + {"stacking": "stacking weights are an optimisation no frozen case verifies",
-                            "bma": "Bayesian model averaging needs the marginal likelihood (bridge sampling)",
+                         + {"bma": "Bayesian model averaging needs the marginal likelihood (bridge sampling)",
                             "kfold": "K-fold cross-validation refits the model"}[weights]
                          + f"; offered: {', '.join(MODEL_WEIGHTS)}")
+    if weights == "stacking":                                             # E05, offered once it leaves PARKED_WEIGHTS
+        if BB is not None:
+            raise ValueError("BB applies to weights='pseudobma' only")
+        names, items, crit = _criterion_results(results, "model_weights()")
+        if crit != "loo":
+            raise ValueError("model_weights(weights='stacking') takes the results of ab.loo(), not of ab.waic()")
+        w = stacking_weights(np.column_stack([r.pointwise["elpd_loo"].to_numpy() for r in items]))
+        return pd.Series(w, index=pd.Index(names, name="model"), name="stacking")
     if weights not in MODEL_WEIGHTS:
         raise ValueError(f"model_weights(weights=...) must be one of {MODEL_WEIGHTS}, got {weights!r}")
     if weights == "pseudobma" and BB is not False:

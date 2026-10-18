@@ -106,9 +106,5 @@
     "x:w"
    ]
   }
- },
- "gate": {
-  "expect": "fail",
-  "reason": "E05_post_prior_effects_stacking not implemented; remove this field when it lands"
  }
 }

@@ -1,7 +1,9 @@
-# Post-processing: `log_lik`, `bayes_R2`, `loo`, `waic`, `loo_compare`, `model_weights`, `hypothesis`, `conditional_effects`
+# Post-processing: `log_lik`, `bayes_R2`, `loo`, `waic`, `loo_compare`, `model_weights`, `hypothesis`, `conditional_effects`, `prior_draws`
 
 brms-parity feature C07 (brms's `log_lik()`, `bayes_R2()` and `loo()`, loo 2.9.0), D05 (brms's `waic()`,
-`loo_compare()` and `model_weights()`) and D06 (brms's `hypothesis()` and `conditional_effects()`).
+`loo_compare()` and `model_weights()`), D06 (brms's `hypothesis()` and `conditional_effects()`) and E05 (brms's
+`sample_prior = "yes"` and `prior_draws()`, the Savage-Dickey evidence ratios of point hypotheses, interaction effects in
+`conditional_effects()`, and the stacking weights, implemented and withheld).
 
 ```python
 import autobayes as ab
@@ -15,6 +17,9 @@ ab.loo_compare({"m1": ab.loo(m1, fit1), "m2": ab.loo(m2, fit2)})          # loo'
 ab.model_weights({"m1": ab.loo(m1, fit1), "m2": ab.loo(m2, fit2)}, "loo")  # brms's Akaike weights
 h = ab.hypothesis(model, fit, ["x > 0", "x + w = 0", "zr < zq"])          # D06: h.table, h.samples
 ce = ab.conditional_effects(model, fit, ["x", "z"])                       # D06: {"x": DataFrame, "z": DataFrame}
+pd = ab.prior_draws(model, draws=4000, seed=1)                            # E05: brms's prior_draws() columns
+h = ab.hypothesis(model, fit, ["x = 0", "w = 0.5"], prior=pd)             # E05: Savage-Dickey Evid.Ratio, Post.Prob
+ce = ab.conditional_effects(model, fit, ["x:z", "x:w"])                   # E05: interaction effects, effect2__
 ```
 
 Each takes the model and its fit (a `FitResult` or its `InferenceData`, checked against the model as `predict()` checks
@@ -138,9 +143,31 @@ brms's `model_weights()` of the same results, a `pandas.Series` in the order giv
   "Using stacking to average Bayesian predictive distributions", Bayesian Analysis 13(3)) without the Bayesian bootstrap,
   the same formula on `elpd_loo` (brms hands it to loo's `loo_model_weights`).
 
-`weights` has no default: brms's default `"stacking"`, and `"bma"`, `"kfold"`, are not offered, and neither is pseudo-BMA
-with the Bayesian bootstrap (brms's default `BB = TRUE`), which draws random numbers; `BB` must be `False` for `"pseudobma"` and is
-refused for the others (D92). The other checks are those of `loo_compare`.
+`weights` has no default: `"bma"` and `"kfold"` are not offered, and neither is pseudo-BMA with the Bayesian bootstrap (brms's
+default `BB = TRUE`), which draws random numbers; `BB` must be `False` for `"pseudobma"` and is refused for the others (D92).
+brms's default `"stacking"` is implemented and withheld (E05, D126; below). The other checks are those of `loo_compare`.
+
+### Stacking (E05, withheld)
+
+brms's `model_weights(weights = "stacking")` is loo's `loo_model_weights()` with its default method: the stacking weights of
+Yao, Vehtari, Simpson and Gelman (2018, eq. 4), the weights on the simplex maximising the leave-one-out log score of the
+combined predictive distribution, `F(w) = sum_i log sum_k w_k exp(elpd_loo_k,i)`. `ab.post_processing.stacking_weights(lpd)`
+computes the exact optimum of `F`, which is concave: with `a_ik = exp(lpd_ik - max_k lpd_ik)` and `g = a' (1 / (a w))`, the
+optimum is where `g_k = N` for every model with a positive weight and `g_k <= N` for the others (the Karush-Kuhn-Tucker
+conditions, `sum_k w_k g_k = N` always), reached by Newton steps on the face of the simplex spanned by the models with positive
+weight, a model leaving the face when its weight reaches 0 and joining it when its `g_k` exceeds `N`, to a relative residual
+of 1e-14. loo finds the optimum with `stats::constrOptim` (a log-barrier method around BFGS), which stops at its tolerance and
+never gives an exact zero: on loo's own probes (`tests/loo_probes/probe_stacking.R`) its weights are off the exact optimum by
+up to 3.7e-4, its objective never above the optimum's.
+
+On the frozen case `gauss_loo_compare_x_stacking` brms's weights are 0.5619733196999603 and 0.43802668030003966; the optimum,
+solved in 50-digit arithmetic, is 0.56197330926078805, and `stacking_weights` returns the nearest doubles. brms's are 1.044e-8
+off it against the oracle's `PRED_REL` of 1e-9. The fixture is not edited and the tolerance not loosened: `"stacking"` (and
+`ab.post_processing.loo_model_weights`) are withheld (`PARKED_WEIGHTS`, refused with the reason), the case stays gated with
+these numbers, and with the park lifted every other gate passes (`tests/oracle/test_prior_effects_stacking_harness.py`). How
+the weights are certified (a two-reference acceptance with the exact optimum as the reference, or otherwise) is Andrew's
+decision (D126). Un-parking is removing the `PARKED_WEIGHTS` entry, exporting `loo_model_weights` as `ab.loo_model_weights`
+(the name the case proposes) and removing the case's gate field.
 
 ## `hypothesis(model, fit, hypotheses, alpha=0.05, robust=False)` (D06)
 
@@ -155,8 +182,9 @@ intercept, brms's `b_Intercept`). A hypothesis is `left (= OR < OR >) right`, a 
   `1 - alpha / 2` quantiles of a point hypothesis's draws and the `alpha` and `1 - alpha` quantiles of a one-sided one
   (R's type 7, a 90 % interval by default); for a one-sided hypothesis `Post.Prob` the share of draws strictly on its
   side of zero and `Evid.Ratio` the draws on that side over the others (a draw at zero counts against it; `Inf` when every
-  draw is on its side, 0 when none is); for a point hypothesis both are NaN (D96); `Star` `"*"` when `Post.Prob > 1 -
-  alpha` (one-sided) or the interval excludes zero (point), else `""`;
+  draw is on its side, 0 when none is); for a point hypothesis both are NaN without prior draws (D96) and brms's
+  Savage-Dickey ratio with them (`prior=`, E05, below); `Star` `"*"` when `Post.Prob > 1 - alpha` (one-sided) or the
+  interval excludes zero (point), else `""`;
 - `samples`, the draws of each hypothesis, `(draws, hypotheses)` with brms's names `H1`, `H2`, ..., the chains one after
   another; `hypotheses`, `alpha`, `robust`; `fit_binding_status` as `predict()` reports it. Printing it prints the table.
 
@@ -170,6 +198,55 @@ the parser does not take (other functions, `%%`, `&`, backticks; D97). The names
 `bsp`) and of a distributional formula's coefficients (`sigma_z`) are refused naming why (D97); so are multivariate and
 non-linear models, mixtures and the cumulative and categorical families (D99). `hypothesis_from_draws(draws, hypotheses)`
 (`from autobayes.hypothesis import hypothesis_from_draws`) is brms's default method: hypotheses on draws given by name.
+
+## Prior draws and Savage-Dickey ratios (E05)
+
+`ab.prior_draws(model, draws=4000, seed=None)` is brms's `prior_draws()` of a fit run with `sample_prior = "yes"`: a
+`pandas.DataFrame`, one row per draw, one column per prior brms samples, named and ordered as brms names them (settled on five
+probed brms fits, `tests/hypothesis_probes/brms-2.23.0-prior-draws.json`): `Intercept` (the prior of the centred design's
+intercept, brms's class `Intercept`); `b`, one draw per row shared by every coefficient when `b` is one prior, or one column per
+coefficient (`b_x`, `b_zq`, `b_x:zq`) when `b` is a mapping by term (brms gives every coefficient its own column as soon as
+one has a prior of its own); the family's parameters in brms's order (`sigma`, `shape` or `phi`, then `nu`, then `zi` or
+`hu`); for each grouping factor in formula order `sd_g` (an intercept-only factor, or a slope group whose SD priors are all
+equal: brms's group-wide prior) or `sd_g__Intercept`, `sd_g__x`, ..., then `cor_g` for a correlated term, one correlation.
+The draws come from the model's own prior distributions (its PyMC variables: a Student-t `nu` truncated at 1, half-normal
+SDs), independent across columns and rows; a correlation is drawn from the LKJ marginal of one off-diagonal entry, `2 B - 1`
+with `B ~ Beta(eta - 1 + d / 2, eta - 1 + d / 2)` (Lewandowski, Kurowicka and Joe 2009, J. Multivariate Analysis 100). A
+flat prior is improper and has no column, as brms does not sample it. They are random, as brms's (Stan's RNG) are: what is
+compared with brms is computed from given draws, and their distributions. Not offered, each refused naming the construct
+(D124): multivariate, non-linear, mixture, ordinal and categorical models, distributional formulas, shrinkage priors, `mo()`,
+`gp()`, `me()`, `mi()`, `cs()`, autocorrelation terms, `mm()`, `gr(by = )` and shared IDs, the D01 families' `alpha`, `beta`
+and `ndt`, and `center_predictors=False`.
+
+`ab.hypothesis(model, fit, hypotheses, prior=..., seed=None)` takes prior draws named as brms names them (`ab.prior_draws`'s,
+or brms's own `prior_draws()`) and gives each point hypothesis brms's Savage-Dickey evidence ratio, the posterior density of
+`left - right` at 0 over its prior density there, and `Post.Prob = Evid.Ratio / (1 + Evid.Ratio)` (for `Evid.Ratio = Inf`
+NaN, as R's `Inf / Inf`); a one-sided hypothesis is unchanged. The prior draws of `left - right` are the hypothesis evaluated
+on each coefficient's prior draws: its own column `b_<name>` if the frame has one, else `b`. Of a hypothesis on several
+parameters, each parameter's prior draws are permuted independently (brms pairs them through a random permutation, R's; here
+NumPy's, seeded by `seed`, so the ratio is brms's in distribution only, D125); of one parameter, nothing is permuted (brms's
+permutation moves only the ratio's last bit). A point hypothesis on `Intercept` (the raw-scale intercept) keeps NaN with a
+warning, as brms gives NA and warns ("Sampling from the prior of an overall intercept is not possible by default"; probed),
+and so does one on a coefficient without prior draws (a flat prior). Refused: prior draws that are not a frame or mapping of
+equal-length finite columns of at least two draws, a hypothesis that is not finite at the prior draws (brms stops there too),
+and a model with `center_predictors=False`.
+
+The density at the point is brms's `density_ratio(x, y, point)` (`autobayes.kde.density_ratio`, `density_at`), written from R's
+documentation of `density()`, `bw.nrd0()` and `spline()`, the published methods, and brms 2.23's and R 4.5's outputs on probe
+inputs (`tests/hypothesis_probes/probe_density_ratio.R`); none of their source is used:
+
+| part | definition | source |
+| --- | --- | --- |
+| bandwidth | `0.9 min(sd, IQR / 1.34) S^(-1/5)`, the SD with divisor `S - 1`, the quartiles R's type 7 formed as `(1 - h) x_j + h x_(j+1)`; a zero minimum replaced by the SD, else `\|x_1\|`, else 1 | `?bw.nrd0` (Silverman 1986, eq. 3.31); the quantile form and the fallbacks settled by probing |
+| estimate | Gaussian kernel; the draws binned linearly on 4096 cells from 4 bandwidths below the range to 4 above, convolved by FFT (on twice as many cells, no wrap-around) with the kernel at the cells' spacing, clipped at 0, interpolated linearly onto 4096 points spanning the range | `?density` (Silverman 1982, Algorithm AS 176; Jones and Lotwick 1984, AS R50); the extension, the kernel's spacing (R 4.4's grid) and the interpolation settled by probing |
+| range | the draws' smallest to largest value; below the draws `point - sd / 4` to the largest, above them the smallest to `point + sd / 4` | brms's outputs (the range `[point, max]` misses by 1e-6) |
+| at the point | the cubic spline through the 4096 values with Forsythe, Malcolm and Moler end conditions (the third derivative at each end that of the cubic through the four end points); every draw at the point: the estimate's value | `?spline` (method `"fmm"`; Forsythe, Malcolm and Moler 1977); not-a-knot ends and linear interpolation miss by 1e-10 and 1e-8 |
+
+It equals brms's `density_ratio()` on 276 probe points (2 to 4000 draws, ties, constant draws, skewed and heavy-tailed draws,
+scales from 1e-5 to 1e6; points inside the draws, at and next to their ends, just and far outside) to 1e-13 relative plus 1e-15
+of the estimate's peak, the FFT's round-off in both. Far in the draws' tails, where the estimate falls to that round-off
+(below about 1e-12 of its peak), brms's value and this one are both round-off and differ; `density_ratio` warns below 1e-10.
+Fewer than two draws and non-finite draws are refused (brms stops on both).
 
 ## `conditional_effects(model, fit, effects, resolution=100, prob=0.95)` (D06)
 
@@ -189,13 +266,23 @@ held fixed. `effects` names predictors of the population-level formula (one name
   brms's default `robust = TRUE` summarises them: `estimate__` the median, `se__` the MAD (`1.4826 median |e - median e|`),
   `lower__` and `upper__` the `(1 - prob) / 2` and `1 - (1 - prob) / 2` quantiles (R's type 7).
 
+An interaction effect `"a:b"` (E05) is two distinct population-level predictors with brms's default `int_conditions`: `a` on
+its grid as above and `b` at each of its levels (a categorical moderator, reference first) or at its mean minus its SD, its
+mean and its mean plus its SD (a numeric one, the SD with divisor `n - 1`); one row per pair with `b` varying fastest (`100 x
+3` rows for a numeric `a`). The columns are `a`, `b`, the response and the other variables as held, `cond__`, `effect1__`
+(`a`), `effect2__` (`b`'s level, or its value as brms labels it, R's `as.character(round(value, 2))`: `"1.6"`, `"0"` for
+-0.004, `"1e+05"`, R's rounding of a tie such as `round(0.005, 2) = 0`; the `b` column keeps the exact value) and the
+summaries. Any pair of the model's predictors is taken, numeric or categorical, in either order, whether or not the formula
+has their interaction (brms takes them too; probed in `tests/hypothesis_probes/brms-2.23.0-effects-grid.json`). Interactions
+of three predictors are refused, and so are effects naming the same pair twice, which brms drops with a warning (D127).
+
 Taken: the Gaussian, Student-t, Bernoulli, Poisson, negative binomial, Gamma, lognormal, Beta, zero-inflated and hurdle
 Poisson families, with categorical predictors, interactions, transforms (the grid is on the raw column: `xpos` for
 `log(xpos)`) and any group-level terms. Refused, naming the construct (D99): the binomial family (its grid needs trials),
 the cumulative and categorical families, mixtures, multivariate and non-linear models, and models with an offset, `mo()`,
 `gp()`, `me()`, `mi()`, an autocorrelation term, addition terms or a distributional formula: no frozen case records how brms
-holds them on the grid. Interaction effects (`"x:z"`), grouping factors as effects, brms's default of every effect, and its
-other arguments are not offered (D98).
+holds them on the grid. Grouping factors as effects, brms's default of every effect, and its other arguments
+(`int_conditions` among them) are not offered (D98).
 
 ## Verification
 
@@ -251,6 +338,28 @@ other arguments are not offered (D98).
   first, equal those recomputed from the log-likelihoods brms computed (`brms-2.23.0-weights.json`, recorded by
   `probe_brms_weights.R`); and the API's names, tie order, response warning and refusals.
 
+- E05: the same gate compares `ab.hypothesis` with the fixture's recorded prior draws (`prior=`) against brms's table, the
+  point hypotheses' Savage-Dickey `Evid.Ratio` and `Post.Prob` among them, `ab.prior_draws`'s columns with brms's
+  `prior_draws()` (`check_prior_draws`), and `ab.conditional_effects` of `"x:z"` and `"x:w"` (300 rows each, `effect2__`)
+  with brms's, on `gauss_hypothesis_prior_effects` (`y ~ x * z + x * w + (1 | g)`, Gaussian; `"x = 0"`, `"w = 0.5"`, `"x:zq =
+  0"`, `"x > 0"`) and `bernoulli_hypothesis_prior_effects` (the logit model; `"x = 0"`, `"zq = 0.5"`, `"x:w = 0"`, `"x <
+  0"`): the ratios to 2e-15. `check_loo_model_weights` compares `ab.loo_model_weights` and `ab.model_weights(...,
+  "stacking")` with brms's `loo_model_weights()` on `gauss_loo_compare_x_stacking`, gated (D126). Harness tests
+  (`tests/oracle/test_prior_effects_stacking_harness.py`) show a corrupted prior draw, prior-draw column name or count, ratio
+  or posterior probability, moderator value, `effect2__` label or column, the moderator's order, and a corrupted stacking
+  weight, model order, method or other model fail; with the park lifted the stacking case fails only on brms's weights.
+- `tests/test_prior_draws.py`: `density_at` and `density_ratio` equal brms's `density_ratio()` on the 276 probe points;
+  `ab.prior_draws`'s names equal brms's `prior_draws()` on the five probed fits, and brms's 1000 recorded draws of each column
+  and 20000 of `ab.prior_draws` follow the prior's distribution (one-sample Kolmogorov-Smirnov, p > 1e-3); brms's
+  `hypothesis()` tables of those fits under two seeds recomputed from their recorded draws (every one-parameter ratio to
+  1e-12, `Intercept`'s NA, the two-parameter ratio only finite: brms's moves with its seed); interaction grids equal brms's
+  on every probed pair order and type and six scales of the moderator, R's labels on 3313 values, and on every frozen case
+  `conditional_effects` takes with two predictors or more (20), both orders of its first pair; options and refusals.
+- `tests/test_loo_compare.py` (E05): `stacking_weights` meets the optimum's conditions to 1e-14 on loo's probe inputs and 200
+  random ones, its objective is never below loo's, loo's weights are within 4e-4 of it, `loo_model_weights()` is
+  `stacking_weights()` of the pointwise elpd (loo, to the last digit), and on the frozen stacking case it is within 2e-17 of
+  the 50-digit optimum while brms's weight is 1.044e-8 off; the park, and the stacking API with the park lifted.
+
 ## Divergences (docs/brms-parity/divergences.md)
 
 - D48: brms's further options are not offered: `newdata`, `re_formula`, `resp`, `ndraws`, `draw_ids` (log_lik);
@@ -262,8 +371,8 @@ other arguments are not offered (D98).
   is NaN, `ab.loo`'s the value of the same formula, computed as `sum_s (w_s p_s / E - w_s)^2`.
 - D51: `r_eff` for chains of fewer than about sixteen draws, and for some strongly autocorrelated chains of about fifty:
   loo's ESS (the posterior package's) and ArviZ's differ there.
-- D92: `model_weights`: brms's default `"stacking"`, `"bma"`, `"kfold"` and pseudo-BMA with the Bayesian bootstrap (brms's
-  default `BB = TRUE`) are not offered, and `weights` has no default.
+- D92: `model_weights`: `"bma"`, `"kfold"` and pseudo-BMA with the Bayesian bootstrap (brms's default `BB = TRUE`) are not
+  offered, and `weights` has no default; brms's default `"stacking"` is implemented and withheld (D126).
 - D93: `loo_compare` of PSIS-LOO and WAIC results together: loo 2.9.0 compares them without a warning (the table takes the
   first result's column names); refused here. `model_weights` also refuses models on different numbers of observations and
   warns when the responses differ, where brms's `model_weights` gave the weights without a warning on a probe with a
@@ -272,14 +381,23 @@ other arguments are not offered (D98).
   `model1`, ... as loo names an unnamed list) rather than brms's argument expressions, and the full table as a DataFrame where
   loo prints `elpd_diff` and `se_diff` only by default.
 - D95: `waic()` of a multivariate model is refused; brms computes it from the model's `log_lik()` (not probed here).
-- D96: a point hypothesis's `Evid.Ratio` and `Post.Prob` are always NaN: brms computes the Savage-Dickey density ratio
-  from prior draws (`sample_prior = "yes"`), which a fit here does not hold; without them brms's are NA too.
+- D96: a point hypothesis's `Evid.Ratio` and `Post.Prob` are NaN without prior draws, as brms's are NA; with prior draws
+  (`prior=`, E05) they are brms's Savage-Dickey ratio and its posterior probability.
 - D97: `hypothesis()` takes class `b` of the response formula, `alpha` and `robust`; not brms's `class`, `group`, `scope`
   or `seed`, a distributional formula's coefficients or the special terms' (class `bsp`), or R expressions beyond the
   parser's grammar.
-- D98: `conditional_effects()` takes named single-predictor effects, `resolution` and `prob`; not brms's default of every
-  effect, interaction effects, `conditions`, `int_conditions`, `re_formula`, `method`, `robust = FALSE`, spaghetti and
-  surface plots, `categorical`, `transform` or plots.
+- D98: `conditional_effects()` takes named effects of one predictor and (E05) two-way interactions with brms's default
+  `int_conditions`, `resolution` and `prob`; not brms's default of every effect, `conditions`, `int_conditions`,
+  `re_formula`, `method`, `robust = FALSE`, spaghetti and surface plots, `categorical`, `transform` or plots.
+- D124: `prior_draws()` covers the intercept, `b`, the family's `sigma`, `shape`, `phi`, `nu`, `zi`, `hu`, `sd` and `cor`;
+  the constructs listed above are refused; a slope group's equal SD priors are named as brms's group-wide prior; the draws
+  are independent draws from the model's priors, not Stan's.
+- D125: a Savage-Dickey ratio of several parameters pairs their prior draws through NumPy's permutation, not R's, so it is
+  brms's in distribution only; far-tail densities are round-off in both and differ (warned); `density_ratio`'s `n` and
+  density options are not offered.
+- D126: stacking weights: the exact optimum, where brms's are loo's `constrOptim` optimum (1.044e-8 off on the frozen case,
+  up to 3.7e-4 on loo's probes); implemented and withheld until Andrew decides how they are certified.
+- D127: interaction effects naming the same pair twice are refused, where brms drops the second with a warning.
 - D99: both refuse multivariate and non-linear models, mixtures and the cumulative and categorical families;
   `conditional_effects()` also the binomial family, offsets, `mo()`, `gp()`, `me()`, `mi()`, autocorrelation, addition terms
   and distributional formulas.

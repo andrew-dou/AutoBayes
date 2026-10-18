@@ -1743,7 +1743,7 @@
     "D05_waic_loo_compare",
     "D06_hypothesis_conditional_effects"
    ],
-   "status": "implementing",
+   "status": "gates_green",
    "summary": "prior draws and Savage-Dickey evidence ratios in hypothesis(), interaction conditional_effects(), stacking weights",
    "pr": null,
    "attempts": 1,
@@ -1757,6 +1757,22 @@
      "gauss_hypothesis_prior_effects",
      "gauss_loo_compare_x_stacking"
     ]
+   },
+   "gates": {
+    "sha": "04f642d49a4b",
+    "dirty_tree": false,
+    "base": "origin/main",
+    "when": "2026-10-18T21:34Z",
+    "results": {
+     "immutability": {
+      "status": "pass",
+      "seconds": 0.0
+     },
+     "oracle": {
+      "status": "pass",
+      "seconds": 415.2
+     }
+    }
    }
   },
   {

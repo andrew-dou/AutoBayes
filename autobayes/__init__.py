@@ -77,6 +77,7 @@ from autobayes.post_processing import Loo, bayes_R2, log_lik, loo
 from autobayes.post_processing import Waic, loo_compare, model_weights, waic   # D05, docs/post-processing.md
 from autobayes.hypothesis import Hypothesis, hypothesis                       # D06, docs/post-processing.md
 from autobayes.conditional_effects import conditional_effects                # D06
+from autobayes.prior_draws import prior_draws                                # E05: brms's sample_prior draws, docs/post-processing.md
 from autobayes.diagnostics import panel
 from autobayes.session import compare_records, environment, fit_record, format_comparison, format_environment
 from autobayes.nonlinear import NonlinearModel, NonlinearSpec        # non-linear formulas, nl=True (C02, docs/nonlinear.md)
@@ -105,4 +106,5 @@ __all__ += ["Horseshoe", "R2D2"]                       # D07
 __all__ += ["acat", "cratio", "sratio"]                             # D04
 __all__ += ["hurdle_gamma", "hurdle_lognormal", "hurdle_negbinomial", "zero_inflated_beta", "zero_inflated_binomial",
             "zero_inflated_negbinomial"]   # D03
+__all__ += ["prior_draws"]                             # E05
 __version__ = "0.8.0"

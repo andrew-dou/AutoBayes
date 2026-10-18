@@ -169,16 +169,23 @@ of very short chains differ (D49-D51); see [post-processing](post-processing.md)
 loo 2.9.0's comparison table of several models' `ab.loo()` or `ab.waic()` results (best first, `elpd_diff`, `se_diff` and each
 model's estimates), and `ab.model_weights(results, weights)` brms's Akaike weights by `"loo"` or `"waic"` and pseudo-BMA weights
 with `BB=False`; verified against `gauss_loo_compare_x` and `gauss_loo_compare_xw` (gate `check_post`) and against loo's and
-brms's outputs on recorded probes; stacking, BMA, K-fold, the Bayesian bootstrap, mixed criteria and a multivariate model's
-WAIC are refused (D92-D95).
+brms's outputs on recorded probes; BMA, K-fold, the Bayesian bootstrap, mixed criteria and a multivariate model's WAIC are
+refused (D92-D95), and stacking is implemented (the exact optimum, `post_processing.stacking_weights`) and withheld: brms's
+weights on `gauss_loo_compare_x_stacking` are loo's optimiser's, 1.04e-8 off the optimum (D126).
 `ab.hypothesis(model, fit, hypotheses)` (D06, brms's `hypothesis()`) tests point and one-sided hypotheses on the
 population-level coefficients by brms's names (brms's table: Estimate, Est.Error, the interval, Evid.Ratio, Post.Prob, Star,
 and the draws), reading the text with a parser of its own, never evaluating it; `ab.conditional_effects(model, fit, effects)`
 (brms's `conditional_effects()` with its defaults) gives each predictor's grid with the others at their means and reference
 levels, the group-level effects left out, and the median, MAD and 95 % interval of the expected response; verified against
 `gauss_hypothesis_effects` and `bernoulli_hypothesis_effects` (gate `check_post`) and against brms's `hypothesis()` on
-recorded draws; brms's Savage-Dickey ratio of a point hypothesis, its other arguments and the models no case verifies are
-not offered (D96-D99). `ab.log_lik`, `ab.bayes_R2` and `ab.loo` refuse a multivariate model naming it.
+recorded draws; its other arguments and the models no case verifies are not offered (D97-D99). `ab.log_lik`, `ab.bayes_R2`
+and `ab.loo` refuse a multivariate model naming it.
+E05: `ab.prior_draws(model, draws, seed)` draws from the model's priors with brms's `prior_draws()` columns (`sample_prior =
+"yes"`; D124), and `ab.hypothesis(..., prior=...)` gives each point hypothesis brms's Savage-Dickey `Evid.Ratio` and
+`Post.Prob` (brms's `density_ratio()`, `autobayes.kde`; D96, D125); `ab.conditional_effects` takes two-way interaction effects
+`"x:z"` with brms's default `int_conditions` (D98, D127); verified against `gauss_hypothesis_prior_effects` and
+`bernoulli_hypothesis_prior_effects` (gate `check_post`) and against brms's and R's outputs on recorded probes
+(`tests/hypothesis_probes`).
 
 Multivariate Gaussian models (C01, brms's `bf(mvbind(y, y2) ~ ...) + set_rescor()`): `ab.gaussian("mvbind(y, y2) ~ x + (1 | g)",
 data, ab.Priors(resp={"y": {...}, "y2": {...}}, rescor=ab.LKJ(eta)), rescor=True)` builds one univariate model per response

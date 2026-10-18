@@ -12,11 +12,20 @@ is summarised over the draws as brms's default ``robust = TRUE`` summarises it (
 the median, ``se__`` the MAD (``1.4826 median |e - median e|``), ``lower__`` and ``upper__`` the ``(1 - prob) / 2`` and
 ``1 - (1 - prob) / 2`` quantiles (R's type 7).
 
+An interaction effect ``"a:b"`` (E05; frozen cases ``gauss_hypothesis_prior_effects`` and ``bernoulli_hypothesis_prior_effects``,
+grids probed in ``tests/hypothesis_probes/brms-2.23.0-effects-grid.json``) is two distinct population-level predictors, with
+brms's default ``int_conditions``: ``a`` on its grid as above, ``b`` at each of its levels (a categorical moderator) or at
+its mean minus its SD, its mean and its mean plus its SD (a numeric one, the SD with divisor ``n - 1``); one row per pair,
+``b`` varying fastest. The table's columns are ``a``, ``b``, the response and the other variables as held, then ``cond__``,
+``effect1__`` (``a``), ``effect2__`` (``b``'s level, or the numeric value as brms labels it: R's
+``as.character(round(value, 2))``, so ``"1.6"``, ``"0"``, ``"1e+05"``; ``b``'s column keeps the exact value) and the
+summaries. brms accepts any pair of the model's variables, whether or not the formula has their interaction.
+
 Only what the frozen cases and the prediction gates verify is offered: models whose expected response is one value per row
 (not the binomial family, whose grid needs trials, nor the cumulative, categorical or mixture families), without offsets,
 ``mo()``, ``gp()``, ``me()``, ``mi()``, autocorrelation, addition terms or distributional formulas; anything else is refused
 naming the construct (divergence D99). brms's other arguments (``conditions``, ``int_conditions``, ``re_formula``, ``method``,
-``robust = FALSE``, interaction effects such as ``"x:z"``, plots) are not offered (divergence D98).
+``robust = FALSE``, interactions of three predictors, surface plots, plots) are not offered (divergence D98).
 """
 from __future__ import annotations
 
@@ -61,20 +70,74 @@ def _check_effects(model, effects) -> tuple[str, ...]:
     if isinstance(effects, str):
         effects = (effects,)
     if not isinstance(effects, Sequence) or not effects or not all(isinstance(e, str) for e in effects):
-        raise ValueError("effects must be a predictor's name or a non-empty list of them, like ['x', 'z'] (brms's default of "
-                         "every main effect and two-way interaction is not offered; divergence D98)")
+        raise ValueError("effects must be a predictor's name, an interaction of two ('x:z'), or a non-empty list of them, like "
+                         "['x', 'x:z'] (brms's default of every main effect and two-way interaction is not offered; divergence D98)")
     groups = {c for t in s.group_terms for c in t.operands}
     for e in effects:
-        if ":" in e:
-            raise ValueError(f"the interaction effect {e!r} is not offered: name one predictor per effect (divergence D98)")
-        if e in groups and e not in s.pop_columns:
-            raise ValueError(f"{e!r} is a grouping factor; conditional_effects() leaves the group-level effects out (brms's "
-                             "re_formula = NA) and takes the population-level predictors only (divergence D98)")
-        if e not in s.pop_columns:
-            raise ValueError(f"{e!r} is not a predictor of the population-level formula; its predictors are {list(s.pop_columns)}")
-    if len(set(effects)) != len(effects):
-        raise ValueError(f"effects {list(effects)} name a predictor twice")
+        parts = e.split(":")
+        if len(parts) > 2:
+            raise ValueError(f"the effect {e!r} interacts {len(parts)} predictors; brms's conditional_effects() takes one or two "
+                             "(divergence D98)")
+        for v in parts:
+            if v in groups and v not in s.pop_columns:
+                raise ValueError(f"{v!r} is a grouping factor; conditional_effects() leaves the group-level effects out (brms's "
+                                 "re_formula = NA) and takes the population-level predictors only (divergence D98)")
+            if v not in s.pop_columns:
+                raise ValueError(f"{v!r} is not a predictor of the population-level formula; its predictors are {list(s.pop_columns)}")
+        if len(parts) == 2 and parts[0] == parts[1]:
+            raise ValueError(f"the interaction effect {e!r} names {parts[0]!r} twice")
+    keys = [frozenset(e.split(":")) for e in effects]
+    repeated = [k for i, k in enumerate(keys) if k in keys[:i]]
+    if repeated:
+        if len(repeated[0]) == 1:
+            raise ValueError(f"effects {list(effects)} name a predictor twice")
+        raise ValueError(f"effects {list(effects)} name a pair of predictors twice (brms drops the repeat with a warning; "
+                         "divergence D98)")
     return tuple(effects)
+
+
+def r_round(value: float, digits: int = 2) -> float:
+    """R's ``round(value, digits)`` as its outputs show it (``tests/hypothesis_probes/brms-2.23.0-effects-grid.json``, 3313
+    values, ties and near-ties among them): of the two candidates ``floor(value 10^d) / 10^d`` and ``ceil(value 10^d) /
+    10^d``, the one closer to ``value`` in double arithmetic, the even one when they are equally close (so ``round(0.005, 2)``
+    is 0, where the correctly rounded value is 0.01)."""
+    p = 10.0 ** digits
+    lo_i, hi_i = math.floor(value * p), math.ceil(value * p)
+    lo, hi = lo_i / p, hi_i / p
+    if lo_i == hi_i or value - lo < hi - value:
+        return lo
+    if hi - value < value - lo:
+        return hi
+    return lo if lo_i % 2 == 0 else hi
+
+
+def r_number_label(value: float) -> str:
+    """R's ``as.character(round(value, 2))``: the value rounded to two decimals as R rounds (``r_round``), written with at
+    most 15 significant digits, in fixed notation unless the scientific one is shorter (R's rule with ``scipen = 0``:
+    ``1e+05``, ``123456.79``), and negative zero as ``0``."""
+    r = r_round(float(value), 2)
+    if r == 0:
+        return "0"
+    digits = next(k for k in range(1, 16) if float(f"{r:.{k - 1}e}") == r) if float(f"{r:.14e}") == r else 15
+    mantissa, exponent = f"{r:.{digits - 1}e}".split("e")
+    exponent = int(exponent)
+    scientific = f"{mantissa}e{'-' if exponent < 0 else '+'}{abs(exponent):02d}"
+    decimals = max(0, digits - 1 - exponent)
+    fixed = f"{r:.{decimals}f}"
+    return fixed if len(fixed) <= len(scientific) else scientific
+
+
+def _moderator(model, column: str):
+    """brms's default ``int_conditions`` of a moderator: its levels (categorical), or its mean minus its SD, its mean and
+    its mean plus its SD (numeric, the SD with divisor ``n - 1``), with brms's labels for ``effect2__``."""
+    categoricals = {c.name: c for c in model.spec.categoricals}
+    if column in categoricals:
+        levels = list(categoricals[column].categories)
+        return levels, [str(v) for v in levels]
+    values = np.asarray(model.data[column], dtype=float)
+    mean, sd = _mean(values), float(np.std(values, ddof=1))
+    grid = [mean - sd, mean, mean + sd]
+    return grid, [r_number_label(v) for v in grid]
 
 
 def _grid_value(model, column: str):
@@ -88,9 +151,10 @@ def _grid_value(model, column: str):
 
 def conditional_effects(model, fit_result, effects, *, resolution: int = 100, prob: float = 0.95) -> dict[str, pd.DataFrame]:
     """brms's ``conditional_effects(fit, effects)`` with its defaults (module docstring): for each effect, a predictor of
-    the population-level formula, a ``pandas.DataFrame`` with brms's columns: the effect, the response and every other
-    variable of the model (the grouping factors missing, ``None``) as held on the grid, then ``cond__`` (``"1"``),
-    ``effect1__`` (the effect's grid values), ``estimate__``, ``se__``, ``lower__`` and ``upper__``. ``fit_result`` is a
+    the population-level formula or an interaction of two (``"x:z"``, E05), a ``pandas.DataFrame`` with brms's columns: the
+    effect's predictors, the response and every other variable of the model (the grouping factors missing, ``None``) as held
+    on the grid, then ``cond__`` (``"1"``), ``effect1__`` (the effect's grid values), for an interaction ``effect2__`` (the
+    moderator's levels or labelled values), ``estimate__``, ``se__``, ``lower__`` and ``upper__``. ``fit_result`` is a
     ``FitResult`` or its ``InferenceData``, checked against the model as ``predict()`` checks it. Returns a dict keyed by
     effect, in the order given."""
     from autobayes.predict import predict
@@ -111,22 +175,30 @@ def conditional_effects(model, fit_result, effects, *, resolution: int = 100, pr
     probs = ((1.0 - prob) / 2.0, 1.0 - (1.0 - prob) / 2.0)
     out = {}
     for effect in effects:
-        if effect in categoricals:
-            grid = list(categoricals[effect].categories)
+        first, *second = effect.split(":")
+        if first in categoricals:
+            grid = list(categoricals[first].categories)
         else:
-            values = np.asarray(model.data[effect], dtype=float)
-            grid = np.linspace(values.min(), values.max(), int(resolution))
+            values = np.asarray(model.data[first], dtype=float)
+            grid = list(np.linspace(values.min(), values.max(), int(resolution)))
+        if second:                                                   # E05: an interaction, the moderator fastest
+            moderator, labels = _moderator(model, second[0])
+            grid, mod_values, mod_labels = ([v for v in grid for _ in moderator], moderator * len(grid), labels * len(grid))
         n = len(grid)
-        newdata = pd.DataFrame({c: (grid if c == effect else [held[c]] * n) for c in s.pop_columns})
+        varying = {first: grid, **({second[0]: mod_values} if second else {})}
+        newdata = pd.DataFrame({c: (varying[c] if c in varying else [held[c]] * n) for c in s.pop_columns})
         ds = predict(model, fit_result, newdata=newdata, kind="mean", include_group_effects=False)
         draws = ds[model.names["mean"]].transpose("chain", "draw", "__obs__").to_numpy().reshape(-1, n)
         estimate = np.median(draws, axis=0)
         se = MAD_CONSTANT * np.median(np.abs(draws - estimate), axis=0)
         lower, upper = np.quantile(draws, probs, axis=0)
-        columns = {effect: grid}
-        columns.update({c: [held[c]] * n for c in variables if c != effect})
-        columns.update({"cond__": ["1"] * n, "effect1__": grid, "estimate__": estimate, "se__": se, "lower__": lower,
-                        "upper__": upper})
+        grid_column = grid if first in categoricals else np.asarray(grid, dtype=float)
+        columns = {first: grid_column, **({second[0]: mod_values} if second else {})}
+        columns.update({c: [held[c]] * n for c in variables if c not in varying})
+        columns.update({"cond__": ["1"] * n, "effect1__": grid_column})
+        if second:
+            columns["effect2__"] = mod_labels
+        columns.update({"estimate__": estimate, "se__": se, "lower__": lower, "upper__": upper})
         table = pd.DataFrame(columns)
         table.attrs["fit_binding_status"] = ds.attrs.get("fit_binding_status", "")
         out[effect] = table
