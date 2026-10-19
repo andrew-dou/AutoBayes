@@ -1879,7 +1879,7 @@
     "D133",
     "D134"
    ],
-   "next_action": "cumulative cloglog withheld: brms log density inexact on cumulative_cloglog (5.9e-7); needs a new case on a narrower point box",
+   "next_action": "complete: cumulative cloglog offered since #79 (accepted on cumulative_cloglog_narrow; cumulative_cloglog keeps G2 as expected failures)",
    "reserved_divergences": "D132-D135",
    "fixtures": {
     "pr": 70,
