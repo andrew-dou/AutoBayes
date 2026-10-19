@@ -1,0 +1,166 @@
+\documentclass[11pt]{article}
+\usepackage[margin=1in]{geometry}
+\usepackage[T1]{fontenc}
+\usepackage{amsmath,amssymb,mathtools}
+\usepackage{booktabs,array,enumitem,caption}
+\usepackage{xcolor,hyperref}
+\sloppy
+\hypersetup{colorlinks=true, linkcolor=blue!50!black, urlcolor=blue!50!black}
+\newcommand{\code}[1]{\texttt{#1}}
+\newcommand{\file}[1]{\texttt{#1}}
+\setlist{nosep, leftmargin=1.4em}
+
+\title{AutoBayes brms-parity loop: Tier E review}
+\author{Status at the Tier E boundary, prepared for Andrew}
+\date{19 October 2026}
+
+\begin{document}
+\maketitle
+
+\noindent This is the Tier E boundary review. You asked for three things on 17 October: continue the loop, benchmark brms
+against AutoBayes, and rewrite the README. The benchmark (\#68) showed AutoBayes 2.3 to 12.7 times faster end to end. The
+README now presents the library (\#69), with your earlier text moved verbatim to \file{docs/agent-scaffold.md} and
+\file{docs/milestones.md}. All six Tier E features are on \code{main}, plus three follow-ups (\#72, \#79 and
+\#78). Every merge was verified locally as \code{andrew-dou}; hosted CI is still refused for billing.
+Section~\ref{sec:brms} lists what brms gets wrong, and Section~\ref{sec:decisions} is what needs you.
+
+\section{What was built}
+
+Table~\ref{tab:built} lists the features.
+
+\begin{table}[tbp]
+\small
+\begin{center}\begin{tabular}{@{}>{\raggedright\arraybackslash}p{0.16\textwidth}>{\raggedright\arraybackslash}p{0.07\textwidth}>{\raggedright\arraybackslash}p{0.47\textwidth}>{\raggedright\arraybackslash}p{0.14\textwidth}@{}}
+\toprule
+Feature & PR & What a user can now write & Diverg. \\
+\midrule
+E06 links & \#71, \#79 & \code{link=} on \code{ab.poisson} (\code{"sqrt"}), \code{ab.negbinomial} (\code{"identity"}), \code{ab.gamma} (\code{"inverse"}, \code{"identity"}), \code{ab.beta} (\code{"probit"}, \code{"cloglog"}), \code{ab.cumulative} (\code{"cloglog"}) & D132--D134 \\
+E05 prior draws, effects & \#73 & \code{ab.prior\_draws(model)}; Savage--Dickey evidence ratios in \code{ab.hypothesis(..., prior=)}; \code{ab.conditional\_effects(m, fit, ["x:z"])}; stacking built, withheld & D124--D127 \\
+E01 bounded, hurdle & \#74 & \code{ab.zero\_one\_inflated\_beta}, \code{ab.zero\_inflated\_beta\_binomial}, \code{ab.xbeta}, \code{ab.hurdle\_cumulative} & D108--D111 \\
+E02 continuous & \#75 & \code{ab.inverse\_gaussian}, \code{ab.von\_mises}, \code{ab.asym\_laplace} (quantile learned or fixed), \code{ab.frechet}, \code{ab.gen\_extreme\_value} & D112--D115 \\
+E03 contexts & \#76 & \code{["y \textasciitilde{} x", "shape \textasciitilde{} z"]} for the Weibull; formulas on \code{phi}, \code{zi}, \code{hu}, \code{alpha}; \code{weights()} for the Weibull and beta-binomial & D116--D118 \\
+E04 \code{cens()}, \code{trunc()} & \#77, \#78 & \code{cens(c)} and interval \code{cens(c, y2)} for the Weibull, lognormal and Gamma families; \code{trunc(ub = b)} for counts & D120--D123 \\
+\bottomrule
+\end{tabular}\end{center}
+\caption{\small The Tier E features. \#70 froze their 33 brms cases; \#72 fixed \code{log\_lik} for the cloglog link.}\label{tab:built}
+\end{table}
+
+\noindent AutoBayes now offers 39 of the 45 response families brms 2.23 documents; Tier E added ten. The six still missing
+are the multi-category families (\code{multinomial}, \code{dirichlet}, \code{dirichlet\_multinomial},
+\code{logistic\_normal}), \code{cox} and \code{wiener}.
+
+\paragraph{How close.} I measured with the gates' own comparisons on \code{main} after the last feature merge
+(\code{4bac77b}). All 166 ungated cases pass, 33 of them from Tier E. Over the Tier E cases the worst relative errors are:
+\begin{itemize}
+\item $2.5\times10^{-9}$ in G2, the gradients in a shape or precision computed through PyTensor's digamma;
+\item $1.0\times10^{-15}$ in G3;
+\item $1.1\times10^{-14}$ in predictions (\code{gen\_extreme\_value\_varint});
+\item $4.4\times10^{-15}$ between the JAX and PyTensor densities;
+\item $2.9\times10^{-13}$ in the post-processing tables (\code{weibull\_censored\_interval\_post}).
+\end{itemize}
+Over all cases the worst G2 error is still Tier C's $7.2\times10^{-9}$. Everything is inside the unchanged tolerances. The
+full non-sampling suite on that \code{main} passed: 4{,}690 tests, no failure. \code{oracle/regen.py check --all}
+regenerated all 171 frozen fixtures from R and found every one identical.
+
+\section{What brms gets wrong}
+\label{sec:brms}
+
+Tier E found more places where brms's own numbers are not the model's. Each is documented with numbers in its divergence
+row.
+\begin{itemize}
+\item \textbf{Truncated count means (D121).} With \code{trunc(lb = 1)}, brms's likelihood normalises by $P(Y \ge 1)$, but
+  its \code{posterior\_epred} returns $E[Y \mid Y \ge 2]$, summed over a finite support. At one frozen point brms gives
+  106.2, where $E[Y \mid Y \ge 1]$ is 134.0. E04 found this and checked it against the fixture's draws. AutoBayes computes
+  the correct mean, and that feature is withheld pending your decision.
+\item \textbf{Interval-censored Gamma gradient (D120).} brms's gradient in log(shape) is off by up to $2.8\times10^{-5}$
+  relative. AutoBayes now accepts this case against a 50-digit reference of the model: \code{oracle/reference.py} gained
+  the regularized incomplete gamma functions in decimal arithmetic.
+\item \textbf{Cumulative cloglog (D132).} brms forms the last category's probability as $1 - \mathrm{inv\_cloglog}(d)$ by
+  subtraction, which loses every digit of an improbable category. Its log density is off by $5.9\times10^{-7}$ at one
+  frozen point. A log density may not fall back to a reference, so the link is accepted on a second, narrower case where
+  brms is exact. The original case stays frozen and checked, with only its two log-density gates expected to fail; the
+  test harness gained that per-gate option.
+\item \textbf{Stan's interval tails (E04's probes).} Stan's Weibull interval \code{(5, 6]} at shape 3 gives $-\infty$
+  where the mass is $e^{-125}$. Its Gamma(2, 1) interval \code{(40, 50]} gives $-36.04$ where the value is $-36.29$.
+  AutoBayes takes every interval from the tail it lies in.
+\item \textbf{Smaller ones.}
+  \begin{itemize}
+  \item Stan's von Mises density overflows above $\kappa \approx 714$ (D113).
+  \item brms's generalized extreme value mean is finite for $\xi \ge 1$, where the mean does not exist (D114).
+  \item loo's stacking weights stop $1.0\times10^{-8}$ short of the optimum (D126); see the decisions.
+  \end{itemize}
+\end{itemize}
+
+\section{What combining the features found}
+
+\begin{itemize}
+\item \textbf{A silent \code{log\_lik} error (D123).} Before E04, \code{ab.log\_lik}, and therefore \code{loo} and
+  \code{waic}, returned the uncensored, untruncated density even for the Gaussian family's \code{cens()} and
+  \code{trunc()} models. It now applies both.
+\item \textbf{A \code{KeyError} on cloglog models.} \code{ab.log\_lik} raised \code{KeyError: 'cloglog'} on every Bernoulli and
+  binomial cloglog model. E06's agent spotted it by reading the code; \#72 fixed it.
+\item \textbf{Shared parameter fields.} E01 and E02 both added a \code{kappa} prior field (xbeta's and the von Mises') and a
+  parameter support on $(0, 1)$. They were merged into one of each, not duplicated.
+\item \textbf{Untested pairings, checked by hand.} E03 gave the Weibull a shape formula and \code{weights()}, and E04 gave it
+  \code{cens()}. No frozen case covers either pair. Both match SciPy's censored Weibull row by row to $4\times10^{-16}$,
+  and that check is now a test.
+\item \textbf{Two mistakes of mine, caught before merging.} A test helper of mine shadowed one of E04's. And my check
+  scripts did not propagate pytest's exit status through \code{tail}, so a run with 7 failures reported success. I read
+  the counts, fixed both, and every check script now sets \code{pipefail}.
+\item \textbf{A network outage.} It stopped all four wave-1 agents mid-work. I resumed each from its own context, and none
+  lost work.
+\end{itemize}
+
+\section{How the claims were checked, and their limits}
+
+\begin{itemize}
+\item \textbf{Per feature.} The gate tool ran on the tree that merged, and the full suite ran on it or on the stack it
+  merged with. The adapter and gate changes were read for weakening: all were extensions or stricter. Every earlier case
+  model was unchanged.
+\item \textbf{Exceptions.} Two merges were verified by re-running only the test files concerned, not the whole suite:
+  \#72, a one-entry fix, and E04's two test-only fixes. The full suite on \code{main} afterwards passed.
+\item \textbf{Limits.} Nothing in the loop samples, so no Tier E model has been fitted beyond the benchmark's ten.
+  \code{conditional\_effects} is checked against brms only on its frozen cases; elsewhere it is checked for consistency
+  with \code{predict()}.
+\end{itemize}
+
+\section{Process and cost}
+
+Agent tokens reported:
+\begin{itemize}
+\item fixtures 0.41M;
+\item E02 0.82M, E01 0.78M, E03 0.73M, E04 0.65M, E06 0.59M, E05 0.57M;
+\item about 4.6M in all.
+\end{itemize}
+The rebases, conflict resolution, both follow-ups and both 50-digit references were mine. The suite lock kept one full
+suite on the machine at a time. That made the merge queue slower, at about 40 minutes per suite, but no run was
+distorted by another.
+
+\section{Decisions}
+\label{sec:decisions}
+
+\begin{enumerate}
+\item \textbf{Stacking weights (D126).} Should two-reference acceptance cover them? brms's weights are $1.0\times10^{-8}$
+  off the exact optimum, against the $10^{-9}$ prediction tolerance, because loo's optimiser stops there. Yes extends the P6
+  contract to \code{model\_weights}; no keeps stacking withheld.
+\item \textbf{Truncated count lower bounds (D121).} I recommend keeping the brms behaviour as a documented divergence and
+  offering the correct mean. The alternative is accepting it against a reference, but this is a brms error in what it
+  computes, not rounding.
+\item \textbf{Reporting brms bugs.} The truncated count mean (D121) and the hurdle negative binomial draws (D86) look like
+  brms bugs. They would go out under your account; I can draft the reports.
+\item \textbf{Tier F.} Candidates, in the order I would take them:
+  \begin{enumerate}
+  \item[(a)] the multi-category families;
+  \item[(b)] the correlation structures \code{car}, \code{sar}, \code{fcor}, \code{unstr} and \code{cosy};
+  \item[(c)] a first real fit of each family on the GPU or the cluster (needs your approval for compute);
+  \item[(d)] splines, once you decide the licensing.
+  \end{enumerate}
+\item \textbf{Still open from earlier tiers.}
+  \begin{itemize}
+  \item Splines licensing.
+  \item CI billing.
+  \item The ArviZ \file{NOTICE}.
+  \end{itemize}
+\end{enumerate}
+
+\end{document}
