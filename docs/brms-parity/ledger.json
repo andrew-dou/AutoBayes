@@ -1636,12 +1636,17 @@
     "D03_more_zero_inflated_hurdle",
     "D04_more_ordinal"
    ],
-   "status": "gates_green",
+   "status": "merged",
    "summary": "zero_one_inflated_beta, zero_inflated_beta_binomial, hurdle_cumulative, xbeta",
-   "pr": null,
+   "pr": 74,
    "attempts": 0,
-   "divergences": [],
-   "next_action": "implementation",
+   "divergences": [
+    "D108",
+    "D109",
+    "D110",
+    "D111"
+   ],
+   "next_action": "other links, auxiliary formulas, cens/trunc, special and autocorrelation terms, mv/nl/mixture not offered (D108-D111)",
    "reserved_divergences": "D108-D111",
    "fixtures": {
     "pr": 70,
@@ -1759,12 +1764,17 @@
     "D05_waic_loo_compare",
     "D06_hypothesis_conditional_effects"
    ],
-   "status": "gates_green",
+   "status": "merged",
    "summary": "prior draws and Savage-Dickey evidence ratios in hypothesis(), interaction conditional_effects(), stacking weights",
-   "pr": null,
+   "pr": 73,
    "attempts": 1,
-   "divergences": [],
-   "next_action": "agent (opus), wave E1",
+   "divergences": [
+    "D124",
+    "D125",
+    "D126",
+    "D127"
+   ],
+   "next_action": "stacking implemented but withheld: brms/loo weights 1.04e-8 off the exact optimum (tolerance 1e-9); P6 for weights is Andrew's decision",
    "reserved_divergences": "D124-D127",
    "fixtures": {
     "pr": 70,
