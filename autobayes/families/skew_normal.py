@@ -7,15 +7,17 @@ brms parameterises Azzalini's skew normal ``SN(xi, omega, alpha)`` by its mean a
 ``likelihoods.skew_normal_family`` (its own density, ``log 2 - log omega + log phi(z) + log Phi(alpha z)``, with a stable
 ``log Phi``); ``sigma`` takes ``Priors(sigma=...)`` (sampled as ``sigma_log__``) and ``alpha`` ``Priors(alpha=...)``, a
 location prior (brms class ``alpha``, default ``normal(0, 4)``; sampled as it is). Checked against brms in the oracle case
-``skew_normal_varint``, not assumed. No distributional formula on ``sigma`` or ``alpha`` and no ``weights()``: no frozen case
-verifies them (D79).
+``skew_normal_varint``, not assumed. E03 (docs/contexts-newer-families.md): ``alpha`` takes a formula of its own under brms's
+identity link (``["y ~ x", "alpha ~ z"]``, one skewness per row, its intercept's default prior ``normal(0, 4)``;
+``skew_normal_distributional_alpha``); no distributional formula on ``sigma`` and no ``weights()``: no frozen case verifies them
+(D79).
 """
 from __future__ import annotations
 
 import numpy as np
 
-from autobayes.families.spec import (NO_FIXED_PARAMETERS, STANDARD_PREDICTION_KINDS, ExtraParameter, FamilySpec, auxiliary,
-                                     extra_draws, scale_line)
+from autobayes.families.spec import (NO_FIXED_PARAMETERS, STANDARD_PREDICTION_KINDS, DistributionalFormula, ExtraParameter,
+                                     FamilySpec, auxiliary, extra_draws, is_distributional, parameter_symbol, scale_line)
 from autobayes.formula import validate_numeric_response
 from autobayes.priors import HalfStudentT, Normal
 
@@ -49,6 +51,13 @@ def _log_likelihood(model, post, eta):
 
 
 def _likelihood_lines(model) -> list[str]:
+    if is_distributional(model, "alpha"):                          # E03: one skewness per row, from alpha's own formula
+        a = parameter_symbol(model, "alpha")
+        return [scale_line(model), ALPHA.prior_line(model), "", "Likelihood",
+                f"  y_i ~ SkewNormal(mean mu_i, SD sigma, skewness {a}): Azzalini's SN(xi_i, omega_i, {a}) with",
+                f"  delta_i = {a} / sqrt(1 + {a}^2), omega_i = sigma / sqrt(1 - 2 delta_i^2 / pi), xi_i = mu_i - omega_i delta_i sqrt(2 / pi);",
+                f"  log f(y_i) = log 2 - log omega_i + log phi(z_i) + log Phi({a} z_i), z_i = (y_i - xi_i) / omega_i (brms's skew_normal).",
+                f"  sigma is the SD of y, sampled as log(sigma); {a} = 0 is the Normal; {a} is its formula's linear predictor (above)."]
     return [scale_line(model), ALPHA.prior_line(model), "", "Likelihood",
             "  y_i ~ SkewNormal(mean mu_i, SD sigma, skewness alpha): Azzalini's SN(xi_i, omega, alpha) with",
             "  delta = alpha / sqrt(1 + alpha^2), omega = sigma / sqrt(1 - 2 delta^2 / pi), xi_i = mu_i - omega delta sqrt(2 / pi);",
@@ -80,4 +89,6 @@ SKEW_NORMAL = FamilySpec(
     default_scale_prior=lambda scale: HalfStudentT(3, scale),       # brms sigma: student_t(3, 0, scale), lb 0
     extra_parameters=(ALPHA,),                                      # D01: brms's alpha, default normal(0, 4)
     log_likelihood=_log_likelihood,                                 # C07: log_lik(), checked against the model's own density
+    # E03: alpha ~ z under brms's identity link (skew_normal_distributional_alpha); its intercept's default normal(0, 4)
+    distributional_formulas=(DistributionalFormula("alpha", "identity", lambda: Normal(0, 4)),),
 )

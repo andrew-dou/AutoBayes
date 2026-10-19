@@ -103,6 +103,11 @@ are extra parameters as D01's are; the generalized extreme value family's extra 
 brms's `posterior_epred(dpar = "xi")` (`derived_draws`) for the draws `predict()` reads. A fixed quantile (brms's
 `bf(quantile = p)`) is no parameter: G1 compares it with brms's Stan data.
 
+E03: a formula on a family's zero-inflation or hurdle probability or extra parameter (`zi ~ z`, `hu ~ z`, the skew normal's
+`alpha ~ z`; `FamilySpec.distributional_formulas`) is matched as B01's (`X_zi`, `Intercept_zi`, `b_zi`, ...): its intercept and
+coefficients are handed to `value_point` as `zi=`, `hu=` or `alpha=`, and brms's `X_<p>` of any family parameter without a
+formula in the model is a mismatch.
+
 D07: under a shrinkage prior on b (brms's `horseshoe()` or `R2D2()`, `Model.shrinkage_names`) brms's `b` is a transformed parameter
 `zb .* sdb`: the point gives the model `zb` and the prior's scales (`shrinkage_point`, each vector put in AutoBayes's design-column
 order through the column map) and no `b`; `zb[k]` maps to `zb` and `hs_local[k]` to `hs_local_log__` at the AutoBayes column of
@@ -461,9 +466,10 @@ def match_special(fixture: Fixture, model: ab.Model) -> dict:
 def _with_distributional(fixture: Fixture, model: ab.Model, cmap: ColumnMap) -> ColumnMap:
     """``cmap`` with the column map of each auxiliary parameter's own formula (B01): a formula on either side must exist
     on both (brms's ``X_<parameter>`` of the family's auxiliary parameter), and each is matched by content."""
-    scale = model.family_spec.scale_parameter
-    if scale is not None and f"X_{scale}" in fixture.standata and scale not in model.spec.dpar_names:
-        raise OracleMismatch(f"brms gives {scale} its own formula (standata X_{scale}); the AutoBayes model has none")
+    fam = model.family_spec
+    for scale in (fam.scale_parameter, fam.zero_parameter, *(e.name for e in fam.extra_parameters)):   # E03: zi, hu, alpha too
+        if scale is not None and f"X_{scale}" in fixture.standata and scale not in model.spec.dpar_names:
+            raise OracleMismatch(f"brms gives {scale} its own formula (standata X_{scale}); the AutoBayes model has none")
     return replace(cmap, distributional={name: match_distributional_columns(fixture, model, name) for name in model.spec.dpar_names})
 
 
@@ -785,6 +791,7 @@ def natural_point(model: ab.Model, point: Point, cmap: ColumnMap, gmap: GroupMap
     nu = float(pars["nu"]) if "nu" in model.names else None
     zi = float(pars["zi"]) if "zi" in pars else None
     hu = float(pars["hu"]) if "hu" in pars else None
+    zi, hu = formulas.get("zi", zi), formulas.get("hu", hu)   # E03: a zi / hu formula's intercept (as sampled) and b
     bsp = simo = None
     if cmap.monotonic:                                     # B03: brms's bsp[k] and simo_k of each monotonic term
         bsp = {c: float(np.atleast_1d(pars["bsp"])[k - 1]) for c, k in cmap.monotonic.items()}
@@ -806,8 +813,8 @@ def natural_point(model: ab.Model, point: Point, cmap: ColumnMap, gmap: GroupMap
     if cmap.measurement:                                   # C06: an me() term's meanme_k, sdme_k and zme_k, by noisy column
         special = {cls: {x: (np.atleast_1d(pars[f"{cls}_{k}"]).astype(float) if cls == "zme" else float(np.atleast_1d(pars[f"{cls}_{k}"])[0]))
                          for x, k in cmap.measurement.items()} for cls in ("meanme", "sdme", "zme")}
-    extras = {e.variable: float(pars[e.variable]) for e in model.family_spec.extra_parameters}   # D01: brms's alpha, beta or ndt
-    # (E02: kappa, quantile, and the GEV's sampled tmp_xi under its own name, value_point's keyword)
+    extras = {e.variable: formulas[e.name] if e.name in formulas else float(pars[e.variable])   # D01: brms's alpha, beta or ndt
+              for e in model.family_spec.extra_parameters}   # (E02: kappa, quantile, the GEV's tmp_xi; E03: alpha's formula)
     shrinkage = shrinkage_point(model, pars, cmap)          # D07: zb and the horseshoe's or R2D2's scales, or None
     if cmap.cs:                                            # D04: brms's bcs, one row per Xcs column, one column per threshold
         bcs = np.atleast_2d(pars["bcs"]).astype(float)
@@ -1288,6 +1295,8 @@ def draws(fixture: Fixture, model: ab.Model, cmap: ColumnMap, gmap: GroupMap) ->
         if par in names and par in pts[0].pars:
             data[names[par]] = (("chain", "draw"), np.array([float(p.pars[par]) for p in pts])[None, :])
     for extra in model.family_spec.extra_parameters:            # D01: brms's alpha, beta or ndt
+        if extra.name in (cmap.distributional or {}):           # E03: alpha's formula's draws, below
+            continue
         data[names[extra.variable]] = (("chain", "draw"), np.array([float(p.pars[extra.variable]) for p in pts])[None, :])
         if extra.derived:                                       # E02: the GEV's xi, derived from tmp_xi in brms's model block
             data[names[extra.name]] = (("chain", "draw"), derived_draws(fixture, extra.name)[None, :])

@@ -35,7 +35,9 @@ brms's rules (``default_prior()``, ``def_dpar_prior``, ``def_scale_prior``, ``pr
   its intercept ``student_t(3, 0, scale)`` with brms's scale of the response read on the log scale for ``sigma``
   (``max(2.5, round(mad(log y), 1))``, zeros read as 0.1, 2.5 when a response is negative) and ``student_t(3, 0, 2.5)``
   for ``shape`` and ``phi`` (``FamilySpec.default_distributional_intercept``); its coefficients flat; no class row of
-  the parameter itself.
+  the parameter itself. E03: the zero-inflation or hurdle probability's formula (``zi ~ z``, ``hu ~ z``, logit link) has
+  ``logistic(0, 1)`` on its intercept and the skew normal's ``alpha ~ z`` (identity link) ``normal(0, 4)``
+  (``DistributionalFormula.default_intercept``), read from the fixtures' ``default_prior`` tables; flat coefficients.
 
 The data-dependent numbers are R's arithmetic, transcribed here and checked against R itself: ``median``, ``mad``
 (constant 1.4826) and ``mean`` (R's two-pass mean on doubles), ``round(x, 1)`` (R 4's algorithm, which picks the
@@ -373,13 +375,19 @@ def default_priors(formula: str | list[str], data: pd.DataFrame, *, family: str 
             raise PriorError(f"no brms default prior is recorded for the {fam.name} family's {fam.scale_parameter}; "
                              f"give the priors explicitly (ab.Priors(..., {fam.scale_parameter}=...))")
         auxiliary[fam.scale_parameter] = fam.default_scale_prior(scale)
-    if fam.zero_parameter is not None:                                # zi or hu (B06): beta(1, 1)
+    for name in spec.dpar_names:                                      # E03: zi, hu, alpha with their own formulas: brms's
+        if name != fam.scale_parameter:                               # def_dpar_prior on the intercept, flat coefficients
+            ds, formula = spec.dpar(name), fam.distributional_formula(name)
+            auxiliary[name] = {**({"intercept": formula.default_intercept()} if ds.intercept else {}),
+                               **({"b": Flat()} if ds.pop_terms else {})}
+    if fam.zero_parameter is not None and fam.zero_parameter not in spec.dpar_names:   # zi or hu (B06): beta(1, 1)
         if fam.default_zero_prior is None:
             raise PriorError(f"no brms default prior is recorded for the {fam.name} family's {fam.zero_parameter}; "
                              f"give the priors explicitly (ab.Priors(..., {fam.zero_parameter}=...))")
         auxiliary[fam.zero_parameter] = fam.default_zero_prior()
     for extra in fam.extra_parameters:                                # D01: alpha normal(0, 4), beta gamma(1, 0.1), ndt uniform(0, min_Y)
-        auxiliary[extra.name] = extra.default_prior()
+        if extra.name not in spec.dpar_names:
+            auxiliary[extra.name] = extra.default_prior()
     for name, make in learned.items():
         if make is None:
             raise PriorError(f"no brms default prior is recorded for the {fam.name} family's learned {name}; "
@@ -595,11 +603,12 @@ def prior_table(priors: Priors, spec, family="gaussian", *, center_predictors: b
                     add(p, cls, coef=f"me{brms_rename(x)}")
     if fam.scale_parameter is not None and fam.scale_parameter not in spec.dpar_names:
         add(getattr(priors, fam.scale_parameter), fam.scale_parameter, lb="0")
-    if fam.zero_parameter is not None:                                # brms's real<lower=0,upper=1> zi / hu (B06)
-        add(getattr(priors, fam.zero_parameter), fam.zero_parameter, lb="0", ub="1")
+    if fam.zero_parameter is not None and fam.zero_parameter not in spec.dpar_names:   # brms's real<lower=0,upper=1> zi / hu (B06);
+        add(getattr(priors, fam.zero_parameter), fam.zero_parameter, lb="0", ub="1")      # with its own formula (E03), its dpar rows
     for extra in fam.extra_parameters:                                # D01: brms's alpha, beta (lb 0), ndt (lb 0, ub min_Y)
-        lb, ub = extra.bounds
-        add(getattr(priors, extra.name), extra.name, lb=lb, ub=ub)
+        if extra.name not in spec.dpar_names:                         # E03: alpha's own formula has its dpar rows instead
+            lb, ub = extra.bounds
+            add(getattr(priors, extra.name), extra.name, lb=lb, ub=ub)
     if priors.nu is not None:
         add(priors.nu, "nu", lb=r_number(fam.learnable_parameters["nu"]))
     sd = priors.sd_priors(spec)

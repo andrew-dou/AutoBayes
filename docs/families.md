@@ -187,7 +187,7 @@ prior (`ExtraParameter.bambi_prior`, which reads `min(y)` for `ndt`); every othe
 | Graph | Bambi's `weibull` (`beta = mu / gamma(1 + 1 / alpha)` to PyMC's `Weibull`) | Bambi's `exponential` (`lam = 1 / mu`) | `likelihoods.skew_normal_family` (`CustomDist`, stable `log Phi`) | `likelihoods.shifted_lognormal_family` (PyMC's `LogNormal` at `y - ndt`) | `likelihoods.exgaussian_family` (`CustomDist`, stable `log Phi`) |
 | Prediction | exp, Weibull draws, by hand | exp, exponential draws, by hand | identity, skew-normal draws, by hand | `expected_response` `exp(mu + sigma^2 / 2) + ndt`, `ndt + LogNormal` draws, by hand | identity, Normal plus exponential draws, by hand |
 | Default priors | log; shape `Gamma(0.01, 0.01)` | log | identity; sigma `HalfStudentT(3, scale)`; alpha `Normal(0, 4)` | log; sigma `HalfStudentT(3, scale)`; ndt `Uniform(0, "min_Y")` | identity; sigma `HalfStudentT(3, scale)`; beta `Gamma(1, 0.1)` |
-| Addition terms, distributional formulas, mo(), multivariate, non-linear, autocorrelation, me()/mi() | none (D79) | none (D79) | none (D79) | none (D79) | none (D79) |
+| Addition terms, distributional formulas, mo(), multivariate, non-linear, autocorrelation, me()/mi() | `weights()` and `shape ~ ...` (E03); the rest none (D79) | none (D79) | `alpha ~ ...` (E03, `distributional_formulas`); the rest none (D79) | none (D79) | none (D79) |
 | Shrinkage priors (D07) | no (D102) | no (D102) | no (D102) | no (D102) | no (D102) |
 | Post-processing (C07) | `log_likelihood`: Weibull | exponential | skew normal | shifted lognormal | ex-Gaussian |
 
@@ -204,8 +204,15 @@ trials, zero-trial rows, `kind="probability"` and `expected = n mu` follow the b
 | Graph | `likelihoods.beta_binomial_logit_family` (PyMC's `BetaBinomial` with alpha = expit(eta) phi, beta = expit(-eta) phi; the trials as the binomial's) | `likelihoods.geometric_family` (PyMC's `NegativeBinomial(mu, 1)`) | `likelihoods.negbinomial2_family` (PyMC's `NegativeBinomial(mu, 1 / sigma)`) |
 | Prediction | expit, Binomial(n, Beta(mu phi, (1 - mu) phi)), by hand, `probability` kind, `expected = n mu`, bound = trials | exp with overflow check, NegBinomial(mu, 1), by hand | exp with overflow check, NegBinomial(mu, 1 / sigma), by hand |
 | Default priors | none (logit); phi `Gamma(0.01, 0.01)` | log | log; sigma `Gamma(0.4, 0.3)` |
-| Addition terms, distributional formulas, mo(), multivariate, non-linear, autocorrelation, me()/mi(), mm() and gr(by = ), other links | none (D80, D81) | none (D80, D81) | none (D80, D81) |
+| Addition terms, distributional formulas, mo(), multivariate, non-linear, autocorrelation, me()/mi(), mm() and gr(by = ), other links | `weights()` and `phi ~ ...` (E03); the rest none (D80, D81) | none (D80, D81) | none (D80, D81) |
 | Post-processing (C07) | `log_likelihood`: the beta-binomial log mass | NegBinomial2-log at shape 1 | NegBinomial2-log at shape 1 / sigma |
+
+E03 (docs/contexts-newer-families.md) adds `FamilySpec.distributional_formulas`: the parameters besides `scale_parameter` that take
+a formula of their own, each a `DistributionalFormula` (its brms name, its link, brms's default prior on its intercept), set for
+the zero-inflated negative binomial's `zi` and the hurdle lognormal's `hu` (logit) and the skew normal's `alpha` (identity);
+`FamilySpec.distributional_parameters` lists them after the scale parameter of a family with `distributional_link` (now the
+Weibull and the beta-binomial too), and `distributional_group_terms` (False for those two) withholds a shared correlation ID in the
+scale parameter's formula.
 
 E01 (docs/bounded-families.md) adds four bounded and hurdle families, each with the logit link only. `ExtraParameter` gains the
 support `"unit"`, brms's `real<lower=0,upper=1>` (a `Beta` prior, sampled as `<name>_logodds__`), for the zero-one-inflated Beta's

@@ -1731,12 +1731,12 @@
     "D02_discrete_families",
     "D03_more_zero_inflated_hurdle"
    ],
-   "status": "implementing",
+   "status": "gates_green",
    "summary": "distributional formulas and weights() for the Tier D families (shape, phi, sigma, zi, hu formulas)",
    "pr": null,
-   "attempts": 1,
+   "attempts": 0,
    "divergences": [],
-   "next_action": "agent (opus), wave E2",
+   "next_action": "wave E2, after E1 merges (shares family modules with E01/E02/E06)",
    "reserved_divergences": "D116-D119",
    "fixtures": {
     "pr": 70,
@@ -1749,6 +1749,22 @@
      "weibull_weighted",
      "zero_inflated_negbinomial_distributional_zi"
     ]
+   },
+   "gates": {
+    "sha": "d5199d8cd17c",
+    "dirty_tree": false,
+    "base": "origin/main",
+    "when": "2026-10-19T03:39Z",
+    "results": {
+     "immutability": {
+      "status": "pass",
+      "seconds": 0.0
+     },
+     "oracle": {
+      "status": "pass",
+      "seconds": 433.0
+     }
+    }
    }
   },
   {

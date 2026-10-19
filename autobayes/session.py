@@ -84,8 +84,9 @@ def _summary_rows(model, idata) -> dict:
     names += [roles[k] for roles in getattr(model, "gp_names", {}).values() for k in ("sdgp", "lscale")]   # each GP's (C03)
     names += [v for k, v in getattr(model, "autocor_names", {}).items() if not k.endswith("_coordinate")]   # ar and ma (C04)
     zero = family_of(model).zero_parameter                      # the zero-inflation / hurdle probability (B06)
-    names += [n[zero]] if zero is not None else []
-    names += [n[e.name] for e in family_of(model).extra_parameters]   # alpha, beta or ndt (D01)
+    own = model.spec.dpar_names                                 # E03: zi, hu or alpha with a formula: its intercept and coefficients
+    for name in ([zero] if zero is not None else []) + [e.name for e in family_of(model).extra_parameters]:   # alpha, beta, ndt (D01)
+        names += [v for k, v in model.dpar_names[name].items() if k != "value"] if name in own else [n[name]]
     s = az.summary(idata, var_names=names, hdi_prob=0.94, round_to="none")
     rows = {}
     for name, r in s.iterrows():
@@ -94,12 +95,15 @@ def _summary_rows(model, idata) -> dict:
     return rows
 
 
-def _scale_priors(model) -> dict:
+def _scale_priors(model, scale: str | None = None) -> dict:
     """The fit record's entries of the auxiliary parameter's prior: ``{"sigma": "HalfNormal(sigma=1)"}``, or with its own
-    formula (B01) its intercept's and coefficients' priors, ``{"sigma:intercept": ..., "sigma:b:z[q]": ...}``."""
+    formula (B01) its intercept's and coefficients' priors, ``{"sigma:intercept": ..., "sigma:b:z[q]": ...}``; ``scale`` names
+    another family parameter (E03: ``zi``, ``hu``, ``alpha``, with or without a formula of its own), by default the family's
+    auxiliary parameter."""
     from autobayes.families import family_of
 
-    scale, s, pr = family_of(model).scale_parameter, model.spec, model.priors
+    scale = family_of(model).scale_parameter if scale is None else scale
+    s, pr = model.spec, model.priors
     if scale not in s.dpar_names:
         return {scale: str(getattr(pr, scale))}
     ds, sub = s.dpar(scale), pr.dpar_priors(s, scale)
@@ -171,8 +175,8 @@ def fit_record(model, fit, *, panel: dict | None = None, max_treedepth: int = 10
                        **{f"lscale:{c}": str(prior) for c, prior in pr.lscale_priors(s).items()},
                        **{f"{cls}:{x}": str(prior) for cls in ("meanme", "sdme") for x, prior in pr.me_priors(s, cls).items()},   # C06
                        **(_scale_priors(model) if fam.scale_parameter is not None else {}),
-                       **({fam.zero_parameter: str(getattr(pr, fam.zero_parameter))} if fam.zero_parameter is not None else {}),
-                       **{e.name: str(getattr(pr, e.name)) for e in fam.extra_parameters},          # alpha, beta or ndt (D01)
+                       **(_scale_priors(model, fam.zero_parameter) if fam.zero_parameter is not None else {}),   # E03: zi:intercept
+                       **{k: v for e in fam.extra_parameters for k, v in _scale_priors(model, e.name).items()},   # alpha, beta, ndt (D01)
                        **({"nu": str(pr.nu)} if pr.nu is not None else {}),
                        **({label: str(prior) for label, prior in prior_labels(model).items()} if mixture else {}),
                        **{part: str(prior) for part, prior in pr.autocor_priors(s).items()}},   # an ARMA term's ar and ma (C04)

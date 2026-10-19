@@ -2094,8 +2094,10 @@ def _distributional_offer(fam) -> str:
     from autobayes.families import FAMILIES
 
     offering = [f"{name} ({spec.scale_parameter})" for name, spec in FAMILIES.items() if spec.distributional_link is not None]
+    others = [f"{name} ({f.parameter}, {f.link} link)" for name, spec in FAMILIES.items() for f in spec.distributional_formulas]
     return (f"a distributional formula is offered for the auxiliary parameter of the {', '.join(offering)} families, with a "
-            "log link (docs/distributional.md, divergence D33)")
+            "log link (docs/distributional.md, divergence D33)"
+            + (f", and for the {', '.join(others)} families (docs/contexts-newer-families.md, divergence D116)" if others else ""))
 
 
 def _parse_formulas(formulas, data: pd.DataFrame | None, family: str, categorical) -> ModelSpec:
@@ -2139,9 +2141,9 @@ def _parse_formulas(formulas, data: pd.DataFrame | None, family: str, categorica
             )
         if name in (p for p, _, _ in parsed):
             raise FormulaError(f"{text!r}: {name!r} has two formulas; give each distributional parameter one")
-        if name != fam.scale_parameter or fam.distributional_link is None:
+        if name not in fam.distributional_parameters:              # B01's scale parameter, or E03's zi, hu, alpha
             nl_hint = ""
-            extras = [e.name for e in fam.extra_parameters]            # D01: alpha, beta, ndt take no formula here (D79)
+            extras = [e.name for e in fam.extra_parameters]            # D01: beta, ndt take no formula here (D79); E03: alpha may
             if name in (fam.scale_parameter, fam.zero_parameter, *fam.fixed_parameters, *fam.learnable_parameters, *extras):
                 why = f"brms's {name} ~ ... is not offered here"
             else:
@@ -2169,7 +2171,7 @@ def _parse_formulas(formulas, data: pd.DataFrame | None, family: str, categorica
             f"{main!r}: the autocorrelation term {main0.autocor.term!r} with a distributional formula is not supported in this "
             "slice (brms accepts bf(y ~ x + ar(...), sigma ~ z); docs/autocorrelation.md, divergence D70)"
         )
-    dpar0 = [parse_formula(f"{name} ~ {rhs}", None, family, None, _ids=True) for name, rhs, _ in parsed]
+    dpar0 = [parse_formula(f"{name} ~ {rhs}", None, family, None, _ids=True, _dpar=True) for name, rhs, _ in parsed]
     mains = [{t.name for t in s.pop_terms if t.kind == "numeric"} for s in (main0, *dpar0)]
     if isinstance(categorical, Mapping):                    # a declared column is categorical in every formula
         for t in (t for s in (main0, *dpar0) for t in s.transform_terms):
@@ -2188,7 +2190,7 @@ def _parse_formulas(formulas, data: pd.DataFrame | None, family: str, categorica
     operands = {c for t in spec.group_terms for c in t.operands}
     dpars = []
     for (name, rhs, text), cat in zip(parsed, dpar_cat):
-        d = parse_formula(f"{name} ~ {rhs}", None, family, cat or None, _ids=True)
+        d = parse_formula(f"{name} ~ {rhs}", None, family, cat or None, _ids=True, _dpar=True)
         unshared = [t for t in d.group_terms if t.id is None]
         if unshared:
             raise FormulaError(
@@ -2197,6 +2199,13 @@ def _parse_formulas(formulas, data: pd.DataFrame | None, family: str, categorica
                 "takes population-level terms only here, and group-level terms only with a correlation ID shared with the "
                 f"response formula's term of the same factor, '{name} ~ ... + (1 |p| g)' next to '... + (1 + x |p| g)' "
                 "(docs/distributional.md, divergence D32; docs/multi-membership-and-by.md, D106)"
+            )
+        if d.group_terms and (name != fam.scale_parameter or not fam.distributional_group_terms):   # E03: no case of these
+            raise FormulaError(
+                f"{text!r}: group-level terms in the formula of {name} of the {fam.name} family "
+                f"({', '.join(t.canonical for t in d.group_terms)}) are not supported in this slice: no frozen brms case verifies "
+                f"a correlation ID shared with that formula; it takes population-level terms only "
+                "(docs/contexts-newer-families.md, divergence D116)"
             )
         for t in d.group_terms:                              # D08: the ID's term in the response formula, same factor
             partner = next((u for u in spec.group_terms if u.id == t.id), None)
@@ -2332,14 +2341,16 @@ def check_imputation(spec: ModelSpec, imputed=()) -> None:
 
 
 def parse_formula(formula: str | list[str], data: pd.DataFrame | None = None, family: str = "gaussian",
-                  categorical: Mapping[str, object] | None = None, *, _ids: bool = False) -> ModelSpec:
+                  categorical: Mapping[str, object] | None = None, *, _ids: bool = False, _dpar: bool = False) -> ModelSpec:
     """Parse and validate a formula in the supported subset, optionally against a data frame.
 
     ``categorical`` maps a predictor column to its reference level (treatment coding); every
     other predictor term must be numeric. ``formula`` may also be a list (B01): the response formula, then one formula
     per distributional parameter, ``["y ~ x + (1 | g)", "sigma ~ z"]`` (``_parse_formulas``, docs/distributional.md).
     ``_ids`` is set by ``_parse_formulas`` alone: a correlation ID ``(1 + x |p| g)`` (D08) is taken in a list of formulas,
-    where a distributional formula shares it, and refused in a formula on its own.
+    where a distributional formula shares it, and refused in a formula on its own. ``_dpar`` (set by ``_parse_formulas``
+    alone) parses a distributional parameter's formula, whose left-hand side is the parameter: a family with trials (E03: the
+    beta-binomial's ``phi ~ z``) does not ask it for ``| trials()``.
     """
     from autobayes.families import get_family
 
@@ -2394,7 +2405,7 @@ def parse_formula(formula: str | list[str], data: pd.DataFrame | None = None, fa
                 "'y ~ [1 +] x1 [+ x2 ...] [+ (1 | factor) ...]' and, for ab.binomial, "
                 "'successes | trials(n) ~ [1 +] x1 [+ x2 ...] [+ (1 | factor) ...]'."
             )
-        if fam.has_trials:
+        if fam.has_trials and not _dpar:
             raise FormulaError(
                 f"{formula!r}: the {fam.name} family needs 'successes | trials(n) ~ ...' (brms syntax); "
                 f"counts without a trials column are not a {fam.name} model."

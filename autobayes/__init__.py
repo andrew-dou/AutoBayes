@@ -20,7 +20,8 @@ mean, and generalized extreme value responses with brms's derived shape xi (E02)
 Supported formulas combine numeric and declared categorical predictors,
 numeric-by-categorical interactions, intercept controls, and optional multiple
 independent varying-intercept factors with independent or correlated varying slopes, and a formula of its own for the
-auxiliary parameter (``["y ~ x", "sigma ~ z"]``: sigma, shape or phi under a log link), and brms's monotonic effects
+auxiliary parameter (``["y ~ x", "sigma ~ z"]``: sigma, shape or phi under a log link; E03: the Weibull's shape, the
+beta-binomial's phi, the zero-inflated negative binomial's zi, the hurdle lognormal's hu and the skew normal's alpha), and brms's monotonic effects
 ``mo(x)`` of ordinal predictors with a Dirichlet prior on their simplex, brms's Gaussian processes ``gp(x)`` (exact) and
 ``gp(x, k = 10, c = 5/4)`` (Hilbert-space approximation) of one numeric column, and brms's measurement-error term ``me(x, sdx)``
 and its missing-value imputation ``mi()`` in a list of formulas, one per response. Explicit priors are required;
@@ -93,6 +94,7 @@ from autobayes.model import (hurdle_gamma, hurdle_lognormal, hurdle_negbinomial,
 from autobayes.model import (hurdle_cumulative, xbeta, zero_inflated_beta_binomial,   # E01, docs/bounded-families.md
                              zero_one_inflated_beta)
 from autobayes.model import asym_laplace, frechet, gen_extreme_value, inverse_gaussian, von_mises   # E02, docs/continuous-families.md
+from autobayes.priors import Logistic   # E03: brms's logistic() on a zi / hu formula's intercept, docs/contexts-newer-families.md
 
 __all__ = [
     "Beta", "Categorical", "DeviceError", "Dirichlet", "Exponential", "FitResult", "Flat", "FormulaError", "Gamma", "GroupTerm", "HalfCauchy",
@@ -115,4 +117,5 @@ __all__ += ["hurdle_gamma", "hurdle_lognormal", "hurdle_negbinomial", "zero_infl
 __all__ += ["prior_draws"]                             # E05
 __all__ += ["hurdle_cumulative", "xbeta", "zero_inflated_beta_binomial", "zero_one_inflated_beta"]   # E01
 __all__ += ["asym_laplace", "frechet", "gen_extreme_value", "inverse_gaussian", "von_mises"]   # E02
+__all__ += ["Logistic"]                                # E03
 __version__ = "0.8.0"

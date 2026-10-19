@@ -87,9 +87,9 @@ class Prior:
         import bambi as bmb
         import numpy as np
 
-        if self.name in _UNIT:
+        if self.name in _UNIT or self.name == "Logistic":
             # B06: float64 parameters. PyTensor makes a Python 2.0 a float32 constant, and the Beta's normalising constant
-            # lgamma(a) + lgamma(b) - lgamma(a + b) would then lose 2e-8 at Beta(2, 2).
+            # lgamma(a) + lgamma(b) - lgamma(a + b) would then lose 2e-8 at Beta(2, 2); E03's Logistic likewise (log(s)).
             return bmb.Prior(self.name, **{k: np.float64(v) for k, v in self.params.items()})
         return bmb.Prior(self.name, **dict(self.params))
 
@@ -214,6 +214,14 @@ def Beta(alpha: float, beta: float) -> Prior:
     return Prior("Beta", {"alpha": _positive("alpha", alpha), "beta": _positive("beta", beta)})
 
 
+def Logistic(mu: float, s: float) -> Prior:
+    """brms's ``logistic(mu, s)``, Stan's and PyMC's logistic distribution of location ``mu`` and scale ``s`` (density
+    ``exp(-z) / (s (1 + exp(-z))^2)``, ``z = (x - mu) / s``): brms's default prior on the intercept of a formula of the
+    zero-inflation or hurdle probability (E03, ``["y ~ x", "zi ~ z"]``), ``logistic(0, 1)``, under which ``inv_logit`` of the
+    intercept is uniform on (0, 1). Accepted for that intercept only (docs/contexts-newer-families.md, divergence D118)."""
+    return Prior("Logistic", {"mu": float(mu), "s": _positive("s", s)})
+
+
 def Dirichlet(*alpha) -> Prior:
     """brms's ``dirichlet(...)`` on the simplex of a monotonic term ``mo(x)`` (B03, ``Priors(simo={"x": ...})``, brms class
     ``simo``): ``Dirichlet(2, 2, 2)`` or ``Dirichlet([2, 2, 2])`` gives one positive concentration per step of the term,
@@ -298,7 +306,7 @@ _BRMS = {   # prior name -> (brms's distribution, its arguments in Stan's order:
     "HalfNormal": ("normal", (0, "sigma")), "HalfStudentT": ("student_t", ("nu", 0, "sigma")),
     "HalfCauchy": ("cauchy", (0, "beta")), "Exponential": ("exponential", ("lam",)),
     "Gamma": ("gamma", ("alpha", "beta")), "InverseGamma": ("inv_gamma", ("alpha", "beta")), "LKJ": ("lkj", ("eta",)),
-    "Beta": ("beta", ("alpha", "beta")),
+    "Beta": ("beta", ("alpha", "beta")), "Logistic": ("logistic", ("mu", "s")),   # E03
 }
 
 
@@ -374,7 +382,11 @@ class Priors:
     ``nu`` is the prior of a Student-t model's learned degrees of freedom (``ab.student(..., nu=None)``): one of
     ``TRUNCATABLE``, truncated to ``nu > 1`` and renormalised there (brms-parity A13); refused for every other model.
     ``zi`` and ``hu`` are the zero-inflation and hurdle probabilities (B06): exactly the one the family has
-    (``FamilySpec.zero_parameter``) must be given, a prior on (0, 1) (``Beta``), and is refused for every other family.
+    (``FamilySpec.zero_parameter``) must be given, a prior on (0, 1) (``Beta``), and is refused for every other family. E03
+    (docs/contexts-newer-families.md): where the probability has its own formula (``zero_inflated_negbinomial``'s ``zi``,
+    ``hurdle_lognormal``'s ``hu``; ``FamilySpec.distributional_formulas``) its entry is that formula's mapping
+    ``{"intercept": ..., "b": ...}`` as for ``sigma``'s, the intercept's prior a location prior or ``Logistic`` (brms's default
+    ``logistic(0, 1)``), and so is the skew normal's ``alpha``'s with a formula of its own.
     A monotonic term ``mo(x)`` (B03, docs/monotonic.md) has a coefficient of class ``b`` (brms's ``bsp``, coefficient
     ``mox``), which ``b`` covers under the term's name, ``b={"mo(x)": Normal(0, 2)}``, and a simplex whose prior is ``simo``,
     a ``Dirichlet`` keyed by the term's column, ``simo={"x": Dirichlet(2, 2, 2)}`` (brms ``class = simo, coef = mox1``; a
@@ -422,7 +434,7 @@ class Priors:
     ``normal(0, 4)``); ``beta``, the mean of the ex-Gaussian's exponential component, a positive-support prior (brms class
     ``beta``, default ``gamma(1, 0.1)``); ``ndt``, the non-decision time, brms's ``real<lower=0,upper=min_Y>``: one of
     ``BOUNDABLE``, truncated to (0, min y) and renormalised there as brms does, or ``Uniform(0, "min_Y")``, brms's default
-    ``uniform(0, min_Y)``. None takes a formula of its own (D79). E01 (docs/bounded-families.md): ``zoi`` and ``coi``, the
+    ``uniform(0, min_Y)``. Only ``alpha`` takes a formula of its own (E03, above); ``beta`` and ``ndt`` take none (D79). E01 (docs/bounded-families.md): ``zoi`` and ``coi``, the
     zero-one-inflated Beta's zero-one-inflation probability and conditional one-inflation probability (brms classes ``zoi`` and
     ``coi``, ``real<lower=0,upper=1>``: a ``Beta`` prior, brms's default ``beta(1, 1)``), and ``kappa``, the extended-support
     Beta's kappa (brms class ``kappa`` of ``xbeta()``, ``real<lower=0>``: a positive-support prior, brms's default
@@ -1031,13 +1043,16 @@ class Priors:
         extras = {e.name: e for e in fam.extra_parameters}            # alpha, beta or ndt (D01)
         auxiliary = {name: getattr(self, name) for name in AUXILIARY}
         predicted = scale is not None and scale in getattr(spec, "dpar_names", ())   # the scale parameter has its own formula (B01)
+        # E03: the zero parameter and the extra parameters with a formula of their own (FamilySpec.distributional_formulas)
+        formulas = [name for name in getattr(spec, "dpar_names", ()) if name != scale]
         if scale is not None and auxiliary[scale] is None and not predicted:
             raise PriorError(fam.scale_missing_error)
-        if zero is not None and auxiliary[zero] is None:
+        if zero is not None and auxiliary[zero] is None and zero not in formulas:
             raise PriorError(f"the {fam.name} family needs a prior on the {AUXILIARY[zero]} {zero}: pass {zero}=..., "
                              "a prior on (0, 1) such as ab.Beta(1, 1)")
         for name, extra in extras.items():                            # D01: each is required, with a prior its support takes
-            self._validate_extra(fam, extra, auxiliary[name])
+            if name not in formulas:                                  # E03: or the priors of its own formula, below
+                self._validate_extra(fam, extra, auxiliary[name])
         for name, prior in auxiliary.items():
             if prior is not None and name in fam.fixed_parameters:   # E02: a quantile the model fixes (bf(quantile = p))
                 raise PriorError(f"the {fam.name} family's {name} is fixed in this model ({name}=...), not learned: do not pass "
@@ -1085,12 +1100,25 @@ class Priors:
                 f"prior for {scale!r} is a mapping, the form of the priors of {scale}'s own formula ('{scale} ~ ...', B01); "
                 f"this model gives {scale} none: pass one positive-support prior, or add the formula "
                 f"(['<response formula>', '{scale} ~ ...'], docs/distributional.md)")
+        logistic = set()                                              # E03: brms's logistic(0, 1) on a zi / hu formula's intercept
+        for name in formulas:                                         # E03: zi, hu, alpha: their formulas' location priors
+            dspec, sub = spec.dpar(name), self.dpar_priors(spec, name)
+            if dspec.intercept:
+                location.append((f"{name}:intercept", sub.intercept))
+                if fam.distributional_parameter_link(name) == "logit":
+                    logistic.add(f"{name}:intercept")
+            location += [(f"{name}:b:{col}", p) for col, p in sub.coefficient_priors(dspec).items()]
         for label, prior in location:
             if not isinstance(prior, Prior):
                 raise PriorError(f"prior for {label!r} must be a Prior, got {type(prior).__name__}")
-            if prior.name not in _LOCATION:
+            if prior.name == "Logistic" and label not in logistic:
+                raise PriorError(f"prior for {label!r} cannot be {prior}: Logistic() is offered for the intercept of a zi or hu formula "
+                                 "only, where it is brms's default (docs/contexts-newer-families.md, divergence D118); use one of "
+                                 f"{sorted(_LOCATION)}")
+            if prior.name not in _LOCATION | ({"Logistic"} if label in logistic else set()):
                 raise PriorError(
-                    f"prior for {label!r} must be a location prior ({sorted(_LOCATION)}), got {prior}"
+                    f"prior for {label!r} must be a location prior ({sorted(_LOCATION | ({'Logistic'} if label in logistic else set()))}), "
+                    f"got {prior}"
                 )
         from autobayes.formula import sd_tag
 
@@ -1103,10 +1131,12 @@ class Priors:
                 raise PriorError(
                     f"prior for {label!r} must be a positive-support prior ({sorted(_SCALE)}), got {prior}"
                 )
-        if zero is not None:                                          # the zero-inflation / hurdle probability (B06)
+        if zero is not None and zero not in formulas:                 # the zero-inflation / hurdle probability (B06)
             prior = auxiliary[zero]
             if not isinstance(prior, Prior):
-                raise PriorError(f"prior for {zero!r} must be a Prior, got {type(prior).__name__}")
+                hint = (f" (a mapping is the form of the priors of {zero}'s own formula, ['<response formula>', '{zero} ~ ...'], "
+                        "E03; this model gives it none)" if zero in fam.distributional_parameters and isinstance(prior, Mapping) else "")
+                raise PriorError(f"prior for {zero!r} must be a Prior, got {type(prior).__name__}{hint}")
             if prior.name not in _UNIT:
                 raise PriorError(f"prior for {zero!r} must be a prior on (0, 1) ({sorted(_UNIT)}; the {AUXILIARY[zero]} "
                                  f"is brms's real<lower=0,upper=1> {zero}), got {prior}")
@@ -1121,6 +1151,10 @@ class Priors:
             raise PriorError(f"the {fam.name} family needs a prior on its {extra.meaning} {extra.name}: pass {extra.name}=..., "
                              f"such as {example[extra.support]} (brms's default is {brms_prior(extra.default_prior())})")
         if not isinstance(prior, Prior):
+            if extra.name in fam.distributional_parameters:           # E03: the skew normal's alpha takes a formula
+                raise PriorError(f"prior for {extra.name!r} must be a Prior, got {type(prior).__name__} (a mapping is the form of "
+                                 f"the priors of {extra.name}'s own formula, ['<response formula>', '{extra.name} ~ ...'], E03; "
+                                 f"this model gives {extra.name} no formula of its own, divergence D79)")
             raise PriorError(f"prior for {extra.name!r} must be a Prior, got {type(prior).__name__} (the {extra.name} of the "
                              f"{fam.name} family takes no formula of its own, divergence {extra.divergence})")
         allowed = EXTRA_PRIORS[extra.support]
@@ -1141,7 +1175,8 @@ class Priors:
         (Bambi would accept a stray ``1|g`` entry silently). ``family`` as for ``validate``. An auxiliary parameter with its
         own formula (B01) gets the dict of its formula's term priors, which Bambi reads for that distributional component.
         A family's extra parameters (D01, ``alpha``, ``beta``, ``ndt``) are not in it: the model adds them
-        (``ExtraParameter.bambi_prior``), because ``ndt``'s bound is the data's smallest response."""
+        (``ExtraParameter.bambi_prior``), because ``ndt``'s bound is the data's smallest response. A zero parameter or an extra
+        parameter with its own formula (E03: ``zi``, ``hu``, ``alpha``) gets its formula's term priors under its brms name."""
         import bambi as bmb
         from autobayes.families import FamilySpec, get_family
         from autobayes.formula import ModelSpec, bambi_group_name
@@ -1163,7 +1198,11 @@ class Priors:
                                                  for (g, c), p in sub.sd_priors(dspec).items()}}
         elif fam.scale_parameter is not None:              # under Bambi's name: "sigma", or "alpha" for brms's "shape"
             out[fam.bambi_scale_parameter] = getattr(self, fam.scale_parameter).to_bambi()
-        if fam.zero_parameter is not None:                  # the zero-inflation / hurdle probability, under brms's name (B06)
+        for name in spec.dpar_names:                        # E03: zi, hu, alpha with a formula of their own, under brms's name
+            if name != fam.scale_parameter:
+                sub, dspec = self.dpar_priors(spec, name), spec.dpar(name)
+                out[name] = {**({"Intercept": sub.intercept.to_bambi()} if dspec.intercept else {}), **sub._bambi_terms(dspec)}
+        if fam.zero_parameter is not None and fam.zero_parameter not in spec.dpar_names:   # under brms's name (B06)
             out[fam.zero_parameter] = getattr(self, fam.zero_parameter).to_bambi()
         if self.nu is not None:                             # a learned Student-t nu (A13): its prior truncated at the bound
             out["nu"] = self.nu.to_bambi_truncated(fam.learnable_parameters["nu"])

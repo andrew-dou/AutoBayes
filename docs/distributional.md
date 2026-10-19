@@ -34,6 +34,11 @@ Six families offer it, for their one auxiliary parameter (`FamilySpec.distributi
 | negative binomial, Gamma (log link) | `shape` | `alpha` (`alpha_Intercept`, `alpha_z`) | `student_t(3, 0, 2.5)` |
 | Beta | `phi` | `phi` (`phi_Intercept`, `phi_z`) | `student_t(3, 0, 2.5)` |
 
+E03 (docs/contexts-newer-families.md) adds the Weibull's `shape` (Bambi's `alpha`) and the beta-binomial's `phi` under the same
+log link, each with `student_t(3, 0, 2.5)` on its intercept, and formulas on three parameters besides the families' auxiliary one:
+the zero-inflated negative binomial's `zi` and the hurdle lognormal's `hu` under the logit link (`logistic(0, 1)` on the
+intercept) and the skew normal's `alpha` under the identity link (`normal(0, 4)`), with population-level terms only.
+
 ## API: a list of formulas
 
 `formula` is a list (or tuple), the response formula first and then the parameter's formula with the parameter's brms name
@@ -73,8 +78,9 @@ in every formula that names it as a main effect.
 
 - Group-level terms (`sigma ~ z + (1 | g)`) and `offset()` in a distributional formula (divergence D32). Bambi builds such
   group terms (`sigma_1|g`), but their priors, names, prediction policies and oracle mapping are not wired here.
-- A formula on any other parameter or with any other link: Student-t `nu` (brms's `logm1` link), `zi` / `hu` (logit),
-  a parameter the family does not have (`shape` for the Gaussian, `sigma` for the Poisson), `mu` (D33).
+- A formula on any other parameter or with any other link: Student-t `nu` (brms's `logm1` link), `zi` / `hu` (logit; E03 offers
+  them for the zero-inflated negative binomial and the hurdle lognormal), a parameter the family does not have (`shape` for the
+  Gaussian, `sigma` for the Poisson), `mu` (D33).
 - `center_predictors=False` with a distributional formula that has an intercept and terms: brms centres it anyway and
   Bambi centres all formulas or none (D34).
 - A distributional formula that reads the response, the trials column or a grouping factor of the response formula (D35);
