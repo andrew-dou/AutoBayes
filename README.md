@@ -52,24 +52,24 @@ against brms, is refused with an error that names the construct, never silently 
 
 ## What it covers
 
-30 of the 45 response families brms 2.23 documents, and most of brms's formula language:
+39 of the 45 response families brms 2.23 documents, and most of brms's formula language:
 
 | Area | What you can write | Docs |
 |---|---|---|
-| Families | Gaussian, Student-t (fixed or learned `nu`), Poisson, negative binomial (`negbinomial`, `negbinomial2`), geometric, Gamma, lognormal, Beta, Bernoulli and binomial (logit, probit, cloglog), beta-binomial, Weibull, exponential, skew-normal, shifted lognormal, ex-Gaussian | [families](docs/families.md), [continuous](docs/continuous-families.md), [discrete](docs/discrete-families.md), [links](docs/links.md) |
-| Zero-inflated and hurdle | zero-inflated Poisson, negative binomial, binomial and Beta; hurdle Poisson, negative binomial, Gamma and lognormal | [zero-inflated and hurdle](docs/zero-inflated-hurdle.md) |
-| Ordinal and categorical | `cumulative` (logit, probit), `sratio`, `cratio`, `acat`, category-specific effects `cs(x)`, `categorical` | [ordinal and categorical](docs/ordinal-categorical.md) |
+| Families | Gaussian, Student-t (fixed or learned `nu`), Poisson (log, sqrt), negative binomial (`negbinomial`, `negbinomial2`), geometric, Gamma (log, inverse, identity), lognormal, Beta (logit, probit, cloglog), Bernoulli and binomial (logit, probit, cloglog), beta-binomial, Weibull, exponential, skew-normal, shifted lognormal, ex-Gaussian, inverse Gaussian, von Mises, asymmetric Laplace (quantile regression), Frechet, generalized extreme value, extended-support Beta (`xbeta`) | [families](docs/families.md), [continuous](docs/continuous-families.md), [discrete](docs/discrete-families.md), [bounded](docs/bounded-families.md), [links](docs/links.md) |
+| Zero-inflated and hurdle | zero-inflated Poisson, negative binomial, binomial, beta-binomial and Beta; zero-one-inflated Beta; hurdle Poisson, negative binomial, Gamma, lognormal and cumulative | [zero-inflated and hurdle](docs/zero-inflated-hurdle.md), [bounded](docs/bounded-families.md) |
+| Ordinal and categorical | `cumulative` (logit, probit, cloglog), `sratio`, `cratio`, `acat`, `hurdle_cumulative`, category-specific effects `cs(x)`, `categorical` | [ordinal and categorical](docs/ordinal-categorical.md) |
 | Population-level terms | numeric and categorical predictors, interactions, `log()`, `exp()`, `sqrt()`, `I(...)`, `offset()`, monotonic effects `mo(x)` | [interactions](docs/interactions.md), [transforms](docs/transforms.md), [offset](docs/offset.md), [monotonic](docs/monotonic.md) |
 | Group-level terms | any number of factors, `(1 \| g)`, `(1 + x \|\| g)`, `(1 + x \| g)` with LKJ, `g:h`, `g/h`, `mm(g, g2)`, `gr(g, by = )`, shared correlation IDs | [varying slopes](docs/varying-slopes.md), [correlated slopes](docs/correlated-slopes.md), [grouping syntax](docs/grouping-syntax.md), [multi-membership and by](docs/multi-membership-and-by.md) |
 | Other terms | Gaussian processes `gp(x)` (exact and Hilbert-space), `ar()`, `ma()`, `arma()`, `me(x, sdx)`, `mi(x)` | [Gaussian processes](docs/gaussian-processes.md), [autocorrelation](docs/autocorrelation.md), [missing values and measurement error](docs/missing-and-measurement-error.md) |
-| Model structure | distributional formulas (`sigma ~ z`), multivariate Gaussian models with residual correlation, non-linear formulas (`nl = TRUE`), finite mixtures | [distributional](docs/distributional.md), [multivariate](docs/multivariate.md), [non-linear](docs/nonlinear.md), [mixtures](docs/mixtures.md) |
-| Addition terms | `weights()`; `cens()` and `trunc()` for the Gaussian family | [addition terms](docs/addition-terms.md) |
+| Model structure | distributional formulas (`sigma ~ z`, and `shape`, `phi`, `zi`, `hu`, `alpha` for the newer families), multivariate Gaussian models with residual correlation, non-linear formulas (`nl = TRUE`), finite mixtures | [distributional](docs/distributional.md), [contexts of the newer families](docs/contexts-newer-families.md), [multivariate](docs/multivariate.md), [non-linear](docs/nonlinear.md), [mixtures](docs/mixtures.md) |
+| Addition terms | `weights()`; `cens()`, including interval censoring `cens(c, y2)`, for the Gaussian, Weibull, lognormal and Gamma families; `trunc()` for the Gaussian family and `trunc(ub = )` for counts | [addition terms](docs/addition-terms.md), [censoring and truncation](docs/cens-trunc-families.md) |
 | Priors | explicit priors on every class; brms's defaults with `ab.default_priors()`; `horseshoe()` and `R2D2()` on `b` | [default priors](docs/default-priors.md), [shrinkage priors](docs/shrinkage-priors.md) |
-| Post-processing | `predict()` (`posterior_linpred`, `posterior_epred`, `posterior_predict`), `log_lik`, `loo`, `waic`, `loo_compare`, `model_weights`, `bayes_R2`, `hypothesis`, `conditional_effects` | [post-processing](docs/post-processing.md), [prediction](docs/linear-prediction.md) |
+| Post-processing | `predict()` (`posterior_linpred`, `posterior_epred`, `posterior_predict`), `log_lik`, `loo`, `waic`, `loo_compare`, `model_weights`, `bayes_R2`, `hypothesis` (with Savage-Dickey evidence ratios from `prior_draws`), `conditional_effects` (main effects and two-way interactions) | [post-processing](docs/post-processing.md), [prediction](docs/linear-prediction.md) |
 
-Not yet: smooth terms `s()` and `t2()`, the fifteen remaining families (among them `zero_one_inflated_beta`,
-`von_mises`, `wiener` and `cox`), spatial and other correlation structures (`car`, `sar`, `fcor`), K-fold
-cross-validation and stacking. Many combinations of the features above are refused because no frozen brms case checks
+Not yet: smooth terms `s()` and `t2()`; the six remaining families (`multinomial`, `dirichlet`,
+`dirichlet_multinomial`, `logistic_normal`, `cox` and `wiener`); spatial and other correlation structures (`car`, `sar`,
+`fcor`, `unstr`, `cosy`); K-fold cross-validation and stacking weights. Many combinations of the features above are refused because no frozen brms case checks
 them yet; each refusal names the construct and the divergence row that explains it. The full map is
 [current capabilities](docs/current-capabilities.md).
 
@@ -130,7 +130,8 @@ and the benchmark above, not by the oracle.
 - [Current capabilities](docs/current-capabilities.md): every supported construct and what checks it.
 - [Divergences from brms](docs/brms-parity/divergences.md): every known difference, with the evidence.
 - Tier reviews: [A](docs/brms-parity/reports/tier-a-review.pdf), [B](docs/brms-parity/reports/tier-b-review.pdf),
-  [C](docs/brms-parity/reports/tier-c-review.pdf), [D](docs/brms-parity/reports/tier-d-review.pdf); the
+  [C](docs/brms-parity/reports/tier-c-review.pdf), [D](docs/brms-parity/reports/tier-d-review.pdf),
+  [E](docs/brms-parity/reports/tier-e-review.pdf); the
   [status report](docs/brms-parity/reports/autobayes-status.pdf) with demonstrations.
 - [Examples](examples/brms_parity/README.md): a tour of model classes and the brms benchmark.
 - The feature ledger, [ledger.json](docs/brms-parity/ledger.json) (`python tools/parity_status.py`).
