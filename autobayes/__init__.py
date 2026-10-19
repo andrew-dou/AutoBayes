@@ -14,7 +14,9 @@ trials, a logit link on the mean success probability and a precision ``phi``, an
 negative binomial counts (``negbinomial2``, ``sigma = 1 / shape``) with a log link (D02); zero-inflated and hurdle
 negative binomial counts, zero-inflated binomial successes and Beta proportions, and hurdle Gamma and lognormal
 responses (D03); zero-one-inflated Beta and extended-support Beta (``xbeta``) proportions on [0, 1], zero-inflated
-beta-binomial successes and hurdle ordinal (``hurdle_cumulative``) responses (E01).
+beta-binomial successes and hurdle ordinal (``hurdle_cumulative``) responses (E01); responses (D03); inverse Gaussian responses under brms's 1/mu^2 or log link, von Mises angles under its tan_half link,
+asymmetric Laplace responses for quantile regression (the quantile learned or fixed), Frechet responses with a log link on the
+mean, and generalized extreme value responses with brms's derived shape xi (E02).
 Supported formulas combine numeric and declared categorical predictors,
 numeric-by-categorical interactions, intercept controls, and optional multiple
 independent varying-intercept factors with independent or correlated varying slopes, and a formula of its own for the
@@ -90,6 +92,7 @@ from autobayes.model import (hurdle_gamma, hurdle_lognormal, hurdle_negbinomial,
                              zero_inflated_binomial, zero_inflated_negbinomial)
 from autobayes.model import (hurdle_cumulative, xbeta, zero_inflated_beta_binomial,   # E01, docs/bounded-families.md
                              zero_one_inflated_beta)
+from autobayes.model import asym_laplace, frechet, gen_extreme_value, inverse_gaussian, von_mises   # E02, docs/continuous-families.md
 
 __all__ = [
     "Beta", "Categorical", "DeviceError", "Dirichlet", "Exponential", "FitResult", "Flat", "FormulaError", "Gamma", "GroupTerm", "HalfCauchy",
@@ -111,4 +114,5 @@ __all__ += ["hurdle_gamma", "hurdle_lognormal", "hurdle_negbinomial", "zero_infl
             "zero_inflated_negbinomial"]   # D03
 __all__ += ["prior_draws"]                             # E05
 __all__ += ["hurdle_cumulative", "xbeta", "zero_inflated_beta_binomial", "zero_one_inflated_beta"]   # E01
+__all__ += ["asym_laplace", "frechet", "gen_extreme_value", "inverse_gaussian", "von_mises"]   # E02
 __version__ = "0.8.0"

@@ -962,6 +962,263 @@ def shifted_lognormal_family():
                         {"mu": "identity", "sigma": "log", "ndt": "log"}, shifted_lognormal_logp, shifted_lognormal_random)
 
 
+# ---- inverse Gaussian, von Mises, asymmetric Laplace, Frechet, generalized extreme value (brms-parity E02) ---------------
+# docs/continuous-families.md. The densities are the published ones in brms's parameterisations (brms's vignette
+# "Parameterization of Response Distributions in brms"), checked against brms's log_prob on the frozen cases
+# inverse_gaussian_varint, inverse_gaussian_log, von_mises_varint, asym_laplace_varint, asym_laplace_quantile,
+# frechet_varint and gen_extreme_value_varint, not assumed. Each likelihood takes the linear predictor eta as Bambi's
+# parent under Bambi's identity link and applies brms's link itself, so the graph's parent deterministic is eta (brms's
+# posterior_linpred):
+#   inverse Gaussian(mu, shape): 0.5 log(shape / (2 pi y^3)) - shape (y - mu)^2 / (2 mu^2 y), written in 1 / mu as
+#     -shape (y / mu - 1)^2 / (2 y); brms's default link 1/mu^2 (1 / mu = sqrt(eta), defined for eta > 0 only: -inf
+#     elsewhere, where Stan's inv_sqrt is NaN and brms's density an error) and its log link (1 / mu = exp(-eta));
+#   von Mises(mu, kappa): kappa cos(y - mu) - log(2 pi) - log I0(kappa), mu = 2 atan(eta) (brms's tan_half link), with
+#     log I0 exact for every kappa (log_bessel_i0: Stan's density raises an overflow above kappa = 713.9);
+#   asymmetric Laplace(mu, sigma, p): log p + log(1 - p) - log sigma - rho_p((y - mu) / sigma), rho_p(u) = u (p - I(u < 0));
+#   Frechet(mu, nu): log nu - log s - (1 + nu) log(y / s) - (y / s)^-nu with log s = eta - lgamma(1 - 1 / nu), mu = exp(eta);
+#   generalized extreme value(mu, sigma, xi): -log sigma - (1 + xi) w - exp(-w), w = log1p(xi z) / xi with z = (y - mu) /
+#     sigma (the Gumbel's z at xi = 0), written as z g(xi z) with g(u) = log1p(u) / u by its series near 0, so that the
+#     density and its gradient are exact as xi passes 0; brms samples the unbounded tmp_xi and derives xi = lb + (ub - lb)
+#     inv_logit(tmp_xi) with lb and ub the smaller and the larger of -1 / max(x) and -1 / min(x), x = (y - mu) / sigma over
+#     the fitted rows (found from the fixture's points: brms's posterior_epred(dpar = "xi") equals it to the last bit), so
+#     that 1 + xi x > 0 on every fitted row; gen_extreme_value_family registers it as the deterministic "xi".
+# Every constant is a float64 (PyTensor would make a Python 2.0 a float32 constant).
+_LOG_2PI = np.float64(math.log(2.0 * math.pi))
+_HALF_LOG_2PI_64 = np.float64(0.5 * math.log(2.0 * math.pi))
+_ONE_AND_HALF = np.float64(1.5)
+_I0_SWITCH = np.float64(500.0)                        # log I0 from i0 below, from the asymptotic series at and above
+_ZERO_64 = np.float64(0.0)
+
+
+def _i0_series(terms: int) -> tuple[np.float64, ...]:
+    """The coefficients ``a_j = ((2j - 1)!!)^2 / (j! 8^j)`` of the asymptotic series ``I0(k) ~ exp(k) / sqrt(2 pi k) (1 +
+    sum_j a_j / k^j)`` (Abramowitz and Stegun 9.7.1), ``a_j = a_{j-1} (2j - 1)^2 / (8 j)``."""
+    out, a = [], 1.0
+    for j in range(1, terms + 1):
+        a *= (2 * j - 1) ** 2 / (8.0 * j)
+        out.append(np.float64(a))
+    return tuple(out)
+
+
+_I0_COEFFICIENTS = _i0_series(8)                      # at k = 500 the ninth term is below 1e-23 of the sum
+
+
+def log_bessel_i0e(kappa):
+    """``log I0(kappa) - kappa`` for ``kappa >= 0``, the log of the exponentially scaled Bessel function: ``log(i0(kappa)) -
+    kappa`` below 500 (PyTensor's ``i0``, whose JAX lowering is ``jax.scipy.special.i0``; ``i0`` itself overflows past 709.8)
+    and ``-log(2 pi kappa) / 2 + log1p(sum_j a_j / kappa^j)`` at and above 500, exact there to rounding. Each branch is evaluated
+    on its argument switched into its own range (not clipped by minimum and maximum, whose JAX gradient splits in two at the
+    tie), so that the branch a switch does not take stays finite with a zero gradient."""
+    below = pt.lt(kappa, _I0_SWITCH)
+    small = pt.switch(below, kappa, _I0_SWITCH)
+    large = pt.switch(below, _I0_SWITCH, kappa)
+    inv = _ONE / large
+    tail = pt.zeros_like(large)
+    for a in reversed(_I0_COEFFICIENTS):                # Horner's scheme in 1 / kappa
+        tail = (tail + a) * inv
+    asymptotic = -_HALF * pt.log(large) - _HALF_LOG_2PI_64 + pt.log1p(tail)
+    return pt.switch(below, pt.log(pt.i0(small)) - small, asymptotic)
+
+
+def log_bessel_i0(kappa):
+    """``log I0(kappa)`` for ``kappa >= 0``: ``kappa + log_bessel_i0e(kappa)``, exact for every kappa."""
+    return kappa + log_bessel_i0e(kappa)
+
+
+def _inverse_gaussian_logp(value, inv_mu, shape):
+    """The inverse Gaussian log density at ``value`` with mean ``1 / inv_mu`` and shape ``shape``."""
+    d = value * inv_mu - _ONE
+    return (_HALF * pt.log(shape) - _HALF_LOG_2PI_64 - _ONE_AND_HALF * pt.log(value)
+            - shape * d * d / (np.float64(2.0) * value))
+
+
+def inverse_gaussian_inverse_squared_logp(value, eta, shape):
+    """brms's ``inverse.gaussian()`` under its default link ``1/mu^2``: ``1 / mu = sqrt(eta)``; ``-inf`` where ``eta <= 0``
+    (no mean; brms's density is an error there), with the branch not taken evaluated at ``eta = 1``."""
+    positive = pt.gt(eta, 0.0)
+    return pt.switch(positive, _inverse_gaussian_logp(value, pt.sqrt(pt.switch(positive, eta, _ONE)), shape), -np.inf)
+
+
+def inverse_gaussian_log_logp(value, eta, shape):
+    """brms's ``inverse.gaussian("log")``: ``1 / mu = exp(-eta)``."""
+    return _inverse_gaussian_logp(value, pt.exp(-eta), shape)
+
+
+def inverse_gaussian_mean(eta, link: str):
+    """The inverse Gaussian mean ``mu`` from the linear predictor (NumPy): ``1 / sqrt(eta)`` under ``1/mu^2``, refused where
+    ``eta <= 0`` (no mean exists; brms's ``posterior_epred`` would be NaN there), ``exp(eta)`` under ``log``."""
+    eta = np.asarray(eta, dtype=float)
+    if link == "log":
+        with np.errstate(over="ignore"):
+            return np.exp(eta)
+    if not (eta > 0).all():
+        raise ValueError("the inverse.gaussian family's 1/mu^2 link needs a positive linear predictor: some draws and rows have "
+                         "eta <= 0, where mu = 1 / sqrt(eta) does not exist; inspect the draws (or use link='log')")
+    return 1.0 / np.sqrt(eta)
+
+
+def inverse_gaussian_random(mu, shape, rng=None, size=None):
+    """Inverse Gaussian draws of mean ``mu`` and shape ``shape`` (NumPy's ``wald``)."""
+    return rng.wald(np.asarray(mu, dtype=float), np.asarray(shape, dtype=float), size=size)
+
+
+def von_mises_logp(value, eta, kappa):
+    """brms's ``von_mises()``: the von Mises log density at ``value`` with ``mu = 2 atan(eta)`` (the tan_half link),
+    ``kappa cos(y - mu) - log(2 pi) - log I0(kappa)`` written as ``-2 kappa sin^2((y - mu) / 2) - log(2 pi) - (log I0(kappa) -
+    kappa)``, which forms no difference of two numbers of the size of kappa (at kappa = 1e6 the first form loses 1e-10)."""
+    mu = np.float64(2.0) * pt.arctan(eta)
+    half = pt.sin(_HALF * (value - mu))
+    return np.float64(-2.0) * kappa * half * half - _LOG_2PI - log_bessel_i0e(kappa)
+
+
+def von_mises_random(mu, kappa, rng=None, size=None):
+    """von Mises draws of mean direction ``mu`` and precision ``kappa`` on [-pi, pi] (NumPy's ``vonmises``)."""
+    return rng.vonmises(np.asarray(mu, dtype=float), np.asarray(kappa, dtype=float), size=size)
+
+
+def asym_laplace_logp(value, mu, sigma, quantile):
+    """brms's ``asym_laplace()``: ``log p + log(1 - p) - log sigma - rho_p((value - mu) / sigma)``."""
+    z = (value - mu) / sigma
+    rho = pt.switch(pt.lt(z, 0.0), z * (quantile - _ONE), z * quantile)
+    return pt.log(quantile) + pt.log1p(-quantile) - pt.log(sigma) - rho
+
+
+def asym_laplace_random(mu, sigma, quantile, rng=None, size=None):
+    """Asymmetric Laplace draws: below ``mu`` with probability ``p``, an exponential of rate ``(1 - p) / sigma`` under it;
+    above it an exponential of rate ``p / sigma`` (the density's two halves)."""
+    mu, sigma, p = (np.asarray(a, dtype=float) for a in (mu, sigma, quantile))
+    shape = size if size is not None else np.broadcast_shapes(mu.shape, sigma.shape, p.shape)
+    e, below = rng.exponential(1.0, size=shape), rng.uniform(size=shape) < p
+    return mu + sigma * np.where(below, -e / (1.0 - p), e / p)
+
+
+def frechet_logp(value, eta, nu):
+    """brms's ``frechet()``: the Frechet log density with scale ``s = mu / Gamma(1 - 1 / nu)``, ``mu = exp(eta)``."""
+    log_s = eta - pt.gammaln(_ONE - _ONE / nu)
+    r = pt.log(value) - log_s
+    return pt.log(nu) - log_s - (_ONE + nu) * r - pt.exp(-nu * r)
+
+
+def frechet_random(eta, nu, rng=None, size=None):
+    """Frechet draws ``s E^(-1 / nu)`` with ``E`` a standard exponential and ``s = exp(eta) / Gamma(1 - 1 / nu)``."""
+    from scipy.special import gammaln
+
+    eta, nu = np.asarray(eta, dtype=float), np.asarray(nu, dtype=float)
+    shape = size if size is not None else np.broadcast_shapes(eta.shape, nu.shape)
+    return np.exp(eta - gammaln(1.0 - 1.0 / nu) - np.log(rng.exponential(1.0, size=shape)) / nu)
+
+
+_G_SERIES = 1e-3                                      # g(u) = log1p(u) / u by its series below |u| = 1e-3 (error < 2e-22)
+
+
+def _log1p_over(u):
+    """``g(u) = log1p(u) / u`` with ``g(0) = 1``: the series ``1 - u/2 + u^2/3 - ... + u^6/7`` for ``|u| < 1e-3`` and
+    ``log1p(u) / u`` elsewhere (``u > -1``), each branch on an argument it is defined at."""
+    near = pt.lt(pt.abs(u), _G_SERIES)
+    s = pt.clip(u, -_G_SERIES, _G_SERIES)
+    series = pt.zeros_like(s)
+    for k in range(7, 0, -1):                          # 1/1 - s/2 + s^2/3 - ...: Horner's scheme
+        series = np.float64(1.0 / k) - s * series
+    far = pt.switch(near, np.float64(0.5), u)
+    return pt.switch(near, series, pt.log1p(far) / far)
+
+
+def gen_extreme_value_logp(value, mu, sigma, xi):
+    """brms's ``gen_extreme_value()``: ``-log sigma - (1 + xi) w - exp(-w)`` with ``w = log1p(xi z) / xi``, ``z = (value -
+    mu) / sigma``; ``-inf`` where ``1 + xi z <= 0`` (outside the support, which brms's xi excludes on the fitted rows)."""
+    z = (value - mu) / sigma
+    u = xi * z
+    inside = pt.gt(u, -_ONE)
+    w = z * _log1p_over(pt.switch(inside, u, _ZERO_64))
+    return pt.switch(inside, -pt.log(sigma) - (_ONE + xi) * w - pt.exp(-w), -np.inf)
+
+
+def gen_extreme_value_xi(tmp_xi, y, mu, sigma):
+    """brms's ``xi`` from its sampled ``tmp_xi`` (PyTensor): ``lb + (ub - lb) inv_logit(tmp_xi)`` with ``lb`` and ``ub`` the
+    smaller and the larger of ``-1 / max(x)`` and ``-1 / min(x)``, ``x = (y - mu) / sigma`` over the fitted rows."""
+    x = (y - mu) / sigma
+    a, b = -_ONE / pt.max(x), -_ONE / pt.min(x)
+    lb, ub = pt.minimum(a, b), pt.maximum(a, b)
+    return lb + (ub - lb) * pt.sigmoid(tmp_xi)
+
+
+def gen_extreme_value_random(mu, sigma, xi, rng=None, size=None):
+    """GEV draws ``mu + sigma (E^-xi - 1) / xi`` with ``E`` a standard exponential (``-log E``, the Gumbel's, at ``xi = 0``),
+    written as ``-log(E) expm1(a) / a`` with ``a = -xi log E``."""
+    mu, sigma, xi = (np.asarray(v, dtype=float) for v in (mu, sigma, xi))
+    shape = size if size is not None else np.broadcast_shapes(mu.shape, sigma.shape, xi.shape)
+    log_e = np.log(rng.exponential(1.0, size=shape))
+    a = -xi * log_e
+    with np.errstate(divide="ignore", invalid="ignore"):
+        ratio = np.where(a == 0.0, 1.0, np.expm1(a) / np.where(a == 0.0, 1.0, a))
+    return mu - sigma * log_e * ratio
+
+
+GEV_XI = "xi"                                          # the graph's deterministic of brms's derived xi
+
+
+def inverse_gaussian_family(link: str):
+    """Bambi family of brms's ``inverse.gaussian()`` under ``link`` (``"1/mu^2"``, the default, or ``"log"``): the linear
+    predictor as the parent (``inverse_squared_mu`` or ``log_mu``) under Bambi's identity link, and the shape (Bambi's
+    ``alpha``, as for the Gamma family) with its prior."""
+    parent, logp = (("log_mu", inverse_gaussian_log_logp) if link == "log" else
+                    ("inverse_squared_mu", inverse_gaussian_inverse_squared_logp))
+
+    def random(eta, shape, rng=None, size=None):
+        eta = np.asarray(eta, dtype=float)
+        mu = np.exp(eta) if link == "log" else 1.0 / np.sqrt(np.where(eta > 0, eta, np.nan))
+        return inverse_gaussian_random(mu, shape, rng=rng, size=size)
+
+    return _mean_family("inverse_gaussian", "InverseGaussian", (parent, "alpha"), {parent: "identity", "alpha": "log"}, logp, random)
+
+
+def von_mises_family():
+    """Bambi family of brms's ``von_mises()``: the linear predictor ``tan_half_mu`` (``tan(mu / 2)``) under Bambi's identity
+    link, and ``kappa`` with its prior."""
+    def random(eta, kappa, rng=None, size=None):
+        return von_mises_random(2.0 * np.arctan(np.asarray(eta, dtype=float)), kappa, rng=rng, size=size)
+
+    return _mean_family("von_mises", "VonMisesTanHalf", ("tan_half_mu", "kappa"), {"tan_half_mu": "identity", "kappa": "log"},
+                        von_mises_logp, random)
+
+
+def asym_laplace_family():
+    """Bambi family of brms's ``asym_laplace()``: the identity link on the location ``mu``, ``sigma`` and the ``quantile``
+    (its prior, or a float64 constant when the model fixes it, brms's ``bf(quantile = p)``)."""
+    return _mean_family("asym_laplace", "AsymmetricLaplace", ("mu", "sigma", "quantile"),
+                        {"mu": "identity", "sigma": "log", "quantile": "logit"}, asym_laplace_logp, asym_laplace_random)
+
+
+def frechet_family():
+    """Bambi family of brms's ``frechet()``: the linear predictor ``log_mu`` under Bambi's identity link, and ``nu`` (learned
+    under its prior truncated at 1, as the Student-t nu, or a float64 constant when fixed)."""
+    return _mean_family("frechet", "Frechet", ("log_mu", "nu"), {"log_mu": "identity", "nu": "log"}, frechet_logp, frechet_random)
+
+
+def gen_extreme_value_family():
+    """Bambi family of brms's ``gen_extreme_value()``: the identity link on the location ``mu``, ``sigma`` and brms's unscaled
+    shape ``tmp_xi`` with its prior; building the likelihood registers ``xi`` (``gen_extreme_value_xi`` of the observed
+    response) as the deterministic ``GEV_XI``, which the density takes."""
+    import bambi as bmb
+
+    params = ("mu", "sigma", "tmp_xi")
+
+    class GenExtremeValue:
+        def __new__(cls, name_, **kwargs):
+            mu, sigma, tmp_xi = (kwargs.pop(p) for p in params)
+            y = pt.as_tensor_variable(np.asarray(kwargs["observed"], dtype=np.float64))
+            xi = pm.Deterministic(GEV_XI, gen_extreme_value_xi(tmp_xi, y, mu, sigma))
+            return pm.CustomDist(name_, mu, sigma, xi, logp=gen_extreme_value_logp, random=gen_extreme_value_random, **kwargs)
+
+        @staticmethod
+        def dist(**kwargs):
+            raise NotImplementedError("the generalized extreme value family's xi is derived from the fitted rows; its "
+                                      "predictions are assembled by predict() (manual_prediction)")
+
+    likelihood = bmb.Likelihood("GenExtremeValue", params=list(params), parent="mu", dist=GenExtremeValue)
+    return bmb.Family("gen_extreme_value", likelihood, link={"mu": "identity", "sigma": "log", "tmp_xi": "identity"})
+
+
 # ---- beta-binomial, geometric and negbinomial2 (brms-parity D02, docs/discrete-families.md) -----------------------------
 # The densities are the published ones in brms's parameterisations (brms's vignette "Parameterization of Response
 # Distributions in brms"), checked against brms's log_prob on the frozen cases beta_binomial_varint, geometric_varint and

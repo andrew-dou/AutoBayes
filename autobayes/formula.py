@@ -2991,6 +2991,31 @@ def validate_nonnegative_response(name: str, s: pd.Series, family_label: str) ->
         )
 
 
+def validate_finite_response(name: str, s: pd.Series, family_label: str) -> None:
+    """A real continuous family's response whose density needs finite values (E02: the asymmetric Laplace and generalized
+    extreme value families; the latter's xi is bounded by the standardised responses): a real numeric column of finite
+    values. Missing values are left to the shared missing-data check that follows."""
+    validate_numeric_response(name, s, family_label)
+    v = s.to_numpy(dtype=float)
+    if np.any(np.isinf(v[~np.isnan(v)])):
+        raise FormulaError(f"response {name!r} has a non-finite value; the {family_label} family needs finite responses.")
+
+
+def validate_angle_response(name: str, s: pd.Series, family_label: str) -> None:
+    """An angle (E02: the von Mises family): a real numeric column of finite values in [-pi, pi], brms's own check
+    (``requires response greater than or equal to -pi`` and ``smaller than or equal to pi``, probed with brms 2.23's
+    ``make_standata()``). Missing values are left to the shared missing-data check that follows."""
+    validate_finite_response(name, s, family_label)
+    v = s.to_numpy(dtype=float)
+    v = v[~np.isnan(v)]
+    bad = v[(v < -math.pi) | (v > math.pi)]
+    if bad.size:
+        raise FormulaError(
+            f"response {name!r} has a value outside [-pi, pi] ({float(bad[0])!r}); the {family_label} family needs angles in "
+            "radians between -pi and pi (brms refuses the same values; wrap them into [-pi, pi] first)."
+        )
+
+
 def validate_zero_proportion_response(name: str, s: pd.Series, family_label: str) -> None:
     """A zero-inflated proportion's response (zero-inflated Beta; D03): a real numeric column of values in [0, 1), the exact
     zeros being the zero part. Missing values are left to the shared missing-data check that follows."""

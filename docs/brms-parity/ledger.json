@@ -1681,12 +1681,12 @@
    "depends_on": [
     "D01_continuous_families"
    ],
-   "status": "implementing",
+   "status": "gates_green",
    "summary": "inverse.gaussian, von_mises, asym_laplace, frechet, gen_extreme_value",
    "pr": null,
-   "attempts": 1,
+   "attempts": 0,
    "divergences": [],
-   "next_action": "agent (opus), wave E1",
+   "next_action": "implementation",
    "reserved_divergences": "D112-D115",
    "fixtures": {
     "pr": 70,
@@ -1699,6 +1699,22 @@
      "inverse_gaussian_varint",
      "von_mises_varint"
     ]
+   },
+   "gates": {
+    "sha": "43b8b5387f31",
+    "dirty_tree": false,
+    "base": "origin/main",
+    "when": "2026-10-19T01:08Z",
+    "results": {
+     "immutability": {
+      "status": "pass",
+      "seconds": 0.0
+     },
+     "oracle": {
+      "status": "pass",
+      "seconds": 478.1
+     }
+    }
    }
   },
   {

@@ -330,3 +330,17 @@ term model are taken, while other links, formulas on the auxiliary parameters, `
 `mm()`, `gr(by = )`, `cs()`, autocorrelation terms, shrinkage priors, multivariate, non-linear and mixture use are refused (D108),
 and `hurdle_cumulative`'s other links, `disc`, threshold options and `bayes_R2()` too (D109); see
 [bounded and hurdle families](bounded-families.md).
+
+Inverse Gaussian, von Mises, asymmetric Laplace, Frechet and generalized extreme value responses (E02, brms's
+`inverse.gaussian()`, `von_mises()`, `asym_laplace()`, `frechet()`, `gen_extreme_value()`): `ab.inverse_gaussian` under brms's
+default `1/mu^2` link (`mu = 1 / sqrt(eta)`, `-inf` where `eta <= 0`) or `link="log"`, with `shape`; `ab.von_mises` (angles in
+`[-pi, pi]`, `tan_half` link, `kappa`, log I0 exact for every kappa where Stan's overflows above 713.9, D113); `ab.asym_laplace`
+(quantile regression, `sigma` and the quantile learned under `Priors(quantile=ab.Beta(...))` or fixed, `quantile=0.25`, brms's
+`bf(quantile = 0.25)`); `ab.frechet` (log link, `nu > 1` learned or fixed as the Student-t nu); `ab.gen_extreme_value` (`sigma`, and
+brms's xi derived from `tmp_xi` so that every fitted row lies in the support, the graph's deterministic `xi`, `Priors(xi=...)` the
+prior of `tmp_xi`); brms's `posterior_epred` (infinite for the GEV where `xi >= 1`, D114), response draws, `log_lik()` and brms's
+default priors. Verified against `inverse_gaussian_varint`, `inverse_gaussian_log`, `von_mises_varint`, `asym_laplace_varint`,
+`asym_laplace_quantile`, `frechet_varint` and `gen_extreme_value_varint` (log densities within 2e-15 relative; G3 checks the
+GEV's xi against brms's `posterior_epred(dpar = "xi")`); the term model and `gp()` are taken, while other links, distributional
+formulas, addition terms, `mo()`, `me()`/`mi()`, `cs()`, `mm()`, `gr(by = )`, autocorrelation terms, multivariate, non-linear,
+mixture and shrinkage-prior use are refused (D112, D115); see [continuous families](continuous-families.md).

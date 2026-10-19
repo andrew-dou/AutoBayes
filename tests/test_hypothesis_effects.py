@@ -273,8 +273,12 @@ def test_conditional_effects_on_every_case_it_takes():
             med = np.median(e, axis=0)
             assert np.array_equal(table["estimate__"].to_numpy(), med)
             assert np.array_equal(table["se__"].to_numpy(), 1.4826 * np.median(np.abs(e - med), axis=0))
-            assert np.allclose(table["lower__"].to_numpy(), np.quantile(e, 0.025, axis=0), rtol=1e-14, atol=0)
-            assert np.allclose(table["upper__"].to_numpy(), np.quantile(e, 0.975, axis=0), rtol=1e-14, atol=0)
+            # NumPy's quantile of the same draws differs by an ulp of the interpolated order statistics with the array's memory
+            # layout, which near zero is more than 1e-14 relative (E02: asym_laplace_quantile, whose lower quantile at one grid
+            # point is 6e-4 between draws -0.06 and 0.29): the tolerance is also absolute at 1e-14 of the draws' scale
+            scale = 1e-14 * np.abs(e).max()
+            assert np.allclose(table["lower__"].to_numpy(), np.quantile(e, 0.025, axis=0), rtol=1e-14, atol=scale)
+            assert np.allclose(table["upper__"].to_numpy(), np.quantile(e, 0.975, axis=0), rtol=1e-14, atol=scale)
         taken.append((b.case["id"], m.family))
     families = {f for _, f in taken}
     assert len(taken) >= 40 and {"gaussian", "student", "bernoulli", "poisson", "negbinomial", "gamma", "lognormal", "beta",

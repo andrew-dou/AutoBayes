@@ -209,6 +209,48 @@ def shifted_lognormal(y, mu, sigma, ndt):
     return lognormal(y - ndt, mu, sigma)
 
 
+# -- E02, docs/continuous-families.md ------------------------------------------------------------------------------------------
+def inverse_gaussian(y, inv_mu, shape):
+    """brms's ``inverse.gaussian``: ``0.5 log(shape / (2 pi y^3)) - shape (y / mu - 1)^2 / (2 y)`` with ``inv_mu = 1 / mu``."""
+    d = y * inv_mu - 1.0
+    return 0.5 * np.log(shape) - _HALF_LOG_2PI - 1.5 * np.log(y) - shape * d * d / (2.0 * y)
+
+
+def von_mises(y, mu, kappa):
+    """brms's ``von_mises``: ``kappa cos(y - mu) - log(2 pi) - log I0(kappa)``, written as ``likelihoods.von_mises_logp`` writes
+    it, with ``log I0(kappa) - kappa`` as ``log(i0e(kappa))`` (exact for every kappa, as brms's ``dvon_mises`` in R is)."""
+    from scipy.special import i0e
+
+    half = np.sin(0.5 * (y - mu))                      # kappa (cos(y - mu) - 1) = -2 kappa sin^2((y - mu) / 2), as the likelihood
+    return -2.0 * kappa * half * half - 2.0 * _HALF_LOG_2PI - np.log(i0e(kappa))
+
+
+def asym_laplace(y, mu, sigma, quantile):
+    """brms's ``asym_laplace``: ``log p + log(1 - p) - log sigma - rho_p((y - mu) / sigma)``, ``rho_p(u) = u (p - I(u < 0))``."""
+    z = (y - mu) / sigma
+    return np.log(quantile) + np.log1p(-quantile) - np.log(sigma) - z * (quantile - (z < 0))
+
+
+def frechet(y, eta, nu):
+    """brms's ``frechet``: ``log nu - log s - (1 + nu) log(y / s) - (y / s)^-nu``, ``log s = eta - lgamma(1 - 1 / nu)``."""
+    log_s = eta - gammaln(1.0 - 1.0 / nu)
+    r = np.log(y) - log_s
+    return np.log(nu) - log_s - (1.0 + nu) * r - np.exp(-nu * r)
+
+
+def gen_extreme_value(y, mu, sigma, xi):
+    """brms's ``gen_extreme_value``: ``-log sigma - (1 + xi) w - exp(-w)``, ``w = log1p(xi z) / xi`` (``z`` at ``xi = 0``),
+    ``z = (y - mu) / sigma``; ``-inf`` outside the support."""
+    z = (y - mu) / sigma
+    u = xi * z
+    inside = u > -1.0
+    safe = np.where(inside, u, 0.0)
+    with np.errstate(divide="ignore", invalid="ignore"):
+        g = np.where(np.abs(safe) < 1e-8, 1.0 - 0.5 * safe, np.log1p(safe) / np.where(safe == 0.0, 1.0, safe))
+    w = z * g
+    return np.where(inside, -np.log(sigma) - (1.0 + xi) * w - np.exp(-w), -np.inf)
+
+
 # -- D02, docs/discrete-families.md --------------------------------------------------------------------------------------------
 def beta_binomial_logit(y, trials, eta, phi):
     """brms's ``beta_binomial_lpmf(y | trials, mu phi, (1 - mu) phi)`` with ``mu = expit(eta)`` and ``1 - mu = expit(-eta)``:

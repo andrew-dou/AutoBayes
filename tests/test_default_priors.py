@@ -175,11 +175,11 @@ def test_inverse_gamma_is_stan_inv_gamma():
 
 
 def test_refusals():
-    with pytest.raises(ValueError, match=r"family must be one of \[.*\], got 'von_mises'"):    # brms's, not offered (sratio is since D04)
-        ab.default_priors("y ~ x", FRAME, family="von_mises")
+    with pytest.raises(ValueError, match=r"family must be one of \[.*\], got 'wiener'"):    # brms's, not offered (von_mises is since E02)
+        ab.default_priors("y ~ x", FRAME, family="wiener")
     with pytest.raises(ValueError, match=r"link must be one of \['cloglog', 'logit', 'probit'\] for the bernoulli family, got 'cauchit'"):
         ab.default_priors("yb ~ x", FRAME, family="bernoulli", link="cauchit")    # the cloglog link is offered since P6 (G6 checks it)
-    with pytest.raises(ValueError, match="nu applies only to the student family"):
+    with pytest.raises(ValueError, match="nu applies only to the student or frechet family"):   # E02: the Frechet nu
         ab.default_priors("y ~ x", FRAME, nu=4)
     with pytest.raises(ValueError, match="student requires a fixed finite scalar nu > 1"):
         ab.default_priors("y ~ x", FRAME, family="student", nu=0.5)
