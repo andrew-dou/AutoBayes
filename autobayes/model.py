@@ -293,6 +293,7 @@ class Model:
                                "exponential", "skew_normal", "shifted_lognormal", "exgaussian", and (D02) "beta_binomial", "geometric",
                                "negbinomial2"
     categories : tuple[str]    the response's categories in order (the cumulative and categorical families, B05); () otherwise
+    hurdle_category : str      hurdle_cumulative's hurdle category, brms's Y = 0 (E01); None otherwise
     family_spec : FamilySpec   the specification of that family under the model's link (autobayes/families/; the registered spec unless ``link`` names another of the family's links)
     link : str                 the link: the family's own, or the ``link`` given ("probit" for the Bernoulli and binomial families)
     spec : ModelSpec
@@ -427,6 +428,9 @@ class Model:
         for t in (*self.spec.transform_terms, *(t for d in self.spec.dpars for t in d.transform_terms)):
             df[t.name] = t.transform.values(df)              # the evaluated column Bambi is handed, under the term's own name (A05)
         self.categories: tuple[str, ...] = ()               # the response's categories, in order (B05: cumulative, categorical)
+        self.hurdle_category: str | None = None              # E01: hurdle_cumulative's hurdle category, brms's Y = 0
+        if fam.hurdle_category is not None:                  # read before the column becomes brms's codes
+            self.hurdle_category = fam.hurdle_category(self.spec, df[self.spec.response])
         if fam.response_categories is not None:              # the response is fitted as its 1-based category, brms's Y
             self.categories, codes, notes = fam.response_categories(self.spec, df[self.spec.response])
             df[self.spec.response] = codes
@@ -1658,7 +1662,8 @@ class Model:
                     shape=None, phi=None, nu: float | None = None,
                     zi: float | None = None, hu: float | None = None, bsp=None, simo=None, theta=None,
                     sdgp=None, lscale=None, zgp=None, ar=None, ma=None, meanme=None, sdme=None, zme=None,
-                    Ymi=None, alpha=None, beta=None, ndt=None, shrinkage=None, bcs=None) -> dict[str, np.ndarray]:
+                    Ymi=None, alpha=None, beta=None, ndt=None, shrinkage=None, bcs=None, zoi=None, coi=None,
+                    kappa=None) -> dict[str, np.ndarray]:
         """A point in PyMC's sampled (value) space, from natural-scale quantities.
 
         ``intercept`` is the *model* intercept (at the predictor means when centred),
@@ -1706,7 +1711,9 @@ class Model:
         parameters of the skew-normal, ex-Gaussian and shifted lognormal families (D01, ``FamilySpec.extra_parameters``), given
         exactly for them: the skewness ``alpha`` (any finite number, stored as given), the exponential component's mean ``beta``
         (positive, stored as its log) and the non-decision time ``ndt`` (strictly between 0 and the smallest response, stored
-        as ``log(ndt / (min(y) - ndt))``, PyMC's interval coordinate and Stan's). Under a shrinkage prior on b (D07,
+        as ``log(ndt / (min(y) - ndt))``, PyMC's interval coordinate and Stan's). ``zoi`` and ``coi`` (E01, the zero-one-inflated
+        Beta's probabilities, strictly between 0 and 1, stored as their logits, as ``zi`` is) and ``kappa`` (E01, the extended-support
+        Beta's, positive, stored as its log) are given exactly for their families. Under a shrinkage prior on b (D07,
         docs/shrinkage-priors.md) ``b`` is a transformed parameter and is omitted: ``shrinkage`` gives brms's ``zb`` and the
         prior's scales instead (``shrinkage.value_entries``), ``{"zb": ..., "hs_global": ..., "hs_slab": ..., "hs_local": ...}``
         or ``{"zb": ..., "R2D2_R2": ..., "R2D2_phi": ...}``, each vector in design-column order.
@@ -1716,11 +1723,14 @@ class Model:
         column (``bcs={"x": [0.2, -0.1, 0.4]}``, or the bare vector for the model's one such term), required exactly when the
         model has one.
         """
-        extras = {"alpha": alpha, "beta": beta, "ndt": ndt}                  # D01
+        extras = {"alpha": alpha, "beta": beta, "ndt": ndt,                 # D01
+                  "zoi": zoi, "coi": coi, "kappa": kappa}                   # E01: zero_one_inflated_beta's zoi, coi; xbeta's kappa
         if self.family_spec.mixture:                          # C05: the components' parameters and theta
-            if any(v is not None for v in extras.values()):   # D01: a mixture's Gaussian components have none
+            if any(extras[k] is not None for k in ("alpha", "beta", "ndt")):   # D01: a mixture's Gaussian components have none
                 raise ValueError("alpha, beta and ndt are the skew_normal, exgaussian and shifted_lognormal families' parameters; "
                                  "a mixture has none")
+            if any(extras[k] is not None for k in ("zoi", "coi", "kappa")):    # E01: nor these
+                raise ValueError("zoi, coi and kappa are the zero_one_inflated_beta and xbeta families' parameters; a mixture has none")
             if ar is not None or ma is not None:              # C04: a mixture has no autocorrelation term
                 raise ValueError("ar and ma are an autocorrelation term's coefficients; a mixture has none")
             if shrinkage is not None:                         # D07: a mixture takes no shrinkage prior
@@ -2230,9 +2240,12 @@ class Model:
                 lines += [f"  expanded  : {ds.canonical_formula}"]
         lines += [f"  family    : {self.family}, {self.link} link", data_line]
         if self.categories:                                   # B05: the response's categories, fitted as brms's 1-based Y
-            lines += [f"  {s.response:<10}: response categories " + ", ".join(f"{k}={c}" for k, c in enumerate(self.categories, start=1))
+            hurdle = self.hurdle_category                     # E01: hurdle_cumulative's hurdle category, coded 0
+            lines += [f"  {s.response:<10}: response categories " + (f"0={hurdle} (the hurdle), " if hurdle is not None else "")
+                      + ", ".join(f"{k}={c}" for k, c in enumerate(self.categories, start=1))
                       + (" (ordered)" if fam.thresholds else f" (the reference is {self.categories[0]!r})")
-                      + "; fitted as the 1-based category (brms's Y)"]
+                      + ("; fitted as brms's Y (0 the hurdle, k the k-th ordered category)" if hurdle is not None
+                         else "; fitted as the 1-based category (brms's Y)")]
         if s.offset is not None:
             lines += [f"  offset    : {s.offset.expression}, added to the linear predictor as written (no coefficient, no prior, "
                       f"never centred; brms offset()); range {d.offset.min():.4f} to {d.offset.max():.4f} over the fitted rows"]
@@ -3228,6 +3241,69 @@ def hurdle_lognormal(formula: str, data: pd.DataFrame, priors: Priors, *,
     taken. """ + _D03_CONTEXTS
     return Model(formula, data, priors, family="hurdle_lognormal",
                  center_predictors=center_predictors, categorical=categorical)
+
+
+# -- E01: bounded families (docs/bounded-families.md) ------------------------------------------------------------------------
+_E01_CONTEXTS = ("No distributional formula, cens(), trunc(), mo(), me(), mi(), mm(), gr(by = ), autocorrelation term, multivariate "
+                 "or non-linear formula, mixture component or other link (divergence D108).")
+
+
+def zero_one_inflated_beta(formula: str, data: pd.DataFrame, priors: Priors, *,
+                           center_predictors: bool = True, categorical: Mapping[str, object] | None = None) -> Model:
+    """Zero-one-inflated Beta proportions (brms ``zero_one_inflated_beta``, E01): responses in [0, 1], an exact 0 or 1 with
+    probability ``zoi`` (a 1 with probability ``coi`` given that), a ``Beta(mu phi, (1 - mu) phi)`` proportion otherwise, ``mu =
+    expit(eta)``; ``E[y] = zoi coi + (1 - zoi) mu``.
+
+    ``Priors(phi=..., zoi=ab.Beta(...), coi=ab.Beta(...))`` (brms classes ``phi``, ``zoi`` and ``coi``; brms's defaults
+    ``gamma(0.01, 0.01)``, ``beta(1, 1)`` and ``beta(1, 1)`` on request through ``ab.default_priors``); the intercept and slope
+    priors are on the logit scale. ``predict(kind="mean")`` returns brms's ``posterior_epred`` as ``mean``; ``kind="linear"``
+    returns ``eta``. ``weights()`` is taken. """ + _E01_CONTEXTS
+    return Model(formula, data, priors, family="zero_one_inflated_beta",
+                 center_predictors=center_predictors, categorical=categorical)
+
+
+def zero_inflated_beta_binomial(formula: str, data: pd.DataFrame, priors: Priors, *,
+                                center_predictors: bool = True, categorical: Mapping[str, object] | None = None) -> Model:
+    """Zero-inflated beta-binomial successes (brms ``zero_inflated_beta_binomial``, E01): ``successes | trials(n) ~ ...``, a
+    structural zero with probability ``zi``, a ``BetaBinomial(n, mu phi, (1 - mu) phi)`` count otherwise, ``mu = expit(eta)``;
+    ``E[y] = (1 - zi) n mu``.
+
+    Trials as for the binomial family (zero-trial rows dropped, D4). ``Priors(phi=..., zi=ab.Beta(...))`` (brms's defaults
+    ``gamma(0.01, 0.01)`` and ``beta(1, 1)`` on request); the intercept and slope priors are on the logit scale.
+    ``predict(kind="mean")`` returns brms's expected count ``(1 - zi) n mu`` as ``expected`` (new rows need the trials column);
+    ``kind="linear"`` returns ``eta``. ``weights()`` is taken (after ``trials()``). """ + _E01_CONTEXTS
+    return Model(formula, data, priors, family="zero_inflated_beta_binomial",
+                 center_predictors=center_predictors, categorical=categorical)
+
+
+def xbeta(formula: str, data: pd.DataFrame, priors: Priors, *,
+          center_predictors: bool = True, categorical: Mapping[str, object] | None = None) -> Model:
+    """Extended-support Beta proportions (brms ``xbeta``, Kosmidis and Zeileis 2024; E01): responses in [0, 1] from one process,
+    ``B ~ Beta(mu phi, (1 - mu) phi)`` with ``mu = expit(eta)`` stretched to ``(1 + 2 kappa) B - kappa`` and censored to [0, 1],
+    so that exact 0s and 1s carry the mass of the stretched Beta beyond the ends.
+
+    ``Priors(phi=..., kappa=...)`` (brms classes ``phi`` and ``kappa``, both ``real<lower=0>``; brms's defaults
+    ``gamma(0.01, 0.01)`` for both on request through ``ab.default_priors``); the intercept and slope priors are on the logit
+    scale of ``mu``. ``predict(kind="mean")`` returns brms's ``posterior_epred``, the censored variable's mean (not ``mu``), as
+    ``mean``; ``kind="linear"`` returns ``eta``. ``weights()`` is taken. """ + _E01_CONTEXTS
+    return Model(formula, data, priors, family="xbeta", center_predictors=center_predictors, categorical=categorical)
+
+
+def hurdle_cumulative(formula: str, data: pd.DataFrame, priors: Priors, *,
+                      center_predictors: bool = True, categorical: Mapping[str, object] | None = None) -> Model:
+    """Hurdle ordinal response (brms ``hurdle_cumulative("logit")``, E01): the hurdle category with probability ``hu``, otherwise
+    one of K ordered categories of a cumulative logit model, ``P(y <= k | y > 0) = expit(tau_k - mu)``, with K - 1 increasing
+    thresholds ``tau`` and the linear predictor ``mu`` without an intercept.
+
+    The response is brms's: whole numbers ``0..K`` (0 the hurdle) or an ordered pandas Categorical (its first declared category
+    the hurdle), fitted as brms's ``Y`` (codes 0..K); ``model.categories`` holds the K ordered categories and
+    ``model.hurdle_category`` the hurdle's label. ``Priors(intercept=..., hu=ab.Beta(...))``: the intercept prior applies to every
+    threshold (brms's class ``Intercept``), sampled for the centred design on Stan's ordered coordinates as for
+    ``ab.cumulative``; brms's defaults on request. The intercept cannot be removed. ``predict(kind="mean")`` returns the K + 1
+    probabilities ``p`` with a ``category`` dimension, the hurdle first; ``kind="linear"`` returns ``mu``, ``kind="response"``
+    codes 0..K. The logit link only, ``disc = 1`` and brms's flexible thresholds (D109); no ``weights()``, ``cs()``, and """ + \
+        _E01_CONTEXTS[3:]
+    return Model(formula, data, priors, family="hurdle_cumulative", center_predictors=center_predictors, categorical=categorical)
 
 
 def cumulative(formula: str, data: pd.DataFrame, priors: Priors, *, link: str = "logit",

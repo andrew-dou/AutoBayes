@@ -3003,8 +3003,24 @@ def validate_zero_proportion_response(name: str, s: pd.Series, family_label: str
     if bad.size:
         raise FormulaError(
             f"response {name!r} has a value outside [0, 1) ({float(bad[0])!r}); the {family_label} family needs proportions in [0, 1): "
-            "an exact 0 is the zero part, an exact 1 is refused (brms's zero_one_inflated_beta, which models it, is not offered)."
+            "an exact 0 is the zero part, an exact 1 is refused (brms's zero_one_inflated_beta and xbeta model exact 1s: "
+            "ab.zero_one_inflated_beta(), ab.xbeta())."
         )
+
+
+def validate_unit_interval_response(name: str, s: pd.Series, family_label: str) -> None:
+    """A response on the closed unit interval (E01: the zero-one-inflated Beta and the extended-support Beta, xbeta): a real
+    numeric column of values in [0, 1], exact zeros and ones included. Missing values are left to the shared missing-data check
+    that follows."""
+    validate_numeric_response(name, s, family_label)
+    v = s.to_numpy(dtype=float)
+    v = v[~np.isnan(v)]
+    if np.any(np.isinf(v)):
+        raise FormulaError(f"response {name!r} has a non-finite value; the {family_label} family needs proportions in [0, 1].")
+    bad = v[(v < 0) | (v > 1)]
+    if bad.size:
+        raise FormulaError(f"response {name!r} has a value outside [0, 1] ({float(bad[0])!r}); the {family_label} family needs "
+                           "proportions in [0, 1] (exact 0s and 1s included).")
 
 
 def validate_binary_response(name: str, s: pd.Series) -> None:
@@ -3078,6 +3094,64 @@ def ordinal_categories(name: str, s: pd.Series) -> tuple[tuple[str, ...], np.nda
     notes = [f"categories {unobserved} of the ordinal response {name!r} have no fitted rows: the thresholds next to them "
              "are informed by the ordering and the prior alone (brms keeps them too)"] if unobserved else []
     return categories, codes, notes
+
+
+def hurdle_ordinal_categories(name: str, s: pd.Series) -> tuple[tuple[str, ...], np.ndarray, list[str], str]:
+    """brms's hurdle_cumulative response (E01, docs/bounded-families.md), as brms 2.23's ``standata()`` codes it (probed): whole
+    numbers ``0..max(y)``, 0 the hurdle category and ``1..max(y)`` the ordinal part's categories (every one, observed or not,
+    as for the cumulative family; brms: "requires either non-negative integers or ordered factors as responses"), or an ordered
+    pandas Categorical, whose first declared category is the hurdle (coded 0, as brms codes an ordered factor's first level) and
+    whose others, in their declared order, the ordinal part's. The ordinal part needs at least two categories (one threshold;
+    brms: "Could not extract the number of thresholds"). Returns the ordinal part's categories as labels, each row's code
+    (brms's ``Y``: 0 for the hurdle, ``k`` for the ordinal part's k-th category), notes naming the ordinal categories no fitted
+    row takes, and the hurdle category's label."""
+    label = f"response {name!r}"
+    reject_complex(label, s)
+    need = ("the hurdle_cumulative family needs whole numbers 0..K (0 the hurdle category) or an ordered pandas Categorical (its "
+            "first declared category the hurdle), brms's non-negative integers or ordered factor")
+    if isinstance(s.dtype, pd.CategoricalDtype):
+        if not s.cat.ordered:
+            raise FormulaError(f"{label} is an unordered pandas Categorical, whose category order means nothing; {need}")
+        declared = tuple(_scalar(label, c, where="declared category") for c in s.cat.categories)
+        if len(set(declared)) != len(declared):
+            raise FormulaError(f"{label} has declared categories that collide after normalisation: {list(declared)}")
+        if len({_kind(c) for c in s.cat.categories}) > 1:
+            raise FormulaError(f"{label} mixes text labels and numeric codes in its declared categories; recode it explicitly")
+        if s.isna().any():
+            raise FormulaError(f"{label} has missing values; drop or impute them explicitly before fitting.")
+        hurdle, categories = declared[0], declared[1:]
+        codes = s.cat.codes.to_numpy().astype(np.int64)
+    else:
+        if pd.api.types.is_bool_dtype(s):
+            raise FormulaError(f"{label} is boolean; {need}")
+        if not pd.api.types.is_numeric_dtype(s):
+            raise FormulaError(f"{label} has dtype {s.dtype}; {need}. Text labels have no order: declare it with an ordered "
+                               "Categorical")
+        v = s.to_numpy(dtype=float)
+        if np.isnan(v).any():
+            raise FormulaError(f"{label} has missing values; drop or impute them explicitly before fitting.")
+        bad = v[~np.isfinite(v) | (v != np.floor(v)) | (v < 0)]
+        if bad.size:
+            raise FormulaError(f"{label} has the value {bad[0]:g}; {need} (brms: 'requires either non-negative integers or "
+                               "ordered factors as responses')")
+        if v.max() > COUNT_CAP:
+            raise FormulaError(f"{label} has the value {v.max():.0f}, which would make {v.max():.0f} categories; an ordinal "
+                               f"response above {COUNT_CAP} is refused")
+        hurdle, categories = "0", tuple(str(k) for k in range(1, int(v.max()) + 1))
+        codes = v.astype(np.int64)
+    if len(categories) < 2:
+        raise FormulaError(f"{label} has {len(categories)} categor{'y' if len(categories) == 1 else 'ies'} above the hurdle category "
+                           f"{hurdle!r}; the ordinal part needs at least two (one threshold; brms: 'Could not extract the number of "
+                           "thresholds')")
+    notes = []
+    unobserved = [c for k, c in enumerate(categories, start=1) if not (codes == k).any()]
+    if unobserved:
+        notes.append(f"categories {unobserved} of the ordinal response {name!r} have no fitted rows: the thresholds next to them "
+                     "are informed by the ordering and the prior alone (brms keeps them too)")
+    if (codes == 0).all():
+        notes.append(f"every fitted row of {name!r} is the hurdle category {hurdle!r}: the ordinal part has no data, so its "
+                     "thresholds and coefficients are informed by their priors alone; check sensitivity to the explicit priors")
+    return categories, codes, notes, hurdle
 
 
 def categorical_categories(name: str, s: pd.Series) -> tuple[tuple[str, ...], np.ndarray, list[str]]:

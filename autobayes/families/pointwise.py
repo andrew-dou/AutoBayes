@@ -338,3 +338,46 @@ def beta_link(y, eta, phi, link: str):
     log_phi = np.log(phi)
     lbeta = _lgamma_of_shape(a, log_phi + log_mu) + _lgamma_of_shape(b, log_phi + log_cm) - gammaln(a + b)
     return (a - 1.0) * np.log(y) + (b - 1.0) * np.log1p(-y) - lbeta
+
+
+# -- E01, docs/bounded-families.md ---------------------------------------------------------------------------------------------
+def zero_one_inflated_beta_logit(y, eta, phi, zoi, coi):
+    """brms's ``zero_one_inflated_beta_lpdf``: ``log zoi + log(1 - coi)`` at 0, ``log zoi + log coi`` at 1, ``log(1 - zoi) + log
+    Beta(y | mu phi, (1 - mu) phi)`` inside, ``mu = expit(eta)`` (the Beta part evaluated at y = 1/2 and eta = 0 on the rows at 0
+    and 1, where its density is infinite and its shapes may underflow)."""
+    zero, one = y == 0, y == 1
+    inside = ~(zero | one)
+    beta = np.log1p(-zoi) + beta_logit(np.where(inside, y, 0.5), np.where(inside, eta, 0.0), phi)
+    edge = np.where(zero, np.log(zoi) + np.log1p(-coi), np.log(zoi) + np.log(coi)) + 0.0 * eta
+    return np.where(inside, beta, edge)
+
+
+def zero_inflated_beta_binomial_logit(y, trials, eta, phi, zi):
+    """brms's ``zero_inflated_beta_binomial_lpmf``: ``log(zi + (1 - zi) BetaBinomial(0 | trials, a, b))`` at zero, ``log(1 - zi) +
+    log BetaBinomial(y | trials, a, b)`` above, ``a = expit(eta) phi``, ``b = expit(-eta) phi``."""
+    mass = beta_binomial_logit(y, trials, eta, phi)
+    return np.where(y == 0, np.logaddexp(np.log(zi), np.log1p(-zi) + mass), np.log1p(-zi) + mass)
+
+
+def xbeta_logit(y, eta, phi, kappa):
+    """brms's ``xbeta_lpdf`` (Kosmidis and Zeileis 2024): with ``c = kappa / (1 + 2 kappa)``, ``log I_c(a, b)`` at 0, ``log I_c(b,
+    a)`` at 1 and ``log Beta((y + kappa) / (1 + 2 kappa) | a, b) - log1p(2 kappa)`` inside, ``a = expit(eta) phi``, ``b =
+    expit(-eta) phi`` (SciPy's ``betainc``; the inner density at y = 1/2 on the rows at 0 and 1)."""
+    from scipy.special import betainc, expit
+
+    a, b = expit(eta) * phi, expit(-eta) * phi
+    c = kappa / (1.0 + 2.0 * kappa)
+    zero, one = y == 0, y == 1
+    inside = ~(zero | one)
+    u = (np.where(inside, y, 0.5) + kappa) / (1.0 + 2.0 * kappa)
+    density = -betaln(a, b) + (a - 1.0) * np.log(u) + (b - 1.0) * np.log1p(-u) - np.log1p(2.0 * kappa)
+    with np.errstate(divide="ignore"):
+        return np.where(zero, np.log(betainc(a, b, c)), np.where(one, np.log(betainc(b, a, c)), density))
+
+
+def hurdle_ordered_logistic(y, eta, thresholds, hu):
+    """brms's ``hurdle_cumulative_logit_lpmf``: ``log hu`` at the hurdle category 0, ``log(1 - hu)`` plus the cumulative logit row
+    (``ordered_logistic``, read at category 1 on the zero rows) at the categories ``1..K``."""
+    y = np.asarray(y, dtype=np.int64)
+    ordinal = ordered_logistic(np.where(y == 0, 1, y), eta, thresholds)
+    return np.where(y == 0, np.log(hu) + 0.0 * np.asarray(eta, dtype=float), np.log1p(-hu) + ordinal)

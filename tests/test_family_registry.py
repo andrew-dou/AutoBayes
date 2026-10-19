@@ -100,11 +100,15 @@ EXPECTED = {                               # family -> (Bambi parent, link, pred
     "zero_inflated_beta": ("logit_mu", "logit", "mean"),
     "hurdle_gamma": ("log_mu", "log", "mean"),
     "hurdle_lognormal": ("mu", "identity", "mean"),
+    "zero_one_inflated_beta": ("logit_mu", "logit", "mean"),    # E01
+    "zero_inflated_beta_binomial": ("logit_mu", "logit", "expected"),
+    "hurdle_cumulative": ("mu", "logit", "p"),
+    "xbeta": ("logit_mu", "logit", "mean"),
 }
 
 
 def test_registry_lists_exactly_the_registered_families():
-    assert set(FAMILIES) == set(EXPECTED) and len(FAMILIES) == 31
+    assert set(FAMILIES) == set(EXPECTED) and len(FAMILIES) == 35
     for name, (parent, link, mean) in EXPECTED.items():
         spec = get_family(name)
         assert isinstance(spec, FamilySpec) and spec is FAMILIES[name]
@@ -115,35 +119,44 @@ def test_registry_lists_exactly_the_registered_families():
     assert {name for name, spec in FAMILIES.items() if spec.scale_parameter == "shape"} == {"negbinomial", "gamma", "weibull",
                                                                                             "zero_inflated_negbinomial", "hurdle_negbinomial",
                                                                                             "hurdle_gamma"}
-    assert {name for name, spec in FAMILIES.items() if spec.scale_parameter == "phi"} == {"beta", "beta_binomial", "zero_inflated_beta"}
+    assert {name for name, spec in FAMILIES.items() if spec.scale_parameter == "phi"} == {"beta", "beta_binomial", "zero_inflated_beta",
+                                                                                          "zero_one_inflated_beta",   # E01
+                                                                                          "zero_inflated_beta_binomial", "xbeta"}
     assert {name for name, spec in FAMILIES.items() if spec.continuous} == {"gaussian", "student", "gamma", "lognormal", "beta", "mixture",
                                                                             "weibull", "exponential", "skew_normal", "shifted_lognormal",
-                                                                            "exgaussian", "zero_inflated_beta", "hurdle_gamma", "hurdle_lognormal"}
+                                                                            "exgaussian", "zero_inflated_beta", "hurdle_gamma", "hurdle_lognormal",
+                                                                            "zero_one_inflated_beta", "xbeta"}          # E01
     assert {spec.bambi_scale_parameter for spec in FAMILIES.values() if spec.scale_parameter == "shape"} == {"alpha"}
     assert {spec.bambi_scale_parameter for spec in FAMILIES.values() if spec.scale_parameter == "phi"} == {"phi"}
     assert all((spec.scale_parameter is None) == (spec.bambi_scale_parameter is None) for spec in FAMILIES.values())
     assert {name for name, spec in FAMILIES.items() if spec.fixed_parameters} == {"student"}
-    assert {name for name, spec in FAMILIES.items() if spec.has_trials} == {"binomial", "beta_binomial", "zero_inflated_binomial"}
+    assert {name for name, spec in FAMILIES.items() if spec.has_trials} == {"binomial", "beta_binomial", "zero_inflated_binomial",
+                                                                            "zero_inflated_beta_binomial"}             # E01
     assert {name for name, spec in FAMILIES.items() if "probability" in spec.prediction_kinds} == {"binomial", "beta_binomial"}
     assert {name for name, spec in FAMILIES.items() if spec.expected_response is not None} == {"lognormal", "zero_inflated_poisson", "hurdle_poisson",
                                                                                                "cumulative", "mixture", "shifted_lognormal",
                                                                                                "sratio", "cratio", "acat",   # D04
                                                                                                "zero_inflated_negbinomial", "hurdle_negbinomial",   # D03
                                                                                                "zero_inflated_binomial", "zero_inflated_beta",
-                                                                                               "hurdle_gamma", "hurdle_lognormal"}
+                                                                                               "hurdle_gamma", "hurdle_lognormal",
+                                                                                               "zero_one_inflated_beta",   # E01
+                                                                                               "zero_inflated_beta_binomial",
+                                                                                               "hurdle_cumulative", "xbeta"}
     assert {name for name, spec in FAMILIES.items() if spec.mixture} == {"mixture"}
     assert {name for name, spec in FAMILIES.items() if spec.response_categories is not None} == {"cumulative", "categorical", "sratio",
-                                                                                                 "cratio", "acat"}
-    assert {name for name, spec in FAMILIES.items() if spec.thresholds} == {"cumulative", "sratio", "cratio", "acat"}
+                                                                                                 "cratio", "acat", "hurdle_cumulative"}
+    assert {name for name, spec in FAMILIES.items() if spec.thresholds} == {"cumulative", "sratio", "cratio", "acat", "hurdle_cumulative"}
+    assert {name for name, spec in FAMILIES.items() if spec.hurdle_category is not None} == {"hurdle_cumulative"}        # E01
     assert {name for name, spec in FAMILIES.items() if spec.thresholds and not spec.ordered_thresholds} == {"sratio", "cratio", "acat"}   # D04
     assert {name for name, spec in FAMILIES.items() if spec.category_specific} == {"sratio", "cratio", "acat"}
     assert {name for name, spec in FAMILIES.items() if spec.per_category} == {"categorical"}
     assert {name: spec.zero_parameter for name, spec in FAMILIES.items() if spec.zero_parameter} == {"zero_inflated_poisson": "zi", "hurdle_poisson": "hu",
         "zero_inflated_negbinomial": "zi", "hurdle_negbinomial": "hu", "zero_inflated_binomial": "zi", "zero_inflated_beta": "zi",
-        "hurdle_gamma": "hu", "hurdle_lognormal": "hu"}
+        "hurdle_gamma": "hu", "hurdle_lognormal": "hu", "zero_inflated_beta_binomial": "zi", "hurdle_cumulative": "hu"}   # E01
     assert {name: tuple(e.name for e in spec.extra_parameters) for name, spec in FAMILIES.items() if spec.extra_parameters} == {
-        "skew_normal": ("alpha",), "exgaussian": ("beta",), "shifted_lognormal": ("ndt",)}          # D01
-    with pytest.raises(ValueError, match=r"family must be one of \['acat', 'bernoulli', 'beta', 'beta_binomial', 'binomial', 'categorical', 'cratio', 'cumulative', 'exgaussian', 'exponential', 'gamma', 'gaussian', 'geometric', 'hurdle_gamma', 'hurdle_lognormal', 'hurdle_negbinomial', 'hurdle_poisson', 'lognormal', 'mixture', 'negbinomial', 'negbinomial2', 'poisson', 'shifted_lognormal', 'skew_normal', 'sratio', 'student', 'weibull', 'zero_inflated_beta', 'zero_inflated_binomial', 'zero_inflated_negbinomial', 'zero_inflated_poisson'\], got 'tweedie'"):
+        "skew_normal": ("alpha",), "exgaussian": ("beta",), "shifted_lognormal": ("ndt",),          # D01
+        "zero_one_inflated_beta": ("zoi", "coi"), "xbeta": ("kappa",)}                            # E01
+    with pytest.raises(ValueError, match=r"family must be one of \['acat', 'bernoulli', 'beta', 'beta_binomial', 'binomial', 'categorical', 'cratio', 'cumulative', 'exgaussian', 'exponential', 'gamma', 'gaussian', 'geometric', 'hurdle_cumulative', 'hurdle_gamma', 'hurdle_lognormal', 'hurdle_negbinomial', 'hurdle_poisson', 'lognormal', 'mixture', 'negbinomial', 'negbinomial2', 'poisson', 'shifted_lognormal', 'skew_normal', 'sratio', 'student', 'weibull', 'xbeta', 'zero_inflated_beta', 'zero_inflated_beta_binomial', 'zero_inflated_binomial', 'zero_inflated_negbinomial', 'zero_inflated_poisson', 'zero_one_inflated_beta'\], got 'tweedie'"):
         get_family("tweedie")
     with pytest.raises(TypeError):
         FAMILIES["tweedie"] = None
@@ -157,7 +170,8 @@ def frame() -> pd.DataFrame:
                          "cnt": rng.poisson(2.0, n), "k": rng.integers(0, 6, n), "n": np.full(n, 5),
                          "ypos": rng.gamma(2.0, 1.0, n), "prop": rng.uniform(0.05, 0.95, n),
                          "ord": [1, 2, 3, 4] * (n // 4), "cat": ["a", "b", "c"] * (n // 3),
-                         "zprop": np.r_[0.0, rng.uniform(0.05, 0.95, n - 1)], "zpos": np.r_[0.0, rng.gamma(2.0, 1.0, n - 1)]})
+                         "zprop": np.r_[0.0, rng.uniform(0.05, 0.95, n - 1)], "zpos": np.r_[0.0, rng.gamma(2.0, 1.0, n - 1)],
+                         "zoprop": np.r_[0.0, 1.0, rng.uniform(0.05, 0.95, n - 2)], "ordh": [0, 1, 2, 3] * (n // 4)})   # E01
 
 
 EXAMPLES = {                               # family -> (formula, extra prior classes, constructor keywords)
@@ -194,6 +208,10 @@ EXAMPLES = {                               # family -> (formula, extra prior cla
     "zero_inflated_beta": ("zprop ~ x", {"phi": ab.Gamma(2, 0.5), "zi": ab.Beta(2, 2)}, {}),
     "hurdle_gamma": ("zpos ~ x", {"shape": ab.Gamma(2, 0.5), "hu": ab.Beta(2, 2)}, {}),
     "hurdle_lognormal": ("zpos ~ x", {"sigma": ab.HalfNormal(1), "hu": ab.Beta(2, 2)}, {}),
+    "zero_one_inflated_beta": ("zoprop ~ x", {"phi": ab.Gamma(2, 0.5), "zoi": ab.Beta(2, 2), "coi": ab.Beta(2, 2)}, {}),   # E01
+    "zero_inflated_beta_binomial": ("k | trials(n) ~ x", {"phi": ab.Gamma(2, 0.5), "zi": ab.Beta(2, 2)}, {}),
+    "hurdle_cumulative": ("ordh ~ x", {"hu": ab.Beta(2, 2)}, {}),
+    "xbeta": ("zoprop ~ x", {"phi": ab.Gamma(2, 0.5), "kappa": ab.Gamma(2, 2)}, {}),
 }
 
 

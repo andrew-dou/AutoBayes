@@ -92,7 +92,9 @@ logit model's. A category-specific term `cs(x)` is brms's column of `Xcs` (`Kcs`
 D01: a family's extra parameter (`FamilySpec.extra_parameters`) is brms's parameter of that name: `alpha` (unbounded, sampled as
 it is), `beta` (`real<lower=0>`, on the log scale) and `ndt` (`real<lower=0,upper=min_Y>`, `min_Y` the smallest `Y`: Stan's
 lower-upper coordinate `log(ndt / (min_Y - ndt))`, recomputed from `ndt` at every point and checked against the fixture's `u`,
-and the probe's step checked, as for `zi`, before it is mapped to `ndt_interval__`).
+and the probe's step checked, as for `zi`, before it is mapped to `ndt_interval__`). E01 adds the support `"unit"`, brms's
+`real<lower=0,upper=1>` `zoi` and `coi`, mapped to `zoi_logodds__` and `coi_logodds__` with the probe's step and Stan's logit at
+every point checked as for `zi`; `kappa` (`xbeta()`) is a `"positive"` one.
 
 D07: under a shrinkage prior on b (brms's `horseshoe()` or `R2D2()`, `Model.shrinkage_names`) brms's `b` is a transformed parameter
 `zb .* sdb`: the point gives the model `zb` and the prior's scales (`shrinkage_point`, each vector put in AutoBayes's design-column
@@ -166,7 +168,9 @@ def priors_from_spec(spec: dict) -> ab.Priors:
                      # C06: a measurement-error term's latent values, {"meanme": [...], "sdme": [...]} (bare, or by column)
                      meanme=_prior(spec.get("meanme")), sdme=_prior(spec.get("sdme")),
                      # D01: a family's extra parameter, {"alpha": [...]}, {"beta": [...]} or {"ndt": [...]}
-                     alpha=_prior(spec.get("alpha")), beta=_prior(spec.get("beta")), ndt=_prior(spec.get("ndt")))
+                     alpha=_prior(spec.get("alpha")), beta=_prior(spec.get("beta")), ndt=_prior(spec.get("ndt")),
+                     # E01: zero_one_inflated_beta's {"zoi": [...], "coi": [...]} and xbeta's {"kappa": [...]}
+                     zoi=_prior(spec.get("zoi")), coi=_prior(spec.get("coi")), kappa=_prior(spec.get("kappa")))
 
 
 def build_model(case: dict, data: pd.DataFrame) -> ab.Model:
@@ -1018,7 +1022,15 @@ def coordinate_map(fixture: Fixture, model: ab.Model, cmap: ColumnMap, gmap: Gro
                     if abs(math.log(v / (top - v)) - pt_.u[idx]) > 1e-10:
                         raise OracleMismatch(f"point {q}: log({par} / (min_Y - {par})) is {math.log(v / (top - v))!r}; brms's "
                                              f"unconstrained value is {pt_.u[idx]!r}")
-            target, expect = (extra.coordinate, 0), {"real": "identity", "positive": "log", "below_min_y": "other"}[extra.support]
+            if extra.support == "unit":                        # E01: real<lower=0,upper=1> zoi, coi: Stan's logit, as zi's
+                if abs(float(e["du"]) - LOGIT_STEP) > 1e-9:
+                    raise OracleMismatch(f"brms's probe moved the coordinate of {par} by {e['du']!r}; logit({par}) moves it by {LOGIT_STEP!r}")
+                for q, pt_ in enumerate(fixture.points):
+                    p = float(pt_.pars[par])
+                    if abs(math.log(p / (1.0 - p)) - pt_.u[idx]) > 1e-10:
+                        raise OracleMismatch(f"point {q}: logit({par}) is {math.log(p / (1.0 - p))!r}; brms's unconstrained value is {pt_.u[idx]!r}")
+            target, expect = (extra.coordinate, 0), {"real": "identity", "positive": "log", "below_min_y": "other",
+                                                     "unit": "other"}[extra.support]
         elif par.startswith("sd_") and int(par[3:]) in by_id:
             g = by_id[int(par[3:])]
             M = int(fixture.standata[f"M_{par[3:]}"])

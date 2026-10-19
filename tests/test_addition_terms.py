@@ -129,7 +129,9 @@ def test_no_park_and_the_family_registry():
                 # D03: the frozen weighted cases of the zero-inflated and hurdle Poisson, and the six families whose unweighted
                 # densities their own cases verify (the weighting is the same wrapper; tests/test_zero_inflated_hurdle_more.py)
                 "zero_inflated_poisson", "hurdle_poisson", "zero_inflated_negbinomial", "hurdle_negbinomial",
-                "zero_inflated_binomial", "zero_inflated_beta", "hurdle_gamma", "hurdle_lognormal"}
+                "zero_inflated_binomial", "zero_inflated_beta", "hurdle_gamma", "hurdle_lognormal",
+                # E01: likewise for three of the four bounded and hurdle families (tests/test_bounded_families.py)
+                "zero_one_inflated_beta", "zero_inflated_beta_binomial", "xbeta"}
     for name, spec in FAMILIES.items():                     # weights() only where a frozen weighted brms case verifies it
         assert ("weights" in spec.addition_terms) == (name in verified), name
         assert ({"cens", "trunc"} <= spec.addition_terms) == (spec.tails is not None) == (name == "gaussian"), name
