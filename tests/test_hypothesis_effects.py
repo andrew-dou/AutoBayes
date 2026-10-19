@@ -292,7 +292,7 @@ def test_conditional_effects_options():
     for bad in ({"resolution": 1}, {"resolution": 10.0}, {"resolution": True}, {"prob": 0}, {"prob": 1}, {"prob": "0.9"}):
         with pytest.raises(ValueError, match="resolution must be|prob must be"):
             ab.conditional_effects(b.model, draws, "x", **bad)
-    for effects, match in ((["x:z"], "the interaction effect 'x:z' is not offered"),
+    for effects, match in ((["x:z:w"], "the effect 'x:z:w' interacts 3 predictors"),   # E05 lifted two-way interactions
                            (["g"], "'g' is a grouping factor"),
                            (["y"], "'y' is not a predictor of the population-level formula; its predictors are \\['x', 'w', 'z'\\]"),
                            (["nope"], "'nope' is not a predictor"),

@@ -28,6 +28,12 @@ D06 `check_hypothesis`, `check_conditional_effects`   in the same `post` gate: `
                          (`post_args`) against brms's hypothesis() table, column by column (labels and stars exactly), and
                          its draws; `ab.conditional_effects` of the case's effects against brms's conditional_effects()
                          table of each, every column (the grid, the values held, cond__, effect1__ and the summaries)
+E05 `check_prior_draws`, `check_loo_model_weights`   in the same `post` gate: `ab.prior_draws` has brms's prior_draws() columns
+                         (brms's draws are Stan's RNG's: they are compared through what is computed from them, the hypothesis
+                         table's Savage-Dickey evidence ratios, `check_hypothesis` handing `ab.hypothesis` the fixture's prior
+                         draws); an interaction effect's table (effect2__) is checked by `check_conditional_effects` as any
+                         other; `ab.loo_model_weights` and `ab.model_weights(..., "stacking")` against brms's
+                         loo_model_weights() of the two fits
 
 A case that opts in to two-reference acceptance (P6, its gate field names a committed high-precision reference and the
 quantity kinds that may fall back on it: "gradient", "epred") has G2's gradient and G4's expected values checked by
@@ -69,6 +75,7 @@ from itertools import zip_longest
 from types import SimpleNamespace
 
 import numpy as np
+import pandas as pd
 
 import autobayes as ab
 from autobayes.priors import dirichlet_concentration
@@ -748,8 +755,10 @@ def check_post(b: Bundle) -> None:
     p_loo, looic; columns Estimate, SE), ``pareto_k`` and ``n_eff``; ``waic`` brms's ``waic()`` (D05, ``check_waic``);
     ``loo_compare`` brms's ``loo_compare()`` and ``model_weights()`` of this model and the case it names (D05,
     ``check_loo_compare``); ``hypothesis`` and ``conditional_effects`` brms's ``hypothesis()`` and ``conditional_effects()``
-    of the case's ``post_args`` (D06, ``check_hypothesis``, ``check_conditional_effects``). A case that lists none has
-    nothing to compare."""
+    of the case's ``post_args`` (D06, ``check_hypothesis``, ``check_conditional_effects``); ``prior_draws`` brms's
+    ``prior_draws()`` columns (E05, ``check_prior_draws``; with it, the hypotheses' evidence ratios come from the fixture's
+    prior draws) and ``loo_model_weights`` brms's stacking weights (E05, ``check_loo_model_weights``). A case that lists none
+    has nothing to compare."""
     if not b.post:
         return
     post = b.fixture.raw.get("post")
@@ -790,6 +799,10 @@ def check_post(b: Bundle) -> None:
             check_hypothesis(b, idata, post["hypothesis"])
         elif name == "conditional_effects":                          # D06
             check_conditional_effects(b, idata, post["conditional_effects"])
+        elif name == "prior_draws":                                  # E05
+            check_prior_draws(b, post["prior_draws"])
+        elif name == "loo_model_weights":                            # E05
+            check_loo_model_weights(b, idata, post["loo_model_weights"])
         else:
             raise OracleMismatch(f"no comparison for the post-processing function {name!r}")
 
@@ -888,7 +901,8 @@ def check_hypothesis(b: Bundle, idata, ref) -> None:
     columns by name and in order, each column (``Hypothesis`` and ``Star`` exactly, the numbers to ``PRED_REL`` with brms's
     NA, stored NaN, exactly), and the draws of each hypothesis, ``(draws, hypotheses)`` with brms's names ``H1``, ..."""
     hypotheses = _post_args(b, "hypothesis")
-    res = b.post["hypothesis"](b.model, idata, hypotheses)
+    prior = recorded_prior_draws(b)                                 # E05: brms's prior draws, for the Savage-Dickey ratios
+    res = b.post["hypothesis"](b.model, idata, hypotheses, **({} if prior is None else {"prior": prior}))
     table = ref["table"]
     columns = list(table["columns"])
     if list(res.table.columns) != columns:
@@ -919,6 +933,69 @@ def check_conditional_effects(b: Bundle, idata, ref) -> None:
             raise OracleMismatch(f"conditional_effects {effect}: columns {list(table.columns)} vs brms {columns}")
         for column in columns:
             _compare_table_column(f"conditional_effects {effect} {column}", table[column].tolist(), theirs["values"][column])
+
+
+# -- E05: prior draws, Savage-Dickey ratios and stacking weights ------------------------------------------------------
+def recorded_prior_draws(b: Bundle):
+    """E05: the fixture's ``post.prior_draws`` (brms's ``prior_draws()`` of the fixed-parameter fit with ``sample_prior =
+    "yes"``) as a ``DataFrame`` with brms's column names, when the case lists ``prior_draws``; else None."""
+    if "prior_draws" not in b.post:
+        return None
+    ref = (b.fixture.raw.get("post") or {}).get("prior_draws")
+    if ref is None:
+        raise OracleMismatch("the case lists prior_draws but the fixture's post block has none")
+    return pd.DataFrame(fx.decode(ref), columns=list(ref.get("colnames") or []))
+
+
+def check_prior_draws(b: Bundle, ref) -> None:
+    """E05: ``ab.prior_draws`` of the case's model, as many draws as brms's, has brms's ``prior_draws()`` columns by name and
+    in order (``Intercept``, ``b`` or one ``b_<coef>`` per coefficient, the family's parameters, ``sd_<group>`` ...), every
+    draw finite, the SDs and the family's scale parameters positive, ``zi`` and ``hu`` in (0, 1), a correlation in (-1, 1).
+    The draws themselves are random (brms's are Stan's RNG's) and are compared through what is computed from them:
+    ``check_hypothesis`` hands the fixture's draws to ``ab.hypothesis``, whose evidence ratios must be brms's."""
+    names = list(ref.get("colnames") or [])
+    S = int(ref["dims"][0])
+    ours = b.post["prior_draws"](b.model, draws=S, seed=1)
+    if list(ours.columns) != names:
+        raise OracleMismatch(f"prior_draws columns {list(ours.columns)} vs brms {names}")
+    values = ours.to_numpy(dtype=float)
+    if values.shape != (S, len(names)) or not np.isfinite(values).all():
+        raise OracleMismatch(f"prior_draws: shape {values.shape} (brms ({S}, {len(names)})) or non-finite draws")
+    for j, name in enumerate(names):
+        v = values[:, j]
+        if (name.startswith("sd_") or name in ("sigma", "shape", "phi", "nu")) and not (v > 0).all():
+            raise OracleMismatch(f"prior_draws {name}: a draw is not positive")
+        if name in ("zi", "hu") and not ((v > 0) & (v < 1)).all():
+            raise OracleMismatch(f"prior_draws {name}: a draw is outside (0, 1)")
+        if name.startswith("cor_") and not (np.abs(v) < 1).all():
+            raise OracleMismatch(f"prior_draws {name}: a correlation outside (-1, 1)")
+
+
+def check_loo_model_weights(b: Bundle, idata, ref) -> None:
+    """E05: loo's ``loo_model_weights()`` (stacking, its default) of this model and the case it names (``compare_with``),
+    which brms's ``model_weights(weights = "stacking")`` equals: the other model must be the target brms evaluated (its log
+    density at its points equals the fixture's ``loo_compare.other_lp``), then ``ab.loo_model_weights`` and
+    ``ab.model_weights(..., "stacking")`` of the two ``ab.loo()`` results, in that order, equal brms's weights, as numbers and
+    as logarithms (as ``check_loo_compare`` compares weights)."""
+    other_id = b.case.get("autobayes", {}).get("compare_with")
+    models = list(ref["models"])
+    if ref.get("method") != "stacking" or not other_id or models != [b.case["id"], other_id]:
+        raise OracleMismatch(f"loo_model_weights: the fixture weighs {models} by {ref.get('method')!r}; the case compares "
+                             f"{[b.case['id'], other_id]} by stacking")
+    other = Bundle(other_id)
+    lp = np.array([other.logp(vp) for _, _, vp in other.points()])
+    other_lp = ((b.fixture.raw.get("post") or {}).get("loo_compare") or {}).get("other_lp")
+    if other_lp is None or rel_err(lp, fx.decode(other_lp)) > LOGP_REL:
+        raise OracleMismatch(f"loo_model_weights: {other_id}'s log density at its points is not the fixture's other_lp")
+    results = {models[0]: ab.loo(b.model, idata), models[1]: ab.loo(other.model, fixed_parameter_draws(other))}
+    theirs = fx.decode(ref["weights"])
+    for what, w in (("loo_model_weights", b.post["loo_model_weights"](results)),
+                    ("model_weights stacking", ab.model_weights(results, "stacking"))):
+        if list(w.index) != models:
+            raise OracleMismatch(f"{what}: models {list(w.index)} vs brms {models}")
+        compare_post(what, w.to_numpy(), theirs)
+        with np.errstate(divide="ignore"):
+            compare_post(f"{what} (log)", np.log(w.to_numpy()), np.log(theirs))
 
 
 # -- multivariate models (C01) ------------------------------------------------------------------------------
