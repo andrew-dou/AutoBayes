@@ -485,7 +485,7 @@ OPTED_IN = sorted(cid for cid in fx.case_ids() if "reference" in (fx.load_case(c
 
 
 def test_every_opted_in_case_has_its_reference_and_every_reference_a_case():
-    assert OPTED_IN == ["bernoulli_cloglog", "cumulative_probit_varint", "gauss_censored", "gauss_truncated"]
+    assert OPTED_IN == ["bernoulli_cloglog", "cumulative_probit_varint", "gamma_censored_interval", "gauss_censored", "gauss_truncated"]
     assert [p.stem for p in REFERENCE_FILES] == OPTED_IN
     for cid in OPTED_IN:
         assert fx.load_case(cid)["gate"]["reference"] == f"{cid}.json"

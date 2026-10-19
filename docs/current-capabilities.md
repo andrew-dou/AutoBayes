@@ -363,7 +363,7 @@ inclusive bounds, the mass a sum of masses); each exact on both paths, with brms
 Gaussian's censored and truncated rows included, D123), `bayes_R2()`, `loo()` and `describe()`. Verified against
 `weibull_censored`, `lognormal_censored`, `poisson_truncated`, `lognormal_censored_interval_weighted`,
 `poisson_truncated_weighted_post`, `weibull_censored_interval_post` and `negbinomial_truncated_ub` (log densities within 1.3e-14
-relative); the Gamma family's `cens()` (brms's gradient in the shape off by up to 2.8e-5 on `gamma_censored_interval`, D120) and a
-count response's lower bound (brms's expected values are `E[Y | Y >= lb + 1]` on `negbinomial_truncated`, D121) are implemented
-and withheld for a two-reference acceptance; the other families and contexts are refused naming the construct (D122); see
+relative); the Gamma family's `cens()` is accepted on `gamma_censored_interval` against a 50-digit reference where brms's
+gradient in the shape is off it (up to 2.8e-5, P6, D120); a count response's lower bound (brms's expected values are
+`E[Y | Y >= lb + 1]` on `negbinomial_truncated`, D121) is implemented and withheld; the other families and contexts are refused naming the construct (D122); see
 [censoring and truncation beyond the Gaussian](cens-trunc-families.md).

@@ -24,9 +24,15 @@ thresholds ``c_1 < ... < c_K`` are brms's ``Intercept``, and ``c_0 = -inf``, ``c
     gaussian, truncated  ypos | trunc(lb = 0) ~ x + (1 | g)   the density minus log(1 - Phi((lb - eta) / sigma))
     cumulative, probit   ord ~ x + (1 | g)                    log(Phi(c_ord - eta) - Phi(c_{ord-1} - eta)), ord in 1..K+1,
                                                               the difference taken in the tail it lies in (``log_normal_interval``)
+    Gamma, log, censored ypos | cens(cens_i, ypos2) ~ x + (1 | g)
+                                                              with mu = exp(eta), rate = shape / mu and t = rate y: by code 0 / 1
+                                                              / -1 / 2 the log density, log Q(shape, t), log P(shape, t) and
+                                                              log(P(shape, t2) - P(shape, t)), P and Q the regularized incomplete
+                                                              gamma functions (``log_gamma_interval``)
 
 with brms's priors: ``normal(m, s)`` on ``Intercept`` and ``b`` (``normal_lpdf``), ``normal(m, s)`` on ``sd_1`` and ``sigma``,
-which are declared ``<lower=0>`` (``normal_lpdf(. | m, s) - normal_lccdf(0 | m, s)``), and ``std_normal`` on ``z_1``. Every
+which are declared ``<lower=0>`` (``normal_lpdf(. | m, s) - normal_lccdf(0 | m, s)``), ``gamma(a, b)`` on the Gamma family's
+``shape`` (``gamma_lpdf``; its support is the declared one, so no truncation term), and ``std_normal`` on ``z_1``. Every
 normalising constant is included, as ``rstan::log_prob`` includes them. The inputs are the doubles brms and AutoBayes
 evaluate, converted to decimal exactly: the CSV's numbers parsed as binary64 (the generator rounds them to four decimals
 so that R and Python parse the same double) and the fixture's ``u``; everything from there on, the centring of ``x``
@@ -53,6 +59,7 @@ import math
 import re
 import sys
 from decimal import ROUND_HALF_EVEN, Context, Decimal, getcontext, localcontext
+from fractions import Fraction
 from functools import lru_cache
 from pathlib import Path
 
@@ -73,7 +80,9 @@ MODELS = {   # the brms formulas this script implements -> (family, link); Case.
     "y | cens(cens_ind) ~ x + (1 | g)": ("gaussian", "identity"),
     "ypos | trunc(lb = 0) ~ x + (1 | g)": ("gaussian", "identity"),
     "ord ~ x + (1 | g)": ("cumulative", "probit"),
+    "ypos | cens(cens_i, ypos2) ~ x + (1 | g)": ("Gamma", "log"),
 }
+_GAMMA = re.compile(r"gamma\(\s*([-+0-9.eE]+)\s*,\s*([-+0-9.eE]+)\s*\)")
 _NORMAL = re.compile(r"normal\(\s*([-+0-9.eE]+)\s*,\s*([-+0-9.eE]+)\s*\)")
 
 
@@ -201,6 +210,119 @@ def log_normal_interval(a: Decimal | None, b: Decimal | None) -> Decimal:
         return +r
 
 
+@lru_cache(maxsize=None)
+def _bernoulli_even(k: int) -> Fraction:
+    """The Bernoulli number B_{2k} (B_2 = 1/6, B_4 = -1/30, ...), exactly, from the recurrence sum_j C(m + 1, j) B_j = 0."""
+    B = [Fraction(1)]
+    for m in range(1, 2 * k + 1):
+        B.append(-sum(math.comb(m + 1, j) * B[j] for j in range(m)) / (m + 1))
+    return B[2 * k]
+
+
+def _log_gamma(a: Decimal) -> Decimal:
+    """log Gamma(a) for a > 0 in the caller's (guarded) context: Stirling's series at z = a + N >= 60 with 30 terms (the next
+    is below 1e-70 there), less sum_{j < N} log(a + j)."""
+    if not a > 0:
+        raise ValueError(f"log Gamma needs a positive argument, got {a}")
+    N = max(0, 60 - int(a))
+    z = a + N
+    total = (z - Decimal("0.5")) * z.ln() - z + (2 * _pi()).ln() / 2
+    power = z
+    for k in range(1, 31):
+        B = _bernoulli_even(k)
+        total += Decimal(B.numerator) / Decimal(B.denominator) / (2 * k * (2 * k - 1) * power)
+        power *= z * z
+    for j in range(N):
+        total -= (a + j).ln()
+    return total
+
+
+def _gamma_p_series(a: Decimal, x: Decimal) -> Decimal:
+    """P(a, x) = x^a e^-x / Gamma(a + 1) sum_n x^n / ((a + 1) ... (a + n)), a sum of positive terms (for x < a + 1)."""
+    eps = Decimal(10) ** -(getcontext().prec + 2)
+    term = total = Decimal(1)
+    n = 0
+    while True:
+        n += 1
+        term = term * x / (a + n)
+        total += term
+        if term <= eps * total:
+            break
+    return (a * x.ln() - x - _log_gamma(a + 1)).exp() * total
+
+
+def _gamma_q_cf(a: Decimal, x: Decimal) -> Decimal:
+    """Q(a, x) = x^a e^-x / Gamma(a) / (x + 1 - a - 1 (1 - a) / (x + 3 - a - 2 (2 - a) / (x + 5 - a - ...))), Legendre's continued
+    fraction, by the modified Lentz method (for x >= a + 1)."""
+    eps = Decimal(10) ** -(getcontext().prec + 2)
+    tiny = Decimal(10) ** -(getcontext().prec * 2)
+    b = x + 1 - a
+    c = 1 / tiny
+    d = 1 / b
+    h = d
+    i = 0
+    while True:
+        i += 1
+        an = -i * (i - a)
+        b += 2
+        d = an * d + b
+        d = tiny if abs(d) < tiny else d
+        c = b + an / c
+        c = tiny if abs(c) < tiny else c
+        d = 1 / d
+        delta = d * c
+        h *= delta
+        if abs(delta - 1) <= eps:
+            break
+    return (a * x.ln() - x - _log_gamma(a)).exp() * h
+
+
+def _gamma_p_q(a: Decimal, x: Decimal) -> tuple[Decimal, Decimal]:
+    """(P(a, x), Q(a, x)), the regularized incomplete gamma functions, the smaller of the two computed directly."""
+    if x < a + 1:
+        p = _gamma_p_series(a, x)
+        return p, 1 - p
+    q = _gamma_q_cf(a, x)
+    return 1 - q, q
+
+
+def log_gamma_interval(a: Decimal, x1: Decimal | None, x2: Decimal | None) -> Decimal:
+    """log(P(a, x2) - P(a, x1)) for 0 <= x1 < x2, ``None`` standing for 0 (x1) or infinity (x2): log P, log Q, or the
+    difference taken in the tail both lie in (Q(x1) - Q(x2) above a + 1, P(x2) - P(x1) below), recomputed with as many
+    further digits as the two terms cancel."""
+    extra = 0
+    while True:
+        ctx = CONTEXT.copy()
+        ctx.prec = PREC + GUARD + extra
+        with localcontext(ctx):
+            if x1 is None and x2 is None:
+                return Decimal(0)
+            if x1 is None:
+                r = _gamma_p_q(a, x2)[0].ln()
+                break
+            if x2 is None:
+                r = _gamma_p_q(a, x1)[1].ln()
+                break
+            (p1, q1), (p2, q2) = _gamma_p_q(a, x1), _gamma_p_q(a, x2)
+            hi, lo = (q1, q2) if x1 >= a + 1 else (p2, p1)
+            diff = hi - lo
+            lost = max(0, hi.adjusted() - diff.adjusted())
+            if lost <= GUARD // 2 + extra:
+                r = diff.ln()
+                break
+        extra = lost + GUARD // 2
+    with localcontext(CONTEXT):
+        return +r
+
+
+def gamma_lpdf(v: Decimal, a: Decimal, rate: Decimal) -> Decimal:
+    """log Gamma(v | a, rate) = a log(rate) - log Gamma(a) + (a - 1) log v - rate v."""
+    with _guarded():
+        r = a * rate.ln() - _log_gamma(a) + (a - 1) * v.ln() - rate * v
+    with localcontext(CONTEXT):
+        return +r
+
+
 def inverse_mills(t: Decimal) -> Decimal:
     """phi(t) / (1 - Phi(t)), the standard Normal density over its upper tail mass."""
     with _guarded():
@@ -280,11 +402,12 @@ class Case:
                 raise SystemExit(f"{case_id}: brms's unconstrained coordinates are {self.upars}; this script implements {expected}")
         else:
             expected = [("b", 1, "identity"), ("Intercept", 1, "identity")] + ([("sigma", 1, "log")] if family == "gaussian" else []) \
+                + ([("shape", 1, "log")] if family == "Gamma" else []) \
                 + [("sd_1", 1, "log")] + [("z_1", j, "identity") for j in range(1, len(self.levels) + 1)]
             if self.upars != expected:
                 raise SystemExit(f"{case_id}: brms's unconstrained coordinates are {self.upars}; this script implements {expected}")
         fitted = read_csv(self.dir / "data.csv")
-        response = {"bernoulli": "yb", "binomial": "k", "cumulative": "ord"}.get(family, "ypos" if self.lb is not None else "y")
+        response = {"bernoulli": "yb", "binomial": "k", "cumulative": "ord", "Gamma": "ypos"}.get(family, "ypos" if self.lb is not None else "y")
         X, Y = self.fixture["standata"]["X"], self.fixture["standata"]["Y"]
         j, n = X["colnames"].index("x"), len(fitted)
         if [float(r["x"]) for r in fitted] != X["values"][j * n:(j + 1) * n] or [float(r[response]) for r in fitted] != Y["values"]:
@@ -303,15 +426,21 @@ class Case:
 
     def _priors(self, rows: list[dict]) -> dict[str, tuple[Decimal, Decimal]]:
         out = {}
+        self.shape_prior = None
         for p in rows:
+            g = _GAMMA.fullmatch(p["prior"].strip())
+            if self.family == "Gamma" and p["class"] == "shape" and g is not None and self.shape_prior is None:
+                self.shape_prior = (Decimal(g.group(1)), Decimal(g.group(2)))      # gamma(a, b) on the Gamma family's shape
+                continue
             m = _NORMAL.fullmatch(p["prior"].strip())
             key = p["class"]
             if m is None or key in out or p.get("coef") or (key == "sd") != ("group" in p) or p.get("group", "g") != "g":
                 raise SystemExit(f"{self.id}: prior {p} is not a normal(m, s) prior of one class this script implements")
             out[key] = (Decimal(m.group(1)), Decimal(m.group(2)))
         wanted = {"Intercept", "b", "sd"} | ({"sigma"} if self.family == "gaussian" else set())
-        if set(out) != wanted:
-            raise SystemExit(f"{self.id}: priors on {sorted(out)}; the model needs exactly {sorted(wanted)}")
+        if set(out) != wanted or (self.family == "Gamma") != (self.shape_prior is not None):
+            raise SystemExit(f"{self.id}: priors on {sorted(out)}; the model needs exactly {sorted(wanted)}"
+                             + (" and gamma(a, b) on shape" if self.family == "Gamma" else ""))
         return out
 
     def _row(self, r: dict[str, str], response: bool = True) -> dict:
@@ -324,6 +453,10 @@ class Case:
             row["y"] = int(r["ord"])
             if not 1 <= row["y"] <= self.nthres + 1:
                 raise SystemExit(f"{self.id}: category {row['y']} outside 1..{self.nthres + 1}")
+        elif self.family == "Gamma":                         # cens(cens_i, ypos2): the code, the response and the interval's end
+            row["y"], row["cens"], row["y2"] = number(r["ypos"]), int(r["cens_i"]), number(r["ypos2"])
+            if row["cens"] not in (-1, 0, 1, 2) or (row["cens"] == 2 and not row["y2"] > row["y"]):
+                raise SystemExit(f"{self.id}: censoring code {row['cens']} on ({row['y']}, {row['y2']})")
         elif self.formula.startswith("k "):
             row["k"], row["n"] = int(r["k"]), int(r["size"])
             row["log_choose"] = Decimal(math.comb(row["n"], row["k"])).ln()
@@ -370,6 +503,15 @@ class Case:
         if self.family == "cumulative":                     # probit: Phi(c_y - eta) - Phi(c_{y-1} - eta)
             c, y = pars["Intercept"], row["y"]
             return log_normal_interval(c[y - 2] - eta if y > 1 else None, c[y - 1] - eta if y <= self.nthres else None)
+        if self.family == "Gamma":                           # rate = shape / mu, mu = exp(eta)
+            a = pars["shape"][0]
+            with _guarded():
+                rate = a / eta.exp()
+                t = rate * row["y"]
+                t2 = rate * row["y2"]
+            if row["cens"] == 0:
+                return gamma_lpdf(row["y"], a, rate)
+            return log_gamma_interval(a, *{1: (t, None), -1: (None, t), 2: (t, t2)}[row["cens"]])
         if self.link == "cloglog":
             e = eta.exp()
             if "k" in row:
@@ -394,6 +536,8 @@ class Case:
             if name in pars:                       # <lower=0>: the normal truncated to (0, inf), brms's - normal_lccdf(0 | m, s)
                 m, s = self.priors[cls]
                 lp += sum(normal_lpdf(v, m, s) - log_ccdf((0 - m) / s) for v in pars[name])
+        if self.family == "Gamma":                           # gamma(a, b) on shape, its declared support (0, inf)
+            lp += gamma_lpdf(pars["shape"][0], *self.shape_prior)
         lp += sum(normal_lpdf(v, Decimal(0), Decimal(1)) for v in pars["z_1"])
         lp += sum(self.row_term(pars, row) for row in self.rows)
         return lp
@@ -436,7 +580,9 @@ def build(case_id: str) -> str:
             "case": case_id,
             "generator": "oracle/reference.py",
             "model": f"{case.formula}, brms {case.family}({case.link}); priors "
-                     + ", ".join(f"{cls} normal({m}, {s})" for cls, (m, s) in case.priors.items()) + ", z_1 std_normal",
+                     + ", ".join(f"{cls} normal({m}, {s})" for cls, (m, s) in case.priors.items())
+                     + (f", shape gamma({case.shape_prior[0]}, {case.shape_prior[1]})" if case.shape_prior is not None else "")
+                     + ", z_1 std_normal",
             "arithmetic": f"decimal, {PREC} significant digits ({GUARD} guard digits in erf, erfc and the constants); values "
                           f"written with {DIGITS}; the gradient without the Jacobian is a fourth-order central difference of the "
                           f"{PREC}-digit density with step {STEP}, with it plus 1 in each log-transformed coordinate",

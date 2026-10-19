@@ -441,7 +441,7 @@ def test_weights_distributional_formulas_and_the_term_model_compose():
 # -- 4. refusals and the parks ------------------------------------------------------------------------------------------------
 REFUSALS = [
     ("cnt | cens(c) ~ x", "poisson", r"'cens\(c\)' is not available for the poisson family; brms's cens\(\) is verified here for the gaussian, "
-                                     r"lognormal, weibull families"),
+                                     r"gamma, lognormal, weibull families"),
     ("cnt | cens(c) ~ x", "negbinomial", r"'cens\(c\)' is not available for the negbinomial family"),
     ("ypos | cens(c) ~ x", "exponential", r"'cens\(c\)' is not available for the exponential family"),
     ("ypos | cens(c) ~ x", "student", r"'cens\(c\)' is not available for the student family"),
@@ -449,9 +449,6 @@ REFUSALS = [
                                             r"the gaussian, poisson, negbinomial families"),
     ("ypos | trunc(lb = 0.1) ~ x", "lognormal", r"'trunc\(lb = 0.1\)' is not available for the lognormal family"),
     ("ypos | trunc(lb = 0.1) ~ x", "gamma", r"'trunc\(lb = 0.1\)' is not available for the gamma family"),
-    ("ypos | cens(c) ~ x", "gamma", r"'cens\(c\)': cens\(\) is implemented for the Gamma family .* and withheld: brms's gradient in the "
-                                    r"shape is not exact.*D120"),
-    ("ypos | cens(c, ypos2) ~ x", "gamma", r"withheld: brms's gradient in the shape is not exact"),
     ("ytr | trunc(lb = 1) ~ x", "negbinomial", r"'trunc\(lb = 1\)': a lower bound of a count response is implemented .* withheld: brms 2.23's "
                                                r"posterior_epred .* E\[Y \| Y >= 2\].*D121"),
     ("ytr | trunc(lb = 1, ub = 8) ~ x", "poisson", r"a lower bound of a count response is implemented"),
@@ -474,7 +471,8 @@ def test_refusals(formula, family, needle):
 
 
 def test_the_links_multivariate_and_nonlinear_models_refuse_them():
-    for family, link, lhs, needle in (("gamma", "inverse", "ypos | cens(c01)", "withheld"), ("gamma", "identity", "ypos | cens(c01)", "withheld"),
+    for family, link, lhs, needle in (("gamma", "inverse", "ypos | cens(c01)", "is not available under the inverse link of the gamma family"),
+                                      ("gamma", "identity", "ypos | cens(c01)", "is not available under the identity link of the gamma family"),
                                       ("poisson", "sqrt", "cnt | trunc(ub = 6)", "is not available under the sqrt link of the poisson family"),
                                       ("negbinomial", "identity", "cnt | trunc(ub = 6)",
                                        "is not available under the identity link of the negbinomial family")):
@@ -502,9 +500,8 @@ def test_censoring_codes_and_upper_bounds_are_validated(codes, y2, needle):
 
 def test_the_parks_carry_their_reasons():
     assert "count_lower_bound" in F.PARKED_TRUNCATION and "D121" in F.PARKED_TRUNCATION["count_lower_bound"]
-    gamma = get_family("gamma")
-    assert "cens" in gamma.addition_terms and set(gamma.parked_additions) == {"cens"} and "D120" in gamma.parked_additions["cens"]
-    assert "2.8e-5" in gamma.parked_additions["cens"] and "-68.5958155986809" in gamma.parked_additions["cens"]
+    gamma = get_family("gamma")                         # D120: cens() offered since P6's reference of gamma_censored_interval
+    assert "cens" in gamma.addition_terms and not gamma.parked_additions
     for link in ("inverse", "identity"):
         assert not get_family("gamma", link).parked_additions and not get_family("gamma", link).addition_terms
     for name, spec in fams.FAMILIES.items():
@@ -558,15 +555,17 @@ def _exact_gamma_shape_gradient(b, k):
     return exact(total, shape)[1] * shape
 
 
-def test_gamma_censoring_with_its_park_lifted_fails_only_brms_inexact_gradient(parked_bundles, lifted):
-    """With the park lifted, gamma_censored_interval passes G1, the G2 log densities, G3, G4, G5 and G6 against brms; its
-    gradient in log(shape) fails at exactly the points where brms's is off the exact one (at point 2 by 2.8e-5 relative),
-    where AutoBayes's is within 2e-10 (PyTensor's digamma in the observed rows' density, 1e-10 absolute, is the rest)."""
+def test_gamma_censoring_passes_on_the_reference_where_brms_gradient_is_inexact(parked_bundles, lifted):
+    """gamma_censored_interval passes G1, the G2 log densities, G3, G4, G5 and G6 against brms, and G2's gradient by
+    two-reference acceptance (P6, D120): brms's gradient in log(shape) is off the exact one at points 0, 2, 3, 4 and 6 (at
+    point 2 by 2.8e-5 relative), where AutoBayes's is within 2e-10 (PyTensor's digamma in the observed rows' density, 1e-10
+    absolute, is the rest), and there the 50-digit reference stands in for brms."""
     b = parked_bundles["gamma_censored_interval"]
-    for check in (gates.check_design, gates.check_logp, gates.check_derived, gates.check_predictions, gates.check_jax, gates.check_default_prior):
+    assert b.case["gate"] == {"expect": "pass", "reference": "gamma_censored_interval.json", "divergence": "D120",
+                              "fallback": ["gradient"]}
+    for check in (gates.check_design, gates.check_logp, gates.check_derived, gates.check_predictions, gates.check_jax,
+                  gates.check_default_prior, gates.check_gradient):
         check(b)
-    with pytest.raises(OracleMismatch, match=r"gradient of alpha_log__"):
-        gates.check_gradient(b)
     position = [e["par"] for e in b.fixture.upars].index("shape")
     over = []
     for k, p in enumerate(b.fixture.points):

@@ -2,9 +2,10 @@
 
 brms-parity feature E04. B02 and P6 gave the Gaussian family brms's `cens(c)` and `trunc(lb = a, ub = b)`
 (docs/addition-terms.md). E04 adds brms's interval censoring `cens(c, y2)`, `cens()` for the Weibull and lognormal families,
-and `trunc(ub = b)` for the Poisson and negative binomial families. The Gamma family's `cens()` and a count response's lower
-bound are implemented and withheld, each because brms's own numbers on its frozen case are not what an exact
-implementation can match (D120, D121).
+and `trunc(ub = b)` for the Poisson and negative binomial families. The Gamma family's `cens()` is accepted against a 50-digit
+reference of its frozen case, where brms's own gradient in the shape is not exact (P6, D120); a count response's lower bound is
+implemented and withheld, because brms's own expected value on its frozen case is not what an exact implementation can match
+(D121).
 
 ```python
 import autobayes as ab
@@ -32,7 +33,7 @@ Each family's tails are exact on the PyTensor and the JAX path and finite with a
 | --- | --- | --- | --- |
 | Weibull | `F = 1 - exp(-exp(u))`, `u = shape (log y - log scale)`: `cloglog_log_p1(u)`, `-exp(u)` | `cloglog_log_mass(u(y), u(y2))` | refused (D122) |
 | lognormal | the Normal tails of `log y` (B02) | `normal_log_mass(log y, log y2)` | refused (D122) |
-| Gamma (withheld) | `log P(shape, x)`, `log Q(shape, x)`, `x = shape y / mu` | from the tail the interval lies in | refused (D122) |
+| Gamma (with P6's reference, D120) | `log P(shape, x)`, `log Q(shape, x)`, `x = shape y / mu` | from the tail the interval lies in | refused (D122) |
 | Poisson, negative binomial | refused (D122) | refused | `log` of the sum of the masses `0..ub`; a lower bound alone `log1mexp` of those below it |
 
 The Gamma's incomplete gamma functions are PyTensor's values (Cephes) and JAX's (`jax.scipy.special.gammainc`); their
