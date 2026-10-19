@@ -1681,12 +1681,17 @@
    "depends_on": [
     "D01_continuous_families"
    ],
-   "status": "gates_green",
+   "status": "merged",
    "summary": "inverse.gaussian, von_mises, asym_laplace, frechet, gen_extreme_value",
-   "pr": null,
+   "pr": 75,
    "attempts": 0,
-   "divergences": [],
-   "next_action": "implementation",
+   "divergences": [
+    "D112",
+    "D113",
+    "D114",
+    "D115"
+   ],
+   "next_action": "other links, distributional formulas, addition/special/autocorrelation terms, mv/nl/mixture, shrinkage not offered (D112-D115)",
    "reserved_divergences": "D112-D115",
    "fixtures": {
     "pr": 70,
