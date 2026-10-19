@@ -12,6 +12,10 @@ brms's default is ``inverse`` (docs/brms-parity/divergences.md, D9). ``shape`` m
 E06 (docs/links.md): brms's ``Gamma("inverse")`` (``mu = 1 / eta``, parent ``inverse_mu``) and ``Gamma("identity")`` (``mu = eta``,
 parent ``mu``), each needing a positive linear predictor, are ``_link("inverse")`` and ``_link("identity")``, reached through
 ``GAMMA.links`` (``ab.gamma(..., link="inverse")``); the default stays ``log`` (D9).
+
+E04 (docs/cens-trunc-families.md): under the log link, ``cens(c)`` and ``cens(c, y2)`` through the regularized incomplete gamma
+function with an exact gradient in the shape (``autobayes.tails``), implemented and withheld (``parked_additions``): brms's own
+gradient in the shape is not exact on the frozen case ``gamma_censored_interval`` (divergence D120).
 """
 from __future__ import annotations
 
@@ -22,6 +26,15 @@ from types import MappingProxyType
 from autobayes.families.spec import NO_FIXED_PARAMETERS, STANDARD_PREDICTION_KINDS, FamilySpec, auxiliary, exp_mean, scale_line, scale_symbol
 from autobayes.formula import validate_positive_response
 from autobayes.priors import Gamma, StudentT
+
+
+CENSORING_PARK = (
+    "cens() is implemented for the Gamma family (log CDF, log CCDF and interval log mass through the regularized incomplete gamma "
+    "function, with an exact gradient in the shape) and withheld: brms's gradient in the shape is not exact. On the frozen case "
+    "gamma_censored_interval, against a 50-digit evaluation (mpmath) of the same log density, brms's gradient in log(shape) is "
+    "off by 1.4e-7, 2.8e-5, 2.4e-5, 1.2e-5 and 1.3e-5 relative at points 0, 2, 3, 4 and 6 (GRAD_REL 1e-7; at point 2 brms "
+    "-68.5938954721456, exact -68.5958155986809), where AutoBayes is within 2e-10; every other gate passes, so the case needs a "
+    "two-reference acceptance (P6) of its gradient (docs/cens-trunc-families.md, divergence D120)")
 
 
 def _bambi_family():
@@ -51,6 +64,12 @@ def _log_likelihood(model, post, eta):
     from autobayes.families.pointwise import gamma_log
 
     return gamma_log(model.design.y, eta, auxiliary(model, post, "shape"))
+
+
+def _tails():
+    from autobayes.tails import GAMMA_TAILS
+
+    return GAMMA_TAILS
 
 
 def _likelihood_lines(model) -> list[str]:
@@ -85,7 +104,9 @@ GAMMA = FamilySpec(
     deterministic_note="mu = exp(linear predictor); mu = exp(eta), expected response",
     default_prior_link="log",                                       # brms reads log(y) under the log link
     default_scale_prior=lambda scale: Gamma(0.01, 0.01),            # brms shape: gamma(0.01, 0.01), lb 0
-    addition_terms=frozenset({"weights"}),                      # B02: weights(), verified against the frozen case gamma_weighted
+    addition_terms=frozenset({"weights", "cens"}),              # B02: weights(), verified against the frozen case gamma_weighted; E04: cens(), withheld below
+    tails=_tails,
+    parked_additions=MappingProxyType({"cens": CENSORING_PARK}),    # E04: implemented, withheld (gamma_censored_interval, D120)
     distributional_link="log",                                      # B01: shape ~ z, brms's log link (gamma_distributional_shape)
     default_distributional_intercept=lambda scale: StudentT(3, 0, 2.5),   # brms Intercept_shape: student_t(3, 0, 2.5) under the log link
     monotonic=True,                                                 # B03: mo(x), verified against gamma_monotonic
@@ -153,6 +174,7 @@ def _link(link: str) -> FamilySpec:
                             if link == "inverse" else "mu = linear predictor = the expected response"),
         default_prior_link=link,                                    # brms reads 1 / y (zeros as 0.1) or y as it is
         addition_terms=frozenset(), distributional_link=None, default_distributional_intercept=None, monotonic=False,   # D133
+        parked_additions=MappingProxyType({}),                      # E04: cens() is refused under these links (D133), not withheld
         log_likelihood=partial(_link_log_likelihood, link),
         check_formula=partial(_link_check_formula, link),
         links=MappingProxyType(others),

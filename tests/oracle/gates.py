@@ -2,7 +2,7 @@
 Each raises `OracleMismatch` naming the point and the quantities that differ; a passing gate returns None.
 
 G1 `check_design`        standata equals the model's design, response, trials, offsets, group coding and addition-term
-                         data (weights, cens, lb, ub; B02), each distributional formula's X_<dpar> (B01), each
+                         data (weights, cens, lb, ub; B02; rcens, E04), each distributional formula's X_<dpar> (B01), each
                          monotonic term's codes, number of steps and Dirichlet concentrations (Xmo_k, Jmo, con_simo_k; B03),
                          and a mixture's component designs X_mu<k> and theta's concentrations (con_theta; C05),
                          and each Gaussian process's row index, inputs or basis and scaling (Jgp_k, Xgp_k, Xgp_prior_k,
@@ -249,7 +249,7 @@ def check_design(b: Bundle) -> None:
             raise OracleMismatch(f"offsets differ by {err}")
     elif "offsets" in sd:
         raise OracleMismatch("brms has offsets but AutoBayes has no offset term")
-    for key in ("weights", "cens", "lb", "ub"):                  # brms's addition-term data (B02): weights(), cens(), trunc() bounds
+    for key in ("weights", "cens", "rcens", "lb", "ub"):         # brms's addition-term data (B02): weights(), cens(), trunc() bounds; E04: cens(c, y2)'s rcens
         mine = getattr(d, key)
         if mine is None:
             if key in sd:
@@ -404,6 +404,8 @@ def check_derived(b: Bundle) -> None:
     # and hurdle families (B06) keep eta itself as their parent log_mu, whose brms counterpart is posterior_linpred.
     holds_mean = b.model.link == "log" and names["linpred"] == names["mean"]
     ref = b.fixture.prediction("fitted", "epred" if holds_mean else "linpred")
+    if holds_mean and b.model.spec.addition("trunc") is not None:   # E04: brms's epred of a truncated model is the truncated
+        ref = np.exp(b.fixture.prediction("fitted", "linpred"))    # mean; the parent holds the untruncated mean exp(eta)
     for k, p, vp in b.points():
         out = fn(vp)
         # B05: a categorical model's linear predictor has one column per non-reference category, brms's (rows, categories); D04:

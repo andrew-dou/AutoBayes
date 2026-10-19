@@ -9,7 +9,8 @@ prior is ``Priors(sigma=...)`` (brms class ``sigma``) and the sampled variable `
 returns brms's ``posterior_epred`` ``exp(mu + sigma^2 / 2)`` under the name ``mean`` (not ``exp(mu)``, the median, and not
 ``mu``, which is the location); ``kind="linear"`` returns ``mu``. Checked against brms in the oracle case
 ``lognormal_varint``, not assumed. ``sigma`` may have its own formula under a log link (B01, docs/distributional.md;
-``lognormal_distributional_sigma``), and the mean then uses each row's ``sigma``.
+``lognormal_distributional_sigma``), and the mean then uses each row's ``sigma``. E04 (docs/cens-trunc-families.md):
+``cens(c)`` and ``cens(c, y2)``, the Normal tails of ``log y`` (``autobayes.tails``; ``lognormal_censored``).
 """
 from __future__ import annotations
 
@@ -46,6 +47,12 @@ def _log_likelihood(model, post, eta):
     return lognormal(model.design.y, eta, auxiliary(model, post, "sigma"))
 
 
+def _tails():
+    from autobayes.tails import LOGNORMAL_TAILS
+
+    return LOGNORMAL_TAILS
+
+
 def _likelihood_lines(model) -> list[str]:
     s = scale_symbol(model)                                    # "sigma", or "sigma_i" with its own formula (B01)
     return [scale_line(model), "", "Likelihood",
@@ -79,7 +86,8 @@ LOGNORMAL = FamilySpec(
     deterministic_note="mu = linear predictor (log-scale location); the expected response exp(mu + sigma^2 / 2) is computed by predict()",
     default_prior_link="log",                                       # brms's log-scale family: it reads log(y)
     default_scale_prior=lambda scale: HalfStudentT(3, scale),       # brms sigma: student_t(3, 0, scale), lb 0
-    addition_terms=frozenset({"weights"}),                      # B02: weights(), verified against the frozen case lognormal_weighted
+    addition_terms=frozenset({"weights", "cens"}),              # B02: weights(), verified against the frozen case lognormal_weighted; E04: cens() (lognormal_censored)
+    tails=_tails,
     distributional_link="log",                                      # B01: sigma ~ z, brms's log link (lognormal_distributional_sigma)
     default_distributional_intercept=lambda scale: StudentT(3, 0, scale),   # brms Intercept_sigma: student_t(3, 0, scale of log y)
     monotonic=True,                                                 # B03: mo(x), verified against lognormal_monotonic

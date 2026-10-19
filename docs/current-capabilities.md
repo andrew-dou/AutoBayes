@@ -355,3 +355,15 @@ brms's default priors and `describe()`; and `weights()` for the Weibull and beta
 densities within 7.9e-16 relative, gradients within 2.5e-9); group-level terms in these formulas and formulas on the families'
 other parameters stay refused (D116, with D79, D81, D84), the predicted probabilities saturate at extreme linear predictors (D117),
 and `conditional_effects()` keeps refusing them (D99); see [contexts of the newer families](contexts-newer-families.md).
+
+`cens()` and `trunc()` beyond the Gaussian family (E04): brms's interval censoring `cens(c, y2)` (code 2, the response in
+`(y, y2]`, brms's `rcens`) for every family that takes `cens()`; `cens()` for the Weibull (the cloglog forms of its CDF) and
+lognormal (the Normal tails of `log y`) families; `trunc(ub = b)` for the Poisson and negative binomial families (integer,
+inclusive bounds, the mass a sum of masses); each exact on both paths, with brms's truncated mean and draws, `log_lik()` (the
+Gaussian's censored and truncated rows included, D123), `bayes_R2()`, `loo()` and `describe()`. Verified against
+`weibull_censored`, `lognormal_censored`, `poisson_truncated`, `lognormal_censored_interval_weighted`,
+`poisson_truncated_weighted_post`, `weibull_censored_interval_post` and `negbinomial_truncated_ub` (log densities within 1.3e-14
+relative); the Gamma family's `cens()` (brms's gradient in the shape off by up to 2.8e-5 on `gamma_censored_interval`, D120) and a
+count response's lower bound (brms's expected values are `E[Y | Y >= lb + 1]` on `negbinomial_truncated`, D121) are implemented
+and withheld for a two-reference acceptance; the other families and contexts are refused naming the construct (D122); see
+[censoring and truncation beyond the Gaussian](cens-trunc-families.md).

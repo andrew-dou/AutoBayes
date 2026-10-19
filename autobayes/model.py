@@ -18,7 +18,9 @@ slopes' deterministics in the PyMC graph to brms's ``r = (diag(sd) L z)^T`` with
 Stan's ``cholesky_corr`` coordinates (``autobayes.correlation``). The left-hand side may carry brms's ``weights(col)``
 next to the binomial's ``trials(n)`` (B02, docs/addition-terms.md): the family's likelihood is then wrapped so that each
 row's log density is multiplied by its weight (``likelihoods.addition_family``); ``cens()`` and ``trunc()`` are
-offered for the Gaussian family (accepted against two references since P6). The family's auxiliary parameter
+offered for the Gaussian family (accepted against two references since P6), and since E04 (docs/cens-trunc-families.md)
+``cens(c, y2)``, ``cens()`` for the Weibull and lognormal families and ``trunc(ub = b)`` for the Poisson and negative binomial
+families (``FamilySpec.tails``, ``autobayes.tails``). The family's auxiliary parameter
 (``sigma``, ``shape``, ``phi``) may have its own formula (B01, docs/distributional.md): ``formula`` is then a list,
 ``["y ~ x + (1 | g)", "sigma ~ z"]``, and Bambi builds the parameter as a distributional component under a log link
 (``Design.dpars`` holds its design, ``Model.dpar_names`` its PyMC names). A finite mixture of Gaussian components (C05,
@@ -188,7 +190,8 @@ class Design:
     categoricals: tuple[Categorical, ...] = ()
     offset: np.ndarray | None = None   # (n,) the offset term's values per fitted row (brms ``offsets``), or None
     weights: np.ndarray | None = None  # (n,) brms ``weights`` of a ``weights(col)`` term (B02), or None
-    cens: np.ndarray | None = None     # (n,) brms ``cens`` of a ``cens(col)`` term: -1 left-, 0 un-, 1 right-censored (B02, parked)
+    cens: np.ndarray | None = None     # (n,) brms ``cens`` of a ``cens(col)`` term: -1 left-, 0 un-, 1 right-censored (B02, parked); 2 interval-censored under ``cens(col, y2)`` (E04)
+    rcens: np.ndarray | None = None    # (n,) brms ``rcens`` of ``cens(col, y2)``: the upper bound y2 on the interval-censored rows, 0 elsewhere (E04)
     lb: np.ndarray | None = None       # (n,) brms ``lb`` and ``ub`` of a ``trunc()`` term, -inf / inf on an open side (B02, parked)
     ub: np.ndarray | None = None
     dpars: Mapping[str, DparDesign] = field(default_factory=lambda: MappingProxyType({}))   # each distributional parameter's own design, by brms name (B01)
@@ -848,6 +851,7 @@ class Model:
                       centered=self.effective_center_predictors, trials=trials,
                       columns=self.spec.columns, categoricals=self.spec.categoricals, offset=offset,
                       weights=additions.get("weights"), cens=additions.get("cens"), lb=additions.get("lb"), ub=additions.get("ub"),
+                      rcens=additions.get("rcens"),                                         # E04: cens(col, y2)'s upper bounds
                       dpars=MappingProxyType({d.response: self._dpar_design(d) for d in self.spec.dpars}),
                       monotonic=MappingProxyType(self._monotonic_design()), gp=MappingProxyType(self._gp_design()),
                       autocor=self._autocor_design,
@@ -2840,11 +2844,22 @@ class Model:
                 out += [f"  weights   : {a.column}, each fitted row's log likelihood multiplied by its weight (brms weights()); weights "
                         f"{d.weights.min():.4f} to {d.weights.max():.4f}, sum {d.weights.sum():.4f} over {d.n} rows; the priors are not "
                         "weighted, and predict() ignores the weights (brms's posterior_epred and posterior_predict do too)"]
+            elif a.kind == "cens" and a.y2 is not None:      # E04: brms's interval censoring cens(c, y2)
+                left, right, inside = int((d.cens == -1).sum()), int((d.cens == 1).sum()), int((d.cens == 2).sum())
+                out += [f"  censoring : {a.term}: {left} left-censored row(s) (-1: y_i is an upper bound, log P(Y_i <= y_i)), {right} "
+                        f"right-censored (1: a lower bound, log P(Y_i > y_i)), {inside} interval-censored (2: y_i < Y_i <= {a.y2}_i, "
+                        f"log P(y_i < Y_i <= {a.y2}_i)), {d.n - left - right - inside} observed (0); brms cens(); predict() ignores the "
+                        "censoring, as brms does"]
             elif a.kind == "cens":
                 left, right = int((d.cens == -1).sum()), int((d.cens == 1).sum())
                 out += [f"  censoring : {a.column}: {left} left-censored row(s) (-1: y_i is an upper bound, log P(Y_i <= y_i)), {right} "
                         f"right-censored (1: a lower bound, log P(Y_i > y_i)), {d.n - left - right} observed (0); brms cens(); predict() "
                         "ignores the censoring, as brms does"]
+            elif self.family_spec.discrete:                  # E04: a count response's bounds are integers and inclusive
+                lb, ub = ("0" if a.lb is None else f"{a.lb:g}"), ("inf" if a.ub is None else f"{a.ub:g}")
+                out += [f"  truncation: {a.term}: the counts lie in {{{lb}, ..., {ub}}}, both bounds included; each row's mass is "
+                        "divided by the probability of that range (brms trunc()); predict(kind='mean') is the truncated mean and "
+                        "kind='response' draws from the truncated distribution, as brms's posterior_predict does"]
             else:
                 lb, ub = ("-inf" if a.lb is None else f"{a.lb:g}"), ("inf" if a.ub is None else f"{a.ub:g}")
                 out += [f"  truncation: {a.term}: the response lies in [{lb}, {ub}]; each row's density is divided by the probability of "
@@ -2866,6 +2881,11 @@ class Model:
             elif a.kind == "cens":
                 out += ["  cens(): a left-censored row contributes log P(Y_i <= y_i), a right-censored row log P(Y_i > y_i), any other row its "
                         "log density (Stan's _lcdf / _lccdf / _lpdf as brms writes them)"]
+                if a.y2 is not None:                         # E04
+                    out += [f"  cens(..., {a.y2}): an interval-censored row contributes log P(y_i < Y_i <= {a.y2}_i), the log of the CDF "
+                            "difference (brms's log_diff_exp of two _lcdf), formed from the tail the interval lies in"]
+            elif self.family_spec.discrete:                  # E04
+                out += [f"  trunc(): every row's log mass minus log P(lb <= Y_i <= ub), the log of the sum of the masses {a.term} allows"]
             else:
                 out += [f"  trunc(): every row's log density minus log P(lb < Y_i <= ub), the log mass of {a.term}"]
         return out
@@ -3076,8 +3096,8 @@ def weibull(formula: str | list[str], data: pd.DataFrame, priors: Priors, *,
     Responses are strictly positive finite reals. The shape takes its own positive-support prior,
     ``Priors(shape=ab.Gamma(0.01, 0.01))`` (brms class ``shape``; brms's default, on request through ``ab.default_priors``).
     ``predict(kind="mean")`` returns ``mu``. E03 (docs/contexts-newer-families.md): ``shape`` may have its own formula under a
-    log link, ``["ypos ~ x", "shape ~ z"]`` with ``Priors(shape={"intercept": ..., "b": ...})``, and ``weights()`` is taken; no
-    ``cens()`` or ``trunc()`` (D79).
+    log link, ``["ypos ~ x", "shape ~ z"]`` with ``Priors(shape={"intercept": ..., "b": ...})``, and ``weights()`` is taken.
+    E04 (docs/cens-trunc-families.md): ``cens(c)`` and ``cens(c, y2)`` (survival data); no ``trunc()`` (D122).
     """
     return Model(formula, data, priors, family="weibull", center_predictors=center_predictors, categorical=categorical)
 

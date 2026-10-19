@@ -77,6 +77,6 @@
  },
  "gate": {
   "expect": "fail",
-  "reason": "E04_cens_trunc_families not implemented; remove this field when it lands"
+  "reason": "E04: a lower truncation bound of a count response is implemented and withheld (formula.PARKED_TRUNCATION, divergence D121): brms 2.23 normalises the likelihood by P(Y >= 1) (lb inclusive, checked on the frozen points to 4e-16) but its posterior_epred is E[Y | Y >= 2] over a finite support (lb exclusive; at point 7 fitted row 27 brms's 106.236 is the mean over 2..394, E[Y | Y >= 2] = 135.97, E[Y | Y >= 1] = 133.95; at point 0 fitted row 0, mu = 0.737, brms 2.9418 = E[Y | Y >= 2], E[Y | Y >= 1] = 1.8847), not the mean of the distribution its likelihood truncates. AutoBayes's expected value is E[Y | Y >= 1] (mu / (1 - P(0))): with the park lifted G1, G2 (log density and gradient), G3, G5 and G6 pass against brms and G4's expected values differ from brms's by up to 0.499 relative (tests/test_cens_trunc_families.py). Remove this field when the case is accepted against two references (P6: E[Y | Y >= 1] as the reference of its expected values)."
  }
 }

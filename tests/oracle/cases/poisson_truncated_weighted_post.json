@@ -1,0 +1,79 @@
+{
+ "id": "poisson_truncated_weighted_post",
+ "tier": "E",
+ "feature": "E04_cens_trunc_families",
+ "note": "E04 integration: poisson with trunc(ub = 6) (a response at the bound) and weights: each row's truncated log mass times its weight; log_lik, bayes_R2 (against the truncated mean) and loo under truncation",
+ "seed": 831,
+ "n_points": 8,
+ "data": {
+  "generator": "tier_e",
+  "seed": 729,
+  "n": 36,
+  "newdata": {
+   "seed": 831,
+   "n": 5
+  }
+ },
+ "brms": {
+  "formula": "cnt | trunc(ub = 6) + weights(w) ~ x + (1 | g)",
+  "family": {
+   "family": "poisson"
+  },
+  "factors": {
+   "g": [
+    "a",
+    "b",
+    "c",
+    "d",
+    "e",
+    "f"
+   ]
+  },
+  "priors": [
+   {
+    "prior": "normal(0, 2)",
+    "class": "Intercept"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "b"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "sd",
+    "group": "g"
+   }
+  ],
+  "extras": [
+   "log_lik",
+   "bayes_R2",
+   "loo"
+  ]
+ },
+ "autobayes": {
+  "constructor": "poisson",
+  "formula": "cnt | trunc(ub = 6) + weights(w) ~ x + (1 | g)",
+  "kwargs": {},
+  "priors": {
+   "intercept": [
+    "Normal",
+    0,
+    2
+   ],
+   "b": [
+    "Normal",
+    0,
+    1
+   ],
+   "sd": [
+    "HalfNormal",
+    1
+   ]
+  },
+  "post": [
+   "log_lik",
+   "bayes_R2",
+   "loo"
+  ]
+ }
+}

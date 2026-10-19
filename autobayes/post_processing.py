@@ -6,7 +6,9 @@ rows. Accepted against brms 2.23 / loo 2.9.0 on the frozen oracle cases ``gauss_
 
 ``log_lik(model, fit)`` is brms's ``log_lik()``: the log density of each fitted row's response at each draw, from the family's
 ``FamilySpec.log_likelihood`` (NumPy, ``families.pointwise``) at ``predict(kind="linear")``'s linear predictor and the draw's
-auxiliary parameters; under ``weights()`` it is multiplied by the row's weight, as brms multiplies it.
+auxiliary parameters; under ``weights()`` it is multiplied by the row's weight, as brms multiplies it. Under ``cens()`` a
+censored row's log likelihood is its log CDF, log CCDF or interval log mass, and under ``trunc()`` every row's is less the
+log mass of the allowed range (E04, ``likelihoods.censored_truncated_log_lik``), as brms's ``log_lik()`` writes them.
 
 ``bayes_R2(model, fit)`` is brms's ``bayes_R2(summary = FALSE)`` (Gelman, Goodrich, Gabry and Vehtari 2019): per draw,
 ``var(yhat) / (var(yhat) + var(y - yhat))`` over the fitted rows, ``yhat`` the expected response (``predict(kind="mean")``,
@@ -113,6 +115,9 @@ def log_lik(model, fit_result) -> xr.DataArray:
     with np.errstate(over="ignore", under="ignore", divide="ignore", invalid="ignore"):
         ll = np.asarray(fam.log_likelihood(model, post, eta), dtype=float)
     ll = np.broadcast_to(ll, eta.shape[:3]).copy()
+    if model.design.cens is not None or model.design.lb is not None:   # E04: brms's censored / truncated log_lik
+        from autobayes.likelihoods import censored_truncated_log_lik
+        ll = np.asarray(censored_truncated_log_lik(model, post, eta, ll), dtype=float)
     if model.design.weights is not None:                       # brms multiplies each row's log density by its weight (B02)
         ll = ll * model.design.weights
     if np.isnan(ll).any():
