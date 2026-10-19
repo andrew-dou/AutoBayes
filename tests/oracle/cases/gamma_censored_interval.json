@@ -77,7 +77,11 @@
   }
  },
  "gate": {
-  "expect": "fail",
-  "reason": "E04: cens() of the Gamma family is implemented and withheld (FamilySpec.parked_additions, divergence D120): brms's gradient in the shape is not exact here. Against a 50-digit evaluation (mpmath) of the same log density at the fixture's own parameter values, brms's gradient in log(shape) is off by 1.4e-7, 2.8e-5, 2.4e-5, 1.2e-5 and 1.3e-5 relative at points 0, 2, 3, 4 and 6 (GRAD_REL 1e-7; point 2: brms -68.5938954721456, exact -68.5958155986809, AutoBayes -68.59581559504063), every other coordinate within the tolerance; AutoBayes is within 2e-10 of the exact gradient at every point. With the park lifted G1, the G2 log densities, G3, G4, G5 and G6 pass against brms and the G2 gradient fails at those five points (tests/test_cens_trunc_families.py). Remove this field when the case is accepted against two references (P6: a 50-digit reference of the gradient)."
+  "expect": "pass",
+  "reference": "gamma_censored_interval.json",
+  "divergence": "D120",
+  "fallback": [
+   "gradient"
+  ]
  }
 }
