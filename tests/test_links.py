@@ -153,12 +153,12 @@ def test_links_offered_parked_and_refused(df):
         elif name not in ("bernoulli", "binomial", "cumulative", "inverse_gaussian"):
             assert not spec.links and spec.with_link(spec.link) is spec
         if name in ordinal:
-            assert set(spec.parked_links) == ({"probit_approx", "cloglog", "cauchit"} if name == "cumulative"
+            assert set(spec.parked_links) == ({"probit_approx", "cauchit"} if name == "cumulative"
                                               else {"probit", "probit_approx", "cloglog", "cauchit"})
         elif name not in ("bernoulli", "binomial"):
             assert not spec.parked_links
     cumulative = FAMILIES["cumulative"]                           # D04, P6: its probit link is offered (D88)
-    assert set(cumulative.links) == {"probit"} and cumulative.with_link("probit").link == "probit"
+    assert set(cumulative.links) == {"probit", "cloglog"} and cumulative.with_link("probit").link == "probit"   # E06: cloglog
     assert cumulative.with_link("probit") is cumulative.with_link("probit") and cumulative.with_link("logit") is cumulative
     ig = FAMILIES["inverse_gaussian"]                             # E02: brms's default 1/mu^2 and its log link
     assert ig.link == "1/mu^2" and set(ig.links) == {"log"} and ig.with_link("log").with_link("1/mu^2") is ig
@@ -173,7 +173,7 @@ def test_links_offered_parked_and_refused(df):
                                          r"\(link= applies to the families with more than one link: poisson \['log', 'sqrt'\], negbinomial "
                                          r"\['identity', 'log'\], gamma \['identity', 'inverse', 'log'\], beta \['cloglog', 'logit', 'probit'\], "
                                          r"bernoulli \['cloglog', 'logit', 'probit'\], binomial \['cloglog', 'logit', 'probit'\], cumulative "
-                                         r"\['logit', 'probit'\], inverse_gaussian \['1/mu\^2', 'log'\]\)"):                    # E06 added the Poisson, NB, Gamma and Beta links
+                                         r"\['cloglog', 'logit', 'probit'\], inverse_gaussian \['1/mu\^2', 'log'\]\)"):                    # E06 added the Poisson, NB, Gamma and Beta links
         ab.Model(BERNOULLI, df, gpriors, family="gaussian", link="probit")
     with pytest.raises(ValueError, match=r"link must be one of \['log', 'sqrt'\] for the poisson family, got 'identity'"):   # E06: sqrt
         ab.Model("k ~ x + (1 | g)", df, PRIORS, family="poisson", link="identity")

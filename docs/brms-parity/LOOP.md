@@ -37,6 +37,14 @@ Immutable under a feature branch: `tests/oracle/fixtures/**` and `tests/oracle/r
 `tests/oracle/two_reference.py` are allowed only to extend them to new parameter kinds and are called out in the PR;
 the gate tool flags them.
 
+### Gates expected to fail on a landed feature
+
+A case whose feature has landed but on which brms's own arithmetic fails a gate that no reference may stand in for (a log
+density) keeps `"gate": {"expect": "fail", "gates": [...], "reason": ...}`: only the listed gates (`g1`, `g2_logp`,
+`g2_gradient`, `g3`, `g4`, `g5`, `g6`, `post`) run as strict expected failures, each passing only by raising the oracle's
+`OracleMismatch`, and every other gate of the case must pass. The feature is accepted on another frozen case where brms is
+exact (E06: `cumulative_cloglog`, with the link accepted on `cumulative_cloglog_narrow`).
+
 ### Two references (P6; Andrew's decision of 2026-10-11, a change of the gate contract)
 
 Some features are exact in AutoBayes while brms's own arithmetic is off the exact value by more than the tolerance at

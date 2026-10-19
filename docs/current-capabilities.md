@@ -313,9 +313,9 @@ the link and `describe()`; a non-positive mean under the identity and inverse li
 `prior_predictive()` (D134). Verified against `poisson_sqrt`, `negbinomial_identity`, `gamma_inverse`, `gamma_identity`,
 `beta_probit` and `beta_cloglog`; under these links the term model and `offset()` are taken, while `weights()` and the other
 addition terms, formulas on `shape` / `phi`, `mo()`, `gp()`, `mm()`, `gr(by = )`, `me()`/`mi()` and autocorrelation terms are
-refused naming the link (D133). The cumulative cloglog link is built but withheld: brms's own log density of
-`cumulative_cloglog` is 5.9e-7 relative off the exact value at one point, which no gate accepts (D38, D132); see
-[links](links.md).
+refused naming the link (D133). The cumulative cloglog link, `ab.cumulative(..., link="cloglog")`, is accepted on
+`cumulative_cloglog_narrow`; on the wider `cumulative_cloglog` brms's own log density is 5.9e-7 relative off the exact value at
+one point, so that case keeps its G2 gates as expected failures (D38, D132); see [links](links.md).
 
 Four bounded and hurdle families (E01, brms's `zero_one_inflated_beta()`, `zero_inflated_beta_binomial()`, `xbeta()` and
 `hurdle_cumulative()`, logit link): `ab.zero_one_inflated_beta` (proportions in [0, 1], `phi`, `zoi` and `coi`),

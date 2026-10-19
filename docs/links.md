@@ -106,7 +106,7 @@ of brms's vignette "Parameterization of Response Distributions in brms"):
 | `ab.gamma(..., link="identity")` | `Gamma("identity")` | `mu = eta`, `eta > 0` | `mu` | `gamma_identity` |
 | `ab.beta(..., link="probit")` | `Beta("probit")` | `mu = Phi(eta)` | `probit_mu` | `beta_probit` |
 | `ab.beta(..., link="cloglog")` | `Beta("cloglog")` | `mu = 1 - exp(-exp(eta))` | `cloglog_mu` | `beta_cloglog` |
-| `ab.cumulative(..., link="cloglog")` | `cumulative("cloglog")` | `P(y <= k) = 1 - exp(-exp(tau_k - mu))` | `mu` | `cumulative_cloglog` (withheld) |
+| `ab.cumulative(..., link="cloglog")` | `cumulative("cloglog")` | `P(y <= k) = 1 - exp(-exp(tau_k - mu))` | `mu` | `cumulative_cloglog_narrow` (and `cumulative_cloglog` but for G2) |
 
 Each spec is its family's under the link (`FamilySpec.links`: `get_family("gamma", "inverse")`, `model.link`, `family_of`),
 built in the family's module (`poisson._sqrt`, `negbinomial._identity`, `gamma._link`, `beta._link`, `cumulative._cloglog`); the
@@ -152,8 +152,9 @@ link, naming the construct and the link (`FamilySpec.check_formula`, `families.l
 autocorrelation terms, none of which a frozen case verifies with these links (each still works under the family's own link).
 Multivariate, non-linear and mixture use stay refused for these families as before.
 
-**The cumulative cloglog link is built but withheld** (`CUMULATIVE.parked_links["cloglog"]`, divergences D38 and D132). On its
-frozen case `cumulative_cloglog` (`ord ~ x + (1 | g)`, seed 832, points from `(-0.6, 0.6)`), gates G1, G3, G4, G5 and G6 pass
+**The cumulative cloglog link** (`ab.cumulative(..., link="cloglog")`, divergences D38 and D132) is accepted on
+`cumulative_cloglog_narrow`, the same model and data with its points drawn from `(-0.3, 0.3)`, where brms's arithmetic is exact
+to the tolerances and every gate passes. It was withheld at first because on the wider case `cumulative_cloglog` (`ord ~ x + (1 | g)`, seed 832, points from `(-0.6, 0.6)`), gates G1, G3, G4, G5 and G6 pass
 and the likelihood equals a 50-digit reference at all eight points (to 2.4e-16 relative; the gradient in `b` checked at points
 1 and 7, within 1.4e-16). brms's own log density is off the reference by 5.9e-7 relative at point 7 (0-based; 1.45e-4 absolute)
 and 6.4e-9 at point 1, and its gradient by up to 1.3e-4 relative (28 of the 176 entries with and without the Jacobian exceed

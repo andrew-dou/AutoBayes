@@ -785,3 +785,19 @@ def test_post_block_and_columns_are_required(post_bundle):
         raw["post"]["loo"]["pointwise"]["colnames"][1] = "mcse"
     with pytest.raises(OracleMismatch, match="loo pointwise columns"):
         gates.check_post(_corrupted(post_bundle, renamed))
+
+
+# -- a gate field that lists the gates expected to fail (E06: cumulative_cloglog) ---------------------------------------------
+def test_listed_gates_fail_strictly_and_the_others_must_pass():
+    """A gate field with ``"gates"`` makes only those gates strict expected failures: one that fails with an
+    ``OracleMismatch`` is an expected failure, one that passes is an error, and an unlisted gate runs as usual."""
+    from tests.oracle.test_baseline import GATE_NAMES, _gate
+
+    b = gates.Bundle("cumulative_cloglog")
+    assert set(b.case["gate"]["gates"]) == {"g2_logp", "g2_gradient"} and set(b.case["gate"]["gates"]) <= set(GATE_NAMES)
+    with pytest.raises(pytest.xfail.Exception):                       # brms's own log density is inexact here (D132)
+        _gate(b, "g2_logp", gates.check_logp)
+    _gate(b, "g1", gates.check_design)                                # not listed: must pass, and does
+    listed_but_passing = _with(b, case={**b.case, "gate": {**b.case["gate"], "gates": ["g1"]}})
+    with pytest.raises(pytest.fail.Exception, match="gate g1 was expected to fail"):
+        _gate(listed_but_passing, "g1", gates.check_design)
