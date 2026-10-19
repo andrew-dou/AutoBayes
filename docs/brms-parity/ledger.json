@@ -1789,7 +1789,7 @@
     "D122",
     "D123"
    ],
-   "next_action": "withheld: gamma_censored_interval (brms gradient off 2.8e-5; P6 gradient reference possible), negbinomial_truncated (brms epred E[Y|Y>=2]; brms bug)",
+   "next_action": "Gamma cens() accepted with P6 reference (#78); count lower bound withheld: brms epred E[Y|Y>=2] (D121, decision pending)",
    "reserved_divergences": "D120-D123",
    "fixtures": {
     "pr": 70,
