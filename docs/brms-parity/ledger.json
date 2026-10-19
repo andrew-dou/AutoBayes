@@ -1710,12 +1710,12 @@
     "D02_discrete_families",
     "D03_more_zero_inflated_hurdle"
    ],
-   "status": "fixtures_frozen",
+   "status": "implementing",
    "summary": "distributional formulas and weights() for the Tier D families (shape, phi, sigma, zi, hu formulas)",
    "pr": null,
-   "attempts": 0,
+   "attempts": 1,
    "divergences": [],
-   "next_action": "wave E2, after E1 merges (shares family modules with E01/E02/E06)",
+   "next_action": "agent (opus), wave E2",
    "reserved_divergences": "D116-D119",
    "fixtures": {
     "pr": 70,
@@ -1738,12 +1738,12 @@
     "B02_cens_trunc_weights",
     "D01_continuous_families"
    ],
-   "status": "fixtures_frozen",
+   "status": "implementing",
    "summary": "cens() and trunc() beyond the Gaussian family (Weibull, lognormal, Gamma, Poisson, negative binomial)",
    "pr": null,
-   "attempts": 0,
+   "attempts": 1,
    "divergences": [],
-   "next_action": "wave E2, after E1 merges (shares family modules with E01/E02/E06)",
+   "next_action": "agent (opus), wave E2",
    "reserved_divergences": "D120-D123",
    "fixtures": {
     "pr": 70,
