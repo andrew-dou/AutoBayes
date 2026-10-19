@@ -51,9 +51,71 @@ def _exp_parameter(eta, name: str):
     return value
 
 
+def _expit_parameter(eta, name: str):
+    """E03: ``inv_logit(eta)``, a probability (``zi``, ``hu``), refused where the linear predictor is not finite."""
+    from scipy.special import expit
+
+    eta = np.asarray(eta, dtype=float)
+    if not np.isfinite(eta).all():
+        raise ValueError(f"{name} = inv_logit(linear predictor) has a nonfinite linear predictor for some draws and rows; inspect "
+                         f"the draws of {name}'s formula")
+    return expit(eta)
+
+
+def _identity_parameter(eta, name: str):
+    """E03: the linear predictor itself (the skew normal's ``alpha``), refused where it is not finite."""
+    value = np.asarray(eta, dtype=float)
+    if not np.isfinite(value).all():
+        raise ValueError(f"{name} (identity link) is nonfinite for some draws and rows; inspect the draws of {name}'s formula")
+    return value
+
+
 # The inverse link of a distributional parameter's formula (NumPy): (its linear predictor, its name) -> the parameter, one
-# value per draw and row, refused rather than clipped where it is not a positive finite number.
-DISTRIBUTIONAL_INVERSE_LINKS: Mapping[str, Callable] = MappingProxyType({"log": _exp_parameter})
+# value per draw and row, refused rather than clipped where it is not a positive finite number (log), or where the linear
+# predictor is not finite (E03: logit, identity).
+DISTRIBUTIONAL_INVERSE_LINKS: Mapping[str, Callable] = MappingProxyType({"log": _exp_parameter, "logit": _expit_parameter,
+                                                                         "identity": _identity_parameter})
+# How describe() writes a distributional parameter at row i, the inverse link of its linear predictor (B01; E03)
+_DPAR_VALUE_TEXT = {"log": "exp(eta_{n},i)", "logit": "inv_logit(eta_{n},i)", "identity": "eta_{n},i"}
+
+
+@dataclass(frozen=True)
+class DistributionalFormula:
+    """A parameter of a family besides its ``scale_parameter`` that takes a formula of its own (E03,
+    docs/contexts-newer-families.md): the zero-inflation or hurdle probability (``FamilySpec.zero_parameter``) under brms's
+    logit link, or an extra parameter (``FamilySpec.extra_parameters``: the skew normal's ``alpha``) under its identity link,
+    set where a frozen brms case verifies it. Bambi builds it as a distributional component of the parameter's brms name.
+    ``default_intercept`` is brms's default prior on the formula's intercept (its def_dpar_prior: ``logistic(0, 1)`` for
+    ``zi`` and ``hu``, ``normal(0, 4)`` for ``alpha``); its coefficients are flat by default, as every ``b``."""
+
+    parameter: str                               # brms's name of the parameter: "zi", "hu", "alpha"
+    link: str                                    # a key of DISTRIBUTIONAL_INVERSE_LINKS: "logit", "identity"
+    default_intercept: Callable[[], object]
+
+
+def parameter_symbol(model, parameter: str) -> str:
+    """How ``describe()`` writes a family parameter in its likelihood lines: ``zi``, or ``zi_i`` when it has its own formula
+    (B01, E03), one value per row."""
+    return f"{parameter}_i" if is_distributional(model, parameter) else parameter
+
+
+def dpar_pointer(model, parameter: str) -> str:
+    """``describe()``'s prior line of a parameter with its own formula (B01, E03): a pointer to the paragraph that writes
+    the formula out, with the parameter at row i as the inverse link of its linear predictor."""
+    value = _DPAR_VALUE_TEXT[model.design.dpars[parameter].link].format(n=parameter)
+    return (f"  {parameter}_i = {value}, one per row: the formula '{model.spec.dpar(parameter).formula}' "
+            f"(Distributional parameter {parameter}, above)")
+
+
+def zero_line(model) -> str:
+    """``describe()``'s prior line of the family's zero-inflation or hurdle probability (bounds 0 and 1); with its own
+    formula (E03), the pointer ``dpar_pointer`` instead."""
+    from autobayes.priors import describe_prior
+
+    name = model.family_spec.zero_parameter
+    if is_distributional(model, name):
+        return dpar_pointer(model, name)
+    return f"  {name} ~ {describe_prior(getattr(model.priors, name), lb=0, ub=1)}"
 
 
 def auxiliary(model, post, parameter: str):
@@ -84,8 +146,7 @@ def scale_line(model) -> str:
 
     name = model.family_spec.scale_parameter
     if is_distributional(model, name):
-        return (f"  {name}_i = exp(eta_{name},i), one per row: the formula '{model.spec.dpar(name).formula}' "
-                f"(Distributional parameter {name}, above)")
+        return dpar_pointer(model, name)
     return f"  {name} ~ {describe_prior(getattr(model.priors, name), lb=0)}"
 
 
@@ -107,8 +168,8 @@ class ExtraParameter:
     """An auxiliary parameter a family has beside its ``scale_parameter`` (D01): brms's ``alpha`` (skew_normal), ``beta``
     (exgaussian) and ``ndt`` (shifted_lognormal); E02's ``kappa`` (von_mises), ``quantile`` (asym_laplace) and ``xi``
     (gen_extreme_value). Its brms name is its ``Priors`` field (brms's prior class), its ``model.names`` key and, unless
-    ``parameter`` says otherwise, its ``Model.value_point`` keyword and its PyMC variable's name; it takes one prior (no
-    distributional formula, D79, D112).
+    ``parameter`` says otherwise, its ``Model.value_point`` keyword and its PyMC variable's name; it takes one prior (D79, D112),
+    or a formula of its own where ``FamilySpec.distributional_formulas`` lists it (E03: the skew normal's ``alpha``).
 
     ``parameter`` (E02) is brms's Stan parameter when it is not the class: brms declares the generalized extreme value
     family's ``real tmp_xi``, puts the prior of class ``xi`` on it and derives ``xi`` from it, the data, ``mu`` and ``sigma``
@@ -196,9 +257,12 @@ class ExtraParameter:
         return np.asarray(np.log(arr) - np.log(top - arr))
 
     def prior_line(self, model) -> str:
-        """``describe()``'s prior line of the parameter, with its bounds."""
+        """``describe()``'s prior line of the parameter, with its bounds; with its own formula (E03), the pointer
+        ``dpar_pointer`` instead."""
         from autobayes.priors import describe_prior
 
+        if is_distributional(model, self.name):
+            return dpar_pointer(model, self.name)
         prior = getattr(model.priors, self.name)
         if self.derived:                                 # E02: brms's prior of class xi is the prior of its tmp_xi
             return f"  {self.variable} ~ {describe_prior(prior)}   (brms's prior of class {self.name}, on its unscaled {self.meaning})"
@@ -220,8 +284,10 @@ NO_EXTRA_PARAMETERS: tuple[ExtraParameter, ...] = ()
 
 def extra_draws(model, post, name: str):
     """The posterior draws of the family's extra parameter ``name`` (``alpha``, ``beta``, ``ndt``) with a row axis, to
-    broadcast against the linear predictor's ``(chain, draw, row)``."""
-    return post[model.names[name]].to_numpy()[..., None]
+    broadcast against the linear predictor's ``(chain, draw, row)``; one with its own formula (E03: the skew normal's
+    ``alpha``) has one value per row already (``predict()`` puts them into the posterior, as for ``auxiliary``)."""
+    values = post[model.names[name]].to_numpy()
+    return values if values.ndim == 3 else values[..., None]
 
 
 @dataclass(frozen=True, eq=False)
@@ -369,6 +435,31 @@ class FamilySpec:
             taking = [n for n, spec in FAMILIES.items() if name in spec.fixable]
             raise ValueError(f"{name}= fixes the {' or '.join(taking)} family's {name}; the {self.name} family has none")
         return self.fixable[name]()
+
+    # E03 (docs/contexts-newer-families.md): the family's parameters besides ``scale_parameter`` that take a formula of their own
+    # (``DistributionalFormula``: zi, hu under the logit link, the skew normal's alpha under the identity), set where a frozen
+    # case verifies it; and whether the scale parameter's own formula (B01) takes group-level terms whose correlation ID is
+    # shared with the response formula's (D08), False where E03 lifted that formula without a case of such terms. The
+    # parameters of ``distributional_formulas`` take population-level terms only.
+    distributional_formulas: tuple[DistributionalFormula, ...] = ()
+    distributional_group_terms: bool = True
+
+    @property
+    def distributional_parameters(self) -> tuple[str, ...]:
+        """The parameters that take a formula of their own, by brms name: the scale parameter under ``distributional_link``
+        (B01), then those of ``distributional_formulas`` (E03)."""
+        scale = (self.scale_parameter,) if self.scale_parameter is not None and self.distributional_link is not None else ()
+        return scale + tuple(f.parameter for f in self.distributional_formulas)
+
+    def distributional_parameter_link(self, parameter: str | None) -> str | None:
+        """The link of ``parameter``'s own formula (``"log"``, ``"logit"``, ``"identity"``), or None when it takes none."""
+        if parameter is not None and parameter == self.scale_parameter:
+            return self.distributional_link
+        return next((f.link for f in self.distributional_formulas if f.parameter == parameter), None)
+
+    def distributional_formula(self, parameter: str) -> DistributionalFormula | None:
+        """The ``DistributionalFormula`` of ``parameter`` (E03), or None (the scale parameter's formula is B01's)."""
+        return next((f for f in self.distributional_formulas if f.parameter == parameter), None)
 
     def with_link(self, link: str | None) -> "FamilySpec":
         """This family's spec under ``link``: this spec for ``None`` or its own link, the one a ``links`` entry builds

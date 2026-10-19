@@ -664,6 +664,8 @@ def test_other_constructs_are_refused_naming_them(family, label):
     fam = get_family(family)
     if label == "scale_formula" and fam.scale_parameter is None:
         pytest.skip("the zero-inflated binomial family has no scale parameter")
+    if label == "zi_formula" and fam.zero_parameter in fam.distributional_parameters:   # E03 (tests/test_contexts_newer_families.py)
+        pytest.skip(f"E03: the {family} family's {fam.zero_parameter} ~ ... is taken ({family}_distributional_{fam.zero_parameter})")
     ctor, formula = make(family, SPECS[family][0], fam.zero_parameter, fam.scale_parameter)
     frame = DATA.assign(c=DATA.cens_ind)
     extra = {"simo": ab.Dirichlet(1)} if label == "mo" else {"ar": ab.Normal(0, 0.5)} if label == "ar" else {}

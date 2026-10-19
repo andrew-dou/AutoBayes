@@ -13,7 +13,8 @@ G2 `check_logp`          log density with and without the Jacobian, and its prio
 G2 `check_gradient`      every gradient coordinate, mapped through the probed parameter table
 G3 `check_derived`       the graph's linear predictor, group effects and correlation matrices, and the raw-scale intercept
                          (the cumulative thresholds and a categorical model's per-category intercepts, B05); an
-                         auxiliary parameter's own formula: its per-row values and raw-scale intercept (B01)
+                         auxiliary parameter's own formula: its per-row values and raw-scale intercept (B01); E03: a zi, hu or
+                         alpha formula's values, the inverse of brms's default link of that parameter (_BRMS_DPAR_LINK)
 G4 `check_predictions`   predict() on the fixture's draws equals posterior_linpred/posterior_epred
 G5 `check_jax`           the JAX-compiled density equals the PyTensor one at every point
 G6 `check_default_prior` brms's default-prior table has the classes this model has, and `ab.default_priors()` for the
@@ -80,6 +81,7 @@ from types import SimpleNamespace
 
 import numpy as np
 import pandas as pd
+from scipy.special import expit
 
 import autobayes as ab
 from autobayes.priors import dirichlet_concentration
@@ -126,9 +128,11 @@ def prior_names(model) -> list[str]:
     out += [v for name in distributional for k, v in model.dpar_names[name].items() if k != "value"]   # their formulas (B01)
     if "nu" in names:                                      # a learned Student-t nu, its prior truncated to nu > 1 (A13)
         out.append(names["nu"])
-    out += [names[par] for par in ("zi", "hu") if par in names]   # the zero-inflation / hurdle probability (B06)
-    out += [names[e.variable] for e in model.family_spec.extra_parameters]   # D01: alpha, beta, ndt (ndt's truncation constant
-    # included); E02: kappa, quantile, and the GEV's tmp_xi, which carries brms's prior of class xi
+    out += [names[par] for par in ("zi", "hu") if par in names and par not in distributional]   # the zero-inflation / hurdle
+    out += [names[e.variable] for e in model.family_spec.extra_parameters                      # probability (B06); D01: alpha,
+            if e.name not in distributional]                    # beta, ndt (ndt's truncation constant included); E02: kappa, quantile,
+                                                                # the GEV's tmp_xi (brms's prior of class xi); E03: with a formula,
+                                                                # its intercept and coefficients, above
     out += [roles["sd"] for roles in model.group_coefficient_names.values()]
     out += [roles["sd"] for roles in getattr(model, "dpar_group_names", {}).values()]   # D08: a shared ID's distributional SDs
     # D08: brms's normalisation constant of gr(by = )'s SDs (a potential of the graph, where brms's lprior has it)
@@ -372,6 +376,14 @@ def check_gradient(b: Bundle) -> None:
 
 
 # -- G3 -----------------------------------------------------------------------------------------------------
+# brms's default link of each distributional parameter a frozen case gives a formula (brmsfamily()'s link_sigma, link_shape,
+# link_phi: log, B01; link_zi, link_hu: logit and link_alpha: identity, E03), with its inverse, which G3 applies to brms's own
+# linear predictor of the parameter; the model's DparDesign.link must be the same
+_BRMS_DPAR_LINK = {"sigma": ("log", np.exp), "shape": ("log", np.exp), "phi": ("log", np.exp),
+                   "zi": ("logit", expit), "hu": ("logit", expit),
+                   "alpha": ("identity", lambda eta: eta)}
+
+
 def check_derived(b: Bundle) -> None:
     if adapter.is_multivariate(b.model):                      # C01
         return _check_derived_multivariate(b)
@@ -414,6 +426,11 @@ def check_derived(b: Bundle) -> None:
                 raise OracleMismatch(f"point {k}: the correlation matrix of {g!r} differs from brms Cor_{m} by {err}")
         start = 1 + len(groups) + len(cors)
         for (name, _), value in zip(distributional, out[start:start + len(distributional)]):   # B01: exp of brms's own predictor
+            if name not in _BRMS_DPAR_LINK:                         # E03: inv_logit for zi and hu, the identity for alpha
+                raise OracleMismatch(f"no brms link of {name}'s formula is recorded here")
+            link, inverse = _BRMS_DPAR_LINK[name]
+            if b.model.design.dpars[name].link != link:
+                raise OracleMismatch(f"the model's link of {name}'s formula is {b.model.design.dpars[name].link}; brms's default is {link}")
             X = b.fixture.standata[f"X_{name}"]
             dmap = b.cmap.distributional[name]
             bd = adapter.coefficients(p.pars, f"b_{name}")
@@ -427,9 +444,10 @@ def check_derived(b: Bundle) -> None:
                     m, cn = b.gmap.brms_id[g], b.gmap.dpar_cn[(name, g, coef)]
                     J = b.fixture.standata[f"J_{m}"].astype(int) - 1
                     eta = eta + np.atleast_1d(p.pars[f"r_{m}_{name}_{cn}"])[J] * b.fixture.standata[f"Z_{m}_{name}_{cn}"]
-            err = rel_err(np.asarray(value, dtype=float).ravel(), np.exp(eta))
+            err = rel_err(np.asarray(value, dtype=float).ravel(), inverse(eta))
             if err > PRED_REL:
-                raise OracleMismatch(f"point {k}: the graph's {name} differs from exp of brms's linear predictor of {name} by {err}")
+                raise OracleMismatch(f"point {k}: the graph's {name} differs from the inverse {link} link of brms's linear predictor "
+                                     f"of {name} by {err}")
             if f"b_{name}_Intercept" in p.pars:                      # the raw-scale intercept of name's formula
                 nat = adapter.natural_point(b.model, p, b.cmap, b.gmap)[name]
                 raw = nat["intercept"] - float(b.model.design.dpars[name].x_means @ nat["b"])
@@ -666,8 +684,8 @@ def check_default_prior(b: Bundle) -> None:
             raise OracleMismatch(f"brms default_prior lacks the rows {sorted(wanted - dpar_rows)} of {name}'s formula")
     if "nu" in b.model.names:
         expected.add("nu")
-    expected |= {par for par in ("zi", "hu") if par in b.model.names}     # B06
-    expected |= {e.name for e in b.model.family_spec.extra_parameters}     # D01: alpha, beta, ndt
+    expected |= {par for par in ("zi", "hu") if par in b.model.names and par not in distributional}     # B06; E03: its dpar rows
+    expected |= {e.name for e in b.model.family_spec.extra_parameters if e.name not in distributional}     # D01: alpha, beta, ndt
     mixture = getattr(b.model, "mixture_names", {})        # C05: each component's sigma<k> and theta (Intercept, b above)
     expected |= {*mixture["sigma"], "theta"} if mixture else set()
     expected |= {part for part in ("ar", "ma") if part in getattr(b.model, "autocor_names", {})}   # C04: an ARMA term's ar and ma

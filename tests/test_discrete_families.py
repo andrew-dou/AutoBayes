@@ -254,6 +254,8 @@ REFUSALS = [
 @pytest.mark.parametrize("family", FAMILIES)
 @pytest.mark.parametrize("construct", [r[0] for r in REFUSALS])
 def test_other_constructs_are_refused_by_name(family, construct):
+    if family == "beta_binomial" and construct in ("distributional", "weights"):   # E03 lifted them (tests/test_contexts_newer_families.py)
+        pytest.skip("E03: the beta-binomial's phi ~ ... and weights() are taken (beta_binomial_distributional_phi, beta_binomial_weighted)")
     _, make, needle = next(r for r in REFUSALS if r[0] == construct)
     needle = needle[family] if isinstance(needle, dict) else needle.format(f=family)
     df = frame().assign(c=0, ord=np.arange(24) % 4, sdx=0.3, xm=np.where(np.arange(24) % 5 == 0, np.nan, 0.5))

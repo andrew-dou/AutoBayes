@@ -111,9 +111,5 @@
     ]
    }
   }
- },
- "gate": {
-  "expect": "fail",
-  "reason": "E03_contexts_newer_families not implemented; remove this field when it lands"
  }
 }

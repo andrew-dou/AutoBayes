@@ -135,7 +135,8 @@ the fit record work as for B06's.
 independent and correlated slopes, the offset) and Gaussian processes `gp()` enter the linear predictor as for every family
 (C03), and `weights()` is taken. Refused naming the construct (divergence D84): links other than the default; formulas on
 `zi` / `hu` or on `shape`, `phi`, `sigma`; `cens()` and `trunc()`; `mo()`; `me()` and `mi()`; `mm()` and `gr(by = )`;
-autocorrelation terms; multivariate, non-linear (`nl=True`) and mixture models.
+autocorrelation terms; multivariate, non-linear (`nl=True`) and mixture models. E03 lifted `zi ~ ...` for
+`zero_inflated_negbinomial` and `hu ~ ...` for `hurdle_lognormal` ([contexts of the newer families](contexts-newer-families.md)).
 
 ## Evidence
 

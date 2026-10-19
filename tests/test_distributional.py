@@ -177,7 +177,8 @@ def test_each_family_offers_a_formula_on_its_auxiliary_parameter(family, formula
     point = m.value_point(intercept=0.1, b=[0.2], **{parameter: {"intercept": 0.3, "b": np.full(len(m.design.dpars[parameter].columns), 0.1)}})
     assert np.isfinite(float(m.pymc_model.compile_logp()(point)))
     assert {name for name, spec in FAMILIES.items() if spec.distributional_link is not None} == {
-        "gaussian", "student", "lognormal", "negbinomial", "gamma", "beta"}
+        "gaussian", "student", "lognormal", "negbinomial", "gamma", "beta",
+        "weibull", "beta_binomial"}                                   # E03 (tests/test_contexts_newer_families.py)
 
 
 # -- priors -----------------------------------------------------------------------------------------------------------

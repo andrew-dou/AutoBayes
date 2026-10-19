@@ -71,7 +71,8 @@ offers for every family but the categorical one) reach these likelihoods through
 (`tests/test_continuous_families.py` checks the observed rows' density at the graph's linear predictor with all of them in one
 formula). Refused, naming the construct, because no frozen case verifies them (D79): a distributional formula on any auxiliary
 parameter (`shape`, `sigma`, `alpha`, `beta`, `ndt`), `weights()`, `cens()`, `trunc()`, `mi()`, `mo()`, `me()`, autocorrelation
-terms, a multivariate formula, a mixture component (D52), and a link other than brms's default (D76).
+terms, a multivariate formula, a mixture component (D52), and a link other than brms's default (D76). E03 lifted three of them:
+the Weibull's `shape ~ ...` and `weights()` and the skew normal's `alpha ~ ...` ([contexts of the newer families](contexts-newer-families.md)).
 
 ## Verification
 

@@ -9,8 +9,10 @@ link and the precision named ``phi`` as in brms (``Priors(phi=...)``, brms class
 as ``phi_log__``). The response and the trials are validated, cast and dropped where the trials are zero exactly as the
 binomial family's (D4); ``predict(kind="mean")`` returns ``mu`` with ``expected = n mu`` (brms's ``posterior_epred``) and
 ``kind="probability"`` returns ``mu`` alone, as for the binomial (D5; both D82, with PyMC's accuracy at a large ``phi``).
-Checked against brms in the oracle case ``beta_binomial_varint``, not assumed. No distributional formula on ``phi``, no
-``weights()`` and no other link: no frozen case verifies them (D80, D81).
+Checked against brms in the oracle case ``beta_binomial_varint``, not assumed. E03 (docs/contexts-newer-families.md): ``phi``
+takes a formula of its own under brms's log link (``["k | trials(size) ~ x", "phi ~ z"]``, B01's machinery, one precision per
+row; ``beta_binomial_distributional_phi``) and the likelihood ``weights()`` after ``trials()`` (``k | trials(size) + weights(w)``;
+``beta_binomial_weighted``); no other link (D80), and everything else D81 lists stays refused.
 """
 from __future__ import annotations
 
@@ -18,9 +20,9 @@ import numpy as np
 from scipy.special import expit
 
 from autobayes.families.binomial import _response_warnings as _binomial_warnings
-from autobayes.families.spec import NO_FIXED_PARAMETERS, FamilySpec, auxiliary, scale_line
+from autobayes.families.spec import NO_FIXED_PARAMETERS, FamilySpec, auxiliary, scale_line, scale_symbol
 from autobayes.formula import binomial_counts
-from autobayes.priors import Gamma
+from autobayes.priors import Gamma, StudentT
 
 _INTERCEPT_NOTE = (
     "  expit(a_c) is the mean success probability at that proportion-weighted predictor; it is NOT the",
@@ -58,20 +60,21 @@ def _log_likelihood(model, post, eta):
 
 
 def _mean_lines(model) -> list[str]:
-    s = model.spec
+    s, phi = model.spec, scale_symbol(model)
     return [f"  mean success probability mu_i = expit(eta_i) = 1 / (1 + exp(-eta_i)); {s.response}_i ~ BetaBinomial({s.trials}_i, "
-            "mu_i phi, (1 - mu_i) phi);",
+            f"mu_i {phi}, (1 - mu_i) {phi});",
             f"  eta is on the log-odds scale; E[{s.response}_i] = {s.trials}_i mu_i."]
 
 
 def _likelihood_lines(model) -> list[str]:
     s = model.spec
-    k, n = s.response, s.trials
+    k, n, phi = s.response, s.trials, scale_symbol(model)          # phi_i with its own formula (E03)
     return [scale_line(model), "", "Likelihood",
-            f"  {k}_i ~ BetaBinomial({n}_i, mu_i phi, (1 - mu_i) phi): {n}_i trials whose success probability is Beta(mu_i phi, (1 - mu_i) phi);",
-            f"  log p({k}_i) = log C({n}_i, {k}_i) + log B({k}_i + mu_i phi, {n}_i - {k}_i + (1 - mu_i) phi) - log B(mu_i phi, (1 - mu_i) phi);",
-            f"  Var[{k}_i] = {n}_i mu_i (1 - mu_i) ({n}_i + phi) / (1 + phi): phi is the precision (the binomial as phi -> infinity),",
-            "  sampled as log(phi); 1 - mu is computed as expit(-eta). brms's beta_binomial, through PyMC's BetaBinomial.",
+            f"  {k}_i ~ BetaBinomial({n}_i, mu_i {phi}, (1 - mu_i) {phi}): {n}_i trials whose success probability is Beta(mu_i {phi}, (1 - mu_i) {phi});",
+            f"  log p({k}_i) = log C({n}_i, {k}_i) + log B({k}_i + mu_i {phi}, {n}_i - {k}_i + (1 - mu_i) {phi}) - log B(mu_i {phi}, (1 - mu_i) {phi});",
+            f"  Var[{k}_i] = {n}_i mu_i (1 - mu_i) ({n}_i + {phi}) / (1 + {phi}): phi is the precision (the binomial as phi -> infinity),",
+            "  sampled as log(phi); 1 - mu is computed as expit(-eta). brms's beta_binomial, through PyMC's BetaBinomial."
+            if phi == "phi" else "  1 - mu is computed as expit(-eta). brms's beta_binomial, through PyMC's BetaBinomial.",
             "  Counts up to 1e6 per row; zero-trial rows are dropped before design construction (as for the binomial)."]
 
 
@@ -98,4 +101,8 @@ BETA_BINOMIAL = FamilySpec(
     default_prior_link=None,                                        # logit: brms's defaults are student_t(3, 0, 2.5) (probed)
     default_scale_prior=lambda scale: Gamma(0.01, 0.01),            # brms beta_binomial phi: gamma(0.01, 0.01), lb 0 (probed)
     log_likelihood=_log_likelihood,                                 # C07: log_lik(), checked against the model's own density
+    addition_terms=frozenset({"weights"}),                          # E03: weights(), each row's log likelihood times its weight
+    distributional_link="log",                                      # E03: phi ~ z, brms's log link (beta_binomial_distributional_phi)
+    default_distributional_intercept=lambda scale: StudentT(3, 0, 2.5),   # brms Intercept_phi: student_t(3, 0, 2.5)
+    distributional_group_terms=False,                               # E03: no case of a correlation ID shared with phi's formula
 )

@@ -344,3 +344,14 @@ default priors. Verified against `inverse_gaussian_varint`, `inverse_gaussian_lo
 GEV's xi against brms's `posterior_epred(dpar = "xi")`); the term model and `gp()` are taken, while other links, distributional
 formulas, addition terms, `mo()`, `me()`/`mi()`, `cs()`, `mm()`, `gr(by = )`, autocorrelation terms, multivariate, non-linear,
 mixture and shrinkage-prior use are refused (D112, D115); see [continuous families](continuous-families.md).
+
+Distributional formulas and `weights()` for the Tier D families (E03): a formula of its own on the Weibull's `shape` and the
+beta-binomial's `phi` (log link), the zero-inflated negative binomial's `zi` and the hurdle lognormal's `hu` (logit link; brms's
+default `logistic(0, 1)` on the intercept, `ab.Logistic`) and the skew normal's `alpha` (identity link), `["zcnt ~ x", "zi ~ z"]`
+with `Priors(zi={"intercept": ..., "b": ...})`, each row's parameter in the density, `predict()` (with `dpar=`), `log_lik()`,
+brms's default priors and `describe()`; and `weights()` for the Weibull and beta-binomial families. Verified against
+`weibull_distributional_shape`, `beta_binomial_distributional_phi`, `zero_inflated_negbinomial_distributional_zi`,
+`hurdle_lognormal_distributional_hu`, `skew_normal_distributional_alpha`, `weibull_weighted` and `beta_binomial_weighted` (log
+densities within 7.9e-16 relative, gradients within 2.5e-9); group-level terms in these formulas and formulas on the families'
+other parameters stay refused (D116, with D79, D81, D84), the predicted probabilities saturate at extreme linear predictors (D117),
+and `conditional_effects()` keeps refusing them (D99); see [contexts of the newer families](contexts-newer-families.md).

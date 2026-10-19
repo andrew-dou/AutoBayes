@@ -53,6 +53,7 @@ from autobayes.priors import AUXILIARY, PriorError, Priors, describe_prior
 _bambi_group_name = bambi_group_name          # ``1|g`` for the varying intercept of ``g``, ``x|g`` for the slope of ``x``
 _SYMMETRIC_HALF = frozenset({"HalfNormal", "HalfStudentT", "HalfCauchy"})   # D08: half priors of a distribution symmetric about 0
 _AUTOCOR_MEANING = {"ar": "autoregressive", "ma": "moving-average"}   # an autocorrelation term's parts (C04)
+_DPAR_INVERSE = {"log": "exp(eta_{})", "logit": "inv_logit(eta_{})", "identity": "eta_{}"}   # describe()'s value of a dpar (B01, E03)
 
 
 def _prior_rv(name: str, prior, *, positive: bool = False):
@@ -489,7 +490,8 @@ class Model:
             if name not in self.learned_parameters:          # one's truncated prior came from Priors.to_bambi (A13)
                 bambi_priors[name] = np.float64(getattr(self, name))   # PyTensor makes a Python 4.0 a float32 constant
         for extra in fam.extra_parameters:                   # D01: alpha, beta, ndt; ndt truncated to (0, min y) of these rows;
-            bambi_priors[extra.variable] = extra.bambi_prior(getattr(priors, extra.name), self.data[self.spec.response])   # E02: tmp_xi
+            if extra.name not in self.spec.dpar_names:       # E03: an alpha with its own formula has its formula's priors there
+                bambi_priors[extra.variable] = extra.bambi_prior(getattr(priors, extra.name), self.data[self.spec.response])   # E02: tmp_xi
         bambi_formula = self.spec.bambi_formula
         # Bambi centres every formula that has an intercept, or none. Without a distributional formula that is the
         # response formula's centring as it has always been; with one (B01), brms centres each formula that has an
@@ -877,13 +879,13 @@ class Model:
         for key, name in roles.items():
             if key != "value" and self.pymc_model[name] not in self.pymc_model.free_RVs:
                 raise RuntimeError(f"{name!r} is not a free variable of the graph")
-        if self.bambi_model.family.link[bname].name != self.family_spec.distributional_link:
-            raise RuntimeError(f"Bambi's link of {bname!r} is {self.bambi_model.family.link[bname].name}, expected "
-                               f"{self.family_spec.distributional_link}")
+        link = self.family_spec.distributional_parameter_link(d.response)   # log (B01); E03: logit for zi / hu, identity for alpha
+        if self.bambi_model.family.link[bname].name != link:
+            raise RuntimeError(f"Bambi's link of {bname!r} is {self.bambi_model.family.link[bname].name}, expected {link}")
         centered = bool(self._bambi_centring and d.intercept and d.pop_terms)   # an intercept-only formula has nothing to centre
         x_means = X_raw.mean(0) if centered else np.zeros(X_raw.shape[1])
         return DparDesign(name=d.response, X_raw=X_raw, X_model=X_raw - x_means if centered else X_raw, x_means=x_means,
-                          columns=d.columns, centered=centered, link=self.family_spec.distributional_link,
+                          columns=d.columns, centered=centered, link=link,
                           group_blocks=MappingProxyType(group_blocks))
 
     def _dpar_group_blocks(self, d: ModelSpec, comp) -> dict[tuple[str, str], GroupBlock]:
@@ -1472,7 +1474,8 @@ class Model:
         over the coefficient levels otherwise); with exactly one group-level term its ``sd``,
         ``offset`` and ``group_effect`` roles are included here as well, and ``sd:x``, ``offset:x``,
         ``group_effect:x`` for each varying slope ``x`` of that term (see ``group_names``). An auxiliary parameter with its own
-        formula (B01) keeps its entry, now a per-row deterministic; its formula's variables are in ``dpar_names``."""
+        formula (B01) keeps its entry, now a per-row deterministic; its formula's variables are in ``dpar_names``; so do a
+        zero parameter and an extra parameter with a formula of their own (E03: ``zi``, ``hu``, ``alpha``)."""
         single = self.spec.group_terms[0] if len(self.spec.group_terms) == 1 else None
         fam = self.family_spec
         out = {
@@ -1698,7 +1701,8 @@ class Model:
         non-reference category and ``b`` is ``(columns, K - 1)``, one column per non-reference category. An auxiliary
         parameter with its own formula (B01) is given as that formula's ``{"intercept": ..., "b": ...}`` instead: the
         intercept as sampled (centred when the formula is, brms's ``Intercept_sigma``) and the coefficients in its
-        design-column order (brms's ``b_sigma``), each stored under its own variable (``Model.dpar_names``), unconstrained.
+        design-column order (brms's ``b_sigma``), each stored under its own variable (``Model.dpar_names``), unconstrained; so is
+        a zero parameter or extra parameter with its own formula (E03), ``zi={"intercept": ..., "b": ...}``, ``alpha={...}``.
         A monotonic term ``mo(x)`` (B03) has no entry in ``b``: ``bsp`` is its coefficient (brms's ``bsp``) and ``simo`` its
         simplex (brms's ``simo``: ``D`` positive shares summing to 1, stored on Stan's stick-breaking coordinates), each keyed
         by the term's column, ``bsp={"x": 0.3}``, ``simo={"x": [0.2, 0.5, 0.3]}`` (a single monotonic term also accepts the
@@ -1905,12 +1909,17 @@ class Model:
             point.update(self._dpar_point(scale, auxiliary[scale]))
         elif scale is not None:
             point[f"{n[scale]}_log__"] = log_scale(auxiliary[scale], scale)
-        if zero is not None:                                   # B06: a probability, sampled as its log-odds
+        if zero is not None and zero in self.spec.dpar_names:  # E03: its own formula's intercept and coefficients as sampled
+            point.update(self._dpar_point(zero, probabilities[zero]))
+        elif zero is not None:                                 # B06: a probability, sampled as its log-odds
             p = np.asarray(probabilities[zero], dtype=float)
             if p.shape != () or not np.isfinite(p) or not 0 < p < 1:
                 raise ValueError(f"{zero} must be a finite scalar strictly between 0 and 1")
             point[f"{n[zero]}_logodds__"] = np.asarray(np.log(p) - np.log1p(-p))
         for name, extra in own.items():                        # D01: on its coordinate (as is, log, Stan's lower-upper)
+            if name in self.spec.dpar_names:                   # E03: alpha's own formula, as sampled
+                point.update(self._dpar_point(name, extras[name]))
+                continue
             point[extra.coordinate] = extra.value(extras[name], self.design.y, self.family)
         learned = self.learned_parameters
         if "nu" in learned:                                    # learned (A13): sampled as log(nu - lower), the interval coordinate
@@ -2665,7 +2674,8 @@ class Model:
                                                  for (g, c), names in self.group_coefficient_names.items())
                      + "".join(f"{names['group_effect']} = u_{name},{g}, " for (name, g, _), names in self.dpar_group_names.items())   # D08
                      + "".join(f"{names['cor']} = Cor_{g} = L_{g} L_{g}^T, " for g, names in self.correlation_names.items()) + fam.deterministic_note
-                     + "".join(f"; {dn['value']} = exp(eta_{name}), one {name} per row (B01)" for name, dn in self.dpar_names.items())
+                     + "".join(f"; {dn['value']} = {_DPAR_INVERSE[self.design.dpars[name].link].format(name)}, one {name} per row (B01)"
+                               for name, dn in self.dpar_names.items())
                      + "".join(f"; {me['latent']} = meanme_{x} + sdme_{x} * zme_{x}, one per row (brms's Xme)" for x, me in self.me_names.items())
                      + shrinkage_note
                      + (f"; {n['linpred']} = mu_i[k], one per row and threshold (D04)" if s.cs_terms else ""))
@@ -2800,18 +2810,23 @@ class Model:
         a = f"a_{name}{'_c' if dd.centered else ''}" if ds.intercept else "0"
         xs = " + ".join(_linear_terms(ds, dd.centered, b=f"b_{name}"))
         groups = "".join(f" + u_{name},{t.factor}[{t.factor}_i]" for t in ds.group_terms)   # D08: a shared ID's varying intercept
+        # how the link reads (B01's log; E03: zi and hu under the logit, alpha under the identity): the left-hand side, row i's
+        # value from its linear predictor, and the scale the coefficients act on
+        left, value, on = {"log": (f"log({name}_i)", f"exp(eta_{name},i) > 0", f"log {name}"),
+                           "logit": (f"logit({name}_i)", f"inv_logit(eta_{name},i), in (0, 1),", f"logit {name}"),
+                           "identity": (f"{name}_i", f"eta_{name},i", f"{name} itself")}[dd.link]
         lines = ["", f"Distributional parameter {name} (its own formula '{ds.formula}', {dd.link} link; brms's bf(..., {ds.formula}))",
-                 f"  {dd.link}({name}_i) = eta_{name},i = {a}" + (f" + {xs}" if xs else "") + groups,
-                 f"  {name}_i = exp(eta_{name},i) > 0 is row i's {name} in the likelihood below; the coefficients act on log {name}."]
+                 f"  {left} = eta_{name},i = {a}" + (f" + {xs}" if xs else "") + groups,
+                 f"  {name}_i = {value} is row i's {name} in the likelihood below; the coefficients act on {on}."]
         if dd.centered:
-            lines += [f"  Its columns are centred at their own fitted-row means (brms's Xc_{name}), so a_{name}_c is log {name} there and",
+            lines += [f"  Its columns are centred at their own fitted-row means (brms's Xc_{name}), so a_{name}_c is {on} there and",
                       f"  its prior applies to a_{name}_c; the posterior reports the raw-scale intercept",
                       f"  a_{name} = a_{name}_c - sum_p mean(x_p) * b_{name}_p (brms's b_{name}_Intercept), computed after sampling."]
         elif not ds.intercept:
-            lines += [f"  No intercept: log {name} is the raw design times its coefficients."]
+            lines += [f"  No intercept: {on} is the raw design times its coefficients."]
         for t in ds.group_terms:                             # D08: correlated with the response formula's term through its ID
             roles = self.dpar_group_names[(name, t.factor, "Intercept")]
-            lines += [f"  u_{name},{t.factor}[j] (PyMC {roles['group_effect']}) is the varying intercept of log {name} by {t.factor}, '{t.canonical}': "
+            lines += [f"  u_{name},{t.factor}[j] (PyMC {roles['group_effect']}) is the varying intercept of {on} by {t.factor}, '{t.canonical}': "
                       f"it shares the correlation ID {t.id!r} with the response formula's term (Group effects, below)."]
         return lines
 
@@ -2861,7 +2876,8 @@ class Model:
         """The parameters whose prior came from ``ab.default_priors`` (brms's defaults; A07), labelled as the prior
         messages label them (``intercept``, ``b:x``, ``sd:g``, ``sd:x|g``, ``cor:g``, ``simo:x``, ``sigma``, ``nu``), in that order; empty
         when the user gave every prior (``zi`` or ``hu`` after the auxiliary parameter, B06; a distributional formula's
-        ``sigma:intercept``, ``sigma:b:z[q]`` in place of ``sigma``, B01; a mixture's ``mu1:intercept``, ``mu1:b:x``, ``sigma1``,
+        ``sigma:intercept``, ``sigma:b:z[q]`` in place of ``sigma``, B01, and E03's ``zi:intercept`` in place of ``zi``, ``hu`` or
+        ``alpha``; a mixture's ``mu1:intercept``, ``mu1:b:x``, ``sigma1``,
         ..., ``theta``, C05). ``fit_record`` stores them under ``"default_priors"``."""
         if self.family_spec.mixture:
             from autobayes.families.mixture import default_prior_labels
@@ -2875,16 +2891,20 @@ class Model:
         found += [(f"lscale:{c}", v) for c, v in pr.lscale_priors(s).items()]
         found += list(pr.autocor_priors(s).items())                                  # an ARMA term's ar and ma (C04)
         found += [(f"{cls}:{x}", v) for cls in ("meanme", "sdme") for x, v in pr.me_priors(s, cls).items()]   # me() (C06)
+        def formula_priors(name):                            # a parameter's own formula's priors (B01; E03: zi, hu, alpha)
+            ds, sub = s.dpar(name), pr.dpar_priors(s, name)
+            return (([(f"{ds.response}:intercept", sub.intercept)] if ds.intercept else [])
+                    + [(f"{ds.response}:b:{k}", v) for k, v in sub.coefficient_priors(ds).items()]
+                    + [(f"{ds.response}:sd:{sd_tag(g, c)}", v) for (g, c), v in (sub.sd_priors(ds).items() if ds.group_terms else ())])   # D08
         if fam.scale_parameter in s.dpar_names:              # its own formula's priors (B01)
-            ds, sub = s.dpar(fam.scale_parameter), pr.dpar_priors(s, fam.scale_parameter)
-            found += [(f"{ds.response}:intercept", sub.intercept)] if ds.intercept else []
-            found += [(f"{ds.response}:b:{k}", v) for k, v in sub.coefficient_priors(ds).items()]
-            found += [(f"{ds.response}:sd:{sd_tag(g, c)}", v) for (g, c), v in (sub.sd_priors(ds).items() if ds.group_terms else ())]   # D08
+            found += formula_priors(fam.scale_parameter)
         elif fam.scale_parameter is not None:
             found.append((fam.scale_parameter, getattr(pr, fam.scale_parameter)))
         if fam.zero_parameter is not None:
-            found.append((fam.zero_parameter, getattr(pr, fam.zero_parameter)))
-        found += [(e.name, getattr(pr, e.name)) for e in fam.extra_parameters]   # alpha, beta, ndt (D01)
+            found += (formula_priors(fam.zero_parameter) if fam.zero_parameter in s.dpar_names
+                      else [(fam.zero_parameter, getattr(pr, fam.zero_parameter))])
+        for e in fam.extra_parameters:                       # alpha, beta, ndt (D01)
+            found += formula_priors(e.name) if e.name in s.dpar_names else [(e.name, getattr(pr, e.name))]
         if pr.nu is not None:
             found.append(("nu", pr.nu))
         return [label for label, prior in found if getattr(prior, "source", "user") == "default"]
@@ -3048,14 +3068,16 @@ def beta(formula: str | list[str], data: pd.DataFrame, priors: Priors, *, link: 
                  center_predictors=center_predictors, categorical=categorical)
 
 
-def weibull(formula: str, data: pd.DataFrame, priors: Priors, *,
+def weibull(formula: str | list[str], data: pd.DataFrame, priors: Priors, *,
             center_predictors: bool = True, categorical: Mapping[str, object] | None = None) -> Model:
     """Weibull response (brms ``weibull()``, D01, docs/continuous-families.md): log link on the mean, ``E[y] = mu = exp(eta)``,
     ``y ~ Weibull(shape, scale = mu / Gamma(1 + 1 / shape))``.
 
     Responses are strictly positive finite reals. The shape takes its own positive-support prior,
     ``Priors(shape=ab.Gamma(0.01, 0.01))`` (brms class ``shape``; brms's default, on request through ``ab.default_priors``).
-    ``predict(kind="mean")`` returns ``mu``. No distributional formula, ``weights()``, ``cens()`` or ``trunc()`` (D79).
+    ``predict(kind="mean")`` returns ``mu``. E03 (docs/contexts-newer-families.md): ``shape`` may have its own formula under a
+    log link, ``["ypos ~ x", "shape ~ z"]`` with ``Priors(shape={"intercept": ..., "b": ...})``, and ``weights()`` is taken; no
+    ``cens()`` or ``trunc()`` (D79).
     """
     return Model(formula, data, priors, family="weibull", center_predictors=center_predictors, categorical=categorical)
 
@@ -3071,14 +3093,16 @@ def exponential(formula: str, data: pd.DataFrame, priors: Priors, *,
     return Model(formula, data, priors, family="exponential", center_predictors=center_predictors, categorical=categorical)
 
 
-def skew_normal(formula: str, data: pd.DataFrame, priors: Priors, *,
+def skew_normal(formula: str | list[str], data: pd.DataFrame, priors: Priors, *,
                 center_predictors: bool = True, categorical: Mapping[str, object] | None = None) -> Model:
     """Skew-normal response (brms ``skew_normal()``, D01, docs/continuous-families.md): identity link on the mean ``mu``,
     standard deviation ``sigma`` and skewness ``alpha`` (Azzalini's skew normal in brms's mean parameterisation).
 
     ``sigma`` takes a positive-support prior, ``Priors(sigma=ab.HalfNormal(1))``, and ``alpha`` a location prior,
     ``Priors(alpha=ab.Normal(0, 4))`` (brms class ``alpha``; its default, on request through ``ab.default_priors``).
-    ``predict(kind="mean")`` returns ``mu``. No distributional formula, ``weights()``, ``cens()`` or ``trunc()`` (D79).
+    ``predict(kind="mean")`` returns ``mu``. E03 (docs/contexts-newer-families.md): ``alpha`` may have its own formula under the
+    identity link, ``["y ~ x", "alpha ~ z"]`` with ``Priors(alpha={"intercept": ..., "b": ...})``; no formula on ``sigma``, no
+    ``weights()``, ``cens()`` or ``trunc()`` (D79).
     """
     return Model(formula, data, priors, family="skew_normal", center_predictors=center_predictors, categorical=categorical)
 
@@ -3109,7 +3133,7 @@ def exgaussian(formula: str, data: pd.DataFrame, priors: Priors, *,
     return Model(formula, data, priors, family="exgaussian", center_predictors=center_predictors, categorical=categorical)
 
 
-def beta_binomial(formula: str, data: pd.DataFrame, priors: Priors, *,
+def beta_binomial(formula: str | list[str], data: pd.DataFrame, priors: Priors, *,
                   center_predictors: bool = True, categorical: Mapping[str, object] | None = None) -> Model:
     """Beta-binomial response (brms ``beta_binomial()``, D02, docs/discrete-families.md): ``successes | trials(n) ~ ...`` with the
     logit link on the mean success probability ``mu`` and the precision ``phi``, ``k ~ BetaBinomial(n, mu phi, (1 - mu) phi)``.
@@ -3117,7 +3141,9 @@ def beta_binomial(formula: str, data: pd.DataFrame, priors: Priors, *,
     Successes and trials as for the binomial family (whole numbers up to 1e6, zero-trial rows dropped). ``phi`` takes a
     positive-support prior, ``Priors(phi=ab.Gamma(0.01, 0.01))`` (brms class ``phi``; brms's default, on request through
     ``ab.default_priors``). ``predict(kind="mean")`` returns ``mu`` and ``expected = n mu`` (brms's ``posterior_epred``),
-    ``kind="probability"`` ``mu`` alone. No distributional formula, ``weights()`` or other link (D80, D81).
+    ``kind="probability"`` ``mu`` alone. E03 (docs/contexts-newer-families.md): ``phi`` may have its own formula under a log link,
+    ``["k | trials(size) ~ x", "phi ~ z"]`` with ``Priors(phi={"intercept": ..., "b": ...})``, and ``weights()`` is taken after
+    ``trials()``; no other link (D80).
     """
     return Model(formula, data, priors, family="beta_binomial", center_predictors=center_predictors, categorical=categorical)
 
@@ -3244,9 +3270,10 @@ def hurdle_poisson(formula: str, data: pd.DataFrame, priors: Priors, *,
 # -- D03: more zero-inflated and hurdle families (docs/zero-inflated-hurdle.md) ---------------------------------------------
 _D03_CONTEXTS = ("No distributional formula, cens(), trunc(), mo(), me(), mi(), mm(), gr(by = ), autocorrelation term, multivariate "
                  "or non-linear formula (divergence D84).")
+_E03_CONTEXTS = _D03_CONTEXTS.replace("No distributional formula,", "No other distributional formula,")   # zi / hu formulas (E03)
 
 
-def zero_inflated_negbinomial(formula: str, data: pd.DataFrame, priors: Priors, *,
+def zero_inflated_negbinomial(formula: str | list[str], data: pd.DataFrame, priors: Priors, *,
                               center_predictors: bool = True, categorical: Mapping[str, object] | None = None) -> Model:
     """Zero-inflated negative binomial counts (brms ``zero_inflated_negbinomial``, D03): a structural zero with probability
     ``zi``, a ``NB(mu, shape)`` count otherwise (mean ``mu = exp(eta)``, variance ``mu + mu^2 / shape``); ``E[y] = (1 - zi) mu``.
@@ -3254,7 +3281,8 @@ def zero_inflated_negbinomial(formula: str, data: pd.DataFrame, priors: Priors, 
     Counts as for Poisson. ``Priors(shape=..., zi=ab.Beta(...))`` (brms classes ``shape`` and ``zi``; brms's defaults
     ``inv_gamma(0.4, 0.3)`` and ``beta(1, 1)`` on request through ``ab.default_priors``); the intercept and slope priors act on
     the log of the negative binomial part's mean. ``predict(kind="mean")`` returns ``(1 - zi) mu`` as ``mean``;
-    ``kind="linear"`` returns ``eta``. ``weights()`` is taken. """ + _D03_CONTEXTS
+    ``kind="linear"`` returns ``eta``. ``weights()`` is taken. E03 (docs/contexts-newer-families.md): ``zi`` may have its own
+    formula under the logit link, ``["zcnt ~ x", "zi ~ z"]`` with ``Priors(zi={"intercept": ..., "b": ...})``. """ + _E03_CONTEXTS
     return Model(formula, data, priors, family="zero_inflated_negbinomial",
                  center_predictors=center_predictors, categorical=categorical)
 
@@ -3308,7 +3336,7 @@ def hurdle_gamma(formula: str, data: pd.DataFrame, priors: Priors, *,
                  center_predictors=center_predictors, categorical=categorical)
 
 
-def hurdle_lognormal(formula: str, data: pd.DataFrame, priors: Priors, *,
+def hurdle_lognormal(formula: str | list[str], data: pd.DataFrame, priors: Priors, *,
                      center_predictors: bool = True, categorical: Mapping[str, object] | None = None) -> Model:
     """Hurdle lognormal responses (brms ``hurdle_lognormal``, D03): non-negative reals, an exact zero with probability ``hu``,
     ``LogNormal(mu, sigma)`` otherwise with the identity link on the log-scale location ``mu``; ``E[y] = (1 - hu) exp(mu +
@@ -3316,7 +3344,8 @@ def hurdle_lognormal(formula: str, data: pd.DataFrame, priors: Priors, *,
 
     ``Priors(sigma=..., hu=ab.Beta(...))``; the intercept and slope priors act on log y in the lognormal part.
     ``predict(kind="mean")`` returns brms's ``posterior_epred`` as ``mean``; ``kind="linear"`` returns ``mu``. ``weights()`` is
-    taken. """ + _D03_CONTEXTS
+    taken. E03 (docs/contexts-newer-families.md): ``hu`` may have its own formula under the logit link, ``["zpos ~ x", "hu ~ z"]``
+    with ``Priors(hu={"intercept": ..., "b": ...})``. """ + _E03_CONTEXTS
     return Model(formula, data, priors, family="hurdle_lognormal",
                  center_predictors=center_predictors, categorical=categorical)
 

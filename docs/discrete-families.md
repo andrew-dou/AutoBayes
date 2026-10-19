@@ -52,7 +52,8 @@ likelihoods through the linear predictor (`tests/test_discrete_families.py` chec
 linear predictor with all of them in one formula). Refused, naming the construct, because no frozen case verifies them (D80,
 D81): a link other than brms's default, a distributional formula on `phi` or `sigma`, `weights()`, `cens()`, `trunc()`,
 `mi()` (as a term or on the response), `mo()`, `me()`, autocorrelation terms, `mm()` and `gr(by = )`, a multivariate formula,
-a mixture component (D52) and `nl=True` (D62).
+a mixture component (D52) and `nl=True` (D62). E03 lifted the beta-binomial's `phi ~ ...` and `weights()`
+([contexts of the newer families](contexts-newer-families.md)).
 
 ## Verification
 
