@@ -26,7 +26,7 @@ from autobayes.families import FAMILIES, get_family
 
 FAMS = ("sratio", "cratio", "acat")
 KIND_FAMILY = {"sratio_logit": "sratio", "cratio_logit": "cratio", "acat_logit": "acat", "cumulative_probit": "probit",
-               "cumulative_cloglog": "cloglog"}                     # E06: built, withheld (tests/test_links_more.py)
+               "cumulative_cloglog": "cloglog"}                     # E06 (tests/test_links_more.py)
 
 # -- data -------------------------------------------------------------------------------------------------------------
 X = [-1.0, 0.5, 2.0, 0.3, -0.2, 1.1, 0.0, -0.7, 0.9, -1.4, 0.2, 1.6]
@@ -390,8 +390,7 @@ def test_data_and_link_refusals():
             with pytest.raises(ValueError, match=f"the {link} link of the {family} family is withheld: brms's {link} link of the ordinal "
                                                  "families is not verified against a frozen brms case here"):
                 get_family(family, link)
-    with pytest.raises(ValueError, match="the cloglog link of the cumulative family is withheld"):
-        ab.cumulative("y ~ x", data(), priors(False), link="cloglog")
+    assert ab.cumulative("y ~ x", data(), priors(False), link="cloglog").link == "cloglog"     # E06: offered since cumulative_cloglog_narrow
 
 
 def test_other_terms_compose():

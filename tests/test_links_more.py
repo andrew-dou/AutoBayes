@@ -87,14 +87,12 @@ def test_registry_offers_each_link_once():
             assert other.distributional_link is None and other.log_likelihood is not None
         assert FAMILIES[family] is spec and spec.check_formula is None                      # the registered spec is unchanged
     assert get_family("negbinomial", "identity").mean_name == get_family("gamma", "inverse").mean_name == "mu"
-    cumulative = FAMILIES["cumulative"]                                    # E06: cloglog built, withheld with its numbers (D132)
-    assert set(cumulative.links) == {"probit"} and set(cumulative.parked_links) == {"probit_approx", "cloglog", "cauchit"}
-    assert "5.9e-7 relative off the 50-digit value" in cumulative.parked_links["cloglog"]
-    with pytest.raises(ValueError, match=r"the cloglog link of the cumulative family is withheld: it is implemented \(E06\), but brms's "
-                                         r"own log density of the frozen case cumulative_cloglog is 5\.9e-7 relative off"):
-        get_family("cumulative", "cloglog")
-    with pytest.raises(ValueError, match="the cloglog link of the cumulative family is withheld"):
-        ab.cumulative("ord ~ x", FRAME, ab.Priors(intercept=ab.Normal(0, 3), b=ab.Normal(0, 1)), link="cloglog")
+    cumulative = FAMILIES["cumulative"]                  # E06: cloglog offered since cumulative_cloglog_narrow (D132)
+    assert set(cumulative.links) == {"probit", "cloglog"} and set(cumulative.parked_links) == {"probit_approx", "cauchit"}
+    assert get_family("cumulative", "cloglog") is cumulative_cloglog_spec() and cumulative_cloglog_spec().link == "cloglog"
+    m = ab.cumulative("ord ~ x", FRAME, ab.Priors(intercept=ab.Normal(0, 3), b=ab.Normal(0, 1)), link="cloglog")
+    assert m.link == "cloglog" and m.family_spec is cumulative_cloglog_spec()
+    assert get_family("cumulative", "probit").with_link("cloglog") is cumulative_cloglog_spec()
     for family in ("sratio", "cratio", "acat"):                            # the other ordinal families keep every park (D38)
         assert "cloglog" in FAMILIES[family].parked_links
 
@@ -115,7 +113,7 @@ def test_other_links_are_refused_naming_each_familys_links():
                                          r"to the families with more than one link: poisson \['log', 'sqrt'\], negbinomial \['identity', 'log'\], "
                                          r"gamma \['identity', 'inverse', 'log'\], beta \['cloglog', 'logit', 'probit'\], bernoulli "
                                          r"\['cloglog', 'logit', 'probit'\], binomial \['cloglog', 'logit', 'probit'\], cumulative "
-                                         r"\['logit', 'probit'\], inverse_gaussian \['1/mu\^2', 'log'\]\)"):   # E02 added the inverse Gaussian
+                                         r"\['cloglog', 'logit', 'probit'\], inverse_gaussian \['1/mu\^2', 'log'\]\)"):   # E02 added the inverse Gaussian
         ab.Model("ypos ~ x + (1 | g)", FRAME, ab.Priors(**BASE, sigma=ab.HalfNormal(1)), family="lognormal", link="log")
     assert ab.poisson("cnt ~ x + (1 | g)", FRAME, priors, link="log").family_spec is FAMILIES["poisson"]    # the default, explicitly
 

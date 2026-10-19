@@ -1,0 +1,73 @@
+{
+ "id": "cumulative_cloglog_narrow",
+ "tier": "E",
+ "feature": "E06_more_links",
+ "note": "E06 follow-up: cumulative_cloglog's model and data with its points drawn from (-0.3, 0.3): on cumulative_cloglog's box (0.6) brms's own log density is inexact at a point where the last category's probability is about 2e-13 and brms forms it as 1 - inv_cloglog by subtraction (D132); this box keeps every category's probability moderate, so brms's arithmetic is exact to the tolerances (as binomial_cloglog was frozen for the binomial cloglog link)",
+ "seed": 834,
+ "n_points": 8,
+ "data": {
+  "generator": "tier_e",
+  "seed": 732,
+  "n": 36,
+  "newdata": {
+   "seed": 832,
+   "n": 5
+  }
+ },
+ "brms": {
+  "formula": "ord ~ x + (1 | g)",
+  "family": {
+   "family": "cumulative",
+   "link": "cloglog"
+  },
+  "factors": {
+   "g": [
+    "a",
+    "b",
+    "c",
+    "d",
+    "e",
+    "f"
+   ]
+  },
+  "priors": [
+   {
+    "prior": "normal(0, 3)",
+    "class": "Intercept"
+   },
+   {
+    "prior": "normal(0, 1.5)",
+    "class": "b"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "sd",
+    "group": "g"
+   }
+  ],
+  "point_halfwidth": 0.3
+ },
+ "autobayes": {
+  "constructor": "cumulative",
+  "formula": "ord ~ x + (1 | g)",
+  "kwargs": {
+   "link": "cloglog"
+  },
+  "priors": {
+   "intercept": [
+    "Normal",
+    0,
+    3
+   ],
+   "b": [
+    "Normal",
+    0,
+    1.5
+   ],
+   "sd": [
+    "HalfNormal",
+    1
+   ]
+  }
+ }
+}
