@@ -4,7 +4,8 @@ brms-parity features B02 and P6. brms writes information about the response on t
 a `|`, as addition terms joined with `+`: `k | trials(n)` (the binomial trials, M2), `y | weights(w)`,
 `y | cens(c)`, `y | trunc(lb = 0)`, and combinations such as `k | trials(n) + weights(w)`. This library parses all
 four into the term model; `weights()` is offered for the nine Tier A families (each verified by a frozen weighted case) and, since D03, for the eight zero-inflated and hurdle families (the frozen cases `zero_inflated_poisson_weighted` and `hurdle_poisson_weighted`; docs/zero-inflated-hurdle.md), and `cens()` and `trunc()` for
-the Gaussian family. These two were withheld (B02) because brms's own numbers for their frozen fixtures are not exact
+the Gaussian family; since E04 (docs/cens-trunc-families.md) interval censoring `cens(c, y2)`, `cens()` for the Weibull and
+lognormal families and `trunc(ub = b)` for the Poisson and negative binomial families too. These two were withheld (B02) because brms's own numbers for their frozen fixtures are not exact
 everywhere; since P6 they are accepted against two references, brms where brms is accurate and a committed 50-digit
 reference where it is not (below, and divergences D24 and D25).
 
@@ -119,10 +120,11 @@ Relative is the gates' measure, `|a - b| / max(1, |a|, |b|)`; brms's log densiti
 
 **Refused, naming the construct:** `cens()` together with `trunc()` (brms writes a censored
 row of a truncated model as the untruncated tail minus the truncation mass, which is not the censored probability of
-the truncated distribution); interval censoring, `cens(col, y2)` and code 2; censoring codes other than -1, 0, 1 (brms
+the truncated distribution); censoring codes other than -1, 0, 1 (and 2 under `cens(col, y2)`; brms
 also reads `"left"`, `"none"`, `"right"` and `TRUE` / `FALSE`); per-row truncation bounds read from a column (numbers
 only; `Inf` / `-Inf` mark an open side); `trunc()` without a finite bound; `lb >= ub`; responses outside the bounds (as
-brms); `cens()` and `trunc()` for a family other than the Gaussian.
+brms); `cens()` and `trunc()` for the families E04 does not offer them for (docs/cens-trunc-families.md, D122). E04 lifted the
+refusal of interval censoring, `cens(col, y2)` with code 2, for every family that takes `cens()`.
 
 The addition term `mi()` (C06, `x | mi() ~ ...`: the response's missing values are parameters) is parsed here too and taken
 in a multivariate list of formulas only, alone on the left-hand side (docs/missing-and-measurement-error.md, divergence D72).

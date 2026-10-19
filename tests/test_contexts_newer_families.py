@@ -154,7 +154,7 @@ REFUSED = [
     ("zero_inflated_negbinomial", ["zcnt ~ x", "zi ~ zcnt"], r"'zcnt' is the response; it cannot also be a predictor of zi.*D35"),
     ("exponential", "ypos | weights(w) ~ x", r"'weights\(w\)' is not available for the exponential family"),
     ("skew_normal", "y | weights(w) ~ x", r"'weights\(w\)' is not available for the skew_normal family"),
-    ("weibull", "ypos | cens(cens_r) ~ x", r"'cens\(cens_r\)' is not available for the weibull family"),
+    ("weibull", "ypos | trunc(ub = 9) ~ x", r"'trunc\(ub = 9\)' is not available for the weibull family"),   # cens() since E04
     ("beta_binomial", "k | trials(size) + trunc(ub = 9) ~ x", r"'trunc\(ub = 9\)' is not available for the beta_binomial family"),
 ]
 

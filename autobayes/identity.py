@@ -161,7 +161,8 @@ def freeze_target(model):
         # in them) and the per-row weights and censoring codes they read.
         **({'additions': {'terms': [a.term for a in s.additions],
                           **({'weights': d.weights} if d.weights is not None else {}),
-                          **({'cens': d.cens} if d.cens is not None else {})}} if s.additions else {}),
+                          **({'cens': d.cens} if d.cens is not None else {}),
+                          **({'rcens': d.rcens} if getattr(d, 'rcens', None) is not None else {})}} if s.additions else {}),   # E04
         # The response's categories (B05: cumulative, categorical), whose 1-based codes are y, likewise
         **({'categories': list(model.categories)} if getattr(model, 'categories', ()) else {}),
         # and hurdle_cumulative's hurdle category (E01), brms's Y = 0

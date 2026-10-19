@@ -18,7 +18,12 @@ brms's response addition terms other than ``trials()`` (B02, docs/addition-terms
 ``ModelSpec.additions``, joined with ``+`` after the ``|`` as brms writes them: ``weights(col)`` multiplies each row's
 log likelihood by its weight. ``cens(col)`` gives each row a censoring code and ``trunc(lb = a, ub = b)`` truncates the
 response (Gaussian); both were withheld (``PARKED_ADDITIONS``) until P6 accepted them against two references, brms where
-brms's own numbers are exact and a committed 50-digit reference where they are not (divergences D24, D25).
+brms's own numbers are exact and a committed 50-digit reference where they are not (divergences D24, D25). E04
+(docs/cens-trunc-families.md) offers ``cens(col)`` and brms's interval censoring ``cens(col, y2)`` (code 2: the response
+lies in ``(y, y2]``) for the Weibull and lognormal families too (the Gamma family's is implemented and withheld,
+``FamilySpec.parked_additions``, divergence D120), and ``trunc(ub = b)`` for the Poisson and negative binomial families, whose
+bounds are integers and inclusive; a lower bound of a count response is implemented and withheld (``PARKED_TRUNCATION``,
+divergence D121).
 
 An interaction ``a:b`` (or ``a*b`` = ``a + b + a:b``) is two-way between any two main effects of the formula (A04,
 docs/interactions.md): numeric by declared categorical (``x:z``, the numeric column times each non-reference
@@ -1018,6 +1023,20 @@ ADDITION_KINDS = ("weights", "cens", "trunc", "mi")   # brms's response addition
 # (docs/addition-terms.md): none since P6, which lifted the parks of cens() and trunc() (divergences D24 and D25).
 PARKED_ADDITIONS = MappingProxyType({})
 
+# E04 (docs/cens-trunc-families.md): forms of trunc() that are implemented but withheld, each with the reason its refusal
+# carries. Removing the entry offers it (tests/test_cens_trunc_families.py does that under monkeypatch to check the withheld
+# form against its frozen fixture).
+PARKED_TRUNCATION = MappingProxyType({
+    "count_lower_bound": (
+        "a lower bound of a count response is implemented (each row's log mass minus log P(Y >= lb), as brms's likelihood "
+        "writes it, and the truncated mean E[Y | Y >= lb]) and withheld: brms 2.23's posterior_epred of such a model is not "
+        "the mean of the distribution its likelihood truncates. On the frozen case negbinomial_truncated (trunc(lb = 1)) brms "
+        "normalises the likelihood by P(Y >= 1) while its expected values are E[Y | Y >= 2] (at point 0, fitted row 0, "
+        "mu = 0.737: brms 2.9418 = E[Y | Y >= 2], E[Y | Y >= 1] = 1.8847), so its G4 cannot pass against brms "
+        "(docs/cens-trunc-families.md, divergence D121)"),
+})
+COUNT_BOUND_LIMIT = 1000   # E04: a count response's truncation bound is at most this (its log mass is a sum of that many masses)
+
 
 def _number_text(v: float) -> str:
     """A truncation bound as the canonical formula writes it: ``0`` for 0.0, ``2.5``, ``-1e-05``."""
@@ -1031,32 +1050,37 @@ class AdditionTerm:
     of the formula rather than a population-level term: it has no coefficient, no prior and no design column.
 
     ``kind`` is ``"weights"`` (``weights(col)``: each row's log likelihood is multiplied by its weight), ``"cens"``
-    (``cens(col)``: a censoring indicator per row, -1 left-, 0 un-, 1 right-censored) or ``"trunc"`` (``trunc(lb = a,
-    ub = b)``: the response truncated to numeric bounds, ``None`` for an open side). ``column`` is the data column of
-    ``weights`` and ``cens``. ``addition_data`` turns the terms into brms's Stan data on a frame. ``"mi"`` (``mi()``, C06,
-    docs/missing-and-measurement-error.md) says that the response's missing values are parameters of the model (brms's
-    ``Ymi``) rather than rows to drop; it reads no column and is no likelihood weight (``addition_data`` skips it)."""
+    (``cens(col)``: a censoring indicator per row, -1 left-, 0 un-, 1 right-censored; with ``y2``, brms's interval
+    censoring ``cens(col, y2)`` takes code 2 too, the response then lying in ``(y, y2]``, E04) or ``"trunc"`` (``trunc(lb =
+    a, ub = b)``: the response truncated to numeric bounds, ``None`` for an open side). ``column`` is the data column of
+    ``weights`` and ``cens``, ``y2`` the column of an interval's upper bounds. ``addition_data`` turns the terms into brms's
+    Stan data on a frame. ``"mi"`` (``mi()``, C06, docs/missing-and-measurement-error.md) says that the response's missing
+    values are parameters of the model (brms's ``Ymi``) rather than rows to drop; it reads no column and is no likelihood
+    weight (``addition_data`` skips it)."""
 
     kind: str
     column: str | None = None
     lb: float | None = None
     ub: float | None = None
+    y2: str | None = None
 
     @property
     def term(self) -> str:
-        """The term as the canonical formula writes it: ``weights(w)``, ``cens(c)``, ``trunc(lb = 0)``, ``trunc(lb = 0, ub = 5)``,
-        ``mi()``."""
+        """The term as the canonical formula writes it: ``weights(w)``, ``cens(c)``, ``cens(c, y2)``, ``trunc(lb = 0)``,
+        ``trunc(lb = 0, ub = 5)``, ``mi()``."""
         if self.kind == "trunc":
             sides = [f"{side} = {_number_text(v)}" for side, v in (("lb", self.lb), ("ub", self.ub)) if v is not None]
             return f"trunc({', '.join(sides)})"
         if self.kind == "mi":
             return "mi()"
+        if self.y2 is not None:
+            return f"{self.kind}({self.column}, {self.y2})"
         return f"{self.kind}({self.column})"
 
     @property
     def columns(self) -> tuple[str, ...]:
-        """The data columns the term reads (none for ``trunc``, whose bounds are numbers)."""
-        return () if self.column is None else (self.column,)
+        """The data columns the term reads (none for ``trunc``, whose bounds are numbers; ``cens(c, y2)`` reads both)."""
+        return tuple(c for c in (self.column, self.y2) if c is not None)
 
 
 def _parse_trunc(args: list[str], piece: str, formula: str) -> AdditionTerm:
@@ -1114,10 +1138,19 @@ def _parse_additions(text: str, formula: str) -> tuple[str | None, tuple[Additio
                 )
             additions.append(AdditionTerm("mi"))
             continue
+        if kind == "cens" and len(args) == 2:                   # E04: brms's interval censoring cens(col, y2) / cens(col, y2 = col2)
+            km = re.fullmatch(rf"(?:y2\s*=\s*)?({_IDENT})", args[1])
+            if not re.fullmatch(_IDENT, args[0]) or km is None:
+                raise FormulaError(f"{formula!r}: {piece!r}: cens() takes the censoring column and, for interval censoring, the "
+                                   "column of the intervals' upper bounds: cens(col) or cens(col, y2)")
+            if km.group(1) == args[0]:
+                raise FormulaError(f"{formula!r}: {piece!r}: the upper bounds y2 must be a column other than the censoring codes")
+            additions.append(AdditionTerm("cens", column=args[0], y2=km.group(1)))
+            continue
         if len(args) != 1 or not re.fullmatch(_IDENT, args[0]):
             hint = {"weights": "; brms's weights(col, scale = TRUE), which rescales the weights to sum to the number of rows, "
                                "is not supported: rescale the column",
-                    "cens": "; interval censoring, cens(col, y2), is not part of this slice", "trials": ""}[kind]
+                    "cens": " or, for interval censoring, cens(col, y2)", "trials": ""}[kind]
             raise FormulaError(f"{formula!r}: {piece!r}: {kind}() takes one column name{hint}")
         if kind == "trials":
             trials = args[0]
@@ -1136,12 +1169,16 @@ def _check_additions(additions: tuple[AdditionTerm, ...], fam, formula: str) -> 
     for a in additions:
         if a.kind in PARKED_ADDITIONS:
             raise FormulaError(f"{formula!r}: {a.term!r}: brms's {a.kind}() is withheld: {PARKED_ADDITIONS[a.kind]}")
+        if a.kind in fam.parked_additions:                     # E04: implemented for the family and withheld (the Gamma's cens())
+            raise FormulaError(f"{formula!r}: {a.term!r}: {fam.parked_additions[a.kind]}")
         if a.kind not in fam.addition_terms:
-            offering = [name for name, other in FAMILIES.items() if a.kind in other.addition_terms]
+            offering = [name for name, other in FAMILIES.items() if a.kind in other.addition_terms and a.kind not in other.parked_additions]
             raise FormulaError(
                 f"{formula!r}: {a.term!r} is not available for the {fam.name} family; brms's {a.kind}() is verified here "
                 f"for the {', '.join(offering) or 'no'} famil{'y' if len(offering) == 1 else 'ies'} (docs/addition-terms.md)"
             )
+        if a.kind == "trunc" and fam.discrete:                 # E04: a count response's bounds (docs/cens-trunc-families.md)
+            _check_count_bounds(a, formula)
     if {"cens", "trunc"} <= {a.kind for a in additions}:
         raise FormulaError(
             f"{formula!r}: cens() together with trunc() is not supported: brms adds a censored row of a truncated model as "
@@ -1154,6 +1191,22 @@ def _check_additions(additions: tuple[AdditionTerm, ...], fam, formula: str) -> 
             f"{formula!r}: mi() together with {', '.join(others)} on the left-hand side is not verified in this slice: brms "
             "would weight, censor or truncate the imputed rows too (docs/missing-and-measurement-error.md, divergence D72)"
         )
+
+
+def _check_count_bounds(a: AdditionTerm, formula: str) -> None:
+    """E04: the truncation bounds of a count response are integers, inclusive (brms normalises by P(lb <= Y <= ub)), at most
+    ``COUNT_BOUND_LIMIT``; a lower bound is withheld while ``PARKED_TRUNCATION`` holds its reason (divergence D121)."""
+    for side, v in (("lb", a.lb), ("ub", a.ub)):
+        if v is not None and v != math.floor(v):
+            raise FormulaError(f"{formula!r}: {a.term!r}: the truncation bounds of a count response are integers (brms's bounds "
+                               f"are inclusive: P(lb <= Y <= ub)); {side} = {_number_text(v)}")
+    if a.ub is not None and a.ub < 0:
+        raise FormulaError(f"{formula!r}: {a.term!r}: an upper bound below 0 leaves a count response no value")
+    if max(abs(v) for v in (a.lb, a.ub) if v is not None) > COUNT_BOUND_LIMIT:
+        raise FormulaError(f"{formula!r}: {a.term!r}: a count response's truncation bound is at most {COUNT_BOUND_LIMIT} here (its "
+                           "log mass is the log of a sum of the masses up to the bound; docs/cens-trunc-families.md, divergence D121)")
+    if a.lb is not None and "count_lower_bound" in PARKED_TRUNCATION:
+        raise FormulaError(f"{formula!r}: {a.term!r}: {PARKED_TRUNCATION['count_lower_bound']}")
 
 
 def _weights_values(column: str, s: pd.Series, where: str) -> np.ndarray:
@@ -1173,7 +1226,7 @@ def _weights_values(column: str, s: pd.Series, where: str) -> np.ndarray:
     return v
 
 
-def _cens_values(column: str, s: pd.Series, where: str) -> np.ndarray:
+def _cens_values(column: str, s: pd.Series, where: str, interval: bool = False) -> np.ndarray:
     reject_complex(f"{where} {column!r}", s)
     if not _is_numeric(s):
         raise FormulaError(
@@ -1183,18 +1236,38 @@ def _cens_values(column: str, s: pd.Series, where: str) -> np.ndarray:
     v = s.to_numpy(dtype=float)
     if not np.all(np.isfinite(v)):
         raise FormulaError(f"{where} {column!r} of 'cens({column})' has missing or non-finite values")
-    if np.any(v == 2):
-        raise FormulaError(f"{where} {column!r}: code 2 (interval censoring) needs brms's cens({column}, y2), which is not part of this slice")
-    bad = v[~np.isin(v, (-1.0, 0.0, 1.0))]
+    if np.any(v == 2) and not interval:
+        raise FormulaError(f"{where} {column!r}: code 2 (interval censoring) needs brms's cens({column}, y2), the column of the "
+                           "intervals' upper bounds")
+    codes = (-1.0, 0.0, 1.0, 2.0) if interval else (-1.0, 0.0, 1.0)
+    bad = v[~np.isin(v, codes)]
     if bad.size:
-        raise FormulaError(f"{where} {column!r}: censoring codes must be -1 (left), 0 (none) or 1 (right); found {float(bad[0])!r}")
+        codes_text = "-1 (left), 0 (none), 1 (right) or 2 (interval)" if interval else "-1 (left), 0 (none) or 1 (right)"
+        raise FormulaError(f"{where} {column!r}: censoring codes must be {codes_text}; found {float(bad[0])!r}")
     return v.astype(np.int64)
+
+
+def _rcens_values(a: AdditionTerm, y: np.ndarray, cens: np.ndarray, s: pd.Series, where: str) -> np.ndarray:
+    """brms's ``rcens`` of ``cens(c, y2)`` (E04): the upper bound ``y2`` on the interval-censored rows (code 2) and 0 on every
+    other row, as brms's standata writes it; an interval's upper bound must be finite and above its lower bound ``y``."""
+    reject_complex(f"{where} {a.y2!r}", s)
+    if not _is_numeric(s):
+        raise FormulaError(f"{where} {a.y2!r} has dtype {s.dtype}; the upper bounds of {a.term!r} must be numeric")
+    y2 = s.to_numpy(dtype=float)
+    interval = cens == 2
+    bad = np.flatnonzero(interval & ~(np.isfinite(y2) & (y2 > y)))
+    if bad.size:
+        i = int(bad[0])
+        raise FormulaError(f"{where} {a.y2!r}: an interval-censored row of {a.term!r} lies in (y, y2] with y2 > y; row {i} has "
+                           f"y = {float(y[i])!r} and y2 = {float(y2[i])!r}")
+    return np.where(interval, y2, 0.0)
 
 
 def addition_data(spec: "ModelSpec", df: pd.DataFrame, *, where: str = "column") -> dict[str, np.ndarray]:
     """brms's Stan data of the formula's addition terms on ``df`` (B02), under brms's names: ``weights`` (positive finite
-    weights), ``cens`` (-1, 0 or 1 per row, int64) and ``lb`` / ``ub`` (the truncation bounds per row, ``-inf`` / ``inf``
-    on an open side, as brms writes both whenever ``trunc()`` is present). Each is checked here: a response outside the
+    weights), ``cens`` (-1, 0 or 1 per row, int64; 2 too under ``cens(c, y2)``), ``rcens`` (``cens(c, y2)``'s upper bounds on
+    the interval-censored rows, 0 elsewhere; E04) and ``lb`` / ``ub`` (the truncation bounds per row, ``-inf`` / ``inf`` on
+    an open side, as brms writes both whenever ``trunc()`` is present). Each is checked here: a response outside the
     truncation bounds is refused, as brms refuses it. Empty without addition terms; ``mi()`` (C06) has no such data (its missing
     rows are the model's ``Design.missing``)."""
     out: dict[str, np.ndarray] = {}
@@ -1202,7 +1275,9 @@ def addition_data(spec: "ModelSpec", df: pd.DataFrame, *, where: str = "column")
         if a.kind == "weights":
             out["weights"] = _weights_values(a.column, df[a.column], where)
         elif a.kind == "cens":
-            out["cens"] = _cens_values(a.column, df[a.column], where)
+            out["cens"] = _cens_values(a.column, df[a.column], where, interval=a.y2 is not None)
+            if a.y2 is not None:
+                out["rcens"] = _rcens_values(a, df[spec.response].to_numpy(dtype=float), out["cens"], df[a.y2], where)
         elif a.kind == "mi":
             continue
         else:

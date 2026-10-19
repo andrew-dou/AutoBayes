@@ -1775,12 +1775,12 @@
     "B02_cens_trunc_weights",
     "D01_continuous_families"
    ],
-   "status": "implementing",
+   "status": "gates_green",
    "summary": "cens() and trunc() beyond the Gaussian family (Weibull, lognormal, Gamma, Poisson, negative binomial)",
    "pr": null,
-   "attempts": 1,
+   "attempts": 0,
    "divergences": [],
-   "next_action": "agent (opus), wave E2",
+   "next_action": "wave E2, after E1 merges (shares family modules with E01/E02/E06)",
    "reserved_divergences": "D120-D123",
    "fixtures": {
     "pr": 70,
@@ -1791,6 +1791,22 @@
      "poisson_truncated",
      "weibull_censored"
     ]
+   },
+   "gates": {
+    "sha": "e40becccb45d",
+    "dirty_tree": false,
+    "base": "origin/main",
+    "when": "2026-10-19T04:08Z",
+    "results": {
+     "immutability": {
+      "status": "pass",
+      "seconds": 0.0
+     },
+     "oracle": {
+      "status": "pass",
+      "seconds": 569.1
+     }
+    }
    }
   },
   {

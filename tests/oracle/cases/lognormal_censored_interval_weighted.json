@@ -1,0 +1,85 @@
+{
+ "id": "lognormal_censored_interval_weighted",
+ "tier": "E",
+ "feature": "E04_cens_trunc_families",
+ "note": "E04 integration: lognormal with interval censoring (every code -1, 0, 1, 2 present) and weights: brms weights each row's censored contribution as a whole (checked on the frozen points); log_lik is the weighted censored row; epred the uncensored mean",
+ "seed": 830,
+ "n_points": 8,
+ "data": {
+  "generator": "tier_e",
+  "seed": 728,
+  "n": 36,
+  "newdata": {
+   "seed": 830,
+   "n": 5
+  }
+ },
+ "brms": {
+  "formula": "ypos | cens(cens_i, ypos2) + weights(w) ~ x + (1 | g)",
+  "family": {
+   "family": "lognormal"
+  },
+  "factors": {
+   "g": [
+    "a",
+    "b",
+    "c",
+    "d",
+    "e",
+    "f"
+   ]
+  },
+  "priors": [
+   {
+    "prior": "normal(0, 5)",
+    "class": "Intercept"
+   },
+   {
+    "prior": "normal(0, 2)",
+    "class": "b"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "sd",
+    "group": "g"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "sigma"
+   }
+  ],
+  "extras": [
+   "log_lik",
+   "loo"
+  ]
+ },
+ "autobayes": {
+  "constructor": "lognormal",
+  "formula": "ypos | cens(cens_i, ypos2) + weights(w) ~ x + (1 | g)",
+  "kwargs": {},
+  "priors": {
+   "intercept": [
+    "Normal",
+    0,
+    5
+   ],
+   "b": [
+    "Normal",
+    0,
+    2
+   ],
+   "sd": [
+    "HalfNormal",
+    1
+   ],
+   "sigma": [
+    "HalfNormal",
+    1
+   ]
+  },
+  "post": [
+   "log_lik",
+   "loo"
+  ]
+ }
+}

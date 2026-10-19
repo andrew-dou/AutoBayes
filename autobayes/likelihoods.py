@@ -1414,28 +1414,88 @@ class Tails:
     ``log_mass(lower, upper, **params)`` as PyTensor graphs of the likelihood's parameters by Bambi's names, finite with a
     finite gradient; ``truncated(lower, upper, size=, **params)`` the PyMC distribution truncated to the bounds (``None``
     for an open side), for draws; ``truncated_mean(model, post, eta, lb, ub)`` and ``draw_truncated(model, post, eta, lb,
-    ub, rng)`` brms's posterior_epred and posterior_predict of a truncated model, from posterior draws (NumPy)."""
+    ub, rng)`` brms's posterior_epred and posterior_predict of a truncated model, from posterior draws (NumPy).
 
-    log_cdf: Callable
-    log_ccdf: Callable
-    log_mass: Callable
-    truncated: Callable
-    truncated_mean: Callable
-    draw_truncated: Callable
+    E04 (docs/cens-trunc-families.md; ``autobayes.tails``): a family that takes only one of the two terms leaves the other's
+    fields ``None``. ``log_truncation(lower, upper, **params)``, where set, is the log mass of the allowed range (``None`` for
+    an open side) in place of the continuous reading ``log P(lower < Y <= upper)`` from the three functions above (a count
+    family's inclusive ``log P(lower <= Y <= upper)``); ``neutral(**params)`` a pair of response values ``v < w`` well inside
+    the support, substituted on the rows a censoring branch does not take (the Gaussian's tails need none); and
+    ``numpy_tails(model, post, eta)`` the NumPy forms ``log_cdf(v)``, ``log_ccdf(v)``, ``log_mass(v, w)`` and
+    ``log_truncation(lower, upper)`` at each draw and row, from which ``censored_truncated_log_lik`` writes brms's pointwise
+    log likelihood."""
+
+    log_cdf: Callable | None = None
+    log_ccdf: Callable | None = None
+    log_mass: Callable | None = None
+    truncated: Callable | None = None
+    truncated_mean: Callable | None = None
+    draw_truncated: Callable | None = None
+    log_truncation: Callable | None = None
+    neutral: Callable | None = None
+    numpy_tails: Callable | None = None
+
+
+def _normal_numpy_tails(model, post, eta):
+    """The Gaussian's NumPy tails (E04: ``log_lik()`` of a censored or truncated model)."""
+    from types import SimpleNamespace
+
+    from scipy.special import log_ndtr
+
+    from autobayes.families.spec import auxiliary
+    from autobayes.tails import np_normal_log_mass
+
+    sigma = auxiliary(model, post, "sigma")
+    return SimpleNamespace(log_cdf=lambda v: log_ndtr((v - eta) / sigma), log_ccdf=lambda v: log_ndtr((eta - v) / sigma),
+                           log_mass=lambda lo, hi: np_normal_log_mass((lo - eta) / sigma, (hi - eta) / sigma))
 
 
 NORMAL_TAILS = Tails(
     log_cdf=normal_log_cdf, log_ccdf=normal_log_ccdf, log_mass=normal_log_mass,
     truncated=lambda lower, upper, *, size=None, mu, sigma: pm.TruncatedNormal.dist(mu=mu, sigma=sigma, lower=lower, upper=upper, size=size),
     truncated_mean=_normal_truncated_mean, draw_truncated=_normal_draw_truncated,
+    numpy_tails=_normal_numpy_tails,
 )
+
+
+def censored_truncated_log_lik(model, post, eta, ll):
+    """brms's pointwise log likelihood of a model with ``cens()`` or ``trunc()`` (E04), from the family's density per draw and
+    row ``ll`` (``(chain, draw, row)``, NumPy): a censored row's log CDF (-1), log CCDF (1) or interval log mass (2) in place
+    of its density, and every row of a truncated model minus the log mass of the allowed range; ``ll`` itself otherwise."""
+    from autobayes.families import family_of
+
+    d = model.design
+    if d.cens is None and d.lb is None:
+        return ll
+    np_tails = family_of(model).tails().numpy_tails(model, post, eta)
+    y = d.y
+    with np.errstate(divide="ignore", invalid="ignore", over="ignore", under="ignore"):
+        if d.cens is not None:
+            out = np.where(d.cens == 1, np_tails.log_ccdf(y), np.where(d.cens == -1, np_tails.log_cdf(y), ll))
+            if d.rcens is not None:                            # the interval's mass, (y, y2]; any valid pair on the other rows
+                upper = np.where(d.cens == 2, d.rcens, y + np.abs(y) + 1.0)
+                out = np.where(d.cens == 2, np_tails.log_mass(y, upper), out)
+            ll = out
+        if d.lb is not None:
+            lower = None if np.isneginf(d.lb[0]) else float(d.lb[0])
+            upper = None if np.isposinf(d.ub[0]) else float(d.ub[0])
+            if getattr(np_tails, "log_truncation", None) is not None:
+                mass = np_tails.log_truncation(lower, upper)
+            elif lower is not None and upper is not None:
+                mass = np_tails.log_mass(np.full(y.shape, lower), np.full(y.shape, upper))
+            elif lower is not None:
+                mass = np_tails.log_ccdf(np.full(y.shape, lower))
+            else:
+                mass = np_tails.log_cdf(np.full(y.shape, upper))
+            ll = ll - mass
+    return ll
 
 
 def _addition_dist(base_dist, data: Mapping[str, np.ndarray], tails: Tails | None):
     """The likelihood class Bambi calls with the family's parameters by name: ``base_dist`` (the family's PyMC
     distribution, or its hand-written class) with the addition terms of ``data`` (``formula.addition_data`` on the fitted
     rows) applied to its log density."""
-    weights, cens = data.get("weights"), data.get("cens")
+    weights, cens, rcens = data.get("weights"), data.get("cens"), data.get("rcens")
     lower = None if "lb" not in data or np.isneginf(data["lb"][0]) else float(data["lb"][0])   # numeric bounds, one per model
     upper = None if "ub" not in data or np.isposinf(data["ub"][0]) else float(data["ub"][0])
     truncated = lower is not None or upper is not None
@@ -1452,10 +1512,25 @@ def _addition_dist(base_dist, data: Mapping[str, np.ndarray], tails: Tails | Non
             kw = dict(zip(keys, params))
             ll = pm.logp(base_dist.dist(**kw), value)
             if cens is not None:                               # brms: lpdf if 0, lccdf if 1, lcdf if -1
-                ll = pt.switch(pt.eq(cens, 1), tails.log_ccdf(value, **kw), pt.switch(pt.eq(cens, -1), tails.log_cdf(value, **kw), ll))
+                right, left = value, value
+                if tails.neutral is not None:                  # E04: each branch at its own rows, a neutral value elsewhere
+                    v, _ = tails.neutral(**kw)
+                    right, left = pt.switch(pt.eq(cens, 1), value, v), pt.switch(pt.eq(cens, -1), value, v)
+                if rcens is not None:                          # E04, cens(c, y2): the log mass of (y, y2] if 2
+                    interval = pt.eq(cens, 2)
+                    if tails.neutral is not None:
+                        v, w = tails.neutral(**kw)
+                        lo, hi = pt.switch(interval, value, v), pt.switch(interval, rcens, w)
+                    else:
+                        lo, hi = value, pt.switch(interval, rcens, value + pt.abs(value) + 1.0)
+                    ll = pt.switch(interval, tails.log_mass(lo, hi, **kw), ll)
+                ll = pt.switch(pt.eq(cens, 1), tails.log_ccdf(right, **kw), pt.switch(pt.eq(cens, -1), tails.log_cdf(left, **kw), ll))
             if truncated:                                      # minus the log mass between the bounds, every row
-                ll = ll - (tails.log_mass(lower, upper, **kw) if lower is not None and upper is not None
-                           else tails.log_ccdf(lower, **kw) if lower is not None else tails.log_cdf(upper, **kw))
+                if tails.log_truncation is not None:           # E04: a count family's inclusive log P(lb <= Y <= ub)
+                    ll = ll - tails.log_truncation(lower, upper, **kw)
+                else:
+                    ll = ll - (tails.log_mass(lower, upper, **kw) if lower is not None and upper is not None
+                               else tails.log_ccdf(lower, **kw) if lower is not None else tails.log_cdf(upper, **kw))
             return ll if weights is None else weights * ll    # each row's log likelihood times its weight
         return draw, logp
 

@@ -9,6 +9,9 @@ link (B01, docs/distributional.md; ``negbinomial_distributional_shape``), Bambi'
 
 E06 (docs/links.md): brms's ``negbinomial("identity")``, ``mu = eta`` (a positive linear predictor), is ``_identity()``, reached
 through ``NEGBINOMIAL.links`` (``ab.negbinomial(..., link="identity")``).
+
+E04 (docs/cens-trunc-families.md): under the log link, ``trunc(ub = b)`` with an integer, inclusive bound (``autobayes.tails``);
+a lower bound, ``negbinomial_truncated``'s ``trunc(lb = 1)``, is implemented and withheld (D121).
 """
 from __future__ import annotations
 
@@ -46,6 +49,12 @@ def _draw_response(model, post, eta, mean, df, rng):
         raise ValueError("negative binomial response prediction exceeds the integer random-generator limit")
     shape = auxiliary(model, post, "shape")                    # per draw, or per draw and row (B01)
     return rng.negative_binomial(shape, shape / (shape + mean)).astype(np.int64)
+
+
+def _tails():
+    from autobayes.tails import NEGBINOMIAL_TAILS
+
+    return NEGBINOMIAL_TAILS
 
 
 def _log_likelihood(model, post, eta):
@@ -87,7 +96,8 @@ NEGBINOMIAL = FamilySpec(
     deterministic_note="mu = exp(linear predictor); mu = exp(eta), expected count",
     default_prior_link="log",                                       # brms reads log(y), zeros as 0.1
     default_scale_prior=lambda scale: InverseGamma(0.4, 0.3),       # brms negbinomial()$prior: shape inv_gamma(0.4, 0.3), lb 0
-    addition_terms=frozenset({"weights"}),                      # B02: weights(), verified against the frozen case negbinomial_weighted
+    addition_terms=frozenset({"weights", "trunc"}),             # B02: weights(), verified against the frozen case negbinomial_weighted; E04: trunc() (negbinomial_truncated, the lower bound withheld: D121)
+    tails=_tails,
     distributional_link="log",                                      # B01: shape ~ z, brms's log link (negbinomial_distributional_shape)
     default_distributional_intercept=lambda scale: StudentT(3, 0, 2.5),   # brms Intercept_shape: student_t(3, 0, 2.5) under the log link
     monotonic=True,                                                 # B03: mo(x), verified against negbinomial_monotonic

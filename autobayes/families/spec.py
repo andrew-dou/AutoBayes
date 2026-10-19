@@ -352,6 +352,7 @@ class FamilySpec:
     # brms's response addition terms (B02, docs/addition-terms.md):
     addition_terms: frozenset[str] = frozenset()   # the addition terms besides trials() the family's likelihood takes: "weights" where a frozen brms case verifies it; "cens" and "trunc" where the family has tails (Gaussian; accepted against two references since P6); "mi" where the response's missing values may be parameters (Gaussian, C06)
     tails: Callable[[], object] | None = None      # () -> likelihoods.Tails: the log-CDF, log-CCDF and log mass between bounds (PyTensor, finite with a finite gradient) and the truncated mean and draws (NumPy) that cens() and trunc() need; None without them
+    parked_additions: Mapping[str, str] = field(default_factory=lambda: NO_PARKED_LINKS)   # E04: addition terms of ``addition_terms`` the family implements and withholds, each with the reason its refusal carries (the Gamma's cens(), D120; docs/cens-trunc-families.md)
     # Ordinal and categorical responses (B05, docs/ordinal-categorical.md). ``response_categories`` turns the response
     # column into brms's ``Y``: (ModelSpec, column) -> (the categories in order as labels, each row's 1-based category,
     # warnings); the model keeps the categories as ``model.categories`` and fits the codes. ``thresholds``: the intercept

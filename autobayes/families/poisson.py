@@ -1,5 +1,7 @@
 """Poisson count response: log link on ``mu``, no auxiliary parameter; or brms's ``poisson("sqrt")`` (E06, docs/links.md),
-``mu = eta^2``, whose spec ``_sqrt()`` is reached through ``POISSON.links`` (``ab.poisson(..., link="sqrt")``)."""
+``mu = eta^2``, whose spec ``_sqrt()`` is reached through ``POISSON.links`` (``ab.poisson(..., link="sqrt")``). E04
+(docs/cens-trunc-families.md): under the log link, ``trunc(ub = b)`` with an integer, inclusive bound (``autobayes.tails``;
+``poisson_truncated``); a lower bound is implemented and withheld (D121)."""
 from __future__ import annotations
 
 from dataclasses import replace
@@ -31,6 +33,12 @@ def _draw_response(model, post, eta, mean, df, rng):
     if np.any(mean >= limit):
         raise ValueError("Poisson response prediction exceeds the integer random-generator limit")
     return rng.poisson(mean)
+
+
+def _tails():
+    from autobayes.tails import POISSON_TAILS
+
+    return POISSON_TAILS
 
 
 def _log_likelihood(model, post, eta):
@@ -66,7 +74,8 @@ POISSON = FamilySpec(
     deterministic_note="mu = exp(linear predictor); mu = exp(eta), expected count",
     default_prior_link="log",                                       # brms reads log(y), zeros as 0.1
     default_scale_prior=None,
-    addition_terms=frozenset({"weights"}),                      # B02: weights(), verified against the frozen case poisson_weighted
+    addition_terms=frozenset({"weights", "trunc"}),             # B02: weights(), verified against the frozen case poisson_weighted; E04: trunc() (poisson_truncated)
+    tails=_tails,
     monotonic=True,                                                 # B03: mo(x), verified against poisson_monotonic
     log_likelihood=_log_likelihood,                                 # C07: log_lik(), verified against poisson_varint_post
     links=MappingProxyType({"sqrt": lambda: _sqrt()}),              # E06: brms's sqrt link (poisson_sqrt)

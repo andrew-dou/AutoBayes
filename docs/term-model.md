@@ -106,10 +106,11 @@ dictionary never see it.
 ## Response addition terms: `ModelSpec.additions`
 
 brms's addition terms after `|` other than `trials()` (B02, docs/addition-terms.md) are data of the formula too, with no
-coefficient, prior or design column: `AdditionTerm(kind, column, lb, ub)` for `weights(col)`, `cens(col)` and
+coefficient, prior or design column: `AdditionTerm(kind, column, lb, ub, y2)` for `weights(col)`, `cens(col)` (and E04's
+interval censoring `cens(col, y2)`) and
 `trunc(lb = a, ub = b)`, and `mi()` (C06: the response's missing values are parameters), in the order written (`spec.addition(kind)` finds one; `term` is its canonical spelling, which
 the canonical formula writes after `trials()`). `formula.addition_data(spec, frame)` gives brms's Stan data (`weights`,
-`cens`, `lb`, `ub`) and `Design` holds them on the fitted rows; the likelihood, not Bambi's formula, reads them.
+`cens`, `rcens`, `lb`, `ub`) and `Design` holds them on the fitted rows; the likelihood, not Bambi's formula, reads them.
 
 ## The autocorrelation term: `ModelSpec.autocor`
 

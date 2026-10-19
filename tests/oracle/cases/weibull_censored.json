@@ -74,9 +74,5 @@
     0.01
    ]
   }
- },
- "gate": {
-  "expect": "fail",
-  "reason": "E04_cens_trunc_families not implemented; remove this field when it lands"
  }
 }
