@@ -1909,6 +1909,81 @@
      }
     }
    }
+  },
+  {
+   "id": "F01_multi_category_families",
+   "tier": "F",
+   "lane": "families",
+   "depends_on": [
+    "B05_ordinal_categorical"
+   ],
+   "status": "queued",
+   "summary": "multinomial, dirichlet, dirichlet_multinomial, logistic_normal (matrix responses)",
+   "pr": null,
+   "attempts": 0,
+   "divergences": [],
+   "next_action": "fixtures (wave F0)",
+   "reserved_divergences": "D136-D139"
+  },
+  {
+   "id": "F02_spatial_car_sar",
+   "tier": "F",
+   "lane": "formula",
+   "depends_on": [
+    "C04_autocor"
+   ],
+   "status": "queued",
+   "summary": "car() (escar, esicar, icar, bym2) and sar() (lag, error) with data2 adjacency/weight matrices",
+   "pr": null,
+   "attempts": 0,
+   "divergences": [],
+   "next_action": "fixtures (wave F0)",
+   "reserved_divergences": "D140-D143"
+  },
+  {
+   "id": "F03_residual_correlation",
+   "tier": "F",
+   "lane": "formula",
+   "depends_on": [
+    "C04_autocor"
+   ],
+   "status": "queued",
+   "summary": "fcor() fixed residual covariance, unstr() and cosy() residual correlation structures",
+   "pr": null,
+   "attempts": 0,
+   "divergences": [],
+   "next_action": "fixtures (wave F0)",
+   "reserved_divergences": "D144-D147"
+  },
+  {
+   "id": "F04_wiener",
+   "tier": "F",
+   "lane": "families",
+   "depends_on": [
+    "D01_continuous_families"
+   ],
+   "status": "queued",
+   "summary": "wiener() diffusion model with dec() responses",
+   "pr": null,
+   "attempts": 0,
+   "divergences": [],
+   "next_action": "fixtures (wave F0)",
+   "reserved_divergences": "D148-D151"
+  },
+  {
+   "id": "F05_cox",
+   "tier": "F",
+   "lane": "families",
+   "depends_on": [
+    "E04_cens_trunc_families"
+   ],
+   "status": "queued",
+   "summary": "cox() proportional hazards with brms's M-spline baseline hazard",
+   "pr": null,
+   "attempts": 0,
+   "divergences": [],
+   "next_action": "fixtures (wave F0)",
+   "reserved_divergences": "D152-D155"
   }
  ]
 }
