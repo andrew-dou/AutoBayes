@@ -1,0 +1,64 @@
+{
+ "id": "gauss_fcor",
+ "tier": "F",
+ "feature": "F03_residual_correlation",
+ "note": "F03: brms fcor(V) with V (data2_V.csv) the fixed covariance s_i s_j 0.5^|i - j| of the 36 rows (s_i cycling through 0.8, 0.9, ..., 1.2), written to twelve decimals; standata Mfcor (36 x 36), N_tg = 1; the covariance of Y is sigma^2 Mfcor, normal_fcor_hom(Y | mu, sigma, Lfcor) with Lfcor = cholesky_decompose(Mfcor) in transformed data; parameters b, Intercept, sigma; linpred = epred = b_Intercept + b x; no newdata (Mfcor is N by N)",
+ "seed": 1021,
+ "n_points": 8,
+ "data": {
+  "generator": "tier_f",
+  "seed": 921,
+  "n": 36,
+  "data2": {
+   "V": "ar1_covariance"
+  }
+ },
+ "brms": {
+  "formula": "y ~ x + fcor(V)",
+  "family": {
+   "family": "gaussian"
+  },
+  "data2": [
+   "V"
+  ],
+  "priors": [
+   {
+    "prior": "normal(0, 2)",
+    "class": "Intercept"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "b"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "sigma"
+   }
+  ]
+ },
+ "autobayes": {
+  "constructor": "gaussian",
+  "formula": "y ~ x + fcor(V)",
+  "kwargs": {},
+  "priors": {
+   "intercept": [
+    "Normal",
+    0,
+    2
+   ],
+   "b": [
+    "Normal",
+    0,
+    1
+   ],
+   "sigma": [
+    "HalfNormal",
+    1
+   ]
+  }
+ },
+ "gate": {
+  "expect": "fail",
+  "reason": "F03_residual_correlation not implemented; remove this field when it lands"
+ }
+}

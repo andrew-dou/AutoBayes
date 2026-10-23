@@ -1,0 +1,115 @@
+{
+ "id": "logistic_normal_varint",
+ "tier": "F",
+ "feature": "F01_multi_category_families",
+ "note": "F01: brms logistic_normal on the simplex cbind(s1, s2, s3), reference category s1 (brms's default refcat, the first category): dpars mus2 and mus3 (identity link; the means of the log-ratios against s1), each with its own (1 | g); one SD per non-reference category, prior classes sigmas2 and sigmas3 (log), and their correlation, cholesky_factor_corr[ncat - 1] Llncor (prior class lncor, lkj(2), which prior_summary writes as lkj_corr_cholesky(2) of class Llncor; Lncor and lncor among the points' quantities); density logistic_normal_cholesky_cor(Y | mu, sigma, Llncor, 1), the last argument the reference category's index; brms refuses posterior_epred (Cannot compute expected values of the posterior predictive distribution for family 'logistic_normal'.), recorded as epred_refused (prediction_refused); linpred (draws, rows, 2)",
+ "seed": 1006,
+ "n_points": 8,
+ "data": {
+  "generator": "tier_f",
+  "seed": 906,
+  "n": 36,
+  "newdata": {
+   "seed": 1006,
+   "n": 5
+  }
+ },
+ "brms": {
+  "formula": "cbind(s1, s2, s3) ~ x + (1 | g)",
+  "family": {
+   "family": "logistic_normal"
+  },
+  "factors": {
+   "g": [
+    "a",
+    "b",
+    "c",
+    "d",
+    "e",
+    "f"
+   ]
+  },
+  "priors": [
+   {
+    "prior": "normal(0, 2)",
+    "class": "Intercept",
+    "dpar": "mus2"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "b",
+    "dpar": "mus2"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "sd",
+    "group": "g",
+    "dpar": "mus2"
+   },
+   {
+    "prior": "normal(0, 2)",
+    "class": "Intercept",
+    "dpar": "mus3"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "b",
+    "dpar": "mus3"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "sd",
+    "group": "g",
+    "dpar": "mus3"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "sigmas2"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "sigmas3"
+   },
+   {
+    "prior": "lkj(2)",
+    "class": "lncor"
+   }
+  ],
+  "prediction_refused": [
+   "epred"
+  ]
+ },
+ "autobayes": {
+  "constructor": "logistic_normal",
+  "formula": "cbind(s1, s2, s3) ~ x + (1 | g)",
+  "kwargs": {},
+  "priors": {
+   "intercept": [
+    "Normal",
+    0,
+    2
+   ],
+   "b": [
+    "Normal",
+    0,
+    1
+   ],
+   "sd": [
+    "HalfNormal",
+    1
+   ],
+   "sigma": [
+    "HalfNormal",
+    1
+   ],
+   "lncor": [
+    "LKJ",
+    2
+   ]
+  }
+ },
+ "gate": {
+  "expect": "fail",
+  "reason": "F01_multi_category_families not implemented; remove this field when it lands"
+ }
+}

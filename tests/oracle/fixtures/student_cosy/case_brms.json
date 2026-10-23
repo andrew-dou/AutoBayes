@@ -1,0 +1,40 @@
+{
+ "factors": {
+  "subj": [
+   "u01",
+   "u02",
+   "u03",
+   "u04",
+   "u05",
+   "u06",
+   "u07",
+   "u08",
+   "u09"
+  ]
+ },
+ "family": {
+  "family": "student"
+ },
+ "formula": "y ~ x + cosy(time = tt, gr = subj)",
+ "id": "student_cosy",
+ "n_points": 8,
+ "priors": [
+  {
+   "class": "Intercept",
+   "prior": "normal(0, 2)"
+  },
+  {
+   "class": "b",
+   "prior": "normal(0, 1)"
+  },
+  {
+   "class": "sigma",
+   "prior": "normal(0, 1)"
+  },
+  {
+   "class": "nu",
+   "prior": "gamma(2, 0.1)"
+  }
+ ],
+ "seed": 1024
+}

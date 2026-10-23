@@ -1,0 +1,113 @@
+{
+ "id": "multinomial_dpar_formula",
+ "tier": "F",
+ "feature": "F01_multi_category_families",
+ "note": "F01: multinomial with a formula of its own for one category's parameter, bf(cbind(m1, m2, m3) | trials(size) ~ x + (1 | g), mum3 ~ z): mum2 keeps x + (1 | g) (sd_1, Z_1_mum2_1), mum3 has z alone (X_mum3: Intercept, zq, zr; no group term); priors by dpar (Intercept and b of mum2 and of mum3, sd of g for mum2); predictions as multinomial_varint's",
+ "seed": 1002,
+ "n_points": 8,
+ "data": {
+  "generator": "tier_f",
+  "seed": 902,
+  "n": 36,
+  "newdata": {
+   "seed": 1002,
+   "n": 5
+  }
+ },
+ "brms": {
+  "formula": [
+   "cbind(m1, m2, m3) | trials(size) ~ x + (1 | g)",
+   "mum3 ~ z"
+  ],
+  "family": {
+   "family": "multinomial"
+  },
+  "factors": {
+   "g": [
+    "a",
+    "b",
+    "c",
+    "d",
+    "e",
+    "f"
+   ],
+   "z": [
+    "p",
+    "q",
+    "r"
+   ]
+  },
+  "priors": [
+   {
+    "prior": "normal(0, 2)",
+    "class": "Intercept",
+    "dpar": "mum2"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "b",
+    "dpar": "mum2"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "sd",
+    "group": "g",
+    "dpar": "mum2"
+   },
+   {
+    "prior": "normal(0, 2)",
+    "class": "Intercept",
+    "dpar": "mum3"
+   },
+   {
+    "prior": "normal(0, 0.5)",
+    "class": "b",
+    "dpar": "mum3"
+   }
+  ]
+ },
+ "autobayes": {
+  "constructor": "multinomial",
+  "formula": [
+   "cbind(m1, m2, m3) | trials(size) ~ x + (1 | g)",
+   "mum3 ~ z"
+  ],
+  "kwargs": {
+   "categorical": {
+    "z": "p"
+   }
+  },
+  "priors": {
+   "intercept": [
+    "Normal",
+    0,
+    2
+   ],
+   "b": [
+    "Normal",
+    0,
+    1
+   ],
+   "sd": [
+    "HalfNormal",
+    1
+   ],
+   "mum3": {
+    "intercept": [
+     "Normal",
+     0,
+     2
+    ],
+    "b": [
+     "Normal",
+     0,
+     0.5
+    ]
+   }
+  }
+ },
+ "gate": {
+  "expect": "fail",
+  "reason": "F01_multi_category_families not implemented; remove this field when it lands"
+ }
+}

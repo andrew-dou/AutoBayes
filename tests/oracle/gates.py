@@ -157,7 +157,14 @@ class Bundle:
         d = fx.fixture_dir(case_id)
         self.data = fx.read_frame(self.case, d / "data.csv")
         self.newdata = fx.read_frame(self.case, d / "newdata.csv") if (d / "newdata.csv").exists() else None
-        self.model = model or adapter.build_model(self.case, self.data)
+        # Tier F: brms's data2 matrices by name ({} for a case without), handed to the case's constructor as data2= (car(W), sar(M),
+        # fcor(M) name them in the formula)
+        self.data2 = fx.read_data2(self.case, d)
+        build = self.case
+        if self.data2:
+            spec = self.case["autobayes"]
+            build = {**self.case, "autobayes": {**spec, "kwargs": {**spec.get("kwargs", {}), "data2": self.data2}}}
+        self.model = model or adapter.build_model(build, self.data)
         # C04: brms sorts an autocorrelation model's Stan rows by series and time; its per-row data are compared in data order
         self.fixture = adapter.in_data_order(self.case, self.fixture, self.model, self.data)
         # C07: the post-processing functions a case names (``"post": ["log_lik", "bayes_R2", "loo"]`` in its autobayes

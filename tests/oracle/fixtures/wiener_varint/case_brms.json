@@ -1,0 +1,46 @@
+{
+ "factors": {
+  "g": [
+   "a",
+   "b",
+   "c",
+   "d",
+   "e",
+   "f"
+  ]
+ },
+ "family": {
+  "family": "wiener"
+ },
+ "formula": "rt | dec(dec) ~ x + (1 | g)",
+ "id": "wiener_varint",
+ "n_points": 8,
+ "priors": [
+  {
+   "class": "Intercept",
+   "prior": "normal(0, 1)"
+  },
+  {
+   "class": "b",
+   "prior": "normal(0, 1)"
+  },
+  {
+   "class": "sd",
+   "group": "g",
+   "prior": "normal(0, 1)"
+  },
+  {
+   "class": "bs",
+   "prior": "gamma(1, 1)"
+  },
+  {
+   "class": "ndt",
+   "prior": "normal(0, 0.3)"
+  },
+  {
+   "class": "bias",
+   "prior": "beta(2, 2)"
+  }
+ ],
+ "seed": 1031
+}

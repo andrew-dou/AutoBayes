@@ -1,0 +1,83 @@
+{
+ "id": "student_cosy",
+ "tier": "F",
+ "feature": "F03_residual_correlation",
+ "note": "F03: student with cosy(time = tt, gr = subj): nu declared real<lower=1> (probed as other; gamma(2, 0.1)), density student_t_time_hom(Y | nu, mu, sigma, Lcortime, ...); otherwise as gauss_cosy",
+ "seed": 1024,
+ "n_points": 8,
+ "data": {
+  "generator": "tier_f",
+  "seed": 924,
+  "n": 36
+ },
+ "brms": {
+  "formula": "y ~ x + cosy(time = tt, gr = subj)",
+  "family": {
+   "family": "student"
+  },
+  "factors": {
+   "subj": [
+    "u01",
+    "u02",
+    "u03",
+    "u04",
+    "u05",
+    "u06",
+    "u07",
+    "u08",
+    "u09"
+   ]
+  },
+  "priors": [
+   {
+    "prior": "normal(0, 2)",
+    "class": "Intercept"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "b"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "sigma"
+   },
+   {
+    "prior": "gamma(2, 0.1)",
+    "class": "nu"
+   }
+  ]
+ },
+ "autobayes": {
+  "constructor": "student",
+  "formula": "y ~ x + cosy(time = tt, gr = subj)",
+  "kwargs": {},
+  "priors": {
+   "intercept": [
+    "Normal",
+    0,
+    2
+   ],
+   "b": [
+    "Normal",
+    0,
+    1
+   ],
+   "sigma": [
+    "HalfNormal",
+    1
+   ],
+   "cosy": [
+    "Flat"
+   ],
+   "nu": [
+    "Gamma",
+    2,
+    0.1
+   ]
+  }
+ },
+ "gate": {
+  "expect": "fail",
+  "reason": "F03_residual_correlation not implemented; remove this field when it lands"
+ }
+}

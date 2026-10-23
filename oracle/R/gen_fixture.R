@@ -4,7 +4,7 @@
 #   Rscript oracle/R/gen_fixture.R <fixture_dir>
 #
 # <fixture_dir> holds the frozen brms-side case (`case_brms.json`, written by oracle/regen.py from the
-# case's `brms` section), `data.csv` and optionally `newdata.csv`. This script compiles the brms model
+# case's `brms` section), `data.csv`, optionally `newdata.csv` and a Tier F case's `data2_<name>.csv`. This script compiles the brms model
 # with rstan and writes `fixture.json`:
 #
 #   standata        every entry of brms::standata(), with dims (column-major values) and column names
@@ -67,6 +67,17 @@
 #   conditional_effects   an interaction effect "x:z" or "x:w" is computed as any effect (brms's default int_conditions: the
 #                   levels of a factor, the mean and mean +/- sd of a numeric moderator)
 #
+# Opt-in per case (Tier F); a case without these keys is generated exactly as before:
+#
+#   data2           a list of names: each a matrix read from data2_<name>.csv next to data.csv (written by tests/oracle/datasets.py:
+#                   a header of column labels after an empty first field, then one line per row, its label first) and handed to
+#                   brm() and default_prior() as data2 = list(<name> = <matrix>), for car(W), sar(M) and fcor(M); the meta records
+#                   each file's sha256 (data2_sha256). A matrix response needs no key: brms evaluates cbind(m1, m2, m3) in the formula
+#                   into the same matrix column (the same Stan program and standata as a column bound beforehand)
+#   prediction_refused   a list of prediction kinds ("linpred", "epred") that brms fails to compute for the model (posterior_epred
+#                   of sar(type = "error")): each is called once per block and must fail, and brms's error message is recorded as
+#                   predictions$<block>$<kind>_refused (and <kind>_nogroup_refused) in place of the array; it stops if brms computes it
+#
 # Nothing here samples, and nothing here evaluates code from the case: the formula is parsed with
 # as.formula(), the family is built with brms::brmsfamily() from named arguments, priors with set_prior().
 # Everything is deterministic given the case, the data and the package versions; a prediction or
@@ -113,6 +124,15 @@ read_frame <- function(path) {
 }
 d <- read_frame(file.path(dir, "data.csv"))
 nd <- if (file.exists(file.path(dir, "newdata.csv"))) read_frame(file.path(dir, "newdata.csv")) else NULL
+data2_names <- unlist(case$data2)                     # opt-in (Tier F): matrices brms receives as data2
+read_matrix <- function(path) {                       # labels as text, every entry a number
+  raw <- read.csv(path, check.names = FALSE, colClasses = "character", row.names = 1)
+  m <- matrix(suppressWarnings(as.numeric(as.matrix(raw))), nrow(raw), ncol(raw), dimnames = list(rownames(raw), colnames(raw)))
+  if (anyNA(m)) stop(sprintf("%s has entries that are not numbers", basename(path)))
+  m
+}
+data2 <- if (length(data2_names)) lapply(setNames(data2_names, data2_names), function(nm) read_matrix(file.path(dir, sprintf("data2_%s.csv", nm)))) else NULL
+if (!is.null(data2) && !is.null(case$loo_compare)) stop("loo_compare of a case with data2 is not supported")
 
 # -- model ------------------------------------------------------------------------------------------------
 # `formula` is one formula string or a list of them (the first is the response formula, the rest are
@@ -136,7 +156,8 @@ fam <- if (is.null(case$family$mixture)) {
 pri <- if (length(case$priors)) do.call(c, lapply(case$priors, function(p) do.call(brms::set_prior, p))) else NULL
 t0 <- Sys.time()
 fit0 <- do.call(brm, c(list(formula = fml, data = d, family = fam, prior = pri, chains = 0,
-                            backend = "rstan", silent = 2, refresh = 0), case$brm_args %||% list()))
+                            backend = "rstan", silent = 2, refresh = 0), if (!is.null(data2)) list(data2 = data2),
+                       case$brm_args %||% list()))
 compile_seconds <- as.numeric(Sys.time() - t0, units = "secs")
 sf <- fit0$fit
 sdat <- standata(fit0)
@@ -240,6 +261,8 @@ deterministic <- function(f) {                        # the same draws under two
   if (!identical(a, b)) stop("a prediction or post-processing function draws random numbers; its output is not deterministic")
   a
 }
+refused <- unlist(case$prediction_refused)            # opt-in (Tier F): prediction kinds brms must fail to compute
+if (length(setdiff(refused, c("linpred", "epred")))) stop("prediction_refused lists kinds other than linpred and epred")
 pred_block <- function(newdata) {
   out <- list(linpred = enc(deterministic(function() posterior_linpred(fit1, newdata = newdata))),
               epred = enc(deterministic(function() posterior_epred(fit1, newdata = newdata))))
@@ -247,6 +270,23 @@ pred_block <- function(newdata) {
     out$linpred_nogroup <- enc(deterministic(function() posterior_linpred(fit1, newdata = newdata, re_formula = NA)))
     out$epred_nogroup <- enc(deterministic(function() posterior_epred(fit1, newdata = newdata, re_formula = NA)))
   }
+  out
+}
+refusal <- function(f) {                              # brms's error message, or a stop when brms computes it after all
+  msg <- tryCatch({ f(); NULL }, error = function(e) conditionMessage(e))
+  if (is.null(msg)) stop("brms computed a prediction the case lists in prediction_refused")
+  msg
+}
+if (length(refused)) pred_block <- function(newdata) {   # the kinds listed are recorded as <kind>_refused, brms's message
+  fn <- list(linpred = posterior_linpred, epred = posterior_epred)
+  run <- function(kind, ...) {
+    f <- function() fn[[kind]](fit1, newdata = newdata, ...)
+    if (kind %in% refused) refusal(f) else enc(deterministic(f))
+  }
+  out <- list()
+  for (kind in c("linpred", "epred")) out[[if (kind %in% refused) paste0(kind, "_refused") else kind]] <- run(kind)
+  if (has_groups) for (kind in c("linpred", "epred"))
+    out[[paste0(kind, if (kind %in% refused) "_nogroup_refused" else "_nogroup")]] <- run(kind, re_formula = NA)
   out
 }
 predictions <- list(fitted = pred_block(NULL))
@@ -404,8 +444,10 @@ fixture <- list(
   points = points,
   predictions = predictions,
   prior_summary = rows(prior_summary(fit0)),
-  default_prior = rows(default_prior(fml, data = d, family = fam))
+  default_prior = rows(if (is.null(data2)) default_prior(fml, data = d, family = fam) else default_prior(fml, data = d, family = fam, data2 = data2))
 )
+if (!is.null(data2))                                  # Tier F: the data2 files, as data.csv's
+  fixture$meta$data2_sha256 <- lapply(setNames(data2_names, data2_names), function(nm) sha(file.path(dir, sprintf("data2_%s.csv", nm))))
 if ("responses" %in% extras) {                        # opt-in: the last axis of a multivariate model's predictions
   resp <- as.character(fit0$formula$responses)
   if (!identical(dimnames(posterior_linpred(fit1))[[3]], resp)) stop("brms's responses are not the prediction array's last axis")

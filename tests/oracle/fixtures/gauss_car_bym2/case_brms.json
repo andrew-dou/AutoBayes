@@ -1,0 +1,63 @@
+{
+ "data2": [
+  "W"
+ ],
+ "factors": {
+  "site": [
+   "s01",
+   "s02",
+   "s03",
+   "s04",
+   "s05",
+   "s06",
+   "s07",
+   "s08",
+   "s09",
+   "s10",
+   "s11",
+   "s12",
+   "s13",
+   "s14",
+   "s15",
+   "s16",
+   "s17",
+   "s18",
+   "s19",
+   "s20",
+   "s21",
+   "s22",
+   "s23",
+   "s24",
+   "s25"
+  ]
+ },
+ "family": {
+  "family": "gaussian"
+ },
+ "formula": "y ~ x + car(W, gr = site, type = \"bym2\")",
+ "id": "gauss_car_bym2",
+ "n_points": 8,
+ "priors": [
+  {
+   "class": "Intercept",
+   "prior": "normal(0, 2)"
+  },
+  {
+   "class": "b",
+   "prior": "normal(0, 1)"
+  },
+  {
+   "class": "sigma",
+   "prior": "normal(0, 1)"
+  },
+  {
+   "class": "sdcar",
+   "prior": "normal(0, 1)"
+  },
+  {
+   "class": "rhocar",
+   "prior": "beta(1, 1)"
+  }
+ ],
+ "seed": 1014
+}

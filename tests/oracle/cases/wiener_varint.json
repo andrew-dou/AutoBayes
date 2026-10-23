@@ -1,0 +1,100 @@
+{
+ "id": "wiener_varint",
+ "tier": "F",
+ "feature": "F04_wiener",
+ "note": "F04: brms wiener on tier_f's response times rt (above 0.35; 0.4092 at the least) with decisions dec (1 upper, 0 lower boundary): rt | dec(dec) ~ x + (1 | g); mu is the drift (identity link); bs, the boundary separation (log); ndt, the non-decision time, declared real<lower=0, upper=min_Y> with min_Y = min(Y) computed in transformed data (not in standata; probed as other), so every rt exceeds every ndt the points can take; bias, the relative starting point in (0, 1) (probed as other). Priors bs gamma(1, 1) (brms's default), ndt normal(0, 0.3), to which brms's lprior adds - log_diff_exp(normal_lcdf(min_Y | 0, 0.3), normal_lcdf(0 | 0, 0.3)) (brms's default is uniform(0, min_Y)), bias beta(2, 2) (lprior checked on the frozen points). Density Stan's wiener_lpdf(rt | bs, ndt, bias, mu) for dec = 1 and wiener_lpdf(rt | bs, ndt, 1 - bias, -mu) for dec = 0; standata dec. epred is brms's ndt - bias / mu + bs / mu (exp(-2 mu bias) - 1) / (exp(-2 mu bs) - 1) (checked), which puts the relative bias where the absolute starting point bs * bias belongs (the mean response time only when bs = 1); log_lik, loo and posterior_predict need RWiener, not installed (Please install the 'RWiener' package.), so Tier F has no wiener post case",
+ "seed": 1031,
+ "n_points": 8,
+ "data": {
+  "generator": "tier_f",
+  "seed": 931,
+  "n": 36,
+  "newdata": {
+   "seed": 1031,
+   "n": 5
+  }
+ },
+ "brms": {
+  "formula": "rt | dec(dec) ~ x + (1 | g)",
+  "family": {
+   "family": "wiener"
+  },
+  "factors": {
+   "g": [
+    "a",
+    "b",
+    "c",
+    "d",
+    "e",
+    "f"
+   ]
+  },
+  "priors": [
+   {
+    "prior": "normal(0, 1)",
+    "class": "Intercept"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "b"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "sd",
+    "group": "g"
+   },
+   {
+    "prior": "gamma(1, 1)",
+    "class": "bs"
+   },
+   {
+    "prior": "normal(0, 0.3)",
+    "class": "ndt"
+   },
+   {
+    "prior": "beta(2, 2)",
+    "class": "bias"
+   }
+  ]
+ },
+ "autobayes": {
+  "constructor": "wiener",
+  "formula": "rt | dec(dec) ~ x + (1 | g)",
+  "kwargs": {},
+  "priors": {
+   "intercept": [
+    "Normal",
+    0,
+    1
+   ],
+   "b": [
+    "Normal",
+    0,
+    1
+   ],
+   "sd": [
+    "HalfNormal",
+    1
+   ],
+   "bs": [
+    "Gamma",
+    1,
+    1
+   ],
+   "ndt": [
+    "Normal",
+    0,
+    0.3
+   ],
+   "bias": [
+    "Beta",
+    2,
+    2
+   ]
+  }
+ },
+ "gate": {
+  "expect": "fail",
+  "reason": "F04_wiener not implemented; remove this field when it lands"
+ }
+}

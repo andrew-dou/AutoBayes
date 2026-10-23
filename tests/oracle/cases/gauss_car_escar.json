@@ -1,0 +1,108 @@
+{
+ "id": "gauss_car_escar",
+ "tier": "F",
+ "feature": "F02_spatial_car_sar",
+ "note": "F02: brms car(W, gr = site, type = \"escar\") (exact sparse CAR) with W (data2_W.csv) the 0/1 rook adjacency of tier_f's 5 by 5 grid, labelled by site (40 edges), on 50 rows, two per site in shuffled order; standata Nloc = 25, Jloc (each row's site by level), Nedges, edges1 > edges2 (W's lower triangle), Nneigh (W's row sums), eigenMcar (eigenvalues of D^-1/2 W D^-1/2); parameters sdcar (log), rcar (Nloc, identity) and car in (0, 1) (probed as other; brms's default flat prior); linpred = epred = b_Intercept + b x + rcar[Jloc] (checked); newdata rows at fitted sites",
+ "seed": 1011,
+ "n_points": 8,
+ "data": {
+  "generator": "tier_f",
+  "seed": 911,
+  "n": 50,
+  "data2": {
+   "W": "rook_adjacency"
+  },
+  "newdata": {
+   "seed": 1011,
+   "n": 5
+  }
+ },
+ "brms": {
+  "formula": "y ~ x + car(W, gr = site, type = \"escar\")",
+  "family": {
+   "family": "gaussian"
+  },
+  "factors": {
+   "site": [
+    "s01",
+    "s02",
+    "s03",
+    "s04",
+    "s05",
+    "s06",
+    "s07",
+    "s08",
+    "s09",
+    "s10",
+    "s11",
+    "s12",
+    "s13",
+    "s14",
+    "s15",
+    "s16",
+    "s17",
+    "s18",
+    "s19",
+    "s20",
+    "s21",
+    "s22",
+    "s23",
+    "s24",
+    "s25"
+   ]
+  },
+  "data2": [
+   "W"
+  ],
+  "priors": [
+   {
+    "prior": "normal(0, 2)",
+    "class": "Intercept"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "b"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "sigma"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "sdcar"
+   }
+  ]
+ },
+ "autobayes": {
+  "constructor": "gaussian",
+  "formula": "y ~ x + car(W, gr = site, type = \"escar\")",
+  "kwargs": {},
+  "priors": {
+   "intercept": [
+    "Normal",
+    0,
+    2
+   ],
+   "b": [
+    "Normal",
+    0,
+    1
+   ],
+   "sigma": [
+    "HalfNormal",
+    1
+   ],
+   "sdcar": [
+    "HalfNormal",
+    1
+   ],
+   "car": [
+    "Flat"
+   ]
+  }
+ },
+ "gate": {
+  "expect": "fail",
+  "reason": "F02_spatial_car_sar not implemented; remove this field when it lands"
+ }
+}

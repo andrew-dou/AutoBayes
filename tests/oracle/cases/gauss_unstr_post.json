@@ -1,0 +1,88 @@
+{
+ "id": "gauss_unstr_post",
+ "tier": "F",
+ "feature": "F03_residual_correlation",
+ "note": "F03 post-processing of unstr: brms's log_lik (draws, rows) of the non-factorised model is each row's log density given its subject's other rows, under N(mu, sigma^2 Cortime) per subject (checked on the frozen points), and loo of the 8-draw fit; seeded points on (-0.5, 0.5) (point_halfwidth): on the default box (-1.2, 1.2) loo()'s mcse_elpd_loo is NA at one row and gen_fixture.R stops on the missing value",
+ "seed": 1025,
+ "n_points": 8,
+ "data": {
+  "generator": "tier_f",
+  "seed": 925,
+  "n": 36
+ },
+ "brms": {
+  "formula": "y ~ x + unstr(time = tt, gr = subj)",
+  "family": {
+   "family": "gaussian"
+  },
+  "factors": {
+   "subj": [
+    "u01",
+    "u02",
+    "u03",
+    "u04",
+    "u05",
+    "u06",
+    "u07",
+    "u08",
+    "u09"
+   ]
+  },
+  "priors": [
+   {
+    "prior": "normal(0, 2)",
+    "class": "Intercept"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "b"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "sigma"
+   },
+   {
+    "prior": "lkj(2)",
+    "class": "cortime"
+   }
+  ],
+  "extras": [
+   "log_lik",
+   "loo"
+  ],
+  "point_halfwidth": 0.5
+ },
+ "autobayes": {
+  "constructor": "gaussian",
+  "formula": "y ~ x + unstr(time = tt, gr = subj)",
+  "kwargs": {},
+  "priors": {
+   "intercept": [
+    "Normal",
+    0,
+    2
+   ],
+   "b": [
+    "Normal",
+    0,
+    1
+   ],
+   "sigma": [
+    "HalfNormal",
+    1
+   ],
+   "cortime": [
+    "LKJ",
+    2
+   ]
+  },
+  "post": [
+   "log_lik",
+   "loo"
+  ]
+ },
+ "gate": {
+  "expect": "fail",
+  "reason": "F03_residual_correlation not implemented; remove this field when it lands"
+ }
+}

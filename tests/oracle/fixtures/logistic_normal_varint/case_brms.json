@@ -1,0 +1,68 @@
+{
+ "factors": {
+  "g": [
+   "a",
+   "b",
+   "c",
+   "d",
+   "e",
+   "f"
+  ]
+ },
+ "family": {
+  "family": "logistic_normal"
+ },
+ "formula": "cbind(s1, s2, s3) ~ x + (1 | g)",
+ "id": "logistic_normal_varint",
+ "n_points": 8,
+ "prediction_refused": [
+  "epred"
+ ],
+ "priors": [
+  {
+   "class": "Intercept",
+   "dpar": "mus2",
+   "prior": "normal(0, 2)"
+  },
+  {
+   "class": "b",
+   "dpar": "mus2",
+   "prior": "normal(0, 1)"
+  },
+  {
+   "class": "sd",
+   "dpar": "mus2",
+   "group": "g",
+   "prior": "normal(0, 1)"
+  },
+  {
+   "class": "Intercept",
+   "dpar": "mus3",
+   "prior": "normal(0, 2)"
+  },
+  {
+   "class": "b",
+   "dpar": "mus3",
+   "prior": "normal(0, 1)"
+  },
+  {
+   "class": "sd",
+   "dpar": "mus3",
+   "group": "g",
+   "prior": "normal(0, 1)"
+  },
+  {
+   "class": "sigmas2",
+   "prior": "normal(0, 1)"
+  },
+  {
+   "class": "sigmas3",
+   "prior": "normal(0, 1)"
+  },
+  {
+   "class": "lncor",
+   "prior": "lkj(2)"
+  }
+ ],
+ "seed": 1006
+}

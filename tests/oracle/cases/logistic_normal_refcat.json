@@ -1,0 +1,118 @@
+{
+ "id": "logistic_normal_refcat",
+ "tier": "F",
+ "feature": "F01_multi_category_families",
+ "note": "F01: logistic_normal with refcat = \"s2\" (brmsfamily(\"logistic_normal\", refcat = \"s2\")): dpars mus1 and mus3, SDs sigmas1 and sigmas3, the reference index 2 in the density; otherwise as logistic_normal_varint (posterior_epred refused)",
+ "seed": 1007,
+ "n_points": 8,
+ "data": {
+  "generator": "tier_f",
+  "seed": 907,
+  "n": 36,
+  "newdata": {
+   "seed": 1007,
+   "n": 5
+  }
+ },
+ "brms": {
+  "formula": "cbind(s1, s2, s3) ~ x + (1 | g)",
+  "family": {
+   "family": "logistic_normal",
+   "refcat": "s2"
+  },
+  "factors": {
+   "g": [
+    "a",
+    "b",
+    "c",
+    "d",
+    "e",
+    "f"
+   ]
+  },
+  "priors": [
+   {
+    "prior": "normal(0, 2)",
+    "class": "Intercept",
+    "dpar": "mus1"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "b",
+    "dpar": "mus1"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "sd",
+    "group": "g",
+    "dpar": "mus1"
+   },
+   {
+    "prior": "normal(0, 2)",
+    "class": "Intercept",
+    "dpar": "mus3"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "b",
+    "dpar": "mus3"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "sd",
+    "group": "g",
+    "dpar": "mus3"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "sigmas1"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "sigmas3"
+   },
+   {
+    "prior": "lkj(2)",
+    "class": "lncor"
+   }
+  ],
+  "prediction_refused": [
+   "epred"
+  ]
+ },
+ "autobayes": {
+  "constructor": "logistic_normal",
+  "formula": "cbind(s1, s2, s3) ~ x + (1 | g)",
+  "kwargs": {
+   "refcat": "s2"
+  },
+  "priors": {
+   "intercept": [
+    "Normal",
+    0,
+    2
+   ],
+   "b": [
+    "Normal",
+    0,
+    1
+   ],
+   "sd": [
+    "HalfNormal",
+    1
+   ],
+   "sigma": [
+    "HalfNormal",
+    1
+   ],
+   "lncor": [
+    "LKJ",
+    2
+   ]
+  }
+ },
+ "gate": {
+  "expect": "fail",
+  "reason": "F01_multi_category_families not implemented; remove this field when it lands"
+ }
+}

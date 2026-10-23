@@ -1,0 +1,101 @@
+{
+ "id": "dirichlet_varint",
+ "tier": "F",
+ "feature": "F01_multi_category_families",
+ "note": "F01: brms dirichlet on tier_f's simplex cbind(s1, s2, s3) (every part at least 0.0199, s3 = 1 - s1 - s2 to four decimals); categories s1 (reference), s2, s3; dpars mus2 and mus3 (logit link: the mean is softmax(0, mu2, mu3)), each with its own (1 | g); phi (log; gamma(0.01, 0.01), brms's default); density dirichlet_logit(Y | mu, phi), Dirichlet(phi * softmax(0, mu)); linpred (draws, rows, 2), epred (draws, rows, 3) = softmax(0, mu2, mu3) (checked)",
+ "seed": 1004,
+ "n_points": 8,
+ "data": {
+  "generator": "tier_f",
+  "seed": 904,
+  "n": 36,
+  "newdata": {
+   "seed": 1004,
+   "n": 5
+  }
+ },
+ "brms": {
+  "formula": "cbind(s1, s2, s3) ~ x + (1 | g)",
+  "family": {
+   "family": "dirichlet"
+  },
+  "factors": {
+   "g": [
+    "a",
+    "b",
+    "c",
+    "d",
+    "e",
+    "f"
+   ]
+  },
+  "priors": [
+   {
+    "prior": "normal(0, 2)",
+    "class": "Intercept",
+    "dpar": "mus2"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "b",
+    "dpar": "mus2"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "sd",
+    "group": "g",
+    "dpar": "mus2"
+   },
+   {
+    "prior": "normal(0, 2)",
+    "class": "Intercept",
+    "dpar": "mus3"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "b",
+    "dpar": "mus3"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "sd",
+    "group": "g",
+    "dpar": "mus3"
+   },
+   {
+    "prior": "gamma(0.01, 0.01)",
+    "class": "phi"
+   }
+  ]
+ },
+ "autobayes": {
+  "constructor": "dirichlet",
+  "formula": "cbind(s1, s2, s3) ~ x + (1 | g)",
+  "kwargs": {},
+  "priors": {
+   "intercept": [
+    "Normal",
+    0,
+    2
+   ],
+   "b": [
+    "Normal",
+    0,
+    1
+   ],
+   "sd": [
+    "HalfNormal",
+    1
+   ],
+   "phi": [
+    "Gamma",
+    0.01,
+    0.01
+   ]
+  }
+ },
+ "gate": {
+  "expect": "fail",
+  "reason": "F01_multi_category_families not implemented; remove this field when it lands"
+ }
+}

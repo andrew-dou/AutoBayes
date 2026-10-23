@@ -1,0 +1,79 @@
+{
+ "id": "gauss_unstr",
+ "tier": "F",
+ "feature": "F03_residual_correlation",
+ "note": "F03: brms unstr(time = tt, gr = subj) on tier_f's balanced panel (subjects u01 to u09 by times 1 to 4, rows in subject and time order, so brms's sorted rows are the data's); standata N_tg = 9, begin_tg, end_tg, nobs_tg (4 each), n_unique_t = 4, n_unique_cortime = 6, Jtime_tg (9 x 4); Lcortime cholesky_factor_corr[4] (prior class cortime, lkj(2); Cortime and cortime among the points' quantities); density normal_time_hom_flex(Y | mu, sigma, Lcortime, ...), each subject's rows N(mu, sigma^2 Cortime); linpred = epred = b_Intercept + b x; no newdata",
+ "seed": 1022,
+ "n_points": 8,
+ "data": {
+  "generator": "tier_f",
+  "seed": 922,
+  "n": 36
+ },
+ "brms": {
+  "formula": "y ~ x + unstr(time = tt, gr = subj)",
+  "family": {
+   "family": "gaussian"
+  },
+  "factors": {
+   "subj": [
+    "u01",
+    "u02",
+    "u03",
+    "u04",
+    "u05",
+    "u06",
+    "u07",
+    "u08",
+    "u09"
+   ]
+  },
+  "priors": [
+   {
+    "prior": "normal(0, 2)",
+    "class": "Intercept"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "b"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "sigma"
+   },
+   {
+    "prior": "lkj(2)",
+    "class": "cortime"
+   }
+  ]
+ },
+ "autobayes": {
+  "constructor": "gaussian",
+  "formula": "y ~ x + unstr(time = tt, gr = subj)",
+  "kwargs": {},
+  "priors": {
+   "intercept": [
+    "Normal",
+    0,
+    2
+   ],
+   "b": [
+    "Normal",
+    0,
+    1
+   ],
+   "sigma": [
+    "HalfNormal",
+    1
+   ],
+   "cortime": [
+    "LKJ",
+    2
+   ]
+  }
+ },
+ "gate": {
+  "expect": "fail",
+  "reason": "F03_residual_correlation not implemented; remove this field when it lands"
+ }
+}

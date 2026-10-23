@@ -1,0 +1,92 @@
+{
+ "id": "multinomial_varint",
+ "tier": "F",
+ "feature": "F01_multi_category_families",
+ "note": "F01: brms multinomial on tier_f's counts m1, m2, m3 (row sums = size), written cbind(m1, m2, m3) | trials(size): brms evaluates cbind() into the matrix column it would take from the data (the same Stan program and standata); categories m1 (reference), m2, m3; one linear predictor per non-reference category, dpars mum2 and mum3 (X_mum2, X_mum3; Intercept_mum2, b_mum2, ...), each with its own (1 | g) term (sd_1 and Z_1_mum2_1 for mum2, sd_2 and Z_2_mum3_1 for mum3); standata Y (36 x 3), trials, ncat = 3; density multinomial_logit2(Y | (0, mu2, mu3)); linpred (draws, rows, 2), epred (draws, rows, 3) = trials * softmax(0, mu2, mu3) (checked on the frozen points)",
+ "seed": 1001,
+ "n_points": 8,
+ "data": {
+  "generator": "tier_f",
+  "seed": 901,
+  "n": 36,
+  "newdata": {
+   "seed": 1001,
+   "n": 5
+  }
+ },
+ "brms": {
+  "formula": "cbind(m1, m2, m3) | trials(size) ~ x + (1 | g)",
+  "family": {
+   "family": "multinomial"
+  },
+  "factors": {
+   "g": [
+    "a",
+    "b",
+    "c",
+    "d",
+    "e",
+    "f"
+   ]
+  },
+  "priors": [
+   {
+    "prior": "normal(0, 2)",
+    "class": "Intercept",
+    "dpar": "mum2"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "b",
+    "dpar": "mum2"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "sd",
+    "group": "g",
+    "dpar": "mum2"
+   },
+   {
+    "prior": "normal(0, 2)",
+    "class": "Intercept",
+    "dpar": "mum3"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "b",
+    "dpar": "mum3"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "sd",
+    "group": "g",
+    "dpar": "mum3"
+   }
+  ]
+ },
+ "autobayes": {
+  "constructor": "multinomial",
+  "formula": "cbind(m1, m2, m3) | trials(size) ~ x + (1 | g)",
+  "kwargs": {},
+  "priors": {
+   "intercept": [
+    "Normal",
+    0,
+    2
+   ],
+   "b": [
+    "Normal",
+    0,
+    1
+   ],
+   "sd": [
+    "HalfNormal",
+    1
+   ]
+  }
+ },
+ "gate": {
+  "expect": "fail",
+  "reason": "F01_multi_category_families not implemented; remove this field when it lands"
+ }
+}

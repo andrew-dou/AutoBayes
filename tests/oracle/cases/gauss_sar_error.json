@@ -1,0 +1,70 @@
+{
+ "id": "gauss_sar_error",
+ "tier": "F",
+ "feature": "F02_spatial_car_sar",
+ "note": "F02: sar(M, type = \"error\"), M as gauss_sar_lag's (from this case's data); errorsar in (min eigenMsar, max eigenMsar) (probed as other; flat); density normal_errorsar; linpred = b_Intercept + b x (checked); brms's posterior_epred fails ('a' is 0-diml: its prepared draws carry an empty lagsar matrix rather than none, and it applies the lag model's solve()), recorded as epred_refused (prediction_refused); posterior_linpred, log_lik, posterior_predict and posterior_epred(incl_autocor = FALSE) work",
+ "seed": 1017,
+ "n_points": 8,
+ "data": {
+  "generator": "tier_f",
+  "seed": 917,
+  "n": 25,
+  "data2": {
+   "M": "rook_symmetric_normalised"
+  }
+ },
+ "brms": {
+  "formula": "y ~ x + sar(M, type = \"error\")",
+  "family": {
+   "family": "gaussian"
+  },
+  "data2": [
+   "M"
+  ],
+  "priors": [
+   {
+    "prior": "normal(0, 2)",
+    "class": "Intercept"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "b"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "sigma"
+   }
+  ],
+  "prediction_refused": [
+   "epred"
+  ]
+ },
+ "autobayes": {
+  "constructor": "gaussian",
+  "formula": "y ~ x + sar(M, type = \"error\")",
+  "kwargs": {},
+  "priors": {
+   "intercept": [
+    "Normal",
+    0,
+    2
+   ],
+   "b": [
+    "Normal",
+    0,
+    1
+   ],
+   "sigma": [
+    "HalfNormal",
+    1
+   ],
+   "errorsar": [
+    "Flat"
+   ]
+  }
+ },
+ "gate": {
+  "expect": "fail",
+  "reason": "F02_spatial_car_sar not implemented; remove this field when it lands"
+ }
+}

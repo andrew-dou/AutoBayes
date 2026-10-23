@@ -1,0 +1,67 @@
+{
+ "id": "gauss_sar_lag",
+ "tier": "F",
+ "feature": "F02_spatial_car_sar",
+ "note": "F02: brms sar(M, type = \"lag\") on 25 rows, one per site of the grid; M (data2_M.csv) is the rook adjacency of the rows' sites normalised symmetrically, D^-1/2 W D^-1/2, in data order. brms cannot take the row-standardised D^-1 W: R's eigen() of it returns the repeated eigenvalue 0 as complex conjugate pairs (|Im| 3.6e-17), brms passes the complex vector as eigenMsar and rstan refuses it (variable does not exist; processing stage=data initialization; variable name=eigenMsar; base type=double); the symmetric matrix has the same eigenvalues, in [-1, 1] (to 1e-13: data2 doubles are written to twelve decimals, text R parses exactly as Python does, which 17-digit text is not). standata Msar (25 x 25), eigenMsar, N_tg = 1; lagsar declared real<lower=min_eigenMsar, upper=max_eigenMsar> (here -1 and 1 to 1e-13; probed as other; flat prior, brms's default); density normal_lagsar(Y | mu, sigma, lagsar, Msar, eigenMsar); linpred = b_Intercept + b x, epred = solve(I - lagsar Msar, linpred) (checked); no newdata (Msar is N by N)",
+ "seed": 1016,
+ "n_points": 8,
+ "data": {
+  "generator": "tier_f",
+  "seed": 916,
+  "n": 25,
+  "data2": {
+   "M": "rook_symmetric_normalised"
+  }
+ },
+ "brms": {
+  "formula": "y ~ x + sar(M, type = \"lag\")",
+  "family": {
+   "family": "gaussian"
+  },
+  "data2": [
+   "M"
+  ],
+  "priors": [
+   {
+    "prior": "normal(0, 2)",
+    "class": "Intercept"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "b"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "sigma"
+   }
+  ]
+ },
+ "autobayes": {
+  "constructor": "gaussian",
+  "formula": "y ~ x + sar(M, type = \"lag\")",
+  "kwargs": {},
+  "priors": {
+   "intercept": [
+    "Normal",
+    0,
+    2
+   ],
+   "b": [
+    "Normal",
+    0,
+    1
+   ],
+   "sigma": [
+    "HalfNormal",
+    1
+   ],
+   "lagsar": [
+    "Flat"
+   ]
+  }
+ },
+ "gate": {
+  "expect": "fail",
+  "reason": "F02_spatial_car_sar not implemented; remove this field when it lands"
+ }
+}

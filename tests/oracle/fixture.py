@@ -27,6 +27,15 @@ which Stan draws anew on every constrain_pars() call; a point hypothesis of such
 `posterior_epred(dpar = )` of distributional parameters the points do not carry, as `post.dpar_epred`, (draws, rows) each),
 `extras` "loo_model_weights" (with `loo_compare`: brms's stacking weights of the two fits as `post.loo_model_weights`) and
 interaction effects ("x:z") in `conditional_effects`, whose tables have each variable of the effect and `effect2__`.
+
+Tier F cases may add `data2` (a list of names) to the brms section, with the matrix each name stands for in the data section
+(``"data2": {name: kind}``, a kind of `datasets.DATA2`): `oracle/regen.py` writes each as `data2_<name>.csv` next to `data.csv`,
+`gen_fixture.R` hands them to brms as ``data2 = list(<name> = <matrix>)`` (car(W), sar(M), fcor(M)) and the fixture's meta records
+their sha256 (`data2_sha256`); `read_data2` reads them back, labelled, and `gates.Bundle` hands them to the case's constructor as
+``data2=``. A matrix response (brms's multinomial, dirichlet, dirichlet_multinomial and logistic_normal) is written in the formula
+as ``cbind(m1, m2, m3)`` over ordinary columns, which brms evaluates into the same matrix column it would take from the data.
+`prediction_refused` (a list of kinds, "linpred" or "epred") records a prediction brms fails to compute for the model as its error
+message, `predictions.<block>.<kind>_refused` (and `<kind>_nogroup_refused`), in place of the array (`Fixture.prediction_refusal`).
 """
 from __future__ import annotations
 
@@ -95,6 +104,23 @@ def read_frame(case: dict, path) -> pd.DataFrame:
     return pd.read_csv(path, dtype={c: str for c in factors}, keep_default_na=False, na_values={c: [""] for c in na_columns})
 
 
+def read_matrix(path) -> pd.DataFrame:
+    """A data2 matrix as `datasets.write_matrix` writes it: labels as text, every entry a double."""
+    frame = pd.read_csv(path, index_col=0, dtype=str, keep_default_na=False)
+    frame.index.name = None
+    return frame.astype(float)
+
+
+def data2_path(directory, name: str) -> Path:
+    return Path(directory) / f"data2_{name}.csv"
+
+
+def read_data2(case: dict, directory) -> dict[str, pd.DataFrame]:
+    """The matrices a Tier F case hands brms as ``data2`` (its brms section's ``data2`` names), each as a frame labelled as brms's
+    matrix is (car()'s W by site), read from ``directory``; {} for a case without."""
+    return {name: read_matrix(data2_path(directory, name)) for name in case["brms"].get("data2", [])}
+
+
 @dataclass(frozen=True)
 class Point:
     u: np.ndarray
@@ -145,6 +171,10 @@ class Fixture:
         "linpred_nogroup" or "epred_nogroup"; None when the fixture has no such entry."""
         entry = self.raw["predictions"].get(block, {}).get(kind)
         return None if entry is None else decode(entry)
+
+    def prediction_refusal(self, block: str, kind: str) -> str | None:
+        """brms's error message for a prediction it fails to compute (Tier F, a case's ``prediction_refused``), else None."""
+        return self.raw["predictions"].get(block, {}).get(f"{kind}_refused")
 
     @property
     def prior_summary(self) -> list[dict]:
