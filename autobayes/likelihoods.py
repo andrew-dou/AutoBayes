@@ -52,7 +52,7 @@ try:  # the JAX lowering; absent JAX, the PyTensor path is all there is
     @jax_funcify.register(StableSoftplus)
     def _jax_funcify_stable_softplus(op, **kwargs):
         return jax.nn.softplus
-except ImportError:  # pragma: no cover
+except ImportError:  # pragma: no cover - JAX is an optional extra; the pinned test environment always has it
     pass
 
 
@@ -2484,7 +2484,7 @@ try:  # the JAX lowering; absent JAX, the PyTensor path is all there is
     @jax_funcify.register(ShapeDifferentiableBetaInc)
     def _jax_funcify_shape_betainc(op, **kwargs):
         return jax_shape_betainc
-except ImportError:  # pragma: no cover
+except ImportError:  # pragma: no cover - JAX is an optional extra; the pinned test environment always has it
     pass
 
 
