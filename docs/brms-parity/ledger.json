@@ -2141,12 +2141,12 @@
    "depends_on": [
     "E04_cens_trunc_families"
    ],
-   "status": "parked:needs splines2",
+   "status": "queued",
    "summary": "cox() proportional hazards with brms's M-spline baseline hazard",
    "pr": null,
    "attempts": 0,
    "divergences": [],
-   "next_action": "Andrew: install splines2 in R for the oracle (brms standata() requires it), then freeze cases",
+   "next_action": "fixtures: splines2 0.5.4 installed 2026-10-24 (Andrew approved)",
    "reserved_divergences": "D152-D155"
   },
   {
