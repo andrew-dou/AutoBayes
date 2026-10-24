@@ -1030,7 +1030,7 @@ class Offset:
         return v
 
 
-ADDITION_KINDS = ("weights", "cens", "trunc", "mi", "dec")   # brms's response addition terms besides trials() that are parsed (B02; mi(), C06; dec(), F04)
+ADDITION_KINDS = ("weights", "cens", "trunc", "mi", "dec", "thres")   # brms's response addition terms besides trials() that are parsed (B02; mi(), C06; dec(), F04; thres(), F06b)
 
 # Addition terms that are parsed, represented and implemented but withheld, each with the reason its refusal carries
 # (docs/addition-terms.md): none since P6, which lifted the parks of cens() and trunc() (divergences D24 and D25).
@@ -1071,13 +1071,18 @@ class AdditionTerm:
     values are parameters of the model (brms's ``Ymi``) rather than rows to drop; it reads no column and is no likelihood
     weight (``addition_data`` skips it). ``"dec"`` (``dec(col)``, F04, docs/wiener.md) is the decision of each row of a
     ``wiener()`` response, 1 for the upper boundary and 0 for the lower one (brms's ``dec``), which the family's likelihood
-    reads."""
+    reads. ``"thres"`` (``thres(gr = z)`` and ``thres(K, gr = z)``, F06b, docs/grouped-thresholds.md) gives each level of the
+    column ``z`` its own thresholds in the cumulative family: ``count`` is ``K`` (None for ``thres(gr = z)``), and once the data
+    are seen ``levels`` are the column's levels and ``nthres`` each level's number of thresholds."""
 
     kind: str
     column: str | None = None
     lb: float | None = None
     ub: float | None = None
     y2: str | None = None
+    count: int | None = None                   # F06b: thres(K, gr = z)'s K
+    levels: tuple[str, ...] = ()               # F06b: thres()'s levels on the fitted rows, and each one's number of thresholds
+    nthres: tuple[int, ...] = ()
 
     @property
     def term(self) -> str:
@@ -1088,6 +1093,8 @@ class AdditionTerm:
             return f"trunc({', '.join(sides)})"
         if self.kind == "mi":
             return "mi()"
+        if self.kind == "thres":                                # F06b
+            return f"thres({'' if self.count is None else f'{self.count}, '}gr = {self.column})"
         if self.y2 is not None:
             return f"{self.kind}({self.column}, {self.y2})"
         return f"{self.kind}({self.column})"
@@ -1135,8 +1142,8 @@ def _parse_additions(text: str, formula: str) -> tuple[str | None, tuple[Additio
             raise FormulaError(
                 f"{formula!r}: {piece!r} is not a supported response addition term. brms's left-hand side "
                 "'response | term + term' takes weights(col), cens(col) and trunc(lb = a, ub = b) here "
-                "(docs/addition-terms.md), dec(col) for the wiener family (docs/wiener.md), and mi() in a multivariate list of "
-                "formulas (docs/missing-and-measurement-error.md); "
+                "(docs/addition-terms.md), dec(col) for the wiener family (docs/wiener.md), thres(gr = z) for the cumulative family "
+                "(docs/grouped-thresholds.md), and mi() in a multivariate list of formulas (docs/missing-and-measurement-error.md); "
                 "a binomial response is exactly 'successes | trials(n)', with any other terms after it."
             )
         if kind in seen:
@@ -1145,6 +1152,10 @@ def _parse_additions(text: str, formula: str) -> tuple[str | None, tuple[Additio
         args = [a.strip() for a in _split_top_level(m.group(2), ",")] if m.group(2).strip() else []
         if kind == "trunc":
             additions.append(_parse_trunc(args, piece, formula))
+            continue
+        if kind == "thres":                                     # F06b: grouped thresholds of the cumulative family
+            from autobayes.grouped_thresholds import parse_thres
+            additions.append(parse_thres(args, piece, formula))
             continue
         if kind == "mi":                                        # C06: the response's missing values are parameters (brms's Ymi)
             if args:
@@ -1187,6 +1198,9 @@ def _check_additions(additions: tuple[AdditionTerm, ...], fam, formula: str) -> 
             raise FormulaError(f"{formula!r}: {a.term!r}: brms's {a.kind}() is withheld: {PARKED_ADDITIONS[a.kind]}")
         if a.kind in fam.parked_additions:                     # E04: implemented for the family and withheld (the Gamma's cens())
             raise FormulaError(f"{formula!r}: {a.term!r}: {fam.parked_additions[a.kind]}")
+        if a.kind == "thres" and a.kind not in fam.addition_terms:   # F06b
+            raise FormulaError(f"{formula!r}: {a.term!r}: grouped thresholds are offered for the cumulative family's logit link only; "
+                               f"brms's thres() in the {fam.name} family is not verified here (docs/grouped-thresholds.md, divergence D158)")
         if a.kind not in fam.addition_terms:
             offering = [name for name, other in FAMILIES.items() if a.kind in other.addition_terms and a.kind not in other.parked_additions]
             raise FormulaError(
@@ -1314,7 +1328,7 @@ def addition_data(spec: "ModelSpec", df: pd.DataFrame, *, where: str = "column")
             out["cens"] = _cens_values(a.column, df[a.column], where, interval=a.y2 is not None)
             if a.y2 is not None:
                 out["rcens"] = _rcens_values(a, df[spec.response].to_numpy(dtype=float), out["cens"], df[a.y2], where)
-        elif a.kind == "mi":
+        elif a.kind in ("mi", "thres"):                        # F06b: thres()'s levels are the model's Design.thresholds
             continue
         elif a.kind == "dec":                                  # F04: the wiener family's decisions
             out["dec"] = _dec_values(a.column, df[a.column], where)
@@ -3293,6 +3307,9 @@ def parse_formula(formula: str | list[str], data: pd.DataFrame | None = None, fa
         )
     if fam.check_formula is not None:                        # a family that does not take every formula (B05)
         fam.check_formula(spec)
+    if spec.addition("thres") is not None:                   # F06b: what combines with grouped thresholds
+        from autobayes.grouped_thresholds import check_thres
+        check_thres(spec, formula)
     with_id = next((t for t in spec.group_terms if t.id is not None), None)
     if with_id is not None and not _ids:                     # D08: an ID is shared with a distributional formula of a list
         raise FormulaError(
@@ -3783,8 +3800,16 @@ def validate_data(spec: ModelSpec, data: pd.DataFrame, family: str = "gaussian",
         formula=spec.formula, response=spec.response, intercept=spec.intercept, levels_by_group=levels_by_group,
         trials=spec.trials, rhs=spec.rhs, categoricals=tuple(categoricals),
         pop_terms=tuple(pop_term(t.name, t.kind, categoricals) for t in spec.pop_terms),   # levels now known
-        group_terms=spec.group_terms, offset=spec.offset, additions=spec.additions, dpars=spec.dpars, monotonics=monotonics,
+        group_terms=spec.group_terms, offset=spec.offset, additions=_seen_additions(spec, data), dpars=spec.dpars, monotonics=monotonics,
         gp_terms=gp_terms,
         autocor=spec.autocor, sar=spec.sar, fcor=spec.fcor, car=spec.car, response_columns=getattr(spec, "response_columns", ()),   # F01b
         timecor=spec.timecor,                                                                                                     # F03b
     )
+
+
+def _seen_additions(spec: ModelSpec, data: pd.DataFrame) -> tuple[AdditionTerm, ...]:
+    """The addition terms once the data are seen: ``thres(gr = z)`` with its levels and their numbers of thresholds (F06b)."""
+    if spec.addition("thres") is None:
+        return spec.additions
+    from autobayes.grouped_thresholds import threshold_coding
+    return tuple(threshold_coding(a, spec, data) if a.kind == "thres" else a for a in spec.additions)

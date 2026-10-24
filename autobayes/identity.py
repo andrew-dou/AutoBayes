@@ -187,6 +187,10 @@ def freeze_target(model):
                           **({'cens': d.cens} if d.cens is not None else {}),
                           **({'rcens': d.rcens} if getattr(d, 'rcens', None) is not None else {}),   # E04
                           **({'dec': d.dec} if getattr(d, 'dec', None) is not None else {})}} if s.additions else {}),   # F04
+        # So do grouped thresholds (F06b, thres(gr = z)): the levels, their numbers of thresholds and each fitted row's level.
+        **({'grouped_thresholds': {'term': d.thresholds.term, 'column': d.thresholds.column, 'levels': list(d.thresholds.levels),
+                                   'nthres': list(d.thresholds.nthres), 'index': d.thresholds.index}}
+           if getattr(d, 'thresholds', None) is not None else {}),
         # The response's categories (B05: cumulative, categorical), whose 1-based codes are y, likewise
         **({'categories': list(model.categories)} if getattr(model, 'categories', ()) else {}),
         # and hurdle_cumulative's hurdle category (E01), brms's Y = 0

@@ -442,3 +442,11 @@ priors and `describe()`. Verified against `dirichlet_varint`, `logistic_normal_v
 densities within 1.1e-15 relative); brms's `posterior_epred` refusal for the logistic-normal family is matched, and slopes,
 offsets, addition terms, distributional formulas and the other special terms are refused naming the construct (D138, D139);
 see [responses on the simplex](dirichlet-logistic-normal.md).
+
+Grouped thresholds (F06b, brms's `thres(gr = z)` and `thres(K, gr = z)` in `cumulative("logit")`): one ordered set of
+thresholds per level of `z` (each level's largest category less one, or `K`), the design uncentred as brms leaves it, the
+thresholds one vector on Stan's ordered coordinates within each level, every row's density, expected values (exact zeros for
+the categories its level does not reach), draws and `log_lik()` from its level's thresholds, brms's prior rows per level and
+threshold; verified against `cumulative_thres_gr` and `cumulative_thres_k_gr`; other families and links, `thres()` without
+`gr`, `mo()`, `gp()` and the other contexts are refused (D158), as are new levels of `z` in `newdata` (D159); see
+[grouped thresholds](grouped-thresholds.md).

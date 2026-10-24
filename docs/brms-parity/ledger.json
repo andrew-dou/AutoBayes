@@ -2171,13 +2171,29 @@
    "depends_on": [
     "B05_ordinal_categorical"
    ],
-   "status": "fixtures_frozen",
+   "status": "gates_green",
    "summary": "thres(gr = ) and thres(K, gr = ) group-specific thresholds for cumulative: cases cumulative_thres_gr, cumulative_thres_k_gr",
    "pr": null,
    "attempts": 0,
    "divergences": [],
    "next_action": "implementing (wave F2); fixtures #89",
-   "reserved_divergences": "D158-D159"
+   "reserved_divergences": "D158-D159",
+   "gates": {
+    "sha": "b38cdc46fcd3",
+    "dirty_tree": false,
+    "base": "origin/main",
+    "when": "2026-10-24T13:44Z",
+    "results": {
+     "immutability": {
+      "status": "pass",
+      "seconds": 0.0
+     },
+     "oracle": {
+      "status": "pass",
+      "seconds": 590.8
+     }
+    }
+   }
   },
   {
    "id": "F06c_subset",

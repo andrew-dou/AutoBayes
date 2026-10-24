@@ -1118,6 +1118,69 @@ def test_post_block_and_columns_are_required(post_bundle):
         gates.check_post(_corrupted(post_bundle, renamed))
 
 
+# -- grouped thresholds (F06b): brms's Intercept_k per level of thres(gr = z) -----------------------------------------------
+@pytest.fixture(scope="module")
+def grouped_bundle():
+    if not fx.has_fixture("cumulative_thres_gr") or fx.load_case("cumulative_thres_gr").get("gate"):
+        pytest.skip("grouped-threshold case not frozen or still gated")
+    return gates.Bundle("cumulative_thres_gr")
+
+
+def test_corrupted_threshold_groups_fail_g1(grouped_bundle):
+    def jthres(raw):
+        raw["standata"]["Jthres"]["values"][0] = 4                     # row 0 (level p) pointed to level q's block
+    def nthres(raw):
+        raw["standata"]["nthres"]["values"][2] = 3
+    with pytest.raises(OracleMismatch, match="is no level of the AutoBayes model's 'thres\\(gr = z\\)'|is not its block"):
+        gates.check_design(_corrupted(grouped_bundle, jthres))
+    with pytest.raises(OracleMismatch, match="brms has ngrthres = 3 levels with nthres \\[3, 3, 3\\]"):
+        gates.check_design(_corrupted(grouped_bundle, nthres))
+
+
+def test_corrupted_grouped_threshold_coordinate_and_gradient_fail(grouped_bundle):
+    def coordinate(raw):
+        raw["points"][1]["u"]["values"][_coordinates(raw, "Intercept_2")[1]] += 1e-6
+    def gradient(raw):
+        raw["points"][0]["grad"]["values"][_coordinates(raw, "Intercept_3")[1]] *= 1 + 1e-6
+    with pytest.raises(OracleMismatch, match="point 1: Stan's ordered coordinate 1 of Intercept_2"):
+        gates.check_gradient(_corrupted(grouped_bundle, coordinate))
+    with pytest.raises(OracleMismatch, match=r"point 0: gradient of Intercept_ordered__\[7\]"):   # level r's second, the merged vector's last
+        gates.check_gradient(_corrupted(grouped_bundle, gradient))
+
+
+def test_corrupted_grouped_thresholds_fail_g3(grouped_bundle):
+    def raw_threshold(raw):
+        raw["points"][2]["pars"]["b_Intercept_2"]["values"][1] += 1e-8
+    def merged(raw):
+        raw["points"][0]["pars"]["merged_Intercept"]["values"][4] += 1e-8
+    with pytest.raises(OracleMismatch, match="(?s)point 2: raw-scale thresholds .* vs brms b_Intercept_k"):
+        gates.check_derived(_corrupted(grouped_bundle, raw_threshold))
+    with pytest.raises(OracleMismatch, match="point 0: brms's merged_Intercept is not its Intercept_k in turn"):
+        gates.check_derived(_corrupted(grouped_bundle, merged))
+
+
+def test_corrupted_zero_probability_fails_g4(grouped_bundle):
+    """brms's expected value of category 4 on the rows of level r is exactly 0; a fixture with any other value there fails."""
+    r = int(np.flatnonzero(grouped_bundle.model.design.thresholds.index == 2)[0])
+    def mutate(raw):
+        values = np.asarray(raw["predictions"]["fitted"]["epred"]["values"], dtype=float).reshape(raw["predictions"]["fitted"]["epred"]["dims"], order="F")
+        values[0, r, 3] = 1e-6
+        raw["predictions"]["fitted"]["epred"]["values"] = values.ravel(order="F").tolist()
+    with pytest.raises(OracleMismatch, match="fitted: 'p' differs from brms posterior_epred"):
+        gates.check_predictions(_corrupted(grouped_bundle, mutate))
+
+
+def test_grouped_and_ungrouped_thresholds_do_not_match_each_other(grouped_bundle):
+    import autobayes as ab
+
+    pri = ab.Priors(intercept=ab.Normal(0, 3), b=ab.Normal(0, 1.5), sd=ab.HalfNormal(1))
+    with pytest.raises(OracleMismatch, match="AutoBayes's cumulative model has ordered thresholds but brms declares 'Intercept' as ''"):
+        gates.Bundle("cumulative_thres_gr", model=ab.cumulative("ord ~ x + (1 | g)", grouped_bundle.data, pri))
+    plain = fx.read_frame(fx.load_case("cumulative_varint"), fx.fixture_dir("cumulative_varint") / "data.csv")
+    with pytest.raises(OracleMismatch, match="brms's standata has no Jthres / ngrthres"):
+        gates.Bundle("cumulative_varint", model=ab.cumulative("ord | thres(gr = z) ~ x + (1 | g)", plain, pri))
+
+
 # -- a gate field that lists the gates expected to fail (E06: cumulative_cloglog) ---------------------------------------------
 def test_listed_gates_fail_strictly_and_the_others_must_pass():
     """A gate field with ``"gates"`` makes only those gates strict expected failures: one that fails with an

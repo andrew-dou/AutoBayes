@@ -215,6 +215,7 @@ class Design:
     missing: Mapping[str, MissingBlock] = field(default_factory=lambda: MappingProxyType({}))   # each column whose missing values are parameters (C06)
     category_specific: Mapping[str, np.ndarray] = field(default_factory=lambda: MappingProxyType({}))   # each cs() term's column on the fitted rows (D04; brms's Xcs), by column
     dec: np.ndarray | None = None      # (n,) brms ``dec`` of a ``dec(col)`` term: each wiener row's decision, 1 upper, 0 lower (F04), or None
+    thresholds: object | None = None   # grouped_thresholds.ThresholdGroups: thres(gr = z)'s levels on the fitted rows (F06b), or None
 
     def __post_init__(self):
         if not self.columns:
@@ -405,6 +406,9 @@ class Model:
         self.imputed: tuple[str, ...] = tuple(imputed)        # C06: the columns a multivariate model imputes by their own formula
         check_imputation(spec0, self.imputed)
         self.effective_center_predictors = self.center_predictors and spec0.intercept
+        if spec0.addition("thres") is not None:              # F06b: grouped thresholds (docs/grouped-thresholds.md): the family's
+            fam = self.family_spec = fam.grouped_thresholds()   # spec with them; brms does not centre the design then
+            self.effective_center_predictors = False
         centred = [d for d in spec0.dpars if d.intercept and d.pop_terms]   # a distributional formula brms centres (B01)
         if centred and not self.center_predictors:
             raise FormulaError(
@@ -511,6 +515,10 @@ class Model:
                     "they get no coefficient, and predictions for them are refused."
                 )
         self.data = df
+        self._threshold_groups = None                        # F06b: thres(gr = z)'s levels on the fitted rows
+        if self.spec.addition("thres") is not None:
+            from autobayes.grouped_thresholds import ThresholdGroups
+            self._threshold_groups = ThresholdGroups.of(self.spec.addition("thres"), self.data)
         self._autocor_design = None                          # C04: the series of the fitted rows, brms's sorted Stan rows
         if self.spec.autocor is not None:
             from autobayes.autocor import series_layout
@@ -540,8 +548,8 @@ class Model:
             self._timecor_design = time_layout(self.spec.timecor, self.data)
 
         bambi_family = fam.bambi_family()
-        if any(a.kind not in ("mi", "dec") for a in self.spec.additions):   # brms's response addition terms act on the likelihood (B02;
-                                                                          # F04: the wiener likelihood reads dec() itself)
+        if any(a.kind not in ("mi", "dec", "thres") for a in self.spec.additions):   # brms's response addition terms act on the likelihood
+                                                                          # (B02; F04: the wiener likelihood reads dec() itself; F06b: thres())
             from autobayes.likelihoods import addition_family
             bambi_family = addition_family(bambi_family, fam, addition_data(self.spec, self.data))
         if self._fcor_design is not None:                    # F03a: the rows' joint normal with covariance sigma^2 M
@@ -956,7 +964,8 @@ class Model:
                       timecor=self._timecor_design,                                               # F03b
                       measurement_error=MappingProxyType(self._measurement_design()),   # C06
                       missing=MappingProxyType(self._missing_design()),
-                      category_specific=MappingProxyType(self._category_specific_design()))   # D04
+                      category_specific=MappingProxyType(self._category_specific_design()),   # D04
+                      thresholds=self._threshold_groups)                                     # F06b
 
     def _dpar_design(self, d: ModelSpec) -> DparDesign:
         """The design of distributional parameter ``d.response``'s formula (B01), as Bambi built its distributional
@@ -2083,7 +2092,10 @@ class Model:
         if not self.spec.intercept and intercept is not None:
             raise ValueError("no population intercept exists; omit intercept (or pass None)")
         point = {n["intercept"]: np.asarray(float(intercept))} if self.spec.intercept and not self.categories else {}
-        if self.spec.intercept and self.categories:          # B05: K - 1 thresholds, or one intercept per non-reference category
+        if self.spec.intercept and self.design.thresholds is not None:   # F06b: each level's thresholds, by level (brms's Intercept_k)
+            from autobayes.grouped_thresholds import value_point as threshold_point
+            point[f"{n['intercept']}_ordered__"] = threshold_point(self, intercept)
+        elif self.spec.intercept and self.categories:        # B05: K - 1 thresholds, or one intercept per non-reference category
             arr = np.atleast_1d(np.asarray(intercept, dtype=float))
             K = len(self.categories)
             if self.family_spec.thresholds and self.family_spec.ordered_thresholds:
@@ -2555,6 +2567,9 @@ class Model:
             lines += [f"  offset    : {s.offset.expression}, added to the linear predictor as written (no coefficient, no prior, "
                       f"never centred; brms offset()); range {d.offset.min():.4f} to {d.offset.max():.4f} over the fitted rows"]
         lines += self._addition_lines()
+        if d.thresholds is not None:                         # F06b: thres(gr = z)'s levels
+            from autobayes.grouped_thresholds import data_lines as threshold_data_lines
+            lines += threshold_data_lines(self)
         lines += self._autocor_data_lines()                  # C04: the series of an autocorrelation term
         if s.sar is not None:                                # F02b: the SAR term's weight matrix
             from autobayes.sar import data_lines
@@ -2804,7 +2819,10 @@ class Model:
             lines += ["", "Group effects", "  none: a population-only model (no '(1 | group)' term)"]
         lines += ["", "Priors" + ("" if fam.link_scale is None else f" (location coefficients on the {fam.link_scale} scale)")]
         each = "[k]" if fam.per_category else ""              # B05: the categorical family's priors hold for every category k
-        if s.intercept and fam.thresholds:
+        if s.intercept and d.thresholds is not None:         # F06b: every threshold of every level
+            from autobayes.grouped_thresholds import prior_line
+            lines += [prior_line(self)]
+        elif s.intercept and fam.thresholds:
             lines += [f"  Intercept[k] ~ {describe_prior(pr.intercept)}, for each of the {len(self.categories) - 1} thresholds "
                       "k (brms's class Intercept)"]
         elif s.intercept:
@@ -2901,6 +2919,9 @@ class Model:
         elif s.intercept and fam.thresholds:                  # D04: brms's unordered thresholds, sampled as they are
             roles = {n["intercept"]: f"Intercept[1..{len(self.categories) - 1}], the thresholds"
                      + (" of the centred design" if d.centered else "") + f" (vector; dims {n['threshold_dim']}, unordered, as brms's)"}
+        if s.intercept and d.thresholds is not None:         # F06b: each level's block on Stan's ordered coordinates
+            from autobayes.grouped_thresholds import value_line
+            roles = dict([value_line(self)])
         for t in s.cs_terms:                                  # D04: each cs() term's coefficients, one per threshold
             roles[t.name] = (f"bcs_{t.operands[0]}[1..{len(self.categories) - 1}], the coefficients of {t.name}, one per threshold "
                              f"(brms's bcs; vector, dims {n['threshold_dim']})")
@@ -3207,8 +3228,8 @@ class Model:
         """``describe()``'s data lines for the response addition terms (B02, docs/addition-terms.md)."""
         d, out = self.design, []
         for a in self.spec.additions:
-            if a.kind == "mi":                               # C06: the response's missing rows, _measurement_data_lines
-                continue
+            if a.kind in ("mi", "thres"):                    # C06: the response's missing rows, _measurement_data_lines; F06b: the
+                continue                                     # levels of thres(gr = z), grouped_thresholds.data_lines
             if a.kind == "dec":                              # F04: the wiener decisions (brms's dec)
                 upper = int((d.dec == 1).sum())
                 out += [f"  decisions : {a.term}: {upper} row(s) at the upper boundary (1), {d.n - upper} at the lower one (0); "
@@ -3245,8 +3266,8 @@ class Model:
         """The likelihood paragraph's lines for the response addition terms (B02)."""
         out = []
         for a in self.spec.additions:
-            if a.kind == "dec":                              # F04: the wiener likelihood's own lines say how it reads dec
-                continue
+            if a.kind in ("dec", "thres"):                   # F04: the wiener likelihood's own lines say how it reads dec; F06b: and
+                continue                                     # the grouped cumulative likelihood's how it reads thres()
             if a.kind == "mi":                               # C06: the likelihood at the observed and imputed values
                 out += [f"  mi(): the likelihood is evaluated at {self.spec.response}'s observed values and, at its missing rows, the parameters "
                         f"{self.missing_names[self.spec.response]['values'] if self.spec.response in self.missing_names else '(none missing)'} "
@@ -3853,7 +3874,9 @@ def cumulative(formula: str, data: pd.DataFrame, priors: Priors, *, link: str = 
     categories. ``link`` is ``"logit"`` or ``"probit"`` (D04, accepted against P6's reference, divergence D88); brms's
     ``cumulative("cloglog")`` is implemented but withheld (E06: brms's own log density of its frozen case is inexact, divergence
     D132; docs/links.md) and its other links are not offered. No ``disc``, category-specific effects or threshold structures
-    (divergences D38, D89).
+    (divergences D38, D89), except F06b's grouped thresholds under the logit link: ``ord | thres(gr = z) ~ ...`` and
+    ``ord | thres(K, gr = z) ~ ...`` give each level of ``z`` its own ordered thresholds (``intercept`` of ``value_point`` a
+    mapping by level), and the design is then never centred, as brms leaves it (docs/grouped-thresholds.md, D158, D159).
     """
     return Model(formula, data, priors, family="cumulative", link=link, center_predictors=center_predictors, categorical=categorical)
 

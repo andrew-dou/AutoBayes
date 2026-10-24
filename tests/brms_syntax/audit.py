@@ -433,7 +433,12 @@ def compare_univariate(model, reading: Reading, issues: list, notes: list, what:
         match_design(reading.get("X"), colnames, d.X_raw, d.columns, spec.intercept and not thresholds, f"{what}X", issues)
         reading.used.update({reading.key("K"), reading.key("Kc")})
         if thresholds:
-            if int(reading.get("nthres")) != len(model.categories) - 1:
+            grouped = getattr(d, "thresholds", None)
+            if grouped is not None:                                  # F06b: thres(gr = z): ngrthres, nthres per level, Jthres
+                if (int(reading.get("ngrthres")) != len(grouped.levels) or not _close(reading.get("nthres"), np.asarray(grouped.nthres))
+                        or not _close(reading.get("Jthres"), grouped.jthres())):
+                    issues.append(f"{what}brms's grouped thresholds (ngrthres, nthres, Jthres) differ from AutoBayes's {grouped.term}")
+            elif int(reading.get("nthres")) != len(model.categories) - 1:
                 issues.append(f"{what}brms has {int(reading.get('nthres'))} thresholds, AutoBayes {len(model.categories) - 1}")
             if reading.has("disc") and float(reading.get("disc")) != 1.0:
                 issues.append(f"{what}brms's disc is {float(reading.get('disc'))}")
