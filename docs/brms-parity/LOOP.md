@@ -98,6 +98,7 @@ references: brms wherever brms is accurate, and a committed high-precision refer
 - Nothing in a gate samples. Fixture generation samples nothing either (fixed-parameter runs on seeded points).
 - brms's Stan code is GPL-3: hash it, never store it.
 - Documentation of a merged feature: a short `docs/<feature>.md` and a line in `docs/current-capabilities.md`.
+- A problem a feature finds in brms, Stan Math or loo (a wrong or inexact result, or input accepted that should be refused) goes into the upstream log, `docs/brms-parity/upstream/` (an entry in `log.json` with a standalone R reproduction `repro/<id>.R`), besides its divergence row.
 
 ## Commands
 
