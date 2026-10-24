@@ -1,0 +1,80 @@
+{
+ "id": "cox_varint",
+ "tier": "F",
+ "feature": "F05_cox",
+ "note": "F05: brms cox() (log link) on tier_f's positive times ypos2 with tier_e's right-censoring indicator cens_r (0 event, 1 right-censored; 9 of 36 rows censored): ypos2 | cens(cens_r) ~ x + (1 | g). The hazard is h0(t) exp(eta), the baseline hazard h0 = Zbhaz sbhaz and its integral H0 = Zcbhaz sbhaz: standata Zbhaz is splines2's cubic M-spline basis of Y with its intercept (mSpline, degree 3, intercept TRUE; bhaz()'s default df = 5 columns, named 1 to 5), Zcbhaz its I-spline basis (iSpline, the integrals from the lower boundary knot, each rising from 0 to 1), Kbhaz = 5, con_sbhaz = (1, ..., 1). Knots (probed: the bases' splines2 attributes, which standata does not carry): the boundary knots are the range of Y, censored rows too, widened by 2% of its length at each end, 0.481216 and 7.131184 (Y in [0.6091, 7.0033]); df - 4 = 1 interior knot at the quantile of Y (R's type 7), the median 2.12045; standata(newdata = ) reuses the fitted knots. sbhaz is simplex[Kbhaz] (Stan's stick-breaking transform: unconstrained coordinates 3 to 6, which the probe leaves unreached, as mixture's theta) with brms's default prior dirichlet(1) (a dirichlet(c) prior is data, con_sbhaz = c; the Stan program does not change). Likelihood: an event contributes log h0 + eta - H0 exp(eta), a right-censored row -H0 exp(eta); the time enters only through the bases (checked on the frozen points: tests/oracle/test_harness.py, test_cox_*). brms's posterior_linpred is eta, the log of the factor mu = exp(eta) on the baseline hazard (posterior_linpred(transform = TRUE) and posterior_epred(dpar = \"mu\") give exp(eta)); posterior_epred fails (Cannot compute expected values of the posterior predictive distribution for family 'cox'.), recorded as epred_refused (prediction_refused), and posterior_predict fails (Cannot sample from the posterior predictive distribution for family 'cox'.). brms needs the time column on newdata even for posterior_linpred (without it splines2 fails: The 'x' cannot be all NA's!), so the F05 cases use ypos2, which tier_f's newdata has (with cens_r = 0)",
+ "seed": 1051,
+ "n_points": 8,
+ "data": {
+  "generator": "tier_f",
+  "seed": 951,
+  "n": 36,
+  "newdata": {
+   "seed": 1051,
+   "n": 5
+  }
+ },
+ "brms": {
+  "formula": "ypos2 | cens(cens_r) ~ x + (1 | g)",
+  "family": {
+   "family": "cox"
+  },
+  "factors": {
+   "g": [
+    "a",
+    "b",
+    "c",
+    "d",
+    "e",
+    "f"
+   ]
+  },
+  "priors": [
+   {
+    "prior": "normal(0, 2)",
+    "class": "Intercept"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "b"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "sd",
+    "group": "g"
+   }
+  ],
+  "prediction_refused": [
+   "epred"
+  ]
+ },
+ "autobayes": {
+  "constructor": "cox",
+  "formula": "ypos2 | cens(cens_r) ~ x + (1 | g)",
+  "kwargs": {},
+  "priors": {
+   "intercept": [
+    "Normal",
+    0,
+    2
+   ],
+   "b": [
+    "Normal",
+    0,
+    1
+   ],
+   "sd": [
+    "HalfNormal",
+    1
+   ],
+   "sbhaz": [
+    "Dirichlet",
+    1
+   ]
+  }
+ },
+ "gate": {
+  "expect": "fail",
+  "reason": "F05_cox not implemented; remove this field when it lands"
+ }
+}

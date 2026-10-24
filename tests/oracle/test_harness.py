@@ -460,6 +460,146 @@ def test_summaries_are_moments_and_quantiles_of_the_draws(case_id):
     _close(resid, _summary(frame[response].to_numpy()[None, :] - inverse_link(eta)))
 
 
+# -- Tier F part 3: F05 cox(), the M-spline baseline hazard ----------------------------------------------------------------------
+COX = [cid for cid in FROZEN if fx.load_case(cid)["brms"]["family"].get("family") == "cox"]
+
+
+def _bhaz_arguments(case) -> dict:
+    """The arguments of a cox case's bhaz() addition term ({} without one): df an integer, knots and Boundary.knots lists."""
+    m = re.search(r"\bbhaz\(((?:[^()]|\([^()]*\))*)\)", _formula_text(case))
+    out = {}
+    for name, value in re.findall(r"([\w.]+)\s*=\s*(c\([^)]*\)|[^,]+)", m.group(1) if m else ""):
+        numbers = [float(v) for v in re.findall(r"-?\d+(?:\.\d*)?(?:e-?\d+)?", value)]
+        out[name] = int(numbers[0]) if name == "df" else numbers
+    return out
+
+
+def _cox_knots(case, y) -> tuple[np.ndarray, np.ndarray]:
+    """The interior and boundary knots of brms 2.23's baseline hazard (probed: splines2's knots and Boundary.knots attributes of
+    standata()'s Zbhaz): the boundary knots are the range of every row's time, censored rows too, widened at each end by 2% of
+    its length; the interior knots are the times' quantiles (R's type 7, numpy's linear) at the df - 3 equally spaced
+    probabilities inside (0, 1), df - degree - 1 knots of a cubic basis with its intercept (bhaz()'s df, 5 by default: the median
+    alone); bhaz(knots = ) and bhaz(Boundary.knots = ) give either."""
+    args = _bhaz_arguments(case)
+    lo, hi = float(y.min()), float(y.max())
+    boundary = np.array(args.get("Boundary.knots", [lo - 0.02 * (hi - lo), hi + 0.02 * (hi - lo)]))
+    if "knots" in args:
+        return np.array(args["knots"]), boundary
+    inner = args.get("df", 5) - 4
+    return np.quantile(y, np.linspace(0.0, 1.0, inner + 2)[1:-1]), boundary
+
+
+def _m_and_i_splines(x, knots, boundary, degree: int = 3) -> tuple[np.ndarray, np.ndarray]:
+    """The M-spline basis of ``degree`` on the knots, every basis function kept (an intercept), and its I-spline basis, the
+    integrals from the lower boundary knot (Ramsay 1988): M_i = k B_i / (t_{i+k} - t_i) for the B-splines B_i of order k = degree
+    + 1 on the knot sequence t, each boundary knot repeated k times, so that each M_i integrates to 1 and each I_i rises from 0
+    to 1."""
+    from scipy.interpolate import BSpline
+    k = degree + 1
+    t = np.concatenate([[boundary[0]] * k, knots, [boundary[1]] * k])
+    n = len(t) - k
+    M, I = np.empty((len(x), n)), np.empty((len(x), n))
+    for i in range(n):
+        spline = BSpline(t, np.eye(n)[i] * k / (t[i + k] - t[i]), degree)
+        integral = spline.antiderivative()
+        M[:, i], I[:, i] = spline(x), integral(x) - integral(boundary[0])
+    return M, I
+
+
+def _prior_of(fixture, cls: str, *, coef: str = "", group: str = "") -> str:
+    """The prior brms applies to one parameter: the most specific non-empty row of its resolved prior table (prior_summary) for
+    the class, the coefficient's or the group's before the class's ("" for a flat prior)."""
+    rows = [r for r in fixture.prior_summary if r["class"] == cls]
+    for c, g in ((coef, group), ("", group), ("", "")):
+        for r in rows:
+            if r["coef"] == c and r["group"] == g and r["prior"]:
+                return r["prior"]
+    return ""
+
+
+def _log_prior_density(prior: str, x, *, half: bool = False) -> float:
+    """Stan's log density of a brms prior string (normal, student_t; "" flat), of a half density (lower bound 0) when ``half``."""
+    stats = pytest.importorskip("scipy.stats")
+    if not prior:
+        return 0.0
+    name, args = re.fullmatch(r"(\w+)\((.*)\)", prior).groups()
+    a = [float(v) for v in args.split(",")]
+    dist = {"normal": lambda: stats.norm(a[0], a[1]), "student_t": lambda: stats.t(a[0], a[1], a[2])}[name]()
+    assert not half or dist.median() == 0.0, "a half density of a prior centred at 0 only"
+    return float(np.sum(dist.logpdf(np.ravel(x)))) + (np.size(x) * np.log(2.0) if half else 0.0)
+
+
+def _cox_rows(sd, p) -> np.ndarray:
+    """F05: each row's log likelihood at a frozen point, from the mathematics. With eta brms's linear predictor, the baseline hazard
+    h0 = Zbhaz sbhaz and the cumulative baseline hazard H0 = Zcbhaz sbhaz (sbhaz a simplex, so H0 rises from 0 at the lower
+    boundary knot to 1 at the upper), the hazard is h0 exp(eta) and the survival function exp(-H0 exp(eta)): an event (cens 0, or
+    every row without cens()) contributes log h0 + eta - H0 exp(eta), a right-censored row (cens 1) -H0 exp(eta)."""
+    s = np.atleast_1d(p.pars["sbhaz"])
+    eta = _centred_eta(sd, p)
+    h0, H0 = sd["Zbhaz"] @ s, sd["Zcbhaz"] @ s
+    cens = sd["cens"] if "cens" in sd else np.zeros(len(eta))
+    assert set(np.unique(cens).tolist()) <= {0.0, 1.0}
+    return np.where(cens == 0, np.log(h0) + eta - H0 * np.exp(eta), -H0 * np.exp(eta))
+
+
+@pytest.mark.parametrize("case_id", COX)
+def test_cox_baseline_hazard_bases_are_m_and_i_splines(case_id):
+    """F05: brms's Y is the time column of the formula, Zbhaz the cubic M-spline basis of Y with its intercept (splines2's mSpline)
+    on the knots `_cox_knots` sets, Zcbhaz its I-spline basis (in [0, 1]), Kbhaz the number of basis functions (df, or the number
+    of knots plus 4) and con_sbhaz the concentration of the Dirichlet prior on the simplex sbhaz (the case's dirichlet(), 1 by
+    default), one per basis function."""
+    case = fx.load_case(case_id)
+    f = fx.Fixture.load(case_id)
+    sd = f.standata
+    time = re.match(r"\s*(\w+)", _formula_text(case)).group(1)
+    y = fx.read_frame(case, fx.fixture_dir(case_id) / "data.csv")[time].to_numpy(dtype=float)
+    assert np.array_equal(sd["Y"], y)
+    knots, boundary = _cox_knots(case, y)
+    M, I = _m_and_i_splines(y, knots, boundary)
+    assert int(sd["Kbhaz"]) == M.shape[1] == len(knots) + 4 == _bhaz_arguments(case).get("df", len(knots) + 4)
+    assert f.colnames("Zbhaz") == f.colnames("Zcbhaz") == [str(k + 1) for k in range(M.shape[1])]
+    for name, basis in (("Zbhaz", M), ("Zcbhaz", I)):
+        assert sd[name].shape == basis.shape and np.max(np.abs(sd[name] - basis)) <= 1e-13 * max(1.0, np.max(np.abs(basis)))
+    assert (sd["Zcbhaz"] >= 0).all() and (sd["Zcbhaz"] <= 1).all()
+    concentration = re.fullmatch(r"dirichlet\((.*)\)", _prior_of(f, "sbhaz")).group(1)
+    assert np.array_equal(sd["con_sbhaz"], np.full(M.shape[1], float(concentration)))
+
+
+@pytest.mark.parametrize("case_id", COX)
+def test_cox_fixture_matches_a_hand_written_likelihood(case_id):
+    """F05: at every frozen point brms's prior (lprior) is the normal or Student-t densities of its prior table on Intercept, b
+    and the group-level sd (a half density) plus the Dirichlet density of sbhaz with concentration con_sbhaz; its log density
+    without the Jacobian is lprior, the standard normal of the group-level z and the likelihood `_cox_rows` writes from the
+    mathematics; brms's fitted linear predictor is eta, the logarithm of the factor exp(eta) on the baseline hazard (its
+    posterior_epred fails); a post case's log_lik is `_cox_rows` per point, (draws, rows)."""
+    stats = pytest.importorskip("scipy.stats")
+    case = fx.load_case(case_id)
+    f = fx.Fixture.load(case_id)
+    sd = f.standata
+    linpred = f.prediction("fitted", "linpred")
+    log_lik = f.raw.get("post", {}).get("log_lik")
+    assert (log_lik is not None) == ("log_lik" in case["brms"].get("extras", []))
+    assert f.prediction_refusal("fitted", "epred") == ("Cannot compute expected values of the posterior predictive distribution "
+                                                       "for family 'cox'.")
+    (group,) = f.groups
+    for k, p in enumerate(f.points):
+        s = np.atleast_1d(p.pars["sbhaz"])
+        assert abs(s.sum() - 1.0) <= 1e-15 and (s > 0).all()
+        lprior = (_log_prior_density(_prior_of(f, "Intercept"), p.pars["Intercept"])
+                  + _log_prior_density(_prior_of(f, "b", coef="x"), p.pars["b"])
+                  + _log_prior_density(_prior_of(f, "sd", coef=group["coef"], group=group["group"]), p.pars["sd_1"], half=True)
+                  + float(stats.dirichlet.logpdf(s, sd["con_sbhaz"])))
+        assert rel_err(lprior, float(p.pars["lprior"])) <= 1e-12
+        z = sum(float(-0.5 * np.sum(np.ravel(v) ** 2) - 0.5 * np.size(v) * np.log(2 * np.pi)) for n, v in p.pars.items()
+                if n.startswith("z_"))
+        rows = _cox_rows(sd, p)
+        assert rel_err(rows.sum(), p.lp_nojac - float(p.pars["lprior"]) - z) <= 1e-12
+        eta = _centred_eta(sd, p)
+        assert np.max(np.abs(linpred[k] - eta)) <= 1e-13 * max(1.0, np.max(np.abs(eta)))
+        if log_lik is not None:
+            assert np.max(np.abs(fx.decode(log_lik)[k] - rows)) <= 1e-12 * max(1.0, np.max(np.abs(rows)))
+
+
 def _sorted_levels(fixture, group):
     (grp,) = [g for g in fixture.groups if g["group"] == group]
     assert list(grp["levels"]) == sorted(grp["levels"]), "the direct indexing below needs sorted brms levels"

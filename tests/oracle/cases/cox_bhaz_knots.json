@@ -1,0 +1,80 @@
+{
+ "id": "cox_bhaz_knots",
+ "tier": "F",
+ "feature": "F05_cox",
+ "note": "F05: explicit knots, ypos2 | cens(cens_r) + bhaz(knots = c(1.5, 3), Boundary.knots = c(0, 6)) ~ x + (1 | g) (5 of 36 rows censored): brms hands bhaz()'s further arguments to splines2, so the interior knots are 1.5 and 3 and the boundary knots 0 and 6 (Y in [0.6779, 5.2572]); Kbhaz = 2 + 4 = 6. With knots a df is ignored (bhaz(df = 7, knots = c(1.5, 3)) gives the same 6 bases); Boundary.knots alone keeps the default interior knot, the median. brms's default Intercept location here is 0.5 (log of the median 1.71425)",
+ "seed": 1054,
+ "n_points": 8,
+ "data": {
+  "generator": "tier_f",
+  "seed": 954,
+  "n": 36,
+  "newdata": {
+   "seed": 1054,
+   "n": 5
+  }
+ },
+ "brms": {
+  "formula": "ypos2 | cens(cens_r) + bhaz(knots = c(1.5, 3), Boundary.knots = c(0, 6)) ~ x + (1 | g)",
+  "family": {
+   "family": "cox"
+  },
+  "factors": {
+   "g": [
+    "a",
+    "b",
+    "c",
+    "d",
+    "e",
+    "f"
+   ]
+  },
+  "priors": [
+   {
+    "prior": "normal(0, 2)",
+    "class": "Intercept"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "b"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "sd",
+    "group": "g"
+   }
+  ],
+  "prediction_refused": [
+   "epred"
+  ]
+ },
+ "autobayes": {
+  "constructor": "cox",
+  "formula": "ypos2 | cens(cens_r) + bhaz(knots = c(1.5, 3), Boundary.knots = c(0, 6)) ~ x + (1 | g)",
+  "kwargs": {},
+  "priors": {
+   "intercept": [
+    "Normal",
+    0,
+    2
+   ],
+   "b": [
+    "Normal",
+    0,
+    1
+   ],
+   "sd": [
+    "HalfNormal",
+    1
+   ],
+   "sbhaz": [
+    "Dirichlet",
+    1
+   ]
+  }
+ },
+ "gate": {
+  "expect": "fail",
+  "reason": "F05_cox not implemented; remove this field when it lands"
+ }
+}

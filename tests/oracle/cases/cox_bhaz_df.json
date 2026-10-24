@@ -1,0 +1,84 @@
+{
+ "id": "cox_bhaz_df",
+ "tier": "F",
+ "feature": "F05_cox",
+ "note": "F05: bhaz(df = 7) and the non-default prior dirichlet(2) on sbhaz: ypos2 | cens(cens_r) + bhaz(df = 7) ~ x + (1 | g) (6 of 36 rows censored). Kbhaz = 7 bases on df - 4 = 3 interior knots at the quartiles of Y (R's type 7: 1.43395, 2.2069, 3.144575), boundary knots 0.589992 and 11.047608 (Y in [0.7911, 10.8465], widened by 2%); con_sbhaz = (2, ..., 2) and the Stan program is cox_varint's (the same stancode hash). brms refuses bhaz(df = 3) (The specified df was too small.); bhaz(df = 4) has no interior knot; bhaz(degree = 2) and bhaz(intercept = FALSE) also reach splines2 (2 interior knots at the terciles for df = 5), and are not frozen",
+ "seed": 1053,
+ "n_points": 8,
+ "data": {
+  "generator": "tier_f",
+  "seed": 953,
+  "n": 36,
+  "newdata": {
+   "seed": 1053,
+   "n": 5
+  }
+ },
+ "brms": {
+  "formula": "ypos2 | cens(cens_r) + bhaz(df = 7) ~ x + (1 | g)",
+  "family": {
+   "family": "cox"
+  },
+  "factors": {
+   "g": [
+    "a",
+    "b",
+    "c",
+    "d",
+    "e",
+    "f"
+   ]
+  },
+  "priors": [
+   {
+    "prior": "normal(0, 2)",
+    "class": "Intercept"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "b"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "sd",
+    "group": "g"
+   },
+   {
+    "prior": "dirichlet(2)",
+    "class": "sbhaz"
+   }
+  ],
+  "prediction_refused": [
+   "epred"
+  ]
+ },
+ "autobayes": {
+  "constructor": "cox",
+  "formula": "ypos2 | cens(cens_r) + bhaz(df = 7) ~ x + (1 | g)",
+  "kwargs": {},
+  "priors": {
+   "intercept": [
+    "Normal",
+    0,
+    2
+   ],
+   "b": [
+    "Normal",
+    0,
+    1
+   ],
+   "sd": [
+    "HalfNormal",
+    1
+   ],
+   "sbhaz": [
+    "Dirichlet",
+    2
+   ]
+  }
+ },
+ "gate": {
+  "expect": "fail",
+  "reason": "F05_cox not implemented; remove this field when it lands"
+ }
+}

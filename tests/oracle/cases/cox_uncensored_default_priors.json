@@ -1,0 +1,47 @@
+{
+ "id": "cox_uncensored_default_priors",
+ "tier": "F",
+ "feature": "F05_cox",
+ "note": "F05: brms cox() without censoring under brms's default priors (student_t(3, 0.8, 2.5) on the Intercept, flat b, student_t(3, 0, 2.5) on sd, dirichlet(1) on sbhaz); the AutoBayes model is built from ab.default_priors(): ypos2 ~ x + (1 | g). standata has no cens, and every row contributes log h0 + eta - H0 exp(eta) (cox_varint's note). brms's default Intercept location is its log-link rule, log(median(Y)) to one decimal (log 2.2557 = 0.81; cox_bhaz_knots's default table has 0.5, log 1.71425 = 0.54), which on the cox model moves with the unit of time (in days instead of these units it is 6.7) though the likelihood does not: the I-spline bases are unit-free and the M-spline bases scale by a constant. Knots: boundary 0.136392 and 10.989208 (Y in [0.3451, 10.7805], widened by 2%), the median 2.2557",
+ "seed": 1052,
+ "n_points": 8,
+ "data": {
+  "generator": "tier_f",
+  "seed": 952,
+  "n": 36,
+  "newdata": {
+   "seed": 1052,
+   "n": 5
+  }
+ },
+ "brms": {
+  "formula": "ypos2 ~ x + (1 | g)",
+  "family": {
+   "family": "cox"
+  },
+  "factors": {
+   "g": [
+    "a",
+    "b",
+    "c",
+    "d",
+    "e",
+    "f"
+   ]
+  },
+  "priors": [],
+  "prediction_refused": [
+   "epred"
+  ]
+ },
+ "autobayes": {
+  "constructor": "cox",
+  "formula": "ypos2 ~ x + (1 | g)",
+  "kwargs": {},
+  "priors": "default"
+ },
+ "gate": {
+  "expect": "fail",
+  "reason": "F05_cox not implemented; remove this field when it lands"
+ }
+}
