@@ -452,7 +452,7 @@ def compare_univariate(model, reading: Reading, issues: list, notes: list, what:
     match_group_scope(model, d.group_blocks, spec.group_terms, reading, {}, issues, notes, what)
     # addition terms and offsets
     for mine, key in ((d.trials, "trials"), (d.offset, "offsets"), (d.weights, "weights"), (d.cens, "cens"), (d.rcens, "rcens"),
-                      (d.lb, "lb"), (d.ub, "ub")):
+                      (d.lb, "lb"), (d.ub, "ub"), (getattr(d, "dec", None), "dec")):     # F04: dec(col), the wiener decisions
         if mine is None:
             continue
         if not reading.has(key):
