@@ -1950,12 +1950,15 @@
    "depends_on": [
     "C04_autocor"
    ],
-   "status": "gates_green",
+   "status": "merged",
    "summary": "car(W, gr, type) escar, esicar, icar, bym2 with data2 adjacency (cases gauss_car_escar, gauss_car_esicar, gauss_car_icar, gauss_car_bym2, poisson_car_bym2)",
-   "pr": null,
+   "pr": 93,
    "attempts": 0,
-   "divergences": [],
-   "next_action": "implementing (wave F1)",
+   "divergences": [
+    "D140",
+    "D141"
+   ],
+   "next_action": "Andrew: bym2 car_scale per-gate g1 xfail (exact definition) vs alternatives",
    "reserved_divergences": "D140-D141",
    "gates": {
     "sha": "d9525a7eb6f2",
