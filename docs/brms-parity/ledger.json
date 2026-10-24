@@ -1935,12 +1935,15 @@
    "depends_on": [
     "B05_ordinal_categorical"
    ],
-   "status": "gates_green",
+   "status": "merged",
    "summary": "dirichlet() and logistic_normal() on simplex responses (cases dirichlet_varint, logistic_normal_varint, logistic_normal_refcat)",
-   "pr": null,
+   "pr": 95,
    "attempts": 0,
-   "divergences": [],
-   "next_action": "implementing (wave F1)",
+   "divergences": [
+    "D138",
+    "D139"
+   ],
+   "next_action": "none",
    "reserved_divergences": "D138-D139",
    "gates": {
     "sha": "3df678de525b",
