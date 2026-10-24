@@ -321,6 +321,16 @@ class Model:
     whose priors are ``Priors(sigma={"intercept": ..., "b": ...})``.
     """
 
+    def __new__(cls, *args, **kwargs):
+        """``Model(..., family=...)`` of a count-matrix family (F01a, ``FamilySpec.matrix_response``: ``multinomial``,
+        ``dirichlet_multinomial``) is ``autobayes.multinomial.MultinomialModel``, which builds its own graph from the same
+        arguments; every other family is this class."""
+        if cls is Model and getattr(FAMILIES.get(kwargs.get("family")), "matrix_response", False):
+            from autobayes.multinomial import MultinomialModel
+
+            return super().__new__(MultinomialModel)
+        return super().__new__(cls)
+
     def __init__(self, formula: str | list[str], data: pd.DataFrame, priors: Priors, *,
                  family: str = "gaussian", center_predictors: bool = True,
                  categorical: Mapping[str, object] | None = None, nu: float | None = None, link: str | None = None,

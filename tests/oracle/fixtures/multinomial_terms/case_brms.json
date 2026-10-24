@@ -1,0 +1,73 @@
+{
+ "factors": {
+  "g": [
+   "a",
+   "b",
+   "c",
+   "d",
+   "e",
+   "f"
+  ],
+  "h": [
+   "h1",
+   "h2",
+   "h3",
+   "h4"
+  ],
+  "z": [
+   "p",
+   "q",
+   "r"
+  ]
+ },
+ "family": {
+  "family": "multinomial"
+ },
+ "formula": [
+  "cbind(m2, m1, m3) | trials(size) ~ x * z + (1 | g) + (1 | h)",
+  "mum3 ~ log(xpos) + (1 | g)"
+ ],
+ "id": "multinomial_terms",
+ "n_points": 8,
+ "priors": [
+  {
+   "class": "Intercept",
+   "dpar": "mum1",
+   "prior": "normal(0, 2)"
+  },
+  {
+   "class": "b",
+   "dpar": "mum1",
+   "prior": "normal(0, 1)"
+  },
+  {
+   "class": "sd",
+   "dpar": "mum1",
+   "group": "g",
+   "prior": "normal(0, 1)"
+  },
+  {
+   "class": "sd",
+   "dpar": "mum1",
+   "group": "h",
+   "prior": "normal(0, 0.5)"
+  },
+  {
+   "class": "Intercept",
+   "dpar": "mum3",
+   "prior": "normal(0, 1.5)"
+  },
+  {
+   "class": "b",
+   "dpar": "mum3",
+   "prior": "normal(0, 0.5)"
+  },
+  {
+   "class": "sd",
+   "dpar": "mum3",
+   "group": "g",
+   "prior": "normal(0, 0.8)"
+  }
+ ],
+ "seed": 1006
+}

@@ -131,6 +131,10 @@ def fit_record(model, fit, *, panel: dict | None = None, max_treedepth: int = 10
         from autobayes.nonlinear import nonlinear_fit_record
 
         return nonlinear_fit_record(model, fit, p, binding)
+    if getattr(model.spec, "is_multinomial", False):           # F01a: the count-matrix families' own model section and summary
+        from autobayes.multinomial import multinomial_fit_record
+
+        return multinomial_fit_record(model, fit, p, binding)
     fam = family_of(model)                                     # the family under the model's link
     s, d, pr = model.spec, model.design, model.priors
     mixture = fam.mixture                                      # C05: a mixture's priors are its components' and theta's

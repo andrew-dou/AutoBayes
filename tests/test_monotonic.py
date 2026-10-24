@@ -172,13 +172,14 @@ def test_the_families_that_take_monotonic_terms():
     # likewise for the beta-binomial, geometric and negbinomial2 families (D81); D04: and for the sratio, cratio and acat families
     # (D42, docs/ordinal-categorical.md); D03: and for the six further zero-inflated and hurdle families (D84); E01: and for the
     # four bounded and hurdle families (D108); E02: and for the inverse Gaussian, von Mises, asymmetric Laplace, Frechet and
-    # generalized extreme value families (D112); F04: and for the wiener family (D151)
+    # generalized extreme value families (D112); F04: and for the wiener family (D151); F01a: and for the multinomial and
+    # Dirichlet-multinomial families (D136)
     assert {name for name, spec in FAMILIES.items() if spec.monotonic} == set(FAMILIES) - {
         "categorical", "mixture", "weibull", "exponential", "skew_normal", "shifted_lognormal", "exgaussian",
         "beta_binomial", "geometric", "negbinomial2", "sratio", "cratio", "acat",
         "zero_inflated_negbinomial", "hurdle_negbinomial", "zero_inflated_binomial", "zero_inflated_beta", "hurdle_gamma",
         "hurdle_lognormal", "zero_one_inflated_beta", "zero_inflated_beta_binomial", "hurdle_cumulative", "xbeta",
-        "inverse_gaussian", "von_mises", "asym_laplace", "frechet", "gen_extreme_value", "wiener"}
+        "inverse_gaussian", "von_mises", "asym_laplace", "frechet", "gen_extreme_value", "wiener", "multinomial", "dirichlet_multinomial"}
     probit = ab.bernoulli("cnt ~ mo(ord)", FRAME.assign(cnt=[0, 1] * 6), ab.Priors(intercept=ab.Normal(0, 1), b=ab.Normal(0, 1),
                           simo=ab.Dirichlet(1)), link="probit")           # the probit link takes it as the logit does
     assert set(probit.design.monotonic) == {"ord"}

@@ -12971,7 +12971,7 @@
     "priors": "default"
    },
    "tokens": [
-    "got 'multinomial'"
+    "count matrix written over its count columns with cbind()"
    ],
    "brms_reading": {
     "status": "ok",
@@ -13001,9 +13001,9 @@
    },
    "result": {
     "status": "error",
-    "type": "ValueError",
-    "message": "family must be one of ['acat', 'asym_laplace', 'bernoulli', 'beta', 'beta_binomial', 'binomial', 'categorical', 'cratio', 'cumulative', 'exgaussian', 'exponential', 'frechet', 'gamma', 'gaussian', 'gen_extreme_value', 'geometric', 'hurdle_cumulative', 'hurdle_gamma', 'hurdle_lognormal', 'hurdle_negbinomial', 'hurdle_poisson', 'inverse_gaussian', 'lognormal', 'mixture', 'negbinomial', 'negbinomial2', 'poisson', 'shifted_lognormal', 'skew_normal', 'sratio', 'student', 'von_mises', 'weibull', 'xbeta', 'zero_inflated_beta', 'zero_inflated_beta_binomial', 'zero_inflated_binomial', 'zero_inflated_negbinomial', 'zero_inflated_poisson', 'zero_one_inflated_beta'], got 'multinomial'",
-    "raised_at": "__init__.py:69",
+    "type": "FormulaError",
+    "message": "'ymn | trials(ntr) ~ x': the multinomial families' response is a count matrix written over its count columns with cbind() (brms's matrix response; a data frame holds no matrix column): 'cbind(y1, ..., yK) | trials(n) ~ terms' (brms's matrix response: the count columns, the first the reference category, and each row's total n), or a list of formulas: that formula first, then formulas of non-reference categories' linear predictors, 'mu<category> ~ terms' (brms's bf(cbind(...) | trials(n) ~ ..., mum3 ~ ...); docs/multinomial.md)",
+    "raised_at": "multinomial.py:214",
     "stage": "default_priors",
     "mechanism": "refusal",
     "outcome": "refused_named",

@@ -397,3 +397,16 @@ for `predict(kind="mean")` (brms's `posterior_epred` misplaces the starting poin
 `wiener_distributional_bs` (G4's expected values accepted against 50-digit references, P6, since brms's are not the mean,
 D148); response draws are refused (D149), as are formulas on `ndt` and `bias` and the other contexts (D151); see
 [the Wiener diffusion model](wiener.md).
+
+Count-matrix responses (F01a, brms's `multinomial()` and `dirichlet_multinomial()`): `ab.multinomial` and
+`ab.dirichlet_multinomial` on `cbind(y1, ..., yK) | trials(n)` (the columns the categories, the first the reference; the trials
+required and equal to each row's counts' sum, as brms requires), one linear predictor `mu<k>` per non-reference category with its
+own centred intercept, coefficients and varying intercepts on the response formula's terms or on a formula of its own
+(`["cbind(m1, m2, m3) | trials(size) ~ x + (1 | g)", "mum3 ~ z"]`), the Dirichlet-multinomial's precision `phi`, both densities
+with the multinomial coefficient and stable at extreme linear predictors and precisions; `predict()` (`posterior_linpred` per
+category, `posterior_epred` as `expected = n p`, count draws), `log_lik()`, `loo()`, brms's default priors, `describe()`, fit
+records and prior-predictive draws. Verified against `multinomial_varint`, `multinomial_dpar_formula`, `multinomial_varint_post`,
+`dirichlet_multinomial_varint` and two cases frozen with it, `multinomial_terms` (reordered columns, two grouping factors, an
+interaction, a transform in a category's own formula) and `dirichlet_multinomial_defaults` (log densities within 5.5e-16
+relative); per-category priors beyond `Priors(dpars=...)` are D137, and slopes, `weights()`, a formula of `phi` and the other
+constructs brms takes are refused (D136); `bayes_R2()` is refused as brms refuses it; see [multinomial](multinomial.md).

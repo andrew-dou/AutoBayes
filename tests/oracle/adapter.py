@@ -118,6 +118,12 @@ fixture's `u`, and the probe's step checked, as for `ndt`).
 F03a: an `fcor(M)` term is brms's `Mfcor` (`N` by `N`, the rows in data order: brms does not reorder them) and `N_tg = 1`,
 checked against the model's `Design.fcor` by `check_fcor_design`; it has no parameter of its own.
 
+F01a: a count-matrix model (brms's `multinomial()` and `dirichlet_multinomial()`, `MultinomialModel`) has one design `X_<mu>` per
+non-reference category, centred by brms (`Intercept_<mu>`, `Kc_<mu>`), matched by content to the category's design
+(`ColumnMap.mus`, `match_multinomial_columns`); each group-level term of each category's formula is a brms group of its own, labelled
+with the category in its Stan data (`Z_<id>_<mu>_1`, `r_<id>_<mu>_1`), matched by that label, its ones and the partition of `J_<id>`
+(`match_multinomial_groups`); `phi` maps to `phi_log__` (`multinomial_coordinate_map`, `multinomial_draws`).
+
 D07: under a shrinkage prior on b (brms's `horseshoe()` or `R2D2()`, `Model.shrinkage_names`) brms's `b` is a transformed parameter
 `zb .* sdb`: the point gives the model `zb` and the prior's scales (`shrinkage_point`, each vector put in AutoBayes's design-column
 order through the column map) and no `b`; `zb[k]` maps to `zb` and `hs_local[k]` to `hs_local_log__` at the AutoBayes column of
@@ -172,12 +178,13 @@ def priors_from_spec(spec: dict) -> ab.Priors:
     "b": [...]}``; ``simo`` is the simplex prior of each monotonic term (B03); a mixture (C05) takes ``{"components": [spec, ...],
     "theta": ["Dirichlet", a, ...]}``, each component's spec of this same form; ``nlpars`` each non-linear parameter's
     ``{"b": [...] | {term: ...}, "sd": [...] | {factor: ...}}`` (C02); ``ar`` and ``ma`` the priors of an
-    autocorrelation term's coefficients (C04)."""
+    autocorrelation term's coefficients (C04); ``dpars`` a count-matrix model's priors of a category's own formula, ``{"mum3":
+    {"intercept": [...], "b": [...], "sd": [...]}}`` (F01a)."""
     # C01, a multivariate model: {"resp": {response: {<the classes above>}}, "cor": {factor: ["LKJ", eta]}, "rescor": ["LKJ", eta]}
     if "resp" in spec:
         return ab.Priors(resp={r: priors_from_spec(sub) for r, sub in spec["resp"].items()}, cor=_prior(spec.get("cor")),
                          rescor=_prior(spec.get("rescor")))
-    return ab.Priors(intercept=_prior(spec.get("intercept")), b=_prior(spec.get("b")),
+    return ab.Priors(intercept=_prior(spec.get("intercept")), b=_prior(spec.get("b")), dpars=_prior(spec.get("dpars")),   # F01a
                      sd=_prior(spec.get("sd")), cor=_prior(spec.get("cor")), sigma=_prior(spec.get("sigma")),
                      shape=_prior(spec.get("shape")), phi=_prior(spec.get("phi")), nu=_prior(spec.get("nu")),
                      zi=_prior(spec.get("zi")), hu=_prior(spec.get("hu")), simo=_prior(spec.get("simo")),
@@ -241,6 +248,7 @@ class ColumnMap:
     measurement: dict = None              # C06: brms's measurement-error group k (Xn_k, meanme_k, sdme_k, zme_k) of each me() term, by noisy column
     ordered: bool = True                  # D04: with thresholds, brms's ordered[nthres] Intercept; False for its vector[nthres] Intercept
     cs: tuple = ()                        # D04: the model's cs() columns in brms's Xcs column order (row k of bcs is cs[k]'s), match_cs
+    mus: dict = None                      # F01a: brms's b_<mu> entry of each design column of each category's formula, by name
 
     def b_index(self, x_col: int) -> int:
         """Index into brms's ``b`` of design column ``x_col``."""
@@ -333,6 +341,8 @@ def match_columns(fixture: Fixture, model: ab.Model) -> ColumnMap:
         return match_response_columns(fixture, model)
     if is_nonlinear(model):                                   # C02: the covariates and each non-linear parameter's X_<nlpar>
         return match_nonlinear_columns(fixture, model)
+    if is_multinomial(model):                                 # F01a: each category's X_<mu>
+        return match_multinomial_columns(fixture, model)
     fam = model.family_spec
     if fam.mixture:                                            # C05: one brms design per component, matched as B05's categories'
         return match_mixture(fixture, model)
@@ -555,6 +565,8 @@ def match_groups(fixture: Fixture, model: ab.Model) -> GroupMap:
         return match_response_groups(fixture, model)
     if is_nonlinear(model):                                   # C02: each non-linear parameter's group-level terms
         return match_nonlinear_groups(fixture, model)
+    if is_multinomial(model):                                 # F01a: each category's group-level terms
+        return match_multinomial_groups(fixture, model)
     ids, cns, levels_of, coef_cn, used = {}, {}, {}, {}, set()
     n = model.design.n
     for (g, coef), block in model.design.group_blocks.items():
@@ -872,6 +884,8 @@ def shrinkage_point(model: ab.Model, pars: dict, cmap: ColumnMap) -> dict | None
 def value_point(model: ab.Model, point: Point, cmap: ColumnMap, gmap: GroupMap) -> dict:
     if is_nonlinear(model):                                   # C02
         return model.value_point(**nonlinear_natural_point(model, point, cmap, gmap))
+    if is_multinomial(model):                                 # F01a
+        return model.value_point(**multinomial_natural_point(model, point, cmap, gmap))
     nat = natural_point(model, point, cmap, gmap)
     if "shrinkage" in nat:                                     # D07: b is the transformed parameter zb * sdb, not a value
         nat["b"] = None
@@ -904,6 +918,8 @@ def coordinate_map(fixture: Fixture, model: ab.Model, cmap: ColumnMap, gmap: Gro
         return response_coordinate_map(fixture, model, cmap, gmap)
     if is_nonlinear(model):                                   # C02
         return nonlinear_coordinate_map(fixture, model, cmap, gmap)
+    if is_multinomial(model):                                 # F01a
+        return multinomial_coordinate_map(fixture, model, cmap, gmap)
     names = model.names
     by_id = {m: g for g, m in gmap.brms_id.items()}
     by_cn = {(g, cn): coef for (g, coef), cn in gmap.coef_cn.items()}     # (factor, brms coefficient number) -> coefficient
@@ -1230,6 +1246,8 @@ def draws(fixture: Fixture, model: ab.Model, cmap: ColumnMap, gmap: GroupMap) ->
         return response_draws(fixture, model, cmap, gmap)
     if is_nonlinear(model):                                   # C02
         return nonlinear_draws(fixture, model, cmap, gmap)
+    if is_multinomial(model):                                 # F01a
+        return multinomial_draws(fixture, model, cmap, gmap)
     pts = fixture.points
     names = model.names
     data, coords = {}, {"chain": [0], "draw": np.arange(len(pts))}
@@ -1993,3 +2011,204 @@ def check_fcor_design(fixture: Fixture, model: ab.Model) -> None:
                              + (f" by {abs_err(theirs, design.M)}" if theirs.shape == design.M.shape else ""))
     if int(np.asarray(sd.get("N_tg", -1))) != 1:
         raise OracleMismatch(f"brms has N_tg = {sd.get('N_tg')!r}; {design.term} is one block of every row (N_tg = 1)")
+
+
+# -- count-matrix responses (F01a) ------------------------------------------------------------------------------------------
+# brms's multinomial and dirichlet_multinomial: one design X_<mu> per non-reference category (its intercept column and the
+# formula's columns; brms centres it, Kc_<mu>, Intercept_<mu>), parameters b_<mu> and Intercept_<mu> per category, and one
+# brms group per group-level term of each category's formula, labelled with the category in its Stan data (Z_<id>_<mu>_1,
+# r_<id>_<mu>_1; the group table has no dpar column for these cases). The response Y is the (rows, K) count matrix.
+def is_multinomial(model) -> bool:
+    """A count-matrix model (``ab.multinomial``, ``ab.dirichlet_multinomial``; F01a)."""
+    return bool(getattr(getattr(model, "spec", None), "is_multinomial", False))
+
+
+def match_multinomial_columns(fixture: Fixture, model) -> ColumnMap:
+    """The column map of a count-matrix model (F01a): brms's category designs ``X_<mu>`` must be exactly the model's
+    categories' linear predictors, each with brms's centred ``Intercept_<mu>`` and ``Kc_<mu>`` coefficients ``b_<mu>``; each
+    category's design columns are matched one by one to the columns of its ``X_<mu>`` by content, the remaining brms column
+    being the intercept's ones. brms's linear design ``X`` is a mismatch."""
+    sd, design = fixture.standata, model.design
+    if "X" in sd:
+        raise OracleMismatch("brms has the linear design X; the AutoBayes model is a count-matrix model with one design per category")
+    brms = sorted(k[2:] for k in sd if k.startswith("X_"))
+    if brms != sorted(design.mus):
+        raise OracleMismatch(f"brms has the category designs {['X_' + k for k in brms]}; AutoBayes's linear predictors are "
+                             f"{sorted(design.mus)}")
+    pars, mus = fixture.points[0].pars, {}
+    for name, md in design.mus.items():
+        X = np.atleast_2d(sd[f"X_{name}"]).reshape(design.n, -1)
+        labels = fixture.colnames(f"X_{name}") or [str(k) for k in range(X.shape[1])]
+        if X.shape[1] != len(md.columns) + 1:
+            raise OracleMismatch(f"brms X_{name} has {X.shape[1]} columns; AutoBayes's design of {name!r} has {list(md.columns)} and "
+                                 "an intercept")
+        taken, cols = set(), []
+        for c, label in enumerate(md.columns):
+            hits = [k for k in range(X.shape[1]) if k not in taken and np.max(np.abs(X[:, k] - md.X_raw[:, c])) <= DESIGN_ABS]
+            if len(hits) != 1:
+                raise OracleMismatch(f"{name}'s design column {label!r} matches {len(hits)} brms X_{name} columns "
+                                     f"{[labels[k] for k in hits]} within {DESIGN_ABS}")
+            cols.append(hits[0])
+            taken.add(hits[0])
+        (rest,) = [k for k in range(X.shape[1]) if k not in taken]
+        if np.max(np.abs(X[:, rest] - 1.0)) > DESIGN_ABS:
+            raise OracleMismatch(f"brms X_{name}'s column {labels[rest]!r}, the one AutoBayes's design leaves, is not the intercept's ones")
+        if f"Intercept_{name}" not in pars or int(sd[f"Kc_{name}"]) != len(md.columns) or coefficients(pars, f"b_{name}").size != len(md.columns):
+            raise OracleMismatch(f"brms does not centre the formula of {name} as AutoBayes does (Intercept_{name}, Kc_{name} = "
+                                 f"{int(sd.get(f'Kc_{name}', -1))}, b_{name} of {coefficients(pars, f'b_{name}').size} entries for "
+                                 f"{len(md.columns)} columns)")
+        b_of = [k - (1 if k > rest else 0) for k in cols]               # brms's b_<mu> skips the intercept column
+        mus[name] = NlparMap(tuple(b_of))
+    return ColumnMap((), None, True, mus=mus)
+
+
+def match_multinomial_groups(fixture: Fixture, model) -> GroupMap:
+    """The group map of a count-matrix model (F01a), keyed by category: every group-level term ``(1 | g)`` of category
+    ``name``'s formula to the one brms group ``m`` whose ``Z_<m>_<name>_1`` is the intercept's ones and whose ``J_<m>``
+    induces its partition of the rows; then the label, the level order and ``M_<m>`` = 1, and that every brms group was used.
+    Keys: ``brms_id[(name, factor)]``, ``level_of[(name, factor)]``, ``coef_cn[(name, factor, "Intercept")]``."""
+    sd, n = fixture.standata, model.design.n
+    ids, cns, levels_of, coef_cn, used = {}, {}, {}, {}, set()
+    for name, md in model.design.mus.items():
+        for (g, coef), block in md.group_blocks.items():
+            found = []
+            for grp in fixture.groups:
+                m = int(grp["id"])
+                Z = sd.get(f"Z_{m}_{name}_1")
+                J = sd[f"J_{m}"].astype(int) - 1
+                if m in used or Z is None or Z.shape != (n,) or np.max(np.abs(Z - 1.0)) > DESIGN_ABS or int(J.max()) + 1 != block.J:
+                    continue
+                level = np.full(block.J, -1)
+                for j in range(block.J):
+                    vals = np.unique(block.group_index[J == j])
+                    if vals.size != 1:
+                        break
+                    level[j] = vals[0]
+                else:
+                    if len(np.unique(level)) == block.J:
+                        found.append((grp, level))
+            if len(found) != 1:
+                raise OracleMismatch(f"the group-level term of {g!r} in {name!r}: {len(found)} brms groups of {name} induce its partition "
+                                     "of the rows")
+            grp, level = found[0]
+            m = int(grp["id"])
+            M = int(sd[f"M_{m}"])
+            if grp["coef"] != coef or [block.levels[i] for i in level] != list(grp["levels"]) or M != 1:
+                raise OracleMismatch(f"{g!r} in {name!r}: brms group {m} ({grp['coef']}, levels {grp['levels']}, M = {M}) differs from "
+                                     f"AutoBayes's ({coef}, {[block.levels[i] for i in level]}, 1)")
+            used.add(m)
+            ids[(name, g)], levels_of[(name, g)], coef_cn[(name, g, coef)], cns[(name, g)] = m, level, 1, 1
+    unmatched = [(grp["id"], grp["group"]) for grp in fixture.groups if int(grp["id"]) not in used]
+    if unmatched:
+        raise OracleMismatch(f"brms group-level terms without an AutoBayes counterpart: {unmatched}")
+    return GroupMap(ids, cns, levels_of, coef_cn)
+
+
+def multinomial_natural_point(model, point: Point, cmap: ColumnMap, gmap: GroupMap) -> dict:
+    """``MultinomialModel.value_point``'s arguments at a brms point (F01a): per category its centred intercept
+    (``Intercept_<mu>``), ``b`` (brms's ``b_<mu>`` in the AutoBayes design's column order) and its group terms' ``sd`` and ``z``
+    (``sd_<id>``, ``z_<id>`` in AutoBayes's level order), by factor; and ``phi``."""
+    pars, dpars = point.pars, {}
+    for d in model.spec.mus:
+        name = d.response
+        bb = coefficients(pars, f"b_{name}")
+        entry = {"intercept": float(pars[f"Intercept_{name}"]), "b": np.array([bb[k] for k in cmap.mus[name].x_column], dtype=float)}
+        if d.group_terms:
+            sd, z = {}, {}
+            for t in d.group_terms:
+                m = gmap.brms_id[(name, t.factor)]
+                za = np.empty(len(gmap.level_of[(name, t.factor)]))
+                za[gmap.level_of[(name, t.factor)]] = np.atleast_2d(pars[f"z_{m}"])[0]
+                sd[t.factor], z[t.factor] = float(np.atleast_1d(pars[f"sd_{m}"])[0]), za
+            entry.update(sd=sd, z=z)
+        dpars[name] = entry
+    return {"dpars": dpars, **({"phi": float(pars["phi"])} if "phi" in model.names else {})}
+
+
+def multinomial_coordinate_map(fixture: Fixture, model, cmap: ColumnMap, gmap: GroupMap) -> list[tuple[int, str, int]]:
+    """``coordinate_map`` of a count-matrix model (F01a): ``b_<mu>[k]`` to the variable and index of the AutoBayes design
+    column brms's ``b`` entry k matched, ``Intercept_<mu>`` to the category's centred intercept, ``sd_<id>`` / ``z_<id>`` to the
+    category's group variables (``z_<id>`` by level), ``phi`` to its log coordinate; each transform checked."""
+    by_id = {m: key for key, m in gmap.brms_id.items()}                     # brms group id -> (category, factor)
+    out = []
+    for e in fixture.upars:
+        idx, transform = int(e["index"]) - 1, e["transform"]
+        par, elem = e["par"], (int(e["elem"]) - 1 if e["elem"] is not None else None)
+        if par is None:
+            raise OracleMismatch(f"brms's unconstrained coordinate {idx + 1} was not reached by the probe")
+        if par.startswith("b_") and par[2:] in cmap.mus:
+            name = par[2:]
+            _, var, j = model.mu_coefficients[name][cmap.mus[name].x_column.index(elem)]
+            target, expect = (var, 0 if j is None else j), "identity"
+        elif par.startswith("Intercept_") and par[10:] in cmap.mus:
+            target, expect = (model.mu_names[par[10:]]["intercept"], 0), "identity"
+        elif par == "phi" and "phi" in model.names:
+            target, expect = ("phi_log__", 0), "log"
+        elif par.startswith("sd_") and par[3:].isdigit() and int(par[3:]) in by_id:
+            name, g = by_id[int(par[3:])]
+            target, expect = (f"{model.mu_group_names[(name, g, 'Intercept')]['sd']}_log__", 0), "log"
+        elif par.startswith("z_") and par[2:].isdigit() and int(par[2:]) in by_id:
+            name, g = by_id[int(par[2:])]
+            target = (model.mu_group_names[(name, g, "Intercept")]["offset"], int(gmap.level_of[(name, g)][elem]))
+            expect = "identity"
+        else:
+            raise OracleMismatch(f"no adapter for brms parameter {par!r} ({fixture.declarations.get(par, 'undeclared')}) of a "
+                                 "count-matrix model")
+        if transform != expect:
+            raise OracleMismatch(f"brms transform of {par}[{elem + 1}] is {transform!r}; AutoBayes uses {expect!r}")
+        out.append((idx, *target))
+    return out
+
+
+def multinomial_draws(fixture: Fixture, model, cmap: ColumnMap, gmap: GroupMap) -> az.InferenceData:
+    """``draws`` of a count-matrix model (F01a): every category's centred intercept (brms's ``Intercept_<mu>``) and raw-scale
+    intercept (``b_<mu>_Intercept``), its coefficients under AutoBayes's names (the vector ``mum3_z`` over ``mum3_z_dim``) from
+    brms's ``b_<mu>``, its group SDs and effects by level (``mum2_1|g`` from ``r_<id>_<mu>_1``), and ``phi``."""
+    pts = fixture.points
+    data, coords = {}, {"chain": [0], "draw": np.arange(len(pts))}
+    for d in model.spec.mus:
+        name, roles = d.response, model.mu_names[d.response]
+        data[roles["intercept"]] = (("chain", "draw"), np.array([float(p.pars[f"Intercept_{name}"]) for p in pts])[None, :])
+        data[roles["raw_intercept"]] = (("chain", "draw"), np.array([float(p.pars[f"b_{name}_Intercept"]) for p in pts])[None, :])
+        rows = model.mu_coefficients[name]
+        values = np.array([[coefficients(p.pars, f"b_{name}")[k] for k in cmap.mus[name].x_column] for p in pts]).reshape(len(pts), -1)
+        for var in dict.fromkeys(v for _, v, _ in rows):
+            positions = [(c, j) for c, (_, v, j) in enumerate(rows) if v == var]
+            if positions[0][1] is None:
+                data[var] = (("chain", "draw"), values[:, positions[0][0]][None, :])
+                continue
+            term = next(t for t in d.pop_terms if roles[f"b:{t.name}"] == var)
+            vec = np.empty((len(pts), len(positions)))
+            for c, j in positions:
+                vec[:, j] = values[:, c]
+            data[var] = (("chain", "draw", f"{var}_dim"), vec[None])
+            coords[f"{var}_dim"] = list(term.levels)
+        for t in d.group_terms:
+            m, level_of = gmap.brms_id[(name, t.factor)], gmap.level_of[(name, t.factor)]
+            r = model.mu_group_names[(name, t.factor, "Intercept")]
+            effects = np.empty((len(pts), len(level_of)))
+            for q, p in enumerate(pts):
+                effects[q, level_of] = np.atleast_1d(p.pars[f"r_{m}_{name}_1"])
+            data[r["sd"]] = (("chain", "draw"), np.array([np.atleast_1d(p.pars[f"sd_{m}"])[0] for p in pts])[None, :])
+            data[r["group_effect"]] = (("chain", "draw", r["coordinate"]), effects[None])
+            coords[r["coordinate"]] = list(model.design.mus[name].group_blocks[(t.factor, "Intercept")].levels)
+    if "phi" in model.names:
+        data["phi"] = (("chain", "draw"), np.array([float(p.pars["phi"]) for p in pts])[None, :])
+    return az.InferenceData(posterior=xr.Dataset(data, coords=coords))
+
+
+def brms_mu_values(fixture: Fixture, point: Point, name: str) -> np.ndarray:
+    """brms's own linear predictor of category ``name`` at a point (F01a), from its Stan data and parameters alone:
+    ``Intercept_<name> + Xc_<name> b_<name>``, ``Xc`` brms's ``X_<name>`` without its intercept column, centred on its column
+    means, plus ``r_<id>_<name>_1[J_<id>]`` times ``Z_<id>_<name>_1`` for every brms group of ``name``."""
+    sd, N = fixture.standata, int(fixture.standata["N"])
+    X = np.asarray(sd[f"X_{name}"], dtype=float).reshape(N, -1)
+    ones = [k for k in range(X.shape[1]) if np.all(X[:, k] == 1.0)]
+    Xc = np.delete(X, ones[:1], axis=1)
+    eta = float(point.pars[f"Intercept_{name}"]) + (Xc - Xc.mean(axis=0)) @ coefficients(point.pars, f"b_{name}")
+    for grp in fixture.groups:
+        m = int(grp["id"])
+        Z = sd.get(f"Z_{m}_{name}_1")
+        if Z is not None:
+            eta = eta + np.atleast_1d(point.pars[f"r_{m}_{name}_1"])[sd[f"J_{m}"].astype(int) - 1] * Z
+    return eta

@@ -503,6 +503,10 @@ class Priors:
     # ``bias``, real<lower=0,upper=1>, a Beta prior); its non-decision time is ``ndt`` above; refused for every other family
     bs: Prior | Mapping[str, object] | None = None
     bias: Prior | None = None
+    # F01a (docs/multinomial.md): the multinomial families' priors of one non-reference category's formula by brms's name of
+    # its linear predictor, {"mum3": {"intercept": ..., "b": ..., "sd": ...}} (brms's dpar = mum3), required for a category with
+    # a formula of its own; the other categories take intercept, b and sd above; refused for every other model
+    dpars: Mapping[str, Mapping[str, object]] | None = None
 
     def __post_init__(self):
         if isinstance(self.components, list):                         # one value for equal component lists (C05)
@@ -558,6 +562,9 @@ class Priors:
         if self.components is not None or self.theta is not None:
             raise PriorError("components and theta are the priors of a mixture (ab.mixture, docs/mixtures.md); "
                              "a multivariate model takes neither")
+        if self.dpars is not None:                                    # F01a
+            raise PriorError("dpars gives the priors of a multinomial model's category formulas (docs/multinomial.md); a "
+                             "multivariate model takes none (divergence D136)")
         if self.ar is not None or self.ma is not None:              # C04
             raise PriorError("ar and ma are the priors of an autocorrelation term ar(), ma(), arma() (docs/autocorrelation.md); a "
                              "multivariate model takes neither: an autocorrelation term in a multivariate formula is not supported "
@@ -1030,6 +1037,10 @@ class Priors:
             from autobayes.nonlinear import nonlinear_improper
 
             return nonlinear_improper(self, spec)
+        if getattr(spec, "is_multinomial", False):                     # F01a: mum2:intercept, mum2:b:x
+            from autobayes.multinomial import multinomial_improper
+
+            return multinomial_improper(self, spec)
         if self.components is not None:
             return [f"mu{k}:{label}" for k, c in enumerate(self.components, start=1) for label in c.improper(spec)]
         out = ["intercept"] if getattr(spec, "intercept", True) and isinstance(self.intercept, Prior) and self.intercept.name == "Flat" else []
@@ -1057,6 +1068,13 @@ class Priors:
 
         check_prior(self)                                             # D07: a shrinkage prior anywhere but the bare b is refused
         self.sar_priors(spec)                                         # F02b: lagsar / errorsar exactly with a SAR term, every model
+        if getattr(spec, "is_multinomial", False):                     # F01a: the count-matrix families, priors per category
+            from autobayes.multinomial import check_multinomial_priors
+
+            return check_multinomial_priors(self, spec, fam)
+        if self.dpars is not None:                                    # F01a, refused for every other model
+            raise PriorError("dpars gives the priors of a multinomial model's category formulas (ab.multinomial, "
+                             "ab.dirichlet_multinomial; docs/multinomial.md); this model has none")
         if getattr(spec, "is_nonlinear", False):                       # a non-linear model (C02): priors per non-linear parameter
             from autobayes.nonlinear import check_nonlinear_priors
 

@@ -325,6 +325,13 @@ def default_priors(formula: str | list[str], data: pd.DataFrame, *, family: str 
                                            center_predictors=center_predictors, rescor=rescor)
 
     fam = get_family(family, link)                                    # an unknown family, or a withheld link, is refused here
+    if fam.matrix_response:                                           # F01a: the count-matrix families, per category
+        from autobayes.multinomial import multinomial_default_priors
+
+        if nu is not None or quantile is not None or families is not None or order is not None or data2:
+            raise ValueError(f"nu, quantile, families, order and data2 do not apply to the {fam.name} family")
+        return multinomial_default_priors(formula, data, family=fam.name, categorical=categorical,
+                                          center_predictors=center_predictors, imputed=imputed)
     if quantile is not None or fam.fixable:                           # E02: a fixed quantile, checked as the constructor checks it
         fam = fam.with_fixed("quantile", quantile)
         if quantile is not None:
@@ -534,6 +541,10 @@ def prior_table(priors: Priors, spec, family="gaussian", *, center_predictors: b
         from autobayes.nonlinear import nonlinear_prior_table
 
         return nonlinear_prior_table(priors, spec, fam)
+    if getattr(spec, "is_multinomial", False):                        # F01a: each category's rows carry its dpar
+        from autobayes.multinomial import multinomial_prior_table
+
+        return multinomial_prior_table(priors, spec, fam)
     priors.validate(spec, fam)
     if (fam.thresholds or fam.per_category) and not categories:
         raise PriorError(f"the {fam.name} family's prior table needs the response categories (Model.prior_table() passes them)")
