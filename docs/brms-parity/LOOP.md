@@ -90,7 +90,7 @@ references: brms wherever brms is accurate, and a committed high-precision refer
   the fixture it certifies: the gate tool refuses a changed one, as it refuses a changed fixture.
 - **In use** (P6): `bernoulli_cloglog` (gradient; 2 of 144 entries on the reference), `gauss_censored` (gradient; 32 of
   160), `gauss_truncated` (gradient, 2 of 160; expected values, 6 of 656) and `gamma_censored_interval` (gradient; 10 of 160, D120) and `cumulative_probit_varint` (gradient; 173 of
-  176, D88). `binomial_cloglog`, frozen with P6, needs
+  176, D88), and `wiener_varint` and `wiener_distributional_bs` (expected values; 656 of 656 each, D148). `binomial_cloglog`, frozen with P6, needs
   no opt-in: brms is within the tolerance at every entry there.
 
 ## Park and stop rules

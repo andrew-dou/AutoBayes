@@ -385,6 +385,6 @@ the drift `mu` (identity link), the boundary separation `bs` (or its own formula
 first-passage time density exact to 4e-15 on both paths (where Stan's is within 1.5e-10, D150), the exact mean response time
 for `predict(kind="mean")` (brms's `posterior_epred` misplaces the starting point, D148), `log_lik()`, `loo()` and
 `bayes_R2()` (which brms computes only with RWiener), `describe()`. Verified against `wiener_varint` and
-`wiener_distributional_bs` (G4's expected values fail against brms by D148, an expected failure until a 50-digit reference
-stands in); response draws are refused (D149), as are formulas on `ndt` and `bias` and the other contexts (D151); see
+`wiener_distributional_bs` (G4's expected values accepted against 50-digit references, P6, since brms's are not the mean,
+D148); response draws are refused (D149), as are formulas on `ndt` and `bias` and the other contexts (D151); see
 [the Wiener diffusion model](wiener.md).

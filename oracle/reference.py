@@ -11,8 +11,10 @@ library only (nothing from autobayes or tests/), reads the frozen fixture's ``ca
 ``newdata.csv`` and the seeded points' unconstrained values in ``fixture.json``, applies brms's constraining transforms
 and their Jacobians itself (identity for ``b``, ``Intercept`` and ``z_1``; ``exp`` with log-Jacobian ``u`` for ``sigma``
 and ``sd_1``; Stan's ``ordered`` transform of the cumulative model's thresholds, ``Intercept[1] = u_1`` and
-``Intercept[k] = Intercept[k - 1] + exp(u_k)`` with log-Jacobian ``u_2 + ... + u_K``; as the fixture's probed ``upars`` table
-says), and evaluates the model's log density in Python's decimal arithmetic at 50 significant digits. The models, in
+``Intercept[k] = Intercept[k - 1] + exp(u_k)`` with log-Jacobian ``u_2 + ... + u_K``; Stan's lower-upper transform of the
+wiener family's ``ndt`` (upper bound ``min_Y``, the smallest response time) and ``bias`` (upper bound 1), ``ub inv_logit(u)``
+with log-Jacobian ``log(ub) + log inv_logit(u) + log(1 - inv_logit(u))``; as the fixture's probed ``upars`` table and its
+declarations say), and evaluates the model's log density in Python's decimal arithmetic at 50 significant digits. The models, in
 brms's parameterisation (``eta = Intercept + b (x - mean(x)) + sd_1 z_1[g]``, the separate centred intercept and
 non-centred group effects of a varying intercept on ``g``; the cumulative model's ``eta`` has no intercept, its
 thresholds ``c_1 < ... < c_K`` are brms's ``Intercept``, and ``c_0 = -inf``, ``c_{K+1} = inf``):
@@ -29,10 +31,21 @@ thresholds ``c_1 < ... < c_K`` are brms's ``Intercept``, and ``c_0 = -inf``, ``c
                                                               / -1 / 2 the log density, log Q(shape, t), log P(shape, t) and
                                                               log(P(shape, t2) - P(shape, t)), P and Q the regularized incomplete
                                                               gamma functions (``log_gamma_interval``)
+    wiener               rt | dec(dec) ~ x + (1 | g), and with bs ~ z (bs = exp(Intercept_bs + Xc_bs b_bs), Xc_bs the dummies of z
+                                                              centred at the fitted rows' means): Stan's wiener_lpdf(rt | bs, ndt,
+                                                              bias, mu) for dec = 1, wiener_lpdf(rt | bs, ndt, 1 - bias, -mu) for
+                                                              dec = 0, mu = eta; the density of the lower boundary f(t | v, a, w) =
+                                                              a^-2 exp(-v a w - v^2 t / 2) f(t / a^2 | 0, 1, w) at t = rt - ndt (the
+                                                              upper boundary's with (-v, 1 - w)), f(u | 0, 1, w) by Navarro and
+                                                              Fuss's small-time series for u <= 1 and their large-time series above
+                                                              (``log_first_passage``)
 
 with brms's priors: ``normal(m, s)`` on ``Intercept`` and ``b`` (``normal_lpdf``), ``normal(m, s)`` on ``sd_1`` and ``sigma``,
 which are declared ``<lower=0>`` (``normal_lpdf(. | m, s) - normal_lccdf(0 | m, s)``), ``gamma(a, b)`` on the Gamma family's
-``shape`` (``gamma_lpdf``; its support is the declared one, so no truncation term), and ``std_normal`` on ``z_1``. Every
+``shape`` (``gamma_lpdf``; its support is the declared one, so no truncation term), and ``std_normal`` on ``z_1``; for the
+wiener family ``gamma(a, b)`` on ``bs`` or ``normal(m, s)`` on its formula's ``Intercept_bs`` and ``b_bs``, ``normal(m, s)`` on
+``ndt`` truncated to (0, min_Y) (``normal_lpdf - log(Phi((min_Y - m) / s) - Phi(-m / s))``, brms's ``log_diff_exp`` of two
+``normal_lcdf``, checked against brms's ``lprior`` at every point) and ``beta(a, b)`` on ``bias``. Every
 normalising constant is included, as ``rstan::log_prob`` includes them. The inputs are the doubles brms and AutoBayes
 evaluate, converted to decimal exactly: the CSV's numbers parsed as binary64 (the generator rounds them to four decimals
 so that R and Python parse the same double) and the fixture's ``u``; everything from there on, the centring of ``x``
@@ -41,9 +54,12 @@ included, is exact to 50 digits.
 Per seeded point the file holds the log density with and without the Jacobian, the gradient with and without it in
 brms's unconstrained order (without: a fourth-order central difference of the 50-digit density with step 1e-10, whose
 truncation and rounding errors are both below 1e-35; with: plus 1 in each log-transformed coordinate and in each
-threshold coordinate after the first, the derivative of its log-Jacobian ``u``), and, for the truncated model, every expected value gate G4 compares: ``posterior_epred``'s
+threshold coordinate after the first, the derivative of its log-Jacobian ``u``, and ``1 - 2 inv_logit(u)`` in each lower-upper
+coordinate), and, for the truncated model, every expected value gate G4 compares: ``posterior_epred``'s
 truncated mean ``eta + sigma phi(a) / (1 - Phi(a))``, ``a = (lb - eta) / sigma``, on the fitted rows and on ``newdata``
-(``x`` centred at the fitted mean), with and without the group effects. Values are written as strings with 30
+(``x`` centred at the fitted mean), with and without the group effects; for the wiener family the same blocks of the mean
+response time ``ndt + (bs P_up - bs bias) / mu``, ``P_up = (1 - exp(-2 mu bs bias)) / (1 - exp(-2 mu bs))``, and ``ndt + bs^2
+bias (1 - bias)`` at ``mu = 0`` (``wiener_mean``; brms's own posterior_epred is not this mean, divergence D148). Values are written as strings with 30
 significant digits, with the sha256 of every file read. Erf and erfc: the series of positive terms for ``|x| < 3`` (with
 15 guard digits) and the Laplace continued fraction above; the gradient's step and the guard digits are constants here.
 Re-running the script reproduces a committed file byte for byte (``--check``); a committed reference is never
@@ -81,9 +97,12 @@ MODELS = {   # the brms formulas this script implements -> (family, link); Case.
     "ypos | trunc(lb = 0) ~ x + (1 | g)": ("gaussian", "identity"),
     "ord ~ x + (1 | g)": ("cumulative", "probit"),
     "ypos | cens(cens_i, ypos2) ~ x + (1 | g)": ("Gamma", "log"),
+    "rt | dec(dec) ~ x + (1 | g)": ("wiener", "identity"),
+    "rt | dec(dec) ~ x + (1 | g), bs ~ z": ("wiener", "identity"),       # a list of formulas, joined with ", "
 }
 _GAMMA = re.compile(r"gamma\(\s*([-+0-9.eE]+)\s*,\s*([-+0-9.eE]+)\s*\)")
 _NORMAL = re.compile(r"normal\(\s*([-+0-9.eE]+)\s*,\s*([-+0-9.eE]+)\s*\)")
+_BETA = re.compile(r"beta\(\s*([-+0-9.eE]+)\s*,\s*([-+0-9.eE]+)\s*\)")
 
 
 # -- 50-digit special functions ---------------------------------------------------------------------------------------
@@ -354,6 +373,119 @@ def log1m_exp_neg(e: Decimal) -> Decimal:
         return +r
 
 
+def _sin(x: Decimal) -> Decimal:
+    """sin(x) in the caller's context: x reduced to [-pi, pi] by a multiple of 2 pi (pi at PREC + 2 GUARD digits), then
+    its Taylor series, summed until a term is below the context's last digit."""
+    two_pi = 2 * _pi()
+    x = x - two_pi * (x / two_pi).to_integral_value()
+    eps = Decimal(10) ** -(getcontext().prec + 2)
+    term = total = x
+    n = 1
+    while abs(term) > eps:
+        term = -term * x * x / ((n + 1) * (n + 2))
+        total += term
+        n += 2
+    return total
+
+
+def beta_lpdf(v: Decimal, a: Decimal, b: Decimal) -> Decimal:
+    """log Beta(v | a, b) = (a - 1) log v + (b - 1) log(1 - v) - log Gamma(a) - log Gamma(b) + log Gamma(a + b)."""
+    with _guarded():
+        r = (a - 1) * v.ln() + (b - 1) * (1 - v).ln() - _log_gamma(a) - _log_gamma(b) + _log_gamma(a + b)
+    with localcontext(CONTEXT):
+        return +r
+
+
+def log_first_passage(u: Decimal, w: Decimal) -> Decimal:
+    """log f(u | 0, 1, w), the density of a Wiener process without drift, started at w in (0, 1) between the boundaries 0 and
+    1, reaching the lower one at time u (Navarro and Fuss 2009): for u <= 1 the small-time series (2 pi u^3)^(-1/2) sum_k (w +
+    2k) exp(-(w + 2k)^2 / (2u)), k = 0, +-1, +-2, ..., above it the large-time series pi sum_{k>=1} k exp(-k^2 pi^2 u / 2)
+    sin(k pi w). Terms are added until the next one's envelope (|w + 2k| exp(-(w + 2k)^2 / (2u)) for both signs of k, k
+    exp(-k^2 pi^2 u / 2)) is below the context's last digit of the sum; when the terms cancel (the sum's leading digit below
+    the largest term's), it is recomputed with as many further digits as they cancel."""
+    extra = 0
+    while True:
+        ctx = CONTEXT.copy()
+        ctx.prec = PREC + GUARD + extra
+        with localcontext(ctx):
+            eps = Decimal(10) ** -(ctx.prec + 2)
+            if u <= 1:
+                total = biggest = w * (-(w * w) / (2 * u)).exp()
+                k = 0
+                while True:
+                    k += 1
+                    up, down = w + 2 * k, w - 2 * k
+                    pair = (up * (-(up * up) / (2 * u)).exp(), down * (-(down * down) / (2 * u)).exp())
+                    total += pair[0] + pair[1]
+                    biggest = max(biggest, abs(pair[0]), abs(pair[1]))
+                    if abs(pair[0]) + abs(pair[1]) <= eps * abs(total):
+                        break
+                log_scale = -(2 * _pi() * u * u * u).ln() / 2
+            else:
+                pi = _pi()
+                total, biggest, k = Decimal(0), Decimal(0), 0
+                while True:
+                    k += 1
+                    envelope = k * (-(k * k) * pi * pi * u / 2).exp()
+                    term = envelope * _sin(k * pi * w)
+                    total += term
+                    biggest = max(biggest, abs(term))
+                    if k >= 2 and envelope <= eps * abs(total):
+                        break
+                log_scale = pi.ln()
+            lost = max(0, biggest.adjusted() - total.adjusted())
+            if lost <= GUARD // 2 + extra:
+                r = total.ln() + log_scale
+                break
+        extra = lost + GUARD // 2
+    with localcontext(CONTEXT):
+        return +r
+
+
+def wiener_lower(t: Decimal, v: Decimal, a: Decimal, w: Decimal) -> Decimal:
+    """log f(t | v, a, w) of reaching the lower boundary at decision time t > 0 (drift v, boundary separation a, relative
+    start w): -v a w - v^2 t / 2 - 2 log a + log f(t / a^2 | 0, 1, w)."""
+    with _guarded():
+        head = -v * a * w - v * v * t / 2 - 2 * a.ln()
+        u = t / (a * a)
+    r = head + log_first_passage(u, w)
+    with localcontext(CONTEXT):
+        return +r
+
+
+def wiener_mean(mu: Decimal, bs: Decimal, ndt: Decimal, bias: Decimal) -> Decimal:
+    """The mean response time over both boundaries, ndt + (bs P_up - bs bias) / mu with P_up = (1 - exp(-2 mu bs bias)) /
+    (1 - exp(-2 mu bs)) (Wald's identity), and ndt + bs^2 bias (1 - bias) at mu = 0; recomputed with as many further digits
+    as P_up - bias cancels (as mu -> 0)."""
+    if mu == 0:
+        with _guarded():
+            r = ndt + bs * bs * bias * (1 - bias)
+        with localcontext(CONTEXT):
+            return +r
+    extra = max(0, -(2 * mu * bs).adjusted())
+    while True:
+        ctx = CONTEXT.copy()
+        ctx.prec = PREC + GUARD + extra
+        with localcontext(ctx):
+            p_up = (1 - (-2 * mu * bs * bias).exp()) / (1 - (-2 * mu * bs).exp())
+            diff = p_up - bias
+            lost = max(0, max(p_up.adjusted(), bias.adjusted()) - diff.adjusted())
+            if lost <= GUARD // 2 + extra:
+                r = ndt + bs * diff / mu
+                break
+        extra = lost + GUARD // 2
+    with localcontext(CONTEXT):
+        return +r
+
+
+def _log_inv_logit(v: Decimal) -> Decimal:
+    """log(1 / (1 + exp(-v)))."""
+    with _guarded():
+        r = -(1 + (-v).exp()).ln()
+    with localcontext(CONTEXT):
+        return +r
+
+
 # -- the case: data, priors, parameters ----------------------------------------------------------------------------
 def sha256(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
@@ -381,7 +513,7 @@ class Case:
                         if (self.dir / name).exists()}
         brms = json.loads((self.dir / "case_brms.json").read_text(encoding="utf-8"))
         self.fixture = json.loads((self.dir / "fixture.json").read_text(encoding="utf-8"))
-        self.formula = brms["formula"]
+        self.formula = brms["formula"] if isinstance(brms["formula"], str) else ", ".join(brms["formula"])
         if self.formula not in MODELS:
             raise SystemExit(f"{case_id}: no reference model for brms formula {self.formula!r}; this script implements {sorted(MODELS)}")
         family, link = MODELS[self.formula]
@@ -390,6 +522,7 @@ class Case:
         self.family, self.link = family, link
         self.lb = Decimal(0) if "trunc(lb = 0)" in self.formula else None
         self.levels = list(brms["factors"]["g"])
+        self.bs_formula = self.formula.endswith(", bs ~ z")      # wiener's bs ~ z: bs = exp(Intercept_bs + Xc_bs b_bs)
         if [grp["levels"] for grp in self.fixture["groups"]] != [self.levels]:
             raise SystemExit(f"{case_id}: brms's group table {self.fixture['groups']} is not one varying intercept on g with the levels {self.levels}")
         self.priors = self._priors(brms["priors"])
@@ -400,6 +533,16 @@ class Case:
                 + [("z_1", "identity")] * len(self.levels)
             if [(par, transform) for par, _, transform in self.upars] != expected:
                 raise SystemExit(f"{case_id}: brms's unconstrained coordinates are {self.upars}; this script implements {expected}")
+        elif family == "wiener":       # bs (log) or its formula's b_bs and Intercept_bs; ndt and bias Stan's lower-upper ("other")
+            middle = [("b_bs", 1, "identity"), ("b_bs", 2, "identity"), ("Intercept_bs", 1, "identity")] if self.bs_formula \
+                else [("bs", 1, "log")]
+            expected = [("b", 1, "identity"), ("Intercept", 1, "identity")] + middle + [("ndt", 1, "other"), ("bias", 1, "other")] \
+                + [("sd_1", 1, "log")] + [("z_1", j, "identity") for j in range(1, len(self.levels) + 1)]
+            if self.upars != expected:
+                raise SystemExit(f"{case_id}: brms's unconstrained coordinates are {self.upars}; this script implements {expected}")
+            declared = self.fixture["declarations"]
+            if (declared["ndt"], declared["bias"]) != ("real<lower=0,upper=min_Y> ndt;", "real<lower=0,upper=1> bias;"):
+                raise SystemExit(f"{case_id}: brms declares {declared['ndt']!r} and {declared['bias']!r}")
         else:
             expected = [("b", 1, "identity"), ("Intercept", 1, "identity")] + ([("sigma", 1, "log")] if family == "gaussian" else []) \
                 + ([("shape", 1, "log")] if family == "Gamma" else []) \
@@ -407,12 +550,22 @@ class Case:
             if self.upars != expected:
                 raise SystemExit(f"{case_id}: brms's unconstrained coordinates are {self.upars}; this script implements {expected}")
         fitted = read_csv(self.dir / "data.csv")
-        response = {"bernoulli": "yb", "binomial": "k", "cumulative": "ord", "Gamma": "ypos"}.get(family, "ypos" if self.lb is not None else "y")
+        response = {"bernoulli": "yb", "binomial": "k", "cumulative": "ord", "Gamma": "ypos", "wiener": "rt"}.get(
+            family, "ypos" if self.lb is not None else "y")
         X, Y = self.fixture["standata"]["X"], self.fixture["standata"]["Y"]
         j, n = X["colnames"].index("x"), len(fitted)
         if [float(r["x"]) for r in fitted] != X["values"][j * n:(j + 1) * n] or [float(r[response]) for r in fitted] != Y["values"]:
             raise SystemExit(f"{case_id}: data.csv's x or {response} is not, double for double, brms's standata X or Y")
         self.x_mean = sum(number(r["x"]) for r in fitted) / len(fitted)
+        if family == "wiener":                               # min_Y, the upper bound of ndt; brms's dec; bs's centred dummies of z
+            self.min_y = min(number(r["rt"]) for r in fitted)
+            if [int(r["dec"]) for r in fitted] != self.fixture["standata"]["dec"]["values"]:
+                raise SystemExit(f"{case_id}: data.csv's dec is not brms's standata dec")
+            self.z_means = {lvl: Decimal(sum(r["z"] == lvl for r in fitted)) / len(fitted) for lvl in ("q", "r")} if self.bs_formula else {}
+            if self.bs_formula:
+                Xb = self.fixture["standata"]["X_bs"]
+                if Xb["colnames"] != ["Intercept", "zq", "zr"] or [float(r["z"] == lvl) for lvl in ("q", "r") for r in fitted] != Xb["values"][n:]:
+                    raise SystemExit(f"{case_id}: data.csv's z is not brms's standata X_bs (Intercept, zq, zr)")
         self.rows = [self._row(r) for r in fitted]
         self.new_rows = [self._row(r, response=False) for r in read_csv(self.dir / "newdata.csv")] \
             if "newdata.csv" in self.sources else []
@@ -423,10 +576,16 @@ class Case:
                 for a, b in zip(mine.get(name, ()), theirs["values"]):
                     if abs(float(a) - b) > 1e-14 * max(1.0, abs(b)):
                         raise SystemExit(f"{case_id}: point {k}: {name} from u is {float(a)!r}, brms's constrained value {b!r}")
+            if family == "wiener":                            # and brms's lprior, ndt's truncation term included, is the script's
+                theirs = p["pars"]["lprior"]["values"][0]
+                if abs(float(self.lprior(mine)) - theirs) > 1e-12 * max(1.0, abs(theirs)):
+                    raise SystemExit(f"{case_id}: point {k}: lprior {float(self.lprior(mine))!r}, brms's {theirs!r}")
 
     def _priors(self, rows: list[dict]) -> dict[str, tuple[Decimal, Decimal]]:
         out = {}
         self.shape_prior = None
+        if self.family == "wiener":
+            return self._wiener_priors(rows)
         for p in rows:
             g = _GAMMA.fullmatch(p["prior"].strip())
             if self.family == "Gamma" and p["class"] == "shape" and g is not None and self.shape_prior is None:
@@ -443,8 +602,37 @@ class Case:
                              + (" and gamma(a, b) on shape" if self.family == "Gamma" else ""))
         return out
 
+    def _wiener_priors(self, rows: list[dict]) -> dict[str, tuple[Decimal, Decimal]]:
+        """wiener's priors: normal(m, s) on Intercept, b and sd (g), and on bs's formula's Intercept and b (dpar bs); gamma(a, b)
+        on bs without a formula; normal(m, s) on ndt (truncated to (0, min_Y) by brms's lprior); beta(a, b) on bias."""
+        out, self.dpar_priors, self.bs_prior, self.ndt_prior, self.bias_prior = {}, {}, None, None, None
+        for p in rows:
+            text_, cls, dpar = p["prior"].strip(), p["class"], p.get("dpar", "")
+            normal, gamma, beta = _NORMAL.fullmatch(text_), _GAMMA.fullmatch(text_), _BETA.fullmatch(text_)
+            if p.get("coef") or (cls == "sd") != ("group" in p) or p.get("group", "g") != "g":
+                raise SystemExit(f"{self.id}: prior {p} is not one of a class this script implements")
+            if dpar == "bs" and normal is not None and cls in ("Intercept", "b") and cls not in self.dpar_priors:
+                self.dpar_priors[cls] = (Decimal(normal.group(1)), Decimal(normal.group(2)))
+            elif not dpar and cls in ("Intercept", "b", "sd") and normal is not None and cls not in out:
+                out[cls] = (Decimal(normal.group(1)), Decimal(normal.group(2)))
+            elif not dpar and cls == "bs" and gamma is not None and self.bs_prior is None:
+                self.bs_prior = (Decimal(gamma.group(1)), Decimal(gamma.group(2)))
+            elif not dpar and cls == "ndt" and normal is not None and self.ndt_prior is None:
+                self.ndt_prior = (Decimal(normal.group(1)), Decimal(normal.group(2)))
+            elif not dpar and cls == "bias" and beta is not None and self.bias_prior is None:
+                self.bias_prior = (Decimal(beta.group(1)), Decimal(beta.group(2)))
+            else:
+                raise SystemExit(f"{self.id}: prior {p} is not one this script implements for wiener")
+        if set(out) != {"Intercept", "b", "sd"} or self.ndt_prior is None or self.bias_prior is None \
+                or (set(self.dpar_priors) == {"Intercept", "b"}) != self.bs_formula or (self.bs_prior is None) != self.bs_formula:
+            raise SystemExit(f"{self.id}: wiener's priors are {rows}; the model needs normal on Intercept, b, sd, ndt, beta on bias and "
+                             + ("normal on bs's Intercept and b" if self.bs_formula else "gamma on bs"))
+        return out
+
     def _row(self, r: dict[str, str], response: bool = True) -> dict:
         row = {"xc": number(r["x"]) - self.x_mean, "level": self.levels.index(r["g"])}
+        if self.family == "wiener" and self.bs_formula:      # brms's Xc_bs: the dummies of z centred at the fitted rows' means
+            row["zc"] = [Decimal(int(r["z"] == lvl)) - self.z_means[lvl] for lvl in ("q", "r")]
         if not response:
             return row
         if self.formula.startswith("yb "):
@@ -460,6 +648,10 @@ class Case:
         elif self.formula.startswith("k "):
             row["k"], row["n"] = int(r["k"]), int(r["size"])
             row["log_choose"] = Decimal(math.comb(row["n"], row["k"])).ln()
+        elif self.family == "wiener":                        # the response time and its decision (1 upper, 0 lower)
+            row["y"], row["dec"] = number(r["rt"]), int(r["dec"])
+            if row["dec"] not in (0, 1) or not row["y"] > 0:
+                raise SystemExit(f"{self.id}: decision {row['dec']} at the response time {row['y']}")
         elif self.lb is None:
             row["y"], row["cens"] = number(r["y"]), int(r["cens_ind"])
             if row["cens"] not in (-1, 0, 1):
@@ -479,15 +671,23 @@ class Case:
             elif transform == "joint" and par in pars:          # Stan's ordered: each threshold the previous plus exp(u)
                 pars[par].append(pars[par][-1] + v.exp())
                 jacobian += v
+            elif transform == "other" and self.family == "wiener":   # Stan's lower-upper: ub inv_logit(u), log-Jacobian
+                upper = self.min_y if par == "ndt" else Decimal(1)  # log(ub) + log inv_logit(u) + log(1 - inv_logit(u))
+                pars.setdefault(par, []).append(upper / (1 + (-v).exp()))
+                jacobian += upper.ln() + _log_inv_logit(v) + _log_inv_logit(-v)
             else:
                 pars.setdefault(par, []).append(v)
         return pars, jacobian
 
-    def jacobian_slopes(self) -> list[int]:
-        """d (log-Jacobian) / d u_i: 1 in each log-transformed coordinate and each threshold coordinate after the first."""
+    def jacobian_slopes(self, u: list[Decimal]) -> list:
+        """d (log-Jacobian) / d u_i: 1 in each log-transformed coordinate and each threshold coordinate after the first, and
+        1 - 2 inv_logit(u_i) in each of wiener's lower-upper coordinates (ndt, bias)."""
         out, seen = [], set()
-        for par, _, transform in self.upars:
-            out.append(1 if transform == "log" or (transform == "joint" and par in seen) else 0)
+        for (par, _, transform), v in zip(self.upars, u):
+            if transform == "other" and self.family == "wiener":
+                out.append(1 - 2 / (1 + (-v).exp()))
+            else:
+                out.append(1 if transform == "log" or (transform == "joint" and par in seen) else 0)
             seen.add(par)
         return out
 
@@ -498,8 +698,20 @@ class Case:
             eta = pars["Intercept"][0] + pars["b"][0] * row["xc"]
         return eta + pars["sd_1"][0] * pars["z_1"][row["level"]] if groups else eta
 
+    def boundary_separation(self, pars: dict, row: dict) -> Decimal:
+        """wiener's bs: the parameter, or with bs ~ z exp(Intercept_bs + Xc_bs b_bs) of the row."""
+        if not self.bs_formula:
+            return pars["bs"][0]
+        with _guarded():
+            r = (pars["Intercept_bs"][0] + sum(c * b for c, b in zip(row["zc"], pars["b_bs"]))).exp()
+        with localcontext(CONTEXT):
+            return +r
+
     def row_term(self, pars: dict, row: dict) -> Decimal:
         eta = self.eta(pars, row)
+        if self.family == "wiener":   # Stan's wiener_lpdf: the upper boundary (dec 1) is the lower one's with (-mu, 1 - bias)
+            bs, bias, t = self.boundary_separation(pars, row), pars["bias"][0], row["y"] - pars["ndt"][0]
+            return wiener_lower(t, -eta, bs, 1 - bias) if row["dec"] == 1 else wiener_lower(t, eta, bs, bias)
         if self.family == "cumulative":                     # probit: Phi(c_y - eta) - Phi(c_{y-1} - eta)
             c, y = pars["Intercept"], row["y"]
             return log_normal_interval(c[y - 2] - eta if y > 1 else None, c[y - 1] - eta if y <= self.nthres else None)
@@ -525,9 +737,34 @@ class Case:
         t = (row["y"] - eta) / sigma
         return log_ccdf(t) if row["cens"] == 1 else log_cdf(t)
 
+    def lprior(self, pars: dict) -> Decimal:
+        """brms's lprior of the wiener model: normal on Intercept and b (and on bs's formula's Intercept_bs and b_bs), the
+        normal on sd_1 truncated to (0, inf), gamma on bs, the normal on ndt less log(Phi((min_Y - m) / s) - Phi((0 - m) / s)),
+        its mass on (0, min_Y), and beta on bias."""
+        lp = Decimal(0)
+        for name, cls in (("Intercept", "Intercept"), ("b", "b")):
+            m, s = self.priors[cls]
+            lp += sum(normal_lpdf(v, m, s) for v in pars[name])
+        if self.bs_formula:
+            for name, cls in (("Intercept_bs", "Intercept"), ("b_bs", "b")):
+                m, s = self.dpar_priors[cls]
+                lp += sum(normal_lpdf(v, m, s) for v in pars[name])
+        else:
+            lp += gamma_lpdf(pars["bs"][0], *self.bs_prior)
+        m, s = self.ndt_prior
+        lp += normal_lpdf(pars["ndt"][0], m, s) - log_normal_interval((0 - m) / s, (self.min_y - m) / s)
+        lp += beta_lpdf(pars["bias"][0], *self.bias_prior)
+        m, s = self.priors["sd"]
+        lp += sum(normal_lpdf(v, m, s) - log_ccdf((0 - m) / s) for v in pars["sd_1"])
+        return lp
+
     def lp_nojac(self, u: list[Decimal]) -> Decimal:
         """brms's target without the Jacobian: the likelihood, lprior and std_normal(z_1)."""
         pars, _ = self.constrain(u)
+        if self.family == "wiener":
+            lp = self.lprior(pars)
+            lp += sum(normal_lpdf(v, Decimal(0), Decimal(1)) for v in pars["z_1"])
+            return lp + sum(self.row_term(pars, row) for row in self.rows)
         lp = Decimal(0)
         for name, cls in (("Intercept", "Intercept"), ("b", "b")):
             m, s = self.priors[cls]
@@ -553,6 +790,10 @@ class Case:
             out.append((at(-2 * STEP) - 8 * at(-STEP) + 8 * at(STEP) - at(2 * STEP)) / (12 * STEP))
         return out
 
+    def wiener_epred(self, pars: dict, row: dict, groups: bool) -> Decimal:
+        """The mean response time of the row (``wiener_mean``), mu its linear predictor with or without the group effects."""
+        return wiener_mean(self.eta(pars, row, groups), self.boundary_separation(pars, row), pars["ndt"][0], pars["bias"][0])
+
     def truncated_mean(self, pars: dict, row: dict, groups: bool) -> Decimal:
         """brms's posterior_epred of the truncated Gaussian: eta + sigma phi(a) / (1 - Phi(a)), a = (lb - eta) / sigma."""
         eta, sigma = self.eta(pars, row, groups), pars["sigma"][0]
@@ -573,17 +814,20 @@ def build(case_id: str) -> str:
             _, jacobian = case.constrain(u)
             lp_nojac = case.lp_nojac(u)
             grad_nojac = case.gradient_nojac(u)
-            grad = [g + slope for g, slope in zip(grad_nojac, case.jacobian_slopes())]
+            grad = [g + slope for g, slope in zip(grad_nojac, case.jacobian_slopes(u))]
             points.append({"lp": text(lp_nojac + jacobian), "lp_nojac": text(lp_nojac), "grad": [text(g) for g in grad],
                            "grad_nojac": [text(g) for g in grad_nojac]})
+        if case.family == "wiener":                     # its own description of the model and the arithmetic
+            model, arithmetic = wiener_text(case)
         out = {
             "case": case_id,
             "generator": "oracle/reference.py",
-            "model": f"{case.formula}, brms {case.family}({case.link}); priors "
+            "model": model if case.family == "wiener" else f"{case.formula}, brms {case.family}({case.link}); priors "
                      + ", ".join(f"{cls} normal({m}, {s})" for cls, (m, s) in case.priors.items())
                      + (f", shape gamma({case.shape_prior[0]}, {case.shape_prior[1]})" if case.shape_prior is not None else "")
                      + ", z_1 std_normal",
-            "arithmetic": f"decimal, {PREC} significant digits ({GUARD} guard digits in erf, erfc and the constants); values "
+            "arithmetic": arithmetic if case.family == "wiener" else
+                          f"decimal, {PREC} significant digits ({GUARD} guard digits in erf, erfc and the constants); values "
                           f"written with {DIGITS}; the gradient without the Jacobian is a fourth-order central difference of the "
                           f"{PREC}-digit density with step {STEP}, with it plus 1 in each log-transformed coordinate",
             "sources": {str(path.relative_to(REPO)): sha256(path) for path in case.sources.values()},
@@ -596,7 +840,33 @@ def build(case_id: str) -> str:
                 block: {kind: [[text(case.truncated_mean(p, row, groups)) for row in rows] for p in pars]
                         for kind, groups in (("epred", True), ("epred_nogroup", False))}
                 for block, rows in (("fitted", case.rows), ("newdata", case.new_rows)) if rows}
+        if case.family == "wiener":                     # G4's expected values: the mean response time (D148)
+            pars = [case.constrain(u)[0] for u in case.points]
+            out["predictions"] = {
+                block: {kind: [[text(case.wiener_epred(p, row, groups)) for row in rows] for p in pars]
+                        for kind, groups in (("epred", True), ("epred_nogroup", False))}
+                for block, rows in (("fitted", case.rows), ("newdata", case.new_rows)) if rows}
     return json.dumps(out, indent=1, ensure_ascii=False) + "\n"
+
+
+def wiener_text(case: Case) -> tuple[str, str]:
+    """The ``model`` and ``arithmetic`` entries of a wiener reference."""
+    priors = ", ".join(f"{cls} normal({m}, {s})" for cls, (m, s) in case.priors.items())
+    if case.bs_formula:
+        priors += ", " + ", ".join(f"{cls} normal({m}, {s}) (dpar bs)" for cls, (m, s) in case.dpar_priors.items())
+    else:
+        priors += f", bs gamma({case.bs_prior[0]}, {case.bs_prior[1]})"
+    priors += (f", ndt normal({case.ndt_prior[0]}, {case.ndt_prior[1]}) on (0, min_Y), bias beta({case.bias_prior[0]}, "
+               f"{case.bias_prior[1]}), z_1 std_normal")
+    model = (f"{case.formula}, brms wiener(identity{', bs log' if case.bs_formula else ''}); Stan's wiener_lpdf(rt | bs, ndt, bias, mu) "
+             f"for dec = 1 and wiener_lpdf(rt | bs, ndt, 1 - bias, -mu) for dec = 0; priors {priors}; expected values the mean "
+             f"response time ndt + (bs P_up - bs bias) / mu, P_up = (1 - exp(-2 mu bs bias)) / (1 - exp(-2 mu bs))")
+    arithmetic = (f"decimal, {PREC} significant digits ({GUARD} guard digits in the first-passage series, erfc, log Gamma and the "
+                  f"constants, more where terms cancel); the Navarro-Fuss small-time series for t / bs^2 <= 1, the large-time one "
+                  f"above, each summed until the next term's envelope is below the last digit; values written with {DIGITS}; the "
+                  f"gradient without the Jacobian is a fourth-order central difference of the {PREC}-digit density with step "
+                  f"{STEP}, with it plus 1 in each log-transformed coordinate and 1 - 2 inv_logit(u) in ndt's and bias's")
+    return model, arithmetic
 
 
 def main(argv=None) -> int:
