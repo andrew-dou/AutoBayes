@@ -2026,12 +2026,17 @@
    "depends_on": [
     "D01_continuous_families"
    ],
-   "status": "gates_green",
+   "status": "merged",
    "summary": "wiener() with dec() responses (cases wiener_varint, wiener_distributional_bs); brms's posterior_epred is wrong (upstream)",
-   "pr": null,
+   "pr": 88,
    "attempts": 0,
-   "divergences": [],
-   "next_action": "implementing (wave F1)",
+   "divergences": [
+    "D148",
+    "D149",
+    "D150",
+    "D151"
+   ],
+   "next_action": "P6 50-digit reference for the exact mean (G4 epred), then ungate g4",
    "reserved_divergences": "D148-D151",
    "gates": {
     "sha": "5db6b17a3b2d",
@@ -2072,12 +2077,12 @@
    "depends_on": [
     "B02_addition_terms"
    ],
-   "status": "queued",
+   "status": "fixtures_frozen",
    "summary": "addition terms se(), rate(), thres(gr = ), subset() (multivariate)",
    "pr": null,
    "attempts": 0,
    "divergences": [],
-   "next_action": "fixtures (wave F0b)",
+   "next_action": "implementing (wave F2); fixtures #89",
    "reserved_divergences": "D156-D161"
   },
   {
@@ -2087,12 +2092,12 @@
    "depends_on": [
     "C07_post_processing"
    ],
-   "status": "queued",
+   "status": "fixtures_frozen",
    "summary": "fixef(), ranef(), coef(), VarCorr(), summary() table, prior_summary(), residuals(), predictive_error()",
    "pr": null,
    "attempts": 0,
    "divergences": [],
-   "next_action": "fixtures (wave F0b)",
+   "next_action": "implementing (wave F2); fixtures #89",
    "reserved_divergences": "D162-D167"
   },
   {
