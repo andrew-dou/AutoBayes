@@ -108,7 +108,8 @@ dictionary never see it.
 brms's addition terms after `|` other than `trials()` (B02, docs/addition-terms.md) are data of the formula too, with no
 coefficient, prior or design column: `AdditionTerm(kind, column, lb, ub, y2)` for `weights(col)`, `cens(col)` (and E04's
 interval censoring `cens(col, y2)`) and
-`trunc(lb = a, ub = b)`, and `mi()` (C06: the response's missing values are parameters), in the order written (`spec.addition(kind)` finds one; `term` is its canonical spelling, which
+`trunc(lb = a, ub = b)`, `mi()` (C06: the response's missing values are parameters) and `thres(gr = z)` / `thres(K, gr = z)`
+(F06b, docs/grouped-thresholds.md: `count` is `K`, and `levels` and `nthres` are filled in once the data are seen), in the order written (`spec.addition(kind)` finds one; `term` is its canonical spelling, which
 the canonical formula writes after `trials()`). `formula.addition_data(spec, frame)` gives brms's Stan data (`weights`,
 `cens`, `rcens`, `lb`, `ub`) and `Design` holds them on the fitted rows; the likelihood, not Bambi's formula, reads them.
 

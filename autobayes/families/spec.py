@@ -437,6 +437,10 @@ class FamilySpec:
     # E02: brms's default prior of the centred intercept, (location, scale) -> prior, where it is not student_t(3, location,
     # scale): the von Mises family's student_t(1, 0, 1) under its tan_half link. None: student_t(3, location, scale) (A07).
     default_intercept_prior: Callable[[float, float], object] | None = None
+    # F06b (docs/grouped-thresholds.md): the builder of this family's spec with brms's grouped thresholds thres(gr = z) (one
+    # ordered set of thresholds per level of z; "thres" in ``addition_terms``), set where a frozen case verifies it (the
+    # cumulative family's logit link). None for every other family and link.
+    grouped_thresholds: Callable[[], "FamilySpec"] | None = None
 
     def with_fixed(self, name: str, value) -> "FamilySpec":
         """E02: this family's spec with the extra parameter ``name`` fixed (``value`` given, brms's bf(name = value)), or this

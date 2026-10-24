@@ -85,7 +85,8 @@ rounding on the fixture).
   population-level terms (and `0 +`); group-level terms and the offset are refused in this slice (divergence D37).
 - Not offered: other cumulative links than logit and probit (the probit link since P6's reference, D88, below; the cloglog link is
   built since E06 but withheld, because brms's own log density of its frozen case is inexact, D132, [links](links.md)), `disc`, category-specific
-  effects `cs()` in the cumulative family and other threshold structures (divergences D38, D89); a categorical reference
+  effects `cs()` in the cumulative family and other threshold structures (divergences D38, D89; grouped thresholds `thres(gr = z)`
+  are F06b's, [grouped thresholds](grouped-thresholds.md), D158); a categorical reference
   category other than the first sorted label (D36). brms's `sratio`, `cratio` and `acat` families are D04's (below).
 
 ## Evidence

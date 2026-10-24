@@ -613,9 +613,17 @@ def prior_table(priors: Priors, spec, family="gaussian", *, center_predictors: b
     coefficient_priors = priors.coefficient_priors(spec)
     for dpar in (brms_dpar_names(categories[1:]) if fam.per_category else [""]):   # brms's mu<k>: one block per category (B05)
         coefs = [(names[col], p) for col, p in coefficient_priors.items()]
+        grouped = spec.addition("thres") if fam.thresholds else None
         if spec.intercept and (center_predictors or fam.thresholds):
             add(priors.intercept, "Intercept", dpar=dpar)
-            if fam.thresholds:                                        # brms lists every threshold under the class row (B05)
+            if grouped is not None:                                   # F06b: a group row per level of thres(gr = z), and its thresholds
+                if not grouped.levels:
+                    raise PriorError(f"the prior table of {grouped.term!r} needs its levels: pass the model's spec, whose data are seen")
+                for level, m in zip(grouped.levels, grouped.nthres):
+                    add(None, "Intercept", group=level, source=priors.intercept.source)
+                    for k in range(1, m + 1):
+                        add(None, "Intercept", coef=str(k), group=level, source=priors.intercept.source)
+            elif fam.thresholds:                                      # brms lists every threshold under the class row (B05)
                 for k in range(1, len(categories)):
                     add(None, "Intercept", coef=str(k), source=priors.intercept.source)
         elif spec.intercept:

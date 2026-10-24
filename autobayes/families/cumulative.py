@@ -181,7 +181,22 @@ CUMULATIVE = FamilySpec(
     links=MappingProxyType({"probit": lambda: _probit(),           # D04: the probit link, accepted against brms and P6's reference (D88)
                             "cloglog": lambda: _cloglog()}),        # E06: accepted against brms on cumulative_cloglog_narrow (D132)
     parked_links=_CUMULATIVE_PARKED_LINKS,
+    addition_terms=frozenset({"thres"}),                            # F06b: thres(gr = z), the logit link's (_grouped)
+    grouped_thresholds=lambda: _grouped(),
 )
+
+
+def _refuse_grouped_thresholds(spec, link: str) -> None:
+    """F06b: grouped thresholds are verified for the logit link only (divergence D158)."""
+    a = spec.addition("thres")
+    if a is not None:
+        raise FormulaError(f"{spec.formula!r}: {a.term!r} with the cumulative family's {link} link is not offered: grouped thresholds "
+                           "are verified for the logit link only (docs/grouped-thresholds.md, divergence D158)")
+
+
+def _probit_check_formula(spec) -> None:
+    _check_formula(spec)
+    _refuse_grouped_thresholds(spec, "probit")
 
 
 # -- D04: the probit link ------------------------------------------------------------------------------------------------
@@ -215,6 +230,7 @@ def _probit() -> FamilySpec:
         bambi_setup=ordinal_bambi_setup("cumulative_probit", ordered=True),
         log_likelihood=ordinal_log_likelihood("cumulative_probit"),
         links=MappingProxyType({"logit": lambda: CUMULATIVE, "cloglog": lambda: _cloglog()}),
+        check_formula=_probit_check_formula, addition_terms=frozenset(), grouped_thresholds=None,   # F06b: logit only (D158)
     )
 
 
@@ -240,6 +256,7 @@ def _cloglog_check_formula(spec) -> None:
     from autobayes.families.links import check_link_formula
 
     _check_formula(spec)
+    _refuse_grouped_thresholds(spec, "cloglog")                     # F06b: logit only (D158)
     check_link_formula(spec, _cloglog())
 
 
@@ -260,4 +277,23 @@ def _cloglog() -> FamilySpec:
         log_likelihood=ordinal_log_likelihood("cumulative_cloglog"),
         monotonic=False, check_formula=_cloglog_check_formula,       # D133
         links=MappingProxyType({"logit": lambda: CUMULATIVE, "probit": lambda: _probit()}),
+        addition_terms=frozenset(), grouped_thresholds=None,         # F06b: logit only (D158)
+    )
+
+
+# -- F06b: grouped thresholds, thres(gr = z) -------------------------------------------------------------------------------
+@lru_cache(maxsize=None)
+def _grouped() -> FamilySpec:
+    """The cumulative logit family's spec with brms's grouped thresholds ``thres(gr = z)`` and ``thres(K, gr = z)`` (F06b,
+    ``autobayes/grouped_thresholds.py``, docs/grouped-thresholds.md): one ordered set of thresholds per level of ``z``, the
+    design uncentred, each row's likelihood, expected values and log_lik from its level's thresholds;
+    ``CUMULATIVE.grouped_thresholds``, which ``Model`` takes for a formula with the term. Checked against brms on
+    ``cumulative_thres_gr`` and ``cumulative_thres_k_gr``."""
+    from autobayes import grouped_thresholds as gt
+
+    return replace(
+        CUMULATIVE, expected_response=gt.expected_response, log_likelihood=gt.log_likelihood, bambi_setup=gt.bambi_setup,
+        mean_lines=gt.mean_lines, likelihood_lines=gt.likelihood_lines, intercept_lines=gt.intercept_lines,
+        deterministic_note="mu = linear predictor (no intercept); b_Intercept = Intercept, the thresholds of every level (not centred)",
+        monotonic=False, links=MappingProxyType({}), parked_links=MappingProxyType({}), grouped_thresholds=None,
     )

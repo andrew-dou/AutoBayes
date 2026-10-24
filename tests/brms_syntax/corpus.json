@@ -6843,8 +6843,8 @@
    "result": {
     "status": "error",
     "type": "FormulaError",
-    "message": "'yord | thres(3) ~ x': 'thres(3)' is not a supported response addition term. brms's left-hand side 'response | term + term' takes weights(col), cens(col) and trunc(lb = a, ub = b) here (docs/addition-terms.md), and mi() in a multivariate list of formulas (docs/missing-and-measurement-error.md); a binomial response is exactly 'successes | trials(n)', with any other terms after it.",
-    "raised_at": "formula.py:1120",
+    "message": "'yord | thres(3) ~ x': 'thres(3)': thres() without gr = , one number of thresholds for every row, is not offered; grouped thresholds thres(gr = z) and thres(K, gr = z) are (docs/grouped-thresholds.md, divergence D158)",
+    "raised_at": "grouped_thresholds.py:63",
     "stage": "default_priors",
     "mechanism": "refusal",
     "outcome": "refused_named",
@@ -6895,14 +6895,13 @@
     "group_terms": []
    },
    "result": {
-    "status": "error",
-    "type": "FormulaError",
-    "message": "'yord | thres(3, gr = f2) ~ x': 'thres(3, gr = f2)' is not a supported response addition term. brms's left-hand side 'response | term + term' takes weights(col), cens(col) and trunc(lb = a, ub = b) here (docs/addition-terms.md), and mi() in a multivariate list of formulas (docs/missing-and-measurement-error.md); a binomial response is exactly 'successes | trials(n)', with any other terms after it.",
-    "raised_at": "formula.py:1120",
-    "stage": "default_priors",
-    "mechanism": "refusal",
-    "outcome": "refused_named",
-    "gap": "capability"
+    "status": "built",
+    "model": "Model",
+    "model_warnings": [],
+    "issues": [],
+    "notes": [],
+    "outcome": "match",
+    "gap": null
    }
   },
   {
@@ -13408,16 +13407,16 @@
  ],
  "summary": {
   "outcomes": {
-   "match": 117,
+   "match": 118,
    "refused_unclear": 18,
-   "refused_named": 111,
+   "refused_named": 110,
    "misread": 1,
    "differs": 1
   },
   "gaps": {
-   "none": 120,
+   "none": 121,
    "defect": 19,
-   "capability": 108,
+   "capability": 107,
    "divergence": 1
   },
   "brms_refuses": 3

@@ -287,6 +287,7 @@ def _check_newdata(model, newdata: pd.DataFrame, *, need_trials: bool = False, i
     operands += [c for d in s.dpars for t in d.group_terms for c in t.data_columns] if include_group_effects else []   # mm(), by
     cols = [*s.model_columns] + ([s.offset.column] if s.offset is not None else []) + operands   # every formula's columns (B01)
     cols += list(s.car.columns) if getattr(s, "car", None) is not None else []   # F02a: the locations, needed with or without groups
+    cols += [a.column for a in s.additions if a.kind == "thres"]   # F06b: each row's level of thres(gr = z)
     cols = list(dict.fromkeys(cols))
     if need_trials:
         if s.trials not in newdata.columns:
@@ -312,6 +313,8 @@ def _check_newdata(model, newdata: pd.DataFrame, *, need_trials: bool = False, i
                                "docs/missing-and-measurement-error.md, divergence D74)")
     if df.isna().any().any():
         raise FormulaError("newdata contains missing values")
+    if getattr(model.design, "thresholds", None) is not None:   # F06b: a fitted level of thres(gr = z) on every row (D159)
+        model.design.thresholds.level_index(df[model.design.thresholds.column], where="newdata column")
     categorical_names = {c.name for c in s.all_categoricals}
     monotonic_columns = {m.column for m in s.monotonics}
     for c in s.model_columns:                                    # numeric predictors and the raw columns of transforms
@@ -489,6 +492,9 @@ def _predict_by_hand(model, idata, df: pd.DataFrame | None, kind: str, seed, pol
         trunc = model.spec.addition("trunc")
         if model.spec.dpars and (kind == "response" or fam.expected_response is not None or trunc is not None):
             post = _with_dpars(model, post, df, include_group_effects=include_group_effects)   # each row's own sigma (B01)
+        if getattr(model.design, "thresholds", None) is not None:   # F06b: each row's level of thres(gr = z)
+            from autobayes.grouped_thresholds import with_row_levels
+            post = with_row_levels(model, post, df)
         if fam.simplex is not None and not fam.simplex.epred:   # F01b: the logistic_normal family has no mean (kind="response" here)
             mean = None
         elif trunc is None:

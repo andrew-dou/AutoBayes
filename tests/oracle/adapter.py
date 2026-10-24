@@ -119,6 +119,12 @@ E03: a formula on a family's zero-inflation or hurdle probability or extra param
 coefficients are handed to `value_point` as `zi=`, `hu=` or `alpha=`, and brms's `X_<p>` of any family parameter without a
 formula in the model is a mismatch.
 
+F06b: grouped thresholds (`thres(gr = z)`, `thres(K, gr = z)`) are brms's `ordered[nthres[k]] Intercept_k`, one per level `k`
+of z (`ngrthres` of them; `merged_Intercept` their concatenation, each row's block `Jthres`): brms's level `k` is matched to
+the model's level by the rows its `Jthres` block points to and its `nthres[k]` (`match_threshold_groups`, `ColumnMap.thres_levels`),
+and each `Intercept_k`'s coordinates are Stan's ordered coordinates of that block, recomputed at every point and checked against
+the fixture's `u` before they are mapped to the level's block of `Intercept_ordered__` (the model's merged vector).
+
 F02b: a SAR term (`sar(M, type = "lag" | "error")`) is brms's `Msar` and `eigenMsar`, checked against the model's weight matrix
 and eigenvalues (`check_sar_design`); its parameter, brms's `real<lower=min_eigenMsar,upper=max_eigenMsar>` `lagsar` or `errorsar`,
 maps to `<name>_interval__` (Stan's lower-upper coordinate, recomputed from the value at every point and checked against the
@@ -275,6 +281,7 @@ class ColumnMap:
     ordered: bool = True                  # D04: with thresholds, brms's ordered[nthres] Intercept; False for its vector[nthres] Intercept
     cs: tuple = ()                        # D04: the model's cs() columns in brms's Xcs column order (row k of bcs is cs[k]'s), match_cs
     mus: dict = None                      # F01a: brms's b_<mu> entry of each design column of each category's formula, by name
+    thres_levels: tuple = ()              # F06b: the model's level of thres(gr = z) of each brms Intercept_k, k = 1.. (match_threshold_groups)
 
     def b_index(self, x_col: int) -> int:
         """Index into brms's ``b`` of design column ``x_col``."""
@@ -314,7 +321,10 @@ def _match_design(fixture: Fixture, model: ab.Model, X_name: str = "X", b_name: 
     rest = [k for k in range(X.shape[1]) if k not in taken]
     intercept_col = None
     ordered = getattr(model.family_spec, "ordered_thresholds", True)
-    if thresholds:                                            # B05: brms's ordinal X has no intercept column, its Intercept
+    thres_levels = ()
+    if thresholds and getattr(model.design, "thresholds", None) is not None:   # F06b: one ordered Intercept_k per level of z
+        thres_levels = match_threshold_groups(fixture, model)
+    elif thresholds:                                          # B05: brms's ordinal X has no intercept column, its Intercept
         declared = fixture.declarations.get(intercept_name, "")  # is the vector of ordered thresholds (D04: or unordered ones)
         want = "ordered[" if ordered else "vector["
         if "nthres" not in fixture.standata or not declared.startswith(want):
@@ -337,7 +347,57 @@ def _match_design(fixture: Fixture, model: ab.Model, X_name: str = "X", b_name: 
         raise OracleMismatch(f"brms {b_name} has {coefficients(pars, b_name).size} entries; expected {expected_b} from {X.shape[1]} design columns")
     if Kc_name in fixture.standata and int(fixture.standata[Kc_name]) != expected_b:
         raise OracleMismatch(f"brms {Kc_name} = {int(fixture.standata[Kc_name])} but {b_name} has {expected_b} entries")
-    return ColumnMap(tuple(cols), intercept_col, centred, thresholds=thresholds, ordered=ordered or not thresholds)
+    return ColumnMap(tuple(cols), intercept_col, centred, thresholds=thresholds, ordered=ordered or not thresholds,
+                     thres_levels=thres_levels)
+
+
+def match_threshold_groups(fixture: Fixture, model: ab.Model) -> tuple[str, ...]:
+    """F06b: the model's level of ``thres(gr = z)`` of each of brms's ``Intercept_k``, ``k = 1..ngrthres``: brms's ``nthres`` (one
+    entry per level) and ``ngrthres`` must be the model's numbers, each ``Intercept_k`` declared ``ordered[nthres[k]]`` and no
+    ungrouped ``Intercept``, and the rows whose ``Jthres`` is level ``k``'s block (``Kthres_start`` the block's first threshold in
+    ``merged_Intercept``, ``Kthres_end`` its last, 1-based) must be exactly the rows of one level of the model with that many
+    thresholds; every brms level and every model level matched once."""
+    sd, groups = fixture.standata, model.design.thresholds
+    if "Jthres" not in sd or "ngrthres" not in sd:
+        raise OracleMismatch(f"the AutoBayes model has {groups.term!r}; brms's standata has no Jthres / ngrthres (ungrouped thresholds)")
+    nthres = np.atleast_1d(sd["nthres"]).astype(int)
+    L = int(sd["ngrthres"])
+    if L != len(groups.levels) or nthres.shape != (L,) or sorted(nthres.tolist()) != sorted(groups.nthres):
+        raise OracleMismatch(f"brms has ngrthres = {L} levels with nthres {nthres.tolist()}; the AutoBayes model's {groups.term!r} has "
+                             f"{len(groups.levels)} levels {list(groups.levels)} with {list(groups.nthres)}")
+    if "Intercept" in fixture.declarations:
+        raise OracleMismatch(f"brms declares the ungrouped thresholds Intercept as well as grouped ones")
+    for k in range(1, L + 1):
+        want = f"ordered[nthres[{k}]]"
+        if not fixture.declarations.get(f"Intercept_{k}", "").startswith(want):
+            raise OracleMismatch(f"brms declares Intercept_{k} as {fixture.declarations.get(f'Intercept_{k}')!r}, not {want}")
+    J = np.atleast_2d(sd["Jthres"]).astype(int)
+    if J.shape != (model.design.n, 2):
+        raise OracleMismatch(f"brms's Jthres is {J.shape}; the model has {model.design.n} rows")
+    starts = np.cumsum(np.r_[0, nthres[:-1]]) + 1                 # brms's merged_Intercept: level k's block starts here (1-based)
+    out = []
+    for k in range(L):
+        rows = np.flatnonzero(J[:, 0] == starts[k])
+        if rows.size == 0 or not (J[rows, 1] == starts[k] + nthres[k] - 1).all():
+            raise OracleMismatch(f"brms's Jthres of the rows of level {k + 1} is not its block {starts[k]}..{starts[k] + nthres[k] - 1}")
+        mine = np.unique(groups.index[rows])
+        if mine.size != 1 or not np.array_equal(np.flatnonzero(groups.index == mine[0]), rows) or groups.nthres[mine[0]] != nthres[k]:
+            raise OracleMismatch(f"brms's level {k + 1} of the thresholds (rows {rows[:6].tolist()}..., {nthres[k]} thresholds) is no level "
+                                 f"of the AutoBayes model's {groups.term!r}")
+        out.append(groups.levels[mine[0]])
+    if sorted(out) != sorted(groups.levels) or len(set(out)) != L:
+        raise OracleMismatch(f"brms's threshold levels match the AutoBayes levels {out}; expected each of {list(groups.levels)} once")
+    covered = np.isin(J[:, 0], starts)
+    if not covered.all():
+        raise OracleMismatch(f"brms's Jthres points rows {np.flatnonzero(~covered)[:6].tolist()} to no level's block")
+    return tuple(out)
+
+
+def merged_thresholds(model: ab.Model, cmap: ColumnMap, pars: dict, name: str = "Intercept") -> np.ndarray:
+    """F06b: brms's ``<name>_k`` (``Intercept_k`` or ``b_Intercept_k``) of every level, in the model's merged order (its levels in
+    turn, each level's block in threshold order)."""
+    by_level = {level: np.atleast_1d(pars[f"{name}_{k}"]).astype(float) for k, level in enumerate(cmap.thres_levels, start=1)}
+    return np.concatenate([by_level[level] for level in model.design.thresholds.levels])
 
 
 def match_cs(fixture: Fixture, model: ab.Model) -> tuple[str, ...]:
@@ -861,7 +921,9 @@ def natural_point(model: ab.Model, point: Point, cmap: ColumnMap, gmap: GroupMap
     else:
         bb = coefficients(pars)
         b = np.array([bb[cmap.b_index(k)] for k in cmap.x_column], dtype=float)
-        if model.spec.intercept and cmap.thresholds:           # B05: brms's ordered thresholds, a vector
+        if model.spec.intercept and cmap.thres_levels:         # F06b: each level's thresholds, brms's Intercept_k, by level
+            intercept = {level: np.atleast_1d(pars[f"Intercept_{k}"]).astype(float) for k, level in enumerate(cmap.thres_levels, start=1)}
+        elif model.spec.intercept and cmap.thresholds:         # B05: brms's ordered thresholds, a vector
             intercept = np.atleast_1d(pars["Intercept"]).astype(float)
         elif model.spec.intercept:
             intercept = float(pars["Intercept"]) if cmap.centred_intercept else float(bb[cmap.b_index(cmap.intercept_column)])
@@ -1032,6 +1094,7 @@ def coordinate_map(fixture: Fixture, model: ab.Model, cmap: ColumnMap, gmap: Gro
     seen_L: dict[str, int] = {}                                            # L_m coordinates met so far, in index order
     seen_thresholds = 0                                                    # Intercept coordinates met so far (B05)
     seen_cortime = 0                                                       # Lcortime coordinates met so far (F03b)
+    seen_levels: dict[str, int] = {}                                       # F06b: each Intercept_k's coordinates met so far
     others = len(cmap.dpars)
     simplex_coordinates = _simplex_coordinates(fixture, model, cmap)       # B03: the coordinates the probe could not reach
     by_k = {k: c for c, k in (cmap.monotonic or {}).items()}               # B03: brms's special-term number -> column
@@ -1076,6 +1139,21 @@ def coordinate_map(fixture: Fixture, model: ab.Model, cmap: ColumnMap, gmap: Gro
             Kcs = len(cmap.cs)
             column, k = cmap.cs[elem % Kcs], elem // Kcs
             target, expect = (next(t.name for t in model.spec.cs_terms if t.operands[0] == column), k), "identity"
+        elif cmap.thres_levels and re.fullmatch(r"Intercept_\d+", par):   # F06b: level k's ordered[nthres[k]] Intercept_k
+            k = int(par[len("Intercept_"):])
+            if k > len(cmap.thres_levels):
+                raise OracleMismatch(f"{par} is no level of the thresholds brms's Jthres points to")
+            j = seen_levels.get(par, 0)
+            seen_levels[par] = j + 1
+            for q, pt_ in enumerate(fixture.points):          # Stan's ordered coordinates of the block, as for the ungrouped ones
+                tau = np.atleast_1d(pt_.pars[par]).astype(float)
+                u = np.r_[tau[0], np.log(np.diff(tau))]
+                if j >= u.size or abs(u[j] - pt_.u[idx]) > 1e-10:
+                    raise OracleMismatch(f"point {q}: Stan's ordered coordinate {j} of {par} is {u[j] if j < u.size else 'absent'!r}; "
+                                         f"brms's unconstrained value is {pt_.u[idx]!r}")
+            groups = model.design.thresholds
+            start = groups.starts[groups.levels.index(cmap.thres_levels[k - 1])]
+            target, expect = (f"{names['intercept']}_ordered__", start + j), "joint"
         elif par == "Intercept" and cmap.thresholds:          # B05: the cumulative thresholds, brms's ordered[nthres]
             k = seen_thresholds
             seen_thresholds += 1
@@ -1416,7 +1494,12 @@ def draws(fixture: Fixture, model: ab.Model, cmap: ColumnMap, gmap: GroupMap) ->
     if cmap.dpars:                                             # B05: the categorical family, one column per category
         _category_family_draws(fixture, model, gmap, data, coords)   # F01b: its group terms and the simplex families' parameters
         return _category_draws(fixture, model, cmap, data, coords)
-    if model.spec.intercept and cmap.thresholds:               # B05: the thresholds, centred (Intercept) and raw (b_Intercept)
+    if model.spec.intercept and cmap.thres_levels:             # F06b: every level's thresholds, merged in the model's order
+        dims = ("chain", "draw", names["threshold_dim"])
+        for var, brms in ((names["intercept"], "Intercept"), (names["thresholds"], "b_Intercept")):
+            data[var] = (dims, np.stack([merged_thresholds(model, cmap, p.pars, brms) for p in pts])[None])
+        coords[names["threshold_dim"]] = list(model.design.thresholds.labels)
+    elif model.spec.intercept and cmap.thresholds:             # B05: the thresholds, centred (Intercept) and raw (b_Intercept)
         dims = ("chain", "draw", names["threshold_dim"])
         data[names["intercept"]] = (dims, np.stack([np.atleast_1d(p.pars["Intercept"]) for p in pts])[None])
         data[names["thresholds"]] = (dims, np.stack([np.atleast_1d(p.pars["b_Intercept"]) for p in pts])[None])

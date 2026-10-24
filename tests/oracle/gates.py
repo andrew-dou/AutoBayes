@@ -58,6 +58,10 @@ rescor; G4: the predictions' response axis; G6: brms's table with every response
 D04: G1 matches brms's Xcs and Kcs to the model's cs() columns (adapter.match_cs), G2 maps the unordered thresholds and bcs, and
 G3 compares the graph's per-threshold predictor mu_cs of a model with cs() terms with brms's (rows, thresholds) posterior_linpred.
 
+F06b: grouped thresholds (thres(gr = z)): G1 matches brms's ngrthres, nthres (one per level) and Jthres to the model's levels
+(adapter.match_threshold_groups); G2 maps each Intercept_k to its level's block; G3 compares the graph's b_Intercept and the
+raw-scale thresholds with brms's b_Intercept_k of every level (and its merged_Intercept), in the model's merged order.
+
 D08: G2's prior part includes a shared correlation ID's distributional SDs and the potential that carries brms's normalisation
 constant of gr(by = )'s SDs; G3 adds a shared ID's distributional effects (r_m_<dpar>_c) to brms's linear predictor of the
 parameter and checks the graph's effects against them.
@@ -262,7 +266,11 @@ def check_design(b: Bundle) -> None:
     for name in designs:
         if sd[name].shape != (d.n, d.X_raw.shape[1] + intercept_column):
             raise OracleMismatch(f"brms {name} is {sd[name].shape}; AutoBayes has {d.X_raw.shape[1]} design columns and intercept={b.model.spec.intercept}")
-    if b.cmap.thresholds and int(sd["nthres"]) != len(b.model.categories) - 1:
+    if b.cmap.thres_levels:                                      # F06b: one nthres per level, Jthres, ngrthres
+        adapter.match_threshold_groups(b.fixture, b.model)
+        if int(np.max(sd["nthres"])) != len(b.model.categories) - 1:
+            raise OracleMismatch(f"brms's largest nthres is {int(np.max(sd['nthres']))}; AutoBayes has {len(b.model.categories)} categories")
+    elif b.cmap.thresholds and int(sd["nthres"]) != len(b.model.categories) - 1:
         raise OracleMismatch(f"brms has nthres = {int(sd['nthres'])}; AutoBayes has {len(b.model.categories)} categories")
     if b.cmap.dpars and not b.cmap.mixture and int(sd["ncat"]) != len(b.model.categories):   # a mixture's dpars are components
         raise OracleMismatch(f"brms has ncat = {int(sd['ncat'])}; AutoBayes has {len(b.model.categories)} categories")
@@ -521,7 +529,18 @@ def check_derived(b: Bundle) -> None:
             if err > PRED_REL:
                 raise OracleMismatch(f"point {k}: group effects of {coef!r} of {g!r} in {name}'s formula differ from brms r_{m}_{name}_{cn} "
                                      f"by {err}")
-        if b.cmap.thresholds:                                        # B05: b_Intercept = Intercept + sum_p mean(x_p) b_p
+        if b.cmap.thres_levels:                                      # F06b: every level's b_Intercept_k = Intercept_k (no centring)
+            nat = adapter.natural_point(b.model, p, b.cmap, b.gmap)
+            brms = adapter.merged_thresholds(b.model, b.cmap, p.pars, "b_Intercept")
+            merged = np.concatenate([np.atleast_1d(p.pars[f"Intercept_{j}"]) for j in range(1, len(b.cmap.thres_levels) + 1)])
+            if rel_err(np.atleast_1d(p.pars["merged_Intercept"]), merged) > PRED_REL:
+                raise OracleMismatch(f"point {k}: brms's merged_Intercept is not its Intercept_k in turn")
+            raw = np.concatenate([nat["intercept"][level] for level in b.model.design.thresholds.levels]) + float(d.x_means @ nat["b"])
+            for what, mine in (("raw-scale thresholds", raw), (f"the graph's {names['thresholds']!r}", np.asarray(out[-1], dtype=float))):
+                err = rel_err(mine, brms)
+                if err > PRED_REL:
+                    raise OracleMismatch(f"point {k}: {what} {mine!r} vs brms b_Intercept_k {brms!r}")
+        elif b.cmap.thresholds:                                      # B05: b_Intercept = Intercept + sum_p mean(x_p) b_p
             nat = adapter.natural_point(b.model, p, b.cmap, b.gmap)
             brms = np.atleast_1d(p.pars["b_Intercept"])
             for what, raw in (("raw-scale thresholds", nat["intercept"] + float(d.x_means @ nat["b"])),

@@ -318,3 +318,9 @@ axis on their SDs and standardised effects (brms's own group term per `mu<k>`).
 
 What a spec does not decide: the formula grammar, the design construction, centring, group coding and the
 sampler are shared by all families and live where they did.
+
+Grouped thresholds (F06b, docs/grouped-thresholds.md): `FamilySpec.grouped_thresholds` builds a family's spec with brms's
+`thres(gr = z)` (the cumulative logit family's `cumulative._grouped()`, which `Model` takes for a formula with the term, and
+whose `bambi_setup`, `expected_response`, `log_likelihood` and wording are `autobayes/grouped_thresholds.py`'s); `"thres"` in
+`addition_terms` is the term's parse-time gate (the cumulative family's alone; its probit and cloglog links refuse it in
+`check_formula`, D158).
