@@ -114,6 +114,9 @@ brms's `posterior_epred(dpar = "xi")` (`derived_draws`) for the draws `predict()
 F04: the wiener family's extra parameters are brms's `bs` (`real<lower=0>`, log scale), `ndt` (as D01's) and `bias`
 (`real<lower=0,upper=1>`, Stan's logit, checked as `quantile` is); `bs ~ z` is a formula on an extra parameter as E03's, below.
 
+F06a: under `se(col)` without `sigma = TRUE` brms reports its data `sigma = 0` among a point's parameters; a model without sigma
+takes no sigma value, and a nonzero one is a mismatch (G1 checks brms's Stan data `sigma`, `se` and `rate()`'s `denom`).
+
 E03: a formula on a family's zero-inflation or hurdle probability or extra parameter (`zi ~ z`, `hu ~ z`, the skew normal's
 `alpha ~ z`; `FamilySpec.distributional_formulas`) is matched as B01's (`X_zi`, `Intercept_zi`, `b_zi`, ...): its intercept and
 coefficients are handed to `value_point` as `zi=`, `hu=` or `alpha=`, and brms's `X_<p>` of any family parameter without a
@@ -952,6 +955,10 @@ def natural_point(model: ab.Model, point: Point, cmap: ColumnMap, gmap: GroupMap
             sd[g], z[g] = per_sd["Intercept"], per_z["Intercept"]
     L = {g: brms_cholesky(model, gmap, g, pars) for g in model.correlation_names}   # D08: a shared ID's too
     sigma = float(pars["sigma"]) if "sigma" in pars else None
+    if sigma is not None and "sigma" not in model.names and not cmap.mixture:   # F06a: se(col) without sigma = TRUE: brms's sigma
+        if sigma != 0.0:                                       # is its data 0, reported among the parameters; the model has none
+            raise OracleMismatch(f"brms reports sigma = {sigma!r}; the AutoBayes model has no sigma (se() without sigma = TRUE fixes it at 0)")
+        sigma = None
     shape = float(pars["shape"]) if "shape" in pars else None
     phi = float(pars["phi"]) if "phi" in pars else None
     formulas = {}                                          # B01: an auxiliary parameter's own formula: its intercept (as sampled) and b

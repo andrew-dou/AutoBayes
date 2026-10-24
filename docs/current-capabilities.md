@@ -450,3 +450,13 @@ the categories its level does not reach), draws and `log_lik()` from its level's
 threshold; verified against `cumulative_thres_gr` and `cumulative_thres_k_gr`; other families and links, `thres()` without
 `gr`, `mo()`, `gp()` and the other contexts are refused (D158), as are new levels of `z` in `newdata` (D159); see
 [grouped thresholds](grouped-thresholds.md).
+
+Known standard errors and rates (F06a, brms's addition terms `se()` and `rate()`): `y | se(col) ~ ...` for the Gaussian and
+Student-t families (each row's scale its standard error, no sigma parameter or prior: brms's Stan data `sigma = 0`) and
+`y | se(col, sigma = TRUE) ~ ...` (the scale `sqrt(sigma^2 + se_i^2)`); `y | rate(col) ~ ...` for the Poisson and negative
+binomial families under the log link (the mean `exp(eta_i) d_i`, the negative binomial's shape `shape * d_i`), with brms's
+`posterior_linpred` (without the denominator) and `posterior_epred` (with it) on fitted and new rows, response draws,
+`log_lik()`, `loo()`, `bayes_R2()`, brms's default priors (no sigma row under `se(col)`) and `describe()`. Verified against
+`gauss_se_meta`, `gauss_se_sigma`, `student_se_sigma`, `poisson_rate` and `negbinomial_rate`; a zero standard error without
+`sigma = TRUE` (where brms's likelihood is undefined, D156), another addition term next to either, a distributional formula, an
+expression inside the call, other links and families are refused (D157); see [se() and rate()](se-rate.md).

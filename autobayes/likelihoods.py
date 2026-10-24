@@ -1491,10 +1491,13 @@ def censored_truncated_log_lik(model, post, eta, ll):
     return ll
 
 
-def _addition_dist(base_dist, data: Mapping[str, np.ndarray], tails: Tails | None):
+def _addition_dist(base_dist, data: Mapping[str, np.ndarray], tails: Tails | None, family_spec=None):
     """The likelihood class Bambi calls with the family's parameters by name: ``base_dist`` (the family's PyMC
     distribution, or its hand-written class) with the addition terms of ``data`` (``formula.addition_data`` on the fitted
-    rows) applied to its log density."""
+    rows) applied to its log density. F06a: ``se()`` and ``rate()`` give the distribution its parameters per row
+    (``se_rate.likelihood_parameters``, by ``family_spec``'s Bambi names) before anything else reads them, its draws included."""
+    from autobayes.se_rate import likelihood_parameters
+
     weights, cens, rcens = data.get("weights"), data.get("cens"), data.get("rcens")
     lower = None if "lb" not in data or np.isneginf(data["lb"][0]) else float(data["lb"][0])   # numeric bounds, one per model
     upper = None if "ub" not in data or np.isposinf(data["ub"][0]) else float(data["ub"][0])
@@ -1505,11 +1508,11 @@ def _addition_dist(base_dist, data: Mapping[str, np.ndarray], tails: Tails | Non
     def forms(keys):
         def draw(*args):
             *params, size = args
-            kw = dict(zip(keys, params))
+            kw = likelihood_parameters(dict(zip(keys, params)), data, family_spec)
             return tails.truncated(lower, upper, size=size, **kw) if truncated else base_dist.dist(**kw, size=size)
 
         def logp(value, *params):
-            kw = dict(zip(keys, params))
+            kw = likelihood_parameters(dict(zip(keys, params)), data, family_spec)
             ll = pm.logp(base_dist.dist(**kw), value)
             if cens is not None:                               # brms: lpdf if 0, lccdf if 1, lcdf if -1
                 right, left = value, value
@@ -1564,7 +1567,7 @@ def addition_family(base, family_spec, data: Mapping[str, np.ndarray]):
     lk = family.likelihood
     tails = family_spec.tails() if family_spec.tails is not None else None
     family.likelihood = bmb.Likelihood(lk.name, params=lk.params, parent=lk.parent,
-                                       dist=_addition_dist(get_distribution_from_likelihood(lk), data, tails))
+                                       dist=_addition_dist(get_distribution_from_likelihood(lk), data, tails, family_spec))
     return family
 
 

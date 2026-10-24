@@ -10,18 +10,29 @@ def _validate_response(spec, data) -> None:
     validate_numeric_response(spec.response, data[spec.response], "Gaussian")
 
 
+def _scale(model, post, df):
+    """Each draw's and row's scale: sigma per draw, or per draw and row (B01); under se() (F06a) each row's known standard error
+    alone (se(col): no sigma) or with sigma in quadrature (se(col, sigma = TRUE)), the rows of ``df`` (None: the fitted rows)."""
+    from autobayes.se_rate import has_scale, row_scale, standard_errors
+
+    return row_scale(model, auxiliary(model, post, "sigma") if has_scale(model) else None, standard_errors(model, df))
+
+
 def _draw_response(model, post, eta, mean, df, rng):
-    return rng.normal(mean, auxiliary(model, post, "sigma"))       # sigma per draw, or per draw and row (B01)
+    return rng.normal(mean, _scale(model, post, df))
 
 
 def _log_likelihood(model, post, eta):
-    """brms's log_lik (C07): ``log Normal(y_i | mu_i, sigma)``, sigma per draw (or per draw and row, B01)."""
+    """brms's log_lik (C07): ``log Normal(y_i | mu_i, sigma)``, sigma per draw (or per draw and row, B01); under se() (F06a) the
+    row's scale is its standard error, or sqrt(sigma^2 + se_i^2)."""
     from autobayes.families.pointwise import normal
 
-    return normal(model.design.y, eta, auxiliary(model, post, "sigma"))
+    return normal(model.design.y, eta, _scale(model, post, None))
 
 
 def _likelihood_lines(model) -> list[str]:
+    from autobayes.se_rate import has_scale, scale_text
+
     term = getattr(model.spec, "fcor", None)                        # F03a: the rows' joint normal with the fixed covariance
     if term is not None:
         n = model.design.n
@@ -29,7 +40,8 @@ def _likelihood_lines(model) -> list[str]:
                 f"  y ~ MultiNormal(mu, sigma^2 * {term.matrix}) over the {n} fitted rows: {term.term}, brms's normal_fcor_hom; {term.matrix} is",
                 f"  the known {n} x {n} residual covariance from data2 (brms's Mfcor), read in data order; its Cholesky factor L (brms's",
                 "  Lfcor) gives z = L^-1 (y - mu) / sigma and log p(y) = sum_i (-z_i^2 / 2 - log sigma - log L_ii - log(2 pi) / 2)"]
-    return [scale_line(model), "", "Likelihood", f"  y_i ~ Normal(mu_i, {scale_symbol(model)})"]
+    return ([scale_line(model)] if has_scale(model) else []) + ["", "Likelihood",
+                                                                f"  y_i ~ Normal(mu_i, {scale_text(model, scale_symbol(model))})"]
 
 
 def _tails():
@@ -74,8 +86,9 @@ GAUSSIAN = FamilySpec(
     deterministic_note="mu = linear predictor",
     default_prior_link="identity",                                  # brms reads y as given: student_t(3, round(median(y), 1), max(2.5, round(mad(y), 1)))
     default_scale_prior=lambda scale: HalfStudentT(3, scale),       # brms sigma: student_t(3, 0, scale), lb 0
-    addition_terms=frozenset({"weights", "cens", "trunc", "mi"}),   # B02: weights(); cens() and trunc() since P6 (two references, D24, D25); mi() (C06)
+    addition_terms=frozenset({"weights", "cens", "trunc", "mi", "se"}),   # B02: weights(); cens() and trunc() since P6 (two references, D24, D25); mi() (C06); se() (F06a: gauss_se_meta, gauss_se_sigma)
     tails=_tails,
+    se_parameter="sigma",                                           # F06a: se(col) is the row's sigma, or adds to it in quadrature
     distributional_link="log",                                      # B01: sigma ~ z, brms's log link
     default_distributional_intercept=lambda scale: StudentT(3, 0, scale),   # brms Intercept_sigma: student_t(3, 0, scale of log y)
     monotonic=True,                                                 # B03: mo(x), verified against gauss_monotonic

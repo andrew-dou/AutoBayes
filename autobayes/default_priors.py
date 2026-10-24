@@ -373,6 +373,10 @@ def default_priors(formula: str | list[str], data: pd.DataFrame, *, family: str 
     if fam is not get_family(family) and fam.check_formula is not None:   # a link's own refusals (E06, divergence D133)
         fam.check_formula(spec)
     check_imputation(spec, imputed)                                   # C06: mi() belongs to a multivariate model
+    if spec.addition("se") is not None:                               # F06a: se(col) without sigma = TRUE: no sigma, no sigma row
+        from autobayes.se_rate import family_for
+
+        fam = family_for(spec, fam)
     from autobayes.fcor import fcor_design
     from autobayes.sar import sar_design
 

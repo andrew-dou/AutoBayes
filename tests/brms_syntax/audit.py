@@ -457,13 +457,19 @@ def compare_univariate(model, reading: Reading, issues: list, notes: list, what:
     match_group_scope(model, d.group_blocks, spec.group_terms, reading, {}, issues, notes, what)
     # addition terms and offsets
     for mine, key in ((d.trials, "trials"), (d.offset, "offsets"), (d.weights, "weights"), (d.cens, "cens"), (d.rcens, "rcens"),
-                      (d.lb, "lb"), (d.ub, "ub"), (getattr(d, "dec", None), "dec")):     # F04: dec(col), the wiener decisions
+                      (d.lb, "lb"), (d.ub, "ub"), (getattr(d, "dec", None), "dec"),     # F04: dec(col), the wiener decisions
+                      (getattr(d, "se", None), "se"), (getattr(d, "denom", None), "denom")):   # F06a: se(col), rate(col)
         if mine is None:
             continue
         if not reading.has(key):
             issues.append(f"{what}AutoBayes has {key}; brms's Stan data has none")
         elif not _close(reading.get(key), mine):
             issues.append(f"{what}{key} differ from brms's")
+    se = spec.addition("se") if hasattr(spec, "addition") else None   # F06a: se(col) without sigma = TRUE, brms's data sigma = 0
+    if se is not None and not se.sigma:
+        if not reading.has("sigma") or float(reading.get("sigma")) != 0.0 or "sigma" in model.names:
+            issues.append(f"{what}brms fixes sigma at 0 in its Stan data under {se.term}; AutoBayes's model "
+                          + ("learns sigma" if "sigma" in model.names else "does not match it"))
     for column, block in d.monotonic.items():                       # mo(): Xmo_k, Jmo
         ks = [k for k in range(1, 50) if reading.has(f"Xmo_{k}") and _close(reading.sd.get(reading.key(f"Xmo_{k}")), block.codes)]
         if len(ks) != 1:

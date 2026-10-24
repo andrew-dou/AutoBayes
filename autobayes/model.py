@@ -216,6 +216,8 @@ class Design:
     category_specific: Mapping[str, np.ndarray] = field(default_factory=lambda: MappingProxyType({}))   # each cs() term's column on the fitted rows (D04; brms's Xcs), by column
     dec: np.ndarray | None = None      # (n,) brms ``dec`` of a ``dec(col)`` term: each wiener row's decision, 1 upper, 0 lower (F04), or None
     thresholds: object | None = None   # grouped_thresholds.ThresholdGroups: thres(gr = z)'s levels on the fitted rows (F06b), or None
+    se: np.ndarray | None = None       # (n,) brms ``se`` of an ``se(col)`` term: each row's known standard error (F06a), or None
+    denom: np.ndarray | None = None    # (n,) brms ``denom`` of a ``rate(col)`` term: each row's denominator (F06a), or None
 
     def __post_init__(self):
         if not self.columns:
@@ -405,6 +407,11 @@ class Model:
             fam.check_formula(spec0)
         self.imputed: tuple[str, ...] = tuple(imputed)        # C06: the columns a multivariate model imputes by their own formula
         check_imputation(spec0, self.imputed)
+        if spec0.addition("se") is not None:                 # F06a: se(col) without sigma = TRUE fixes sigma at 0 (no sigma)
+            from autobayes.se_rate import check_priors, family_for
+
+            check_priors(spec0, priors)
+            fam = self.family_spec = family_for(spec0, fam)
         self.effective_center_predictors = self.center_predictors and spec0.intercept
         if spec0.addition("thres") is not None:              # F06b: grouped thresholds (docs/grouped-thresholds.md): the family's
             fam = self.family_spec = fam.grouped_thresholds()   # spec with them; brms does not centre the design then
@@ -551,7 +558,12 @@ class Model:
         if any(a.kind not in ("mi", "dec", "thres") for a in self.spec.additions):   # brms's response addition terms act on the likelihood
                                                                           # (B02; F04: the wiener likelihood reads dec() itself; F06b: thres())
             from autobayes.likelihoods import addition_family
-            bambi_family = addition_family(bambi_family, fam, addition_data(self.spec, self.data))
+            additions = addition_data(self.spec, self.data)
+            bambi_family = addition_family(bambi_family, fam, additions)
+            if "denom" in additions:                          # F06a: rate(col), brms's mu + log_denom in the linear predictor
+                from autobayes.likelihoods import monotonic_family
+                from autobayes.se_rate import log_denominator_hook
+                bambi_family = monotonic_family(bambi_family, log_denominator_hook(np.log(additions["denom"])))
         if self._fcor_design is not None:                    # F03a: the rows' joint normal with covariance sigma^2 M
             from autobayes.fcor import fcor_family
             bambi_family = fcor_family(bambi_family, self._fcor_design)
@@ -957,6 +969,7 @@ class Model:
                       weights=additions.get("weights"), cens=additions.get("cens"), lb=additions.get("lb"), ub=additions.get("ub"),
                       rcens=additions.get("rcens"),                                         # E04: cens(col, y2)'s upper bounds
                       dec=additions.get("dec"),                                             # F04: the wiener decisions
+                      se=additions.get("se"), denom=additions.get("denom"),                 # F06a: se() and rate()
                       dpars=MappingProxyType({d.response: self._dpar_design(d) for d in self.spec.dpars}),
                       monotonic=MappingProxyType(self._monotonic_design()), gp=MappingProxyType(self._gp_design()),
                       autocor=self._autocor_design, sar=self._sar_design, fcor=self._fcor_design,   # F02b, F03a
@@ -3235,6 +3248,10 @@ class Model:
                 out += [f"  decisions : {a.term}: {upper} row(s) at the upper boundary (1), {d.n - upper} at the lower one (0); "
                         "predict() needs no decisions (the mean response time is over both boundaries)"]
                 continue
+            if a.kind in ("se", "rate"):                     # F06a: brms's se and denom
+                from autobayes.se_rate import data_lines
+                out += data_lines(self, a)
+                continue
             if a.kind == "weights":
                 out += [f"  weights   : {a.column}, each fitted row's log likelihood multiplied by its weight (brms weights()); weights "
                         f"{d.weights.min():.4f} to {d.weights.max():.4f}, sum {d.weights.sum():.4f} over {d.n} rows; the priors are not "
@@ -3268,6 +3285,10 @@ class Model:
         for a in self.spec.additions:
             if a.kind in ("dec", "thres"):                   # F04: the wiener likelihood's own lines say how it reads dec; F06b: and
                 continue                                     # the grouped cumulative likelihood's how it reads thres()
+            if a.kind in ("se", "rate"):                     # F06a
+                from autobayes.se_rate import likelihood_lines
+                out += likelihood_lines(self, a)
+                continue
             if a.kind == "mi":                               # C06: the likelihood at the observed and imputed values
                 out += [f"  mi(): the likelihood is evaluated at {self.spec.response}'s observed values and, at its missing rows, the parameters "
                         f"{self.missing_names[self.spec.response]['values'] if self.spec.response in self.missing_names else '(none missing)'} "

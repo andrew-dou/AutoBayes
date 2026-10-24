@@ -2,7 +2,8 @@
 Each raises `OracleMismatch` naming the point and the quantities that differ; a passing gate returns None.
 
 G1 `check_design`        standata equals the model's design, response, trials, offsets, group coding and addition-term
-                         data (weights, cens, lb, ub; B02; rcens, E04; dec, F04), each distributional formula's X_<dpar> (B01), each
+                         data (weights, cens, lb, ub; B02; rcens, E04; dec, F04; se, denom and se()'s sigma = 0, F06a), each
+                         distributional formula's X_<dpar> (B01), each
                          monotonic term's codes, number of steps and Dirichlet concentrations (Xmo_k, Jmo, con_simo_k; B03),
                          and a mixture's component designs X_mu<k> and theta's concentrations (con_theta; C05),
                          and each Gaussian process's row index, inputs or basis and scaling (Jgp_k, Xgp_k, Xgp_prior_k,
@@ -299,8 +300,9 @@ def check_design(b: Bundle) -> None:
             raise OracleMismatch(f"offsets differ by {err}")
     elif "offsets" in sd:
         raise OracleMismatch("brms has offsets but AutoBayes has no offset term")
-    for key in ("weights", "cens", "rcens", "lb", "ub"):         # brms's addition-term data (B02): weights(), cens(), trunc() bounds; E04: cens(c, y2)'s rcens
-        mine = getattr(d, key)
+    # brms's addition-term data (B02): weights(), cens(), trunc() bounds; E04: cens(c, y2)'s rcens; F06a: se()'s se, rate()'s denom
+    for key in ("weights", "cens", "rcens", "lb", "ub", "se", "denom"):
+        mine = getattr(d, key, None)
         if mine is None:
             if key in sd:
                 raise OracleMismatch(f"brms has {key} but AutoBayes does not")
@@ -316,6 +318,7 @@ def check_design(b: Bundle) -> None:
         err = abs_err(theirs[~inf], mine[~inf])
         if not err <= DESIGN_ABS:
             raise OracleMismatch(f"{key} differ by {err}")
+    check_fixed_sigma(b)                                         # F06a: se(col) without sigma = TRUE, brms's data sigma = 0
     mine = getattr(d, "dec", None)                              # F04: brms's dec of dec(col), each wiener row's decision
     if (mine is None) != ("dec" not in sd):
         raise OracleMismatch("brms has dec but AutoBayes does not" if mine is None else "AutoBayes has dec but brms standata has none")
@@ -355,6 +358,20 @@ def check_design(b: Bundle) -> None:
     # maps were built
     adapter.match_columns(b.fixture, b.model)
     adapter.match_groups(b.fixture, b.model)
+
+
+def check_fixed_sigma(b: Bundle) -> None:
+    """G1 of ``se(col)`` without ``sigma = TRUE`` (F06a): brms writes ``sigma = 0`` into its Stan data exactly when the model has
+    the term and no sigma parameter (no ``sigma`` among its names), and nowhere else."""
+    sd, se = b.fixture.standata, b.model.spec.addition("se")
+    mine = se is not None and not se.sigma and "sigma" not in b.model.names
+    if "sigma" in sd and not mine:
+        raise OracleMismatch(f"brms's Stan data holds sigma = {float(sd['sigma'])!r} (se() without sigma = TRUE); the AutoBayes model "
+                             + ("learns sigma" if "sigma" in b.model.names else "has no such se() term"))
+    if mine and "sigma" not in sd:
+        raise OracleMismatch("the AutoBayes model fixes sigma at 0 under se() without sigma = TRUE; brms's Stan data has no sigma")
+    if mine and float(sd["sigma"]) != 0.0:
+        raise OracleMismatch(f"brms fixes sigma at {float(sd['sigma'])!r} in its Stan data; se() without sigma = TRUE fixes it at 0")
 
 
 def check_fixed_parameters(b: Bundle) -> None:

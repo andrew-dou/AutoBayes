@@ -186,7 +186,9 @@ def freeze_target(model):
                           **({'weights': d.weights} if d.weights is not None else {}),
                           **({'cens': d.cens} if d.cens is not None else {}),
                           **({'rcens': d.rcens} if getattr(d, 'rcens', None) is not None else {}),   # E04
-                          **({'dec': d.dec} if getattr(d, 'dec', None) is not None else {})}} if s.additions else {}),   # F04
+                          **({'dec': d.dec} if getattr(d, 'dec', None) is not None else {}),   # F04
+                          **({'se': d.se} if getattr(d, 'se', None) is not None else {}),      # F06a: se()'s standard errors
+                          **({'denom': d.denom} if getattr(d, 'denom', None) is not None else {})}} if s.additions else {}),   # and rate()'s denominators
         # So do grouped thresholds (F06b, thres(gr = z)): the levels, their numbers of thresholds and each fitted row's level.
         **({'grouped_thresholds': {'term': d.thresholds.term, 'column': d.thresholds.column, 'levels': list(d.thresholds.levels),
                                    'nthres': list(d.thresholds.nthres), 'index': d.thresholds.index}}

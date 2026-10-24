@@ -129,6 +129,11 @@ refusal of interval censoring, `cens(col, y2)` with code 2, for every family tha
 The addition term `mi()` (C06, `x | mi() ~ ...`: the response's missing values are parameters) is parsed here too and taken
 in a multivariate list of formulas only, alone on the left-hand side (docs/missing-and-measurement-error.md, divergence D72).
 
+F06a adds `se(col)` and `se(col, sigma = TRUE)` (known standard errors, Gaussian and Student-t) and `rate(col)` (a rate's
+denominator, Poisson and negative binomial): `AdditionTerm("se", column, sigma=...)` and `AdditionTerm("rate", column)`, brms's
+Stan data `se` and `denom` (`Design.se`, `Design.denom`), each alone on the left-hand side (docs/se-rate.md, divergences D156,
+D157).
+
 ## Evidence
 
 Oracle cases (gates G1-G6 against frozen brms fixtures): `gauss_weighted`, and one weighted case per family frozen for

@@ -42,10 +42,26 @@ def _tails():
 
 
 def _log_likelihood(model, post, eta):
-    """brms's log_lik (C07): ``log Poisson(y_i | exp(eta_i))``."""
+    """brms's log_lik (C07): ``log Poisson(y_i | exp(eta_i))``; under rate() (F06a) at the mean ``exp(eta_i) denom_i``."""
     from autobayes.families.pointwise import poisson_log
+    from autobayes.se_rate import denominators
 
-    return poisson_log(model.design.y, eta)
+    denom = denominators(model, None)
+    return poisson_log(model.design.y, eta if denom is None else eta + np.log(denom))
+
+
+def _likelihood_lines(model) -> list[str]:
+    rate = model.spec.addition("rate")
+    if rate is not None:                                       # F06a: brms's rate(col)
+        mean = f"  y_i ~ Poisson(mu_i * {rate.column}_i); mu_i = exp(eta_i), {rate.column}_i the row's denominator (brms's rate())"
+    else:
+        mean = "  y_i ~ Poisson(mu_i); mu_i = exp(eta_i)"
+    return ["", "Likelihood", mean,
+            "  Input counts are integers from 0 through 1e6; zero-count rows are retained.",
+            ("  The exposure enters through the offset term (mu_i = exp(offset_i) * exp(eta_i - offset_i)); "
+             "no overdispersion or zero-inflation is modeled.") if model.spec.offset is not None else
+            "  No overdispersion or zero-inflation is modeled." if rate is not None else
+            "  No exposure/offset, overdispersion or zero-inflation is modeled."]
 
 
 POISSON = FamilySpec(
@@ -64,17 +80,15 @@ POISSON = FamilySpec(
     scale_rule="sigma and shape must be omitted for Poisson (no auxiliary parameter)",
     scale_missing_error=None,
     linpred_symbol="eta", scale_phrase="log mean", intercept_meaning="log expected count",
-    mean_lines=lambda model: ["  E[y_i] = mu_i = exp(eta_i); eta is log expected count."],
-    likelihood_lines=lambda model: ["", "Likelihood", "  y_i ~ Poisson(mu_i); mu_i = exp(eta_i)",
-                                    "  Input counts are integers from 0 through 1e6; zero-count rows are retained.",
-                                    ("  The exposure enters through the offset term (mu_i = exp(offset_i) * exp(eta_i - offset_i)); "
-                                     "no overdispersion or zero-inflation is modeled.") if model.spec.offset is not None else
-                                    "  No exposure/offset, overdispersion or zero-inflation is modeled."],
+    mean_lines=lambda model: (["  E[y_i] = mu_i = exp(eta_i); eta is log expected count."] if model.spec.addition("rate") is None else
+                              [f"  E[y_i] = exp(eta_i) * {model.spec.addition('rate').column}_i; eta is the log expected count per unit of "
+                               "the denominator (brms's rate())."]),
+    likelihood_lines=_likelihood_lines,
     centred_intercept_note=(),
     deterministic_note="mu = exp(linear predictor); mu = exp(eta), expected count",
     default_prior_link="log",                                       # brms reads log(y), zeros as 0.1
     default_scale_prior=None,
-    addition_terms=frozenset({"weights", "trunc"}),             # B02: weights(), verified against the frozen case poisson_weighted; E04: trunc() (poisson_truncated)
+    addition_terms=frozenset({"weights", "trunc", "rate"}),     # B02: weights(), verified against the frozen case poisson_weighted; E04: trunc() (poisson_truncated); F06a: rate() (poisson_rate)
     tails=_tails,
     monotonic=True,                                                 # B03: mo(x), verified against poisson_monotonic
     log_likelihood=_log_likelihood,                                 # C07: log_lik(), verified against poisson_varint_post

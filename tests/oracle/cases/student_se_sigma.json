@@ -84,9 +84,5 @@
     0.1
    ]
   }
- },
- "gate": {
-  "expect": "fail",
-  "reason": "F06_addition_terms not implemented; remove this field when it lands"
  }
 }

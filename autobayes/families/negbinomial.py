@@ -48,7 +48,16 @@ def _draw_response(model, post, eta, mean, df, rng):
     if np.any(mean >= limit):
         raise ValueError("negative binomial response prediction exceeds the integer random-generator limit")
     shape = auxiliary(model, post, "shape")                    # per draw, or per draw and row (B01)
+    shape = _rate_shape(model, shape, df)                      # F06a: times each row's denominator under rate()
     return rng.negative_binomial(shape, shape / (shape + mean)).astype(np.int64)
+
+
+def _rate_shape(model, shape, df):
+    """The shape of each row: ``shape``, or under rate() (F06a) ``shape * denom_i``, the rows of ``df`` (None: the fitted rows)."""
+    from autobayes.se_rate import denominators
+
+    denom = denominators(model, df)
+    return shape if denom is None else shape * denom
 
 
 def _tails():
@@ -58,20 +67,30 @@ def _tails():
 
 
 def _log_likelihood(model, post, eta):
-    """brms's log_lik (C07): ``log NegBinomial2(y_i | exp(eta_i), shape)``, shape per draw (or per draw and row, B01)."""
+    """brms's log_lik (C07): ``log NegBinomial2(y_i | exp(eta_i), shape)``, shape per draw (or per draw and row, B01); under rate()
+    (F06a) at the mean ``exp(eta_i) denom_i`` and the shape ``shape * denom_i``."""
     from autobayes.families.pointwise import neg_binomial_2_log
+    from autobayes.se_rate import denominators
 
-    return neg_binomial_2_log(model.design.y, eta, auxiliary(model, post, "shape"))
+    denom = denominators(model, None)
+    shape = _rate_shape(model, auxiliary(model, post, "shape"), None)
+    return neg_binomial_2_log(model.design.y, eta if denom is None else eta + np.log(denom), shape)
 
 
 def _likelihood_lines(model) -> list[str]:
     s = scale_symbol(model)                                    # "shape", or "shape_i" with its own formula (B01)
-    return [scale_line(model), "", "Likelihood",
-            f"  y_i ~ NegativeBinomial(mu_i, {s}); mu_i = exp(eta_i); Var[y_i] = mu_i + mu_i^2 / {s}",
+    rate = model.spec.addition("rate")
+    if rate is not None:                                       # F06a: brms's rate(col): mean and shape times the denominator
+        d = f"{rate.column}_i"
+        head = [f"  y_i ~ NegativeBinomial(mu_i * {d}, {s} * {d}); mu_i = exp(eta_i), {d} the row's denominator (brms's rate());",
+                f"  Var[y_i] = {d} (mu_i + mu_i^2 / {s})"]
+    else:
+        head = [f"  y_i ~ NegativeBinomial(mu_i, {s}); mu_i = exp(eta_i); Var[y_i] = mu_i + mu_i^2 / {s}"]
+    return [scale_line(model), "", "Likelihood", *head,
             "  brms's neg_binomial_2 parameterisation: shape is the inverse overdispersion (Poisson as shape -> infinity);",
             "  PyMC's NegativeBinomial(mu, alpha) with alpha = shape, " + ("sampled as log(shape)." if s == "shape" else "one shape_i per row."),
             "  Input counts are integers from 0 through 1e6; zero-count rows are retained.",
-            "  No exposure/offset or zero-inflation is modeled."]
+            "  No zero-inflation is modeled." if rate is not None else "  No exposure/offset or zero-inflation is modeled."]
 
 
 NEGBINOMIAL = FamilySpec(
@@ -90,13 +109,17 @@ NEGBINOMIAL = FamilySpec(
     scale_rule="shape is required for the negative binomial family; sigma does not apply",
     scale_missing_error="the negative binomial family needs a prior on the shape (overdispersion) parameter: pass shape=...",
     linpred_symbol="eta", scale_phrase="log mean", intercept_meaning="log expected count",
-    mean_lines=lambda model: [f"  E[y_i] = mu_i = exp(eta_i); eta is log expected count; Var[y_i] = mu_i + mu_i^2 / {scale_symbol(model)}."],
+    mean_lines=lambda model: ([f"  E[y_i] = mu_i = exp(eta_i); eta is log expected count; Var[y_i] = mu_i + mu_i^2 / {scale_symbol(model)}."]
+                              if model.spec.addition("rate") is None else
+                              [f"  E[y_i] = exp(eta_i) * {model.spec.addition('rate').column}_i; eta is the log expected count per unit of "
+                               "the denominator (brms's rate())."]),
     likelihood_lines=_likelihood_lines,
     centred_intercept_note=(),
     deterministic_note="mu = exp(linear predictor); mu = exp(eta), expected count",
     default_prior_link="log",                                       # brms reads log(y), zeros as 0.1
     default_scale_prior=lambda scale: InverseGamma(0.4, 0.3),       # brms negbinomial()$prior: shape inv_gamma(0.4, 0.3), lb 0
-    addition_terms=frozenset({"weights", "trunc"}),             # B02: weights(), verified against the frozen case negbinomial_weighted; E04: trunc() (negbinomial_truncated, the lower bound withheld: D121)
+    addition_terms=frozenset({"weights", "trunc", "rate"}),     # B02: weights(), verified against the frozen case negbinomial_weighted; E04: trunc() (negbinomial_truncated, the lower bound withheld: D121); F06a: rate() (negbinomial_rate)
+    rate_parameters=("alpha",),                                     # F06a: rate() multiplies the shape (Bambi's alpha) by the denominator too
     tails=_tails,
     distributional_link="log",                                      # B01: shape ~ z, brms's log link (negbinomial_distributional_shape)
     default_distributional_intercept=lambda scale: StudentT(3, 0, 2.5),   # brms Intercept_shape: student_t(3, 0, 2.5) under the log link

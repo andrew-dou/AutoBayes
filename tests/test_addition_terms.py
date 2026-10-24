@@ -79,7 +79,8 @@ def test_grammar_term_model_and_canonical_forms():
 
 
 REFUSALS = [
-    ("y | se(s) ~ x", "gaussian", r"'se\(s\)' is not a supported response addition term.*exactly 'successes \| trials\(n\)'"),
+    # F06a made se(s) a supported term (tests/test_se_rate.py); brms's vreal() of custom families stays unsupported
+    ("y | vreal(s) ~ x", "gaussian", r"'vreal\(s\)' is not a supported response addition term.*exactly 'successes \| trials\(n\)'"),
     ("y | w ~ x", "gaussian", r"'w' is not a supported response addition term"),
     ("y | weights(w) + weights(v) ~ x", "gaussian", r"weights\(\) appears more than once on the left-hand side"),
     ("k | trials(n) + trials(m) ~ x", "binomial", r"trials\(\) appears more than once"),
