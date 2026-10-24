@@ -13031,7 +13031,7 @@
     "priors": "default"
    },
    "tokens": [
-    "got 'dirichlet'"
+    "dirichlet"
    ],
    "brms_reading": {
     "status": "ok",
@@ -13065,9 +13065,8 @@
     "raised_at": "formula.py:2643",
     "stage": "default_priors",
     "mechanism": "refusal",
-    "outcome": "refused_unclear",
-    "gap": "defect",
-    "pin": "'ydir ~ x': the dirichlet family's response is written cbind(y1, ..., yK) ~ ...,"
+    "outcome": "refused_named",
+    "gap": "capability"
    }
   },
   {
@@ -13412,15 +13411,15 @@
  "summary": {
   "outcomes": {
    "match": 115,
-   "refused_unclear": 19,
-   "refused_named": 112,
+   "refused_unclear": 18,
+   "refused_named": 113,
    "misread": 1,
    "differs": 1
   },
   "gaps": {
    "none": 118,
-   "defect": 20,
-   "capability": 109,
+   "defect": 19,
+   "capability": 110,
    "divergence": 1
   },
   "brms_refuses": 3
