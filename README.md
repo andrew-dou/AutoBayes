@@ -67,7 +67,7 @@ refused with an error naming the construct.
 | Post-processing | `predict()` (`posterior_linpred`, `posterior_epred`, `posterior_predict`), `log_lik`, `loo`, `waic`, `loo_compare`, `model_weights`, `bayes_R2`, `hypothesis` (with Savage-Dickey evidence ratios), `conditional_effects` | [post-processing](docs/post-processing.md), [prediction](docs/linear-prediction.md) |
 
 Not yet: `s()` and `t2()`; `multinomial`, `dirichlet`, `dirichlet_multinomial`, `logistic_normal`, `cox` and `wiener`;
-`car`, `sar`, `fcor`, `unstr` and `cosy`; K-fold cross-validation and stacking weights. Combinations no frozen brms case
+`car`, `fcor`, `unstr` and `cosy`; K-fold cross-validation and stacking weights. Combinations no frozen brms case
 checks yet are refused, each naming its divergence row. The full map is
 [current capabilities](docs/current-capabilities.md).
 

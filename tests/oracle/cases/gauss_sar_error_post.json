@@ -1,0 +1,74 @@
+{
+ "id": "gauss_sar_error_post",
+ "tier": "F",
+ "feature": "F02b_sar",
+ "note": "F02b post-processing of the error-SAR model (M as gauss_sar_lag's, from this case's data): brms's log_lik (draws, rows) of the non-factorised model is each row's log density given every other row, under Y ~ N(mu, sigma^2 A^-1 A^-T) with A = I - errorsar Msar (checked on the frozen points), and loo of the 8-draw fit; brms's log density omits -N/2 log(2 pi) as on gauss_sar_error, and its posterior_epred fails as there, recorded as epred_refused (prediction_refused)",
+ "seed": 1142,
+ "n_points": 8,
+ "data": {
+  "generator": "tier_f",
+  "seed": 942,
+  "n": 25,
+  "data2": {
+   "M": "rook_symmetric_normalised"
+  }
+ },
+ "brms": {
+  "formula": "y ~ x + sar(M, type = \"error\")",
+  "family": {
+   "family": "gaussian"
+  },
+  "data2": [
+   "M"
+  ],
+  "priors": [
+   {
+    "prior": "normal(0, 2)",
+    "class": "Intercept"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "b"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "sigma"
+   }
+  ],
+  "extras": [
+   "log_lik",
+   "loo"
+  ],
+  "prediction_refused": [
+   "epred"
+  ]
+ },
+ "autobayes": {
+  "constructor": "gaussian",
+  "formula": "y ~ x + sar(M, type = \"error\")",
+  "kwargs": {},
+  "priors": {
+   "intercept": [
+    "Normal",
+    0,
+    2
+   ],
+   "b": [
+    "Normal",
+    0,
+    1
+   ],
+   "sigma": [
+    "HalfNormal",
+    1
+   ],
+   "errorsar": [
+    "Flat"
+   ]
+  },
+  "post": [
+   "log_lik",
+   "loo"
+  ]
+ }
+}

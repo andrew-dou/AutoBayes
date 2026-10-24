@@ -439,6 +439,11 @@ class Priors:
     ``coi``, ``real<lower=0,upper=1>``: a ``Beta`` prior, brms's default ``beta(1, 1)``), and ``kappa``, the extended-support
     Beta's kappa (brms class ``kappa`` of ``xbeta()``, ``real<lower=0>``: a positive-support prior, brms's default
     ``gamma(0.01, 0.01)``), each required exactly for its family and refused for every other.
+
+    ``lagsar`` and ``errorsar`` are the prior of a SAR term's parameter (F02b, ``sar(M, type = "lag")`` and ``type = "error"``;
+    docs/spatial-sar.md): brms's classes of those names, bounded by the smallest and largest eigenvalue of ``M``; ``Flat()``, brms's
+    default (flat on that interval), is the prior offered (divergence D143), required exactly for the term's type and refused for
+    every other model.
     """
 
     intercept: Prior | None = None
@@ -487,6 +492,9 @@ class Priors:
     kappa: Prior | None = None
     quantile: Prior | None = None
     xi: Prior | None = None
+    # F02b (docs/spatial-sar.md): the parameter of a SAR term sar(M, type = "lag" | "error"), brms's class lagsar or errorsar
+    lagsar: Prior | None = None
+    errorsar: Prior | None = None
 
     def __post_init__(self):
         if isinstance(self.components, list):                         # one value for equal component lists (C05)
@@ -546,6 +554,9 @@ class Priors:
             raise PriorError("ar and ma are the priors of an autocorrelation term ar(), ma(), arma() (docs/autocorrelation.md); a "
                              "multivariate model takes neither: an autocorrelation term in a multivariate formula is not supported "
                              "(divergence D70)")
+        if self.lagsar is not None or self.errorsar is not None:    # F02b
+            raise PriorError("lagsar and errorsar are the priors of a SAR term sar(M, type = ...) (docs/spatial-sar.md); a multivariate "
+                             "model takes neither: a SAR term in a multivariate model is not supported (divergence D143)")
         if self.sdgp is not None or self.lscale is not None:          # C03: a multivariate formula takes no gp()
             raise PriorError("sdgp and lscale are the priors of a Gaussian process gp(x) (docs/gaussian-processes.md); a multivariate "
                              "model takes neither: a Gaussian process in a multivariate formula is not supported (divergence D56)")
@@ -897,6 +908,31 @@ class Priors:
             out[name] = prior
         return out
 
+    def sar_priors(self, spec) -> dict[str, Prior]:
+        """The prior of a SAR term's parameter (F02b, ``spec.sar``): ``{"lagsar": ...}`` or ``{"errorsar": ...}``, brms's class of
+        that name. Coverage is exact: the term's parameter needs its prior and the other one, or one without the term, is refused;
+        the prior is ``Flat()``, brms's default, flat on the parameter's interval (no other prior on it is verified here,
+        divergence D143)."""
+        term = getattr(spec, "sar", None)
+        out: dict[str, Prior] = {}
+        for name in ("lagsar", "errorsar"):
+            prior = getattr(self, name)
+            if term is None or term.parameter != name:
+                if prior is not None:
+                    has = (f"; the SAR term '{term.term}' has {term.parameter}" if term is not None else
+                           "; the formula has no SAR term sar(M, type = ...)")
+                    raise PriorError(f"do not pass {name}{has}")
+                continue
+            if prior is None:
+                raise PriorError(f"the SAR term '{term.term}' has the parameter {name}, which needs a prior: pass {name}=ab.Flat() (brms "
+                                 f"class {name}, bounded by the smallest and largest eigenvalue of {term.matrix}; brms's default is flat)")
+            if not isinstance(prior, Prior) or prior.name != "Flat":
+                raise PriorError(f"prior for {name!r} must be ab.Flat(), brms's default, flat on the interval between the smallest and "
+                                 f"largest eigenvalue of {term.matrix}; got {prior}: another prior on the bounded {name} is not verified "
+                                 "here (docs/spatial-sar.md, divergence D143)")
+            out[name] = prior
+        return out
+
     def me_priors(self, spec, cls: str) -> dict[str, Prior]:
         """The prior of class ``cls`` (``"meanme"``, the location of a measurement-error term's latent values, or ``"sdme"``,
         their scale; C06) of each ``me(x, sdx)`` term, keyed by its noisy column ``x`` in formula order: a location prior
@@ -991,6 +1027,7 @@ class Priors:
         out = ["intercept"] if getattr(spec, "intercept", True) and isinstance(self.intercept, Prior) and self.intercept.name == "Flat" else []
         out += [f"b:{col}" for col, p in self.coefficient_priors(spec).items() if p.name == "Flat"]
         out += [name for name, p in self.autocor_priors(spec).items() if p.name == "Flat"]   # an ARMA term's ar / ma (C04)
+        out += list(self.sar_priors(spec))                             # a SAR term's lagsar / errorsar, always flat (F02b)
         for name in getattr(spec, "dpar_names", ()):                  # a distributional parameter's formula (B01): sigma:b:zq
             out += [f"{name}:{label}" for label in self.dpar_priors(spec, name).improper(spec.dpar(name))]
         for cls in ("meanme", "sdme"):                                 # a measurement-error term's latent values (C06)
@@ -1011,6 +1048,7 @@ class Priors:
         from autobayes.shrinkage import check_model, check_prior, is_shrinkage
 
         check_prior(self)                                             # D07: a shrinkage prior anywhere but the bare b is refused
+        self.sar_priors(spec)                                         # F02b: lagsar / errorsar exactly with a SAR term, every model
         if getattr(spec, "is_nonlinear", False):                       # a non-linear model (C02): priors per non-linear parameter
             from autobayes.nonlinear import check_nonlinear_priors
 

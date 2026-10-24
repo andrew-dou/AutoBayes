@@ -67,9 +67,5 @@
    "log_lik",
    "loo"
   ]
- },
- "gate": {
-  "expect": "fail",
-  "reason": "F02_spatial_car_sar not implemented; remove this field when it lands"
  }
 }

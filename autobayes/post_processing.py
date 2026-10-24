@@ -8,7 +8,9 @@ rows. Accepted against brms 2.23 / loo 2.9.0 on the frozen oracle cases ``gauss_
 ``FamilySpec.log_likelihood`` (NumPy, ``families.pointwise``) at ``predict(kind="linear")``'s linear predictor and the draw's
 auxiliary parameters; under ``weights()`` it is multiplied by the row's weight, as brms multiplies it. Under ``cens()`` a
 censored row's log likelihood is its log CDF, log CCDF or interval log mass, and under ``trunc()`` every row's is less the
-log mass of the allowed range (E04, ``likelihoods.censored_truncated_log_lik``), as brms's ``log_lik()`` writes them.
+log mass of the allowed range (E04, ``likelihoods.censored_truncated_log_lik``), as brms's ``log_lik()`` writes them. A SAR
+model's rows are not independent (F02b, docs/spatial-sar.md): its ``log_lik()`` is each row's density given every other row
+(``sar.sar_log_lik``), as brms's, and ``loo()`` and ``waic()`` read it; its ``bayes_R2()`` is refused (divergence D143).
 
 ``bayes_R2(model, fit)`` is brms's ``bayes_R2(summary = FALSE)`` (Gelman, Goodrich, Gabry and Vehtari 2019): per draw,
 ``var(yhat) / (var(yhat) + var(y - yhat))`` over the fitted rows, ``yhat`` the expected response (``predict(kind="mean")``,
@@ -112,8 +114,13 @@ def log_lik(model, fit_result) -> xr.DataArray:
     post = getattr(fit_result, "idata", fit_result).posterior
     if model.spec.dpars:                                       # each distributional parameter's per-row values (B01)
         post = _with_dpars(model, post, model.data)
+    sar = getattr(model.design, "sar", None)
     with np.errstate(over="ignore", under="ignore", divide="ignore", invalid="ignore"):
-        ll = np.asarray(fam.log_likelihood(model, post, eta), dtype=float)
+        if sar is not None:                                    # F02b: each row given every other row
+            from autobayes.sar import sar_log_lik
+            ll = sar_log_lik(model.design.y, eta, post[model.names["sigma"]].to_numpy(), post[sar.parameter].to_numpy(), sar)
+        else:
+            ll = np.asarray(fam.log_likelihood(model, post, eta), dtype=float)
     ll = np.broadcast_to(ll, eta.shape[:3]).copy()
     if model.design.cens is not None or model.design.lb is not None:   # E04: brms's censored / truncated log_lik
         from autobayes.likelihoods import censored_truncated_log_lik
@@ -138,6 +145,9 @@ def bayes_R2(model, fit_result) -> xr.DataArray:
     from autobayes.predict import predict
 
     _refuse_unsupported(model, "bayes_R2()")                 # me() / mi() (D74) and multivariate models (D95)
+    if getattr(model.design, "sar", None) is not None:       # F02b: no frozen case records brms's R2 of a SAR model
+        raise ValueError(f"bayes_R2() of a model with the SAR term {model.spec.sar.term!r} is not offered: no frozen brms case verifies "
+                         "it (brms's posterior_epred, which it reads, fails for the error model; docs/spatial-sar.md, divergence D143)")
     fam = family_of(model)
     if fam.per_category:
         raise ValueError(f"bayes_R2() is not defined for the {model.family} family's unordered categories (brms: \"'bayes_R2' is "

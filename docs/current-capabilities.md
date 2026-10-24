@@ -223,7 +223,7 @@ the lagged residuals of earlier rows of its own series in time order, after ever
 positions of a series that the JAX backend compiles. Predictions on the fitted rows add the term from the observed
 residuals, in data order, as brms's `posterior_linpred` does; new rows are refused. Verified against `gauss_ar1`,
 `gauss_arma11` and `gauss_arma22_varint` (lags two deep next to a varying intercept); `ab.log_lik`, `ab.bayes_R2` and
-`ab.loo` (C07) read the predictor with the term, as brms's do; `cov = TRUE`, `cosy()`, `car()`, `sar()`, `fcor()`,
+`ab.loo` (C07) read the predictor with the term, as brms's do; `cov = TRUE`, `cosy()`, `car()`, `fcor()`,
 `unstr()`, other families, distributional formulas, addition terms, multivariate formulas, non-linear models, mixtures,
 `gp()` next to the term and new rows are refused (D68-D71); see [autocorrelation](autocorrelation.md).
 
@@ -367,3 +367,14 @@ relative); the Gamma family's `cens()` is accepted on `gamma_censored_interval` 
 gradient in the shape is off it (up to 2.8e-5, P6, D120); a count response's lower bound (brms's expected values are
 `E[Y | Y >= lb + 1]` on `negbinomial_truncated`, D121) is implemented and withheld; the other families and contexts are refused naming the construct (D122); see
 [censoring and truncation beyond the Gaussian](cens-trunc-families.md).
+
+Simultaneous autoregressive terms (F02b, brms's `sar(M, type = "lag")` and `sar(M, type = "error")`): for the Gaussian family with
+population-level terms, the weight matrix `M` over the fitted rows handed as `data2={"M": M}`, the joint SAR density of the
+responses (`log|I - rho M|` from `M`'s eigenvalues; brms's `lagsar` or `errorsar` between the smallest and largest of them, under
+`Priors(lagsar=ab.Flat())`, brms's default), `predict()` on the fitted rows (`A^-1 mu` for the lag model, brms's
+`posterior_epred`; `mu` for the error model, where brms's fails, D142), `log_lik()` of each row given the others, `loo()`,
+`waic()`, brms's default priors and `describe()`. Verified against `gauss_sar_lag`, `gauss_sar_error`, `gauss_sar_lag_post` and
+`gauss_sar_error_post` (brms's densities leave out `-N/2 log(2 pi)`, and so does the model's, D142); other families, group-level
+and special terms, offsets, addition terms, distributional, multivariate and non-linear models, other priors, matrices with
+complex eigenvalues or eigenvalues outside [-1, 1], new rows and `bayes_R2()` are refused (D143); see
+[SAR terms](spatial-sar.md).

@@ -51,6 +51,7 @@ def _refuse_unsupported_effects(model) -> None:
         (bool(getattr(s, "me_terms", ())), lambda: f"the measurement-error term {s.me_terms[0].name!r}"),
         (bool(getattr(s, "mi_terms", ())) or bool(getattr(s, "missing_columns", ())), lambda: "missing values modelled by mi()"),
         (s.autocor is not None, lambda: f"the autocorrelation term {s.autocor.term!r}"),
+        (getattr(s, "sar", None) is not None, lambda: f"the SAR term {s.sar.term!r}"),                          # F02b (D143)
         (bool(s.dpars), lambda: f"a distributional formula for {', '.join(s.dpar_names)}"),
         (bool(s.additions), lambda: f"the addition term(s) {', '.join(a.term for a in s.additions)}"),
     ]

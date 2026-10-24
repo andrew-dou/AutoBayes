@@ -31,6 +31,8 @@ brms's rules (``default_prior()``, ``def_dpar_prior``, ``def_scale_prior``, ``pr
   the process's inputs on its coefficient row (``gpx``), the class row empty with ``lb`` 0: ``default_lscale``.
 - An autocorrelation term (C04, ``ar()``, ``ma()``, ``arma()``): its ``ar`` and ``ma`` flat (brms's classes ``ar`` and
   ``ma``, no bounds in the regression formulation), ``Flat()``, one class row each.
+- A SAR term (F02b, ``sar(M, type = "lag" | "error")``): its ``lagsar`` or ``errorsar`` flat, ``Flat()``, on the class row with
+  brms's bounds ``lb`` ``min_eigenMsar`` and ``ub`` ``max_eigenMsar`` (written as those names, as brms writes them).
 - An auxiliary parameter with its own formula (B01, ``sigma ~ z``; brms's ``def_dpar_prior`` under the formula's log link):
   its intercept ``student_t(3, 0, scale)`` with brms's scale of the response read on the log scale for ``sigma``
   (``max(2.5, round(mad(log y), 1))``, zeros read as 0.1, 2.5 when a response is negative) and ``student_t(3, 0, 2.5)``
@@ -268,7 +270,7 @@ def default_priors(formula: str | list[str], data: pd.DataFrame, *, family: str 
                    nu: float | None = None, link: str | None = None, center_predictors: bool = True,
                    families: list[str] | None = None, order: str | bool | None = None,
                    rescor: bool | None = None, nl: bool = False, imputed: tuple[str, ...] = (),
-                   quantile: float | None = None) -> Priors:
+                   quantile: float | None = None, data2: Mapping[str, object] | None = None) -> Priors:
     """brms's default priors for ``formula`` on ``data`` under ``family`` (brms 2.23's ``default_prior()``), as a
     ``Priors`` the constructors accept: ``ab.gaussian(f, df, ab.default_priors(f, df))``. ``formula`` may be a list with a
     distributional formula (B01, ``["y ~ x", "sigma ~ z"]``), whose priors are its intercept's and coefficients'.
@@ -299,14 +301,20 @@ def default_priors(formula: str | list[str], data: pd.DataFrame, *, family: str 
     which takes neither a mixture's ``families``/``order`` nor a multivariate formula or ``rescor`` (divergence D62).
 
     ``quantile`` (E02) is the asymmetric Laplace family's fixed quantile, as its constructor takes it: brms's ``bf(quantile =
-    p)`` has no quantile prior, so none is returned; left ``None`` the quantile gets brms's ``beta(1, 1)``."""
+    p)`` has no quantile prior, so none is returned; left ``None`` the quantile gets brms's ``beta(1, 1)``.
+
+    ``data2`` (F02b) is the constructor's: the matrices the formula reads (``sar(M, ...)``'s weight matrix), checked as the
+    constructor checks them; a SAR term's ``lagsar`` or ``errorsar`` gets brms's flat prior, which does not depend on them."""
     from autobayes.families import FAMILIES, get_family
-    from autobayes.formula import check_imputation, parse_formula
+    from autobayes.formula import FormulaError, check_imputation, parse_formula
     from autobayes.multivariate import is_multivariate_formula, multivariate_default_priors
 
     if quantile is not None and (nl or rescor is not None or is_multivariate_formula(formula)):   # E02: asym_laplace's own
         raise ValueError("quantile= fixes the asym_laplace family's quantile in a univariate linear model; a non-linear or "
                          "multivariate asym_laplace model is not offered (divergence D112)")
+    if data2 is not None and (nl or rescor is not None or is_multivariate_formula(formula)):   # F02b, as ab.gaussian refuses it
+        raise FormulaError("data2 is read by a SAR term sar(M, type = ...), which a non-linear or multivariate model does not take "
+                           "in this slice (docs/spatial-sar.md, divergence D143)")
     if nl:                                                            # a non-linear model (C02): its parameters' defaults; it refuses
         from autobayes.nonlinear import nonlinear_default_priors     # a mixture's and a multivariate model's arguments itself
 
@@ -345,6 +353,11 @@ def default_priors(formula: str | list[str], data: pd.DataFrame, *, family: str 
     if fam is not get_family(family) and fam.check_formula is not None:   # a link's own refusals (E06, divergence D133)
         fam.check_formula(spec)
     check_imputation(spec, imputed)                                   # C06: mi() belongs to a multivariate model
+    from autobayes.sar import check_data2, sar_design
+
+    if spec.sar is not None:                                          # F02b: data2 holds what sar() reads, checked as the model does
+        sar_design(spec.sar, data2, len(data))
+    check_data2(spec, data2)
     # B05: brms never reads an ordinal or categorical response for its defaults (no identity or log link: 0 and 2.5), and
     # its labels need not be numbers
     y = np.asarray(data[spec.response], dtype=float) if fam.response_categories is None else np.zeros(len(data))
@@ -406,10 +419,12 @@ def default_priors(formula: str | list[str], data: pd.DataFrame, *, family: str 
     lscale = {g.column: default_lscale(g) for g in spec.gp_terms}      # C03: tuned to the process's inputs
     autocor = {part: Flat() for part, _ in spec.autocor.parts} if spec.autocor is not None else {}   # C04: flat ar and ma
     me = {t.operands[0]: Flat() for t in spec.me_terms}                  # C06: brms's flat meanme and sdme (sdme on (0, inf))
+    sar = {spec.sar.parameter: Flat()} if spec.sar is not None else {}   # F02b: brms's flat lagsar / errorsar
     priors = Priors(intercept=mark(intercept), b=mark(Flat()) if spec.pop_terms else None, sd=mark(sd) or None,
                     cor=mark(cor) or None, nu=mark(learned.get("nu")), simo=mark(simo) or None,
                     sdgp=mark(sdgp) or None, lscale=mark(lscale) or None, meanme=mark(me) or None, sdme=mark(me) or None,
-                    **{k: mark(v) for k, v in auxiliary.items()}, **{k: mark(v) for k, v in autocor.items()})
+                    **{k: mark(v) for k, v in auxiliary.items()}, **{k: mark(v) for k, v in autocor.items()},
+                    **{k: mark(v) for k, v in sar.items()})
     priors.validate(spec, fam)
     return priors
 
@@ -591,6 +606,8 @@ def prior_table(priors: Priors, spec, family="gaussian", *, center_predictors: b
                 add(p, cls, coef=brms_rename(f"gp({column})"))
     for part, prior in priors.autocor_priors(spec).items():          # an ARMA term's ar / ma (C04): a class row each, unbounded
         add(prior, part)
+    for name, prior in priors.sar_priors(spec).items():              # a SAR term's lagsar / errorsar (F02b), bounded by M's eigenvalues
+        add(prior, name, lb="min_eigenMsar", ub="max_eigenMsar")
     for cls, lb in (("meanme", ""), ("sdme", "0")):                    # C06: an me() term's latent values, brms's class rows
         me = priors.me_priors(spec, cls)                               # (lb 0 on sdme's) and one coefficient row me<x> each
         if me:

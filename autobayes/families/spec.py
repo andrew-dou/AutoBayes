@@ -406,6 +406,9 @@ class FamilySpec:
     # brms's ARMA terms ar(), ma(), arma() in the regression formulation (C04, docs/autocorrelation.md): whether the family's
     # linear predictor takes them, set where a frozen brms case verifies it. They are added last, on the residuals y - eta.
     autocorrelation: bool = False
+    # brms's simultaneous autoregressive term sar(M, type = "lag" | "error") (F02b, docs/spatial-sar.md): whether the family takes
+    # it, set where a frozen brms case verifies it. Its likelihood is the joint SAR density (autobayes.sar.sar_family).
+    sar: bool = False
     # brms's measurement-error term me(x, sdx) and missing-value term mi(col) with the response's mi() (C06,
     # docs/missing-and-measurement-error.md): whether the family's linear predictor takes them, set where a frozen case verifies
     # it (the response's own mi() is an addition term, "mi" in ``addition_terms``).

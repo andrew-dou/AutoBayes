@@ -112,6 +112,14 @@ def _autocor_payload(model):
             'priors': {part: _prior(prior) for part, prior in model.priors.autocor_priors(model.spec).items()}}
 
 
+def _sar_payload(model):
+    """The target identity's entry of a SAR term (F02b): the term, its weight matrix and eigenvalues (what the density reads),
+    and the prior of its parameter."""
+    d = model.design.sar
+    return {'term': d.term, 'type': d.type, 'matrix': d.matrix, 'M': d.M, 'eigenvalues': d.eigenvalues,
+            'priors': {name: _prior(prior) for name, prior in model.priors.sar_priors(model.spec).items()}}
+
+
 def freeze_target(model):
     """Call once immediately after construction; only the digest is retained."""
     s, d, pr = model.spec, model.design, model.priors
@@ -178,6 +186,8 @@ def freeze_target(model):
         **({'gaussian_processes': _gp_payload(model)} if getattr(s, 'gp_terms', ()) else {}),
         # So does an autocorrelation term (C04): its series, positions and coefficient priors.
         **({'autocorrelation': _autocor_payload(model)} if getattr(s, 'autocor', None) is not None else {}),
+        # So does a SAR term (F02b): its weight matrix, eigenvalues and parameter's prior.
+        **({'sar': _sar_payload(model)} if getattr(s, 'sar', None) is not None else {}),
         # So do an me() term (C06): its noisy values, known noise and the priors of its latent values; and each column whose
         # missing values are parameters (C06): its values with 0 at the missing rows, and those rows.
         **({'measurement_error': _measurement_payload(model)} if getattr(d, 'measurement_error', {}) else {}),

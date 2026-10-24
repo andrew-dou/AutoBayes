@@ -225,6 +225,9 @@ class _Parser:
             raise FormulaError(f"{self.text!r}: {name}() at position {pos} is brms's autocorrelation term (C04), not a function of the "
                                "non-linear expression; a non-linear model takes no autocorrelation term in this slice (brms adds one "
                                "with bf(..., autocor = ~ ar(...)); docs/autocorrelation.md, divergence D70)")
+        if name == "sar":                                                  # F02b: brms's SAR term, not a function
+            raise FormulaError(f"{self.text!r}: sar() at position {pos} is brms's SAR term (F02b), not a function of the non-linear "
+                               "expression; a non-linear model takes no SAR term in this slice (docs/spatial-sar.md, divergence D143)")
         if name in ("nlf", "lf"):
             raise FormulaError(f"{self.text!r}: brms's {name}() is not supported here (divergence D60): give each non-linear "
                                "parameter its own linear formula in the list, and write the non-linear expression once")
@@ -615,6 +618,9 @@ def parse_nonlinear(formulas, data: pd.DataFrame | None = None, family: str = "g
         if d.autocor is not None:                                      # C04: brms refuses it too
             raise FormulaError(f"{text!r}: the autocorrelation term {d.autocor.term!r} in a non-linear parameter's formula is not "
                                "supported, as in brms ('Explicit covariance terms can only be specified on mu'; docs/autocorrelation.md)")
+        if getattr(d, "sar", None) is not None:                        # F02b: not verified in a parameter's formula
+            raise FormulaError(f"{text!r}: the SAR term {d.sar.term!r} in a non-linear parameter's formula is not supported in this "
+                               "slice (docs/spatial-sar.md, divergence D143)")
         if d.me_terms or d.mi_terms:                                   # C06: not verified in a parameter's formula
             t = (*d.me_terms, *d.mi_terms)[0]
             what, did = ("measurement-error", "D73") if t.kind == "measurement_error" else ("missing-value", "D72")
