@@ -4,6 +4,7 @@ independently of autobayes), and a corrupted fixture fails every gate it touches
 committed 50-digit references regenerate byte for byte from the fixtures they name, and the three rules hold."""
 import copy
 import json
+import re
 import subprocess
 import sys
 import warnings
@@ -133,6 +134,87 @@ def test_stacking_weights_are_recorded_for_the_two_models(case_id):
     assert list(block["models"]) == list(post["loo_compare"]["models"]) and block["method"] == "stacking"
     w = fx.decode(block["weights"])
     assert w.shape == (2,) and (w >= 0).all() and abs(w.sum() - 1.0) < 1e-12
+
+
+def _formula_text(case) -> str:
+    """The brms formula of a case, its parts joined ("" for a multivariate case, whose formulas are under mvbf)."""
+    formula = case["brms"].get("formula", "")
+    return " ".join(formula) if isinstance(formula, list) else formula
+
+
+@pytest.mark.parametrize("case_id", FROZEN)
+def test_data2_matrices_are_the_frozen_files(case_id, tmp_path):
+    """Tier F: a case's data2 matrices (its brms section's names, its data section's kinds) are the committed data2_<name>.csv files,
+    byte for byte as tests/oracle/datasets.py writes them, with their sha256 in the fixture's meta; a case without data2 has
+    neither. brms saw what Python reads: sar()'s Msar and fcor()'s Mfcor equal the file exactly, and car(W, gr = site)'s edges
+    (edges1, edges2), numbers of neighbours (Nneigh) and row locations (Jloc) are W's, its labels the levels of the grouping
+    factor in order."""
+    case = fx.load_case(case_id)
+    d = fx.fixture_dir(case_id)
+    names = case["brms"].get("data2", [])
+    assert names == list(case["data"].get("data2", {}))
+    assert sorted(p.name for p in d.glob("data2_*.csv")) == sorted(fx.data2_path(d, n).name for n in names)
+    fixture = fx.Fixture.load(case_id)
+    if not names:
+        assert "data2_sha256" not in fixture.meta
+        return
+    assert fixture.meta["data2_sha256"] == {n: fx.sha256(fx.data2_path(d, n)) for n in names}
+    data, _ = datasets.make(case["data"])
+    for name, matrix in datasets.data2(case["data"], data).items():
+        datasets.write_matrix(matrix, tmp_path / f"data2_{name}.csv")
+        assert (tmp_path / f"data2_{name}.csv").read_bytes() == fx.data2_path(d, name).read_bytes()
+    terms = {m.group(2): m.group(1) for m in re.finditer(r"\b(car|sar|fcor)\((\w+)", _formula_text(case))}
+    assert sorted(terms) == sorted(names)
+    sd, frame = fixture.standata, fx.read_frame(case, d / "data.csv")
+    for name, matrix in fx.read_data2(case, d).items():
+        M = matrix.to_numpy()
+        if terms[name] != "car":
+            assert np.array_equal(sd[{"sar": "Msar", "fcor": "Mfcor"}[terms[name]]], M)
+            continue
+        (gr,) = re.findall(rf"\bcar\({name},\s*gr\s*=\s*(\w+)", _formula_text(case))
+        levels = case["brms"]["factors"][gr]
+        assert list(matrix.index) == list(matrix.columns) == levels and int(sd["Nloc"]) == len(levels)
+        edges = sorted(zip(sd["edges1"].astype(int).tolist(), sd["edges2"].astype(int).tolist()))
+        assert edges == sorted(zip(*(np.nonzero(np.tril(M))[k] + 1 for k in range(2)))) and len(edges) == int(sd["Nedges"])
+        if "Nneigh" in sd:
+            assert np.array_equal(sd["Nneigh"], M.sum(1))
+        assert np.array_equal(sd["Jloc"], [levels.index(s) + 1 for s in frame[gr]])
+
+
+CBIND = [cid for cid in FROZEN if re.match(r"\s*cbind\(", _formula_text(fx.load_case(cid)))]
+
+
+@pytest.mark.parametrize("case_id", CBIND)
+def test_matrix_response_is_the_bound_columns(case_id):
+    """Tier F: brms's Y of a ``cbind(m1, m2, m3)`` response is those columns of data.csv, exactly and in order (ncat of them), and
+    its trials() are their row sums (brms refuses any other)."""
+    case = fx.load_case(case_id)
+    lhs = _formula_text(case).split("~")[0]
+    columns = [c.strip() for c in re.match(r"\s*cbind\(([^)]*)\)", lhs).group(1).split(",")]
+    frame = fx.read_frame(case, fx.fixture_dir(case_id) / "data.csv")
+    sd = fx.Fixture.load(case_id).standata
+    assert int(sd["ncat"]) == len(columns) and np.array_equal(sd["Y"], frame[columns].to_numpy(dtype=float))
+    if "trials" in sd:
+        assert np.array_equal(sd["trials"], frame[columns].sum(axis=1).to_numpy())
+
+
+REFUSED = [cid for cid in FROZEN if fx.load_case(cid)["brms"].get("prediction_refused")]
+
+
+@pytest.mark.parametrize("case_id", REFUSED)
+def test_refused_predictions_are_recorded_as_brms_s_messages(case_id):
+    """Tier F: a prediction kind that a case lists in ``prediction_refused`` (brms fails to compute it: posterior_epred of
+    logistic_normal and of sar(type = "error")) is recorded in every block, with and without group effects, as brms's error
+    message in place of the array; every other kind is an array."""
+    refused = fx.load_case(case_id)["brms"]["prediction_refused"]
+    fixture = fx.Fixture.load(case_id)
+    for block, entries in fixture.raw["predictions"].items():
+        for kind in ("linpred", "epred"):
+            for name in (kind, f"{kind}_nogroup") if fixture.groups else (kind,):
+                if kind in refused:
+                    assert name not in entries and fixture.prediction_refusal(block, name)
+                else:
+                    assert fixture.prediction(block, name) is not None and fixture.prediction_refusal(block, name) is None
 
 
 def _sorted_levels(fixture, group):

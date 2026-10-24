@@ -157,7 +157,14 @@ class Bundle:
         d = fx.fixture_dir(case_id)
         self.data = fx.read_frame(self.case, d / "data.csv")
         self.newdata = fx.read_frame(self.case, d / "newdata.csv") if (d / "newdata.csv").exists() else None
-        self.model = model or adapter.build_model(self.case, self.data)
+        # Tier F: brms's data2 matrices by name ({} for a case without), handed to the case's constructor as data2= (car(W), sar(M),
+        # fcor(M) name them in the formula)
+        self.data2 = fx.read_data2(self.case, d)
+        build = self.case
+        if self.data2:
+            spec = self.case["autobayes"]
+            build = {**self.case, "autobayes": {**spec, "kwargs": {**spec.get("kwargs", {}), "data2": self.data2}}}
+        self.model = model or adapter.build_model(build, self.data)
         # C04: brms sorts an autocorrelation model's Stan rows by series and time; its per-row data are compared in data order
         self.fixture = adapter.in_data_order(self.case, self.fixture, self.model, self.data)
         # C07: the post-processing functions a case names (``"post": ["log_lik", "bayes_R2", "loo"]`` in its autobayes
@@ -602,7 +609,10 @@ def check_predictions(b: Bundle) -> None:
         for include, suffix in ((True, ""), (False, "_nogroup")):
             ref_lin = b.fixture.prediction(block, "linpred" + suffix)
             ref_ep = b.fixture.prediction(block, "epred" + suffix)
-            if ref_lin is None or ref_ep is None:
+            # Tier F: brms fails to compute posterior_epred for some cases (logistic_normal; sar type "error"), recorded as
+            # epred_refused; the linear predictor is still checked
+            epred_refused = ref_ep is None and b.fixture.prediction_refusal(block, "epred" + suffix) is not None
+            if ref_lin is None or (ref_ep is None and not epred_refused):
                 if not include and b.model.spec.groups:
                     raise OracleMismatch(f"fixture lacks the {block} predictions without group effects")
                 continue
@@ -610,6 +620,8 @@ def check_predictions(b: Bundle) -> None:
             err = rel_err(lin, ref_lin)
             if err > PRED_REL:
                 raise OracleMismatch(f"{block}{suffix}: linear predictor differs from brms posterior_linpred by {err}")
+            if epred_refused:
+                continue
             mean = b.model.predict(idata, newdata=nd, kind="mean", include_group_effects=include)[mean_var].to_numpy()[0]
             err = rel_err(mean, ref_ep)
             if err > PRED_REL:
@@ -649,6 +661,8 @@ def default_prior_table(b: Bundle) -> list[dict[str, str]]:
     kwargs = dict(spec.get("kwargs", {}))
     if "nu" in b.model.family_spec.learnable_parameters:
         kwargs["nu"] = None
+    if b.data2:                                               # Tier F: brms's default_prior() reads data2 (car, sar, fcor)
+        kwargs["data2"] = b.data2
     priors = ab.default_priors(spec["formula"], b.data, family=b.model.family, **kwargs)
     return priors.table(b.model.spec, b.model.family_spec, center_predictors=b.model.effective_center_predictors,
                         categories=getattr(b.model, "categories", ()) or None)   # the ordinal and categorical tables need them (B05)

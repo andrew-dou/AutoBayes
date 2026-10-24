@@ -1,0 +1,60 @@
+{
+ "factors": {
+  "g": [
+   "a",
+   "b",
+   "c",
+   "d",
+   "e",
+   "f"
+  ],
+  "z": [
+   "p",
+   "q",
+   "r"
+  ]
+ },
+ "family": {
+  "family": "wiener"
+ },
+ "formula": [
+  "rt | dec(dec) ~ x + (1 | g)",
+  "bs ~ z"
+ ],
+ "id": "wiener_distributional_bs",
+ "n_points": 8,
+ "priors": [
+  {
+   "class": "Intercept",
+   "prior": "normal(0, 1)"
+  },
+  {
+   "class": "b",
+   "prior": "normal(0, 1)"
+  },
+  {
+   "class": "sd",
+   "group": "g",
+   "prior": "normal(0, 1)"
+  },
+  {
+   "class": "Intercept",
+   "dpar": "bs",
+   "prior": "normal(0, 1)"
+  },
+  {
+   "class": "b",
+   "dpar": "bs",
+   "prior": "normal(0, 0.5)"
+  },
+  {
+   "class": "ndt",
+   "prior": "normal(0, 0.3)"
+  },
+  {
+   "class": "bias",
+   "prior": "beta(2, 2)"
+  }
+ ],
+ "seed": 1032
+}

@@ -1,0 +1,128 @@
+{
+ "id": "wiener_distributional_bs",
+ "tier": "F",
+ "feature": "F04_wiener",
+ "note": "F04: wiener with bs ~ z (log link): X_bs (36 x 3: Intercept, zq, zr), Intercept_bs and b_bs, bs per row; ndt and bias constant, priors as wiener_varint's; epred as wiener_varint's, with each row's bs",
+ "seed": 1032,
+ "n_points": 8,
+ "data": {
+  "generator": "tier_f",
+  "seed": 932,
+  "n": 36,
+  "newdata": {
+   "seed": 1032,
+   "n": 5
+  }
+ },
+ "brms": {
+  "formula": [
+   "rt | dec(dec) ~ x + (1 | g)",
+   "bs ~ z"
+  ],
+  "family": {
+   "family": "wiener"
+  },
+  "factors": {
+   "g": [
+    "a",
+    "b",
+    "c",
+    "d",
+    "e",
+    "f"
+   ],
+   "z": [
+    "p",
+    "q",
+    "r"
+   ]
+  },
+  "priors": [
+   {
+    "prior": "normal(0, 1)",
+    "class": "Intercept"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "b"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "sd",
+    "group": "g"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "Intercept",
+    "dpar": "bs"
+   },
+   {
+    "prior": "normal(0, 0.5)",
+    "class": "b",
+    "dpar": "bs"
+   },
+   {
+    "prior": "normal(0, 0.3)",
+    "class": "ndt"
+   },
+   {
+    "prior": "beta(2, 2)",
+    "class": "bias"
+   }
+  ]
+ },
+ "autobayes": {
+  "constructor": "wiener",
+  "formula": [
+   "rt | dec(dec) ~ x + (1 | g)",
+   "bs ~ z"
+  ],
+  "kwargs": {
+   "categorical": {
+    "z": "p"
+   }
+  },
+  "priors": {
+   "intercept": [
+    "Normal",
+    0,
+    1
+   ],
+   "b": [
+    "Normal",
+    0,
+    1
+   ],
+   "sd": [
+    "HalfNormal",
+    1
+   ],
+   "bs": {
+    "intercept": [
+     "Normal",
+     0,
+     1
+    ],
+    "b": [
+     "Normal",
+     0,
+     0.5
+    ]
+   },
+   "ndt": [
+    "Normal",
+    0,
+    0.3
+   ],
+   "bias": [
+    "Beta",
+    2,
+    2
+   ]
+  }
+ },
+ "gate": {
+  "expect": "fail",
+  "reason": "F04_wiener not implemented; remove this field when it lands"
+ }
+}

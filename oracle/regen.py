@@ -35,6 +35,8 @@ def write_inputs(case: dict, out: Path) -> None:
     datasets.write_csv(data, out / "data.csv")
     if nd is not None:
         datasets.write_csv(nd, out / "newdata.csv")
+    for name, matrix in datasets.data2(case["data"], data).items():      # Tier F: the matrices brms receives as data2
+        datasets.write_matrix(matrix, out / f"data2_{name}.csv")
     (out / "case_brms.json").write_text(fx.canonical_json(fx.frozen_section(case)), encoding="utf-8")
 
 
@@ -87,7 +89,8 @@ def check(case_id: str) -> str:
         fresh = Path(tmp) / case_id
         generate(case_id, fresh)
         problems = []
-        for name in ("case_brms.json", "data.csv", "newdata.csv"):
+        data2 = sorted({p.name for d in (committed, fresh) for p in d.glob("data2_*.csv")})   # Tier F
+        for name in ("case_brms.json", "data.csv", "newdata.csv", *data2):
             a, b = committed / name, fresh / name
             if a.exists() != b.exists():
                 problems.append(f"{name}: present only in {'committed' if a.exists() else 'regenerated'}")

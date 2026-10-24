@@ -1,0 +1,74 @@
+{
+ "id": "gauss_cosy",
+ "tier": "F",
+ "feature": "F03_residual_correlation",
+ "note": "F03: brms cosy(time = tt, gr = subj) on the panel of gauss_unstr: cosy in (0, 1) (probed as other; flat prior, brms's default) is the compound-symmetric correlation of a subject's times (Lcortime, its Cholesky factor, among the points' quantities); standata N_tg, begin_tg, end_tg, nobs_tg; density normal_time_hom(Y | mu, sigma, Lcortime, ...); linpred = epred = b_Intercept + b x; no newdata",
+ "seed": 1023,
+ "n_points": 8,
+ "data": {
+  "generator": "tier_f",
+  "seed": 923,
+  "n": 36
+ },
+ "brms": {
+  "formula": "y ~ x + cosy(time = tt, gr = subj)",
+  "family": {
+   "family": "gaussian"
+  },
+  "factors": {
+   "subj": [
+    "u01",
+    "u02",
+    "u03",
+    "u04",
+    "u05",
+    "u06",
+    "u07",
+    "u08",
+    "u09"
+   ]
+  },
+  "priors": [
+   {
+    "prior": "normal(0, 2)",
+    "class": "Intercept"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "b"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "sigma"
+   }
+  ]
+ },
+ "autobayes": {
+  "constructor": "gaussian",
+  "formula": "y ~ x + cosy(time = tt, gr = subj)",
+  "kwargs": {},
+  "priors": {
+   "intercept": [
+    "Normal",
+    0,
+    2
+   ],
+   "b": [
+    "Normal",
+    0,
+    1
+   ],
+   "sigma": [
+    "HalfNormal",
+    1
+   ],
+   "cosy": [
+    "Flat"
+   ]
+  }
+ },
+ "gate": {
+  "expect": "fail",
+  "reason": "F03_residual_correlation not implemented; remove this field when it lands"
+ }
+}

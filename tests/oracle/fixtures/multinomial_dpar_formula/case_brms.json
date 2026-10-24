@@ -1,0 +1,55 @@
+{
+ "factors": {
+  "g": [
+   "a",
+   "b",
+   "c",
+   "d",
+   "e",
+   "f"
+  ],
+  "z": [
+   "p",
+   "q",
+   "r"
+  ]
+ },
+ "family": {
+  "family": "multinomial"
+ },
+ "formula": [
+  "cbind(m1, m2, m3) | trials(size) ~ x + (1 | g)",
+  "mum3 ~ z"
+ ],
+ "id": "multinomial_dpar_formula",
+ "n_points": 8,
+ "priors": [
+  {
+   "class": "Intercept",
+   "dpar": "mum2",
+   "prior": "normal(0, 2)"
+  },
+  {
+   "class": "b",
+   "dpar": "mum2",
+   "prior": "normal(0, 1)"
+  },
+  {
+   "class": "sd",
+   "dpar": "mum2",
+   "group": "g",
+   "prior": "normal(0, 1)"
+  },
+  {
+   "class": "Intercept",
+   "dpar": "mum3",
+   "prior": "normal(0, 2)"
+  },
+  {
+   "class": "b",
+   "dpar": "mum3",
+   "prior": "normal(0, 0.5)"
+  }
+ ],
+ "seed": 1002
+}

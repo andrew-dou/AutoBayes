@@ -1,0 +1,75 @@
+{
+ "id": "gauss_sar_lag_post",
+ "tier": "F",
+ "feature": "F02_spatial_car_sar",
+ "note": "F02 post-processing of the lag-SAR model (M as gauss_sar_lag's, from this case's data): brms's log_lik (draws, rows) of the non-factorised model is each row's log density given every other row, under Y ~ N(A^-1 mu, sigma^2 A^-1 A^-T) with A = I - lagsar Msar (checked on the frozen points), and loo of the 8-draw fit",
+ "seed": 1018,
+ "n_points": 8,
+ "data": {
+  "generator": "tier_f",
+  "seed": 918,
+  "n": 25,
+  "data2": {
+   "M": "rook_symmetric_normalised"
+  }
+ },
+ "brms": {
+  "formula": "y ~ x + sar(M, type = \"lag\")",
+  "family": {
+   "family": "gaussian"
+  },
+  "data2": [
+   "M"
+  ],
+  "priors": [
+   {
+    "prior": "normal(0, 2)",
+    "class": "Intercept"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "b"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "sigma"
+   }
+  ],
+  "extras": [
+   "log_lik",
+   "loo"
+  ]
+ },
+ "autobayes": {
+  "constructor": "gaussian",
+  "formula": "y ~ x + sar(M, type = \"lag\")",
+  "kwargs": {},
+  "priors": {
+   "intercept": [
+    "Normal",
+    0,
+    2
+   ],
+   "b": [
+    "Normal",
+    0,
+    1
+   ],
+   "sigma": [
+    "HalfNormal",
+    1
+   ],
+   "lagsar": [
+    "Flat"
+   ]
+  },
+  "post": [
+   "log_lik",
+   "loo"
+  ]
+ },
+ "gate": {
+  "expect": "fail",
+  "reason": "F02_spatial_car_sar not implemented; remove this field when it lands"
+ }
+}

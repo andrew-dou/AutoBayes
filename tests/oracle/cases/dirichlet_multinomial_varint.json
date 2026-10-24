@@ -1,0 +1,101 @@
+{
+ "id": "dirichlet_multinomial_varint",
+ "tier": "F",
+ "feature": "F01_multi_category_families",
+ "note": "F01: brms dirichlet_multinomial on the counts cbind(m1, m2, m3) | trials(size): dpars mum2, mum3 as the multinomial's, each with its own (1 | g), and phi (log; gamma(0.01, 0.01), brms's default); density dirichlet_multinomial_logit2(Y | mu, phi); epred (draws, rows, 3) = trials * softmax(0, mu2, mu3) (checked)",
+ "seed": 1005,
+ "n_points": 8,
+ "data": {
+  "generator": "tier_f",
+  "seed": 905,
+  "n": 36,
+  "newdata": {
+   "seed": 1005,
+   "n": 5
+  }
+ },
+ "brms": {
+  "formula": "cbind(m1, m2, m3) | trials(size) ~ x + (1 | g)",
+  "family": {
+   "family": "dirichlet_multinomial"
+  },
+  "factors": {
+   "g": [
+    "a",
+    "b",
+    "c",
+    "d",
+    "e",
+    "f"
+   ]
+  },
+  "priors": [
+   {
+    "prior": "normal(0, 2)",
+    "class": "Intercept",
+    "dpar": "mum2"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "b",
+    "dpar": "mum2"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "sd",
+    "group": "g",
+    "dpar": "mum2"
+   },
+   {
+    "prior": "normal(0, 2)",
+    "class": "Intercept",
+    "dpar": "mum3"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "b",
+    "dpar": "mum3"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "sd",
+    "group": "g",
+    "dpar": "mum3"
+   },
+   {
+    "prior": "gamma(0.01, 0.01)",
+    "class": "phi"
+   }
+  ]
+ },
+ "autobayes": {
+  "constructor": "dirichlet_multinomial",
+  "formula": "cbind(m1, m2, m3) | trials(size) ~ x + (1 | g)",
+  "kwargs": {},
+  "priors": {
+   "intercept": [
+    "Normal",
+    0,
+    2
+   ],
+   "b": [
+    "Normal",
+    0,
+    1
+   ],
+   "sd": [
+    "HalfNormal",
+    1
+   ],
+   "phi": [
+    "Gamma",
+    0.01,
+    0.01
+   ]
+  }
+ },
+ "gate": {
+  "expect": "fail",
+  "reason": "F01_multi_category_families not implemented; remove this field when it lands"
+ }
+}
