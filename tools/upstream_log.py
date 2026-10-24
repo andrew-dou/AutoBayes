@@ -25,10 +25,10 @@ TEX = DIR / "upstream-log.tex"
 SCHEMA = "autobayes-upstream-log-v1"
 FIELDS = ["id", "title", "component", "functions", "versions", "divergences", "found", "kind", "what", "observed",
           "expected", "status", "repro", "upstream", "fix", "known_upstream"]
-COMPONENTS = ["brms", "Stan Math", "rstan", "loo"]
+COMPONENTS = ["brms", "Stan Math", "rstan", "loo", "posterior"]
 KINDS = ["wrong result", "inexact numerics", "missing validation"]
 STATUSES = ["reproduced", "recorded only", "not a bug after all"]
-UPSTREAMS = ["paul-buerkner/brms", "stan-dev/math", "stan-dev/rstan", "stan-dev/loo"]
+UPSTREAMS = ["paul-buerkner/brms", "stan-dev/math", "stan-dev/rstan", "stan-dev/loo", "stan-dev/posterior"]
 KNOWN = ["not found", "related", "known", "known, fixed upstream"]
 ROWS = 10
 
