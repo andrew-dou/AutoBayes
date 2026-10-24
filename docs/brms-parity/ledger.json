@@ -2156,12 +2156,15 @@
    "depends_on": [
     "B02_addition_terms"
    ],
-   "status": "gates_green",
+   "status": "merged",
    "summary": "se(sei) and se(sei, sigma = TRUE) (Gaussian, Student-t); rate(denom) (Poisson, negative binomial): cases gauss_se_meta, gauss_se_sigma, student_se_sigma, poisson_rate, negbinomial_rate",
-   "pr": null,
+   "pr": 98,
    "attempts": 0,
-   "divergences": [],
-   "next_action": "implementing (wave F2); fixtures #89",
+   "divergences": [
+    "D156",
+    "D157"
+   ],
+   "next_action": "none",
    "reserved_divergences": "D156-D157",
    "gates": {
     "sha": "4ab5bd0c00de",
