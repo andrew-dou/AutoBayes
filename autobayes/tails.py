@@ -173,7 +173,7 @@ try:  # the shape derivative's JAX lowering, for a gradient graph compiled to JA
     @jax_funcify.register(_GammaIncShapeDerivative)
     def _jax_funcify_gammainc_shape_derivative(op, **kwargs):
         return _lax.igamma_grad_a
-except ImportError:  # pragma: no cover
+except ImportError:  # pragma: no cover - JAX is an optional extra; the pinned test environment always has it
     pass
 
 

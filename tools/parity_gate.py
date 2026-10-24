@@ -1,12 +1,14 @@
 #!/usr/bin/env python
 """Run the brms-parity gates on the current checkout and, with --feature, record the result in the ledger.
 
-    python tools/parity_gate.py [--feature ID] [--base origin/main] [--smoke] [--skip-suite]
+    python tools/parity_gate.py [--feature ID] [--base origin/main] [--smoke] [--skip-suite] [--diff-coverage]
 
 Checks, in order (cheapest first), stopping at the first failure unless --keep-going:
   immutability  tests/oracle/fixtures/** and tests/oracle/references/** (P6) only added since --base;
                 tests/oracle/tolerances.py unchanged; changes to tests/oracle/{gates,adapter,two_reference}.py reported
   oracle        pytest tests/oracle  (G1-G6)
+  diff_coverage with --diff-coverage only: tools/diff_coverage.py --base <base>, every line the branch adds or changes
+                under autobayes/ runs under the feature's tests (LOOP.md "Diff coverage")
   suite         pytest tests -m "not slow and not sampling"  (G7, local part; hosted CI runs "not slow")
   smoke         with --smoke only: one 120-second sampling smoke, advisory, zero retries (G8)
 
@@ -64,6 +66,8 @@ def main(argv=None) -> int:
     ap.add_argument("--base", default="origin/main")
     ap.add_argument("--smoke", action="store_true", help="also run the advisory 120-second sampling smoke")
     ap.add_argument("--skip-suite", action="store_true", help="skip the non-sampling suite (oracle gates only)")
+    ap.add_argument("--diff-coverage", action="store_true",
+                    help="also require every changed executable line under autobayes/ to run (tools/diff_coverage.py)")
     ap.add_argument("--keep-going", action="store_true")
     args = ap.parse_args(argv)
 
@@ -90,13 +94,18 @@ def main(argv=None) -> int:
 
     env = dict(os.environ)
     env.setdefault("PYTENSOR_FLAGS", f"base_compiledir={REPO / '.pytensor-gate'}")
+    diff_coverage = [sys.executable, str(REPO / "tools" / "diff_coverage.py"), "--base", args.base]
     for name, cmd in (("oracle", [*PYTEST, "tests/oracle"]),
+                      ("diff_coverage", diff_coverage if args.diff_coverage else []),
                       ("suite", [] if args.skip_suite else [*PYTEST, "tests", "-m", "not slow and not sampling"])):
         if not cmd:
             continue
         t0 = time.perf_counter()
         proc = subprocess.run(cmd, cwd=REPO, capture_output=True, text=True, env=env)
         record(name, proc.returncode == 0, time.perf_counter() - t0, proc.stdout + proc.stderr)
+        if name == "diff_coverage" and proc.returncode == 0:   # a failure prints the report's tail above
+            print("  " + next((ln for ln in reversed(proc.stdout.splitlines()) if ln.startswith("DIFF COVERAGE")),
+                              "no DIFF COVERAGE line"))
         if failed and not args.keep_going:
             return finish(args, sha, dirty, results)
     if args.smoke:
