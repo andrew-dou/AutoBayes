@@ -105,9 +105,5 @@
     "method": "posterior_epred"
    }
   }
- },
- "gate": {
-  "expect": "fail",
-  "reason": "F07_summaries not implemented; remove this field when it lands"
  }
 }
