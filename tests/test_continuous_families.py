@@ -255,9 +255,9 @@ def test_the_extra_parameters_are_refused_in_mixtures_and_multivariate_models():
         ab.gaussian("mvbind(y, w) ~ x", df, ab.Priors(resp=resp, beta=ab.Gamma(1, 0.1)), rescor=False)
     with pytest.raises(ab.PriorError, match=r"response 'y': the gaussian family has no non-decision time"):
         ab.gaussian("mvbind(y, w) ~ x", df, ab.Priors(resp={**resp, "y": {**resp["y"], "ndt": ab.Normal(0, 1)}}), rescor=False)
-    with pytest.raises(ValueError, match="alpha, beta, ndt, zoi, coi, kappa, quantile and tmp_xi are the skew_normal, exgaussian, "
-                                         "shifted_lognormal, zero_one_inflated_beta, xbeta, von_mises, asym_laplace and gen_extreme_value "
-                                         "families' parameters; a mixture has none"):   # E01, E02
+    with pytest.raises(ValueError, match="alpha, beta, ndt, zoi, coi, kappa, quantile, tmp_xi, bs and bias are the skew_normal, exgaussian, "
+                                         "shifted_lognormal, zero_one_inflated_beta, xbeta, von_mises, asym_laplace, gen_extreme_value "
+                                         "and wiener families' parameters; a mixture has none"):   # E01, E02, F04
         ab.mixture("y ~ x", df, ab.Priors(components=[comp, comp], theta=ab.Dirichlet(2)), families=["gaussian", "gaussian"]).value_point(
             intercept=[0.0, 1.0], b=np.zeros((1, 2)), sigma=[1.0, 1.0], theta=[0.5, 0.5], alpha=1.0)
 

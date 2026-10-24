@@ -170,7 +170,8 @@ def freeze_target(model):
         **({'additions': {'terms': [a.term for a in s.additions],
                           **({'weights': d.weights} if d.weights is not None else {}),
                           **({'cens': d.cens} if d.cens is not None else {}),
-                          **({'rcens': d.rcens} if getattr(d, 'rcens', None) is not None else {})}} if s.additions else {}),   # E04
+                          **({'rcens': d.rcens} if getattr(d, 'rcens', None) is not None else {}),   # E04
+                          **({'dec': d.dec} if getattr(d, 'dec', None) is not None else {})}} if s.additions else {}),   # F04
         # The response's categories (B05: cumulative, categorical), whose 1-based codes are y, likewise
         **({'categories': list(model.categories)} if getattr(model, 'categories', ()) else {}),
         # and hurdle_cumulative's hurdle category (E01), brms's Y = 0
@@ -214,9 +215,10 @@ def freeze_target(model):
                    # the zero-inflation / hurdle probability's prior (B06) likewise
                    **({'zi': prior(pr.zi)} if pr.zi is not None else {}),
                    **({'hu': prior(pr.hu)} if pr.hu is not None else {}),
-                   # a family's extra parameter's prior (D01: alpha, beta, ndt; E01: zoi, coi, kappa; E02: kappa, quantile, xi)
-                   # likewise
-                   **{name: prior(getattr(pr, name)) for name in ('alpha', 'beta', 'ndt', 'zoi', 'coi', 'kappa', 'quantile', 'xi')
+                   # a family's extra parameter's prior (D01: alpha, beta, ndt; E01: zoi, coi, kappa; E02: kappa, quantile, xi;
+                   # F04: bs, bias) likewise
+                   **{name: prior(getattr(pr, name)) for name in ('alpha', 'beta', 'ndt', 'zoi', 'coi', 'kappa', 'quantile', 'xi',
+                                                                  'bs', 'bias')
                       if getattr(pr, name, None) is not None}},
     }
     encoded = json.dumps(_canonical(payload), sort_keys=True, separators=(',', ':'),

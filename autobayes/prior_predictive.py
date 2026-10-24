@@ -19,6 +19,8 @@ def prior_predictive(model, *, draws=500, seed=None):
         raise ValueError('draws must be a positive integer')
     if seed is not None and (isinstance(seed, (bool, np.bool_)) or not isinstance(seed, Integral) or seed < 0):
         raise ValueError('seed must be a nonnegative integer or None')
+    if 'response' not in family_of(model).prediction_kinds:   # F04: a family whose response is not drawn (wiener, divergence D149)
+        raise ValueError(f'prior predictive draws are not offered for the {model.family} family: {family_of(model).kind_error}')
     priors = getattr(model, 'priors', None)               # a flat prior (ab.Flat, brms's default for b) has nothing to draw from
     improper = priors.improper(model.spec) if priors is not None else []
     if improper:

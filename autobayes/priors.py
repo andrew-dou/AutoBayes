@@ -11,7 +11,8 @@ truncated to ``nu > 1``); ``zi`` or ``hu``, the zero-inflation or hurdle probabi
 lognormal families (D01; ``ndt``'s ``Uniform(0, "min_Y")`` is brms's ``uniform(0, min_Y)``); ``zoi`` and ``coi``, the
 zero-one-inflated Beta's two probabilities (E01, ``Beta`` priors); ``kappa``, the extended-support Beta's (``xbeta``, E01) or
 the von Mises precision (E02); ``quantile`` or ``xi``, the quantile or shape of the asymmetric Laplace and generalized extreme
-value families (E02; ``xi`` is the prior of brms's unscaled ``tmp_xi``). An
+value families (E02; ``xi`` is the prior of brms's unscaled ``tmp_xi``); ``bs`` and ``bias``, the boundary separation and
+relative starting point of the wiener family, beside its ``ndt`` (F04). An
 auxiliary parameter with its own formula (B01, ``["y ~ x", "sigma ~ z"]``) takes the priors of that formula's intercept
 and coefficients instead, ``sigma={"intercept": ..., "b": ...}`` (brms's ``Intercept`` and ``b`` with ``dpar = sigma``).
 Every class the model has must be given, and a class the model does
@@ -51,7 +52,9 @@ AUXILIARY = {"sigma": "residual SD", "shape": "shape parameter", "phi": "precisi
              # E01: the zero-one-inflated Beta's two probabilities; E01, E02: kappa (xbeta's, von_mises's precision); E02:
              # asym_laplace's quantile, gen_extreme_value's xi (the prior of brms's tmp_xi)
              "zoi": "zero-one-inflation probability", "coi": "conditional one-inflation probability", "kappa": "kappa parameter",
-             "quantile": "quantile", "xi": "extreme value shape"}
+             "quantile": "quantile", "xi": "extreme value shape",
+             # F04: the wiener family's boundary separation and relative starting point (its ndt is D01's)
+             "bs": "boundary separation", "bias": "relative starting point"}
 # The priors of a learned parameter with a lower bound (the Student-t nu, A13): the positive-support priors whose
 # truncation at the bound PyMC can renormalise (it needs their CDF; PyMC has none for HalfStudentT).
 TRUNCATABLE = frozenset({"Gamma", "Exponential", "HalfNormal", "HalfCauchy"})
@@ -495,6 +498,11 @@ class Priors:
     # F02b (docs/spatial-sar.md): the parameter of a SAR term sar(M, type = "lag" | "error"), brms's class lagsar or errorsar
     lagsar: Prior | None = None
     errorsar: Prior | None = None
+    # F04 (docs/wiener.md): the wiener family's boundary separation (brms class ``bs``, real<lower=0>, a positive-support prior;
+    # or with its own formula, ``bs ~ z``, that formula's {"intercept": ..., "b": ...}) and relative starting point (class
+    # ``bias``, real<lower=0,upper=1>, a Beta prior); its non-decision time is ``ndt`` above; refused for every other family
+    bs: Prior | Mapping[str, object] | None = None
+    bias: Prior | None = None
 
     def __post_init__(self):
         if isinstance(self.components, list):                         # one value for equal component lists (C05)
@@ -1192,7 +1200,7 @@ class Priors:
             if extra.name in fam.distributional_parameters:           # E03: the skew normal's alpha takes a formula
                 raise PriorError(f"prior for {extra.name!r} must be a Prior, got {type(prior).__name__} (a mapping is the form of "
                                  f"the priors of {extra.name}'s own formula, ['<response formula>', '{extra.name} ~ ...'], E03; "
-                                 f"this model gives {extra.name} no formula of its own, divergence D79)")
+                                 f"this model gives {extra.name} no formula of its own, divergence {extra.divergence})")
             raise PriorError(f"prior for {extra.name!r} must be a Prior, got {type(prior).__name__} (the {extra.name} of the "
                              f"{fam.name} family takes no formula of its own, divergence {extra.divergence})")
         allowed = EXTRA_PRIORS[extra.support]

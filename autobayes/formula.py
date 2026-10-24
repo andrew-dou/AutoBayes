@@ -1018,7 +1018,7 @@ class Offset:
         return v
 
 
-ADDITION_KINDS = ("weights", "cens", "trunc", "mi")   # brms's response addition terms besides trials() that are parsed (B02; mi(), C06)
+ADDITION_KINDS = ("weights", "cens", "trunc", "mi", "dec")   # brms's response addition terms besides trials() that are parsed (B02; mi(), C06; dec(), F04)
 
 # Addition terms that are parsed, represented and implemented but withheld, each with the reason its refusal carries
 # (docs/addition-terms.md): none since P6, which lifted the parks of cens() and trunc() (divergences D24 and D25).
@@ -1057,7 +1057,9 @@ class AdditionTerm:
     ``weights`` and ``cens``, ``y2`` the column of an interval's upper bounds. ``addition_data`` turns the terms into brms's
     Stan data on a frame. ``"mi"`` (``mi()``, C06, docs/missing-and-measurement-error.md) says that the response's missing
     values are parameters of the model (brms's ``Ymi``) rather than rows to drop; it reads no column and is no likelihood
-    weight (``addition_data`` skips it)."""
+    weight (``addition_data`` skips it). ``"dec"`` (``dec(col)``, F04, docs/wiener.md) is the decision of each row of a
+    ``wiener()`` response, 1 for the upper boundary and 0 for the lower one (brms's ``dec``), which the family's likelihood
+    reads."""
 
     kind: str
     column: str | None = None
@@ -1121,7 +1123,8 @@ def _parse_additions(text: str, formula: str) -> tuple[str | None, tuple[Additio
             raise FormulaError(
                 f"{formula!r}: {piece!r} is not a supported response addition term. brms's left-hand side "
                 "'response | term + term' takes weights(col), cens(col) and trunc(lb = a, ub = b) here "
-                "(docs/addition-terms.md), and mi() in a multivariate list of formulas (docs/missing-and-measurement-error.md); "
+                "(docs/addition-terms.md), dec(col) for the wiener family (docs/wiener.md), and mi() in a multivariate list of "
+                "formulas (docs/missing-and-measurement-error.md); "
                 "a binomial response is exactly 'successes | trials(n)', with any other terms after it."
             )
         if kind in seen:
@@ -1151,7 +1154,7 @@ def _parse_additions(text: str, formula: str) -> tuple[str | None, tuple[Additio
         if len(args) != 1 or not re.fullmatch(_IDENT, args[0]):
             hint = {"weights": "; brms's weights(col, scale = TRUE), which rescales the weights to sum to the number of rows, "
                                "is not supported: rescale the column",
-                    "cens": " or, for interval censoring, cens(col, y2)", "trials": ""}[kind]
+                    "cens": " or, for interval censoring, cens(col, y2)", "trials": "", "dec": " of decisions, 1 or 0"}[kind]
             raise FormulaError(f"{formula!r}: {piece!r}: {kind}() takes one column name{hint}")
         if kind == "trials":
             trials = args[0]
@@ -1264,13 +1267,33 @@ def _rcens_values(a: AdditionTerm, y: np.ndarray, cens: np.ndarray, s: pd.Series
     return np.where(interval, y2, 0.0)
 
 
+def _dec_values(column: str, s: pd.Series, where: str) -> np.ndarray:
+    """F04: the decisions of ``dec(col)``, 1 (the upper boundary) or 0 (the lower one) per row, numeric or boolean, as int64.
+    brms also reads the labels 'upper' / 'lower' and codes every nonzero number as the upper boundary (as.logical()), so that -1
+    or 0.5 would silently be an upper-boundary decision; any value but 0 and 1 is refused here (divergence D151)."""
+    reject_complex(f"{where} {column!r}", s)
+    if pd.api.types.is_bool_dtype(s):
+        return s.to_numpy(dtype=np.int64)
+    if not _is_numeric(s):
+        raise FormulaError(f"{where} {column!r} has dtype {s.dtype}; the decisions of 'dec({column})' are 1 (upper boundary) or 0 "
+                           "(lower boundary), numeric or boolean: recode brms's labels 'upper' / 'lower' explicitly")
+    v = s.to_numpy(dtype=float)
+    if not np.all(np.isfinite(v)):
+        raise FormulaError(f"{where} {column!r} of 'dec({column})' has missing or non-finite values")
+    bad = v[~np.isin(v, (0.0, 1.0))]
+    if bad.size:
+        raise FormulaError(f"{where} {column!r}: the decisions of 'dec({column})' are 1 (upper boundary) or 0 (lower boundary); found "
+                           f"{float(bad[0])!r} (brms codes every nonzero value as the upper boundary; divergence D151)")
+    return v.astype(np.int64)
+
+
 def addition_data(spec: "ModelSpec", df: pd.DataFrame, *, where: str = "column") -> dict[str, np.ndarray]:
     """brms's Stan data of the formula's addition terms on ``df`` (B02), under brms's names: ``weights`` (positive finite
     weights), ``cens`` (-1, 0 or 1 per row, int64; 2 too under ``cens(c, y2)``), ``rcens`` (``cens(c, y2)``'s upper bounds on
     the interval-censored rows, 0 elsewhere; E04) and ``lb`` / ``ub`` (the truncation bounds per row, ``-inf`` / ``inf`` on
-    an open side, as brms writes both whenever ``trunc()`` is present). Each is checked here: a response outside the
-    truncation bounds is refused, as brms refuses it. Empty without addition terms; ``mi()`` (C06) has no such data (its missing
-    rows are the model's ``Design.missing``)."""
+    an open side, as brms writes both whenever ``trunc()`` is present) and ``dec`` (``dec(col)``'s decisions, 1 or 0 per row,
+    int64; F04). Each is checked here: a response outside the truncation bounds is refused, as brms refuses it. Empty without
+    addition terms; ``mi()`` (C06) has no such data (its missing rows are the model's ``Design.missing``)."""
     out: dict[str, np.ndarray] = {}
     for a in spec.additions:
         if a.kind == "weights":
@@ -1281,6 +1304,8 @@ def addition_data(spec: "ModelSpec", df: pd.DataFrame, *, where: str = "column")
                 out["rcens"] = _rcens_values(a, df[spec.response].to_numpy(dtype=float), out["cens"], df[a.y2], where)
         elif a.kind == "mi":
             continue
+        elif a.kind == "dec":                                  # F04: the wiener family's decisions
+            out["dec"] = _dec_values(a.column, df[a.column], where)
         else:
             lb = -math.inf if a.lb is None else a.lb
             ub = math.inf if a.ub is None else a.ub

@@ -103,6 +103,9 @@ are extra parameters as D01's are; the generalized extreme value family's extra 
 brms's `posterior_epred(dpar = "xi")` (`derived_draws`) for the draws `predict()` reads. A fixed quantile (brms's
 `bf(quantile = p)`) is no parameter: G1 compares it with brms's Stan data.
 
+F04: the wiener family's extra parameters are brms's `bs` (`real<lower=0>`, log scale), `ndt` (as D01's) and `bias`
+(`real<lower=0,upper=1>`, Stan's logit, checked as `quantile` is); `bs ~ z` is a formula on an extra parameter as E03's, below.
+
 E03: a formula on a family's zero-inflation or hurdle probability or extra parameter (`zi ~ z`, `hu ~ z`, the skew normal's
 `alpha ~ z`; `FamilySpec.distributional_formulas`) is matched as B01's (`X_zi`, `Intercept_zi`, `b_zi`, ...): its intercept and
 coefficients are handed to `value_point` as `zi=`, `hu=` or `alpha=`, and brms's `X_<p>` of any family parameter without a
@@ -191,7 +194,9 @@ def priors_from_spec(spec: dict) -> ab.Priors:
                      zoi=_prior(spec.get("zoi")), coi=_prior(spec.get("coi")), kappa=_prior(spec.get("kappa")),
                      quantile=_prior(spec.get("quantile")), xi=_prior(spec.get("xi")),
                      # F02b: a SAR term's {"lagsar": ["Flat"]} or {"errorsar": ["Flat"]}
-                     lagsar=_prior(spec.get("lagsar")), errorsar=_prior(spec.get("errorsar")))
+                     lagsar=_prior(spec.get("lagsar")), errorsar=_prior(spec.get("errorsar")),
+                     # F04: the wiener family's {"bs": [...]} (or bs's formula, {"bs": {"intercept": ..., "b": ...}}) and {"bias": [...]}
+                     bs=_prior(spec.get("bs")), bias=_prior(spec.get("bias")))
 
 
 def build_model(case: dict, data: pd.DataFrame) -> ab.Model:
