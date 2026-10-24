@@ -1,0 +1,14 @@
+brms 2.23.0, rstan 2.32.7, StanHeaders 2.32.10, R 4.5.2
+
+E[y] at mu = 0.1, sigma = 1
+  (the fit's xi: -0.5)
+  xi = -0.5   brms 0.3275461490944839   exact 0.3275461490944839   relative error 0
+  (the fit's xi: 1e-10)
+  xi = 1e-10  brms 0.6772160527328651   exact 0.6772156650004378   relative error 5.7e-07
+  (the fit's xi: 0)
+  xi = 0      brms NaN   exact 0.6772156649015323
+  (the fit's xi: 1.5)
+  xi = 1.5    brms -2.929938467874022   exact Inf
+
+PROBLEM PRESENT: brms's generalized extreme value mean is wrong for xi >= 1 and at or near xi = 0
+run time 123.0 s

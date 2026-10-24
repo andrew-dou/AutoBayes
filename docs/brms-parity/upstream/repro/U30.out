@@ -1,0 +1,11 @@
+loo 2.9.0, R 4.5.2
+observation 5 (log-likelihood near -400):
+  elpd_loo         -400.083688219  (shifted row: -0.0836882186983, + 400 = -400.083688219)
+  mcse_elpd_loo    NaN  (expected, the shifted row's: 0.0134962534892)
+  p_loo            0.166252158351  (shifted row: 0.166252158351)
+  influence_pareto_k 0.105094775792  (shifted row: 0.105094775792)
+print(loo) says: MCSE of elpd_loo is NaN.
+print(loo of the shifted matrix) says: MCSE of elpd_loo is 0.0.
+
+PROBLEM PRESENT: loo's MCSE of elpd_loo is NaN for an observation whose elpd is below about -372
+run time 0.0 s

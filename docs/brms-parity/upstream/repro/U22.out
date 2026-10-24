@@ -1,0 +1,39 @@
+brms 2.23.0, rstan 2.32.7, StanHeaders 2.32.10, R 4.5.2
+the number of chains is less than 1; sampling not done
+the generated program calls normal_lccdf: TRUE
+the number of chains is less than 1; sampling not done
+
+right-censored row at y = z: log(1 - Phi(z))
+the number of chains is less than 1; sampling not done
+  z = 0          brms -0.6931471805599454   exact -0.6931471805599453   relative error 1.6e-16
+the number of chains is less than 1; sampling not done
+  z = 1          brms -1.841021645009263   exact -1.841021645009264   relative error 1.2e-16
+the number of chains is less than 1; sampling not done
+  z = 5          brms -15.0649983940277   exact -15.06499839398873   relative error 2.6e-12
+the number of chains is less than 1; sampling not done
+  z = 6.17       brms -21.79781992084687   exact -21.79781996608673   relative error 2.1e-09
+the number of chains is less than 1; sampling not done
+  z = 8          brms -35.03205247743868   exact -35.01343715991455   relative error 0.00053
+the number of chains is less than 1; sampling not done
+  z = 8.3        brms -Inf   exact -37.49421742374825   relative error Inf
+the number of chains is less than 1; sampling not done
+  z = 9          brms -Inf   exact -43.62814911333211   relative error Inf
+the number of chains is less than 1; sampling not done
+  z = 20         brms -Inf   exact -203.9171553710973   relative error Inf
+the number of chains is less than 1; sampling not done
+the number of chains is less than 1; sampling not done
+
+truncated row y = L + 0.5 of y | trunc(lb = L): log phi(y) - log(1 - Phi(L))
+the number of chains is less than 1; sampling not done
+  L = 0          brms -0.3507913526447273   exact -0.3507913526447274   relative error 3.2e-16
+the number of chains is less than 1; sampling not done
+  L = 1          brms -0.2029168881954093   exact -0.2029168881954091   relative error 1.1e-15
+the number of chains is less than 1; sampling not done
+  L = 6.17       brms -1.365568612357809   exact -1.365568567117943   relative error 3.3e-08
+the number of chains is less than 1; sampling not done
+  L = 8          brms -2.011886055765999   exact -2.030501373290122   relative error 0.0092
+the number of chains is less than 1; sampling not done
+  L = 9          brms  Inf   exact -2.41578941987256   relative error Inf
+
+PROBLEM PRESENT: Stan's normal_lccdf loses its upper tail, so brms's censored and truncated rows do
+run time 607.7 s

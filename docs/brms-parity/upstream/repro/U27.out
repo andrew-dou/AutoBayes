@@ -1,0 +1,28 @@
+brms 2.23.0, rstan 2.32.7, StanHeaders 2.32.10, R 4.5.2
+the number of chains is less than 1; sampling not done
+
+skew_normal(), mu = 0, sigma = 1, alpha = 10 (the generated program calls skew_normal_lpdf: TRUE)
+the number of chains is less than 1; sampling not done
+the number of chains is less than 1; sampling not done
+  y =   0.5: brms -1.326073719865459   exact -1.32607371986546   relative error 6.7e-16
+the number of chains is less than 1; sampling not done
+  y =    -5: brms -259.5392660824244   exact -259.5392660824243   relative error 2.2e-16
+the number of chains is less than 1; sampling not done
+  y =    -8: brms -Inf   exact -841.9599722745395   relative error Inf
+the number of chains is less than 1; sampling not done
+  y =    -9: brms -Inf   exact -1110.717630363651   relative error Inf
+the number of chains is less than 1; sampling not done
+
+exgaussian(), mu = 0, sigma = 1, beta = 1 (the generated program calls exp_mod_normal_lpdf: TRUE)
+the number of chains is less than 1; sampling not done
+the number of chains is less than 1; sampling not done
+  y =   0.5: brms -1.368946415288656   exact -1.368946415288657   relative error 3.2e-16
+the number of chains is less than 1; sampling not done
+  y =   -30: brms -424.8212439563432   exact -424.8212439563432   relative error 0
+the number of chains is less than 1; sampling not done
+  y =   -36: brms -617.0032275937984   exact -617.0032275937984   relative error 0
+the number of chains is less than 1; sampling not done
+  y =   -40: brms -Inf   exact -765.1084420137538   relative error Inf
+
+PROBLEM PRESENT: Stan's skew_normal_lpdf / exp_mod_normal_lpdf are -Inf where log Phi underflows
+run time 47.5 s
