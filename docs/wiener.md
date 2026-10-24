@@ -49,9 +49,10 @@ strictly positive finite reals. `min_Y` is the smallest response time of the fit
   at any drift (within 3e-15 of a 60-digit evaluation; numerical integration of the density gives the same mean). brms 2.23's
   `posterior_epred` is `ndt - bias / mu + bs / mu (exp(-2 mu bias) - 1) / (exp(-2 mu bs) - 1)`, the relative bias where the
   absolute starting point `bs * bias` belongs: the mean only at `bs = 1` (D148). The two frozen cases' G4 expected values
-  therefore fail against brms and are recorded as an expected failure of G4 (`"gates": ["g4"]`), until a 50-digit reference
-  (P6) stands in for them; their linear predictor is brms's (`tests/test_wiener.py` checks it, and that brms's expected values
-  are its formula on the same draws).
+  are therefore accepted against two references (P6, `"fallback": ["epred"]`): every one of them is off brms and within
+  `PRED_REL` of the committed 50-digit reference (`tests/oracle/references/wiener_varint.json`,
+  `wiener_distributional_bs.json`, written by `oracle/reference.py`), while their linear predictor compares with brms only
+  (`tests/test_wiener.py` also checks that brms's expected values are its formula on the same draws).
 - `kind="response"` (brms's `posterior_predict`) and `prior_predictive()` are refused: brms needs the R package RWiener, and no
   sampler of the first-passage time is implemented here (D149).
 - `ab.log_lik()`, `ab.loo()` and `ab.waic()` take each row's density from the model's own; brms needs RWiener for them (D150).
@@ -71,8 +72,9 @@ components, shrinkage priors on `b`, `conditional_effects()` and `prior_draws()`
 ## Verification
 
 The frozen brms fixtures `wiener_varint` (`rt | dec(dec) ~ x + (1 | g)`) and `wiener_distributional_bs` (with `bs ~ z`) pass G1
-(with brms's `dec`), G2, G3, G5 and G6, and G4's linear predictor; G4's expected values fail against brms by D148. The largest
-relative errors against brms at the eight frozen points:
+(with brms's `dec`), G2, G3, G5, G6 and G4's linear predictor against brms, and G4's expected values against their 50-digit
+references (P6; all 656 of each case's on the reference, by D148). The largest relative errors against brms at the eight
+frozen points:
 
 | case | log density (with / without Jacobian, prior part) | gradient | JAX vs PyTensor | linear predictor | brms's formula on these draws vs its epred |
 | --- | --- | --- | --- | --- | --- |
@@ -80,6 +82,10 @@ relative errors against brms at the eight frozen points:
 | `wiener_distributional_bs` | 1.4e-10 / 1.5e-10 / 2.2e-16 | 1.2e-8 | 2.5e-16 | 2.3e-16 | 8.3e-14 |
 
 The log density and gradient differences are Stan's (D150): this library's density is within 4e-15 of the 60-digit value at
-the same points. `ab.default_priors()` reproduces brms's `default_prior()` table on both fixtures (G6) and on two test frames:
+the same points. Against the 50-digit references (`oracle/reference.py`: the Navarro-Fuss series in Python's `decimal`, brms's
+transforms, priors and Jacobians, its gradient a fourth-order central difference) AutoBayes's log density is within 4.3e-16
+(`wiener_varint`) and 3.7e-16 (`wiener_distributional_bs`), its gradient within 8.3e-15 and 3.9e-15, and its expected values
+within 6.7e-16; brms's gradient is within 8.7e-9 and 1.2e-8 of the reference, and its expected values up to 0.24 and 0.61 off it
+(the gates' measure, relative to the larger of 1 and the values). `ab.default_priors()` reproduces brms's `default_prior()` table on both fixtures (G6) and on two test frames:
 brms reads `rt` as given (the Intercept's location its median, the scale `max(2.5, MAD)`), and `bs`, `ndt`, `bias` and the
 Intercept of `bs`'s formula have constant defaults (probed on rescaled responses).

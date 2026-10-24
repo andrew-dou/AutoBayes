@@ -122,10 +122,11 @@
   }
  },
  "gate": {
-  "expect": "fail",
-  "gates": [
-   "g4"
-  ],
-  "reason": "F04: brms 2.23's posterior_epred of wiener() puts the relative bias where the absolute starting point bs * bias belongs (divergence D148); AutoBayes's mean response time ndt + (bs P(upper) - bs bias) / mu is exact, so G4's expected values fail against brms until a 50-digit reference (P6) stands in for them; G4's linear predictor and every other gate pass"
+  "expect": "pass",
+  "reference": "wiener_distributional_bs.json",
+  "divergence": "D148",
+  "fallback": [
+   "epred"
+  ]
  }
 }

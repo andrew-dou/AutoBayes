@@ -34,6 +34,7 @@ from autobayes.families.wiener import BIAS, BS, NDT, WIENER, _draw_response
 from autobayes.formula import FormulaError, addition_data, parse_formula
 from tests.oracle import adapter, gates
 from tests.oracle import fixture as fx
+from tests.oracle import two_reference
 from tests.oracle.tolerances import PRED_REL, rel_err
 from tests.test_continuous_families import graph, rows_logp
 
@@ -291,10 +292,10 @@ def _draws_with_dpars(b, idata, nd, include):
 
 
 def test_frozen_points_linear_predictor_and_brms_epred(bundle):
-    """At brms's frozen points: the linear predictor is brms's posterior_linpred in every block (G4's first part, which the
-    case's expected failure of G4 would not show), brms's posterior_epred is brms's formula on the same draws (so G4's expected
-    values fail for the formula alone), and predict(kind="mean") is the mean response time of those draws, off brms's by more
-    than the tolerance."""
+    """At brms's frozen points: the linear predictor is brms's posterior_linpred in every block, brms's posterior_epred is
+    brms's formula on the same draws (so G4's expected values are off brms for the formula alone), and predict(kind="mean") is
+    the mean response time of those draws, off brms's by more than the tolerance: G4 passes on the case's 50-digit reference
+    (P6, D148) at every expected value and only there, and without the reference it fails on the expected values."""
     from autobayes.families.spec import extra_draws
 
     b = bundle
@@ -310,8 +311,15 @@ def test_frozen_points_linear_predictor_and_brms_epred(bundle):
             mean = b.model.predict(idata, newdata=nd, kind="mean", include_group_effects=include)["mean"].to_numpy()[0]
             np.testing.assert_allclose(mean, wn.expected_response_time(lin, bs, ndt, bias), rtol=1e-15)
             assert rel_err(mean, brms) > 1e-3
+    entries = 2 * len(b.fixture.points) * (b.model.design.n + len(b.newdata))
+    with pytest.warns(two_reference.ReferenceFallback, match=rf"{b.case['id']} G4 epred: {entries} of {entries} entries passed on the reference"):
+        report = gates.check_predictions(b)
+    assert report.count == report.entries == entries
+    unopted = copy.copy(b)
+    unopted.case = {k: v for k, v in b.case.items() if k != "gate"}
+    unopted.__dict__.pop("reference", None)
     with pytest.raises(gates.OracleMismatch, match=r"fitted: 'mean' differs from brms posterior_epred"):
-        gates.check_predictions(b)
+        gates.check_predictions(unopted)
 
 
 def test_frozen_points_log_lik_loo_and_bayes_R2(bundle):

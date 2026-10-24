@@ -810,7 +810,8 @@ OPTED_IN = sorted(cid for cid in fx.case_ids() if "reference" in (fx.load_case(c
 
 
 def test_every_opted_in_case_has_its_reference_and_every_reference_a_case():
-    assert OPTED_IN == ["bernoulli_cloglog", "cumulative_probit_varint", "gamma_censored_interval", "gauss_censored", "gauss_truncated"]
+    assert OPTED_IN == ["bernoulli_cloglog", "cumulative_probit_varint", "gamma_censored_interval", "gauss_censored", "gauss_truncated",
+                        "wiener_distributional_bs", "wiener_varint"]
     assert [p.stem for p in REFERENCE_FILES] == OPTED_IN
     for cid in OPTED_IN:
         assert fx.load_case(cid)["gate"]["reference"] == f"{cid}.json"
@@ -877,7 +878,8 @@ def _no_gate(bundle):
 
 def test_fallback_is_reported_with_its_count_and_place(opted_in_bundles):
     """Each opted-in case passes G2's gradient (and gauss_truncated G4) with exactly these entries on the reference: the
-    points where brms's own arithmetic is off the exact value (divergences D18, D24, D25). The report is a
+    points where brms's own arithmetic is off the exact value (divergences D18, D24, D25); the wiener cases pass G4 on the
+    reference at every expected value (D148: brms's posterior_epred is not the mean). The report is a
     ReferenceFallback warning, which pytest's summary shows, and the gate's return value."""
     censored = ["point 0 z_1[1]"] + [f"point 4 {c}" for c in ("b[1]", "Intercept[1]", "sigma[1]", "sd_1[1]", "z_1[1]", "z_1[2]", "z_1[4]")] \
         + [f"point 5 {c}" for c in ("b[1]", "Intercept[1]", "sigma[1]", "sd_1[1]", "z_1[1]", "z_1[2]")] + ["point 6 z_1[4]", "point 7 Intercept[1]"]
@@ -895,6 +897,10 @@ def test_fallback_is_reported_with_its_count_and_place(opted_in_bundles):
         report = gates.check_predictions(opted_in_bundles["gauss_truncated"])
     assert report.entries == 656 and list(report.where) == epred
     assert "point 4 b[1] (with and without the Jacobian)" in str(gates.check_gradient(opted_in_bundles["gauss_truncated"]))
+    for cid in ("wiener_distributional_bs", "wiener_varint"):        # D148: brms's posterior_epred is off the mean everywhere
+        with pytest.warns(two_reference.ReferenceFallback, match=rf"{cid} G4 epred: 656 of 656 entries passed on the reference"):
+            report = gates.check_predictions(opted_in_bundles[cid])
+        assert report.entries == report.count == 656
 
 
 def _corrupt_autobayes_gradient(b, k, i, factor):
