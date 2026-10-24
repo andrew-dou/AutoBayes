@@ -1962,12 +1962,15 @@
    "depends_on": [
     "C04_autocor"
    ],
-   "status": "gates_green",
+   "status": "merged",
    "summary": "sar(M, type) lag and error with data2 weights (cases gauss_sar_lag, gauss_sar_error, gauss_sar_lag_post)",
-   "pr": null,
+   "pr": 87,
    "attempts": 0,
-   "divergences": [],
-   "next_action": "implementing (wave F1)",
+   "divergences": [
+    "D142",
+    "D143"
+   ],
+   "next_action": "none",
    "reserved_divergences": "D142-D143",
    "gates": {
     "sha": "d5446e965796",
