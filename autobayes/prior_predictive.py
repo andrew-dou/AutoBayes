@@ -15,6 +15,9 @@ def prior_predictive(model, *, draws=500, seed=None):
     """
     if getattr(model, 'responses', None):                   # C01: not part of the multivariate slice
         return model.prior_predictive(draws=draws, seed=seed)
+    if getattr(getattr(model, 'spec', None), 'is_multinomial', False):   # F01a: a count matrix per row
+        from autobayes.multinomial import multinomial_prior_predictive
+        return multinomial_prior_predictive(model, draws=draws, seed=seed)
     if isinstance(draws, (bool, np.bool_)) or not isinstance(draws, Integral) or draws <= 0:
         raise ValueError('draws must be a positive integer')
     if seed is not None and (isinstance(seed, (bool, np.bool_)) or not isinstance(seed, Integral) or seed < 0):

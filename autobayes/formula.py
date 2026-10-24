@@ -130,6 +130,7 @@ _MI_RE = re.compile(r"^mi\s*\((.*)\)$", re.S)                                   
 _MI_TERM_RE = re.compile(rf"^mi\(({_IDENT})\)$")                                                    # the canonical spelling mi(col)
 MI_CALL_RE = re.compile(r"(?<![A-Za-z0-9_.])mi\s*\(")                                                 # an mi( call anywhere in a formula (C06)
 MVBIND_RE = re.compile(r"^\s*mvbind\s*\(", re.S)                                                       # brms's multivariate mvbind(y, y2) ~ ... (C01)
+CBIND_RE = re.compile(r"^\s*cbind\s*\(", re.S)                                                         # brms's matrix response cbind(y1, y2, ...) (F01a)
 _GP_RE = re.compile(r"^gp\s*\((.*)\)$", re.S)                                                        # gp(<inside>), brms's Gaussian process (C03)
 _AUTOCOR_RE = re.compile(r"^(ar|ma|arma|cosy|car|sar|unstr)\s*\(", re.S)   # brms's autocorrelation terms (C04; autobayes.autocor)
 _SAR_RE = re.compile(r"^sar\s*\(", re.S)                                                              # brms's sar(M, type) (F02b; autobayes.sar)
@@ -2534,6 +2535,9 @@ def parse_formula(formula: str | list[str], data: pd.DataFrame | None = None, fa
                f"ab.{offering[0] if offering else 'gaussian'}(..., rescor=...) for the {', '.join(offering) or 'no'} "
                f"family only; a multivariate {fam.name} model is not offered (docs/multivariate.md, divergence D58)")
         )
+    if fam.matrix_response and CBIND_RE.match(formula):   # F01a: the count-matrix families' response is parsed elsewhere
+        raise FormulaError(f"{formula!r}: the {fam.name} family's matrix response is parsed by "
+                           f"autobayes.multinomial.parse_multinomial (ab.{fam.name}); parse_formula reads one response column")
     trials, additions = None, ()
     if _BAMBI_PROPORTION_RE.match(formula):
         raise FormulaError(

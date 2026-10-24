@@ -1,0 +1,25 @@
+{
+ "factors": {
+  "g": [
+   "a",
+   "b",
+   "c",
+   "d",
+   "e",
+   "f"
+  ],
+  "z": [
+   "p",
+   "q",
+   "r"
+  ]
+ },
+ "family": {
+  "family": "dirichlet_multinomial"
+ },
+ "formula": "cbind(m1, m2, m3) | trials(size) ~ x + z + (1 | g)",
+ "id": "dirichlet_multinomial_defaults",
+ "n_points": 8,
+ "priors": [],
+ "seed": 1007
+}

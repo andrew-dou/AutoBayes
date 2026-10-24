@@ -92,22 +92,20 @@
     "HalfNormal",
     1
    ],
-   "mum3": {
-    "intercept": [
-     "Normal",
-     0,
-     2
-    ],
-    "b": [
-     "Normal",
-     0,
-     0.5
-    ]
+   "dpars": {
+    "mum3": {
+     "intercept": [
+      "Normal",
+      0,
+      2
+     ],
+     "b": [
+      "Normal",
+      0,
+      0.5
+     ]
+    }
    }
   }
- },
- "gate": {
-  "expect": "fail",
-  "reason": "F01_multi_category_families not implemented; remove this field when it lands"
  }
 }

@@ -581,6 +581,11 @@ def predict(model, fit_result, *, newdata: pd.DataFrame | None = None, kind: str
 
         return predict_nonlinear(model, fit_result, newdata=newdata, kind=kind, new_groups=new_groups, seed=seed,
                                  include_group_effects=include_group_effects, dpar=dpar, nlpar=nlpar)
+    if getattr(getattr(model, "spec", None), "is_multinomial", False):  # F01a: the count-matrix families, per category
+        from autobayes.multinomial import predict_multinomial
+
+        return predict_multinomial(model, fit_result, newdata=newdata, kind=kind, new_groups=new_groups, seed=seed,
+                                   include_group_effects=include_group_effects, dpar=dpar, nlpar=nlpar)
     if nlpar is not None:
         raise ValueError(f"nlpar applies to a non-linear model (nl=True; docs/nonlinear.md); this model has no non-linear parameter "
                          f"(got {nlpar!r})")

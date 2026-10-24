@@ -169,6 +169,15 @@ when `mixture` is set; every other family has `mixture=False`.
 | Autocorrelation (C04) | no (D70) |
 | Missing values and measurement error (C06) | no |
 
+The count-matrix families (F01a, docs/multinomial.md) `multinomial` and `dirichlet_multinomial` (`autobayes/families/multinomial.py`)
+set `matrix_response`: the response is brms's matrix `cbind(y_1, ..., y_K) | trials(n)` and every non-reference category has a
+formula of its own, so `Model(..., family=...)` returns `autobayes.multinomial.MultinomialModel`, which builds the PyMC graph itself
+from the categories' designs and the family module's likelihoods, and `Priors` (`validate`, `improper`, `table`),
+`ab.default_priors`, `predict()`, `prior_predictive()` and the fit record take its paths (the spec's `is_multinomial`). They also
+set `per_category` (`bayes_R2()`, `hypothesis()`, `conditional_effects()` and `prior_draws()` refuse them as the categorical
+family's) and have trials (`response_kind` `"binomial"`: `predict()`'s `expected`); the parent `mu` is rows x (K - 1), the mean
+`p`, and the Dirichlet-multinomial's `scale_parameter` its precision `phi` (brms's `gamma(0.01, 0.01)` by default).
+
 The Weibull, exponential, skew-normal, shifted lognormal and ex-Gaussian families (D01, docs/continuous-families.md) are
 continuous families built from the fields above. Three of them have a second auxiliary parameter beside `scale_parameter`:
 `extra_parameters`, a tuple of `ExtraParameter` (`autobayes/families/spec.py`), each with its brms name (its `Priors` field,

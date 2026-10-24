@@ -57,7 +57,10 @@ CROSS_CHECK = ["gauss_weighted", "gauss_distributional_sigma", "gauss_slope_corr
                "zero_one_inflated_beta_varint", "zero_inflated_beta_binomial_varint", "xbeta_varint", "hurdle_cumulative_varint",
                # E02: the inverse Gaussian (both links), von Mises, asymmetric Laplace (quantile learned and fixed), Frechet and GEV
                "inverse_gaussian_varint", "inverse_gaussian_log", "von_mises_varint", "asym_laplace_varint", "asym_laplace_quantile",
-               "frechet_varint", "gen_extreme_value_varint"]
+               "frechet_varint", "gen_extreme_value_varint",
+               # F01a: the count-matrix families, their categories' own formulas and group terms
+               "multinomial_varint", "multinomial_dpar_formula", "dirichlet_multinomial_varint", "multinomial_terms",
+               "dirichlet_multinomial_defaults"]
 
 
 def _bundle(case_id):

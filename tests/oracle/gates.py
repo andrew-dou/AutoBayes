@@ -64,6 +64,12 @@ covariates C_k, each parameter's X_<nlpar> (K_<nlpar>, never centred) and group 
 b_<nlpar> coordinate; G3 the graph's non-linear predictor, each parameter's values against brms's own X_<nlpar> b_<nlpar> plus
 its group effects, the group effects and correlation matrices (`check_nonlinear_derived`); G4 predict(); G6 the nlpar rows.
 
+F01a, a count-matrix model (brms's multinomial and dirichlet_multinomial): G1 checks brms's Y (rows x K), ncat, trials and each
+category's X_<mu> (K_<mu>, Kc_<mu>) and groups by content (`check_multinomial_design`); G2 maps Intercept_<mu>, b_<mu>, each category's
+sd_<id> and z_<id>, and phi; G3 the graph's mu, each category's values against brms's own linear predictor of it, the raw-scale
+intercepts b_<mu>_Intercept and the group effects (`check_multinomial_derived`); G4 compares predict()'s expected counts with
+posterior_epred; G6 the categories' dpar rows.
+
 E02: G1 checks a parameter brms's formula fixes (`bf(quantile = p)`, in its Stan data) against the model's fixed value
 (`check_fixed_parameters`); G2 maps kappa, quantile (Stan's logit) and the GEV's tmp_xi; G3 compares the graph's derived xi with
 the fixture's record of brms's `posterior_epred(dpar = "xi")` (`check_derived_parameters`), which G4's draws also carry.
@@ -115,6 +121,10 @@ def prior_names(model) -> list[str]:
         out += [roles["L"] for roles in model.nlpar_correlation_names.values()]
         scale = model.family_spec.scale_parameter
         return out + ([model.names[scale]] if scale is not None else [])
+    if adapter.is_multinomial(model):                          # F01a: each category's intercept, coefficients and group SDs; phi
+        out = [v for roles in model.mu_names.values() for k, v in roles.items() if k not in ("value", "raw_intercept")]
+        out += [roles["sd"] for roles in model.mu_group_names.values()]
+        return out + (["phi"] if "phi" in model.names else [])
     names = model.names
     out = [names["intercept"]] if model.spec.intercept else []
     shrinkage = getattr(model, "shrinkage_names", {})       # D07: b is then zb * sdb, a transformed parameter without a prior
@@ -229,6 +239,8 @@ def check_design(b: Bundle) -> None:
         raise OracleMismatch(f"brms N = {int(sd['N'])}, AutoBayes n = {d.n}")
     if adapter.is_nonlinear(b.model):                              # C02: no X; the covariates and each parameter's X_<nlpar>
         return check_nonlinear_design(b)
+    if adapter.is_multinomial(b.model):                            # F01a: the count matrix, trials and each category's X_<mu>
+        return check_multinomial_design(b)
     # B05: the cumulative model's X has no intercept column (its thresholds take its place); the categorical model has one
     # design per non-reference category
     designs = [f"X_{dp}" for dp in b.cmap.dpars] or ["X"]
@@ -413,6 +425,8 @@ def check_derived(b: Bundle) -> None:
         return _check_derived_multivariate(b)
     if adapter.is_nonlinear(b.model):                              # C02: mu, each parameter's values, group effects, Cor
         return check_nonlinear_derived(b)
+    if adapter.is_multinomial(b.model):                            # F01a: mu, each category's values, group effects, raw intercepts
+        return check_multinomial_derived(b)
     pmm, names, d = b.model.pymc_model, b.model.names, b.model.design
     groups = list(b.model.group_coefficient_names.items())          # every group-level coefficient: intercepts and slopes
     cors = list(b.model.correlation_names.items())                  # the correlation matrix of every correlated term (A02)
@@ -732,6 +746,12 @@ def check_default_prior(b: Bundle) -> None:
         wanted |= {("cor", "")} if b.model.spec.correlated_factors else set()
         if not wanted <= nl_rows:
             raise OracleMismatch(f"brms default_prior lacks the non-linear parameters' rows {sorted(wanted - nl_rows)}")
+    if adapter.is_multinomial(b.model):                            # F01a: each category's Intercept, b and sd rows by dpar
+        dp_rows = {(row["class"], row.get("dpar", "")) for row in b.fixture.default_prior}
+        wanted = {(cls, d.response) for d in b.model.spec.mus
+                  for cls, has in (("Intercept", True), ("b", bool(d.columns)), ("sd", bool(d.group_terms))) if has}
+        if not wanted <= dp_rows:
+            raise OracleMismatch(f"brms default_prior lacks the categories' rows {sorted(wanted - dp_rows)}")
     if not b.fixture.prior_summary:
         raise OracleMismatch("fixture has no prior_summary table")
     # ab.default_priors() reproduces brms's table: every row, in brms's order, every column (A07)
@@ -808,6 +828,61 @@ def check_nonlinear_derived(b: Bundle) -> None:
             err = rel_err(cor, np.atleast_2d(p.pars[f"Cor_{m}"])[np.ix_(perm, perm)])
             if err > PRED_REL:
                 raise OracleMismatch(f"point {k}: the correlation matrix of {g!r} in {name!r} differs from brms Cor_{m} by {err}")
+
+
+# -- count-matrix responses (F01a) ---------------------------------------------------------------------------------
+def check_multinomial_design(b: Bundle) -> None:
+    """G1 of a count-matrix model: brms's ``Y`` is the model's (rows, K) count matrix, ``ncat`` its number of categories and
+    ``trials`` its trials; no linear design, offsets or addition-term data on either side; each category's ``X_<mu>`` (with
+    ``K_<mu>``, ``Kc_<mu>``) and group designs matched by content (the adapter's maps, rebuilt here)."""
+    sd, d = b.fixture.standata, b.model.design
+    Y = np.asarray(sd["Y"], dtype=float).reshape(d.n, -1)
+    if Y.shape != d.y.shape or abs_err(Y, d.y) > DESIGN_ABS:
+        raise OracleMismatch(f"brms's Y {Y.shape} differs from the AutoBayes count matrix {d.y.shape}")
+    if int(sd["ncat"]) != len(b.model.categories):
+        raise OracleMismatch(f"brms has ncat = {int(sd['ncat'])}; AutoBayes has the categories {list(b.model.categories)}")
+    if "trials" not in sd or abs_err(sd["trials"], d.trials) > DESIGN_ABS:
+        raise OracleMismatch("brms's trials differ from the AutoBayes model's")
+    for key in ("X", "offsets", "weights", "cens", "lb", "ub"):
+        if key in sd:
+            raise OracleMismatch(f"brms has {key}, which a count-matrix model of this slice has not")
+    for name, md in d.mus.items():
+        k = len(md.columns)
+        if int(sd[f"K_{name}"]) != k + 1 or int(sd[f"Kc_{name}"]) != k:
+            raise OracleMismatch(f"brms has K_{name} = {int(sd[f'K_{name}'])}, Kc_{name} = {int(sd[f'Kc_{name}'])}; AutoBayes's design of "
+                                 f"{name!r} has {k} columns and an intercept")
+    adapter.match_multinomial_columns(b.fixture, b.model)
+    adapter.match_multinomial_groups(b.fixture, b.model)
+
+
+def check_multinomial_derived(b: Bundle) -> None:
+    """G3 of a count-matrix model at every point: the graph's ``mu`` (rows, K - 1) against brms's posterior_linpred, each
+    category's values against brms's own linear predictor of it (``adapter.brms_mu_values``, from the fixture alone), its
+    raw-scale intercept against ``b_<mu>_Intercept`` and its group effects against ``r_<id>_<mu>_1``."""
+    pmm, model = b.model.pymc_model, b.model
+    mus = list(model.mu_names.items())
+    groups = list(model.mu_group_names.items())
+    dets = ([pmm[model.names["linpred"]]] + [pmm[roles["value"]] for _, roles in mus] + [pmm[roles["raw_intercept"]] for _, roles in mus]
+            + [pmm[roles["group_effect"]] for _, roles in groups])
+    fn = pmm.compile_fn(pmm.replace_rvs_by_values(dets), inputs=pmm.value_vars, point_fn=True, on_unused_input="ignore")
+    ref = b.fixture.prediction("fitted", "linpred")
+    for k, p, vp in b.points():
+        out = [np.asarray(v, dtype=float) for v in fn(vp)]
+        err = rel_err(out[0], ref[k])
+        if err > PRED_REL:
+            raise OracleMismatch(f"point {k}: the graph's {model.names['linpred']!r} differs from brms's posterior_linpred by {err}")
+        for (name, _), value, raw in zip(mus, out[1:1 + len(mus)], out[1 + len(mus):1 + 2 * len(mus)]):
+            err = rel_err(value, adapter.brms_mu_values(b.fixture, p, name))
+            if err > PRED_REL:
+                raise OracleMismatch(f"point {k}: the graph's values of {name!r} differ from brms's linear predictor of {name} by {err}")
+            err = rel_err(raw, p.pars[f"b_{name}_Intercept"])
+            if err > PRED_REL:
+                raise OracleMismatch(f"point {k}: the raw-scale intercept of {name!r} differs from brms's b_{name}_Intercept by {err}")
+        for ((name, g, _), _), eff in zip(groups, out[1 + 2 * len(mus):]):
+            m = b.gmap.brms_id[(name, g)]
+            err = rel_err(eff[b.gmap.level_of[(name, g)]], np.atleast_1d(p.pars[f"r_{m}_{name}_1"]))
+            if err > PRED_REL:
+                raise OracleMismatch(f"point {k}: group effects of {g!r} in {name!r} differ from brms r_{m}_{name}_1 by {err}")
 
 
 ALL = (check_design, check_logp, check_gradient, check_derived, check_predictions, check_jax, check_default_prior)

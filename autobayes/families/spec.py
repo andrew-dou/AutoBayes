@@ -10,7 +10,8 @@ the three sequential and adjacent-category ordinal families, ``sratio``, ``crati
 ``zero_inflated_negbinomial.py``, ``hurdle_negbinomial.py``, ``zero_inflated_binomial.py``, ``zero_inflated_beta.py``,
 ``hurdle_gamma.py``, ``hurdle_lognormal.py``; E01's ``zero_one_inflated_beta.py``, ``zero_inflated_beta_binomial.py``,
 ``hurdle_cumulative.py``, ``xbeta.py``; E02's ``inverse_gaussian.py``, ``von_mises.py``, ``asym_laplace.py``,
-``frechet.py``, ``gen_extreme_value.py``; F04's ``wiener.py``);
+``frechet.py``, ``gen_extreme_value.py``; F04's ``wiener.py``; F01a's ``multinomial.py``, the multinomial and
+Dirichlet-multinomial families);
 ``autobayes.families.FAMILIES`` is the registry and ``get_family(name)`` the lookup. Callable fields
 take the built ``Model`` (or the frame being validated) because that is what the call sites have in
 hand; none of them is called before ``Model.__init__`` has resolved the spec.
@@ -358,7 +359,7 @@ class FamilySpec:
     # warnings); the model keeps the categories as ``model.categories`` and fits the codes. ``thresholds``: the intercept
     # is brms's vector of ordered thresholds ``Intercept`` (cumulative), which is not part of the linear predictor.
     # ``per_category``: one linear predictor per non-reference category (categorical), every coefficient with a trailing
-    # category axis. ``bambi_setup``: (model, Bambi prior dict) -> (Bambi family, prior dict, whether Bambi centres the
+    # category axis (F01a's count-matrix families: one formula per category instead, ``matrix_response``). ``bambi_setup``: (model, Bambi prior dict) -> (Bambi family, prior dict, whether Bambi centres the
     # design), for a family whose likelihood is built from the model (its categories, terms and column means).
     # ``check_formula`` refuses a formula the family does not take; ``intercept_lines`` is ``describe()``'s paragraph on
     # the intercept in place of the generic one. None / False for every other family.
@@ -450,6 +451,11 @@ class FamilySpec:
     # parameters of ``distributional_formulas`` take population-level terms only.
     distributional_formulas: tuple[DistributionalFormula, ...] = ()
     distributional_group_terms: bool = True
+    # F01a (docs/multinomial.md): the response is brms's count matrix cbind(y_1, ..., y_K) | trials(n), with one linear
+    # predictor per non-reference category (``per_category``), each with a formula of its own (brms's mu<k>, its own centred
+    # intercept, coefficients and group-level terms): ``autobayes.multinomial.MultinomialModel`` builds the model, which
+    # ``Model(..., family=...)`` returns for such a family. False for every other family.
+    matrix_response: bool = False
 
     @property
     def distributional_parameters(self) -> tuple[str, ...]:
