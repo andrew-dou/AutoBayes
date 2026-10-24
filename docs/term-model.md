@@ -111,7 +111,9 @@ interval censoring `cens(col, y2)`) and
 `trunc(lb = a, ub = b)`, `mi()` (C06: the response's missing values are parameters) and `thres(gr = z)` / `thres(K, gr = z)`
 (F06b, docs/grouped-thresholds.md: `count` is `K`, and `levels` and `nthres` are filled in once the data are seen), in the order written (`spec.addition(kind)` finds one; `term` is its canonical spelling, which
 the canonical formula writes after `trials()`). `formula.addition_data(spec, frame)` gives brms's Stan data (`weights`,
-`cens`, `rcens`, `lb`, `ub`) and `Design` holds them on the fitted rows; the likelihood, not Bambi's formula, reads them.
+`cens`, `rcens`, `lb`, `ub`) and `Design` holds them on the fitted rows; the likelihood, not Bambi's formula, reads them. F06a
+adds `se(col)` (with `AdditionTerm.sigma` for `se(col, sigma = TRUE)`) and `rate(col)`, brms's `se` and `denom`
+(`Design.se`, `Design.denom`; docs/se-rate.md).
 
 ## The autocorrelation term: `ModelSpec.autocor`
 

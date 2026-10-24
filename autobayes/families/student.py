@@ -25,8 +25,16 @@ def _validate_response(spec, data) -> None:
     validate_numeric_response(spec.response, data[spec.response], "Student-t")
 
 
+def _scale(model, post, df):
+    """Each draw's and row's scale: sigma per draw, or per draw and row (B01); under se() (F06a) each row's known standard error
+    alone (se(col): no sigma) or with sigma in quadrature (se(col, sigma = TRUE)), the rows of ``df`` (None: the fitted rows)."""
+    from autobayes.se_rate import has_scale, row_scale, standard_errors
+
+    return row_scale(model, auxiliary(model, post, "sigma") if has_scale(model) else None, standard_errors(model, df))
+
+
 def _draw_response(model, post, eta, mean, df, rng):
-    sigma = auxiliary(model, post, "sigma")                    # per draw, or per draw and row (B01)
+    sigma = _scale(model, post, df)                            # per draw, or per draw and row (B01; F06a's se())
     if model.nu is None:                                       # learned: each posterior draw's own degrees of freedom
         nu = post[model.names["nu"]].to_numpy()[..., None]
         return mean + sigma * rng.standard_t(nu, size=mean.shape)
@@ -38,7 +46,7 @@ def _log_likelihood(model, post, eta):
     from autobayes.families.pointwise import student_t
 
     nu = post[model.names["nu"]].to_numpy()[..., None] if model.nu is None else model.nu
-    return student_t(model.design.y, nu, eta, auxiliary(model, post, "sigma"))
+    return student_t(model.design.y, nu, eta, _scale(model, post, None))      # F06a: se()'s row scale
 
 
 def _time_correlation():
@@ -48,16 +56,19 @@ def _time_correlation():
 
 
 def _likelihood_lines(model) -> list[str]:
-    sigma = scale_symbol(model)                                # "sigma", or "sigma_i" with its own formula (B01)
+    from autobayes.se_rate import has_scale, scale_text
+
+    sigma = scale_text(model, scale_symbol(model))             # "sigma", or "sigma_i" with its own formula (B01); F06a: se()'s
+    head = [scale_line(model)] if has_scale(model) else []     # (no sigma under se(col) without sigma = TRUE)
     if model.nu is None:                                       # learned (A13)
-        return [scale_line(model),
+        return [*head,
                 f"  nu ~ {describe_prior(model.priors.nu, lb=NU_LOWER)}, truncated to nu > {NU_LOWER:g} and renormalised there (brms's real<lower=1> nu:",
                 f"       the prior minus its log probability of nu > {NU_LOWER:g}); nu is learned, sampled as log(nu - {NU_LOWER:g})",
                 "", "Likelihood",
                 f"  y_i ~ StudentT(nu, mu_i, {sigma}); E[y_i] = mu_i",
                 "  sigma is scale, not residual SD; variance = sigma^2 * nu/(nu-2) for nu>2",
                 "  variance is infinite for 1<nu<=2."]
-    return [scale_line(model), f"  nu = {model.nu:g} (fixed, not sampled)", "", "Likelihood",
+    return [*head, f"  nu = {model.nu:g} (fixed, not sampled)", "", "Likelihood",
             f"  y_i ~ StudentT(nu, mu_i, {sigma}); E[y_i] = mu_i",
             "  sigma is scale, not residual SD; variance = sigma^2 * nu/(nu-2) for nu>2",
             "  variance is infinite for 1<nu<=2. Learned nu is not supported."]
@@ -87,7 +98,8 @@ STUDENT = FamilySpec(
     default_prior_link="identity",                                  # brms reads y as given, as for the Gaussian
     default_scale_prior=lambda scale: HalfStudentT(3, scale),       # brms sigma: student_t(3, 0, scale), lb 0
     default_learned_priors=MappingProxyType({"nu": lambda: Gamma(2, 0.1)}),   # brms nu: gamma(2, 0.1), lb 1
-    addition_terms=frozenset({"weights"}),                      # B02: weights(), verified against the frozen case student_weighted
+    addition_terms=frozenset({"weights", "se"}),                # B02: weights(), verified against the frozen case student_weighted; F06a: se() (student_se_sigma)
+    se_parameter="sigma",                                           # F06a: se(col) is the row's sigma, or adds to it in quadrature
     distributional_link="log",                                      # B01: sigma ~ z, brms's log link (student_distributional_sigma)
     default_distributional_intercept=lambda scale: StudentT(3, 0, scale),   # brms Intercept_sigma: student_t(3, 0, scale of log y)
     monotonic=True,                                                 # B03: mo(x), verified against student_monotonic

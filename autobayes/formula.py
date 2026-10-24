@@ -1030,7 +1030,8 @@ class Offset:
         return v
 
 
-ADDITION_KINDS = ("weights", "cens", "trunc", "mi", "dec", "thres")   # brms's response addition terms besides trials() that are parsed (B02; mi(), C06; dec(), F04; thres(), F06b)
+ADDITION_KINDS = ("weights", "cens", "trunc", "mi", "dec", "thres",   # brms's response addition terms besides trials() that are parsed (B02;
+                  "se", "rate")       # mi(), C06; dec(), F04; thres(), F06b; se() and rate(), F06a, autobayes/se_rate.py)
 
 # Addition terms that are parsed, represented and implemented but withheld, each with the reason its refusal carries
 # (docs/addition-terms.md): none since P6, which lifted the parks of cens() and trunc() (divergences D24 and D25).
@@ -1073,7 +1074,10 @@ class AdditionTerm:
     ``wiener()`` response, 1 for the upper boundary and 0 for the lower one (brms's ``dec``), which the family's likelihood
     reads. ``"thres"`` (``thres(gr = z)`` and ``thres(K, gr = z)``, F06b, docs/grouped-thresholds.md) gives each level of the
     column ``z`` its own thresholds in the cumulative family: ``count`` is ``K`` (None for ``thres(gr = z)``), and once the data
-    are seen ``levels`` are the column's levels and ``nthres`` each level's number of thresholds."""
+    are seen ``levels`` are the column's levels and ``nthres`` each level's number of thresholds. ``"se"`` (``se(col)``, F06a,
+    docs/se-rate.md) is each row's known standard error, the row's scale without ``sigma`` or, with ``sigma`` True (``se(col,
+    sigma = TRUE)``), added to sigma in quadrature; ``"rate"`` (``rate(col)``) each row's denominator, which multiplies the mean
+    (``autobayes/se_rate.py``)."""
 
     kind: str
     column: str | None = None
@@ -1083,6 +1087,7 @@ class AdditionTerm:
     count: int | None = None                   # F06b: thres(K, gr = z)'s K
     levels: tuple[str, ...] = ()               # F06b: thres()'s levels on the fitted rows, and each one's number of thresholds
     nthres: tuple[int, ...] = ()
+    sigma: bool = False                # F06a: se(col, sigma = TRUE)
 
     @property
     def term(self) -> str:
@@ -1095,6 +1100,8 @@ class AdditionTerm:
             return "mi()"
         if self.kind == "thres":                                # F06b
             return f"thres({'' if self.count is None else f'{self.count}, '}gr = {self.column})"
+        if self.kind == "se" and self.sigma:                    # F06a
+            return f"se({self.column}, sigma = TRUE)"
         if self.y2 is not None:
             return f"{self.kind}({self.column}, {self.y2})"
         return f"{self.kind}({self.column})"
@@ -1142,8 +1149,9 @@ def _parse_additions(text: str, formula: str) -> tuple[str | None, tuple[Additio
             raise FormulaError(
                 f"{formula!r}: {piece!r} is not a supported response addition term. brms's left-hand side "
                 "'response | term + term' takes weights(col), cens(col) and trunc(lb = a, ub = b) here "
-                "(docs/addition-terms.md), dec(col) for the wiener family (docs/wiener.md), thres(gr = z) for the cumulative family "
-                "(docs/grouped-thresholds.md), and mi() in a multivariate list of formulas (docs/missing-and-measurement-error.md); "
+                "(docs/addition-terms.md), se(col) and rate(col) (docs/se-rate.md), dec(col) for the wiener family (docs/wiener.md), "
+                "thres(gr = z) for the cumulative family (docs/grouped-thresholds.md), and mi() in a multivariate list of formulas "
+                "(docs/missing-and-measurement-error.md); "
                 "a binomial response is exactly 'successes | trials(n)', with any other terms after it."
             )
         if kind in seen:
@@ -1174,10 +1182,18 @@ def _parse_additions(text: str, formula: str) -> tuple[str | None, tuple[Additio
                 raise FormulaError(f"{formula!r}: {piece!r}: the upper bounds y2 must be a column other than the censoring codes")
             additions.append(AdditionTerm("cens", column=args[0], y2=km.group(1)))
             continue
+        if kind == "se" and args and re.fullmatch(_IDENT, args[0]) and len(args) <= 2:   # F06a: se(col), se(col, sigma = TRUE)
+            from autobayes.se_rate import parse_se
+
+            additions.append(AdditionTerm("se", column=args[0], sigma=parse_se(args, piece, formula)))
+            continue
         if len(args) != 1 or not re.fullmatch(_IDENT, args[0]):
             hint = {"weights": "; brms's weights(col, scale = TRUE), which rescales the weights to sum to the number of rows, "
                                "is not supported: rescale the column",
-                    "cens": " or, for interval censoring, cens(col, y2)", "trials": "", "dec": " of decisions, 1 or 0"}[kind]
+                    "cens": " or, for interval censoring, cens(col, y2)", "trials": "", "dec": " of decisions, 1 or 0",
+                    "se": " of standard errors, and sigma = TRUE to learn sigma as well (brms evaluates an expression; compute the "
+                          "column; docs/se-rate.md, divergence D157)",
+                    "rate": " of denominators (brms evaluates an expression; compute the column; docs/se-rate.md, divergence D157)"}[kind]
             raise FormulaError(f"{formula!r}: {piece!r}: {kind}() takes one column name{hint}")
         if kind == "trials":
             trials = args[0]
@@ -1215,6 +1231,9 @@ def _check_additions(additions: tuple[AdditionTerm, ...], fam, formula: str) -> 
             "the untruncated tail log P(Y <= y) or log P(Y > y) minus the log mass between the bounds, which is not the "
             "censored probability of the truncated distribution (docs/addition-terms.md, divergence D25)"
         )
+    from autobayes.se_rate import check_additions
+
+    check_additions(additions, formula)                        # F06a: se() and rate() alone on the left-hand side (D157)
     others = [a.term for a in additions if a.kind != "mi"]
     if others and len(others) < len(additions):                # C06: mi() is verified alone on the left-hand side
         raise FormulaError(
@@ -1318,8 +1337,9 @@ def addition_data(spec: "ModelSpec", df: pd.DataFrame, *, where: str = "column")
     weights), ``cens`` (-1, 0 or 1 per row, int64; 2 too under ``cens(c, y2)``), ``rcens`` (``cens(c, y2)``'s upper bounds on
     the interval-censored rows, 0 elsewhere; E04) and ``lb`` / ``ub`` (the truncation bounds per row, ``-inf`` / ``inf`` on
     an open side, as brms writes both whenever ``trunc()`` is present) and ``dec`` (``dec(col)``'s decisions, 1 or 0 per row,
-    int64; F04). Each is checked here: a response outside the truncation bounds is refused, as brms refuses it. Empty without
-    addition terms; ``mi()`` (C06) has no such data (its missing rows are the model's ``Design.missing``)."""
+    int64; F04), ``se`` (``se(col)``'s standard errors) and ``denom`` (``rate(col)``'s denominators; F06a). Each is checked
+    here: a response outside the truncation bounds is refused, as brms refuses it. Empty without addition terms; ``mi()`` (C06)
+    has no such data (its missing rows are the model's ``Design.missing``)."""
     out: dict[str, np.ndarray] = {}
     for a in spec.additions:
         if a.kind == "weights":
@@ -1332,6 +1352,14 @@ def addition_data(spec: "ModelSpec", df: pd.DataFrame, *, where: str = "column")
             continue
         elif a.kind == "dec":                                  # F04: the wiener family's decisions
             out["dec"] = _dec_values(a.column, df[a.column], where)
+        elif a.kind == "se":                                   # F06a: brms's se, each row's known standard error
+            from autobayes.se_rate import se_values
+
+            out["se"] = se_values(a.column, df[a.column], where, sigma=a.sigma)
+        elif a.kind == "rate":                                 # F06a: brms's denom, each row's denominator
+            from autobayes.se_rate import rate_values
+
+            out["denom"] = rate_values(a.column, df[a.column], where)
         else:
             lb = -math.inf if a.lb is None else a.lb
             ub = math.inf if a.ub is None else a.ub
@@ -2402,6 +2430,9 @@ def _parse_formulas(formulas, data: pd.DataFrame | None, family: str, categorica
     else:
         main_cat, dpar_cat = categorical, [None] * len(parsed)
     spec = parse_formula(main, data, family, main_cat, _ids=True)
+    from autobayes.se_rate import check_distributional
+
+    check_distributional(spec.additions, parsed[0][2], main)   # F06a: se() and rate() take no distributional formula (D157)
     operands = {c for t in spec.group_terms for c in t.operands}
     dpars = []
     for (name, rhs, text), cat in zip(parsed, dpar_cat):

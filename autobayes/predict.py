@@ -281,13 +281,16 @@ def term_labels(term, df: pd.DataFrame) -> list[np.ndarray]:
     return [df[term.column].to_numpy()]
 
 
-def _check_newdata(model, newdata: pd.DataFrame, *, need_trials: bool = False, include_group_effects: bool = True) -> pd.DataFrame:
+def _check_newdata(model, newdata: pd.DataFrame, *, need_trials: bool = False, include_group_effects: bool = True,
+                   extra: tuple[str, ...] = ()) -> pd.DataFrame:
+    """``extra`` (F06a): the addition-term columns the prediction reads on new rows, checked by the caller (``se_rate``)."""
     s = model.spec
     operands = [c for t in s.group_terms for c in t.data_columns] if include_group_effects else []   # g and h, never g_h; D08:
     operands += [c for d in s.dpars for t in d.group_terms for c in t.data_columns] if include_group_effects else []   # mm(), by
     cols = [*s.model_columns] + ([s.offset.column] if s.offset is not None else []) + operands   # every formula's columns (B01)
     cols += list(s.car.columns) if getattr(s, "car", None) is not None else []   # F02a: the locations, needed with or without groups
     cols += [a.column for a in s.additions if a.kind == "thres"]   # F06b: each row's level of thres(gr = z)
+    cols += list(extra)                                          # F06a: se()'s and rate()'s columns where the kind needs them
     cols = list(dict.fromkeys(cols))
     if need_trials:
         if s.trials not in newdata.columns:
@@ -502,6 +505,9 @@ def _predict_by_hand(model, idata, df: pd.DataFrame | None, kind: str, seed, pol
         else:                                                    # brms's posterior_epred of a truncated model: the truncated mean (B02)
             lb, ub = (-np.inf if trunc.lb is None else trunc.lb), (np.inf if trunc.ub is None else trunc.ub)
             mean = fam.tails().truncated_mean(model, post, mu, lb, ub)
+        if model.spec.addition("rate") is not None:              # F06a: brms's posterior_epred of rate(col), exp(eta) denom
+            from autobayes.se_rate import rate_mean
+            mean = rate_mean(model, mean, None if in_sample else df)
         sar = getattr(model.design, "sar", None)
         if sar is not None:                                      # F02b: (I - rho M)^-1 mu (lag), mu (error)
             from autobayes.sar import sar_mean
@@ -676,8 +682,14 @@ def predict(model, fit_result, *, newdata: pd.DataFrame | None = None, kind: str
     from autobayes.identity import check_fit_binding
     binding = check_fit_binding(model, fit_result, allow_unverified=True)
     idata = getattr(fit_result, "idata", fit_result)
+    extra = ()
+    if newdata is not None and any(a.kind in ("se", "rate") for a in model.spec.additions):   # F06a: the new rows' se() / rate()
+        from autobayes.se_rate import check_newdata, newdata_columns
+        check_newdata(model, newdata, kind)
+        extra = tuple(newdata_columns(model, kind))
     df = (None if newdata is None else _check_newdata(
-        model, newdata, need_trials=(fam.has_trials and kind in ("mean", "response")), include_group_effects=include_group_effects))
+        model, newdata, need_trials=(fam.has_trials and kind in ("mean", "response")), include_group_effects=include_group_effects,
+        extra=extra))
     new_levels = {t.factor: ([] if df is None else sorted(set().union(*(set(m) for m in term_labels(t, df)))
                                                           - set(model.design.group_designs[t.factor].levels)))
                   for t in (model.spec.group_terms if include_group_effects else ())}

@@ -5642,14 +5642,13 @@
     "group_terms": []
    },
    "result": {
-    "status": "error",
-    "type": "FormulaError",
-    "message": "'y | se(sey) ~ x': 'se(sey)' is not a supported response addition term. brms's left-hand side 'response | term + term' takes weights(col), cens(col) and trunc(lb = a, ub = b) here (docs/addition-terms.md), and mi() in a multivariate list of formulas (docs/missing-and-measurement-error.md); a binomial response is exactly 'successes | trials(n)', with any other terms after it.",
-    "raised_at": "formula.py:1120",
-    "stage": "default_priors",
-    "mechanism": "refusal",
-    "outcome": "refused_named",
-    "gap": "capability"
+    "status": "built",
+    "model": "Model",
+    "model_warnings": [],
+    "issues": [],
+    "notes": [],
+    "outcome": "match",
+    "gap": null
    }
   },
   {
@@ -5691,14 +5690,13 @@
     "group_terms": []
    },
    "result": {
-    "status": "error",
-    "type": "FormulaError",
-    "message": "'y | se(sey, sigma = TRUE) ~ x': 'se(sey, sigma = TRUE)' is not a supported response addition term. brms's left-hand side 'response | term + term' takes weights(col), cens(col) and trunc(lb = a, ub = b) here (docs/addition-terms.md), and mi() in a multivariate list of formulas (docs/missing-and-measurement-error.md); a binomial response is exactly 'successes | trials(n)', with any other terms after it.",
-    "raised_at": "formula.py:1120",
-    "stage": "default_priors",
-    "mechanism": "refusal",
-    "outcome": "refused_named",
-    "gap": "capability"
+    "status": "built",
+    "model": "Model",
+    "model_warnings": [],
+    "issues": [],
+    "notes": [],
+    "outcome": "match",
+    "gap": null
    }
   },
   {
@@ -5744,8 +5742,8 @@
    "result": {
     "status": "error",
     "type": "FormulaError",
-    "message": "'y | se(sey) + weights(wt) ~ x': 'se(sey)' is not a supported response addition term. brms's left-hand side 'response | term + term' takes weights(col), cens(col) and trunc(lb = a, ub = b) here (docs/addition-terms.md), and mi() in a multivariate list of formulas (docs/missing-and-measurement-error.md); a binomial response is exactly 'successes | trials(n)', with any other terms after it.",
-    "raised_at": "formula.py:1120",
+    "message": "'y | se(sey) + weights(wt) ~ x': 'se(sey)' together with 'weights(wt)' is not supported in this slice: no frozen brms case verifies the pair; se() and rate() are offered alone on the left-hand side (docs/se-rate.md, divergence D157)",
+    "raised_at": "se_rate.py:106",
     "stage": "default_priors",
     "mechanism": "refusal",
     "outcome": "refused_named",
@@ -6591,14 +6589,13 @@
     "group_terms": []
    },
    "result": {
-    "status": "error",
-    "type": "FormulaError",
-    "message": "'ycount | rate(expo) ~ x': 'rate(expo)' is not a supported response addition term. brms's left-hand side 'response | term + term' takes weights(col), cens(col) and trunc(lb = a, ub = b) here (docs/addition-terms.md), and mi() in a multivariate list of formulas (docs/missing-and-measurement-error.md); a binomial response is exactly 'successes | trials(n)', with any other terms after it.",
-    "raised_at": "formula.py:1120",
-    "stage": "default_priors",
-    "mechanism": "refusal",
-    "outcome": "refused_named",
-    "gap": "capability"
+    "status": "built",
+    "model": "Model",
+    "model_warnings": [],
+    "issues": [],
+    "notes": [],
+    "outcome": "match",
+    "gap": null
    }
   },
   {
@@ -13407,16 +13404,16 @@
  ],
  "summary": {
   "outcomes": {
-   "match": 118,
+   "match": 121,
    "refused_unclear": 18,
-   "refused_named": 110,
+   "refused_named": 107,
    "misread": 1,
    "differs": 1
   },
   "gaps": {
-   "none": 121,
+   "none": 124,
    "defect": 19,
-   "capability": 107,
+   "capability": 104,
    "divergence": 1
   },
   "brms_refuses": 3
