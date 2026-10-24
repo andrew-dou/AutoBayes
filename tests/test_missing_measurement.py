@@ -201,9 +201,10 @@ def test_me_refused_in_multivariate(me_data):
 
 
 def test_a_formula_per_response_without_mi_stays_refused(mi_data):
+    """With rescor=True; F06c offers it with rescor=False (tests/test_subset.py)."""
     with pytest.raises(FormulaError, match=re.escape("a formula of its own per response (brms's bf(y ~ ...) + bf(y2 ~ ...)) is not "
                                                      "supported in this slice") + ".*divergence D56"):
-        ab.gaussian(["y ~ w", "v ~ w"], mi_data, mi_priors(("y", "v")), rescor=False)
+        ab.gaussian(["y ~ w", "v ~ w"], mi_data, mi_priors(("y", "v")), rescor=True)
 
 
 # -- 3. me(): the graph, its density and its points -----------------------------------------------------------------------

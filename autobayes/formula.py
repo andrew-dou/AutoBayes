@@ -137,6 +137,7 @@ SIMPLEX_RESPONSE = ("the {family} family's response is written cbind(y1, ..., yK
                     "response; a matrix column of the data is not read here)")
 CBIND_RE = re.compile(r"^\s*cbind\s*\(", re.S)                                                         # brms's matrix response cbind(y1, y2, ...) (F01a, F01b)
 _CBIND_FORMULA_RE = re.compile(r"^\s*cbind\s*\(([^()]*)\)\s*(\|[^~]*)?~\s*(.+?)\s*$", re.S)            # F01b: cbind(<columns>) [| additions] ~ rhs
+SUBSET_CALL_RE = re.compile(r"(?<![A-Za-z0-9_.])subset\s*\(")                                        # brms's subset() addition term (F06c)
 _GP_RE = re.compile(r"^gp\s*\((.*)\)$", re.S)                                                        # gp(<inside>), brms's Gaussian process (C03)
 _AUTOCOR_RE = re.compile(r"^(ar|ma|arma|cosy|car|sar|unstr)\s*\(", re.S)   # brms's autocorrelation terms (C04; autobayes.autocor)
 _SAR_RE = re.compile(r"^sar\s*\(", re.S)                                                              # brms's sar(M, type) (F02b; autobayes.sar)
@@ -2380,8 +2381,9 @@ def _parse_formulas(formulas, data: pd.DataFrame | None, family: str, categorica
                 if not any(name in (o.scale_parameter, o.zero_parameter, *o.fixed_parameters, *o.learnable_parameters,
                                     *(e.name for e in o.extra_parameters)) for o in FAMILIES.values()):   # C01: a second response
                     why += (f"; if {name!r} is a second response, a formula of its own per response (brms's bf(y ~ ...) + "
-                            f"bf({name} ~ ...)) is not supported: a multivariate model's responses share one right-hand side, "
-                            f"'mvbind(y, {name}) ~ ...' (docs/multivariate.md, divergence D56)")
+                            f"bf({name} ~ ...) + set_rescor(FALSE)) is a multivariate model: pass rescor=False (docs/subset.md; "
+                            f"with rescor=True the responses share one right-hand side, 'mvbind(y, {name}) ~ ...', "
+                            "docs/multivariate.md, divergence D56)")
                 nl_hint = (f". If {name!r} is a non-linear parameter of the first formula, build the model with nl=True "
                            "(brms's nl = TRUE; docs/nonlinear.md)")              # C02
             raise FormulaError(f"{text!r}: {why}; {_distributional_offer(fam)}{nl_hint}")
@@ -2707,6 +2709,14 @@ def parse_formula(formula: str | list[str], data: pd.DataFrame | None = None, fa
                            f"autobayes.multinomial.parse_multinomial (ab.{fam.name}); parse_formula reads one response column")
     if fam.simplex is not None and not _matrix:            # F01b: the simplex families' response is K columns, cbind()
         raise FormulaError(f"{formula!r}: {SIMPLEX_RESPONSE.format(family=fam.name)}")
+    if "~" in formula and SUBSET_CALL_RE.search(formula.split("~", 1)[0]):   # F06c: a multivariate list's response term
+        term = re.search(r"(?<![A-Za-z0-9_.])subset\s*\([^()]*\)?", formula.split("~", 1)[0]).group(0)
+        raise FormulaError(
+            f"{formula!r}: {term!r}: brms's subset() is offered here in a multivariate model with a formula per response, each response's "
+            "likelihood on the rows of its subset: ab.gaussian(['y | subset(s1) ~ ...', 'y2 | subset(s2) ~ ...'], data, "
+            "ab.Priors(resp={...}), rescor=False) (docs/subset.md); in a univariate model, which brms fits to the subset's rows, "
+            "it is not: pass those rows as the data (divergence D160)"
+        )
     trials, additions = None, ()
     if _BAMBI_PROPORTION_RE.match(formula):
         raise FormulaError(

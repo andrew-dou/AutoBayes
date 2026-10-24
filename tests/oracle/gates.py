@@ -55,6 +55,9 @@ A multivariate model (C01) passes each gate response by response where the gate 
 linear predictor, group effects and raw-scale intercept, each response's view of the fixture, adapter.ResponseView) and as one
 model where it is about the joint density (G2, G5: one log density and gradient, the residual correlation's included; G3's
 rescor; G4: the predictions' response axis; G6: brms's table with every response's rows and rescor).
+F06c, `subset()`: G1 checks each response's rows (`N_<resp>`, `Y_<resp>`, `_check_design_subset`), G3 each response's linear
+predictor against brms's own on its rows, and G4 (`check_response_predictions`, for a case with `prediction_resp`) that
+`predict()` refuses the joint predictions brms refuses and that `predict(resp=)` equals brms's per-response predictions.
 
 D04: G1 matches brms's Xcs and Kcs to the model's cs() columns (adapter.match_cs), G2 maps the unordered thresholds and bcs, and
 G3 compares the graph's per-threshold predictor mu_cs of a model with cs() terms with brms's (rows, thresholds) posterior_linpred.
@@ -736,6 +739,8 @@ def check_latent(b: Bundle) -> None:
 def check_predictions(b: Bundle) -> None:
     if b.reference is not None and "epred" in b.reference.fallback:         # P6: brms where it is accurate, the reference where not
         return two_reference.check_predictions(b)
+    if b.case["brms"].get("prediction_resp"):                               # F06c: each response's own predictions (subset())
+        return check_response_predictions(b)
     idata = adapter.draws(b.fixture, b.model, b.cmap, b.gmap)
     # brms's posterior_epred of a family with trials is trials * mu, predict()'s "expected" (D5): the binomial's and, since D02,
     # the beta-binomial's
@@ -763,6 +768,44 @@ def check_predictions(b: Bundle) -> None:
             err = rel_err(mean, ref_ep)
             if err > PRED_REL:
                 raise OracleMismatch(f"{block}{suffix}: {mean_var!r} differs from brms posterior_epred by {err}")
+
+
+def check_response_predictions(b: Bundle) -> None:
+    """G4 of a multivariate model whose joint predictions brms refuses and records response by response (F06c, a case's
+    ``prediction_resp``: ``subset()``): ``predict()`` without ``resp`` must refuse each joint prediction brms refuses (a
+    ``ValueError``), and ``predict(resp=r)``, on the fitted rows and on ``newdata``, with and without group effects, must equal
+    brms's ``posterior_linpred`` / ``posterior_epred(resp = r)`` on the rows of ``r``'s subset (``Fixture.response_prediction``),
+    row for row."""
+    idata = adapter.draws(b.fixture, b.model, b.cmap, b.gmap)
+    mean_var = b.model.names["mean"]
+    for block, nd in (("fitted", None), ("newdata", b.newdata)):
+        if block == "newdata" and nd is None:
+            continue
+        for brms_kind, kind in (("linpred", "linear"), ("epred", "mean")):
+            if b.fixture.prediction_refusal(block, brms_kind) is None:
+                continue
+            try:
+                b.model.predict(idata, newdata=nd, kind=kind)
+            except ValueError as e:
+                if "resp" not in str(e):                                    # refused, but not for brms's reason
+                    raise OracleMismatch(f"{block}: the joint posterior_{brms_kind} is refused for another reason than brms's: {e}") from None
+                continue
+            raise OracleMismatch(f"{block}: brms refuses the joint posterior_{brms_kind} ({b.fixture.prediction_refusal(block, brms_kind)!r}); "
+                                 "the AutoBayes model returns it")
+        for r in b.case["brms"]["prediction_resp"]:
+            for include, suffix in ((True, ""), (False, "_nogroup")):
+                for brms_kind, kind, var in (("linpred", "linear", "eta"), ("epred", "mean", mean_var)):
+                    ref = b.fixture.response_prediction(block, r, brms_kind + suffix)
+                    if ref is None:
+                        raise OracleMismatch(f"fixture lacks the {block} {brms_kind}{suffix} of the response {r!r}")
+                    ours = b.model.predict(idata, newdata=nd, kind=kind, resp=r, include_group_effects=include)[var].to_numpy()[0]
+                    if ours.shape != ref.shape:
+                        raise OracleMismatch(f"{block}{suffix}: the response {r!r} is predicted on {ours.shape[-1]} rows; brms's "
+                                             f"posterior_{brms_kind}(resp = {r!r}) on {ref.shape[-1]}")
+                    err = rel_err(ours, ref)
+                    if err > PRED_REL:
+                        raise OracleMismatch(f"{block}{suffix}: the response {r!r}'s {var!r} differs from brms posterior_{brms_kind}"
+                                             f"(resp = {r!r}) by {err}")
 
 
 # -- G5 -----------------------------------------------------------------------------------------------------
@@ -1298,6 +1341,8 @@ def _check_design_multivariate(b: Bundle) -> None:
         raise OracleMismatch(f"brms has nresp = {sd.get('nresp')}, nrescor = {sd.get('nrescor')}; AutoBayes has {K} correlated responses")
     if not m.rescor and "nrescor" in sd:
         raise OracleMismatch("brms has a residual correlation (nrescor) but the AutoBayes model has rescor=False")
+    if m.design.rows is not None:                                   # F06c: subset(), each response on its rows (N_<resp>, Y_<resp>)
+        return _check_design_subset(b)
     Y_brms = np.column_stack([sd[f"Y_{r}"] for r in m.responses])
     observed = np.isfinite(Y_brms)                                   # C06: brms writes Inf at a response's missing rows
     if not np.array_equal(observed, ~np.isnan(m.design.Y)):
@@ -1317,6 +1362,30 @@ def _check_design_multivariate(b: Bundle) -> None:
             raise OracleMismatch(f"response {r!r}: {e}") from None
 
 
+def _check_design_subset(b: Bundle) -> None:
+    """G1 of a multivariate model with ``subset()`` (F06c): each response's ``N_<resp>`` and ``Y_<resp>`` are its rows of the data
+    (the model's ``design.rows``, whose response values ``Y`` holds there and nowhere else), the rows in data order whose indicator is
+    1 in the case's data, then each response's design, response and group coding as G1 checks a univariate model's, on its view."""
+    sd, m = b.fixture.standata, b.model
+    for k, r in enumerate(m.responses):
+        rows, column = m.design.rows[r], m.spec.subsets.get(r)
+        expected = np.arange(len(b.data)) if column is None else np.flatnonzero(b.data[column].to_numpy() == 1)
+        if rows.tolist() != expected.tolist() or int(sd[f"N_{r}"]) != rows.size:
+            raise OracleMismatch(f"response {r!r}: brms N_{r} = {int(sd[f'N_{r}'])} rows, the model's rows {rows.tolist()[:12]} "
+                                 f"({rows.size}); subset({column}) holds {expected.size}")
+        on = np.zeros(m.design.n, dtype=bool)
+        on[rows] = True
+        if np.isnan(m.design.Y[on, k]).any() or not np.isnan(m.design.Y[~on, k]).all():
+            raise OracleMismatch(f"response {r!r}: the model's Y is not its response on its rows and NaN elsewhere")
+        err = abs_err(np.asarray(sd[f"Y_{r}"], dtype=float), m.design.Y[on, k])
+        if not err <= DESIGN_ABS:
+            raise OracleMismatch(f"response {r!r}: Y_{r} differs from the response on its rows by {err}")
+        try:
+            check_design(_response_bundle(b, r))
+        except OracleMismatch as e:
+            raise OracleMismatch(f"response {r!r}: {e}") from None
+
+
 def _check_derived_multivariate(b: Bundle) -> None:
     """G3 of a multivariate model, on its graph: every response's linear predictor (brms's linpred on that response's slice),
     group effects (``r_m_<resp>_c``) and correlation matrices (``Cor_m``), its raw-scale intercept (``b_<resp>_Intercept``),
@@ -1329,13 +1398,18 @@ def _check_derived_multivariate(b: Bundle) -> None:
     wanted += ["rescor"] if m.rescor else []
     fn = pmm.compile_fn(pmm.replace_rvs_by_values([pmm[v] for v in wanted]), inputs=pmm.value_vars, point_fn=True, on_unused_input="ignore")
     ref = b.fixture.prediction("fitted", "linpred")
+    # F06c: brms refuses a subset() model's joint predictions; each response's own, on its rows, are its linear predictor
+    own = {r: b.fixture.response_prediction("fitted", r, "linpred") for r in m.responses} if ref is None else {}
+    if ref is None and any(v is None for v in own.values()):
+        raise OracleMismatch("the fixture has neither the joint linear predictor nor each response's")
     for k, p, vp in b.points():
         out = dict(zip(wanted, fn(vp)))
         nat = adapter.natural_point(m, p, b.cmap, b.gmap)["resp"]
         for i, (r, sub) in enumerate(m.submodels.items()):
             view, gmap = b.cmap.views[r], b.gmap.maps[r]
             pars = view.point(p).pars
-            err = rel_err(np.asarray(out[m.variable(r, sub.names["linpred"])], dtype=float).ravel(), ref[k][:, i])
+            brms = ref[k][:, i] if ref is not None else own[r][k]
+            err = rel_err(np.asarray(out[m.variable(r, sub.names["linpred"])], dtype=float).ravel(), brms)
             if err > PRED_REL:
                 raise OracleMismatch(f"point {k}: the graph's linear predictor of {r!r} differs from brms by {err}")
             for (g, coef), roles in sub.group_coefficient_names.items():

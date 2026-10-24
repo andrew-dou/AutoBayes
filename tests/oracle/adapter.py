@@ -48,6 +48,8 @@ the fixture as brms's univariate model of one response (`X_y` as `X`, `b_y` as `
 `groups[*].resp`), which the matching above applies to with that response's own model (`MultivariateModel.submodels`); the
 names it maps to are the response's in the multivariate graph (`y_Intercept`). The residual correlation `Lrescor` is mapped
 as `L_m` is: Stan's `cholesky_corr` coordinates recomputed from `Lrescor` at every point and checked against `u`.
+F06c: with `subset()` brms refuses the joint predictions and the fixture has no `responses`; the responses are those of each
+response's own predictions (`predictions.fitted.resp`), which `ResponseView.prediction` returns, on the response's rows.
 
 A Gaussian process `gp(x)` (C03) is brms's GP `k`: its row index `Jgp_k` and its `Xgp_k` (the distinct scaled inputs of an
 exact GP, the basis at them of an approximate one, `NBgp_k` basis functions) are matched by content to the model's
@@ -1758,7 +1760,9 @@ class ResponseView(Fixture):
 
     def prediction(self, block: str, kind: str) -> np.ndarray | None:
         full = self.parent.prediction(block, kind)
-        return None if full is None else full[..., list(self.parent.raw["responses"]).index(self.response)]
+        if full is None:                                       # F06c: brms refuses the joint predictions; the response's own
+            return self.parent.response_prediction(block, self.response, kind)
+        return full[..., list(self.parent.raw["responses"]).index(self.response)]
 
 
 @dataclass(frozen=True)
@@ -1774,8 +1778,10 @@ _GLOBAL_DATA = ("N", "nresp", "nrescor", "prior_only")        # a multivariate m
 
 def _response_views(fixture: Fixture, model) -> dict[str, ResponseView]:
     """Each response's view, after checking that brms's responses are the model's, in order (the last axis of the predictions),
-    that every group term belongs to a response, and that every entry of brms's data is a response's or ``_GLOBAL_DATA``."""
-    responses = list(fixture.raw.get("responses") or [])
+    that every group term belongs to a response, and that every entry of brms's data is a response's or ``_GLOBAL_DATA``. A
+    fixture with ``subset()`` (F06c), whose joint predictions brms refuses, has no ``responses``: its responses are those of each
+    response's own predictions (``predictions.fitted.resp``), in the order recorded."""
+    responses = list(fixture.raw.get("responses") or fixture.raw["predictions"].get("fitted", {}).get("resp", {}))
     if responses != list(model.responses):
         raise OracleMismatch(f"brms's responses are {responses}; the AutoBayes model's {list(model.responses)}")
     stray = [(g["group"], g["coef"]) for g in fixture.groups if g.get("resp") not in responses]
