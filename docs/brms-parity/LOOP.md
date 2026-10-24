@@ -37,6 +37,18 @@ Immutable under a feature branch: `tests/oracle/fixtures/**` and `tests/oracle/r
 `tests/oracle/two_reference.py` are allowed only to extend them to new parameter kinds and are called out in the PR;
 the gate tool flags them.
 
+### Diff coverage
+
+Every line of library code a feature adds or changes runs under the tests before it merges (Andrew's rule).
+`python tools/diff_coverage.py --base origin/main`, or `tools/parity_gate.py --diff-coverage`, takes the lines the branch
+adds or modifies under `autobayes/` (committed or not), keeps those the compiler gives code to (docstrings, comments and
+blank lines do not count), runs the test files the branch adds or changes and the oracle gates of the cases it adds or
+ungates in one traced process, and must end in `DIFF COVERAGE n/n (100.0%)`: 100 % of the changed executable lines, no
+lower threshold. The only exemption is a line ending in `# pragma: no cover - <reason>`; a pragma without a reason fails
+the gate. The tool prints every exemption with its reason, and the merge queue reads each one and sends the branch back
+for any line a deterministic test could reach. Code that runs only in a subprocess, or only as compiled JAX or PyTensor
+code, is invisible to the tool (a jitted function's Python counts once, when JAX traces it).
+
 ### Gates expected to fail on a landed feature
 
 A case whose feature has landed but on which brms's own arithmetic fails a gate that no reference may stand in for (a log
@@ -108,6 +120,10 @@ python oracle/regen.py new <case-id>
 
 ```bash
 python tools/parity_gate.py --feature <id> --base origin/main
+```
+
+```bash
+python tools/diff_coverage.py --base origin/main
 ```
 
 ```bash
