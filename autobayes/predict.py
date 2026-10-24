@@ -608,7 +608,7 @@ def _prediction_attrs(model, ds, policies, new_levels, *, in_sample, manual, inc
 
 def predict(model, fit_result, *, newdata: pd.DataFrame | None = None, kind: str = "response",
             new_groups: str | Mapping[str, str] = "error", seed: int | None = None, include_group_effects: bool = True,
-            dpar: str | None = None, nlpar: str | None = None) -> xr.Dataset:
+            dpar: str | None = None, nlpar: str | None = None, resp: str | None = None) -> xr.Dataset:
     """Expected response or new response draws, with explicit policies for unseen factors.
 
     A string applies to every factor; a mapping covers every factor exactly. RNG traversal
@@ -618,7 +618,12 @@ def predict(model, fit_result, *, newdata: pd.DataFrame | None = None, kind: str
     predictor and ``kind="mean"`` its values (brms's ``dpar =``); ``kind="response"`` does not apply.
     A non-linear model (C02, docs/nonlinear.md) is predicted by ``nonlinear.predict_nonlinear``; ``nlpar`` names one of its
     non-linear parameters, whose values ``kind="linear"`` and ``kind="mean"`` then return (brms's ``nlpar =``).
+    ``resp`` (F06c, docs/subset.md) names one response of a multivariate model, whose predictions alone are returned on its
+    rows (brms's ``resp =``); a model with ``subset()`` predicts one response at a time.
     """
+    if resp is not None and not getattr(model, "responses", None):     # F06c: brms's resp = belongs to a multivariate model
+        raise ValueError(f"resp applies to a multivariate model, naming one of its responses (docs/subset.md); this model has one "
+                         f"response (got {resp!r})")
     if getattr(getattr(model, "spec", None), "is_nonlinear", False):    # a non-linear model (C02)
         from autobayes.nonlinear import predict_nonlinear
 
@@ -636,7 +641,7 @@ def predict(model, fit_result, *, newdata: pd.DataFrame | None = None, kind: str
         from autobayes.multivariate import predict_multivariate
 
         return predict_multivariate(model, fit_result, newdata=newdata, kind=kind, new_groups=new_groups, seed=seed,
-                                    include_group_effects=include_group_effects, dpar=dpar)
+                                    include_group_effects=include_group_effects, dpar=dpar, resp=resp)
     fam = family_of(model)                                      # the family under the model's link
     if kind not in fam.prediction_kinds:
         raise ValueError(fam.kind_error)

@@ -6791,8 +6791,8 @@
    "result": {
     "status": "error",
     "type": "FormulaError",
-    "message": "'y | subset(sub) ~ x': 'subset(sub)' is not a supported response addition term. brms's left-hand side 'response | term + term' takes weights(col), cens(col) and trunc(lb = a, ub = b) here (docs/addition-terms.md), and mi() in a multivariate list of formulas (docs/missing-and-measurement-error.md); a binomial response is exactly 'successes | trials(n)', with any other terms after it.",
-    "raised_at": "formula.py:1120",
+    "message": "'y | subset(sub) ~ x': 'subset(sub)': brms's subset() is offered here in a multivariate model with a formula per response, each response's likelihood on the rows of its subset: ab.gaussian(['y | subset(s1) ~ ...', 'y2 | subset(s2) ~ ...'], data, ab.Priors(resp={...}), rescor=False) (docs/subset.md); in a univariate model, which brms fits to the subset's rows, it is not: pass those rows as the data (divergence D160)",
+    "raised_at": "formula.py:2714",
     "stage": "default_priors",
     "mechanism": "refusal",
     "outcome": "refused_named",
@@ -10662,8 +10662,8 @@
    "result": {
     "status": "error",
     "type": "FormulaError",
-    "message": "'disc ~ z': the cumulative family has no parameter 'disc' (it has no parameter besides the mean); if 'disc' is a second response, a formula of its own per response (brms's bf(y ~ ...) + bf(disc ~ ...)) is not supported: a multivariate model's responses share one right-hand side, 'mvbind(y, disc) ~ ...' (docs/multivariate.md, divergence D56); a distributional formula is offered for the auxiliary parameter of the gaussian (sigma), student (sigma), negbinomial (shape), gamma (shape), lognormal (sigma), beta (phi), weibull (shape), beta_binomial (phi) families, with a log link (docs/distributional.md, divergence D33), and for the skew_normal (alpha, identity link), zero_inflated_negbinomial (zi, logit link), hurdle_lognormal (hu, logit link) families (docs/contexts-newer-families.md, divergence D116). If 'disc' is a non-linear parameter of the first formula, build the model with nl=True (brms's nl = TRUE; docs/nonlinear.md)",
-    "raised_at": "formula.py:2237",
+    "message": "'disc ~ z': the cumulative family has no parameter 'disc' (it has no parameter besides the mean); if 'disc' is a second response, a formula of its own per response (brms's bf(y ~ ...) + bf(disc ~ ...) + set_rescor(FALSE)) is a multivariate model: pass rescor=False (docs/subset.md; with rescor=True the responses share one right-hand side, 'mvbind(y, disc) ~ ...', docs/multivariate.md, divergence D56); a distributional formula is offered for the auxiliary parameter of the gaussian (sigma), student (sigma), negbinomial (shape), gamma (shape), lognormal (sigma), beta (phi), weibull (shape), beta_binomial (phi) families, with a log link (docs/distributional.md, divergence D33), and for the skew_normal (alpha, identity link), zero_inflated_negbinomial (zi, logit link), hurdle_lognormal (hu, logit link), wiener (bs, log link) families (docs/contexts-newer-families.md, divergence D116). If 'disc' is a non-linear parameter of the first formula, build the model with nl=True (brms's nl = TRUE; docs/nonlinear.md)",
+    "raised_at": "formula.py:2389",
     "stage": "default_priors",
     "mechanism": "refusal",
     "outcome": "refused_unclear",
@@ -10742,8 +10742,8 @@
    "result": {
     "status": "error",
     "type": "FormulaError",
-    "message": "'a ~ 1': the gaussian family has no parameter 'a' (its parameters besides the mean are ['sigma']); if 'a' is a second response, a formula of its own per response (brms's bf(y ~ ...) + bf(a ~ ...)) is not supported: a multivariate model's responses share one right-hand side, 'mvbind(y, a) ~ ...' (docs/multivariate.md, divergence D56); a distributional formula is offered for the auxiliary parameter of the gaussian (sigma), student (sigma), negbinomial (shape), gamma (shape), lognormal (sigma), beta (phi), weibull (shape), beta_binomial (phi) families, with a log link (docs/distributional.md, divergence D33), and for the skew_normal (alpha, identity link), zero_inflated_negbinomial (zi, logit link), hurdle_lognormal (hu, logit link) families (docs/contexts-newer-families.md, divergence D116). If 'a' is a non-linear parameter of the first formula, build the model with nl=True (brms's nl = TRUE; docs/nonlinear.md)",
-    "raised_at": "formula.py:2237",
+    "message": "'a ~ 1': the gaussian family has no parameter 'a' (its parameters besides the mean are ['sigma']); if 'a' is a second response, a formula of its own per response (brms's bf(y ~ ...) + bf(a ~ ...) + set_rescor(FALSE)) is a multivariate model: pass rescor=False (docs/subset.md; with rescor=True the responses share one right-hand side, 'mvbind(y, a) ~ ...', docs/multivariate.md, divergence D56); a distributional formula is offered for the auxiliary parameter of the gaussian (sigma), student (sigma), negbinomial (shape), gamma (shape), lognormal (sigma), beta (phi), weibull (shape), beta_binomial (phi) families, with a log link (docs/distributional.md, divergence D33), and for the skew_normal (alpha, identity link), zero_inflated_negbinomial (zi, logit link), hurdle_lognormal (hu, logit link), wiener (bs, log link) families (docs/contexts-newer-families.md, divergence D116). If 'a' is a non-linear parameter of the first formula, build the model with nl=True (brms's nl = TRUE; docs/nonlinear.md)",
+    "raised_at": "formula.py:2389",
     "stage": "default_priors",
     "mechanism": "refusal",
     "outcome": "refused_unclear",
@@ -11774,8 +11774,8 @@
    "result": {
     "status": "error",
     "type": "FormulaError",
-    "message": "['y ~ x', 'y2 ~ z']: a formula of its own per response (brms's bf(y ~ ...) + bf(y2 ~ ...)) is not supported in this slice; a multivariate model is one formula, 'mvbind(y, y2) ~ <terms>', whose right-hand side every response shares (docs/multivariate.md, divergence D56)",
-    "raised_at": "multivariate.py:139",
+    "message": "['y ~ x', 'y2 ~ z']: a formula of its own per response (brms's bf(y ~ ...) + bf(y2 ~ ...)) is not supported in this slice with a residual correlation (rescor=True): no frozen case verifies the joint likelihood of responses with designs of their own; pass rescor=False (docs/subset.md), or write one formula, 'mvbind(y, y2) ~ <terms>', whose right-hand side every response shares (docs/multivariate.md, divergence D56)",
+    "raised_at": "multivariate.py:498",
     "stage": "default_priors",
     "mechanism": "refusal",
     "outcome": "refused_named",
@@ -11843,14 +11843,13 @@
     "group_terms": []
    },
    "result": {
-    "status": "error",
-    "type": "FormulaError",
-    "message": "['y ~ x', 'y2 ~ z']: a formula of its own per response (brms's bf(y ~ ...) + bf(y2 ~ ...)) is not supported in this slice; a multivariate model is one formula, 'mvbind(y, y2) ~ <terms>', whose right-hand side every response shares (docs/multivariate.md, divergence D56)",
-    "raised_at": "multivariate.py:139",
-    "stage": "default_priors",
-    "mechanism": "refusal",
-    "outcome": "refused_named",
-    "gap": "capability"
+    "status": "built",
+    "model": "MultivariateModel",
+    "model_warnings": [],
+    "issues": [],
+    "notes": [],
+    "outcome": "match",
+    "gap": null
    }
   },
   {
@@ -12002,14 +12001,13 @@
     "group_terms": []
    },
    "result": {
-    "status": "error",
-    "type": "FormulaError",
-    "message": "['y | subset(sub) ~ x', 'y2 ~ x']: a formula of its own per response (brms's bf(y ~ ...) + bf(y2 ~ ...)) is not supported in this slice; a multivariate model is one formula, 'mvbind(y, y2) ~ <terms>', whose right-hand side every response shares (docs/multivariate.md, divergence D56)",
-    "raised_at": "multivariate.py:139",
-    "stage": "default_priors",
-    "mechanism": "refusal",
-    "outcome": "refused_named",
-    "gap": "capability"
+    "status": "built",
+    "model": "MultivariateModel",
+    "model_warnings": [],
+    "issues": [],
+    "notes": [],
+    "outcome": "match",
+    "gap": null
    }
   },
   {
@@ -13404,16 +13402,16 @@
  ],
  "summary": {
   "outcomes": {
-   "match": 121,
+   "match": 123,
    "refused_unclear": 18,
-   "refused_named": 107,
+   "refused_named": 105,
    "misread": 1,
    "differs": 1
   },
   "gaps": {
-   "none": 124,
+   "none": 126,
    "defect": 19,
-   "capability": 104,
+   "capability": 102,
    "divergence": 1
   },
   "brms_refuses": 3

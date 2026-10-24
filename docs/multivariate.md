@@ -45,6 +45,9 @@ per response. C06 uses it (docs/missing-and-measurement-error.md): a list of for
 "xm | mi() ~ w"]` with `rescor=False`, is one formula per response (`spec.separate`, `formula` the list, `rhs` empty,
 `canonical_formula` brms's `bf(...) + bf(...)`), each response built from its own formula with its own declarations, and the
 missing values `Ymi_xm` one variable of the assembled graph, by brms's name, shared by the responses that hold them.
+F06c (docs/subset.md) takes a list of formulas without `mi()` with `rescor=False`, each response's formula optionally with
+brms's `subset(<indicator>)`, its model built on the rows of its subset (`spec.subsets`, `design.rows`, one observation
+coordinate per response, `observation_dims`), and `predict(resp=)` predicts one response on its rows.
 
 ## Using it
 
@@ -80,7 +83,8 @@ missing values `Ymi_xm` one variable of the assembled graph, by brms's name, sha
 
 ## Refused, with the construct named
 
-A formula per response without `mi()` (`["y ~ x", "y2 ~ z"]`, brms's `bf(y ~ ...) + bf(y2 ~ ...)`; with `mi()` it is C06's),
+A formula per response without `mi()` (`["y ~ x", "y2 ~ z"]`, brms's `bf(y ~ ...) + bf(y2 ~ ...)`) with `rescor=True` (with
+`rescor=False` it is F06c's, with or without `subset()`, docs/subset.md; with `mi()` it is C06's),
 a distributional formula in a multivariate model, addition terms after `mvbind()`, `mi()` inside `mvbind()` (C06 takes it in a
 list of formulas), `me()` (D73) and `mo()` (D56); an autocorrelation term `ar()`, `ma()`, `arma()` (C04: brms gives each
 response its own, `ar_y` and `ar_y2`; docs/autocorrelation.md, D70) and the `ar` and `ma` priors at the top level or in a

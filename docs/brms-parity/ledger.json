@@ -2224,13 +2224,29 @@
    "depends_on": [
     "C01_multivariate"
    ],
-   "status": "fixtures_frozen",
+   "status": "gates_green",
    "summary": "subset() in a multivariate model with a formula per response, set_rescor(FALSE): case gauss_mv_subset",
    "pr": null,
    "attempts": 0,
    "divergences": [],
    "next_action": "implementing (wave F2); fixtures #89",
-   "reserved_divergences": "D160-D161"
+   "reserved_divergences": "D160-D161",
+   "gates": {
+    "sha": "394933d1a400",
+    "dirty_tree": false,
+    "base": "origin/main",
+    "when": "2026-10-24T18:54Z",
+    "results": {
+     "immutability": {
+      "status": "pass",
+      "seconds": 0.0
+     },
+     "oracle": {
+      "status": "pass",
+      "seconds": 1021.9
+     }
+    }
+   }
   },
   {
    "id": "F07_summaries",

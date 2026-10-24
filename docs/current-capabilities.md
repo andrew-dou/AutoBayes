@@ -193,9 +193,18 @@ on the same rows and right-hand side and assembles their graphs into one, with `
 replaced by brms's `multi_normal_cholesky` through the residual correlation's Cholesky factor `Lrescor` (LKJ prior, Stan's
 `cholesky_corr` coordinates) and with `rescor=False` independent; `predict()` adds a `response` dimension and draws each row's
 responses jointly. Verified against `gauss_mv_rescor`, `gauss_mv_norescor` and `gauss_mv_slopes` (categorical, interaction,
-offset, correlated slopes per response under brms's shared `cor` prior); a formula per response (with `mi()`, C06 below), `mi()`, `mo()`, `(1 |ID| g)`
+offset, correlated slopes per response under brms's shared `cor` prior); a formula per response (with `mi()`, C06 below; with `rescor=False`, F06c below), `mi()`, `mo()`, `(1 |ID| g)`
 across responses, other families and a missing `rescor` are refused (D56-D58; names D59); see
 [multivariate models](multivariate.md).
+
+Subsets and a formula per response (F06c, brms's `bf(y | subset(sub1) ~ ...) + bf(y2 | subset(sub2) ~ ...) + set_rescor(FALSE)`):
+`ab.gaussian(["y | subset(sub1) ~ x + (1 | g)", "y2 | subset(sub2) ~ x"], data, ab.Priors(resp={...}), rescor=False)` builds each
+response's univariate model of its own formula on the rows of its subset (a logical or 0/1 indicator; every row without
+`subset()`), its default priors read from those rows, one observation coordinate per response in the assembled graph;
+`predict(resp=)` predicts one response on its fitted rows or on the new rows whose own indicator is 1, and joint predictions
+are refused as brms refuses them. Verified against `gauss_mv_subset`; `rescor=True`, `mi()` with `subset()`, other addition
+terms beside it, other indicators, grouping levels a subset does not reach and the univariate `subset()` are refused (D160,
+D161); see [subset() and a formula per response](subset.md).
 
 Gaussian processes (C03, brms's `gp()`): `gp(x)`, the exact process of one numeric column, and `gp(x, k = K, c = C)`, its
 Hilbert-space approximation with `K` basis functions, both with the squared-exponential kernel and brms's scaling of the input,
