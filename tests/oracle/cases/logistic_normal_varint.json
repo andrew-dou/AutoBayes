@@ -107,9 +107,5 @@
     2
    ]
   }
- },
- "gate": {
-  "expect": "fail",
-  "reason": "F01_multi_category_families not implemented; remove this field when it lands"
  }
 }

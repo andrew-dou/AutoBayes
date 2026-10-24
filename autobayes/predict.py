@@ -456,6 +456,9 @@ def _predict_by_hand(model, idata, df: pd.DataFrame | None, kind: str, seed, pol
         for member, w in zip(members, weights.T):                # one member, weight 1, except for a multi-membership term (D08)
             for i, lvl in enumerate(member):
                 for k, (_, u, covariate) in enumerate(coefs):
+                    if fam.per_category:                         # F01b: (chain, draw, level, category) effects of fitted levels
+                        mu[..., i, :] += u[..., levels.index(lvl), :] * covariate[i]
+                        continue
                     effect = (new_effects[lvl][k] if lvl in new_effects else u[..., levels.index(lvl)]) * covariate[i]
                     mu[..., i] += effect if not term.is_mm else w[i] * effect
     if model.spec.autocor is not None:                          # C04: the ARMA term on the fitted rows' residuals, added last
@@ -481,7 +484,9 @@ def _predict_by_hand(model, idata, df: pd.DataFrame | None, kind: str, seed, pol
         trunc = model.spec.addition("trunc")
         if model.spec.dpars and (kind == "response" or fam.expected_response is not None or trunc is not None):
             post = _with_dpars(model, post, df, include_group_effects=include_group_effects)   # each row's own sigma (B01)
-        if trunc is None:
+        if fam.simplex is not None and not fam.simplex.epred:   # F01b: the logistic_normal family has no mean (kind="response" here)
+            mean = None
+        elif trunc is None:
             mean = expected_response(fam, model, post, mu)
         else:                                                    # brms's posterior_epred of a truncated model: the truncated mean (B02)
             lb, ub = (-np.inf if trunc.lb is None else trunc.lb), (np.inf if trunc.ub is None else trunc.ub)
@@ -491,7 +496,7 @@ def _predict_by_hand(model, idata, df: pd.DataFrame | None, kind: str, seed, pol
             from autobayes.sar import sar_mean
             mean = sar_mean(mu, post[sar.parameter].to_numpy(), sar)
         if model.categories:                                     # B05: the probability of every category
-            out = {fam.mean_name: (dims + ("category",), mean)}
+            out = {fam.mean_name: (dims + ("category",), mean)} if mean is not None else {}   # F01b: none for logistic_normal
             coords["category"] = outcome_categories(model)   # E01: the hurdle category first
         else:
             out = {fam.mean_name: (dims, mean)}
@@ -505,6 +510,8 @@ def _predict_by_hand(model, idata, df: pd.DataFrame | None, kind: str, seed, pol
             from autobayes.families.spec import auxiliary
 
             out["y"] = (dims, fcor_draws(mean, auxiliary(model, post, "sigma"), model.design.fcor, rng))
+        elif kind == "response" and fam.simplex is not None:     # F01b: draws on the simplex, one share per category
+            out["y"] = (dims + ("category",), fam.draw_response(model, post, mu, mean, df, rng))
         elif kind == "response":                                 # brms's posterior_predict ignores weights and censoring
             out["y"] = (dims, fam.draw_response(model, post, mu, mean, df, rng) if trunc is None
                         else fam.tails().draw_truncated(model, post, mu, lb, ub, rng))   # and draws from the truncated distribution
@@ -655,6 +662,11 @@ def predict(model, fit_result, *, newdata: pd.DataFrame | None = None, kind: str
                   for t in (model.spec.group_terms if include_group_effects else ())}
     for g, unseen in new_levels.items():
         t = model.spec.group_term_of(g)
+        if unseen and policies[g] != "error" and fam.per_category:   # F01b: each category's group term would draw its own
+            raise FormulaError(
+                f"newdata has levels of {g!r} not seen in training: {unseen}; new levels in a {model.family} model, whose every "
+                "non-reference category has its own group term, are not offered in this slice (no frozen case verifies how brms "
+                f"draws them; docs/dirichlet-logistic-normal.md, divergence {fam.simplex.divergence if fam.simplex else 'D37'})")
         if unseen and policies[g] != "error" and (t.by is not None or t.id is not None):   # D08
             raise FormulaError(
                 f"newdata has levels of {g!r} not seen in training: {unseen}; new levels of "

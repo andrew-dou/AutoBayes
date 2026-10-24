@@ -12128,13 +12128,13 @@
    "result": {
     "status": "error",
     "type": "FormulaError",
-    "message": "'cbind(y, y2) ~ x': expected 'response ~ terms'. Supported: 'y ~ [1 +] x1 [+ x2 ...] [+ (1 | factor) ...]' and, for ab.binomial, 'successes | trials(n) ~ [1 +] x1 [+ x2 ...] [+ (1 | factor) ...]'.",
-    "raised_at": "formula.py:2478",
+    "message": "'cbind(y, y2) ~ x': a cbind(...) response of several columns is the response of the dirichlet and logistic_normal families (proportions; docs/dirichlet-logistic-normal.md) and of the multinomial and dirichlet_multinomial families (counts with trials(); docs/multinomial.md); the gaussian family takes one response column",
+    "raised_at": "formula.py:2562",
     "stage": "default_priors",
     "mechanism": "refusal",
     "outcome": "refused_unclear",
     "gap": "defect",
-    "pin": "'cbind(y, y2) ~ x': expected 'response ~ terms'. Supported: 'y ~ [1 +] x1 [+ x2 "
+    "pin": "'cbind(y, y2) ~ x': a cbind(...) response of several columns is the response of "
    }
   },
   {
@@ -13031,7 +13031,7 @@
     "priors": "default"
    },
    "tokens": [
-    "got 'dirichlet'"
+    "dirichlet"
    ],
    "brms_reading": {
     "status": "ok",
@@ -13060,9 +13060,9 @@
    },
    "result": {
     "status": "error",
-    "type": "ValueError",
-    "message": "family must be one of ['acat', 'asym_laplace', 'bernoulli', 'beta', 'beta_binomial', 'binomial', 'categorical', 'cratio', 'cumulative', 'exgaussian', 'exponential', 'frechet', 'gamma', 'gaussian', 'gen_extreme_value', 'geometric', 'hurdle_cumulative', 'hurdle_gamma', 'hurdle_lognormal', 'hurdle_negbinomial', 'hurdle_poisson', 'inverse_gaussian', 'lognormal', 'mixture', 'negbinomial', 'negbinomial2', 'poisson', 'shifted_lognormal', 'skew_normal', 'sratio', 'student', 'von_mises', 'weibull', 'xbeta', 'zero_inflated_beta', 'zero_inflated_beta_binomial', 'zero_inflated_binomial', 'zero_inflated_negbinomial', 'zero_inflated_poisson', 'zero_one_inflated_beta'], got 'dirichlet'",
-    "raised_at": "__init__.py:69",
+    "type": "FormulaError",
+    "message": "'ydir ~ x': the dirichlet family's response is written cbind(y1, ..., yK) ~ ..., one column per category (brms's matrix response; a matrix column of the data is not read here)",
+    "raised_at": "formula.py:2643",
     "stage": "default_priors",
     "mechanism": "refusal",
     "outcome": "refused_named",

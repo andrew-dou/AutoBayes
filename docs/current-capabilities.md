@@ -419,3 +419,14 @@ records and prior-predictive draws. Verified against `multinomial_varint`, `mult
 interaction, a transform in a category's own formula) and `dirichlet_multinomial_defaults` (log densities within 5.5e-16
 relative); per-category priors beyond `Priors(dpars=...)` are D137, and slopes, `weights()`, a formula of `phi` and the other
 constructs brms takes are refused (D136); `bayes_R2()` is refused as brms refuses it; see [multinomial](multinomial.md).
+
+Responses on the simplex (F01b, `ab.dirichlet` and `ab.logistic_normal`, brms's `dirichlet()` and `logistic_normal()`): a
+`cbind(y1, ..., yK)` response of K proportions per row summing to 1, the columns its categories (the first the reference, or
+`refcat=` for the logistic-normal family); one linear predictor per non-reference category (brms's `mu<k>`) with its own
+intercept, coefficients and varying intercepts `(1 | g)` (one SD per category); the Dirichlet precision `phi`, or the
+logistic-normal family's `sigma<k>` (`Priors(sigma=...)`) and the LKJ-correlated log-ratios (`Priors(lncor=ab.LKJ(eta))`, brms's
+`Llncor`); `predict()` (`kind="linear"`, the Dirichlet's `kind="mean"`, draws on the simplex), `log_lik()`, brms's default
+priors and `describe()`. Verified against `dirichlet_varint`, `logistic_normal_varint` and `logistic_normal_refcat` (log
+densities within 1.1e-15 relative); brms's `posterior_epred` refusal for the logistic-normal family is matched, and slopes,
+offsets, addition terms, distributional formulas and the other special terms are refused naming the construct (D138, D139);
+see [responses on the simplex](dirichlet-logistic-normal.md).

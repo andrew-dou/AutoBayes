@@ -270,7 +270,7 @@ def default_priors(formula: str | list[str], data: pd.DataFrame, *, family: str 
                    nu: float | None = None, link: str | None = None, center_predictors: bool = True,
                    families: list[str] | None = None, order: str | bool | None = None,
                    rescor: bool | None = None, nl: bool = False, imputed: tuple[str, ...] = (),
-                   quantile: float | None = None, data2: Mapping[str, object] | None = None) -> Priors:
+                   quantile: float | None = None, data2: Mapping[str, object] | None = None, refcat: str | None = None) -> Priors:
     """brms's default priors for ``formula`` on ``data`` under ``family`` (brms 2.23's ``default_prior()``), as a
     ``Priors`` the constructors accept: ``ab.gaussian(f, df, ab.default_priors(f, df))``. ``formula`` may be a list with a
     distributional formula (B01, ``["y ~ x", "sigma ~ z"]``), whose priors are its intercept's and coefficients'.
@@ -308,7 +308,13 @@ def default_priors(formula: str | list[str], data: pd.DataFrame, *, family: str 
     ``errorsar`` gets brms's flat prior, which does not depend on them, and ``fcor(M)`` adds no prior class, as in brms. A CAR
     term ``car(W, gr = site, type = ...)`` (docs/spatial-car.md) gets brms's ``student_t(3, 0, scale)`` on ``sdcar`` (a
     group-level SD's default), the flat prior on ``car`` (escar; ``Flat()``, uniform on (0, 1)) and ``beta(1, 1)`` on ``rhocar``
-    (bym2)."""
+    (bym2).
+
+    F01b (docs/dirichlet-logistic-normal.md): a ``cbind(y1, ..., yK)`` response of the dirichlet or logistic_normal family, whose
+    reference category ``refcat`` is as its constructor takes it, gets brms's defaults for every non-reference category's
+    ``Intercept`` (``student_t(3, 0, 2.5)``: brms does not read such a response for them), flat ``b`` and group SDs, and the
+    Dirichlet's ``gamma(0.01, 0.01)`` on ``phi``, or the logistic-normal family's ``student_t(3, 0, 2.5)`` on every ``sigma<k>``
+    (``Priors(sigma=...)``) and ``lkj(1)`` on ``lncor``."""
     from autobayes.families import FAMILIES, get_family
     from autobayes.formula import DATA2_UNIVARIATE, FormulaError, check_data2, check_imputation, parse_formula
     from autobayes.multivariate import is_multivariate_formula, multivariate_default_priors
@@ -335,6 +341,8 @@ def default_priors(formula: str | list[str], data: pd.DataFrame, *, family: str 
             raise ValueError(f"nu, quantile, families, order and data2 do not apply to the {fam.name} family")
         return multinomial_default_priors(formula, data, family=fam.name, categorical=categorical,
                                           center_predictors=center_predictors, imputed=imputed)
+    from autobayes.families.simplex import check_refcat
+    check_refcat(fam, refcat)                                         # F01b: the simplex families' reference category
     if quantile is not None or fam.fixable:                           # E02: a fixed quantile, checked as the constructor checks it
         fam = fam.with_fixed("quantile", quantile)
         if quantile is not None:
@@ -373,7 +381,11 @@ def default_priors(formula: str | list[str], data: pd.DataFrame, *, family: str 
     check_data2(spec, data2)
     # B05: brms never reads an ordinal or categorical response for its defaults (no identity or log link: 0 and 2.5), and
     # its labels need not be numbers
-    y = np.asarray(data[spec.response], dtype=float) if fam.response_categories is None else np.zeros(len(data))
+    if fam.simplex is not None:                                       # F01b: the response's columns and refcat, checked as the
+        from autobayes.families.simplex import categories_of           # constructor checks them
+        categories_of(spec, refcat, fam)
+    y = (np.asarray(data[spec.response], dtype=float) if fam.response_categories is None and fam.simplex is None
+         else np.zeros(len(data)))                                    # F01b: brms reads no simplex response for its defaults
     location, scale = location_scale(y, fam.default_prior_link, _offset_values(spec, data))
     intercept = None
     if spec.intercept:                                                # the cumulative thresholds keep brms's Intercept class (B05)
@@ -414,6 +426,9 @@ def default_priors(formula: str | list[str], data: pd.DataFrame, *, family: str 
     for extra in fam.extra_parameters:                                # D01: alpha normal(0, 4), beta gamma(1, 0.1), ndt uniform(0, min_Y)
         if extra.name not in spec.dpar_names:
             auxiliary[extra.name] = extra.default_prior()
+    lncor = None
+    if fam.simplex is not None and "lncor" in fam.simplex.own_priors:   # F01b: the logistic_normal family's sigma<k> and lncor
+        auxiliary["sigma"], lncor = HalfStudentT(DF, scale), LKJ(1)
     for name, make in learned.items():
         if make is None:
             raise PriorError(f"no brms default prior is recorded for the {fam.name} family's learned {name}; "
@@ -442,6 +457,7 @@ def default_priors(formula: str | list[str], data: pd.DataFrame, *, family: str 
     priors = Priors(intercept=mark(intercept), b=mark(Flat()) if spec.pop_terms else None, sd=mark(sd) or None,
                     cor=mark(cor) or None, nu=mark(learned.get("nu")), simo=mark(simo) or None,
                     sdgp=mark(sdgp) or None, lscale=mark(lscale) or None, meanme=mark(me) or None, sdme=mark(me) or None,
+                    lncor=mark(lncor),
                     **{k: mark(v) for k, v in auxiliary.items()}, **{k: mark(v) for k, v in autocor.items()},
                     **{k: mark(v) for k, v in sar.items()}, **{k: mark(v) for k, v in car.items()})
     priors.validate(spec, fam)
@@ -645,6 +661,12 @@ def prior_table(priors: Priors, spec, family="gaussian", *, center_predictors: b
                     add(p, cls, coef=f"me{brms_rename(x)}")
     if fam.scale_parameter is not None and fam.scale_parameter not in spec.dpar_names:
         add(getattr(priors, fam.scale_parameter), fam.scale_parameter, lb="0")
+    if fam.simplex is not None and "lncor" in fam.simplex.own_priors:   # F01b: brms's class lncor and one class sigma<k> each
+        from autobayes.families.simplex import sigma_names
+
+        add(priors.lncor, "lncor")
+        for name in sigma_names(categories):
+            add(priors.sigma, name, lb="0")
     if fam.zero_parameter is not None and fam.zero_parameter not in spec.dpar_names:   # brms's real<lower=0,upper=1> zi / hu (B06);
         add(getattr(priors, fam.zero_parameter), fam.zero_parameter, lb="0", ub="1")      # with its own formula (E03), its dpar rows
     for extra in fam.extra_parameters:                                # D01: brms's alpha, beta (lb 0), ndt (lb 0, ub min_Y)
@@ -654,26 +676,27 @@ def prior_table(priors: Priors, spec, family="gaussian", *, center_predictors: b
     if priors.nu is not None:
         add(priors.nu, "nu", lb=r_number(fam.learnable_parameters["nu"]))
     sd = priors.sd_priors(spec)
-    if sd:
+    # F01b: a per-category family's group terms are brms's once per non-reference category, each block under its dpar mu<k>
+    for dp in ((brms_dpar_names(categories[1:]) if fam.per_category else [""]) if sd else []):
         ps = list(sd.values())
         if same(ps):
-            add(ps[0], "sd", lb="0")
+            add(ps[0], "sd", lb="0", dpar=dp)
         else:
-            add(None, "sd", lb="0")
+            add(None, "sd", lb="0", dpar=dp)
         for t in spec.group_terms:
             mine = [sd[(t.factor, c)] for c in t.coefs]
             if same(ps):
-                add(None, "sd", group=t.factor, source=mine[0].source)
+                add(None, "sd", group=t.factor, source=mine[0].source, dpar=dp)
                 for c, p in zip(t.coefs, mine):
-                    add(None, "sd", coef=brms_rename(c), group=t.factor, source=p.source)
+                    add(None, "sd", coef=brms_rename(c), group=t.factor, source=p.source, dpar=dp)
             elif same(mine):
-                add(mine[0], "sd", group=t.factor)
+                add(mine[0], "sd", group=t.factor, dpar=dp)
                 for c, p in zip(t.coefs, mine):
-                    add(None, "sd", coef=brms_rename(c), group=t.factor, source=p.source)
+                    add(None, "sd", coef=brms_rename(c), group=t.factor, source=p.source, dpar=dp)
             else:
-                add(None, "sd", group=t.factor)
+                add(None, "sd", group=t.factor, dpar=dp)
                 for c, p in zip(t.coefs, mine):
-                    add(p, "sd", coef=brms_rename(c), group=t.factor)
+                    add(p, "sd", coef=brms_rename(c), group=t.factor, dpar=dp)
     cor = priors.cor_priors(spec)
     if cor:
         ps = list(cor.values())

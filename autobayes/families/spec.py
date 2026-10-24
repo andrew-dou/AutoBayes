@@ -459,6 +459,11 @@ class FamilySpec:
     # intercept, coefficients and group-level terms): ``autobayes.multinomial.MultinomialModel`` builds the model, which
     # ``Model(..., family=...)`` returns for such a family. False for every other family.
     matrix_response: bool = False
+    # F01b (docs/dirichlet-logistic-normal.md): a response on the simplex written ``cbind(y1, ..., yK) ~ ...`` (brms's dirichlet
+    # and logistic_normal): a ``families.simplex.Simplex``, what the family's K-column response, reference category, own
+    # parameters and refusals are; ``Model``, ``Priors``, ``predict()`` and the prior tables take the paths of
+    # ``autobayes/families/simplex.py`` for it. None for every other family.
+    simplex: object | None = None
 
     @property
     def distributional_parameters(self) -> tuple[str, ...]:

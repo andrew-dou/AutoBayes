@@ -179,7 +179,8 @@ def test_the_families_that_take_monotonic_terms():
         "beta_binomial", "geometric", "negbinomial2", "sratio", "cratio", "acat",
         "zero_inflated_negbinomial", "hurdle_negbinomial", "zero_inflated_binomial", "zero_inflated_beta", "hurdle_gamma",
         "hurdle_lognormal", "zero_one_inflated_beta", "zero_inflated_beta_binomial", "hurdle_cumulative", "xbeta",
-        "inverse_gaussian", "von_mises", "asym_laplace", "frechet", "gen_extreme_value", "wiener", "multinomial", "dirichlet_multinomial"}
+        "inverse_gaussian", "von_mises", "asym_laplace", "frechet", "gen_extreme_value", "wiener", "multinomial", "dirichlet_multinomial",
+        "dirichlet", "logistic_normal"}                       # F01b: no frozen mo() case on the simplex (D138, D139)
     probit = ab.bernoulli("cnt ~ mo(ord)", FRAME.assign(cnt=[0, 1] * 6), ab.Priors(intercept=ab.Normal(0, 1), b=ab.Normal(0, 1),
                           simo=ab.Dirichlet(1)), link="probit")           # the probit link takes it as the logit does
     assert set(probit.design.monotonic) == {"ord"}

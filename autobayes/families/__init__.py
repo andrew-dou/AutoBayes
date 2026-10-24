@@ -5,7 +5,8 @@ see docs/families.md. A family with several links (Bernoulli, binomial: logit, p
 default link's spec and reaches the others through ``FamilySpec.links`` (docs/links.md); so does the cumulative family
 for its probit link (D04), and the inverse Gaussian family for its log link (E02). The count-matrix families (F01a:
 ``multinomial``, ``dirichlet_multinomial``; ``FamilySpec.matrix_response``) are registered here and built by
-``autobayes.multinomial``.
+``autobayes.multinomial``. F01b's ``simplex.py`` builds the dirichlet and logistic_normal families of a ``cbind(y1, ...,
+yK)`` response on the simplex (``FamilySpec.simplex``).
 Nothing outside this package compares a family name against a string (``tests/test_family_registry.py`` enforces that).
 """
 from __future__ import annotations
@@ -40,6 +41,7 @@ from autobayes.families.negbinomial2 import NEGBINOMIAL2
 from autobayes.families.ordinal import ACAT, CRATIO, SRATIO
 from autobayes.families.poisson import POISSON
 from autobayes.families.shifted_lognormal import SHIFTED_LOGNORMAL
+from autobayes.families.simplex import DIRICHLET, LOGISTIC_NORMAL
 from autobayes.families.skew_normal import SKEW_NORMAL
 from autobayes.families.spec import FamilySpec
 from autobayes.families.student import STUDENT
@@ -65,7 +67,8 @@ FAMILIES = MappingProxyType({spec.name: spec for spec in (GAUSSIAN, STUDENT, POI
                                                           XBETA,
                                                           INVERSE_GAUSSIAN, VON_MISES, ASYM_LAPLACE, FRECHET, GEN_EXTREME_VALUE,   # E02
                                                           WIENER,   # F04
-                                                          MULTINOMIAL, DIRICHLET_MULTINOMIAL)})                                # F01a
+                                                          MULTINOMIAL, DIRICHLET_MULTINOMIAL,                                  # F01a
+                                                          DIRICHLET, LOGISTIC_NORMAL)})                                        # F01b
 
 
 def get_family(name: str, link: str | None = None) -> FamilySpec:

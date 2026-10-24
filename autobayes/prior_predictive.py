@@ -23,6 +23,11 @@ def prior_predictive(model, *, draws=500, seed=None):
         raise ValueError(f'prior_predictive() of a model with the CAR term {car.term!r} is not offered: its latent effects have no '
                          'forward draws here (the intrinsic types are improper but for the soft sum-to-zero constraint; '
                          'docs/spatial-car.md, divergence D141)')
+    simplex = getattr(getattr(model, 'family_spec', None), 'simplex', None)
+    if simplex is not None:                                 # F01b: a K-column response on the simplex
+        raise ValueError(f'prior_predictive() is not offered for the {model.family} family: its response is K proportions per row '
+                         f'(cbind()), which this function\'s checks of one value per row do not cover '
+                         f'(docs/dirichlet-logistic-normal.md, divergence {simplex.divergence})')
     if isinstance(draws, (bool, np.bool_)) or not isinstance(draws, Integral) or draws <= 0:
         raise ValueError('draws must be a positive integer')
     if seed is not None and (isinstance(seed, (bool, np.bool_)) or not isinstance(seed, Integral) or seed < 0):
