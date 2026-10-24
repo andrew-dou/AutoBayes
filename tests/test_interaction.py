@@ -1,4 +1,4 @@
-"""M3a-2: one numeric-by-categorical interaction. Checks D1-D8 and D12 of docs/m3a2-decision.md."""
+"""M3a-2: one numeric-by-categorical interaction. Checks D1-D8 and D12 of docs/history/m3a2-decision.md."""
 import json
 
 import numpy as np
@@ -258,7 +258,7 @@ def test_density_jacobian_and_gradients_both_paths(family, priors, center):
 # -- D4: change of reference with the interaction ---------------------------------------------------
 def reference_map_interaction(levels, ref, new_ref, centered):
     """theta = (intercept, b, beta over old non-ref levels, delta over old non-ref levels) -> theta' for the
-    new reference (docs/m3a2-decision.md): beta'_l = beta_l - beta_new, delta'_l = delta_l - delta_new,
+    new reference (docs/history/m3a2-decision.md): beta'_l = beta_l - beta_new, delta'_l = delta_l - delta_new,
     beta'_ref = -beta_new, delta'_ref = -delta_new, b' = b + delta_new, a' = a + beta_new (raw) or a'_c = a_c."""
     old = [l for l in levels if l != ref]; new = [l for l in levels if l != new_ref]
     K = len(old); n = 2 + 2 * K

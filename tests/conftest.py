@@ -19,7 +19,7 @@ def evidence_dir() -> Path:
     Default parent: ``evidence-runs/`` under the repository (gitignored). ``AUTOBAYES_EVIDENCE_DIR``
     names another parent (CI passes one). Anything resolving into ``docs/`` or into an existing
     run is refused before any write; ``run.json`` (environment, git head, argv, pid) is written
-    first, with exclusive create. The committed ``docs/m*-evidence/`` files are history.
+    first, with exclusive create. The committed ``docs/history/*-evidence/`` files are history.
     """
     from tests.evidence import allocate_run_dir, git_head
 

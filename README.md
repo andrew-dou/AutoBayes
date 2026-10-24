@@ -141,6 +141,9 @@ The gates never sample. Sampler convergence is checked by the sampling tests and
   [status report](docs/brms-parity/reports/autobayes-status.pdf).
 - [Examples](examples/brms_parity/README.md): a tour of model classes and the brms benchmark.
 - The feature ledger, [ledger.json](docs/brms-parity/ledger.json) (`python tools/parity_status.py`).
+- [Library history](docs/history/milestones.md): the milestones before the brms-parity loop, with their decision
+  records and evidence under `docs/history/`.
+- The agent scaffold and reference pack: [autobayes-scaffold](https://github.com/andrew-dou/autobayes-scaffold).
 
 ## Limits
 
@@ -151,11 +154,11 @@ The gates never sample. Sampler convergence is checked by the sampling tests and
 ## Origins
 
 AutoBayes began as a skill and pre-research pack for running a long Bayesian model-iteration program with a coding
-agent in the loop. That material is still in the repository (`reference/`, `scaffold/`, `skills/`, `SKILL.md`) and is
-described in [the agent scaffold](docs/agent-scaffold.md). The library's record before the brms-parity loop is
-[library milestones](docs/milestones.md).
+agent in the loop. That material (`SKILL.md`, `skills/`, `reference/`, `scaffold/` and their description) is now its own
+repository, [autobayes-scaffold](https://github.com/andrew-dou/autobayes-scaffold), taken from this one at commit
+`f5ee3df`; its history stays in this repository's git log. The library's record before the brms-parity loop is
+[library milestones](docs/history/milestones.md).
 
 ## Licence
 
-MIT. The `wiki/` pattern is adapted from
-[Karpathy's LLM Wiki gist](https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f).
+MIT.

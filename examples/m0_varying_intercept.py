@@ -5,7 +5,7 @@
     .venv/bin/python examples/m0_varying_intercept.py --backend numpyro     # JAX/NumPyro on CPU
     .venv/bin/python examples/m0_varying_intercept.py --backend numpyro --device gpu
     .venv/bin/python examples/m0_varying_intercept.py --backend numpyro --device gpu \
-        --record docs/m0-evidence/gpu_record.json --compare docs/m0-evidence/B2_numpyro_cpu_record.json
+        --record docs/history/m0-evidence/gpu_record.json --compare docs/history/m0-evidence/B2_numpyro_cpu_record.json
 
 The GPU form is the reproducible command for the GPU validation. It errors clearly on
 a machine without a visible GPU rather than running on the CPU. ``--record`` writes the

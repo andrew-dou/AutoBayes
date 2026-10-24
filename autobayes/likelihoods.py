@@ -20,7 +20,7 @@ PyTensor's ``Softplus`` (same value, C code and gradient ``sigmoid(eta)`` on the
 path) whose JAX lowering is ``jax.nn.softplus`` (``logaddexp(x, 0)``, stable value and
 gradient for every finite ``x``). The subclass is a distinct op, so no rewrite replaces it
 with the plain one. Verified in ``tests/test_bernoulli.py`` on both paths at logits up to
-``1e6``, both signs, both outcomes (checks R1 and R2 in ``docs/m1-decision.md``).
+``1e6``, both signs, both outcomes (checks R1 and R2 in ``docs/history/m1-decision.md``).
 """
 from __future__ import annotations
 
@@ -92,18 +92,18 @@ def bernoulli_logit_family():
 # quantity and are added, never subtracted, so nothing cancels at v = 0 or v = n;
 # d/deta = v expit(-eta) - (n - v) expit(eta). Bambi's built-in binomial (eps-floored p) and
 # pm.Binomial(logit_p=) were measured first and fail the tolerance on 49 and 60 of 130 grid
-# points (docs/m2-decision.md).
+# points (docs/history/m2-decision.md).
 #
 # The coefficient is a function of the EVALUATED value, computed inside the graph, so that
 # the exposed RV is one normalised distribution whose logp and random agree for every
-# outcome (correction record in docs/m2-decision.md: a fixed observed-outcome coefficient
+# outcome (correction record in docs/history/m2-decision.md: a fixed observed-outcome coefficient
 # gave masses summing to 0.75 or 1.5 for n = 2). It is never formed as a float64 difference
 # of three gammaln values of magnitude ~n log n: near a binomial mode the true log density
 # is O(-10), and that difference carried ~1e-6 absolute error at n = 1e9 (repair record).
 # Measured accuracy of the symbolic decomposition below against a 60-digit reference over the
 # acceptance grid, identical on both paths: absolute error <= 1.2e-10 at n <= 1e6 (one float64
 # ulp of the coefficient's own magnitude, worst at v = n/4) and 9.4e-10 at n = 1e7
-# (docs/m2-evidence/correction/coefficient_accuracy.json). Even with an exact coefficient the
+# (docs/history/m2-evidence/correction/coefficient_accuracy.json). Even with an exact coefficient the
 # likelihood terms are ~n ln 2 near the mode, whose float64 spacing bounds the combined value;
 # that is why counts are capped (formula.COUNT_CAP) at the largest tested value that meets the
 # tolerance on both paths with a margin.

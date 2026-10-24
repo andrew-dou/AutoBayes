@@ -183,7 +183,8 @@ def fit(model, *, backend: str = "pymc", device: str = "cpu", chains: int = 4,
     if actual.platform in _GPU_PLATFORMS and device != "gpu":
         notes.append("arrays landed on a GPU although device='cpu' was requested; check jax.default_device")
     if dtype != "float64":
-        notes.append(f"JAX default dtype is {dtype}, not float64; see reference/pymc-to-jax.md")
+        notes.append(f"JAX default dtype is {dtype}, not float64; see reference/pymc-to-jax.md in "  # pragma: no cover - a NumPyro fit with JAX reset out of float64; no deterministic test samples
+                     "https://github.com/andrew-dou/autobayes-scaffold")
     idata.attrs[FIT_IDENTITY_ATTR] = target_json
     return FitResult(idata=idata, backend="numpyro", device_requested=device,
                      device_actual=f"{actual.platform}:{getattr(actual, 'device_kind', '?')}(id={actual.id})",

@@ -176,7 +176,7 @@ def reference_logp_bernoulli(point: dict, data: pd.DataFrame, *, response: str, 
 
     ``point`` holds a_c, b (array), log_sd, z (array); there is no residual scale. The
     likelihood is written with ``log_expit`` so it is exact at any logit, which is what the
-    Bambi-built model is compared against (and where it deviates, see docs/m1-decision.md).
+    Bambi-built model is compared against (and where it deviates, see docs/history/m1-decision.md).
     """
     from scipy.special import log_expit
 

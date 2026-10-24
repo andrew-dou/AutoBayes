@@ -149,7 +149,7 @@ SUPPORTED_TRANSFORMS = ("only log(col), exp(col), sqrt(col), I(col^k) with integ
                         "other function calls and transformations inside the formula are not supported: compute the column in the "
                         "data frame and name it instead.")
 
-COUNT_CAP = 10**6   # the validated domain for binomial counts per row (docs/m2-decision.md, repair record)
+COUNT_CAP = 10**6   # the validated domain for binomial counts per row (docs/history/m2-decision.md, repair record)
 
 
 class FormulaError(ValueError):
@@ -158,7 +158,7 @@ class FormulaError(ValueError):
 
 @dataclass(frozen=True)
 class Categorical:
-    """A categorical main effect: treatment or full-level coding (docs/m3c2-decision.md).
+    """A categorical main effect: treatment or full-level coding (docs/history/m3c2-decision.md).
 
     ``levels`` are the distinct string labels present in the fitted rows in ``sorted`` order
     (empty until the data are seen); ``reference`` is the declared reference label, which
@@ -2233,7 +2233,7 @@ _FLOAT_EXACT = 2 ** 53          # float64 represents every integer up to here ex
 
 
 def _label(v) -> str:
-    """The string label of one categorical value (docs/m3a1-decision.md, repair record).
+    """The string label of one categorical value (docs/history/m3a1-decision.md, repair record).
 
     Integers of any width and sign map to their exact decimal string; floats only when finite,
     integral and at most 2**53 in magnitude; strings are themselves. Booleans, complex numbers,
@@ -3076,7 +3076,7 @@ def parse_formula(formula: str | list[str], data: pd.DataFrame | None = None, fa
                     f"{piece!r}: the main effect {side!r} is missing. This slice requires both main effects of an "
                     f"interaction ('{left} + {right} + {left}:{right}' or '{left}*{right}'): omitting one is a different "
                     "model (the level intercepts or the reference slope are forced to zero and formulae changes the "
-                    "interaction's coding) and is not part of the verified subset (docs/m3a2-decision.md)."
+                    "interaction's coding) and is not part of the verified subset (docs/history/m3a2-decision.md)."
                 )
     if remove_intercept and not predictors and not gps:     # 'y ~ 0 + gp(x)' leaves the Gaussian process (C03)
         raise FormulaError(f"{formula!r}: no intercept requires at least one population-level predictor")
@@ -3656,10 +3656,10 @@ def check_counts(label: str, s: pd.Series, *, cap: int = COUNT_CAP, domain: str 
         raise FormulaError(f"{label} has a negative value ({vf[vf < 0][0]!r}); counts must be non-negative")
     if np.any(vf > cap):
         if domain == "poisson":
-            raise FormulaError(f"{label} exceeds the Poisson input-count limit {cap}; see docs/poisson-decision.md")
+            raise FormulaError(f"{label} exceeds the Poisson input-count limit {cap}; see docs/history/poisson-decision.md")
         raise FormulaError(
             f"{label} has a value above the tested limit {cap} ({vf[vf > cap][0]:.0f}); larger counts per row "
-            "are outside the validated domain (the float64 density and gradient checks in docs/m2-decision.md) "
+            "are outside the validated domain (the float64 density and gradient checks in docs/history/m2-decision.md) "
             "and are refused rather than assumed. Note that splitting a row into several rows changes the "
             "unweighted centring and therefore what the centred-intercept prior refers to."
         )
@@ -3760,7 +3760,7 @@ def validate_data(spec: ModelSpec, data: pd.DataFrame, family: str = "gaussian",
             raise FormulaError(
                 f"column {c!r} has dtype {data[c].dtype}; a predictor is numeric unless it is declared "
                 f"categorical with its reference level, for example categorical={{{c!r}: <level>}} "
-                "(treatment coding; docs/m3a1-decision.md)."
+                "(treatment coding; docs/history/m3a1-decision.md)."
             )
     if spec.offset is not None:
         spec.offset.values(data)                                 # numeric, finite and (for log) positive, or refused

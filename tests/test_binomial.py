@@ -1,4 +1,4 @@
-"""M2: grouped binomial counts with a logit link. Checks A1-A9 and C1 of docs/m2-decision.md, and N1-N5 of its correction record."""
+"""M2: grouped binomial counts with a logit link. Checks A1-A9 and C1 of docs/history/m2-decision.md, and N1-N5 of its correction record."""
 import copy
 import json
 import math
@@ -21,7 +21,7 @@ PRIORS_DICT = {"intercept": ("Normal", {"mu": 0.0, "sigma": 1.5}),
                "sd": ("HalfNormal", {"sigma": 1.0})}
 FORMULA = "k | trials(n) ~ x + (1 | g)"
 ETAS = [0.0, 0.5, -0.5, 12.0, -12.0, 40.0, -40.0, 300.0, -300.0, 1000.0, -1000.0, 1e6, -1e6]
-GRID_N = [1, 2, 10, 10**3, 10**5, COUNT_CAP - 1, COUNT_CAP]          # acceptance grid (docs/m2-decision.md, repair record)
+GRID_N = [1, 2, 10, 10**3, 10**5, COUNT_CAP - 1, COUNT_CAP]          # acceptance grid (docs/history/m2-decision.md, repair record)
 MODE_OFFSETS = [0.0, 1e-3, -1e-3, 0.1, -0.1, 1.0, -1.0]
 
 

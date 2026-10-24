@@ -24,7 +24,7 @@ REQUIRED_EXECUTION_KEYS = {"backend", "device_requested", "device_actual", "plat
 
 def fake_repo(tmp_path: Path) -> Path:
     repo = tmp_path / "repo"
-    hist = repo / "docs" / "m0-evidence"
+    hist = repo / "docs" / "history" / "m0-evidence"
     hist.mkdir(parents=True)
     (hist / "run.json").write_text("HISTORICAL-RUN")
     (hist / "B2_recovery.json").write_text("HISTORICAL-B2")
@@ -60,20 +60,21 @@ def test_many_allocations_never_collide(tmp_path):
 
 
 # -- refusals, before any write ---------------------------------------------------------------
-@pytest.mark.parametrize("target", ["docs/m0-evidence", "docs/m0-evidence/new-run", "docs", "docs/m1-evidence/x/y"])
+@pytest.mark.parametrize("target", ["docs/history/m0-evidence", "docs/history/m0-evidence/new-run", "docs",
+                                    "docs/history/m1-evidence/x/y"])
 def test_override_into_history_is_refused_before_any_write(tmp_path, target):
     repo = fake_repo(tmp_path)
     before = tree_snapshot(repo)
     with pytest.raises(EvidenceDestinationError, match="committed history"):
         alloc(repo, repo / target)
     assert tree_snapshot(repo) == before               # no file created or changed anywhere in the repo
-    assert (repo / "docs" / "m0-evidence" / "run.json").read_text() == "HISTORICAL-RUN"
+    assert (repo / "docs" / "history" / "m0-evidence" / "run.json").read_text() == "HISTORICAL-RUN"
 
 
 def test_symlink_into_history_is_refused(tmp_path):
     repo = fake_repo(tmp_path)
     link = tmp_path / "innocent-looking"
-    link.symlink_to(repo / "docs" / "m0-evidence", target_is_directory=True)
+    link.symlink_to(repo / "docs" / "history" / "m0-evidence", target_is_directory=True)
     before = tree_snapshot(repo)
     with pytest.raises(EvidenceDestinationError, match="resolves to"):
         alloc(repo, link)
@@ -142,6 +143,6 @@ def test_fit_record_schema_and_exclusive_write(model, small_fit, evidence_dir):
 def test_committed_history_bytes_match_head(evidence_dir):
     """The committed evidence files have exactly their committed bytes after this run has
     allocated its directory and written into it."""
-    head = committed_bytes(REPO, ["docs/m0-evidence", "docs/m1-evidence"])
+    head = committed_bytes(REPO, ["docs/history/m0-evidence", "docs/history/m1-evidence"])
     assert len(head) >= 10, "expected the committed evidence files to be tracked"
     assert working_tree_bytes(REPO, list(head)) == head

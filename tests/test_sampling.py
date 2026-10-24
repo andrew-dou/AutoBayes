@@ -15,7 +15,7 @@ from tests.conftest import PRIORS, simulate
 from tests.reference_logp import conditional_gaussian_posterior
 
 # Candidate evidence goes to the run-specific directory (conftest.evidence_dir), never to the
-# committed docs/m*-evidence/ history. Acceptance is the statistical criteria asserted below,
+# committed docs/history/*-evidence/ history. Acceptance is the statistical criteria asserted below,
 # not agreement with any earlier JSON.
 
 
@@ -51,7 +51,7 @@ def test_simulated_recovery_both_backends(evidence_dir):
 
     4 x 1000 draws gave R-hat 1.02 and bulk ESS 350 on the intercept on both backends
     (the intercept trades off against the mean of the 20 offsets); 2500 draws per chain
-    is the run that meets the panel thresholds. Recorded in docs/m0-evidence.
+    is the run that meets the panel thresholds. Recorded in docs/history/m0-evidence.
     """
     truth = dict(a=1.0, b=0.5, sd=0.5, sigma=0.3)
     df = simulate(n=200, J=20, seed=20, **truth)
@@ -85,7 +85,7 @@ def test_simulated_recovery_both_backends(evidence_dir):
 def test_bernoulli_recovery_both_backends(evidence_dir):
     """M1 B1: simulated binary data, n=600, J=30; PyMC and NumPyro CPU paths agree and recover truth.
 
-    Thresholds set in docs/m1-decision.md before the run. One recovery is not calibration.
+    Thresholds set in docs/history/m1-decision.md before the run. One recovery is not calibration.
     """
     from scipy.special import expit
 
@@ -123,7 +123,7 @@ def test_history_bytes_unchanged_after_sampling(evidence_dir):
     from tests.conftest import REPO
     from tests.evidence import committed_bytes, working_tree_bytes
 
-    head = committed_bytes(REPO, ["docs/m0-evidence", "docs/m1-evidence"])
+    head = committed_bytes(REPO, ["docs/history/m0-evidence", "docs/history/m1-evidence"])
     assert len(head) >= 10
     assert working_tree_bytes(REPO, list(head)) == head
     assert not any(p.resolve().is_relative_to((REPO / "docs").resolve()) for p in evidence_dir.iterdir())
@@ -132,7 +132,7 @@ def test_history_bytes_unchanged_after_sampling(evidence_dir):
 @pytest.mark.slow
 def test_binomial_recovery_both_backends(evidence_dir):
     """M2 B1: 300 rows, 30 groups all present, trials 5-50; PyMC and NumPyro CPU paths agree
-    and recover the truth. Thresholds set in docs/m2-decision.md before the run. One recovery
+    and recover the truth. Thresholds set in docs/history/m2-decision.md before the run. One recovery
     on one simulated data set; not calibration."""
     from scipy.special import expit
 
@@ -167,7 +167,7 @@ def test_binomial_recovery_both_backends(evidence_dir):
 
 @pytest.mark.slow
 def test_categorical_recovery_both_backends(evidence_dir):
-    """C10 (docs/m3a1-decision.md): Gaussian y ~ x + z + (1 | g), one categorical predictor with unequal
+    """C10 (docs/history/m3a1-decision.md): Gaussian y ~ x + z + (1 | g), one categorical predictor with unequal
     level proportions, prespecified design, seed and gates; both CPU samplers. One recovery, not calibration."""
     from tests.test_categorical import BETA, LEVELS, PROPS, TRUTH
     rng = np.random.default_rng(11)
@@ -211,7 +211,7 @@ def test_categorical_recovery_both_backends(evidence_dir):
 
 @pytest.mark.slow
 def test_interaction_recovery_both_backends(evidence_dir):
-    """D10 (docs/m3a2-decision.md): Gaussian y ~ x + z + x:z + (1 | g) with different within-level x means,
+    """D10 (docs/history/m3a2-decision.md): Gaussian y ~ x + z + x:z + (1 | g) with different within-level x means,
     prespecified design, seed and gates; both CPU samplers. One recovery is not calibration."""
     from tests.test_interaction import BETA, DELTA, LEVELS, PROPS, TRUTH, XMEAN
     rng = np.random.default_rng(13)
