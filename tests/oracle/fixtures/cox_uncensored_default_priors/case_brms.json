@@ -1,0 +1,23 @@
+{
+ "factors": {
+  "g": [
+   "a",
+   "b",
+   "c",
+   "d",
+   "e",
+   "f"
+  ]
+ },
+ "family": {
+  "family": "cox"
+ },
+ "formula": "ypos2 ~ x + (1 | g)",
+ "id": "cox_uncensored_default_priors",
+ "n_points": 8,
+ "prediction_refused": [
+  "epred"
+ ],
+ "priors": [],
+ "seed": 1052
+}
