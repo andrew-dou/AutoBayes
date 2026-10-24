@@ -41,6 +41,10 @@ E05 `check_prior_draws`, `check_loo_model_weights`   in the same `post` gate: `a
                          draws); an interaction effect's table (effect2__) is checked by `check_conditional_effects` as any
                          other; `ab.loo_model_weights` and `ab.model_weights(..., "stacking")` against brms's
                          loo_model_weights() of the two fits
+F07 `check_summary`     in the same `post` gate: `ab.fixef`, `ab.ranef`, `ab.coef`, `ab.VarCorr`, `ab.posterior_summary`,
+                         `ab.summary` and `ab.residuals` on the fixture's summary draws (chains of seeded points, held as a fit's
+                         posterior holds them: `summary_draws_fit`) against brms's summaries in the fixture's `post` block, every
+                         label exactly and every number (Rhat and the ESS included) to PRED_REL
 
 A case that opts in to two-reference acceptance (P6, its gate field names a committed high-precision reference and the
 quantity kinds that may fall back on it: "gradient", "epred") has G2's gradient and G4's expected values checked by
@@ -1080,8 +1084,9 @@ def check_post(b: Bundle) -> None:
     ``check_loo_compare``); ``hypothesis`` and ``conditional_effects`` brms's ``hypothesis()`` and ``conditional_effects()``
     of the case's ``post_args`` (D06, ``check_hypothesis``, ``check_conditional_effects``); ``prior_draws`` brms's
     ``prior_draws()`` columns (E05, ``check_prior_draws``; with it, the hypotheses' evidence ratios come from the fixture's
-    prior draws) and ``loo_model_weights`` brms's stacking weights (E05, ``check_loo_model_weights``). A case that lists none
-    has nothing to compare."""
+    prior draws) and ``loo_model_weights`` brms's stacking weights (E05, ``check_loo_model_weights``); brms's summaries
+    ``fixef``, ``ranef``, ``coef``, ``VarCorr``, ``posterior_summary``, ``summary`` and ``residuals`` on the fixture's summary
+    draws (F07, ``check_summary``). A case that lists none has nothing to compare."""
     if not b.post:
         return
     post = b.fixture.raw.get("post")
@@ -1089,6 +1094,7 @@ def check_post(b: Bundle) -> None:
         raise OracleMismatch(f"the case lists {sorted(b.post)} but the fixture has no post block")
     idata = fixed_parameter_draws(b)
     S = len(b.fixture.points)
+    summary_idata = summary_draws_fit(b) if set(b.post) & set(SUMMARIES) else None   # F07: the summaries' own draws
     for name, fn in b.post.items():
         if name not in post:
             raise OracleMismatch(f"the case lists {name} but the fixture's post block has {sorted(post)}")
@@ -1126,6 +1132,8 @@ def check_post(b: Bundle) -> None:
             check_prior_draws(b, post["prior_draws"])
         elif name == "loo_model_weights":                            # E05
             check_loo_model_weights(b, idata, post["loo_model_weights"])
+        elif name in SUMMARIES:                                      # F07: on the fixture's summary draws, not its points
+            check_summary(b, name, fn, summary_idata, post[name])
         else:
             raise OracleMismatch(f"no comparison for the post-processing function {name!r}")
 
@@ -1319,6 +1327,95 @@ def check_loo_model_weights(b: Bundle, idata, ref) -> None:
         compare_post(what, w.to_numpy(), theirs)
         with np.errstate(divide="ignore"):
             compare_post(f"{what} (log)", np.log(w.to_numpy()), np.log(theirs))
+
+
+# -- F07: brms's summaries -----------------------------------------------------------------------------------------
+SUMMARIES = ("fixef", "ranef", "coef", "VarCorr", "posterior_summary", "summary", "residuals")
+SUMMARY_COUNTS = ("nobs", "ngrps", "chains", "iter", "warmup", "thin", "total_ndraws")
+# the arguments gen_fixture.R hands each summary (residuals: brms's default type, the expected value's method)
+SUMMARY_ARGS = {"residuals": {"type": "ordinary", "method": "posterior_epred"}}
+
+
+def summary_draws_fit(b: Bundle):
+    """F07: the fixture's summary draws (``Fixture.summary_draws``: ``chains`` chains of ``iter`` seeded points, chain by chain)
+    as an AutoBayes fit's posterior holds them, ``(chain, draw)``, each point under AutoBayes's names as G3 and G4 map the
+    frozen points (``adapter.draws``); no warmup is recorded (brms's fixed-parameter run has none)."""
+    import copy
+
+    import arviz as az
+    import xarray as xr
+
+    block = b.fixture.summary_draws
+    if block is None:
+        raise OracleMismatch("the case lists brms's summaries but the fixture has no summary draws")
+    view = copy.copy(b.fixture)
+    view.__dict__["points"] = block["points"]                 # the summary draws in place of the frozen points
+    one = adapter.draws(view, b.model, b.cmap, b.gmap).posterior   # one chain of chains x iter draws, chain by chain
+    C, I = block["chains"], block["iter"]
+    data = {k: (v.dims, v.to_numpy()[0].reshape(C, I, *v.shape[2:])) for k, v in one.data_vars.items()}
+    coords = {k: v for k, v in one.coords.items() if k not in ("chain", "draw")}
+    return az.InferenceData(posterior=xr.Dataset(data, coords={**coords, "chain": np.arange(C), "draw": np.arange(I)}))
+
+
+def _same_labels(what: str, ours, theirs) -> None:
+    if list(ours) != list(theirs):
+        raise OracleMismatch(f"{what}: AutoBayes's {list(ours)} vs brms's {list(theirs)}")
+
+
+def _compare_summary_table(what: str, frame, ref) -> None:
+    """A brms matrix with its labels (``fx.decode_labelled``) against a DataFrame: the row names (brms gives residuals() none)
+    and column names exactly, the numbers with ``compare_post``."""
+    values, (rows, columns) = fx.decode_labelled(ref)
+    if rows:
+        _same_labels(f"{what} rows", frame.index, rows)
+    _same_labels(f"{what} columns", frame.columns, columns)
+    compare_post(what, frame.to_numpy(), values)
+
+
+def _compare_summary_array(what: str, frame, ref) -> None:
+    """brms's ``[row, statistic, coef]`` array (ranef(), coef(), VarCorr()'s cor and cov) against a DataFrame with those rows
+    and the columns ``(coef, statistic)``."""
+    values, (rows, stats, coefs) = fx.decode_labelled(ref)
+    _same_labels(f"{what} rows", frame.index, rows)
+    _same_labels(f"{what} columns", frame.columns, [(c, s) for c in coefs for s in stats])
+    compare_post(what, frame.to_numpy().reshape(len(rows), len(coefs), len(stats)).transpose(0, 2, 1), values)
+
+
+def check_summary(b: Bundle, name: str, fn, idata, ref) -> None:
+    """F07: ``ab.<name>(model, idata)`` on the summary draws (``summary_draws_fit``) against brms's record of it in the fixture's
+    ``post`` block, every label exactly (names, row and column order, groups, parts) and every number to ``PRED_REL``:
+    ``fixef``, ``posterior_summary`` and ``residuals`` (with the case's ``post_args``, which must be what gen_fixture.R used)
+    are tables; ``ranef`` and ``coef`` one ``[level, statistic, coef]`` array per group; ``VarCorr`` per group its ``sd`` table
+    and ``cor`` and ``cov`` arrays (``residual__``: sigma's ``sd``); ``summary`` its tables (``fixed``, ``spec_pars``,
+    ``cor_pars``, ``random`` by group: Rhat, Bulk_ESS and Tail_ESS included) and its counts."""
+    args = dict((b.case.get("autobayes", {}).get("post_args") or {}).get(name) or {})
+    if args != SUMMARY_ARGS.get(name, {}):
+        raise OracleMismatch(f"{name}: the case's post_args {args} are not what the fixture computed, {SUMMARY_ARGS.get(name, {})}")
+    res = fn(b.model, idata, **args)
+    if name in ("fixef", "posterior_summary", "residuals"):
+        _compare_summary_table(name, res, ref)
+    elif name in ("ranef", "coef"):
+        _same_labels(f"{name} groups", res, ref)
+        for g, array in ref.items():
+            _compare_summary_array(f"{name} {g}", res[g], array)
+    elif name == "VarCorr":
+        _same_labels("VarCorr groups", res, ref)
+        for g, parts in ref.items():
+            _same_labels(f"VarCorr {g} parts", res[g], parts)
+            for part, table in parts.items():
+                (_compare_summary_table if part == "sd" else _compare_summary_array)(f"VarCorr {g} {part}", res[g][part], table)
+    else:                                                          # summary()
+        for table in (k for k in ref if k not in ("random", *SUMMARY_COUNTS)):
+            if not hasattr(res, table):
+                raise OracleMismatch(f"summary: brms's table {table!r} has no counterpart")
+            _compare_summary_table(f"summary {table}", getattr(res, table), ref[table])
+        _same_labels("summary random groups", res.random, ref["random"])
+        for g, table in ref["random"].items():
+            _compare_summary_table(f"summary random {g}", res.random[g], table)
+        for key in SUMMARY_COUNTS:
+            ours, theirs = getattr(res, key), ref[key]
+            if (list(ours.items()) if key == "ngrps" else ours) != (list(theirs.items()) if key == "ngrps" else theirs):
+                raise OracleMismatch(f"summary {key}: AutoBayes {ours} vs brms {theirs}")
 
 
 # -- multivariate models (C01) ------------------------------------------------------------------------------

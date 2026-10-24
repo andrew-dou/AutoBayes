@@ -2258,13 +2258,33 @@
    "depends_on": [
     "C07_post_processing"
    ],
-   "status": "fixtures_frozen",
+   "status": "gates_green",
    "summary": "fixef(), ranef(), coef(), VarCorr(), summary() table, prior_summary(), residuals(), predictive_error()",
    "pr": null,
    "attempts": 0,
    "divergences": [],
    "next_action": "implementing (wave F2); fixtures #89",
-   "reserved_divergences": "D162-D167"
+   "reserved_divergences": "D162-D167",
+   "gates": {
+    "sha": "9f5d99502715",
+    "dirty_tree": false,
+    "base": "origin/main",
+    "when": "2026-10-24T20:47Z",
+    "results": {
+     "immutability": {
+      "status": "pass",
+      "seconds": 0.0
+     },
+     "oracle": {
+      "status": "pass",
+      "seconds": 830.9
+     },
+     "diff_coverage": {
+      "status": "pass",
+      "seconds": 77.5
+     }
+    }
+   }
   },
   {
    "id": "F08_syntax_fixes",

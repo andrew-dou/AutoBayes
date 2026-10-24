@@ -469,3 +469,13 @@ binomial families under the log link (the mean `exp(eta_i) d_i`, the negative bi
 `gauss_se_meta`, `gauss_se_sigma`, `student_se_sigma`, `poisson_rate` and `negbinomial_rate`; a zero standard error without
 `sigma = TRUE` (where brms's likelihood is undefined, D156), another addition term next to either, a distributional formula, an
 expression inside the call, other links and families are refused (D157); see [se() and rate()](se-rate.md).
+
+brms's summaries of a fit (F07): `ab.fixef`, `ab.ranef`, `ab.coef`, `ab.VarCorr`, `ab.posterior_summary`, `ab.summary` (its
+tables `fixed`, `spec_pars`, `cor_pars` and `random`, with posterior 1.6.1's rank-normalised `Rhat`, `Bulk_ESS` and `Tail_ESS`,
+`autobayes.convergence`, written from Vehtari et al. 2021) and `ab.residuals(type="ordinary", method="posterior_epred")`, each a
+DataFrame (or a mapping of them) with brms's names, order and labels, and `summaries.brms_draws`, the draws under brms's variable
+names, `lprior` and `lp__` included. Verified against `gauss_varint_summaries`, `bernoulli_slope_correlated_summaries` and
+`gauss_distributional_sigma_summaries` (four chains of fifty seeded draws; every number within 2e-15 of brms's), brms's names on
+eight further structures and posterior's diagnostics on 136 probes; Gaussian and Bernoulli models with ordinary population- and
+group-level terms and a formula of sigma are taken, everything else is refused naming the construct (D162 to D165); see
+[summaries](summaries.md).

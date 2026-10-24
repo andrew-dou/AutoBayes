@@ -477,6 +477,9 @@ class FamilySpec:
     # parameters and refusals are; ``Model``, ``Priors``, ``predict()`` and the prior tables take the paths of
     # ``autobayes/families/simplex.py`` for it. None for every other family.
     simplex: object | None = None
+    # brms's summaries fixef(), ranef(), coef(), VarCorr(), posterior_summary(), summary() and residuals() (F07,
+    # docs/summaries.md): whether they take the family, set where a frozen brms case verifies its names and parameters.
+    summaries: bool = False
 
     @property
     def distributional_parameters(self) -> tuple[str, ...]:

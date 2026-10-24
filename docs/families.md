@@ -29,6 +29,7 @@ test or `match`.
 | Residual correlation (F03b) | `time_correlation` (the family's kernel of the joint density of a group's rows under brms's `unstr(time, gr)` and `cosy(time, gr)`, docs/unstr-cosy.md; set where a frozen case verifies it; None: refused, D146) | `timecor.NORMAL_TIME` | `timecor.STUDENT_TIME` | none | none | none | none | none | none | none |
 | Missing values and measurement error (C06) | `missing_values`, `measurement_error` (brms's `mi(col)` with `col \| mi() ~ ...`, the addition term `"mi"` in `addition_terms`, and `me(x, sdx)`, docs/missing-and-measurement-error.md; set where a frozen case verifies it) | yes | no | no | no | no | no | no | no | no |
 | Shrinkage priors (D07) | `shrinkage` (the family takes brms's `horseshoe()` and `R2D2()` on class `b`, scaled by `bambi_scale_parameter`, brms's `autoscale = TRUE`; docs/shrinkage-priors.md; set where a frozen case verifies it) | yes | no (D102) | no (D102) | no (D102) | no (D102) | no (D102) | no (D102) | no (D102) | no (D102) |
+| Summaries (F07) | `summaries` (`fixef()`, `ranef()`, `coef()`, `VarCorr()`, `posterior_summary()`, `summary()` and `residuals()` take the family, docs/summaries.md; set where a frozen case verifies it) | yes | no (D162) | no (D162) | no (D162) | no (D162) | no (D162) | no (D162) | yes (every link) | no (D162) |
 
 A family with a `distributional_link` lets its auxiliary parameter have its own formula (docs/distributional.md): Bambi
 builds it as a distributional component named `bambi_scale_parameter`, `model.names[scale_parameter]` is then the per-row

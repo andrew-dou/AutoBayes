@@ -92,6 +92,8 @@ def _spec(link: str) -> FamilySpec:
         addition_terms=frozenset({"weights"}),                  # B02: weights(), verified against the frozen case bernoulli_weighted (logit; the probit link's likelihood is weighted the same way)
         monotonic=True,                                             # B03: mo(x), verified against bernoulli_monotonic (logit; under probit the term enters the same linear predictor)
         log_likelihood=partial(_log_likelihood, link),                # C07: log_lik(), checked against the model's own density (test_post_processing.py)
+        summaries=True,                                             # F07: verified against bernoulli_slope_correlated_summaries (logit; the names
+                                                                    # do not depend on the link, and residuals() reads predict()'s G4-checked mean)
     )
 
 

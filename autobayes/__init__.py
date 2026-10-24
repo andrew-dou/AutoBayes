@@ -103,6 +103,7 @@ from autobayes.priors import Logistic   # E03: brms's logistic() on a zi / hu fo
 from autobayes.model import wiener   # F04, docs/wiener.md
 from autobayes.multinomial import MultinomialModel, dirichlet_multinomial, multinomial   # F01a, docs/multinomial.md
 from autobayes.model import dirichlet, logistic_normal   # F01b: cbind() responses on the simplex, docs/dirichlet-logistic-normal.md
+from autobayes.summaries import Summary, VarCorr, coef, fixef, posterior_summary, ranef, residuals, summary   # F07, docs/summaries.md
 
 __all__ = [
     "Beta", "Categorical", "DeviceError", "Dirichlet", "Exponential", "FitResult", "Flat", "FormulaError", "Gamma", "GroupTerm", "HalfCauchy",
@@ -129,4 +130,5 @@ __all__ += ["Logistic"]                                # E03
 __all__ += ["wiener"]                                  # F04
 __all__ += ["MultinomialModel", "dirichlet_multinomial", "multinomial"]   # F01a
 __all__ += ["dirichlet", "logistic_normal"]            # F01b
+__all__ += ["Summary", "VarCorr", "coef", "fixef", "posterior_summary", "ranef", "residuals", "summary"]   # F07
 __version__ = "0.8.0"
