@@ -60,6 +60,7 @@ _AUTOCOR_RE = re.compile(r"(?<![A-Za-z0-9_.])(ar|ma|arma)\s*\(")                
 _SAR_RE = re.compile(r"(?<![A-Za-z0-9_.])sar\s*\(")                                                      # brms's SAR term (F02b)
 _FCOR_RE = re.compile(r"(?<![A-Za-z0-9_.])fcor\s*\(")                                                 # brms's fcor() (F03a)
 _ME_RE = re.compile(r"(?<![A-Za-z0-9_.])me\s*\(")                                                 # brms's me() (C06)
+_CAR_RE = re.compile(r"(?<![A-Za-z0-9_.])car\s*\(")                                               # brms's car() (F02a)
 RESPONSE_DIM, RESPONSE_DIM_T = "__resp__", "__resp_T__"     # the graph's response coordinates (Lrescor, rescor, the joint response)
 PREDICTION_DIM = "response"                                 # predict()'s response dimension, brms's last axis of its prediction arrays
 
@@ -177,6 +178,9 @@ def parse_multivariate(formula, data: pd.DataFrame | None = None, family: str = 
             raise FormulaError(f"{formula!r}: {piece!r}: a Gaussian process in a multivariate formula is not verified in this slice "
                                "(each response would have its own process, brms's sdgp_y and lscale_y); write it in a univariate "
                                "model (docs/multivariate.md, divergence D56)")
+        if _CAR_RE.search(piece):                             # F02a
+            raise FormulaError(f"{formula!r}: {piece!r}: a CAR term in a multivariate formula is not verified in this slice; write it "
+                               "in a univariate model (docs/spatial-car.md, divergence D141)")
         if _AUTOCOR_RE.search(piece):
             raise FormulaError(f"{formula!r}: {piece!r}: an autocorrelation term in a multivariate formula is not verified in this "
                                "slice (brms gives each response its own ARMA term, ar_y and ar_y2, with J_lag_y and J_lag_y2); write it "
@@ -293,6 +297,9 @@ def _parse_imputation(formulas, data, family, categorical, *, rescor) -> Multiva
         if s.fcor is not None:                                # F03a: likewise
             raise FormulaError(f"{s.formula!r}: {s.fcor.term} in a multivariate model is not verified in this slice; write it in a "
                                "univariate model (docs/fcor.md, divergence D144)")
+        if s.car is not None:                                 # F02a: likewise
+            raise FormulaError(f"{s.formula!r}: the CAR term {s.car.term!r} in a multivariate model is not verified in this slice; write "
+                               "it in a univariate model (docs/spatial-car.md, divergence D141)")
         if s.autocor is not None:                             # C04: likewise
             raise FormulaError(f"{s.formula!r}: the autocorrelation term {s.autocor.term!r} in a multivariate model is not verified in "
                                "this slice (brms gives each response its own ARMA term, ar_y and ar_y2); write it in a univariate model "

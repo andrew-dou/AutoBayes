@@ -79,6 +79,7 @@ POISSON = FamilySpec(
     monotonic=True,                                                 # B03: mo(x), verified against poisson_monotonic
     log_likelihood=_log_likelihood,                                 # C07: log_lik(), verified against poisson_varint_post
     links=MappingProxyType({"sqrt": lambda: _sqrt()}),              # E06: brms's sqrt link (poisson_sqrt)
+    car=True,                                                       # F02a: car(), verified against poisson_car_bym2 (log link)
 )
 
 

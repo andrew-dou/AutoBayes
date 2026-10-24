@@ -18,6 +18,11 @@ def prior_predictive(model, *, draws=500, seed=None):
     if getattr(getattr(model, 'spec', None), 'is_multinomial', False):   # F01a: a count matrix per row
         from autobayes.multinomial import multinomial_prior_predictive
         return multinomial_prior_predictive(model, draws=draws, seed=seed)
+    car = getattr(getattr(model, 'spec', None), 'car', None)
+    if car is not None:                                     # F02a: the CAR density is a potential, which forward draws ignore
+        raise ValueError(f'prior_predictive() of a model with the CAR term {car.term!r} is not offered: its latent effects have no '
+                         'forward draws here (the intrinsic types are improper but for the soft sum-to-zero constraint; '
+                         'docs/spatial-car.md, divergence D141)')
     if isinstance(draws, (bool, np.bool_)) or not isinstance(draws, Integral) or draws <= 0:
         raise ValueError('draws must be a positive integer')
     if seed is not None and (isinstance(seed, (bool, np.bool_)) or not isinstance(seed, Integral) or seed < 0):

@@ -135,6 +135,7 @@ _GP_RE = re.compile(r"^gp\s*\((.*)\)$", re.S)                                   
 _AUTOCOR_RE = re.compile(r"^(ar|ma|arma|cosy|car|sar|unstr)\s*\(", re.S)   # brms's autocorrelation terms (C04; autobayes.autocor)
 _SAR_RE = re.compile(r"^sar\s*\(", re.S)                                                              # brms's sar(M, type) (F02b; autobayes.sar)
 _FCOR_RE = re.compile(r"^fcor\s*\(", re.S)                  # brms's fixed residual covariance fcor(M) (F03a; autobayes.fcor)
+_CAR_RE = re.compile(r"^car\s*\(", re.S)                       # brms's spatial CAR term (F02a; autobayes.car), read before the others
 SUPPORTED_TRANSFORMS = ("only log(col), exp(col), sqrt(col), I(col^k) with integer k, and I(col * k), I(col + k), I(col - k) with a "
                         "numeric constant k are supported as in-formula transforms of one numeric column (A05, docs/transforms.md); "
                         "other function calls and transformations inside the formula are not supported: compute the column in the "
@@ -1486,7 +1487,8 @@ class ModelSpec:
     terms of the linear predictor that are not population-level terms (no coefficient of class ``b``, no design column).
     ``autocor`` is the formula's autocorrelation term (C04, ``ar()``, ``ma()`` or ``arma()``; ``autocor.Autocor``), or None.
     ``sar`` is its simultaneous autoregressive term (F02b, ``sar(M, type = "lag")``; ``sar.Sar``), or None.
-    ``fcor`` is the formula's fixed residual covariance ``fcor(M)`` (F03a, ``fcor.Fcor``; docs/fcor.md), or None."""
+    ``fcor`` is the formula's fixed residual covariance ``fcor(M)`` (F03a, ``fcor.Fcor``; docs/fcor.md), or None; ``car`` its
+    spatial CAR term (F02a, ``car(M, gr, type)``; ``car.Car``), or None."""
 
     formula: str
     response: str
@@ -1505,11 +1507,12 @@ class ModelSpec:
     autocor: "Autocor | None" = None
     sar: "Sar | None" = None
     fcor: "Fcor | None" = None
+    car: "Car | None" = None
 
     def __init__(self, formula, response, predictors=(), group=None, intercept=True,
                  levels=(), trials=None, rhs="", terms=(), categoricals=(), interactions=(),
                  *, groups=None, levels_by_group=None, pop_terms=None, group_terms=None, offset=None, additions=(), dpars=(),
-                 monotonics=None, gp_terms=(), autocor=None, sar=None, fcor=None):
+                 monotonics=None, gp_terms=(), autocor=None, sar=None, fcor=None, car=None):
         """Keep the original positional constructor: without ``pop_terms`` / ``group_terms`` the term model is
         built from the flat ``predictors``, ``terms``, ``categoricals``, ``interactions`` and ``group(s)``.
         Terms given as mappings (``dataclasses.asdict`` output) are rebuilt, the distributional formulas and the
@@ -1531,6 +1534,10 @@ class ModelSpec:
             from autobayes.fcor import Fcor
             if not isinstance(fcor, Fcor):
                 fcor = Fcor(**fcor)
+        if car is not None:                                      # F02a: rebuilt from a mapping (dataclasses.asdict output)
+            from autobayes.car import Car
+            if not isinstance(car, Car):
+                car = Car(**car)
         if group_terms is not None:
             if groups is not None or group is not None:
                 raise ValueError("supply group_terms or group/groups, not both")
@@ -1570,7 +1577,7 @@ class ModelSpec:
                       levels_by_group=_GroupLevels((g, level_map[g]) for g in factors),
                       trials=trials, rhs=rhs, categoricals=categoricals,
                       pop_terms=pop_terms, group_terms=group_terms, offset=offset, additions=additions, dpars=dpars,
-                      monotonics=monotonics, gp_terms=gp_terms, autocor=autocor, sar=sar, fcor=fcor)
+                      monotonics=monotonics, gp_terms=gp_terms, autocor=autocor, sar=sar, fcor=fcor, car=car)
         for key, value in values.items():
             object.__setattr__(self, key, value)
 
@@ -1583,13 +1590,14 @@ class ModelSpec:
                     + ((self.gp_terms,) if self.gp_terms else ())
                     + ((self.autocor,) if self.autocor is not None else ())
                     + ((self.sar,) if self.sar is not None else ())
-                    + ((self.fcor,) if self.fcor is not None else ()))
+                    + ((self.fcor,) if self.fcor is not None else ())
+                    + ((self.car,) if self.car is not None else ()))
 
     @property
     def data2_names(self) -> tuple[str, ...]:
-        """The names of the ``data2`` matrices the formula's terms read (Tier F): ``sar(M, ...)``'s ``M`` (F02b) and ``fcor(M)``'s
-        ``M`` (F03a), in that order; ``check_data2`` refuses any other name."""
-        return tuple(t.matrix for t in (self.sar, self.fcor) if t is not None)
+        """The names of the ``data2`` matrices the formula's terms read (Tier F): ``sar(M, ...)``'s ``M`` (F02b), ``fcor(M)``'s
+        ``M`` (F03a) and ``car(W, ...)``'s ``W`` (F02a), in that order; ``check_data2`` refuses any other name."""
+        return tuple(t.matrix for t in (self.sar, self.fcor, self.car) if t is not None)
 
     def addition(self, kind: str) -> AdditionTerm | None:
         """The addition term of ``kind`` (``"weights"``, ``"cens"``, ``"trunc"``), or None when the formula has none."""
@@ -1884,8 +1892,9 @@ class ModelSpec:
 
 
 # -- Tier F: brms's data2, the matrices a formula's terms read by name ----------------------------------------------------
-DATA2_UNIVARIATE = ("data2 is read by a SAR term sar(M, type = ...) or a fixed residual covariance fcor(M), which a non-linear or "
-                    "multivariate model does not take in this slice (docs/spatial-sar.md, docs/fcor.md, divergences D143, D144)")
+DATA2_UNIVARIATE = ("data2 is read by a SAR term sar(M, type = ...), a fixed residual covariance fcor(M) or a CAR term car(W, gr = "
+                    "...), which a non-linear or multivariate model does not take in this slice (docs/spatial-sar.md, docs/fcor.md, "
+                    "docs/spatial-car.md, divergences D141, D143, D144)")
 
 
 def data2_mapping(data2) -> None:
@@ -1895,14 +1904,14 @@ def data2_mapping(data2) -> None:
 
 
 def check_data2(spec, data2) -> None:
-    """``data2`` holds exactly the matrices the formula's terms read (``ModelSpec.data2_names``: ``sar(M, ...)``'s M, F02b, and
-    ``fcor(M)``'s M, F03a), keyed by name: an entry no term reads is refused rather than ignored (brms ignores it). Each term
-    reads and checks its own matrix (``sar.sar_design``, ``fcor.fcor_design``)."""
+    """``data2`` holds exactly the matrices the formula's terms read (``ModelSpec.data2_names``: ``sar(M, ...)``'s M, F02b,
+    ``fcor(M)``'s M, F03a, and ``car(W, ...)``'s W, F02a), keyed by name: an entry no term reads is refused rather than ignored
+    (brms ignores it). Each term reads and checks its own matrix (``sar.sar_design``, ``fcor.fcor_design``, ``car.car_layout``)."""
     data2_mapping(data2)
     unread = sorted(str(k) for k in (data2 or {}) if k not in spec.data2_names)
     if unread:
-        raise FormulaError(f"data2 holds {unread}, which no term of the formula reads (data2 is read by sar(M, ...) and fcor(M) here; "
-                           "docs/spatial-sar.md, docs/fcor.md)")
+        raise FormulaError(f"data2 holds {unread}, which no term of the formula reads (data2 is read by sar(M, ...), fcor(M) and "
+                           "car(W, ...) here; docs/spatial-sar.md, docs/fcor.md, docs/spatial-car.md)")
 
 
 def _split_top_level(rhs: str, sep: str = "+") -> list[str]:
@@ -2313,6 +2322,9 @@ def _parse_formulas(formulas, data: pd.DataFrame | None, family: str, categorica
     # without the data); a declaration that names no formula's main effect stays with the response formula, which
     # refuses it as it always has.
     main0 = parse_formula(main, None, family, None, _ids=True)
+    if main0.car is not None:                                 # F02a: not next to a distributional formula (D141)
+        raise FormulaError(f"{main!r}: the CAR term {main0.car.term!r} with a distributional formula is not supported in this slice "
+                           "(docs/spatial-car.md, divergence D141)")
     if main0.autocor is not None:                             # C04: not next to a distributional formula (D70)
         raise FormulaError(
             f"{main!r}: the autocorrelation term {main0.autocor.term!r} with a distributional formula is not supported in this "
@@ -2392,6 +2404,9 @@ def _parse_formulas(formulas, data: pd.DataFrame | None, family: str, categorica
                 f"in this slice: brms would give {name} a Gaussian process of its own; gp() belongs to the response formula here "
                 "(docs/gaussian-processes.md, divergence D64)"
             )
+        if d.car is not None:                                 # F02a: the term belongs to the response formula (D141)
+            raise FormulaError(f"{text!r}: a CAR term in a distributional formula ({d.car.term}) is not supported: it belongs to the "
+                               "response formula here (docs/spatial-car.md, divergence D141)")
         if d.autocor is not None:                             # C04: brms too ('Explicit covariance terms can only be specified on mu')
             raise FormulaError(
                 f"{text!r}: an autocorrelation term in a distributional formula ({d.autocor.term}) is not supported: it belongs "
@@ -2606,6 +2621,7 @@ def parse_formula(formula: str | list[str], data: pd.DataFrame | None = None, fa
     autocors: list = []                                    # (autocorrelation term, piece as written); at most one (C04)
     sars: list = []                                        # (SAR term, piece as written); at most one (F02b)
     fcors: list = []                                       # (fcor() term, piece as written); at most one (F03a)
+    cars: list = []                                        # (CAR term, piece as written); at most one (F02a)
     saw_intercept_token = False
     remove_intercept = False
 
@@ -2680,6 +2696,11 @@ def parse_formula(formula: str | list[str], data: pd.DataFrame | None = None, fa
             from autobayes.fcor import parse_fcor
 
             fcors.append((parse_fcor(piece), piece))
+            continue
+        if _CAR_RE.match(piece):                                # brms's car() (F02a, docs/spatial-car.md)
+            from autobayes.car import parse_car
+
+            cars.append((parse_car(piece, formula), piece))
             continue
         if _AUTOCOR_RE.match(piece):                            # brms's ar(), ma(), arma() (C04); its other structures refused (D69)
             from autobayes.autocor import parse_autocor
@@ -2974,6 +2995,20 @@ def parse_formula(formula: str | list[str], data: pd.DataFrame | None = None, fa
                 "supported in this slice: no frozen brms case verifies the pair (brms takes it, the residuals then those of the "
                 "predictor with the process); docs/autocorrelation.md, divergence D70"
             )
+    car = None
+    if cars:                                                 # F02a: one CAR term, for a family that takes it, alone (D141)
+        from autobayes.car import check_car
+
+        if len(cars) > 1:
+            raise FormulaError(f"{formula!r}: {cars[0][1]!r} and {cars[1][1]!r}: one car() term per formula (brms: 'Can only model "
+                               "one term per autocorrelation class')")
+        car = cars[0][0]
+        others = ([f"the addition term {a.term!r}" for a in additions] + [f"the autocorrelation term {a.term!r}" for a, _ in autocors]
+                  + [f"the monotonic term {name!r}" for name in monotonics] + [f"the Gaussian process {g.term!r}" for g, _ in gps]
+                  + [f"the term {name!r}" for name in (*special_columns, *category_specific)]
+                  + [f"the group term '{t.canonical}'" for t in group_terms if t.custom]
+                  + [f"the SAR term {s.term!r}" for s, _ in sars] + [f"the fixed residual covariance {f.term!r}" for f, _ in fcors])
+        check_car(car, cars[0][1], response=response, trials=trials, fam=fam, others=others, formula=formula)
     for name, cols in special_columns.items():                # C06: a column me() or mi() reads is read by nothing else
         elsewhere = [*(p for p in predictors if p != name and p not in special_columns), *transform_columns, *mo_columns, *gp_columns,
                      *(c for other, oc in special_columns.items() if other != name for c in oc),
@@ -3001,6 +3036,7 @@ def parse_formula(formula: str | list[str], data: pd.DataFrame | None = None, fa
               *([trials] if trials is not None else []),
               *([offset.column] if offset is not None else []), *(c for a in additions for c in a.columns)}
     in_use |= set(autocor.columns) if autocor is not None else set()   # the time and series columns (C04)
+    in_use |= set(car.columns) if car is not None else set()   # the column of locations (F02a)
     derived_columns: dict[str, GroupTerm] = {}
     for term in group_terms:
         if not term.derived:
@@ -3085,6 +3121,7 @@ def parse_formula(formula: str | list[str], data: pd.DataFrame | None = None, fa
     sar = sars[0][0] if sars else None
     parts += [sar.term] if sar is not None else []                # the SAR term, after it (F02b)
     parts += [fcors[0][0].term] if fcors else []                  # the fixed residual covariance, after it (F03a)
+    parts += [car.term] if car is not None else []                # the CAR term, last (F02a)
     canonical_rhs = " + ".join(parts) if parts else "1"           # intercept-only population model: 'y ~ 1'
     if remove_intercept:
         canonical_rhs = "0 + " + canonical_rhs
@@ -3096,7 +3133,7 @@ def parse_formula(formula: str | list[str], data: pd.DataFrame | None = None, fa
     spec = ModelSpec(
         formula=formula.strip(), response=response, intercept=not remove_intercept, trials=trials,
         rhs=canonical_rhs, categoricals=categoricals, pop_terms=pop_terms, group_terms=tuple(group_terms),
-        offset=offset, additions=additions, gp_terms=tuple(g for g, _ in gps), autocor=autocor, sar=sar,
+        offset=offset, additions=additions, gp_terms=tuple(g for g, _ in gps), autocor=autocor, sar=sar, car=car,
         fcor=fcors[0][0] if fcors else None,
     )
     if sar is not None:                                      # F02b: the family and the terms next to it (D143)
@@ -3523,6 +3560,7 @@ def validate_data(spec: ModelSpec, data: pd.DataFrame, family: str = "gaussian",
               + ([spec.trials] if spec.trials else []) + ([spec.offset.column] if spec.offset is not None else [])
               + [c for a in spec.additions for c in a.columns])
     needed = list(dict.fromkeys(needed))                         # the offset column may also be a predictor
+    needed += [c for c in (spec.car.columns if spec.car is not None else ()) if c not in needed]   # F02a: the locations
     missing = [c for c in needed if c not in data.columns]
     if missing:
         raise FormulaError(f"columns not in data: {missing}")
@@ -3610,5 +3648,5 @@ def validate_data(spec: ModelSpec, data: pd.DataFrame, family: str = "gaussian",
         pop_terms=tuple(pop_term(t.name, t.kind, categoricals) for t in spec.pop_terms),   # levels now known
         group_terms=spec.group_terms, offset=spec.offset, additions=spec.additions, dpars=spec.dpars, monotonics=monotonics,
         gp_terms=gp_terms,
-        autocor=spec.autocor, sar=spec.sar, fcor=spec.fcor,
+        autocor=spec.autocor, sar=spec.sar, fcor=spec.fcor, car=spec.car,
     )

@@ -60,8 +60,8 @@ from dataclasses import replace
 import numpy as np
 import pandas as pd
 
-from autobayes.priors import (LKJ, Dirichlet, Flat, HalfNormal, HalfStudentT, InverseGamma, Prior, PriorError, Priors, StudentT,
-                              brms_prior)
+from autobayes.priors import (LKJ, Beta, Dirichlet, Flat, HalfNormal, HalfStudentT, InverseGamma, Prior, PriorError, Priors,
+                              StudentT, brms_prior)
 
 BRMS_VERSION = "2.23.0"          # the brms whose default_prior() this reproduces (the oracle fixtures' meta.brms)
 DF = 3.0                         # the degrees of freedom of brms's student_t(3, ., .) defaults
@@ -304,8 +304,11 @@ def default_priors(formula: str | list[str], data: pd.DataFrame, *, family: str 
     p)`` has no quantile prior, so none is returned; left ``None`` the quantile gets brms's ``beta(1, 1)``.
 
     ``data2`` (Tier F) is the constructor's: the matrices the formula reads (``sar(M, ...)``'s weight matrix, F02b; ``fcor(M)``'s
-    covariance, F03a), checked as the constructor checks them; a SAR term's ``lagsar`` or ``errorsar`` gets brms's flat prior,
-    which does not depend on them, and ``fcor(M)`` adds no prior class, as in brms."""
+    covariance, F03a; ``car(W, gr, ...)``'s adjacency, F02a), checked as the constructor checks them; a SAR term's ``lagsar`` or
+    ``errorsar`` gets brms's flat prior, which does not depend on them, and ``fcor(M)`` adds no prior class, as in brms. A CAR
+    term ``car(W, gr = site, type = ...)`` (docs/spatial-car.md) gets brms's ``student_t(3, 0, scale)`` on ``sdcar`` (a
+    group-level SD's default), the flat prior on ``car`` (escar; ``Flat()``, uniform on (0, 1)) and ``beta(1, 1)`` on ``rhocar``
+    (bym2)."""
     from autobayes.families import FAMILIES, get_family
     from autobayes.formula import DATA2_UNIVARIATE, FormulaError, check_data2, check_imputation, parse_formula
     from autobayes.multivariate import is_multivariate_formula, multivariate_default_priors
@@ -430,11 +433,17 @@ def default_priors(formula: str | list[str], data: pd.DataFrame, *, family: str 
     autocor = {part: Flat() for part, _ in spec.autocor.parts} if spec.autocor is not None else {}   # C04: flat ar and ma
     me = {t.operands[0]: Flat() for t in spec.me_terms}                  # C06: brms's flat meanme and sdme (sdme on (0, inf))
     sar = {spec.sar.parameter: Flat()} if spec.sar is not None else {}   # F02b: brms's flat lagsar / errorsar
+    car = {}
+    if spec.car is not None:                                            # F02a: the term checked against data2 as the model checks it
+        from autobayes.car import car_layout
+
+        car_layout(spec.car, data, data2)
+        car = {c: {"sdcar": HalfStudentT(DF, scale), "car": Flat(), "rhocar": Beta(1, 1)}[c] for c in spec.car.classes}
     priors = Priors(intercept=mark(intercept), b=mark(Flat()) if spec.pop_terms else None, sd=mark(sd) or None,
                     cor=mark(cor) or None, nu=mark(learned.get("nu")), simo=mark(simo) or None,
                     sdgp=mark(sdgp) or None, lscale=mark(lscale) or None, meanme=mark(me) or None, sdme=mark(me) or None,
                     **{k: mark(v) for k, v in auxiliary.items()}, **{k: mark(v) for k, v in autocor.items()},
-                    **{k: mark(v) for k, v in sar.items()})
+                    **{k: mark(v) for k, v in sar.items()}, **{k: mark(v) for k, v in car.items()})
     priors.validate(spec, fam)
     return priors
 
@@ -622,6 +631,8 @@ def prior_table(priors: Priors, spec, family="gaussian", *, center_predictors: b
         add(prior, part)
     for name, prior in priors.sar_priors(spec).items():              # a SAR term's lagsar / errorsar (F02b), bounded by M's eigenvalues
         add(prior, name, lb="min_eigenMsar", ub="max_eigenMsar")
+    for cls, prior in priors.car_priors(spec).items():                 # a CAR term's sdcar (lb 0), car and rhocar (in (0, 1); F02a)
+        add(prior, cls, lb="0", ub="" if cls == "sdcar" else "1")
     for cls, lb in (("meanme", ""), ("sdme", "0")):                    # C06: an me() term's latent values, brms's class rows
         me = priors.me_priors(spec, cls)                               # (lb 0 on sdme's) and one coefficient row me<x> each
         if me:

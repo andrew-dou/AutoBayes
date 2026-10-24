@@ -413,6 +413,9 @@ class FamilySpec:
     # brms's fixed residual covariance fcor(M) (F03a, docs/fcor.md): whether the family's likelihood takes the known covariance
     # sigma^2 M of its residuals over the fitted rows, set where a frozen brms case verifies it.
     fcor: bool = False
+    # brms's spatial CAR term car(M, gr, type) (F02a, docs/spatial-car.md): whether the family's linear predictor takes it, set
+    # where a frozen brms case verifies it. It adds one effect per location, rcar[gr_i], to the linear predictor.
+    car: bool = False
     # brms's measurement-error term me(x, sdx) and missing-value term mi(col) with the response's mi() (C06,
     # docs/missing-and-measurement-error.md): whether the family's linear predictor takes them, set where a frozen case verifies
     # it (the response's own mi() is an addition term, "mi" in ``addition_terms``).

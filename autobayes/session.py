@@ -84,6 +84,7 @@ def _summary_rows(model, idata) -> dict:
     names += [roles[k] for roles in getattr(model, "gp_names", {}).values() for k in ("sdgp", "lscale")]   # each GP's (C03)
     names += [v for k, v in getattr(model, "autocor_names", {}).items() if not k.endswith("_coordinate")]   # ar and ma (C04)
     names += list(getattr(model, "sar_names", {}).values())     # lagsar or errorsar (F02b)
+    names += [v for k, v in getattr(model, "car_names", {}).items() if k in ("sdcar", "car", "rhocar")]   # a CAR term's (F02a)
     zero = family_of(model).zero_parameter                      # the zero-inflation / hurdle probability (B06)
     own = model.spec.dpar_names                                 # E03: zi, hu or alpha with a formula: its intercept and coefficients
     for name in ([zero] if zero is not None else []) + [e.name for e in family_of(model).extra_parameters]:   # alpha, beta, ndt (D01)
@@ -185,7 +186,8 @@ def fit_record(model, fit, *, panel: dict | None = None, max_treedepth: int = 10
                        **({"nu": str(pr.nu)} if pr.nu is not None else {}),
                        **({label: str(prior) for label, prior in prior_labels(model).items()} if mixture else {}),
                        **{part: str(prior) for part, prior in pr.autocor_priors(s).items()},   # an ARMA term's ar and ma (C04)
-                       **{name: str(prior) for name, prior in pr.sar_priors(s).items()}},      # a SAR term's lagsar / errorsar (F02b)
+                       **{name: str(prior) for name, prior in pr.sar_priors(s).items()},       # a SAR term's lagsar / errorsar (F02b)
+                       **{cls: str(prior) for cls, prior in pr.car_priors(s).items()}},   # a CAR term's sdcar, car, rhocar (F02a)
             # a mixture (C05): its component families, identification and PyMC names
             **({"mixture": {"families": list(model.components), "order": ORDER,
                             "names": {k: list(v) if isinstance(v, tuple) else v for k, v in model.mixture_names.items()}}}
@@ -223,6 +225,9 @@ def fit_record(model, fit, *, panel: dict | None = None, max_treedepth: int = 10
                if getattr(s, "sar", None) is not None else {}),
             # a fixed residual covariance (F03a): the term, the data2 name of its matrix and the matrix's size
             **({"fcor": {"term": s.fcor.term, "matrix": s.fcor.matrix, "rows": d.fcor.n}} if getattr(s, "fcor", None) is not None else {}),
+            # a CAR term (F02a): the term, its locations and edges, and its PyMC names
+            **({"car": {"term": s.car.term, "type": s.car.type, "gr": s.car.gr, "matrix": s.car.matrix, "locations": d.car.Nloc,
+                        "edges": len(d.car.edges), "names": model.car_names}} if getattr(s, "car", None) is not None else {}),
             # each measurement-error term (C06): its columns and PyMC names
             **({"measurement_error": {t.name: {"column": t.operands[0], "noise_column": t.operands[1], "names": model.me_names[t.operands[0]]}
                                       for t in s.me_terms}} if s.me_terms else {}),

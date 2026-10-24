@@ -64,6 +64,8 @@ _NO_CDF = frozenset({"HalfStudentT"})            # positive-support priors whose
 # (``bounded_log_mass``); and ``Uniform(0, "min_Y")``, brms's default, the uniform distribution on the interval itself.
 BOUNDABLE = frozenset({"Normal", "StudentT", "HalfNormal", "HalfCauchy", "Exponential", "Gamma", "InverseGamma", "Uniform"})
 MIN_Y = "min_Y"                                  # brms's name of the smallest response, the upper bound of ndt
+_CAR_CLASSES = ("sdcar", "car", "rhocar")        # F02a: a CAR term's prior classes, in brms's order
+_CAR_DEFAULTS = {"sdcar": "student_t(3, 0, scale), as for sd", "car": "flat on (0, 1), ab.Flat()", "rhocar": "beta(1, 1)"}
 # D01: the priors each support of a family's extra parameter takes (families.spec.EXTRA_SUPPORTS)
 EXTRA_PRIORS = {"real": frozenset({"Normal", "StudentT"}), "positive": frozenset(_SCALE), "below_min_y": BOUNDABLE,
                 "unit": frozenset(_UNIT)}                       # E01, E02: brms's real<lower=0,upper=1> zoi, coi, quantile
@@ -423,6 +425,9 @@ class Priors:
     ``ar`` and ``ma`` are the priors of an autocorrelation term's coefficients (C04, ``ar()``, ``ma()``, ``arma()``;
     docs/autocorrelation.md): one location prior for every entry of the vector (brms's classes ``ar`` and ``ma``,
     unbounded; flat by default, ``Flat()``), required exactly for the parts the term has and refused for every other model.
+    ``sdcar``, ``car`` and ``rhocar`` are the priors of a spatial CAR term's parameters (F02a, ``car(M, gr, type)``;
+    docs/spatial-car.md): ``sdcar`` a positive-support prior, ``car`` (escar) and ``rhocar`` (bym2) a ``Beta`` or ``Flat()``,
+    the uniform on (0, 1), required exactly for the type (``car_priors``) and refused for every other model.
 
     A measurement-error term ``me(x, sdx)`` (C06, docs/missing-and-measurement-error.md) has a coefficient of class ``b``
     (brms's ``bsp``, coefficient ``mexsdx``), covered by ``b`` under the term's name, and its latent values a location and a
@@ -507,6 +512,12 @@ class Priors:
     # its linear predictor, {"mum3": {"intercept": ..., "b": ..., "sd": ...}} (brms's dpar = mum3), required for a category with
     # a formula of its own; the other categories take intercept, b and sd above; refused for every other model
     dpars: Mapping[str, Mapping[str, object]] | None = None
+    # F02a, a spatial CAR term car(M, gr, type) (docs/spatial-car.md): the SD of its effects (brms class ``sdcar``, a
+    # positive-support prior), the escar's spatial dependence (class ``car``) and the BYM2 mixing proportion (class ``rhocar``),
+    # each in (0, 1) under a Beta prior or Flat() (the uniform there, brms's flat prior on the interval); refused without the term
+    sdcar: Prior | None = None
+    car: Prior | None = None
+    rhocar: Prior | None = None
 
     def __post_init__(self):
         if isinstance(self.components, list):                         # one value for equal component lists (C05)
@@ -572,6 +583,9 @@ class Priors:
         if self.lagsar is not None or self.errorsar is not None:    # F02b
             raise PriorError("lagsar and errorsar are the priors of a SAR term sar(M, type = ...) (docs/spatial-sar.md); a multivariate "
                              "model takes neither: a SAR term in a multivariate model is not supported (divergence D143)")
+        if any(getattr(self, k) is not None for k in _CAR_CLASSES):    # F02a
+            raise PriorError("sdcar, car and rhocar are the priors of a CAR term car() (docs/spatial-car.md); a multivariate model "
+                             "takes none: a CAR term in a multivariate formula is not supported (divergence D141)")
         if self.sdgp is not None or self.lscale is not None:          # C03: a multivariate formula takes no gp()
             raise PriorError("sdgp and lscale are the priors of a Gaussian process gp(x) (docs/gaussian-processes.md); a multivariate "
                              "model takes neither: a Gaussian process in a multivariate formula is not supported (divergence D56)")
@@ -948,6 +962,31 @@ class Priors:
             out[name] = prior
         return out
 
+    def car_priors(self, spec) -> dict[str, Prior]:
+        """The priors of a CAR term's parameters (F02a, ``spec.car``): ``{"sdcar": ..., "car": ...}`` (escar), ``{"sdcar": ...}``
+        (esicar, icar) or ``{"sdcar": ..., "rhocar": ...}`` (bym2): ``sdcar`` a positive-support prior, ``car`` and ``rhocar`` a
+        ``Beta`` or ``Flat()`` (the uniform on (0, 1)). Coverage is exact: each class the term has needs its prior, and the prior
+        of a class it lacks is refused."""
+        term = getattr(spec, "car", None)
+        wanted = term.classes if term is not None else ()
+        out: dict[str, Prior] = {}
+        for name in _CAR_CLASSES:
+            prior = getattr(self, name)
+            if name not in wanted:
+                if prior is not None:
+                    raise PriorError(f"do not pass {name}: " + (f"the CAR term '{term.term}' has no {name}" if term is not None else
+                                                                "the formula has no CAR term car()"))
+                continue
+            if prior is None:
+                raise PriorError(f"the CAR term '{term.term}' needs a prior on {name}: pass {name}=... (brms class {name}; brms's "
+                                 f"default is {_CAR_DEFAULTS[name]}, which ab.default_priors() returns)")
+            allowed = _SCALE if name == "sdcar" else _UNIT | {"Flat"}
+            if not isinstance(prior, Prior) or prior.name not in allowed:
+                kind = "a positive-support prior" if name == "sdcar" else "a prior on (0, 1) or Flat(), the uniform there"
+                raise PriorError(f"prior for {name!r} must be {kind} ({sorted(allowed)}), got {prior}")
+            out[name] = prior
+        return out
+
     def me_priors(self, spec, cls: str) -> dict[str, Prior]:
         """The prior of class ``cls`` (``"meanme"``, the location of a measurement-error term's latent values, or ``"sdme"``,
         their scale; C06) of each ``me(x, sdx)`` term, keyed by its noisy column ``x`` in formula order: a location prior
@@ -1102,6 +1141,7 @@ class Priors:
         self.lscale_priors(spec)
         self.me_priors(spec, "meanme")                                # and of the measurement-error terms' latent values (C06)
         self.me_priors(spec, "sdme")
+        self.car_priors(spec)                                         # and of a CAR term's parameters (F02a)
         scale = fam.scale_parameter                                   # "sigma", "shape", "phi" or None
         zero = fam.zero_parameter                                     # "zi", "hu" or None (B06)
         extras = {e.name: e for e in fam.extra_parameters}            # alpha, beta or ndt (D01)
@@ -1311,7 +1351,7 @@ class Priors:
         form = ("Priors(components=[ab.Priors(intercept=..., b=..., sigma=...), ...], theta=ab.Dirichlet(...)), one Priors per "
                 "component (brms's dpar = mu<k> and class sigma<k>; docs/mixtures.md)")
         top = [name for name in ("intercept", "b", "sd", "sigma", "shape", "phi", "cor", "nu", "zi", "hu", "simo", "meanme", "sdme",
-                                 "alpha", "beta", "ndt", "zoi", "coi", "kappa", "quantile", "xi")
+                                 "alpha", "beta", "ndt", "zoi", "coi", "kappa", "quantile", "xi", *_CAR_CLASSES)
                if getattr(self, name) is not None]
         if top:
             raise PriorError(f"a mixture's priors are per component, {form}; {top} at the top level do not apply")

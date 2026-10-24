@@ -221,6 +221,10 @@ class _Parser:
         raise self._error("expected a number, a name, a function or '('")
 
     def _call(self, name: str, pos: int):
+        if name == "car":                                                  # F02a: brms's CAR term, not a function
+            raise FormulaError(f"{self.text!r}: car() at position {pos} is brms's spatial CAR term (F02a), not a function of the "
+                               "non-linear expression; a non-linear model takes no CAR term in this slice (docs/spatial-car.md, "
+                               "divergence D141)")
         if name in ("ar", "ma", "arma"):                                   # C04: brms's autocorrelation term, not a function
             raise FormulaError(f"{self.text!r}: {name}() at position {pos} is brms's autocorrelation term (C04), not a function of the "
                                "non-linear expression; a non-linear model takes no autocorrelation term in this slice (brms adds one "
@@ -418,6 +422,7 @@ class NonlinearSpec:
     monotonics = ()
     gp_terms = ()                         # Gaussian processes (C03): none, as a non-linear model takes none (D61)
     autocor = None                        # an autocorrelation term (C04): none, as a non-linear model takes none (D70)
+    car = None                            # a CAR term (F02a): none, as a non-linear model takes none (D141)
     me_terms = ()                         # me() and mi() terms and columns with missing values (C06): none (D72, D73)
     mi_terms = ()
     missing_columns = ()
@@ -624,6 +629,9 @@ def parse_nonlinear(formulas, data: pd.DataFrame | None = None, family: str = "g
         if getattr(d, "sar", None) is not None:                        # F02b: not verified in a parameter's formula
             raise FormulaError(f"{text!r}: the SAR term {d.sar.term!r} in a non-linear parameter's formula is not supported in this "
                                "slice (docs/spatial-sar.md, divergence D143)")
+        if d.car is not None:                                          # F02a: not verified in a parameter's formula
+            raise FormulaError(f"{text!r}: the CAR term {d.car.term!r} in a non-linear parameter's formula is not supported in this "
+                               "slice (docs/spatial-car.md, divergence D141)")
         if d.me_terms or d.mi_terms:                                   # C06: not verified in a parameter's formula
             t = (*d.me_terms, *d.mi_terms)[0]
             what, did = ("measurement-error", "D73") if t.kind == "measurement_error" else ("missing-value", "D72")
@@ -748,7 +756,9 @@ def check_nonlinear_priors(priors: Priors, spec: NonlinearSpec, fam) -> None:
                                (("ar", "ma"), "an autocorrelation term ar(), ma(), arma() (docs/autocorrelation.md)",
                                 "a non-linear model takes no autocorrelation term (divergence D70)"),
                                (("meanme", "sdme"), "a measurement-error term me(x, sdx) (docs/missing-and-measurement-error.md)",
-                                "a non-linear model takes no measurement-error term (divergence D73)")):
+                                "a non-linear model takes no measurement-error term (divergence D73)"),
+                               (("sdcar", "car", "rhocar"), "a CAR term car() (docs/spatial-car.md)",
+                                "a non-linear model takes no CAR term (divergence D141)")):
         given = [f for f in fields if getattr(priors, f) is not None]
         if given:
             raise PriorError(f"{' and '.join(given)} {'is' if len(given) == 1 else 'are'} the prior{'s' if len(given) > 1 else ''} "

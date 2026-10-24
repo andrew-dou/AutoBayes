@@ -101,6 +101,9 @@
  },
  "gate": {
   "expect": "fail",
-  "reason": "F02_spatial_car_sar not implemented; remove this field when it lands"
+  "gates": [
+   "g1"
+  ],
+  "reason": "brms's car_scale is INLA's perturbed BYM2 scaling (Q + max(diag Q) sqrt(eps) I, conditioned on sum = 0) with its float rounding: 0.5163859009642695, 1.7e-10 below that definition's value 0.5163859011368434 (computed exactly from Q's eigendecomposition), beyond G1's 1e-12; every other gate passes (through the scaling factor the log density is within 6.4e-11 and the graph's linear predictor within 6.1e-10 relative of brms's); D140"
  }
 }

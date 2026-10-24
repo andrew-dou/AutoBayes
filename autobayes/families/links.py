@@ -129,6 +129,7 @@ def check_link_formula(spec, fam) -> None:
     found += [f"the missing-value term {t.name!r}" for t in getattr(spec, "mi_terms", ())]
     found += [f"the category-specific term {t.name!r}" for t in getattr(spec, "cs_terms", ())]
     found += [f"the autocorrelation term {spec.autocor.term!r}"] if getattr(spec, "autocor", None) is not None else []
+    found += [f"the CAR term {spec.car.term!r}"] if getattr(spec, "car", None) is not None else []   # F02a
     found += [f"the addition term {a.term!r}" for a in getattr(spec, "additions", ())]
     found += [f"the distributional formula '{d.formula}'" for d in getattr(spec, "dpars", ())]
     if found:
