@@ -31,7 +31,7 @@ from dataclasses import dataclass
 import numpy as np
 import pandas as pd
 
-from autobayes.formula import _IDENT, FormulaError, _split_top_level
+from autobayes.formula import _IDENT, FormulaError, _split_top_level, data2_mapping
 
 SAR_PARAMETERS = {"lag": "lagsar", "error": "errorsar"}       # brms's parameter (and prior class) of each type
 BOUNDS = ("min_eigenMsar", "max_eigenMsar")                   # brms's names of the bounds, as its prior table writes them
@@ -169,7 +169,7 @@ def sar_design(term: Sar, data2: Mapping | None, n: int) -> SarDesign:
     [-1, 1] (to ``SPECTRUM_TOLERANCE``): brms bounds the parameter by the smallest and largest eigenvalue, and ``1 - rho
     lambda`` stays positive over that interval only then (D143)."""
     name = term.matrix
-    _check_mapping(data2)
+    data2_mapping(data2)
     if data2 is None or name not in data2:
         given = "no data2" if data2 is None else f"data2 with {sorted(map(str, data2))}"
         raise FormulaError(f"the SAR term {term.term!r} reads the matrix {name!r} from data2, and the model was given {given}: pass "
@@ -208,24 +208,6 @@ def sar_design(term: Sar, data2: Mapping | None, n: int) -> SarDesign:
                            "for the SAR parameter")
     return SarDesign(term=term.term, type=term.type, parameter=term.parameter, matrix=name, M=M, eigenvalues=eigenvalues,
                      symmetric=symmetric)
-
-
-def _check_mapping(data2) -> None:
-    if data2 is not None and not isinstance(data2, Mapping):
-        raise FormulaError(f"data2 must be a mapping from a matrix's name to the matrix, got {type(data2).__name__}")
-
-
-def check_data2(spec, data2: Mapping | None) -> None:
-    """``data2`` holds exactly the matrices the formula's terms read (``sar()``'s M), keyed by name; an entry no term reads is
-    refused rather than ignored."""
-    _check_mapping(data2)
-    if data2 is None:
-        return
-    read = {spec.sar.matrix} if getattr(spec, "sar", None) is not None else set()
-    unread = sorted(str(k) for k in data2 if k not in read)
-    if unread:
-        raise FormulaError(f"data2 holds {unread}, which no term of the formula reads (data2 is read by sar(M, ...) here; "
-                           "docs/spatial-sar.md)")
 
 
 # -- the model ---------------------------------------------------------------------------------------------------------

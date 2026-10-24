@@ -58,6 +58,7 @@ _MO_RE = re.compile(r"(?<![A-Za-z0-9_.])mo\s*\(")                               
 _GP_RE = re.compile(r"(?<![A-Za-z0-9_.])gp\s*\(")                                                 # brms's gp() (C03)
 _AUTOCOR_RE = re.compile(r"(?<![A-Za-z0-9_.])(ar|ma|arma)\s*\(")                                     # brms's ARMA terms (C04)
 _SAR_RE = re.compile(r"(?<![A-Za-z0-9_.])sar\s*\(")                                                      # brms's SAR term (F02b)
+_FCOR_RE = re.compile(r"(?<![A-Za-z0-9_.])fcor\s*\(")                                                 # brms's fcor() (F03a)
 _ME_RE = re.compile(r"(?<![A-Za-z0-9_.])me\s*\(")                                                 # brms's me() (C06)
 RESPONSE_DIM, RESPONSE_DIM_T = "__resp__", "__resp_T__"     # the graph's response coordinates (Lrescor, rescor, the joint response)
 PREDICTION_DIM = "response"                                 # predict()'s response dimension, brms's last axis of its prediction arrays
@@ -183,6 +184,10 @@ def parse_multivariate(formula, data: pd.DataFrame | None = None, family: str = 
         if _SAR_RE.search(piece):                             # F02b
             raise FormulaError(f"{formula!r}: {piece!r}: a SAR term in a multivariate formula is not verified in this slice; write it "
                                "in a univariate model (docs/spatial-sar.md, divergence D143)")
+        if _FCOR_RE.search(piece):                            # F03a: brms gives each response its own Mfcor_y
+            raise FormulaError(f"{formula!r}: {piece!r}: a fixed residual covariance in a multivariate formula is not verified in "
+                               "this slice (brms gives each response its own matrix, Mfcor_y and Mfcor_y2); write it in a univariate "
+                               "model (docs/fcor.md, divergence D144)")
         if _ME_RE.search(piece):
             raise FormulaError(f"{formula!r}: {piece!r}: a measurement-error term in a multivariate model is not supported in this "
                                "slice; me() belongs to a univariate Gaussian model here (docs/missing-and-measurement-error.md, "
@@ -285,6 +290,9 @@ def _parse_imputation(formulas, data, family, categorical, *, rescor) -> Multiva
             raise FormulaError(f"{s.formula!r}: the Gaussian process {s.gp_terms[0].term!r} in a multivariate model is not verified in this "
                                "slice (each response would have its own process, brms's sdgp_y and lscale_y); write it in a univariate "
                                "model (docs/multivariate.md, divergence D56)")
+        if s.fcor is not None:                                # F03a: likewise
+            raise FormulaError(f"{s.formula!r}: {s.fcor.term} in a multivariate model is not verified in this slice; write it in a "
+                               "univariate model (docs/fcor.md, divergence D144)")
         if s.autocor is not None:                             # C04: likewise
             raise FormulaError(f"{s.formula!r}: the autocorrelation term {s.autocor.term!r} in a multivariate model is not verified in "
                                "this slice (brms gives each response its own ARMA term, ar_y and ar_y2); write it in a univariate model "

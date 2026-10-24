@@ -118,7 +118,6 @@ FORMULA_REFUSALS = [
     ("y ~ x + ar(t, g, cov = maybe)", r"cov must be TRUE or FALSE"),
     ("y ~ x + cosy(t, g)", r"brms's compound symmetry, cosy\(\) is not offered here; .* divergence D69"),
     ("y ~ x + car(M, gr = g)", r"spatial conditional autoregression, car\(\) .* divergence D69"),
-    ("y ~ x + fcor(M)", r"fixed residual covariance matrix, fcor\(\) .* D69"),
     ("y ~ x + unstr(t, g)", r"unstructured residual covariance, unstr\(\) .* D69"),
     ("y ~ x + ar(t, g:h)", r"gr = g:h: gr must be one column name here \(brms's gr = g:h groups the series by two columns.*D70"),
     ("y ~ x + ar(time = log(t), gr = g)", r"time = log\(t\): time must be one column name here"),

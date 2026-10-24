@@ -217,6 +217,8 @@ def fit_record(model, fit, *, panel: dict | None = None, max_treedepth: int = 10
             **({"sar": {"term": s.sar.term, "type": s.sar.type, "matrix": s.sar.matrix, "n": d.sar.n,
                         "bounds": [d.sar.lower, d.sar.upper], "names": model.sar_names}}
                if getattr(s, "sar", None) is not None else {}),
+            # a fixed residual covariance (F03a): the term, the data2 name of its matrix and the matrix's size
+            **({"fcor": {"term": s.fcor.term, "matrix": s.fcor.matrix, "rows": d.fcor.n}} if getattr(s, "fcor", None) is not None else {}),
             # each measurement-error term (C06): its columns and PyMC names
             **({"measurement_error": {t.name: {"column": t.operands[0], "noise_column": t.operands[1], "names": model.me_names[t.operands[0]]}
                                       for t in s.me_terms}} if s.me_terms else {}),

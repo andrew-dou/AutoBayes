@@ -23,7 +23,7 @@ summaries. brms accepts any pair of the model's variables, whether or not the fo
 
 Only what the frozen cases and the prediction gates verify is offered: models whose expected response is one value per row
 (not the binomial family, whose grid needs trials, nor the cumulative, categorical or mixture families), without offsets,
-``mo()``, ``gp()``, ``me()``, ``mi()``, autocorrelation, addition terms or distributional formulas; anything else is refused
+``mo()``, ``gp()``, ``me()``, ``mi()``, autocorrelation, ``fcor()``, addition terms or distributional formulas; anything else is refused
 naming the construct (divergence D99). brms's other arguments (``conditions``, ``int_conditions``, ``re_formula``, ``method``,
 ``robust = FALSE``, interactions of three predictors, surface plots, plots) are not offered (divergence D98).
 """
@@ -52,6 +52,7 @@ def _refuse_unsupported_effects(model) -> None:
         (bool(getattr(s, "mi_terms", ())) or bool(getattr(s, "missing_columns", ())), lambda: "missing values modelled by mi()"),
         (s.autocor is not None, lambda: f"the autocorrelation term {s.autocor.term!r}"),
         (getattr(s, "sar", None) is not None, lambda: f"the SAR term {s.sar.term!r}"),                          # F02b (D143)
+        (getattr(s, "fcor", None) is not None, lambda: f"the fixed residual covariance {s.fcor.term!r}"),   # F03a
         (bool(s.dpars), lambda: f"a distributional formula for {', '.join(s.dpar_names)}"),
         (bool(s.additions), lambda: f"the addition term(s) {', '.join(a.term for a in s.additions)}"),
     ]

@@ -22,6 +22,13 @@ def _log_likelihood(model, post, eta):
 
 
 def _likelihood_lines(model) -> list[str]:
+    term = getattr(model.spec, "fcor", None)                        # F03a: the rows' joint normal with the fixed covariance
+    if term is not None:
+        n = model.design.n
+        return [scale_line(model), "", "Likelihood",
+                f"  y ~ MultiNormal(mu, sigma^2 * {term.matrix}) over the {n} fitted rows: {term.term}, brms's normal_fcor_hom; {term.matrix} is",
+                f"  the known {n} x {n} residual covariance from data2 (brms's Mfcor), read in data order; its Cholesky factor L (brms's",
+                "  Lfcor) gives z = L^-1 (y - mu) / sigma and log p(y) = sum_i (-z_i^2 / 2 - log sigma - log L_ii - log(2 pi) / 2)"]
     return [scale_line(model), "", "Likelihood", f"  y_i ~ Normal(mu_i, {scale_symbol(model)})"]
 
 
@@ -71,6 +78,7 @@ GAUSSIAN = FamilySpec(
     nonlinear_likelihood=_nonlinear_likelihood,                     # C02: nl = TRUE, verified against gauss_nonlinear_exp and _terms
     autocorrelation=True,                                           # C04: ar(), ma(), arma(), verified against gauss_ar1, gauss_arma11
     sar=True,                                                       # F02b: sar(M, type = ), verified against gauss_sar_lag, gauss_sar_error
+    fcor=True,                                                      # F03a: fcor(M), verified against gauss_fcor and gauss_fcor_varint
     measurement_error=True,                                         # C06: me(x, sdx), verified against gauss_me
     missing_values=True,                                            # C06: mi(col) with col | mi() ~ ..., verified against gauss_mi
     shrinkage=True,                                                 # D07: horseshoe() and R2D2() on b, verified against gauss_horseshoe and gauss_r2d2

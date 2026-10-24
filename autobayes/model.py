@@ -35,7 +35,9 @@ brms's autocorrelation terms ``ar()``, ``ma()`` and ``arma()`` in the regression
 are added to the Gaussian linear predictor last, on the residuals of every other term (``autobayes.autocor``;
 ``Design.autocor`` holds the series of the fitted rows). brms's ``sar(M, type = "lag" | "error")`` (F02b, docs/spatial-sar.md)
 replaces the Gaussian likelihood with the joint SAR density of the responses (``autobayes.sar``; ``M`` comes in ``data2``,
-``Design.sar`` holds it and its eigenvalues).
+``Design.sar`` holds it and its eigenvalues). brms's fixed residual covariance ``fcor(M)`` (F03a, docs/fcor.md) makes the
+Gaussian likelihood the rows' joint normal with covariance ``sigma^2 M``, ``M`` from ``data2`` (``autobayes.fcor``; ``Design.fcor``
+holds ``M`` and its Cholesky factor).
 """
 from __future__ import annotations
 
@@ -52,6 +54,7 @@ from autobayes.families import FAMILIES, FamilySpec, get_family
 from autobayes.formula import (Categorical, FormulaError, ModelSpec, addition_data, bambi_group_name, binomial_counts, by_levels_of,
                                categorical_labels, check_imputation, factor_column, group_labels, interaction_cells,
                                measurement_values, missing_values, mm_weights, parse_formula, pop_term_design, sd_tag)
+from autobayes.formula import DATA2_UNIVARIATE, check_data2   # Tier F: brms's data2 (F02b, F03a)
 from autobayes.priors import AUXILIARY, PriorError, Priors, describe_prior
 
 _bambi_group_name = bambi_group_name          # ``1|g`` for the varying intercept of ``g``, ``x|g`` for the slope of ``x``
@@ -201,6 +204,7 @@ class Design:
     gp: Mapping[str, GPBlock] = field(default_factory=lambda: MappingProxyType({}))   # each Gaussian process's block, by column (C03)
     autocor: object | None = None      # autocor.AutocorDesign: the series of an autocorrelation term on the fitted rows (C04), or None
     sar: object | None = None          # sar.SarDesign: a SAR term's weight matrix and its eigenvalues on the fitted rows (F02b), or None
+    fcor: object | None = None         # fcor.FcorDesign: the fixed residual covariance of an fcor(M) term on the fitted rows (F03a), or None
     measurement_error: Mapping[str, MeasurementBlock] = field(default_factory=lambda: MappingProxyType({}))   # each me() term's block, by noisy column (C06)
     missing: Mapping[str, MissingBlock] = field(default_factory=lambda: MappingProxyType({}))   # each column whose missing values are parameters (C06)
     category_specific: Mapping[str, np.ndarray] = field(default_factory=lambda: MappingProxyType({}))   # each cs() term's column on the fitted rows (D04; brms's Xcs), by column
@@ -322,9 +326,10 @@ class Model:
                  categorical: Mapping[str, object] | None = None, nu: float | None = None, link: str | None = None,
                  families: list[str] | None = None, order: str | bool | None = None, imputed: tuple[str, ...] = (),
                  quantile: float | None = None, data2: Mapping[str, object] | None = None):
-        """``data2`` (F02b) holds the matrices the formula's terms read by name, brms's ``data2``: ``sar(M, ...)``'s weight
-        matrix over the fitted rows, ``data2={"M": matrix}`` (a NumPy array or a DataFrame, in data order); an entry no term
-        reads is refused. ``imputed`` (C06) is set by ``MultivariateModel`` for the models of its responses: the responses of its
+        """``data2`` (Tier F) holds the matrices the formula's terms read by name, brms's ``data2``: ``sar(M, ...)``'s weight
+        matrix (F02b) and ``fcor(M)``'s covariance (F03a, docs/fcor.md) over the fitted rows, ``data2={"M": matrix}`` (a NumPy array
+        or a DataFrame, in data order); an entry no term reads is refused (``formula.check_data2``). ``imputed`` (C06) is set by
+        ``MultivariateModel`` for the models of its responses: the responses of its
         ``col | mi() ~ ...`` formulas, whose missing values are parameters (``formula.check_imputation``); empty otherwise.
         ``quantile`` (E02) fixes the asymmetric Laplace family's quantile (brms's ``bf(y ~ ..., quantile = p)``): the model's
         spec is then the family's with that parameter fixed (``FamilySpec.with_fixed``) and ``self.quantile`` its value."""
@@ -481,16 +486,21 @@ class Model:
                     f"no series of {self.spec.autocor.term} has more than {longest} row(s): {unread} multiply no lagged residual and "
                     "are informed by their prior alone (brms keeps them too)"
                 )
-        from autobayes.sar import check_data2, sar_design
+        from autobayes.fcor import fcor_design
+        from autobayes.sar import sar_design
 
         self._sar_design = sar_design(self.spec.sar, data2, len(self.data)) if self.spec.sar is not None else None
-        check_data2(self.spec, data2)                         # F02b: data2 holds what sar() reads, and nothing else
+        self._fcor_design = fcor_design(self.spec.fcor, data2, len(self.data)) if self.spec.fcor is not None else None   # F03a
+        check_data2(self.spec, data2)                         # Tier F: data2 holds what sar() and fcor() read, and nothing else
 
         bambi_family = fam.bambi_family()
         if any(a.kind not in ("mi", "dec") for a in self.spec.additions):   # brms's response addition terms act on the likelihood (B02;
                                                                           # F04: the wiener likelihood reads dec() itself)
             from autobayes.likelihoods import addition_family
             bambi_family = addition_family(bambi_family, fam, addition_data(self.spec, self.data))
+        if self._fcor_design is not None:                    # F03a: the rows' joint normal with covariance sigma^2 M
+            from autobayes.fcor import fcor_family
+            bambi_family = fcor_family(bambi_family, self._fcor_design)
         bambi_data = self.data
         own = self.missing_names.get(self.spec.response)      # C06: the response's missing values are parameters (| mi())
         if own is not None:
@@ -557,6 +567,8 @@ class Model:
             check_graph(self)
         if self.spec.autocor is not None:                    # C04: the graph's ARMA terms against brms's recursion
             self._check_autocor_effects()
+        if self._fcor_design is not None:                    # F03a: the graph's likelihood against the dense multivariate normal
+            self._check_fcor_likelihood()
         if fam.discrete:
             rv = self.pymc_model[self.names["y"]]
             obs = np.asarray(self.pymc_model.rvs_to_values[rv].eval())
@@ -871,7 +883,7 @@ class Model:
                       dec=additions.get("dec"),                                             # F04: the wiener decisions
                       dpars=MappingProxyType({d.response: self._dpar_design(d) for d in self.spec.dpars}),
                       monotonic=MappingProxyType(self._monotonic_design()), gp=MappingProxyType(self._gp_design()),
-                      autocor=self._autocor_design, sar=self._sar_design,                    # F02b
+                      autocor=self._autocor_design, sar=self._sar_design, fcor=self._fcor_design,   # F02b, F03a
                       measurement_error=MappingProxyType(self._measurement_design()),   # C06
                       missing=MappingProxyType(self._missing_design()),
                       category_specific=MappingProxyType(self._category_specific_design()))   # D04
@@ -1318,6 +1330,29 @@ class Model:
         if got.shape != expected.shape or not np.allclose(got, expected, rtol=1e-10, atol=1e-10):
             raise RuntimeError(f"the graph's {parent!r} does not add brms's ARMA term {self.spec.autocor.term!r} on the residuals; "
                                f"largest difference {np.max(np.abs(got - expected)) if got.shape == expected.shape else got.shape}")
+
+    # -- the fixed residual covariance (F03a) -------------------------------------------
+    def _check_fcor_likelihood(self) -> None:
+        """The likelihood of an ``fcor(M)`` model read off the graph (F03a): at a point a small, distinct step from the graph's
+        initial point (so that the predictor varies by row), the sum of the observed variable's elementwise log density equals
+        ``log MultiNormal(y | mu, sigma^2 M)`` computed from the dense covariance (``fcor.fcor_values``), with the graph's own
+        ``mu`` and ``sigma`` at that point."""
+        import pymc as pm
+
+        from autobayes.fcor import fcor_values
+
+        pmm, n = self.pymc_model, self.names
+        rv = pmm[n["y"]]
+        start = pmm.initial_point()
+        point = {name: np.asarray(v, dtype=float) + 0.05 * (1.0 + np.arange(np.size(v))).reshape(np.shape(v)) / max(np.size(v), 1)
+                 for name, v in start.items()}
+        outputs = pmm.replace_rvs_by_values([pm.logp(rv, pmm.rvs_to_values[rv]).sum(), pmm[self.family_spec.parent], pmm[n["sigma"]]])
+        fn = pmm.compile_fn(outputs, inputs=pmm.value_vars, point_fn=True, on_unused_input="ignore", mode="FAST_COMPILE")
+        got, mu, sigma = (np.asarray(v, dtype=float) for v in fn(point))
+        expected = fcor_values(self.design.y, mu.ravel(), sigma, self.design.fcor)
+        if not np.isclose(got, expected, rtol=1e-10, atol=1e-10):
+            raise RuntimeError(f"the graph's likelihood of {self.spec.fcor.term} is {float(got)!r}; MultiNormal(y | mu, sigma^2 "
+                               f"{self.spec.fcor.matrix}) is {float(expected)!r}")
 
     # -- measurement-error and missing-value terms (C06) ---------------------------------
     def _add_measurement_effects(self, eta):
@@ -2304,6 +2339,7 @@ class Model:
                     + ([f"distributional formula(s) for {', '.join(s.dpar_names)}"] if s.dpars else [])
                     + ([f"autocorrelation term {s.autocor.term}"] if s.autocor is not None else [])
                     + ([f"simultaneous autoregressive term {s.sar.term}"] if s.sar is not None else [])          # F02b
+                    + ([f"fixed residual covariance {s.fcor.term}"] if s.fcor is not None else [])    # F03a
                     + (["measurement-error term(s)"] if s.me_terms else []) + (["missing-value term(s)"] if s.mi_terms else [])
                     + ([f"a shrinkage prior on b ({brms_spelling(pr.b).split('(')[0]})"] if self.shrinkage_names else [])   # D07
                     + (["category-specific effect(s) cs()"] if s.cs_terms else []))                      # D04
@@ -2335,6 +2371,11 @@ class Model:
         if s.sar is not None:                                # F02b: the SAR term's weight matrix
             from autobayes.sar import data_lines
             lines += data_lines(self)
+        if s.fcor is not None:                               # F03a: the matrix from data2
+            M = d.fcor.M
+            lines += [f"  fcor      : {s.fcor.term}: data2[{s.fcor.matrix!r}], the {d.n} x {d.n} covariance of the residuals before the "
+                      f"factor sigma^2 (brms's Mfcor), its rows and columns the fitted rows in data order; diagonal {np.diag(M).min():.4g} "
+                      f"to {np.diag(M).max():.4g}, log det {np.linalg.slogdet(M)[1]:.6g}"]
         for t in s.transform_terms:
             tr, col = t.transform, d.X_raw[:, s.columns.index(t.name)]
             lines += [f"  {t.name:<10}: in-formula transform of {tr.column!r}, {tr.expression(f'{tr.column}_i')}, range {col.min():.4f} to "
@@ -3039,14 +3080,14 @@ def gaussian(formula: str | list[str], data: pd.DataFrame, priors: Priors, *, ce
     "a ~ 1 + (1 | g)", "b ~ 1"]`` with ``Priors(nlpars={"a": {"b": ..., "sd": ...}, "b": {"b": ...}}, sigma=...)``, brms's
     ``bf(y ~ a * exp(b * x), a ~ 1 + (1 | g), b ~ 1, nl = TRUE)``; ``loop`` is brms's option of that name (only its default,
     True, is offered: divergence D63), and a non-linear model takes no multivariate formula or ``rescor`` (divergence D62).
-    ``data2`` (F02b, docs/spatial-sar.md) holds the matrices the formula reads by name, brms's ``data2``: ``y ~ x + sar(M, type =
-    "lag")`` with ``data2={"M": matrix}``, the weight matrix over the rows in data order, and ``Priors(..., lagsar=ab.Flat())``;
-    a non-linear or multivariate model takes none (divergence D143)."""
+    ``data2`` (Tier F) holds the matrices the formula reads by name, brms's ``data2``: ``y ~ x + sar(M, type = "lag")`` with
+    ``data2={"M": matrix}``, the weight matrix over the rows in data order, and ``Priors(..., lagsar=ab.Flat())`` (F02b,
+    docs/spatial-sar.md), or ``y ~ x + fcor(M)``, the residual covariance (F03a, docs/fcor.md); a non-linear or multivariate model
+    takes none (divergences D143, D144)."""
     from autobayes.multivariate import MultivariateModel, is_multivariate_formula     # C01
 
-    if data2 is not None and (nl or rescor is not None or is_multivariate_formula(formula)):   # F02b
-        raise FormulaError("data2 is read by a SAR term sar(M, type = ...), which a non-linear or multivariate model does not take "
-                           "in this slice (docs/spatial-sar.md, divergence D143)")
+    if data2 is not None and (nl or rescor is not None or is_multivariate_formula(formula)):   # F02b, F03a
+        raise FormulaError(DATA2_UNIVARIATE)
     if nl:                                                             # C02: a non-linear model
         from autobayes.nonlinear import NonlinearModel
 

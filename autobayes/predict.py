@@ -60,6 +60,10 @@ fitted rows: ``kind="linear"`` is the linear predictor ``mu`` (brms's ``posterio
 response, ``(I - rho M)^-1 mu`` under the lag model (brms's ``posterior_epred``) and ``mu`` under the error model (where brms's
 fails, divergence D142), and ``kind="response"`` draws from the joint SAR distribution of the rows. New rows are refused: ``M``
 is a matrix over the fitted rows (divergence D143).
+A model with a fixed residual covariance ``fcor(M)`` (F03a, docs/fcor.md) is predicted in this layer on its fitted rows: the
+linear predictor and expected response are those without the term (brms's ``posterior_linpred`` and ``posterior_epred``),
+and ``kind="response"`` draws the rows jointly, ``mu + sigma L z`` with ``L`` the Cholesky factor of ``M`` and ``z`` standard
+normal (brms's ``posterior_predict``). New rows are refused: ``M`` covers the fitted rows (divergence D145).
 
 ``new_groups`` decides what happens when ``newdata`` contains a level of the grouping
 factor that was not in the training data (a population-only model has no grouping factor: it
@@ -480,6 +484,11 @@ def _predict_by_hand(model, idata, df: pd.DataFrame | None, kind: str, seed, pol
         if kind == "response" and sar is not None:               # F02b: the rows' joint SAR distribution
             from autobayes.sar import sar_draws
             out["y"] = (dims, sar_draws(model, post, mu, rng))
+        elif kind == "response" and getattr(model.spec, "fcor", None) is not None:   # F03a: the rows' joint normal, mu + sigma L z
+            from autobayes.fcor import fcor_draws
+            from autobayes.families.spec import auxiliary
+
+            out["y"] = (dims, fcor_draws(mean, auxiliary(model, post, "sigma"), model.design.fcor, rng))
         elif kind == "response":                                 # brms's posterior_predict ignores weights and censoring
             out["y"] = (dims, fam.draw_response(model, post, mu, mean, df, rng) if trunc is None
                         else fam.tails().draw_truncated(model, post, mu, lb, ub, rng))   # and draws from the truncated distribution
@@ -609,6 +618,12 @@ def predict(model, fit_result, *, newdata: pd.DataFrame | None = None, kind: str
             f"{model.spec.sar.matrix} relates the fitted rows to one another, and new rows have no place in it; predict on the "
             "fitted rows (newdata=None) (docs/spatial-sar.md, divergence D143)"
         )
+    if getattr(model.spec, "fcor", None) is not None and newdata is not None:   # F03a: M covers the fitted rows only (D145)
+        raise FormulaError(
+            f"predictions on new data are not offered for a model with {model.spec.fcor.term}: its matrix is the covariance of the "
+            "fitted rows' residuals, and new rows have none (brms needs an M of the new rows' own; docs/fcor.md, divergence D145); "
+            "predict on the fitted rows (newdata=None)"
+        )
     from autobayes.identity import check_fit_binding
     binding = check_fit_binding(model, fit_result, allow_unverified=True)
     idata = getattr(fit_result, "idata", fit_result)
@@ -638,6 +653,7 @@ def predict(model, fit_result, *, newdata: pd.DataFrame | None = None, kind: str
               or bool(model.spec.gp_terms)                     # nor the Gaussian processes (C03)
               or model.spec.autocor is not None                # an autocorrelation term (C04): nor this one
               or getattr(model.spec, "sar", None) is not None  # nor a SAR term (F02b)
+              or getattr(model.spec, "fcor", None) is not None  # nor the joint normal of fcor() (F03a)
               or bool(model.spec.me_terms) or bool(model.spec.mi_terms)    # nor the me() and mi() terms (C06)
               or bool(model.spec.custom_group_terms))          # nor the mm() and gr(by = ) terms (D08)
     if dpar is not None:

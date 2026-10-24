@@ -63,6 +63,8 @@ formula are refused.
 brms's autocorrelation terms ``ar(time, gr, p)``, ``ma(time, gr, q)`` and ``arma(time, gr, p, q)`` in its regression
 formulation (C04, docs/autocorrelation.md) are held in ``ModelSpec.autocor`` (``autocor.Autocor``), one per formula: not
 a population-level term (no design column, no ``b`` coefficient), the coefficients ``ar`` and ``ma`` are its own.
+brms's fixed residual covariance ``fcor(M)`` (F03a, docs/fcor.md) is held in ``ModelSpec.fcor`` (``fcor.Fcor``), one per
+formula: no design column and no parameter, the name of a matrix in ``data2`` that the likelihood reads.
 
 ``me(x, sdx)`` and ``mi(col)`` are brms's measurement-error and missing-value terms (C06,
 docs/missing-and-measurement-error.md), special terms like ``mo()``: kinds ``"measurement_error"`` and ``"missing"``, a
@@ -129,8 +131,9 @@ _MI_TERM_RE = re.compile(rf"^mi\(({_IDENT})\)$")                                
 MI_CALL_RE = re.compile(r"(?<![A-Za-z0-9_.])mi\s*\(")                                                 # an mi( call anywhere in a formula (C06)
 MVBIND_RE = re.compile(r"^\s*mvbind\s*\(", re.S)                                                       # brms's multivariate mvbind(y, y2) ~ ... (C01)
 _GP_RE = re.compile(r"^gp\s*\((.*)\)$", re.S)                                                        # gp(<inside>), brms's Gaussian process (C03)
-_AUTOCOR_RE = re.compile(r"^(ar|ma|arma|cosy|car|sar|fcor|unstr)\s*\(", re.S)   # brms's autocorrelation terms (C04; autobayes.autocor)
+_AUTOCOR_RE = re.compile(r"^(ar|ma|arma|cosy|car|sar|unstr)\s*\(", re.S)   # brms's autocorrelation terms (C04; autobayes.autocor)
 _SAR_RE = re.compile(r"^sar\s*\(", re.S)                                                              # brms's sar(M, type) (F02b; autobayes.sar)
+_FCOR_RE = re.compile(r"^fcor\s*\(", re.S)                  # brms's fixed residual covariance fcor(M) (F03a; autobayes.fcor)
 SUPPORTED_TRANSFORMS = ("only log(col), exp(col), sqrt(col), I(col^k) with integer k, and I(col * k), I(col + k), I(col - k) with a "
                         "numeric constant k are supported as in-formula transforms of one numeric column (A05, docs/transforms.md); "
                         "other function calls and transformations inside the formula are not supported: compute the column in the "
@@ -1481,7 +1484,8 @@ class ModelSpec:
     ``gp(x)``, ``gp(x, k = 10, c = 5/4)``; ``GaussianProcess``), in formula order, their inputs known once the data are seen:
     terms of the linear predictor that are not population-level terms (no coefficient of class ``b``, no design column).
     ``autocor`` is the formula's autocorrelation term (C04, ``ar()``, ``ma()`` or ``arma()``; ``autocor.Autocor``), or None.
-    ``sar`` is its simultaneous autoregressive term (F02b, ``sar(M, type = "lag")``; ``sar.Sar``), or None."""
+    ``sar`` is its simultaneous autoregressive term (F02b, ``sar(M, type = "lag")``; ``sar.Sar``), or None.
+    ``fcor`` is the formula's fixed residual covariance ``fcor(M)`` (F03a, ``fcor.Fcor``; docs/fcor.md), or None."""
 
     formula: str
     response: str
@@ -1499,11 +1503,12 @@ class ModelSpec:
     gp_terms: tuple[GaussianProcess, ...]
     autocor: "Autocor | None" = None
     sar: "Sar | None" = None
+    fcor: "Fcor | None" = None
 
     def __init__(self, formula, response, predictors=(), group=None, intercept=True,
                  levels=(), trials=None, rhs="", terms=(), categoricals=(), interactions=(),
                  *, groups=None, levels_by_group=None, pop_terms=None, group_terms=None, offset=None, additions=(), dpars=(),
-                 monotonics=None, gp_terms=(), autocor=None, sar=None):
+                 monotonics=None, gp_terms=(), autocor=None, sar=None, fcor=None):
         """Keep the original positional constructor: without ``pop_terms`` / ``group_terms`` the term model is
         built from the flat ``predictors``, ``terms``, ``categoricals``, ``interactions`` and ``group(s)``.
         Terms given as mappings (``dataclasses.asdict`` output) are rebuilt, the distributional formulas and the
@@ -1521,6 +1526,10 @@ class ModelSpec:
             from autobayes.sar import Sar
             if not isinstance(sar, Sar):
                 sar = Sar(**sar)
+        if fcor is not None:                                     # F03a: likewise
+            from autobayes.fcor import Fcor
+            if not isinstance(fcor, Fcor):
+                fcor = Fcor(**fcor)
         if group_terms is not None:
             if groups is not None or group is not None:
                 raise ValueError("supply group_terms or group/groups, not both")
@@ -1560,7 +1569,7 @@ class ModelSpec:
                       levels_by_group=_GroupLevels((g, level_map[g]) for g in factors),
                       trials=trials, rhs=rhs, categoricals=categoricals,
                       pop_terms=pop_terms, group_terms=group_terms, offset=offset, additions=additions, dpars=dpars,
-                      monotonics=monotonics, gp_terms=gp_terms, autocor=autocor, sar=sar)
+                      monotonics=monotonics, gp_terms=gp_terms, autocor=autocor, sar=sar, fcor=fcor)
         for key, value in values.items():
             object.__setattr__(self, key, value)
 
@@ -1572,7 +1581,14 @@ class ModelSpec:
                     + ((self.dpars,) if self.dpars else ()) + ((self.monotonics,) if self.monotonics else ())
                     + ((self.gp_terms,) if self.gp_terms else ())
                     + ((self.autocor,) if self.autocor is not None else ())
-                    + ((self.sar,) if self.sar is not None else ()))
+                    + ((self.sar,) if self.sar is not None else ())
+                    + ((self.fcor,) if self.fcor is not None else ()))
+
+    @property
+    def data2_names(self) -> tuple[str, ...]:
+        """The names of the ``data2`` matrices the formula's terms read (Tier F): ``sar(M, ...)``'s ``M`` (F02b) and ``fcor(M)``'s
+        ``M`` (F03a), in that order; ``check_data2`` refuses any other name."""
+        return tuple(t.matrix for t in (self.sar, self.fcor) if t is not None)
 
     def addition(self, kind: str) -> AdditionTerm | None:
         """The addition term of ``kind`` (``"weights"``, ``"cens"``, ``"trunc"``), or None when the formula has none."""
@@ -1864,6 +1880,28 @@ class ModelSpec:
         parts = ([] if self.intercept else ["0"]) + [t.bambi_name for t in self.bambi_terms]
         parts += ([self.offset.term] if self.offset is not None else []) + [t.bambi_canonical for t in self.bambi_group_terms]
         return " + ".join(parts) if parts else "1"
+
+
+# -- Tier F: brms's data2, the matrices a formula's terms read by name ----------------------------------------------------
+DATA2_UNIVARIATE = ("data2 is read by a SAR term sar(M, type = ...) or a fixed residual covariance fcor(M), which a non-linear or "
+                    "multivariate model does not take in this slice (docs/spatial-sar.md, docs/fcor.md, divergences D143, D144)")
+
+
+def data2_mapping(data2) -> None:
+    """``data2`` is None or a mapping from a matrix's name to the matrix (brms's ``data2 = list(M = ...)``)."""
+    if data2 is not None and not isinstance(data2, Mapping):
+        raise FormulaError(f"data2 must be a mapping from a matrix's name to the matrix, got {type(data2).__name__}")
+
+
+def check_data2(spec, data2) -> None:
+    """``data2`` holds exactly the matrices the formula's terms read (``ModelSpec.data2_names``: ``sar(M, ...)``'s M, F02b, and
+    ``fcor(M)``'s M, F03a), keyed by name: an entry no term reads is refused rather than ignored (brms ignores it). Each term
+    reads and checks its own matrix (``sar.sar_design``, ``fcor.fcor_design``)."""
+    data2_mapping(data2)
+    unread = sorted(str(k) for k in (data2 or {}) if k not in spec.data2_names)
+    if unread:
+        raise FormulaError(f"data2 holds {unread}, which no term of the formula reads (data2 is read by sar(M, ...) and fcor(M) here; "
+                           "docs/spatial-sar.md, docs/fcor.md)")
 
 
 def _split_top_level(rhs: str, sep: str = "+") -> list[str]:
@@ -2284,6 +2322,11 @@ def _parse_formulas(formulas, data: pd.DataFrame | None, family: str, categorica
             f"{main!r}: the SAR term {main0.sar.term!r} with a distributional formula is not supported, as in brms ('SAR models are "
             "not implemented when predicting 'sigma' or 'nu''; docs/spatial-sar.md, divergence D143)"
         )
+    if main0.fcor is not None:                                # F03a: brms's heterogeneous normal_fcor_het, not verified (D144)
+        raise FormulaError(
+            f"{main!r}: {main0.fcor.term} with a distributional formula is not supported in this slice (brms accepts "
+            "bf(y ~ x + fcor(M), sigma ~ z), its normal_fcor_het; docs/fcor.md, divergence D144)"
+        )
     dpar0 = [parse_formula(f"{name} ~ {rhs}", None, family, None, _ids=True, _dpar=True) for name, rhs, _ in parsed]
     mains = [{t.name for t in s.pop_terms if t.kind == "numeric"} for s in (main0, *dpar0)]
     if isinstance(categorical, Mapping):                    # a declared column is categorical in every formula
@@ -2357,6 +2400,11 @@ def _parse_formulas(formulas, data: pd.DataFrame | None, family: str, categorica
             raise FormulaError(
                 f"{text!r}: a SAR term in a distributional formula ({d.sar.term}) is not supported: it belongs to the response "
                 "formula (docs/spatial-sar.md, divergence D143)"
+            )
+        if d.fcor is not None:                                # F03a: brms refuses it too
+            raise FormulaError(
+                f"{text!r}: {d.fcor.term} in a distributional formula is not supported: it belongs to the response formula, as in "
+                "brms ('Explicit covariance terms can only be specified on mu'; docs/fcor.md)"
             )
         if d.me_terms:                                       # C06
             raise FormulaError(
@@ -2553,6 +2601,7 @@ def parse_formula(formula: str | list[str], data: pd.DataFrame | None = None, fa
     gps: list[tuple[GaussianProcess, str]] = []            # the Gaussian processes (C03): (term, piece as written)
     autocors: list = []                                    # (autocorrelation term, piece as written); at most one (C04)
     sars: list = []                                        # (SAR term, piece as written); at most one (F02b)
+    fcors: list = []                                       # (fcor() term, piece as written); at most one (F03a)
     saw_intercept_token = False
     remove_intercept = False
 
@@ -2622,6 +2671,11 @@ def parse_formula(formula: str | list[str], data: pd.DataFrame | None = None, fa
             if term is None:
                 raise FormulaError(f"{piece!r}: a SAR term is written sar(M, type = \"lag\") or sar(M, type = \"error\") (docs/spatial-sar.md)")
             sars.append((term, piece))
+            continue
+        if _FCOR_RE.match(piece):                               # brms's fixed residual covariance fcor(M) (F03a)
+            from autobayes.fcor import parse_fcor
+
+            fcors.append((parse_fcor(piece), piece))
             continue
         if _AUTOCOR_RE.match(piece):                            # brms's ar(), ma(), arma() (C04); its other structures refused (D69)
             from autobayes.autocor import parse_autocor
@@ -3026,6 +3080,7 @@ def parse_formula(formula: str | list[str], data: pd.DataFrame | None = None, fa
                            "term per autocorrelation class')")
     sar = sars[0][0] if sars else None
     parts += [sar.term] if sar is not None else []                # the SAR term, after it (F02b)
+    parts += [fcors[0][0].term] if fcors else []                  # the fixed residual covariance, after it (F03a)
     canonical_rhs = " + ".join(parts) if parts else "1"           # intercept-only population model: 'y ~ 1'
     if remove_intercept:
         canonical_rhs = "0 + " + canonical_rhs
@@ -3038,11 +3093,16 @@ def parse_formula(formula: str | list[str], data: pd.DataFrame | None = None, fa
         formula=formula.strip(), response=response, intercept=not remove_intercept, trials=trials,
         rhs=canonical_rhs, categoricals=categoricals, pop_terms=pop_terms, group_terms=tuple(group_terms),
         offset=offset, additions=additions, gp_terms=tuple(g for g, _ in gps), autocor=autocor, sar=sar,
+        fcor=fcors[0][0] if fcors else None,
     )
     if sar is not None:                                      # F02b: the family and the terms next to it (D143)
         from autobayes.sar import check_sar
 
         check_sar(spec, fam, formula)
+    if fcors:                                                # F03a: one term, a family that takes it, nothing unverified beside it
+        from autobayes.fcor import check_fcor
+
+        check_fcor(spec, fam, [p for _, p in fcors], formula)
     if spec.gp_terms and fam.per_category:                   # one linear predictor per category (C03)
         raise FormulaError(
             f"{formula!r}: a Gaussian process ({spec.gp_terms[0].term}) is not available for the {fam.name} family: brms would give "
@@ -3546,5 +3606,5 @@ def validate_data(spec: ModelSpec, data: pd.DataFrame, family: str = "gaussian",
         pop_terms=tuple(pop_term(t.name, t.kind, categoricals) for t in spec.pop_terms),   # levels now known
         group_terms=spec.group_terms, offset=spec.offset, additions=spec.additions, dpars=spec.dpars, monotonics=monotonics,
         gp_terms=gp_terms,
-        autocor=spec.autocor, sar=spec.sar,
+        autocor=spec.autocor, sar=spec.sar, fcor=spec.fcor,
     )

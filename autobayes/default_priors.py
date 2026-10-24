@@ -303,18 +303,18 @@ def default_priors(formula: str | list[str], data: pd.DataFrame, *, family: str 
     ``quantile`` (E02) is the asymmetric Laplace family's fixed quantile, as its constructor takes it: brms's ``bf(quantile =
     p)`` has no quantile prior, so none is returned; left ``None`` the quantile gets brms's ``beta(1, 1)``.
 
-    ``data2`` (F02b) is the constructor's: the matrices the formula reads (``sar(M, ...)``'s weight matrix), checked as the
-    constructor checks them; a SAR term's ``lagsar`` or ``errorsar`` gets brms's flat prior, which does not depend on them."""
+    ``data2`` (Tier F) is the constructor's: the matrices the formula reads (``sar(M, ...)``'s weight matrix, F02b; ``fcor(M)``'s
+    covariance, F03a), checked as the constructor checks them; a SAR term's ``lagsar`` or ``errorsar`` gets brms's flat prior,
+    which does not depend on them, and ``fcor(M)`` adds no prior class, as in brms."""
     from autobayes.families import FAMILIES, get_family
-    from autobayes.formula import FormulaError, check_imputation, parse_formula
+    from autobayes.formula import DATA2_UNIVARIATE, FormulaError, check_data2, check_imputation, parse_formula
     from autobayes.multivariate import is_multivariate_formula, multivariate_default_priors
 
     if quantile is not None and (nl or rescor is not None or is_multivariate_formula(formula)):   # E02: asym_laplace's own
         raise ValueError("quantile= fixes the asym_laplace family's quantile in a univariate linear model; a non-linear or "
                          "multivariate asym_laplace model is not offered (divergence D112)")
-    if data2 is not None and (nl or rescor is not None or is_multivariate_formula(formula)):   # F02b, as ab.gaussian refuses it
-        raise FormulaError("data2 is read by a SAR term sar(M, type = ...), which a non-linear or multivariate model does not take "
-                           "in this slice (docs/spatial-sar.md, divergence D143)")
+    if data2 is not None and (nl or rescor is not None or is_multivariate_formula(formula)):   # F02b, F03a, as ab.gaussian refuses it
+        raise FormulaError(DATA2_UNIVARIATE)
     if nl:                                                            # a non-linear model (C02): its parameters' defaults; it refuses
         from autobayes.nonlinear import nonlinear_default_priors     # a mixture's and a multivariate model's arguments itself
 
@@ -353,10 +353,13 @@ def default_priors(formula: str | list[str], data: pd.DataFrame, *, family: str 
     if fam is not get_family(family) and fam.check_formula is not None:   # a link's own refusals (E06, divergence D133)
         fam.check_formula(spec)
     check_imputation(spec, imputed)                                   # C06: mi() belongs to a multivariate model
-    from autobayes.sar import check_data2, sar_design
+    from autobayes.fcor import fcor_design
+    from autobayes.sar import sar_design
 
     if spec.sar is not None:                                          # F02b: data2 holds what sar() reads, checked as the model does
         sar_design(spec.sar, data2, len(data))
+    if spec.fcor is not None:                                         # F03a: likewise for fcor(); no prior class of its own
+        fcor_design(spec.fcor, data2, len(data))
     check_data2(spec, data2)
     # B05: brms never reads an ordinal or categorical response for its defaults (no identity or log link: 0 and 2.5), and
     # its labels need not be numbers

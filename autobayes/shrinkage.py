@@ -212,7 +212,7 @@ def check_model(prior: Prior, spec, fam) -> None:
     ``FamilySpec.shrinkage`` (the Gaussian has it: brms autoscales by its sigma), a formula without population-level terms or
     without an intercept, and group-level terms, an offset, response addition terms, distributional formulas, monotonic,
     measurement-error and missing-value terms (brms's class bsp, which brms's shrinkage would include), Gaussian processes and
-    autocorrelation terms. ``spec`` is the parsed formula (the data need not be seen)."""
+    autocorrelation terms and ``fcor()`` (F03a). ``spec`` is the parsed formula (the data need not be seen)."""
     fn = f"{prior.name}() on b"
     if not getattr(fam, "shrinkage", False):
         raise PriorError(f"{fn} is offered for the Gaussian family only, where the frozen cases verify it (brms scales it by the "
@@ -241,6 +241,8 @@ def check_model(prior: Prior, spec, fam) -> None:
         refused.append(f"an autocorrelation term {spec.autocor.term}")
     if getattr(spec, "sar", None) is not None:                # F02b: not verified with it either (D143)
         refused.append(f"a SAR term {spec.sar.term}")
+    if getattr(spec, "fcor", None) is not None:              # F03a
+        refused.append(f"a fixed residual covariance {spec.fcor.term}")
     if refused:
         raise PriorError(f"{fn} is offered with population-level terms that are columns of the design only; this formula has "
                          + "; ".join(refused) + f", which no frozen case verifies with it ({DOC}, divergence D102)")

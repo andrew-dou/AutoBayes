@@ -379,11 +379,16 @@ def response_fingerprint(model) -> str | None:
 
 
 def _refuse_unsupported(model, what: str) -> None:
-    """What ``log_lik()`` does not take here is refused naming ``what``: a model with ``me()`` or ``mi()`` (D74) and a
-    multivariate model (C01), whose log-likelihood brms sums over the responses or keeps per response."""
+    """What ``log_lik()`` does not take here is refused naming ``what``: a model with ``me()`` or ``mi()`` (D74), a
+    multivariate model (C01), whose log-likelihood brms sums over the responses or keeps per response, and a model with
+    ``fcor()`` (F03a, D145)."""
     _refuse_measurement(model, what)
     if getattr(model, "responses", None):
         raise ValueError(f"{what} of a multivariate model is not offered in this slice (docs/post-processing.md, divergence D95)")
+    term = getattr(getattr(model, "spec", None), "fcor", None)
+    if term is not None:                                     # F03a: brms's log_lik conditions each row on all the others
+        raise ValueError(f"{what} of a model with {term.term} is not offered: brms's log_lik() of the joint normal is each row's "
+                         "density given every other row, which no frozen case checks here (docs/fcor.md, divergence D145)")
 
 
 def _estimates(pw: pd.DataFrame, rows) -> pd.DataFrame:

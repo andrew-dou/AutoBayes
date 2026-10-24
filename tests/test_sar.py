@@ -27,7 +27,8 @@ from scipy.special import expit
 import autobayes as ab
 from autobayes.families import FAMILIES
 from autobayes.formula import ModelSpec, parse_formula
-from autobayes.sar import (Sar, SarDesign, _solve, check_data2, parse_sar, sar_design, sar_log_lik, sar_mean, sar_response)
+from autobayes.formula import check_data2                     # Tier F: shared with fcor() (F03a)
+from autobayes.sar import (Sar, SarDesign, _solve, parse_sar, sar_design, sar_log_lik, sar_mean, sar_response)
 
 # a 4 x 3 rook grid of sites, one row per site: the adjacency W, its symmetric normalisation D^-1/2 W D^-1/2 (eigenvalues in
 # [-1, 1], the largest 1) and its row standardisation D^-1 W (not symmetric; the same eigenvalues: D^-1 W = D^-1/2 M D^1/2)

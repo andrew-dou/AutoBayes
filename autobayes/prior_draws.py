@@ -23,7 +23,7 @@ as the model's density has them), independent across columns and rows. They are 
 and cannot be reproduced; what is compared with brms is computed from given draws (the evidence ratios) and the
 distributions (tests/test_prior_draws.py). Not offered, each refused naming the construct (divergence D124): multivariate,
 non-linear, mixture, ordinal and categorical models, distributional formulas, shrinkage priors, ``mo()``, ``gp()``,
-``me()``, ``mi()``, ``cs()``, autocorrelation terms, ``mm()`` and ``gr(by = )`` group terms, the D01 families' extra
+``me()``, ``mi()``, ``cs()``, autocorrelation terms, ``fcor()``, ``mm()`` and ``gr(by = )`` group terms, the D01 families' extra
 parameters (``alpha``, ``beta``, ``ndt``) and ``center_predictors=False``.
 """
 from __future__ import annotations
@@ -68,6 +68,7 @@ def _refuse_unsupported(model) -> None:
         (bool(getattr(spec, "cs_terms", ())), lambda: f"the category-specific term {spec.cs_terms[0].name!r}"),
         (spec.autocor is not None, lambda: f"the autocorrelation term {spec.autocor.term!r}"),
         (getattr(spec, "sar", None) is not None, lambda: f"the SAR term {spec.sar.term!r}"),                     # F02b (D143)
+        (getattr(spec, "fcor", None) is not None, lambda: f"the fixed residual covariance {spec.fcor.term!r}"),   # F03a
     ]
     for present, construct in constructs:
         if present:
