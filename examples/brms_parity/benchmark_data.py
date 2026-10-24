@@ -121,11 +121,92 @@ def multimembership(rng, n=1000, J=30):
     return pd.DataFrame({"y": y, "x": x, "g1": [f"g{k:03d}" for k in g1], "g2": [f"g{k:03d}" for k in g2]})
 
 
+def gauss_mixture(rng, n=1000):
+    """B11: y ~ x, a two-component Gaussian mixture (brms's mixture(gaussian, gaussian), ordered intercepts), theta = (0.35,
+    0.65)."""
+    x = _std(rng.normal(size=n))
+    first = rng.random(n) < 0.35
+    y = np.where(first, -1.5 + 0.4 * x + rng.normal(0, 0.6, n), 1.5 + 0.8 * x + rng.normal(0, 1.0, n))
+    return pd.DataFrame({"y": y, "x": x})
+
+
+def gp_exact(rng, n=200):
+    """B12: y ~ gp(x), the exact Gaussian process (squared-exponential kernel) on 200 distinct inputs."""
+    x = _std(rng.uniform(-3, 3, n))
+    return pd.DataFrame({"y": np.sin(2.0 * x) + 0.3 * x + rng.normal(0, 0.3, n), "x": x})
+
+
+def ar1_panel(rng, J=40, T=50):
+    """B13: y ~ x + ar(time = t, gr = g, p = 1), Gaussian, AR(1) residuals (coefficient 0.6) within each of 40 series of 50
+    times, rows sorted by series and time."""
+    x = _std(rng.normal(size=J * T))
+    e = np.empty(J * T)
+    for j in range(J):
+        prev = 0.0
+        for t in range(T):
+            prev = 0.6 * prev + rng.normal(0, 0.5)
+            e[j * T + t] = prev
+    return pd.DataFrame({"y": 1.0 + 0.8 * x + e, "x": x, "t": np.tile(np.arange(T), J),
+                         "g": [f"g{k:03d}" for k in np.repeat(np.arange(J), T)]})
+
+
+def nonlinear_growth(rng, n=1000, J=20):
+    """B14: y ~ a * exp(b * x), a ~ 1 + (1 | g), b ~ 1 (brms's nl = TRUE), Gaussian, a varying amplitude."""
+    g = rng.integers(0, J, n)
+    x = _std(rng.uniform(0, 3, n))
+    a = 2.0 + rng.normal(0, 0.3, J)[g]
+    return pd.DataFrame({"y": a * np.exp(0.5 * x) + rng.normal(0, 0.4, n), "x": x, "g": [f"g{k:03d}" for k in g]})
+
+
+def mv_rescor(rng, n=1000, J=30):
+    """B15: mvbind(y1, y2) ~ x + (1 | g), Gaussian with a residual correlation of 0.5 (set_rescor(TRUE))."""
+    g = rng.integers(0, J, n)
+    x = _std(rng.normal(size=n))
+    e = rng.multivariate_normal([0.0, 0.0], [[1.0, 0.4], [0.4, 0.64]], n)
+    u1, u2 = rng.normal(0, 0.5, J), rng.normal(0, 0.3, J)
+    return pd.DataFrame({"y1": 0.5 + 1.0 * x + u1[g] + e[:, 0], "y2": -0.3 + 0.4 * x + u2[g] + e[:, 1], "x": x,
+                         "g": [f"g{k:03d}" for k in g]})
+
+
+def monotonic_gauss(rng, n=1500, J=30):
+    """B16: y ~ x + mo(edu) + (1 | g), Gaussian, a monotonic effect of a five-level ordinal predictor (steps 0.5, 0.2, 0.2,
+    0.1 of a total 1.2)."""
+    g = rng.integers(0, J, n)
+    x = _std(rng.normal(size=n))
+    edu = rng.integers(1, 6, n)
+    effect = 1.2 * np.cumsum([0.0, 0.5, 0.2, 0.2, 0.1])
+    y = 0.5 + 0.6 * x + effect[edu - 1] + rng.normal(0, 0.5, J)[g] + rng.normal(0, 1.0, n)
+    return pd.DataFrame({"y": y, "x": x, "edu": edu, "g": [f"g{k:03d}" for k in g]})
+
+
+def weibull_censored(rng, n=2000, J=40):
+    """B17: y | cens(cens_r) ~ x + (1 | g), Weibull (shape 1.5, log link on the mean) with about 30% of the times
+    right-censored by independent uniform censoring times (cens_r = 1)."""
+    g = rng.integers(0, J, n)
+    x = _std(rng.normal(size=n))
+    mu = np.exp(1.0 + 0.4 * x + rng.normal(0, 0.4, J)[g])
+    t = mu / gamma_fn(1 + 1 / 1.5) * rng.weibull(1.5, n)
+    c = rng.uniform(0, 4.5 * np.median(t), n)
+    return pd.DataFrame({"y": np.minimum(t, c), "cens_r": (c < t).astype(int), "x": x, "g": [f"g{k:03d}" for k in g]})
+
+
+def distributional_sigma(rng, n=2000, J=40):
+    """B18: y ~ x + (1 | g), sigma ~ z, Gaussian with a log-linear residual SD."""
+    g = rng.integers(0, J, n)
+    x, z = _std(rng.normal(size=n)), _std(rng.normal(size=n))
+    y = 1.0 + 0.5 * x + rng.normal(0, 0.5, J)[g] + rng.normal(size=n) * np.exp(-0.2 + 0.5 * z)
+    return pd.DataFrame({"y": y, "x": x, "z": z, "g": [f"g{k:03d}" for k in g]})
+
+
 MODELS = {"B1_logistic_glmm": logistic_glmm, "B2_gaussian_glmm": gaussian_glmm,
           "B3_ordinal_glmm": ordinal_glmm, "B4_zip_glmm": zip_glmm,
           "B5_weibull_glmm": weibull_glmm, "B6_zinb_glmm": zinb_glmm, "B7_sratio_glmm": sratio_glmm,
           "B8_horseshoe_regression": horseshoe_regression, "B9_betabinomial_glmm": betabinomial_glmm,
-          "B10_multimembership": multimembership}
+          "B10_multimembership": multimembership,
+          # since 21 October 2026 (seeds 20261015 + 10, ...; B1-B10 unchanged)
+          "B11_gauss_mixture": gauss_mixture, "B12_gp_exact": gp_exact, "B13_ar1_panel": ar1_panel,
+          "B14_nonlinear_growth": nonlinear_growth, "B15_mv_rescor": mv_rescor, "B16_monotonic": monotonic_gauss,
+          "B17_weibull_censored": weibull_censored, "B18_distributional_sigma": distributional_sigma}
 
 
 def main(out_dir: str) -> None:
