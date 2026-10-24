@@ -165,6 +165,9 @@ def prior_names(model) -> list[str]:
     # C06: an me() term's meanme and sdme (brms's lprior; its zme and the noisy values' density are in the model block, and the
     # missing values Ymi have no prior); an me() / mi() term's coefficient is among the terms
     out += [roles[k] for roles in getattr(model, "me_names", {}).values() for k in ("mean", "sd")]
+    # F01b: the logistic_normal family's sigma<k> and Llncor (lkj_corr_cholesky_lpdf(Llncor | eta)); the dirichlet phi is above
+    simplex = getattr(model, "simplex_names", {})
+    out += [*simplex.get("sigma", ()), *([simplex["L"]] if "L" in simplex else [])]
     return out
 
 
@@ -460,6 +463,9 @@ def check_derived(b: Bundle) -> None:
         if err > PRED_REL:
             raise OracleMismatch(f"point {k}: the graph's {names['linpred']!r} differs from brms by {err}")
         for ((g, coef), _), eff in zip(groups, out[1:1 + len(groups)]):
+            if b.gmap.category:                                     # F01b: each category's column against its own group term
+                check_category_effects(b, k, p, g, coef, eff)
+                continue
             m, cn = b.gmap.brms_id[g], b.gmap.coef_cn[(g, coef)]
             r = np.asarray(eff, dtype=float).ravel()[b.gmap.level_of[g]]
             err = rel_err(r, np.atleast_1d(p.pars[f"r_{m}_{cn}"]))
@@ -551,6 +557,18 @@ def check_car_effects(b: Bundle) -> None:
         err = rel_err(np.asarray(fn(vp)[0], dtype=float), np.atleast_1d(p.pars["rcar"]))
         if err > PRED_REL:
             raise OracleMismatch(f"point {k}: the graph's rcar differs from brms's rcar by {err}")
+
+
+def check_category_effects(b: Bundle, k: int, p, g: str, coef: str, eff) -> None:
+    """F01b, G3 of a per-category family's group term at point ``k``: the graph's effects of ``(g, coef)``, ``(levels, K - 1)``,
+    column by column against brms's ``r_m_<dpar>_c`` of each non-reference category's own group (``GroupMap.category``)."""
+    from autobayes.default_priors import brms_dpar_names
+
+    eff = np.asarray(eff, dtype=float)
+    for c, ((m, cn), dp) in enumerate(zip(b.gmap.category[(g, coef)], brms_dpar_names(b.model.categories[1:]))):
+        err = rel_err(eff[b.gmap.level_of[g], c], np.atleast_1d(p.pars[f"r_{m}_{dp}_{cn}"]))
+        if err > PRED_REL:
+            raise OracleMismatch(f"point {k}: group effects of {coef!r} of {g!r} in {dp} differ from brms r_{m}_{dp}_{cn} by {err}")
 
 
 _SHRINKAGE_DATA = ("Kscales", "hs_df", "hs_df_global", "hs_df_slab", "hs_scale_global", "hs_scale_slab", "R2D2_mean_R2",

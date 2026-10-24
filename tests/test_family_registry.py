@@ -112,11 +112,13 @@ EXPECTED = {                               # family -> (Bambi parent, link, pred
     "wiener": ("mu", "identity", "mean"),                 # F04: the drift rate mu; the mean response time is "mean"
     "multinomial": ("mu", "logit", "p"),                  # F01a: mu = the non-reference categories' linear predictors
     "dirichlet_multinomial": ("mu", "logit", "p"),
+    "dirichlet": ("mu", "logit", "p"),                    # F01b: the K - 1 linear predictors are the parent
+    "logistic_normal": ("mu", "identity", "mean"),        # (its mean is refused, as brms refuses posterior_epred)
 }
 
 
 def test_registry_lists_exactly_the_registered_families():
-    assert set(FAMILIES) == set(EXPECTED) and len(FAMILIES) == 43
+    assert set(FAMILIES) == set(EXPECTED) and len(FAMILIES) == 45
     for name, (parent, link, mean) in EXPECTED.items():
         spec = get_family(name)
         assert isinstance(spec, FamilySpec) and spec is FAMILIES[name]
@@ -130,13 +132,15 @@ def test_registry_lists_exactly_the_registered_families():
     assert {name for name, spec in FAMILIES.items() if spec.scale_parameter == "phi"} == {"beta", "beta_binomial", "zero_inflated_beta",
                                                                                           "zero_one_inflated_beta",   # E01
                                                                                           "zero_inflated_beta_binomial", "xbeta",
-                                                                                          "dirichlet_multinomial"}                 # F01a
+                                                                                          "dirichlet_multinomial",                 # F01a
+                                                                                          "dirichlet"}                # F01b
     assert {name for name, spec in FAMILIES.items() if spec.continuous} == {"gaussian", "student", "gamma", "lognormal", "beta", "mixture",
                                                                             "weibull", "exponential", "skew_normal", "shifted_lognormal",
                                                                             "exgaussian", "zero_inflated_beta", "hurdle_gamma", "hurdle_lognormal",
                                                                             "zero_one_inflated_beta", "xbeta",          # E01
                                                                             "inverse_gaussian", "von_mises", "asym_laplace", "frechet", "gen_extreme_value",   # E02
-                                                                            "wiener"}                                    # F04
+                                                                            "wiener",                                    # F04
+                                                                            "dirichlet", "logistic_normal"}             # F01b
     assert {spec.bambi_scale_parameter for spec in FAMILIES.values() if spec.scale_parameter == "shape"} == {"alpha"}
     assert {spec.bambi_scale_parameter for spec in FAMILIES.values() if spec.scale_parameter == "phi"} == {"phi"}
     assert all((spec.scale_parameter is None) == (spec.bambi_scale_parameter is None) for spec in FAMILIES.values())
@@ -168,8 +172,10 @@ def test_registry_lists_exactly_the_registered_families():
     assert {name for name, spec in FAMILIES.items() if spec.hurdle_category is not None} == {"hurdle_cumulative"}        # E01
     assert {name for name, spec in FAMILIES.items() if spec.thresholds and not spec.ordered_thresholds} == {"sratio", "cratio", "acat"}   # D04
     assert {name for name, spec in FAMILIES.items() if spec.category_specific} == {"sratio", "cratio", "acat"}
-    assert {name for name, spec in FAMILIES.items() if spec.per_category} == {"categorical", "multinomial", "dirichlet_multinomial"}
+    assert {name for name, spec in FAMILIES.items() if spec.per_category} == {"categorical", "multinomial", "dirichlet_multinomial",
+                                                                              "dirichlet", "logistic_normal"}   # F01a, F01b
     assert {name for name, spec in FAMILIES.items() if spec.matrix_response} == {"multinomial", "dirichlet_multinomial"}   # F01a
+    assert {name for name, spec in FAMILIES.items() if spec.simplex is not None} == {"dirichlet", "logistic_normal"}   # F01b
     assert {name: spec.zero_parameter for name, spec in FAMILIES.items() if spec.zero_parameter} == {"zero_inflated_poisson": "zi", "hurdle_poisson": "hu",
         "zero_inflated_negbinomial": "zi", "hurdle_negbinomial": "hu", "zero_inflated_binomial": "zi", "zero_inflated_beta": "zi",
         "hurdle_gamma": "hu", "hurdle_lognormal": "hu", "zero_inflated_beta_binomial": "zi", "hurdle_cumulative": "hu"}   # E01
@@ -180,7 +186,7 @@ def test_registry_lists_exactly_the_registered_families():
         "wiener": ("bs", "ndt", "bias")}                                                            # F04
     assert {name: e.variable for name, spec in FAMILIES.items() for e in spec.extra_parameters if e.derived} == {
         "gen_extreme_value": "tmp_xi"}                                                               # E02: brms's tmp_xi
-    with pytest.raises(ValueError, match=r"family must be one of \['acat', 'asym_laplace', 'bernoulli', 'beta', 'beta_binomial', 'binomial', 'categorical', 'cratio', 'cumulative', 'dirichlet_multinomial', 'exgaussian', 'exponential', 'frechet', 'gamma', 'gaussian', 'gen_extreme_value', 'geometric', 'hurdle_cumulative', 'hurdle_gamma', 'hurdle_lognormal', 'hurdle_negbinomial', 'hurdle_poisson', 'inverse_gaussian', 'lognormal', 'mixture', 'multinomial', 'negbinomial', 'negbinomial2', 'poisson', 'shifted_lognormal', 'skew_normal', 'sratio', 'student', 'von_mises', 'weibull', 'wiener', 'xbeta', 'zero_inflated_beta', 'zero_inflated_beta_binomial', 'zero_inflated_binomial', 'zero_inflated_negbinomial', 'zero_inflated_poisson', 'zero_one_inflated_beta'\], got 'tweedie'"):
+    with pytest.raises(ValueError, match=r"family must be one of \['acat', 'asym_laplace', 'bernoulli', 'beta', 'beta_binomial', 'binomial', 'categorical', 'cratio', 'cumulative', 'dirichlet', 'dirichlet_multinomial', 'exgaussian', 'exponential', 'frechet', 'gamma', 'gaussian', 'gen_extreme_value', 'geometric', 'hurdle_cumulative', 'hurdle_gamma', 'hurdle_lognormal', 'hurdle_negbinomial', 'hurdle_poisson', 'inverse_gaussian', 'logistic_normal', 'lognormal', 'mixture', 'multinomial', 'negbinomial', 'negbinomial2', 'poisson', 'shifted_lognormal', 'skew_normal', 'sratio', 'student', 'von_mises', 'weibull', 'wiener', 'xbeta', 'zero_inflated_beta', 'zero_inflated_beta_binomial', 'zero_inflated_binomial', 'zero_inflated_negbinomial', 'zero_inflated_poisson', 'zero_one_inflated_beta'\], got 'tweedie'"):
         get_family("tweedie")
     with pytest.raises(TypeError):
         FAMILIES["tweedie"] = None
@@ -198,7 +204,9 @@ def frame() -> pd.DataFrame:
                          "zoprop": np.r_[0.0, 1.0, rng.uniform(0.05, 0.95, n - 2)], "ordh": [0, 1, 2, 3] * (n // 4)}   # E01
                         ).assign(ang=np.linspace(-3.0, 3.0, n),   # E02: von Mises angles in [-pi, pi]
                                  rt=np.linspace(0.4, 1.5, n), dec=[1, 0, 0] * (n // 3),   # F04: response times and decisions
-                                 c1=[1, 0, 2] * (n // 3), c2=[2, 3, 0] * (n // 3), c3=[2, 2, 3] * (n // 3), n5=np.full(n, 5))   # F01a
+                                 c1=[1, 0, 2] * (n // 3), c2=[2, 3, 0] * (n // 3), c3=[2, 2, 3] * (n // 3), n5=np.full(n, 5),   # F01a
+                                 s1=np.linspace(0.1, 0.3, n), s2=np.linspace(0.5, 0.2, n),   # F01b: a simplex response
+                                 s3=lambda d: 1.0 - d["s1"] - d["s2"])
 
 
 EXAMPLES = {                               # family -> (formula, extra prior classes, constructor keywords)
@@ -247,6 +255,8 @@ EXAMPLES = {                               # family -> (formula, extra prior cla
     "wiener": ("rt | dec(dec) ~ x", {"bs": ab.Gamma(1, 1), "ndt": ab.Uniform(0, "min_Y"), "bias": ab.Beta(2, 2)}, {}),   # F04
     "multinomial": ("cbind(c1, c2, c3) | trials(n5) ~ x", {}, {}),                                   # F01a
     "dirichlet_multinomial": ("cbind(c1, c2, c3) | trials(n5) ~ x", {"phi": ab.Gamma(0.01, 0.01)}, {}),
+    "dirichlet": ("cbind(s1, s2, s3) ~ x", {"phi": ab.Gamma(2, 0.5)}, {}),                          # F01b
+    "logistic_normal": ("cbind(s1, s2, s3) ~ x", {"sigma": ab.HalfNormal(1), "lncor": ab.LKJ(2)}, {}),
 }
 
 

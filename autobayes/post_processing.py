@@ -149,6 +149,10 @@ def bayes_R2(model, fit_result) -> xr.DataArray:
         raise ValueError(f"bayes_R2() of a model with the SAR term {model.spec.sar.term!r} is not offered: no frozen brms case verifies "
                          "it (brms's posterior_epred, which it reads, fails for the error model; docs/spatial-sar.md, divergence D143)")
     fam = family_of(model)
+    if fam.simplex is not None:                                # F01b: a K-column response on the simplex
+        raise ValueError(f"bayes_R2() is not offered for the {model.family} family: its response is K proportions per row, for which "
+                         "no frozen case records brms's R2 (docs/dirichlet-logistic-normal.md, divergence "
+                         f"{fam.simplex.divergence})")
     if fam.per_category:
         raise ValueError(f"bayes_R2() is not defined for the {model.family} family's unordered categories (brms: \"'bayes_R2' is "
                          "not defined for unordered categorical models\")")

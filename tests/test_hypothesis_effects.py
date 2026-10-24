@@ -178,7 +178,10 @@ def test_names_are_brms_coefficient_names_on_every_case():
                      "hypothesis() of a model with the hurdle_cumulative family's thresholds",
                      # F01a: the count-matrix families' categories, refused as the categorical family's
                      "hypothesis() of a model with the multinomial family's categories",
-                     "hypothesis() of a model with the dirichlet_multinomial family's categories"}
+                     "hypothesis() of a model with the dirichlet_multinomial family's categories",
+                     # F01b: the dirichlet and logistic_normal families' categories, refused as the categorical family's
+                     "hypothesis() of a model with the dirichlet family's categories",
+                     "hypothesis() of a model with the logistic_normal family's categories"}
 
 
 def _bundle(case_id):

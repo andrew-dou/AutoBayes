@@ -518,6 +518,10 @@ class Priors:
     sdcar: Prior | None = None
     car: Prior | None = None
     rhocar: Prior | None = None
+    # F01b (docs/dirichlet-logistic-normal.md): LKJ(eta) on the correlation of the logistic-normal family's log-ratios (brms class
+    # ``lncor``, placed on its Cholesky factor ``Llncor``); that family's SDs take ``sigma`` (one prior for every sigma<k>). Refused
+    # for every other family.
+    lncor: Prior | None = None
 
     def __post_init__(self):
         if isinstance(self.components, list):                         # one value for equal component lists (C05)
@@ -566,6 +570,7 @@ class Priors:
         from autobayes.shrinkage import check_prior
 
         check_prior(self)                                             # D07: horseshoe() / R2D2() in a response's priors
+        self._refuse_lncor(fam, "a multivariate model")               # F01b
         if self.nlpars is not None:                                   # C02
             raise PriorError("nlpars gives the priors of non-linear parameters (ab.gaussian(..., nl=True), docs/nonlinear.md); "
                              "a multivariate model takes none: a non-linear model in a multivariate formula is not supported "
@@ -1107,6 +1112,7 @@ class Priors:
 
         check_prior(self)                                             # D07: a shrinkage prior anywhere but the bare b is refused
         self.sar_priors(spec)                                         # F02b: lagsar / errorsar exactly with a SAR term, every model
+        self._refuse_lncor(fam)                                       # F01b: the logistic-normal family's alone
         if getattr(spec, "is_multinomial", False):                     # F01a: the count-matrix families, priors per category
             from autobayes.multinomial import check_multinomial_priors
 
@@ -1157,7 +1163,14 @@ class Priors:
         for name, extra in extras.items():                            # D01: each is required, with a prior its support takes
             if name not in formulas:                                  # E03: or the priors of its own formula, below
                 self._validate_extra(fam, extra, auxiliary[name])
+        own = fam.simplex.own_priors if fam.simplex is not None else ()   # F01b: the logistic-normal family's sigma and lncor
+        if own:
+            from autobayes.families.simplex import check_priors
+
+            check_priors(self, fam)
         for name, prior in auxiliary.items():
+            if prior is not None and name in own:
+                continue
             if prior is not None and name in fam.fixed_parameters:   # E02: a quantile the model fixes (bf(quantile = p))
                 raise PriorError(f"the {fam.name} family's {name} is fixed in this model ({name}=...), not learned: do not pass "
                                  f"a prior on it (brms's bf({name} = ...) has none); leave {name}=None to learn it under its prior")
@@ -1244,6 +1257,13 @@ class Priors:
             if prior.name not in _UNIT:
                 raise PriorError(f"prior for {zero!r} must be a prior on (0, 1) ({sorted(_UNIT)}; the {AUXILIARY[zero]} "
                                  f"is brms's real<lower=0,upper=1> {zero}), got {prior}")
+
+    def _refuse_lncor(self, fam, what: str | None = None) -> None:
+        """F01b: ``lncor`` is the logistic-normal family's prior (``Simplex.own_priors``) and refused for every other model."""
+        own = fam.simplex.own_priors if fam.simplex is not None and what is None else ()
+        if self.lncor is not None and "lncor" not in own:
+            raise PriorError(f"lncor is the prior of the logistic_normal family's correlation of its log-ratios (brms class lncor); "
+                             f"{what or 'the ' + fam.name + ' family'} has none")
 
     @staticmethod
     def _validate_extra(fam, extra, prior) -> None:

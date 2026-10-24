@@ -66,7 +66,7 @@ refused with an error naming the construct.
 | Priors | explicit priors on every class; brms's defaults with `ab.default_priors()`; `horseshoe()` and `R2D2()` on `b` | [default priors](docs/default-priors.md), [shrinkage priors](docs/shrinkage-priors.md) |
 | Post-processing | `predict()` (`posterior_linpred`, `posterior_epred`, `posterior_predict`), `log_lik`, `loo`, `waic`, `loo_compare`, `model_weights`, `bayes_R2`, `hypothesis` (with Savage-Dickey evidence ratios), `conditional_effects` | [post-processing](docs/post-processing.md), [prediction](docs/linear-prediction.md) |
 
-Not yet: `s()` and `t2()`; `dirichlet`, `logistic_normal` and `cox`;
+Not yet: `s()` and `t2()`; `cox`;
 `unstr` and `cosy`; K-fold cross-validation and stacking weights. Combinations no frozen brms case
 checks yet are refused, each naming its divergence row. The full map is
 [current capabilities](docs/current-capabilities.md).

@@ -307,8 +307,11 @@ class Model:
                                "zero_inflated_poisson", "hurdle_poisson", "cumulative", "categorical", "mixture", and (D01) "weibull",
                                "exponential", "skew_normal", "shifted_lognormal", "exgaussian", and (D02) "beta_binomial", "geometric",
                                "negbinomial2", and (E02) "inverse_gaussian", "von_mises", "asym_laplace", "frechet", "gen_extreme_value",
-                               and (F04) "wiener"
-    categories : tuple[str]    the response's categories in order (the cumulative and categorical families, B05); () otherwise
+                               and (F04) "wiener", and (F01b) "dirichlet", "logistic_normal"
+    categories : tuple[str]    the response's categories in order (the cumulative and categorical families, B05; F01b: a cbind()
+                               response's columns, the reference first); () otherwise
+    response_matrix : ndarray  F01b: a cbind() response on the simplex, (n, K) in the columns' order (brms's Y); None otherwise
+    category_order : ndarray   F01b: the column of each category of ``categories`` in that matrix; None otherwise
     hurdle_category : str      hurdle_cumulative's hurdle category, brms's Y = 0 (E01); None otherwise
     family_spec : FamilySpec   the specification of that family under the model's link (autobayes/families/; the registered spec unless ``link`` names another of the family's links, or, E02, ``quantile`` fixes the asymmetric Laplace quantile)
     quantile : float | None    E02: the asymmetric Laplace family's fixed quantile, or None when it is learned (that family only)
@@ -338,7 +341,7 @@ class Model:
                  family: str = "gaussian", center_predictors: bool = True,
                  categorical: Mapping[str, object] | None = None, nu: float | None = None, link: str | None = None,
                  families: list[str] | None = None, order: str | bool | None = None, imputed: tuple[str, ...] = (),
-                 quantile: float | None = None, data2: Mapping[str, object] | None = None):
+                 quantile: float | None = None, data2: Mapping[str, object] | None = None, refcat: str | None = None):
         """``data2`` (Tier F) holds the matrices the formula's terms read by name, brms's ``data2``: ``sar(M, ...)``'s weight
         matrix (F02b) and ``fcor(M)``'s covariance (F03a, docs/fcor.md) over the fitted rows, ``data2={"M": matrix}`` (a NumPy array
         or a DataFrame, in data order), and ``car(W, gr = site)``'s adjacency matrix (F02a, docs/spatial-car.md), a DataFrame labelled
@@ -346,7 +349,9 @@ class Model:
         ``MultivariateModel`` for the models of its responses: the responses of its
         ``col | mi() ~ ...`` formulas, whose missing values are parameters (``formula.check_imputation``); empty otherwise.
         ``quantile`` (E02) fixes the asymmetric Laplace family's quantile (brms's ``bf(y ~ ..., quantile = p)``): the model's
-        spec is then the family's with that parameter fixed (``FamilySpec.with_fixed``) and ``self.quantile`` its value."""
+        spec is then the family's with that parameter fixed (``FamilySpec.with_fixed``) and ``self.quantile`` its value.
+        ``refcat`` (F01b) is the reference category of a ``cbind(y1, ..., yK)`` response on the simplex (brms's ``refcat``): one
+        of its columns, the first by default (``families.simplex.categories_of``); refused for every other family."""
         import bambi as bmb
 
         fam = get_family(family)
@@ -376,6 +381,8 @@ class Model:
         elif nu is not None:
             accepting = [name for name, other in FAMILIES.items() if "nu" in other.fixed_parameters]
             raise ValueError(f"nu applies only to the {' or '.join(accepting)} family")
+        from autobayes.families.simplex import check_refcat
+        check_refcat(fam, refcat)                              # F01b: the simplex families' reference category
         self.family = family
         self.family_spec: FamilySpec = fam
         self.priors = priors
@@ -408,7 +415,7 @@ class Model:
             raise PriorError(f"{priors.b.name}() on b with center_predictors=False is not offered: no frozen case verifies it "
                              "(docs/shrinkage-priors.md, divergence D102)")
         operands = [c for t in spec0.group_terms for c in t.data_columns]   # the columns the grouping factors are read from
-        cols = ([spec0.response, *spec0.pop_columns] + operands
+        cols = ([*(spec0.response_columns or (spec0.response,)), *spec0.pop_columns] + operands   # F01b: cbind()'s columns
                 + ([spec0.trials] if spec0.trials else []) + ([spec0.offset.column] if spec0.offset is not None else [])
                 + [c for a in spec0.additions for c in a.columns]          # weights() and cens() columns (B02)
                 + [c for d in spec0.dpars for c in d.pop_columns]          # the columns distributional formulas read (B01)
@@ -466,6 +473,16 @@ class Model:
         for t in (*self.spec.transform_terms, *(t for d in self.spec.dpars for t in d.transform_terms)):
             df[t.name] = t.transform.values(df)              # the evaluated column Bambi is handed, under the term's own name (A05)
         self.categories: tuple[str, ...] = ()               # the response's categories, in order (B05: cumulative, categorical)
+        # F01b: a cbind(y1, ..., yK) response on the simplex, (n, K) in the columns' order (brms's Y), its categories the reference
+        # first (self.categories) and each category's column (category_order); Bambi is handed the reference's column under the
+        # synthetic response name, which the likelihood does not read
+        self.response_matrix: np.ndarray | None = None
+        self.category_order: np.ndarray | None = None
+        if fam.simplex is not None:
+            from autobayes.families.simplex import categories_of, response_matrix
+            self.response_matrix = response_matrix(self.spec, df, fam.name)
+            self.categories, self.category_order = categories_of(self.spec, refcat, fam)
+            df[self.spec.response] = self.response_matrix[:, self.category_order[0]]
         self.hurdle_category: str | None = None              # E01: hurdle_cumulative's hurdle category, brms's Y = 0
         if fam.hurdle_category is not None:                  # read before the column becomes brms's codes
             self.hurdle_category = fam.hurdle_category(self.spec, df[self.spec.response])
@@ -634,6 +651,9 @@ class Model:
         if self.family_spec.mixture:                        # C05: each component's sigma, theta and the component coordinates
             roles = self.mixture_names
             variable_names += [*roles["sigma"], roles["theta"], roles["coordinate"], f"{self.spec.response}_dim"]
+        simplex = self.simplex_names                        # F01b: the observed categories' coordinate, sigma<k>, Llncor
+        variable_names += [simplex[k] for k in ("response_dim", "L", "coordinate", "coordinate_T") if k in simplex]
+        variable_names += list(simplex.get("sigma", ()))
         for roles in (*self.group_coefficient_names.values(), *self.dpar_group_names.values()):   # D08: a shared ID's dpar terms too
             variable_names.extend(roles[k] for k in ("sd", "offset", "group_effect", "by_normalisation") if k in roles)
         for roles in self.correlation_names.values():
@@ -866,12 +886,17 @@ class Model:
                 coord = self.group_names[g]["coordinate"]
                 if tuple(str(v) for v in self.pymc_model.coords[coord]) != levels:
                     raise RuntimeError(f"PyMC coordinate {coord!r} differs from fitted labels")
-                for coef in t.coefs:                       # every coefficient's effects carry the factor's level dimension
+                # every coefficient's effects carry the factor's level dimension; a per-category family's (F01b) also the
+                # category dimension, its SD that one alone
+                category = (self.names["category_dim"],) if self.family_spec.per_category else ()
+                for coef in t.coefs:
                     roles = self._group_roles(g, coef)
                     for key in ("offset", "group_effect"):
                         dims = tuple(self.pymc_model.named_vars_to_dims.get(roles[key], ()))
-                        if dims != (coord,):
-                            raise RuntimeError(f"PyMC dims of {roles[key]!r} are {dims}; expected ({coord!r},)")
+                        if dims != (coord, *category):
+                            raise RuntimeError(f"PyMC dims of {roles[key]!r} are {dims}; expected {(coord, *category)}")
+                    if category and tuple(self.pymc_model.named_vars_to_dims.get(roles["sd"], ())) != category:
+                        raise RuntimeError(f"PyMC dims of {roles['sd']!r} are not {category}: one SD per non-reference category")
             Z = np.concatenate(parts, axis=1) if parts else np.zeros((len(X_raw), 0))
             if Z.shape != (len(X_raw), start) or bambi_Z.shape != (len(X_raw), bambi_start):
                 raise RuntimeError("unexpected concatenated group design shape")
@@ -900,7 +925,8 @@ class Model:
         else:
             x_means = np.zeros(X_raw.shape[1])
             X_model = X_raw
-        y = np.asarray(self.data[self.spec.response], dtype=float)
+        y = (np.asarray(self.data[self.spec.response], dtype=float) if self.response_matrix is None
+             else self.response_matrix.copy())               # F01b: brms's Y, (n, K) in the columns' order
         trials = np.asarray(self.data[self.spec.trials], dtype=np.int64) if self.spec.trials else None
         additions = addition_data(self.spec, self.data)      # brms's weights, cens, lb and ub on the fitted rows (B02)
         return Design(y=y, X_raw=X_raw, X_model=X_model, x_means=x_means,
@@ -1610,6 +1636,11 @@ class Model:
             out["linpred"] = "mu_cs"                          # posterior_linpred of a model with cs() terms)
         if fam.per_category:                                  # B05: the coordinate of the non-reference categories
             out["category_dim"] = f"{self.spec.response}_reduced_dim"
+        if fam.simplex is not None:                           # F01b: the observed K categories' coordinate; the logistic_normal
+            roles = self.simplex_names                        # family's sigma<k> and Llncor under brms's names
+            out["response_dim"] = roles["response_dim"]
+            if "L" in roles:
+                out.update({name: name for name in roles["sigma"]}, Llncor=roles["L"])
         if fam.mixture:                                       # C05: each component's sigma<k>, theta and the component coordinate
             roles = self.mixture_names
             out.update({name: name for name in roles["sigma"]}, theta=roles["theta"], component_dim=roles["coordinate"])
@@ -1619,6 +1650,18 @@ class Model:
         out.update(self.sar_names)                            # "lagsar" or "errorsar" (F02b)
         out.update({k: v for k, v in self.car_names.items() if not k.endswith("coordinate") and k != "lpdf"})   # F02a: sdcar, rcar, ...
         return out
+
+    @property
+    def simplex_names(self) -> dict:
+        """PyMC names of a simplex model's own parameters and coordinates (F01b, docs/dirichlet-logistic-normal.md;
+        ``families.simplex.names``): ``"response_dim"`` the coordinate of the observed response's K categories, and the
+        logistic_normal family's ``"sigma"`` (brms's ``sigma<k>``), ``"L"`` (``Llncor``) and its two coordinates. Empty for any
+        other model."""
+        if self.family_spec.simplex is None:
+            return {}
+        from autobayes.families.simplex import names
+
+        return names(self)
 
     @property
     def mixture_names(self) -> dict:
@@ -1788,7 +1831,7 @@ class Model:
                     sdgp=None, lscale=None, zgp=None, ar=None, ma=None, meanme=None, sdme=None, zme=None,
                     Ymi=None, alpha=None, beta=None, ndt=None, shrinkage=None, bcs=None, zoi=None, coi=None,
                     kappa=None, quantile=None, tmp_xi=None, lagsar=None, errorsar=None, bs=None, bias=None,
-                    car=None) -> dict[str, np.ndarray]:
+                    car=None, Llncor=None) -> dict[str, np.ndarray]:
         """A point in PyMC's sampled (value) space, from natural-scale quantities.
 
         ``intercept`` is the *model* intercept (at the predictor means when centred),
@@ -1858,6 +1901,12 @@ class Model:
         F02a: ``car`` maps a CAR term's parameters and latent vectors, by brms's names, to their values (``car.value_entries``):
         ``{"sdcar": 0.8, "car": 0.4, "rcar": array(Nloc)}`` (escar), ``{"sdcar": ..., "zcar": array(Nloc - 1)}`` (esicar),
         ``{"sdcar": ..., "zcar": array(Nloc)}`` (icar), ``{"sdcar": ..., "rhocar": ..., "zcar": ..., "nszcar": ...}`` (bym2).
+        F01b (docs/dirichlet-logistic-normal.md): the group-level terms of a per-category family (the dirichlet and logistic_normal
+        families; the categorical family takes none, D37) give each coefficient one SD per non-reference category and one
+        standardised effect per level and category: ``sd={"g": array(K - 1)}``, ``z={"g": array(J, K - 1)}`` (brms's ``sd_m`` and
+        ``z_m`` of each category's group term in column k). The dirichlet family's precision is ``phi``; the logistic_normal
+        family's SDs are ``sigma``, K - 1 positive numbers in category order (brms's ``sigma<k>``, stored as their logs), and
+        ``Llncor`` the Cholesky factor of their correlation (brms's ``Llncor``, stored on Stan's ``cholesky_corr`` coordinates).
         """
         from autobayes.car import value_entries
         car_point = value_entries(self, car)                  # F02a: a CAR term's values; refused for a model without one
@@ -1940,7 +1989,12 @@ class Model:
                 for coef in t.coefs:
                     block = self.design.group_blocks[(g, coef)]
                     arr = np.asarray(zs[coef], dtype=float)
-                    if arr.shape != (block.J,) or not np.isfinite(arr).all():
+                    if self.family_spec.per_category:         # F01b: one column per non-reference category
+                        want = (block.J, len(self.categories) - 1)
+                        if arr.shape != want or not np.isfinite(arr).all():
+                            raise ValueError(f"z for {g!r} must be a finite array of shape {want}: one row per level, one column per "
+                                             f"non-reference category {list(self.categories[1:])}")
+                    elif arr.shape != (block.J,) or not np.isfinite(arr).all():
                         what = repr(g) if coef == "Intercept" else f"the slope {coef!r} of {g!r}"
                         raise ValueError(f"z for {what} must have {block.J} finite entries")
                     sd_by_coef[(g, coef)], z_by_coef[(g, coef)] = sds[coef], arr
@@ -1964,7 +2018,12 @@ class Model:
                 L_by_group[g] = check_correlation_cholesky(by_group[g], len(self.correlation_coefs(g)), f"L for {g!r}")
         scale = self.family_spec.scale_parameter                 # "sigma", "shape", "phi" or None
         auxiliary = {"sigma": sigma, "shape": shape, "phi": phi}
-        if {k for k, v in auxiliary.items() if v is not None} != ({scale} if scale is not None else set()):
+        simplex = self.family_spec.simplex                       # F01b: the logistic_normal family's own sigma and Llncor
+        simplex_own = simplex.own_priors if simplex is not None else ()
+        if Llncor is not None and "lncor" not in simplex_own:
+            raise ValueError(f"Llncor is the Cholesky factor of the logistic_normal family's correlation of its log-ratios; the "
+                             f"{self.family} family has none")
+        if {k for k, v in auxiliary.items() if v is not None and k not in simplex_own} != ({scale} if scale is not None else set()):
             raise ValueError(self.family_spec.scale_rule)
         zero = self.family_spec.zero_parameter                   # "zi", "hu" or None (B06)
         probabilities = {"zi": zi, "hu": hu}
@@ -2025,11 +2084,20 @@ class Model:
                     raise ValueError(f"sd for {g!r} must be {len(block.by_levels)} finite positive SDs, one per level "
                                      f"{list(block.by_levels)} of its by column (or a mapping over them)")
                 point[f"{roles['sd']}_log__"] = np.log(arr)
+            elif self.family_spec.per_category:                # F01b: one SD per non-reference category
+                arr = np.asarray(sd_by_coef[(g, coef)], dtype=float)
+                if arr.shape != (len(self.categories) - 1,) or not np.isfinite(arr).all() or (arr <= 0).any():
+                    raise ValueError(f"sd for {g!r} must be {len(self.categories) - 1} finite positive SDs, one per non-reference "
+                                     f"category {list(self.categories[1:])}")
+                point[f"{roles['sd']}_log__"] = np.log(arr)
             else:
                 point[f"{roles['sd']}_log__"] = log_scale(sd_by_coef[(g, coef)], f"sd:{sd_tag(g, coef)}")
             point[roles["offset"]] = z_by_coef[(g, coef)]
         for g, roles in self.correlation_names.items():              # Stan's cholesky_corr coordinates of L (A02)
             point[f"{roles['L']}_cholesky_corr__"] = cholesky_corr_free(L_by_group[g])
+        if simplex_own:                                        # F01b: the logistic_normal family's sigma<k> and Llncor
+            from autobayes.families.simplex import own_point
+            point.update(own_point(self, sigma=sigma, Llncor=Llncor))
         if scale in self.spec.dpar_names:                      # its own formula (B01): the intercept and coefficients as sampled
             point.update(self._dpar_point(scale, auxiliary[scale]))
         elif scale is not None:
@@ -2412,7 +2480,10 @@ class Model:
             if ds.canonical_formula != ds.formula:
                 lines += [f"  expanded  : {ds.canonical_formula}"]
         lines += [f"  family    : {self.family}, {self.link} link", data_line]
-        if self.categories:                                   # B05: the response's categories, fitted as brms's 1-based Y
+        if fam.simplex is not None:                           # F01b: the cbind() response's columns, categories and reference
+            from autobayes.families.simplex import response_lines
+            lines += response_lines(self)
+        elif self.categories:                                 # B05: the response's categories, fitted as brms's 1-based Y
             hurdle = self.hurdle_category                     # E01: hurdle_cumulative's hurdle category, coded 0
             lines += [f"  {s.response:<10}: response categories " + (f"0={hurdle} (the hurdle), " if hurdle is not None else "")
                       + ", ".join(f"{k}={c}" for k, c in enumerate(self.categories, start=1))
@@ -2629,6 +2700,10 @@ class Model:
                 if t.by is not None:                         # D08: the SD of the level's by level
                     lines += [f"  u_{g}[j] = sd_{g}[{t.by}[j]] * z_{g}[j], z_{g}[j] ~ Normal(0, 1), j = 0..{block.J - 1}: one SD per level "
                               f"of {t.by!r} ({', '.join(block.by_levels)}), the level's own (brms's sd_m[1, Jby_m[j]])"]
+                elif fam.per_category:                       # F01b: one group term per non-reference category, as brms's
+                    lines += [f"  u_{g}[j, k] = sd_{g}[k] * z_{g}[j, k], z_{g}[j, k] ~ Normal(0, 1), j = 0..{block.J - 1}, for each "
+                              f"non-reference category k = {', '.join(self.categories[1:])}: brms's own group term of {g} in each mu<k>, "
+                              "independent across categories; mu_i[k] adds u_" + f"{g}[{g}_i, k]"]
                 else:
                     lines += [f"  u_{g}[j] = sd_{g} * z_{g}[j], z_{g}[j] ~ Normal(0, 1), j = 0..{block.J - 1}"]
                 if t.is_mm:
@@ -2721,7 +2796,7 @@ class Model:
         if fam.per_category:
             lines += [f"  (one prior per class, the same for every non-reference category k = {', '.join(self.categories[1:])})"]
         for (g, c), prior in pr.sd_priors(s).items():
-            lines += [f"  sd_{sd_tag(g, c)} ~ {describe_prior(prior, lb=0)}"]
+            lines += [f"  sd_{sd_tag(g, c)}{each} ~ {describe_prior(prior, lb=0)}"]
         for g, prior in pr.cor_priors(s).items():
             lines += [f"  Cor_{g} ~ {prior} (brms lkj({prior.params['eta']:g}) on the correlation matrix, placed on L_{g} as lkj_corr_cholesky)"
                       + ("   (brms default)" if prior.source == "default" else "")]
@@ -2772,6 +2847,16 @@ class Model:
         for (g, c), names in self.group_coefficient_names.items():
             roles[f"{names['sd']}_log__"] = f"log(sd_{sd_tag(g, c)})"
             roles[names["offset"]] = ("z" if len(s.groups) == 1 else f"z_{g}") if c == "Intercept" else f"z_{c}|{g}"
+            if fam.per_category:                              # F01b: one SD per non-reference category, z by level and category
+                others = ", ".join(self.categories[1:])
+                roles[f"{names['sd']}_log__"] = f"log(sd_{sd_tag(g, c)}[{others}]) (vector; dims {n['category_dim']})"
+                roles[names["offset"]] = f"z_{g}[j, k] (matrix; dims {names['coordinate']} x {n['category_dim']})"
+        simplex_roles = self.simplex_names                    # F01b: the logistic_normal family's sigma<k> and Llncor
+        for name, cat in zip(simplex_roles.get("sigma", ()), self.categories[1:]):
+            roles[f"{name}_log__"] = f"log({name}), the SD of log(y[{cat}] / y[{self.categories[0]}]) (brms's {name})"
+        if "L" in simplex_roles:
+            roles[f"{simplex_roles['L']}_cholesky_corr__"] = (f"{simplex_roles['L']}, the Cholesky factor of the log-ratios' correlation, on "
+                                                              "Stan's cholesky_corr coordinates (brms's Llncor)")
         for (g, c), names in self.group_coefficient_names.items():   # D08: gr(by = )'s SD, a vector over the by levels
             if "by_coordinate" in names:
                 roles[f"{names['sd']}_log__"] = f"log(sd_{g}[{', '.join(self.design.group_blocks[(g, c)].by_levels)}]) (vector; dims {names['by_coordinate']})"
@@ -3102,6 +3187,8 @@ class Model:
             found += formula_priors(e.name) if e.name in s.dpar_names else [(e.name, getattr(pr, e.name))]
         if pr.nu is not None:
             found.append(("nu", pr.nu))
+        if fam.simplex is not None and fam.simplex.own_priors:   # F01b: the logistic_normal family's sigma<k> and lncor
+            found += [("sigma", pr.sigma), ("lncor", pr.lncor)]
         return [label for label, prior in found if getattr(prior, "source", "user") == "default"]
 
     def prior_table(self) -> list[dict[str, str]]:
@@ -3693,6 +3780,41 @@ def categorical(formula: str, data: pd.DataFrame, priors: Priors, *,
     this slice (D37). ``categorical={column: reference}`` declares categorical predictors as for every family.
     """
     return Model(formula, data, priors, family="categorical", center_predictors=center_predictors, categorical=categorical)
+
+
+def dirichlet(formula: str, data: pd.DataFrame, priors: Priors, *, refcat: str | None = None, center_predictors: bool = True,
+              categorical: Mapping[str, object] | None = None) -> Model:
+    """A response on the simplex under brms's ``dirichlet()`` (F01b, docs/dirichlet-logistic-normal.md): ``cbind(y1, ..., yK) ~
+    <terms>``, K proportion columns whose rows sum to 1, ``y_i ~ Dirichlet(phi * softmax(0, mu_i))`` with one linear predictor
+    per non-reference category (brms's ``mu<k>``: its own centred intercept, coefficients and varying intercepts with their own
+    SD) and the precision ``phi`` (``Priors(phi=...)``, brms's default ``gamma(0.01, 0.01)``).
+
+    The categories are the columns, the first the reference (``refcat`` may name only it: divergence D138). ``Priors(intercept=,
+    b=, sd=)`` hold for every non-reference category (one prior per class). ``predict(kind="linear")`` returns ``mu`` with a
+    ``category`` dimension over the non-reference categories (brms's ``posterior_linpred``), ``kind="mean"`` the expected
+    proportions ``softmax(0, mu)`` over all K (brms's ``posterior_epred``), ``kind="response"`` draws on the simplex.
+    Population-level terms of every kind and varying intercepts ``(1 | g)``; group-level slopes, offsets and addition terms are
+    refused (D138)."""
+    return Model(formula, data, priors, family="dirichlet", center_predictors=center_predictors, categorical=categorical,
+                 refcat=refcat)
+
+
+def logistic_normal(formula: str, data: pd.DataFrame, priors: Priors, *, refcat: str | None = None, center_predictors: bool = True,
+                    categorical: Mapping[str, object] | None = None) -> Model:
+    """A response on the simplex under brms's ``logistic_normal()`` (F01b, docs/dirichlet-logistic-normal.md): ``cbind(y1, ...,
+    yK) ~ <terms>``, K >= 3 proportion columns whose rows sum to 1; the log-ratios ``log(y_i[k] / y_i[ref])`` of the
+    non-reference categories are ``MultiNormal(mu_i, diag(sigma) Lncor diag(sigma))``, the density on the simplex with its
+    Jacobian ``-sum_k log y_i[k]``. One linear predictor per non-reference category (brms's ``mu<k>``, as for ``ab.dirichlet``),
+    one SD per non-reference category (brms's ``sigma<k>``, ``Priors(sigma=...)``, one prior for all; brms's default
+    ``student_t(3, 0, 2.5)``) and the correlation of the log-ratios (``Priors(lncor=ab.LKJ(eta))``, brms's class ``lncor``,
+    default ``lkj(1)``).
+
+    ``refcat`` names the reference category, one of the columns (the first by default; brms's ``refcat``). ``predict(kind=
+    "linear")`` returns ``mu`` (brms's ``posterior_linpred``) and ``kind="response"`` draws on the simplex; ``kind="mean"`` is
+    refused, as brms refuses ``posterior_epred`` for the family. Population-level terms and varying intercepts ``(1 | g)``;
+    group-level slopes, offsets, addition terms and two-column responses are refused (D139)."""
+    return Model(formula, data, priors, family="logistic_normal", center_predictors=center_predictors, categorical=categorical,
+                 refcat=refcat)
 
 
 def mixture(formula: str, data: pd.DataFrame, priors: Priors, *, families: list[str], order: str | bool | None = None,

@@ -60,7 +60,9 @@ CROSS_CHECK = ["gauss_weighted", "gauss_distributional_sigma", "gauss_slope_corr
                "frechet_varint", "gen_extreme_value_varint",
                # F01a: the count-matrix families, their categories' own formulas and group terms
                "multinomial_varint", "multinomial_dpar_formula", "dirichlet_multinomial_varint", "multinomial_terms",
-               "dirichlet_multinomial_defaults"]
+               "dirichlet_multinomial_defaults",
+               # F01b: the dirichlet and logistic_normal families (log_lik() unit-tested; no frozen post case)
+               "dirichlet_varint", "logistic_normal_varint", "logistic_normal_refcat"]
 
 
 def _bundle(case_id):

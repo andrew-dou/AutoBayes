@@ -214,6 +214,11 @@ def freeze_target(model):
         # coefficients'); unordered thresholds are the family's (sratio, cratio, acat), which 'family' names.
         **({'category_specific': [{'term': f'cs({c})', 'column': c, 'values': values} for c, values in d.category_specific.items()]}
            if getattr(d, 'category_specific', {}) else {}),
+        # So does a cbind() response on the simplex (F01b): its columns in order and its reference category (y is the matrix and
+        # 'categories' lists them the reference first), and the logistic_normal family's prior on lncor (sigma's is below).
+        **({'simplex': {'columns': list(s.response_columns), 'reference': model.categories[0],
+                        **({'lncor': prior(pr.lncor)} if getattr(pr, 'lncor', None) is not None else {})}}
+           if getattr(s, 'response_columns', ()) else {}),
         'priors': {'intercept': prior(pr.intercept), 'sigma': prior(pr.sigma),
                    'coefficients': {} if mixture else {k: prior(v) for k,v in pr.coefficient_priors(s).items()},
                    'groups': {k: prior(v) for k,v in pr.group_priors(s).items()},

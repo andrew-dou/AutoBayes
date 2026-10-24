@@ -85,6 +85,7 @@ def _summary_rows(model, idata) -> dict:
     names += [v for k, v in getattr(model, "autocor_names", {}).items() if not k.endswith("_coordinate")]   # ar and ma (C04)
     names += list(getattr(model, "sar_names", {}).values())     # lagsar or errorsar (F02b)
     names += [v for k, v in getattr(model, "car_names", {}).items() if k in ("sdcar", "car", "rhocar")]   # a CAR term's (F02a)
+    names += list(getattr(model, "simplex_names", {}).get("sigma", ()))   # F01b: the logistic_normal family's sigma<k>
     zero = family_of(model).zero_parameter                      # the zero-inflation / hurdle probability (B06)
     own = model.spec.dpar_names                                 # E03: zi, hu or alpha with a formula: its intercept and coefficients
     for name in ([zero] if zero is not None else []) + [e.name for e in family_of(model).extra_parameters]:   # alpha, beta, ndt (D01)
@@ -184,6 +185,8 @@ def fit_record(model, fit, *, panel: dict | None = None, max_treedepth: int = 10
                        **(_scale_priors(model, fam.zero_parameter) if fam.zero_parameter is not None else {}),   # E03: zi:intercept
                        **{k: v for e in fam.extra_parameters for k, v in _scale_priors(model, e.name).items()},   # alpha, beta, ndt (D01)
                        **({"nu": str(pr.nu)} if pr.nu is not None else {}),
+                       # F01b: the logistic_normal family's one prior of every sigma<k> and its lncor
+                       **({"sigma": str(pr.sigma), "lncor": str(pr.lncor)} if fam.simplex is not None and fam.simplex.own_priors else {}),
                        **({label: str(prior) for label, prior in prior_labels(model).items()} if mixture else {}),
                        **{part: str(prior) for part, prior in pr.autocor_priors(s).items()},   # an ARMA term's ar and ma (C04)
                        **{name: str(prior) for name, prior in pr.sar_priors(s).items()},       # a SAR term's lagsar / errorsar (F02b)
@@ -192,6 +195,10 @@ def fit_record(model, fit, *, panel: dict | None = None, max_treedepth: int = 10
             **({"mixture": {"families": list(model.components), "order": ORDER,
                             "names": {k: list(v) if isinstance(v, tuple) else v for k, v in model.mixture_names.items()}}}
                if mixture else {}),
+            # a cbind() response on the simplex (F01b): its columns, its categories (the reference first) and their PyMC names
+            **({"simplex": {"columns": list(s.response_columns), "categories": list(model.categories), "reference": model.categories[0],
+                            "names": {k: list(v) if isinstance(v, list) else v for k, v in model.simplex_names.items()}}}
+               if fam.simplex is not None else {}),
             # which of those priors ab.default_priors() filled in (brms's defaults, A07); absent when the user gave them all
             **({"default_priors": {"brms": BRMS_VERSION, "parameters": list(defaults)}} if defaults else {}),
             "terms": list(s.terms),

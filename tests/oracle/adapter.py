@@ -221,7 +221,8 @@ def priors_from_spec(spec: dict) -> ab.Priors:
                      # F04: the wiener family's {"bs": [...]} (or bs's formula, {"bs": {"intercept": ..., "b": ...}}) and {"bias": [...]}
                      bs=_prior(spec.get("bs")), bias=_prior(spec.get("bias")),
                      # F02a: a CAR term's {"sdcar": [...], "car": ["Flat"]} (escar) or {"sdcar": [...], "rhocar": ["Beta", a, b]} (bym2)
-                     sdcar=_prior(spec.get("sdcar")), car=_prior(spec.get("car")), rhocar=_prior(spec.get("rhocar")))
+                     sdcar=_prior(spec.get("sdcar")), car=_prior(spec.get("car")), rhocar=_prior(spec.get("rhocar")),
+                     lncor=_prior(spec.get("lncor")))                    # F01b: the logistic_normal family's {"lncor": ["LKJ", eta]}
 
 
 def build_model(case: dict, data: pd.DataFrame) -> ab.Model:
@@ -569,6 +570,66 @@ class GroupMap:
     # D08: a distributional formula's coefficient of a shared correlation ID, (parameter, factor, coefficient) -> its 1-based
     # coefficient number in the factor's brms group (sd_m[c], z_m[c], r_m_<parameter>_c, Z_m_<parameter>_c)
     dpar_cn: dict = None
+    # F01b: a per-category family's group-level coefficient (factor, coefficient) -> brms's (group id m, coefficient number c) of
+    # each non-reference category's own group term, in category order (sd_m[c], z_m[c], r_m_<dpar>_c, Z_m_<dpar>_c, dpar mu<k>)
+    category: dict = None
+
+
+def match_category_groups(fixture: Fixture, model: ab.Model) -> GroupMap:
+    """F01b: the group-level terms of a per-category family (the dirichlet and logistic_normal families' ``(1 | g)``), which brms
+    writes once per non-reference category: a group of its own for each ``mu<k>``, whose covariate is ``Z_m_<dpar>_c`` (``dpar``
+    the category's ``mu<k>``, ``brms_dpar_names``) and whose ``J_m`` induces the block's partition of the rows. Each AutoBayes block
+    ``(factor, coef)`` must meet exactly one such coefficient per category, all with the block's coefficient label and level
+    order, and every brms coefficient must be met; brms's group of one coefficient is never correlated."""
+    from autobayes.default_priors import brms_dpar_names
+
+    sd, n = fixture.standata, model.design.n
+    dpars = brms_dpar_names(model.categories[1:])
+    used, levels_of, per = set(), {}, {}
+    for (g, coef), block in model.design.group_blocks.items():
+        gidx = block.group_index
+        covariate = block.Z[np.arange(n), gidx]
+        per[(g, coef)] = []
+        for dp in dpars:
+            found = []
+            for grp in fixture.groups:
+                m_id, cn = int(grp["id"]), int(grp["cn"])
+                Z = sd.get(f"Z_{m_id}_{dp}_{cn}")
+                if (m_id, cn) in used or Z is None or f"J_{m_id}" not in sd:
+                    continue
+                J = sd[f"J_{m_id}"].astype(int) - 1
+                m = _level_map(zip(J.tolist(), gidx.tolist()), block.J) if J.shape == gidx.shape else None
+                if m is not None and Z.shape == (n,) and np.max(np.abs(Z - covariate)) <= DESIGN_ABS:
+                    found.append((grp, m))
+            if len(found) != 1:
+                raise OracleMismatch(f"group-level coefficient {coef!r} of {g!r} in {dp}: {len(found)} brms group terms induce its "
+                                     f"partition of the rows and carry its covariate column Z_m_{dp}_c within {DESIGN_ABS}")
+            grp, m = found[0]
+            if grp["coef"] != coef or [block.levels[i] for i in m] != list(grp["levels"]):
+                raise OracleMismatch(f"{g!r} in {dp}: brms coefficient {grp['coef']!r} with levels {grp['levels']}; AutoBayes {coef!r} "
+                                     f"with {[block.levels[i] for i in m]}")
+            if g in levels_of and not np.array_equal(levels_of[g], m):
+                raise OracleMismatch(f"{g!r}: brms orders its levels differently in the categories' group terms")
+            m_id = int(grp["id"])
+            if int(sd[f"M_{m_id}"]) != 1 or f"L_{m_id}" in fixture.declarations:
+                raise OracleMismatch(f"{g!r} in {dp}: brms group {m_id} has M_{m_id} = {int(sd[f'M_{m_id}'])} coefficients"
+                                     f"{' and a correlation matrix' if f'L_{m_id}' in fixture.declarations else ''}; the AutoBayes "
+                                     f"term '{model.spec.group_term_of(g).canonical}' gives each category one, uncorrelated")
+            used.add((m_id, int(grp["cn"])))
+            levels_of[g] = m
+            per[(g, coef)].append((m_id, int(grp["cn"])))
+    unmatched = [(grp["group"], grp["coef"]) for grp in fixture.groups if (int(grp["id"]), int(grp["cn"])) not in used]
+    if unmatched:
+        raise OracleMismatch(f"brms group-level terms without an AutoBayes counterpart: {unmatched}")
+    return GroupMap({}, {}, levels_of, {}, None, category=per)
+
+
+def category_group_of(gmap: GroupMap, m_id: int, cn: int) -> tuple[str, str, int] | None:
+    """F01b: the AutoBayes (factor, coefficient, category index) of brms's group ``m_id`` coefficient ``cn``, or None."""
+    for (g, coef), pairs in (gmap.category or {}).items():
+        if (m_id, cn) in pairs:
+            return g, coef, pairs.index((m_id, cn))
+    return None
 
 
 def match_groups(fixture: Fixture, model: ab.Model) -> GroupMap:
@@ -583,6 +644,8 @@ def match_groups(fixture: Fixture, model: ab.Model) -> GroupMap:
         return match_nonlinear_groups(fixture, model)
     if is_multinomial(model):                                 # F01a: each category's group-level terms
         return match_multinomial_groups(fixture, model)
+    if model.family_spec.per_category and model.spec.group_terms:   # F01b: one brms group term per non-reference category
+        return match_category_groups(fixture, model)
     ids, cns, levels_of, coef_cn, used = {}, {}, {}, {}, set()
     n = model.design.n
     for (g, coef), block in model.design.group_blocks.items():
@@ -794,7 +857,13 @@ def natural_point(model: ab.Model, point: Point, cmap: ColumnMap, gmap: GroupMap
         elif model.spec.intercept:
             intercept = float(pars["Intercept"]) if cmap.centred_intercept else float(bb[cmap.b_index(cmap.intercept_column)])
     sd, z = {}, {}
-    for t in model.spec.group_terms:
+    for (g, coef), pairs in (gmap.category or {}).items():   # F01b: brms's sd_m[c] and z_m[c] of each category, column by column
+        J = len(gmap.level_of[g])
+        sd[g] = np.array([float(np.ravel(pars[f"sd_{m}"])[cn - 1]) for m, cn in pairs])
+        z[g] = np.empty((J, len(pairs)))
+        for k, (m, cn) in enumerate(pairs):
+            z[g][gmap.level_of[g], k] = np.atleast_2d(pars[f"z_{m}"])[cn - 1]
+    for t in (model.spec.group_terms if not gmap.category else ()):
         g = t.factor
         m = gmap.brms_id[g]
         sd_m, zb = np.atleast_1d(pars[f"sd_{m}"]), np.atleast_2d(pars[f"z_{m}"])    # z_m is (M_m, N_m), brms level order
@@ -859,6 +928,10 @@ def natural_point(model: ab.Model, point: Point, cmap: ColumnMap, gmap: GroupMap
     extras = {e.variable: formulas[e.name] if e.name in formulas else float(pars[e.variable])   # D01: brms's alpha, beta or ndt
               for e in model.family_spec.extra_parameters}   # (E02: kappa, quantile, the GEV's tmp_xi; E03: alpha's formula)
     shrinkage = shrinkage_point(model, pars, cmap)          # D07: zb and the horseshoe's or R2D2's scales, or None
+    simplex = getattr(model, "simplex_names", {})          # F01b: the logistic_normal family's sigma<k> (in category order) and Llncor
+    if "L" in simplex:
+        sigma = np.array([float(pars[name]) for name in simplex["sigma"]])
+        extras["Llncor"] = np.atleast_2d(pars[simplex["L"]]).astype(float)
     if cmap.cs:                                            # D04: brms's bcs, one row per Xcs column, one column per threshold
         bcs = np.atleast_2d(pars["bcs"]).astype(float)
         extras["bcs"] = {c: bcs[k] for k, c in enumerate(cmap.cs)}
@@ -1109,6 +1182,32 @@ def coordinate_map(fixture: Fixture, model: ab.Model, cmap: ColumnMap, gmap: Gro
                         raise OracleMismatch(f"point {q}: log({par} / (min_Y - {par})) is {math.log(v / (top - v))!r}; brms's "
                                              f"unconstrained value is {pt_.u[idx]!r}")
             target, expect = (extra.coordinate, 0), {"real": "identity", "positive": "log", "below_min_y": "other", "unit": "other"}[extra.support]
+        elif gmap.category and re.fullmatch(r"(sd|z)_\d+", par):    # F01b: a category's own group term (match_category_groups)
+            cls, m_id = par.split("_")
+            M = int(fixture.standata[f"M_{m_id}"])
+            c, j = elem % M, elem // M                          # z_m is (M, N), column-major; sd_m has M entries
+            hit = category_group_of(gmap, int(m_id), c + 1)
+            if hit is None:
+                raise OracleMismatch(f"{par}[{elem + 1}] belongs to no group-level coefficient of the AutoBayes model's categories")
+            g, coef, k = hit
+            roles, K1 = model.group_coefficient_names[(g, coef)], len(model.categories) - 1
+            if cls == "sd":                                     # 1|g_sigma: one SD per non-reference category, on the log scale
+                target, expect = (f"{roles['sd']}_log__", k), "log"
+            else:                                               # 1|g_offset: (levels, categories), C order
+                target, expect = (roles["offset"], int(gmap.level_of[g][j]) * K1 + k), "identity"
+        elif par in getattr(model, "simplex_names", {}).get("sigma", ()):   # F01b: brms's real<lower=0> sigma<k>, on the log scale
+            target, expect = (f"{par}_log__", 0), "log"
+        elif par == getattr(model, "simplex_names", {}).get("L"):   # F01b: brms's cholesky_factor_corr[K - 1] Llncor
+            k = seen_L.get(par, 0)
+            seen_L[par] = k + 1
+            # sampled on Stan's cholesky_corr coordinates, as a correlated group term's L_m (below): recompute coordinate k from
+            # Llncor at every point and require it to be the fixture's u before the gradient is compared
+            for q, pt_ in enumerate(fixture.points):
+                u = cholesky_corr_free(np.atleast_2d(pt_.pars[par]))
+                if k >= u.size or abs(u[k] - pt_.u[idx]) > 1e-10:
+                    raise OracleMismatch(f"point {q}: Stan's cholesky_corr coordinate {k} of {par} is {u[k] if k < u.size else 'absent'!r}; "
+                                         f"brms's unconstrained value is {pt_.u[idx]!r}")
+            target, expect = (f"{par}_cholesky_corr__", k), ("joint" if transform == "joint" else "other")
         elif par.startswith("sd_") and int(par[3:]) in by_id:
             g = by_id[int(par[3:])]
             M = int(fixture.standata[f"M_{par[3:]}"])
@@ -1277,6 +1376,7 @@ def draws(fixture: Fixture, model: ab.Model, cmap: ColumnMap, gmap: GroupMap) ->
         data[roles["theta"]] = (("chain", "draw", roles["coordinate"]), np.stack([np.atleast_1d(p.pars["theta"]) for p in pts])[None])
         return _category_draws(fixture, model, cmap, data, coords, axis=roles["coordinate"], labels=roles["labels"])
     if cmap.dpars:                                             # B05: the categorical family, one column per category
+        _category_family_draws(fixture, model, gmap, data, coords)   # F01b: its group terms and the simplex families' parameters
         return _category_draws(fixture, model, cmap, data, coords)
     if model.spec.intercept and cmap.thresholds:               # B05: the thresholds, centred (Intercept) and raw (b_Intercept)
         dims = ("chain", "draw", names["threshold_dim"])
@@ -1403,6 +1503,36 @@ def derived_draws(fixture: Fixture, name: str) -> np.ndarray:
     if values.shape[0] != len(fixture.points) or np.max(np.abs(values - values[:, :1])) > 0:
         raise OracleMismatch(f"brms's posterior_epred(dpar = {name!r}) is {values.shape}, not one value per point on every row")
     return values[:, 0]
+
+
+def _category_family_draws(fixture: Fixture, model: ab.Model, gmap: GroupMap, data: dict, coords: dict) -> None:
+    """F01b: ``draws`` of a per-category family's group terms (each coefficient's SD per non-reference category, brms's ``sd_m``
+    of each category's group, and its effects by level and category, ``r_m_<dpar>_c``) and of the simplex families' own
+    parameters (the dirichlet ``phi``; the logistic_normal family's ``sigma<k>`` and ``Llncor``), added to ``data`` and ``coords``."""
+    from autobayes.default_priors import brms_dpar_names
+
+    pts, names = fixture.points, model.names
+    category = names["category_dim"]
+    dpars = brms_dpar_names(model.categories[1:])
+    for (g, coef), pairs in (gmap.category or {}).items():
+        roles = model.group_coefficient_names[(g, coef)]
+        sd = np.array([[float(np.ravel(p.pars[f"sd_{m}"])[cn - 1]) for m, cn in pairs] for p in pts])
+        r = np.empty((len(pts), len(gmap.level_of[g]), len(pairs)))
+        for k, ((m, cn), dp) in enumerate(zip(pairs, dpars)):
+            for d, p in enumerate(pts):
+                r[d, gmap.level_of[g], k] = np.atleast_1d(p.pars[f"r_{m}_{dp}_{cn}"])
+        data[roles["sd"]] = (("chain", "draw", category), sd[None])
+        data[roles["group_effect"]] = (("chain", "draw", roles["coordinate"], category), r[None])
+        coords[roles["coordinate"]] = list(model.design.group_blocks[(g, coef)].levels)
+    if "phi" in names and "phi" in pts[0].pars:                 # the dirichlet family's precision
+        data[names["phi"]] = (("chain", "draw"), np.array([float(p.pars["phi"]) for p in pts])[None, :])
+    simplex = getattr(model, "simplex_names", {})
+    if "L" in simplex:                                          # the logistic_normal family's sigma<k> and Llncor
+        for name in simplex["sigma"]:
+            data[name] = (("chain", "draw"), np.array([float(p.pars[name]) for p in pts])[None, :])
+        L = np.stack([np.atleast_2d(p.pars[simplex["L"]]) for p in pts])
+        data[simplex["L"]] = (("chain", "draw", simplex["coordinate"], simplex["coordinate_T"]), L[None])
+        coords[simplex["coordinate"]] = coords[simplex["coordinate_T"]] = list(model.categories[1:])
 
 
 def _category_draws(fixture: Fixture, model: ab.Model, cmap: ColumnMap, data: dict, coords: dict, axis: str | None = None,

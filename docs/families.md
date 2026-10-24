@@ -282,6 +282,23 @@ fitted rows' decisions (`wiener_diffusion.wiener_family`). It has no scale param
 | Addition terms, formulas on ndt and bias, mo(), cs(), multivariate, non-linear, autocorrelation, me()/mi(), mm() and gr(by = ), mixtures, shrinkage priors, other links | none (D151) |
 | Post-processing (C07) | `log_likelihood` from the model's own density (brms needs RWiener, D150) |
 
+F01b (docs/dirichlet-logistic-normal.md) adds `FamilySpec.simplex`, a `families.simplex.Simplex` for a response written
+`cbind(y1, ..., yK)` of K proportions per row (F01a's count matrices are `FamilySpec.matrix_response`): the formula's `ModelSpec.response_columns` and the
+synthetic `response`, `Model.response_matrix` (brms's `Y`, the columns' order), `model.categories` the reference first
+(`refcat=` where `Simplex.takes_refcat`) and `Model.category_order`; and, with `per_category`, group-level terms with a category
+axis on their SDs and standardised effects (brms's own group term per `mu<k>`).
+
+| Group | dirichlet | logistic_normal |
+| --- | --- | --- |
+| Names | `mu` / logit / `p` | `mu` / identity / `mean` (not offered) |
+| Response | `cbind()` of K >= 2 proportion columns, rows summing to 1 (`simplex.response_matrix`); the first column the reference | the same, K >= 3; any column the reference (`refcat`) |
+| Parameters | phi / phi | none; `Simplex.own_priors`: `sigma<k>` (one prior, `Priors(sigma=...)`) and `Llncor` (`Priors(lncor=LKJ(eta))`), built in the likelihood |
+| Graph | `simplex._bambi_setup`: Bambi's categorical family, `dirichlet_logit_logp` | the same, `logistic_normal_logp` with the simplex Jacobian |
+| Prediction | `softmax(0, mu)`; Dirichlet draws from log-scale Gamma variates | `kind="mean"` refused (brms refuses `posterior_epred`); `softmax(0, mu + diag(sigma) Lncor e)` draws |
+| Default priors | none (scale 2.5); phi `Gamma(0.01, 0.01)` | none (scale 2.5); sigma `HalfStudentT(3, 2.5)`, lncor `LKJ(1)` |
+| Group terms | varying intercepts only (D138) | varying intercepts only (D139) |
+| Post-processing (C07) | `log_likelihood`: the Dirichlet density | the logistic-normal density with its Jacobian |
+
 ## Adding a family
 
 1. Write `autobayes/families/<name>.py` building one `FamilySpec`; keep the response validation primitives in

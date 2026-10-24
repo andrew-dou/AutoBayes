@@ -19,7 +19,8 @@ asymmetric Laplace responses for quantile regression (the quantile learned or fi
 mean, and generalized extreme value responses with brms's derived shape xi (E02); response times and decisions of brms's
 Wiener diffusion model, ``rt | dec(dec) ~ ...`` (F04).
 Count-matrix responses ``cbind(y1, ..., yK) | trials(n)`` with brms's multinomial and Dirichlet-multinomial families, one
-linear predictor per non-reference category, each with its own formula (F01a).
+linear predictor per non-reference category, each with its own formula (F01a). Responses on the simplex, ``cbind(y1, ...,
+yK)``, under brms's dirichlet and logistic-normal families with one linear predictor per non-reference category (F01b).
 Supported formulas combine numeric and declared categorical predictors,
 numeric-by-categorical interactions, intercept controls, and optional multiple
 independent varying-intercept factors with independent or correlated varying slopes, and a formula of its own for the
@@ -100,6 +101,7 @@ from autobayes.model import asym_laplace, frechet, gen_extreme_value, inverse_ga
 from autobayes.priors import Logistic   # E03: brms's logistic() on a zi / hu formula's intercept, docs/contexts-newer-families.md
 from autobayes.model import wiener   # F04, docs/wiener.md
 from autobayes.multinomial import MultinomialModel, dirichlet_multinomial, multinomial   # F01a, docs/multinomial.md
+from autobayes.model import dirichlet, logistic_normal   # F01b: cbind() responses on the simplex, docs/dirichlet-logistic-normal.md
 
 __all__ = [
     "Beta", "Categorical", "DeviceError", "Dirichlet", "Exponential", "FitResult", "Flat", "FormulaError", "Gamma", "GroupTerm", "HalfCauchy",
@@ -125,4 +127,5 @@ __all__ += ["asym_laplace", "frechet", "gen_extreme_value", "inverse_gaussian", 
 __all__ += ["Logistic"]                                # E03
 __all__ += ["wiener"]                                  # F04
 __all__ += ["MultinomialModel", "dirichlet_multinomial", "multinomial"]   # F01a
+__all__ += ["dirichlet", "logistic_normal"]            # F01b
 __version__ = "0.8.0"

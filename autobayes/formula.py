@@ -130,7 +130,11 @@ _MI_RE = re.compile(r"^mi\s*\((.*)\)$", re.S)                                   
 _MI_TERM_RE = re.compile(rf"^mi\(({_IDENT})\)$")                                                    # the canonical spelling mi(col)
 MI_CALL_RE = re.compile(r"(?<![A-Za-z0-9_.])mi\s*\(")                                                 # an mi( call anywhere in a formula (C06)
 MVBIND_RE = re.compile(r"^\s*mvbind\s*\(", re.S)                                                       # brms's multivariate mvbind(y, y2) ~ ... (C01)
-CBIND_RE = re.compile(r"^\s*cbind\s*\(", re.S)                                                         # brms's matrix response cbind(y1, y2, ...) (F01a)
+# F01b: the refusal of a one-column response for a simplex family (a matrix column of the data is not read)
+SIMPLEX_RESPONSE = ("the {family} family's response is written cbind(y1, ..., yK) ~ ..., one column per category (brms's matrix "
+                    "response; a matrix column of the data is not read here)")
+CBIND_RE = re.compile(r"^\s*cbind\s*\(", re.S)                                                         # brms's matrix response cbind(y1, y2, ...) (F01a, F01b)
+_CBIND_FORMULA_RE = re.compile(r"^\s*cbind\s*\(([^()]*)\)\s*(\|[^~]*)?~\s*(.+?)\s*$", re.S)            # F01b: cbind(<columns>) [| additions] ~ rhs
 _GP_RE = re.compile(r"^gp\s*\((.*)\)$", re.S)                                                        # gp(<inside>), brms's Gaussian process (C03)
 _AUTOCOR_RE = re.compile(r"^(ar|ma|arma|cosy|car|sar|unstr)\s*\(", re.S)   # brms's autocorrelation terms (C04; autobayes.autocor)
 _SAR_RE = re.compile(r"^sar\s*\(", re.S)                                                              # brms's sar(M, type) (F02b; autobayes.sar)
@@ -1488,7 +1492,10 @@ class ModelSpec:
     ``autocor`` is the formula's autocorrelation term (C04, ``ar()``, ``ma()`` or ``arma()``; ``autocor.Autocor``), or None.
     ``sar`` is its simultaneous autoregressive term (F02b, ``sar(M, type = "lag")``; ``sar.Sar``), or None.
     ``fcor`` is the formula's fixed residual covariance ``fcor(M)`` (F03a, ``fcor.Fcor``; docs/fcor.md), or None; ``car`` its
-    spatial CAR term (F02a, ``car(M, gr, type)``; ``car.Car``), or None."""
+    spatial CAR term (F02a, ``car(M, gr, type)``; ``car.Car``), or None.
+    ``response_columns`` (F01b) are the K columns of a response written ``cbind(y1, ..., yK)`` (brms's matrix response of the
+    simplex families, ``FamilySpec.simplex``), in the order written; ``response`` is then the synthetic name of that response
+    (``matrix_response_name``), which no data frame holds. Empty for a response of one column."""
 
     formula: str
     response: str
@@ -1508,11 +1515,12 @@ class ModelSpec:
     sar: "Sar | None" = None
     fcor: "Fcor | None" = None
     car: "Car | None" = None
+    response_columns: tuple[str, ...] = ()
 
     def __init__(self, formula, response, predictors=(), group=None, intercept=True,
                  levels=(), trials=None, rhs="", terms=(), categoricals=(), interactions=(),
                  *, groups=None, levels_by_group=None, pop_terms=None, group_terms=None, offset=None, additions=(), dpars=(),
-                 monotonics=None, gp_terms=(), autocor=None, sar=None, fcor=None, car=None):
+                 monotonics=None, gp_terms=(), autocor=None, sar=None, fcor=None, car=None, response_columns=()):
         """Keep the original positional constructor: without ``pop_terms`` / ``group_terms`` the term model is
         built from the flat ``predictors``, ``terms``, ``categoricals``, ``interactions`` and ``group(s)``.
         Terms given as mappings (``dataclasses.asdict`` output) are rebuilt, the distributional formulas and the
@@ -1577,7 +1585,8 @@ class ModelSpec:
                       levels_by_group=_GroupLevels((g, level_map[g]) for g in factors),
                       trials=trials, rhs=rhs, categoricals=categoricals,
                       pop_terms=pop_terms, group_terms=group_terms, offset=offset, additions=additions, dpars=dpars,
-                      monotonics=monotonics, gp_terms=gp_terms, autocor=autocor, sar=sar, fcor=fcor, car=car)
+                      monotonics=monotonics, gp_terms=gp_terms, autocor=autocor, sar=sar, fcor=fcor, car=car,
+                      response_columns=tuple(response_columns))   # F01b: cbind(y1, ..., yK)
         for key, value in values.items():
             object.__setattr__(self, key, value)
 
@@ -1591,7 +1600,8 @@ class ModelSpec:
                     + ((self.autocor,) if self.autocor is not None else ())
                     + ((self.sar,) if self.sar is not None else ())
                     + ((self.fcor,) if self.fcor is not None else ())
-                    + ((self.car,) if self.car is not None else ()))
+                    + ((self.car,) if self.car is not None else ())
+                    + ((self.response_columns,) if self.response_columns else ()))
 
     @property
     def data2_names(self) -> tuple[str, ...]:
@@ -1866,7 +1876,8 @@ class ModelSpec:
         operands in main-effect order), then the offset and the group terms; on the left, ``trials()`` first and the
         other addition terms in the order written."""
         extra = ([f"trials({self.trials})"] if self.trials is not None else []) + [a.term for a in self.additions]
-        lhs = self.response if not extra else f"{self.response} | {' + '.join(extra)}"
+        response = f"cbind({', '.join(self.response_columns)})" if self.response_columns else self.response   # F01b
+        lhs = response if not extra else f"{response} | {' + '.join(extra)}"
         return f"{lhs} ~ {self.rhs}"
 
     @property
@@ -2273,6 +2284,11 @@ def _parse_formulas(formulas, data: pd.DataFrame | None, family: str, categorica
     main, *rest = formulas
     if not rest:
         return parse_formula(main, data, family, categorical)
+    if fam.simplex is not None:                                # F01b: no parameter of a simplex family takes a formula here
+        raise FormulaError(
+            f"{list(formulas)!r}: a distributional formula is not offered for the {fam.name} family (brms's formulas of phi, "
+            f"sigma<k> or a category's mu<k>; no frozen case verifies them; docs/dirichlet-logistic-normal.md, divergence "
+            f"{fam.simplex.divergence})")
     if any(MI_CALL_RE.search(text) for text in formulas):     # C06: a formula per response with mi() is a multivariate model
         raise FormulaError(
             f"{list(formulas)!r}: a list of formulas with mi() is brms's multivariate model with one formula per response, "
@@ -2522,14 +2538,82 @@ def check_imputation(spec: ModelSpec, imputed=()) -> None:
         )
 
 
+def matrix_response_name(columns) -> str:
+    """F01b: the synthetic name of the response ``cbind(y1, ..., yK)`` (``ModelSpec.response``): ``cbind_y1_..._yK``, the column
+    the model hands Bambi (the reference category's values; the likelihood reads the K columns) and the stem of its coordinates
+    (``<name>_reduced_dim`` over the non-reference categories, as for the categorical family)."""
+    return "cbind_" + "_".join(columns)
+
+
+def _parse_matrix_response(formula: str, data: pd.DataFrame | None, family: str, categorical, *, _ids: bool = False) -> ModelSpec:
+    """F01b: ``cbind(y1, ..., yK) ~ <terms>``, brms's matrix response, for a family whose response lies on the simplex
+    (``FamilySpec.simplex``: dirichlet, logistic_normal). The right-hand side is parsed as any formula's, under the synthetic
+    response name ``matrix_response_name(columns)``; the spec keeps the columns (``ModelSpec.response_columns``) and the formula
+    as written. Refused, naming the construct: ``cbind()`` for a family of one response column, fewer columns than the family
+    takes, a column that is not a name or is named twice, addition terms after ``|`` (D138, D139), and a response column that
+    is also a predictor, a grouping factor or the offset."""
+    from autobayes.families import FAMILIES, get_family
+
+    fam = get_family(family)
+    m = _CBIND_FORMULA_RE.match(formula)
+    if fam.simplex is None:
+        simplex = [name for name, other in FAMILIES.items() if other.simplex is not None]
+        counts = [name for name, other in FAMILIES.items() if other.matrix_response]
+        raise FormulaError(
+            f"{formula!r}: a cbind(...) response of several columns is the response of the {' and '.join(simplex)} families "
+            f"(proportions; docs/dirichlet-logistic-normal.md)" + (f" and of the {' and '.join(counts)} families (counts with "
+                                                                    f"trials(); docs/multinomial.md)" if counts else "")
+            + f"; the {fam.name} family takes one response column"
+        )
+    if not m:
+        raise FormulaError(f"{formula!r}: expected 'cbind(y1, y2, ...) ~ terms', the response's columns named inside cbind()")
+    inside, additions, rhs = m.group(1), m.group(2), m.group(3)
+    columns = [c.strip() for c in inside.split(",")]
+    bad = [c for c in columns if not re.fullmatch(_IDENT, c)]
+    if bad:
+        raise FormulaError(f"{formula!r}: cbind() takes the response's column names, got {bad[0]!r}")
+    if len(set(columns)) != len(columns):
+        raise FormulaError(f"{formula!r}: cbind() names the column {next(c for c in columns if columns.count(c) > 1)!r} twice")
+    if len(columns) < fam.simplex.min_categories:
+        raise FormulaError(
+            f"{formula!r}: the {fam.name} family needs at least {fam.simplex.min_categories} response columns, got {len(columns)}"
+            + (f" ({fam.simplex.few_categories})" if fam.simplex.few_categories else ""))
+    if additions is not None:
+        raise FormulaError(
+            f"{formula!r}: addition terms after the cbind() response ('{additions.strip()}') are not offered for the {fam.name} "
+            f"family (no frozen case verifies them; docs/dirichlet-logistic-normal.md, divergence {fam.simplex.divergence})")
+    response = matrix_response_name(columns)
+    rewritten = f"{response} ~ {rhs}"
+    try:
+        inner = parse_formula(rewritten, None, family, categorical, _ids=_ids, _matrix=True)
+    except FormulaError as e:                                    # the refusals of the right-hand side, quoting the formula as written
+        raise FormulaError(str(e).replace(rewritten, formula.strip())) from None
+    reads = [*inner.pop_columns, *(c for t in inner.group_terms for c in t.data_columns),
+             *([inner.offset.column] if inner.offset is not None else []), *(inner.autocor.columns if inner.autocor is not None else ())]
+    shared = [c for c in columns if c in reads]
+    if shared:
+        raise FormulaError(f"{formula!r}: the response column {shared[0]!r} cannot also be a predictor, a grouping factor or the offset")
+    spec = ModelSpec(
+        formula=formula.strip(), response=response, intercept=inner.intercept, levels_by_group=dict(inner.levels_by_group),
+        trials=None, rhs=inner.rhs, categoricals=inner.categoricals, pop_terms=inner.pop_terms, group_terms=inner.group_terms,
+        offset=inner.offset, additions=(), dpars=inner.dpars, monotonics=inner.monotonics, gp_terms=inner.gp_terms,
+        autocor=inner.autocor, sar=inner.sar, fcor=inner.fcor, car=inner.car, response_columns=tuple(columns),
+    )
+    if data is not None:
+        spec = validate_data(spec, data, family)
+    return spec
+
+
 def parse_formula(formula: str | list[str], data: pd.DataFrame | None = None, family: str = "gaussian",
-                  categorical: Mapping[str, object] | None = None, *, _ids: bool = False, _dpar: bool = False) -> ModelSpec:
+                  categorical: Mapping[str, object] | None = None, *, _ids: bool = False, _dpar: bool = False,
+                  _matrix: bool = False) -> ModelSpec:
     """Parse and validate a formula in the supported subset, optionally against a data frame.
 
     ``categorical`` maps a predictor column to its reference level (treatment coding); every
     other predictor term must be numeric. ``formula`` may also be a list (B01): the response formula, then one formula
     per distributional parameter, ``["y ~ x + (1 | g)", "sigma ~ z"]`` (``_parse_formulas``, docs/distributional.md).
-    ``_ids`` is set by ``_parse_formulas`` alone: a correlation ID ``(1 + x |p| g)`` (D08) is taken in a list of formulas,
+    ``_matrix`` (F01b) is set by ``_parse_matrix_response`` alone, for the right-hand side of a ``cbind()`` response; a simplex
+    family's formula without one is refused. ``_ids`` is set by ``_parse_formulas`` alone: a correlation ID ``(1 + x |p| g)`` (D08) is taken in a list of formulas,
     where a distributional formula shares it, and refused in a formula on its own. ``_dpar`` (set by ``_parse_formulas``
     alone) parses a distributional parameter's formula, whose left-hand side is the parameter: a family with trials (E03: the
     beta-binomial's ``phi ~ z``) does not ask it for ``| trials()``.
@@ -2539,6 +2623,8 @@ def parse_formula(formula: str | list[str], data: pd.DataFrame | None = None, fa
     if not isinstance(formula, str):
         return _parse_formulas(formula, data, family, categorical)
     fam = get_family(family)
+    if CBIND_RE.match(formula) and not fam.matrix_response:   # F01b: brms's matrix response of the simplex families (F01a's
+        return _parse_matrix_response(formula, data, family, categorical, _ids=_ids)   # count matrices are parsed below)
     if MVBIND_RE.match(formula):                           # C01: a multivariate formula is one model per response, built elsewhere
         from autobayes.families import FAMILIES
 
@@ -2553,6 +2639,8 @@ def parse_formula(formula: str | list[str], data: pd.DataFrame | None = None, fa
     if fam.matrix_response and CBIND_RE.match(formula):   # F01a: the count-matrix families' response is parsed elsewhere
         raise FormulaError(f"{formula!r}: the {fam.name} family's matrix response is parsed by "
                            f"autobayes.multinomial.parse_multinomial (ab.{fam.name}); parse_formula reads one response column")
+    if fam.simplex is not None and not _matrix:            # F01b: the simplex families' response is K columns, cbind()
+        raise FormulaError(f"{formula!r}: {SIMPLEX_RESPONSE.format(family=fam.name)}")
     trials, additions = None, ()
     if _BAMBI_PROPORTION_RE.match(formula):
         raise FormulaError(
@@ -3556,7 +3644,8 @@ def validate_data(spec: ModelSpec, data: pd.DataFrame, family: str = "gaussian",
     if not dpar and (spec.trials is not None) != fam.has_trials:
         raise FormulaError("a trials column is present exactly for the binomial family")
     operands = [c for t in spec.group_terms for c in t.data_columns]   # the columns the grouping factors are read from (D08: and
-    needed = (([] if dpar else [spec.response]) + [*spec.pop_columns] + operands   # mm()'s weights, gr()'s by column)
+    response = list(getattr(spec, "response_columns", ())) or [spec.response]   # F01b: the K columns of cbind(y1, ..., yK)
+    needed = (([] if dpar else response) + [*spec.pop_columns] + operands      # mm()'s weights, gr()'s by column)
               + ([spec.trials] if spec.trials else []) + ([spec.offset.column] if spec.offset is not None else [])
               + [c for a in spec.additions for c in a.columns])
     needed = list(dict.fromkeys(needed))                         # the offset column may also be a predictor
@@ -3589,7 +3678,8 @@ def validate_data(spec: ModelSpec, data: pd.DataFrame, family: str = "gaussian",
             )
         categoricals.append(Categorical(name=cat.name, reference=cat.reference, levels=levels, unused=unused, full_rank=cat.full_rank))
     if not dpar:
-        reject_complex(f"response {spec.response!r}", data[spec.response])
+        for c in response:                                       # F01b: each column of a cbind() response
+            reject_complex(f"response {c!r}", data[c])
         fam.validate_response(spec, data)
     for c in spec.missing_columns:                               # C06: the columns whose missing values are parameters
         missing_values(f"column {c!r}", data[c], c == spec.response)
@@ -3648,5 +3738,5 @@ def validate_data(spec: ModelSpec, data: pd.DataFrame, family: str = "gaussian",
         pop_terms=tuple(pop_term(t.name, t.kind, categoricals) for t in spec.pop_terms),   # levels now known
         group_terms=spec.group_terms, offset=spec.offset, additions=spec.additions, dpars=spec.dpars, monotonics=monotonics,
         gp_terms=gp_terms,
-        autocor=spec.autocor, sar=spec.sar, fcor=spec.fcor, car=spec.car,
+        autocor=spec.autocor, sar=spec.sar, fcor=spec.fcor, car=spec.car, response_columns=getattr(spec, "response_columns", ()),   # F01b
     )
