@@ -8922,14 +8922,13 @@
     "group_terms": []
    },
    "result": {
-    "status": "error",
-    "type": "FormulaError",
-    "message": "'cosy(time = t, gr = g)': brms's compound symmetry, cosy() is not offered here; the autocorrelation terms supported are ar(), ma() and arma() in brms's regression formulation (docs/autocorrelation.md, divergence D69)",
-    "raised_at": "autocor.py:106",
-    "stage": "default_priors",
-    "mechanism": "refusal",
-    "outcome": "refused_named",
-    "gap": "capability"
+    "status": "built",
+    "model": "Model",
+    "model_warnings": [],
+    "issues": [],
+    "notes": [],
+    "outcome": "match",
+    "gap": null
    }
   },
   {
@@ -8977,14 +8976,13 @@
     "group_terms": []
    },
    "result": {
-    "status": "error",
-    "type": "FormulaError",
-    "message": "'unstr(time = t, gr = g)': brms's an unstructured residual covariance, unstr() is not offered here; the autocorrelation terms supported are ar(), ma() and arma() in brms's regression formulation (docs/autocorrelation.md, divergence D69)",
-    "raised_at": "autocor.py:106",
-    "stage": "default_priors",
-    "mechanism": "refusal",
-    "outcome": "refused_named",
-    "gap": "capability"
+    "status": "built",
+    "model": "Model",
+    "model_warnings": [],
+    "issues": [],
+    "notes": [],
+    "outcome": "match",
+    "gap": null
    }
   },
   {
@@ -13410,16 +13408,16 @@
  ],
  "summary": {
   "outcomes": {
-   "match": 115,
+   "match": 117,
    "refused_unclear": 18,
-   "refused_named": 113,
+   "refused_named": 111,
    "misread": 1,
    "differs": 1
   },
   "gaps": {
-   "none": 118,
+   "none": 120,
    "defect": 19,
-   "capability": 110,
+   "capability": 108,
    "divergence": 1
   },
   "brms_refuses": 3

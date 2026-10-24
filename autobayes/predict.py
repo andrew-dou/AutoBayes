@@ -65,6 +65,11 @@ linear predictor and expected response are those without the term (brms's ``post
 and ``kind="response"`` draws the rows jointly, ``mu + sigma L z`` with ``L`` the Cholesky factor of ``M`` and ``z`` standard
 normal (brms's ``posterior_predict``). New rows are refused: ``M`` covers the fitted rows (divergence D145).
 
+A model with a residual correlation term (F03b, docs/unstr-cosy.md: brms's ``unstr()``, ``cosy()``) is predicted in this layer on
+its fitted rows: the linear predictor and the expected response are ``mu``, as brms's ``posterior_linpred`` and
+``posterior_epred``, and ``kind="response"`` draws each group's rows jointly (``timecor.draw_response``, brms's
+``posterior_predict``). New rows are refused (divergence D146).
+
 ``new_groups`` decides what happens when ``newdata`` contains a level of the grouping
 factor that was not in the training data (a population-only model has no grouping factor: it
 needs no such column, its result carries ``new_groups = "not_applicable"``, and any value other
@@ -512,6 +517,9 @@ def _predict_by_hand(model, idata, df: pd.DataFrame | None, kind: str, seed, pol
             out["y"] = (dims, fcor_draws(mean, auxiliary(model, post, "sigma"), model.design.fcor, rng))
         elif kind == "response" and fam.simplex is not None:     # F01b: draws on the simplex, one share per category
             out["y"] = (dims + ("category",), fam.draw_response(model, post, mu, mean, df, rng))
+        elif kind == "response" and getattr(model.spec, "timecor", None) is not None:   # F03b: each group's rows jointly
+            from autobayes.timecor import draw_response
+            out["y"] = (dims, draw_response(model, post, mu, rng))
         elif kind == "response":                                 # brms's posterior_predict ignores weights and censoring
             out["y"] = (dims, fam.draw_response(model, post, mu, mean, df, rng) if trunc is None
                         else fam.tails().draw_truncated(model, post, mu, lb, ub, rng))   # and draws from the truncated distribution
@@ -652,6 +660,13 @@ def predict(model, fit_result, *, newdata: pd.DataFrame | None = None, kind: str
             "fitted rows' residuals, and new rows have none (brms needs an M of the new rows' own; docs/fcor.md, divergence D145); "
             "predict on the fitted rows (newdata=None)"
         )
+    timecor = getattr(model.spec, "timecor", None)
+    if timecor is not None and newdata is not None:            # F03b: brms's new rows' correlation (D146)
+        raise FormulaError(
+            f"predictions on new data are not offered for a model with the residual correlation term {timecor.term!r}: no frozen "
+            "brms case verifies how new rows join the groups and times of the fitted ones (docs/unstr-cosy.md, divergence D146); "
+            "predict on the fitted rows (newdata=None)"
+        )
     from autobayes.identity import check_fit_binding
     binding = check_fit_binding(model, fit_result, allow_unverified=True)
     idata = getattr(fit_result, "idata", fit_result)
@@ -688,6 +703,7 @@ def predict(model, fit_result, *, newdata: pd.DataFrame | None = None, kind: str
               or getattr(model.spec, "sar", None) is not None  # nor a SAR term (F02b)
               or getattr(model.spec, "fcor", None) is not None  # nor the joint normal of fcor() (F03a)
               or getattr(model.spec, "car", None) is not None  # nor a CAR term (F02a)
+              or timecor is not None                           # nor a residual correlation term's joint draws (F03b)
               or bool(model.spec.me_terms) or bool(model.spec.mi_terms)    # nor the me() and mi() terms (C06)
               or bool(model.spec.custom_group_terms))          # nor the mm() and gr(by = ) terms (D08)
     if dpar is not None:

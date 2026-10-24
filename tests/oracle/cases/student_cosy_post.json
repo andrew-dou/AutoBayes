@@ -1,0 +1,85 @@
+{
+ "id": "student_cosy_post",
+ "tier": "F",
+ "feature": "F03_residual_correlation",
+ "note": "F03b: student with cosy(time = t, gr = g): six groups of 3 to 9 rows that are not contiguous in the data (brms sorts them by g and t), each group the leading block of the compound-symmetric Lcortime of the largest group (9), student_t_time_hom's multivariate t with scale matrix sigma^2 Cor (checked on the frozen points); log_lik is each row's density given its group's other rows, the conditional of the multivariate t (nu + k - 1 degrees of freedom), in data order, and loo of the 8-draw fit; seeded points on (-0.5, 0.5) (point_halfwidth)",
+ "seed": 1027,
+ "n_points": 8,
+ "data": {
+  "generator": "tier_f",
+  "seed": 938,
+  "n": 36
+ },
+ "brms": {
+  "formula": "y ~ x + cosy(time = t, gr = g)",
+  "family": {
+   "family": "student"
+  },
+  "factors": {
+   "g": [
+    "a",
+    "b",
+    "c",
+    "d",
+    "e",
+    "f"
+   ]
+  },
+  "priors": [
+   {
+    "prior": "normal(0, 2)",
+    "class": "Intercept"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "b"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "sigma"
+   },
+   {
+    "prior": "gamma(2, 0.1)",
+    "class": "nu"
+   }
+  ],
+  "extras": [
+   "log_lik",
+   "loo"
+  ],
+  "point_halfwidth": 0.5
+ },
+ "autobayes": {
+  "constructor": "student",
+  "formula": "y ~ x + cosy(time = t, gr = g)",
+  "kwargs": {},
+  "priors": {
+   "intercept": [
+    "Normal",
+    0,
+    2
+   ],
+   "b": [
+    "Normal",
+    0,
+    1
+   ],
+   "sigma": [
+    "HalfNormal",
+    1
+   ],
+   "cosy": [
+    "Flat"
+   ],
+   "nu": [
+    "Gamma",
+    2,
+    0.1
+   ]
+  },
+  "post": [
+   "log_lik",
+   "loo"
+  ]
+ }
+}

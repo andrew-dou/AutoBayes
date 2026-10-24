@@ -416,6 +416,10 @@ class FamilySpec:
     # brms's spatial CAR term car(M, gr, type) (F02a, docs/spatial-car.md): whether the family's linear predictor takes it, set
     # where a frozen brms case verifies it. It adds one effect per location, rcar[gr_i], to the linear predictor.
     car: bool = False
+    # brms's residual correlation structures unstr(time, gr) and cosy(time, gr) (F03b, docs/unstr-cosy.md): () -> the family's
+    # kernel of the joint density of a group's rows (``timecor.NORMAL_TIME``, ``timecor.STUDENT_TIME``), set where a frozen brms
+    # case verifies it; None: the family takes neither term.
+    time_correlation: Callable[[], object] | None = None
     # brms's measurement-error term me(x, sdx) and missing-value term mi(col) with the response's mi() (C06,
     # docs/missing-and-measurement-error.md): whether the family's linear predictor takes them, set where a frozen case verifies
     # it (the response's own mi() is an addition term, "mi" in ``addition_terms``).

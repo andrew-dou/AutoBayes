@@ -6,7 +6,9 @@ rows. Accepted against brms 2.23 / loo 2.9.0 on the frozen oracle cases ``gauss_
 
 ``log_lik(model, fit)`` is brms's ``log_lik()``: the log density of each fitted row's response at each draw, from the family's
 ``FamilySpec.log_likelihood`` (NumPy, ``families.pointwise``) at ``predict(kind="linear")``'s linear predictor and the draw's
-auxiliary parameters; under ``weights()`` it is multiplied by the row's weight, as brms multiplies it. Under ``cens()`` a
+auxiliary parameters; under ``weights()`` it is multiplied by the row's weight, as brms multiplies it. With a residual
+correlation term (F03b, ``unstr()``, ``cosy()``) it is each row's density given its group's other rows (``timecor.log_lik``),
+as brms's ``log_lik()`` of a non-factorised model is. Under ``cens()`` a
 censored row's log likelihood is its log CDF, log CCDF or interval log mass, and under ``trunc()`` every row's is less the
 log mass of the allowed range (E04, ``likelihoods.censored_truncated_log_lik``), as brms's ``log_lik()`` writes them. A SAR
 model's rows are not independent (F02b, docs/spatial-sar.md): its ``log_lik()`` is each row's density given every other row
@@ -119,6 +121,9 @@ def log_lik(model, fit_result) -> xr.DataArray:
         if sar is not None:                                    # F02b: each row given every other row
             from autobayes.sar import sar_log_lik
             ll = sar_log_lik(model.design.y, eta, post[model.names["sigma"]].to_numpy(), post[sar.parameter].to_numpy(), sar)
+        elif getattr(model.spec, "timecor", None) is not None:   # F03b: each row's density given its group's other rows
+            from autobayes.timecor import log_lik as timecor_log_lik
+            ll = timecor_log_lik(model, post, eta)
         else:
             ll = np.asarray(fam.log_likelihood(model, post, eta), dtype=float)
     ll = np.broadcast_to(ll, eta.shape[:3]).copy()
@@ -140,7 +145,9 @@ def bayes_R2(model, fit_result) -> xr.DataArray:
     """brms's ``bayes_R2(summary = FALSE)``: per draw, ``var(yhat) / (var(yhat) + var(y - yhat))`` over the fitted rows, with
     ``yhat`` the expected response (``predict(kind="mean")``; the expected count ``n p`` for a binomial model; for the
     cumulative family the expected category ``sum_k k P(y = k)`` against the 1-based category, as brms computes it),
-    ``(chain, draw)``. Refused for the categorical family, as brms refuses it."""
+    ``(chain, draw)``. Refused for the categorical family, as brms refuses it. With a residual correlation term (F03b) the
+    rows are paired as given, where brms 2.23 pairs the response with ``posterior_epred`` in its rows sorted by group and time
+    (divergence D147)."""
     from autobayes.families import family_of
     from autobayes.predict import predict
 

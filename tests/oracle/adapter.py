@@ -66,6 +66,14 @@ standata array back in data order, so that every matcher compares rows by conten
 on brms's rows and `check_autocor_design` checks it, `Kar` and `Kma`, and each Stan row's series and position against the
 model's series. brms's `ar` and `ma` (`vector[Kar]`, `vector[Kma]`, unbounded) are the model's `ar` and `ma`.
 
+F03b, a residual correlation term (`unstr(time, gr)`, `cosy(time, gr)`): brms sorts the rows by group and time as for an ARMA
+term, and `in_data_order` puts them back the same way (the per-group arrays `N_tg`, `begin_tg`, `end_tg`, `nobs_tg`,
+`Jtime_tg` stay brms's); `check_timecor_design` checks that each of brms's groups is one of the model's, its rows in the
+model's time order, with brms's `Jtime_tg` the model's time indices (`unstr`). `unstr`'s `Lcortime` (`cholesky_factor_corr`)
+maps to `Lcortime_cholesky_corr__` as `L_m` does (Stan's `cholesky_corr` coordinates recomputed from it at every point and
+checked against `u`), `cosy` (`real<lower=0,upper=1>`) to its logit coordinate with the probe's step and Stan's logit at every
+point checked, as for `zi`.
+
 C06: an `me(x, sdx)` or `mi(col)` term is one of brms's special terms (`Ksp`); the adapter maps `bsp[1]` to the model's one such
 term (`ColumnMap.special`, `match_special`; brms's order of several is not verified here). An `me()` term is brms's
 measurement-error group 1, whose `Xn_1` and `noise_1` are matched by content to `Design.measurement_error` and whose `meanme_1`,
@@ -208,6 +216,7 @@ def priors_from_spec(spec: dict) -> ab.Priors:
                      sdgp=_prior(spec.get("sdgp")), lscale=_prior(spec.get("lscale")),   # C03: {column: [...]} or one prior
                      nlpars=_prior(spec.get("nlpars")),                                 # C02: {nlpar: {"b": ..., "sd": ...}}
                      ar=_prior(spec.get("ar")), ma=_prior(spec.get("ma")),
+                     cortime=_prior(spec.get("cortime")), cosy=_prior(spec.get("cosy")),   # F03b: unstr()'s LKJ, cosy()'s prior
                      # C06: a measurement-error term's latent values, {"meanme": [...], "sdme": [...]} (bare, or by column)
                      meanme=_prior(spec.get("meanme")), sdme=_prior(spec.get("sdme")),
                      # D01: a family's extra parameter, {"alpha": [...]}, {"beta": [...]} or {"ndt": [...]}
@@ -918,6 +927,9 @@ def natural_point(model: ab.Model, point: Point, cmap: ColumnMap, gmap: GroupMap
         zgp = {c: np.ravel(pars[f"zgp_{k}"]).astype(float) for c, k in cmap.gp.items()}
     ar, ma = (np.atleast_1d(pars[part]).astype(float) if part in model.autocor_names else None for part in ("ar", "ma"))   # C04
     sar = {name: float(pars[name]) for name in getattr(model, "sar_names", {})}            # F02b: brms's lagsar or errorsar
+    timecor = getattr(model, "timecor_names", {})          # F03b: unstr()'s Lcortime, over the sorted times as the model's, or cosy
+    Lcortime = np.atleast_2d(pars["Lcortime"]).astype(float) if "L" in timecor else None
+    cosy = float(pars["cosy"]) if "cosy" in timecor else None
     special = {}
     if cmap.special:                                       # C06: the me() / mi() term's coefficient, brms's bsp[1], by its column
         terms = {t.name: t for t in model.spec.pop_terms}
@@ -938,7 +950,8 @@ def natural_point(model: ab.Model, point: Point, cmap: ColumnMap, gmap: GroupMap
     return dict(intercept=intercept, b=b, sd=sd or None, z=z or None, L=L or None, sigma=sigma, shape=shape, phi=phi, nu=nu,
                 zi=zi, hu=hu, bsp=bsp, simo=simo, theta=theta, sdgp=sdgp, lscale=lscale, zgp=zgp, ar=ar, ma=ma, **special, **extras, **sar,
                 **({"shrinkage": shrinkage} if shrinkage is not None else {}),
-                **({"car": car_point(model, pars)} if getattr(model, "car_names", {}) else {}))   # F02a
+                **({"car": car_point(model, pars)} if getattr(model, "car_names", {}) else {}),   # F02a
+                **({"Lcortime": Lcortime} if Lcortime is not None else {}), **({"cosy": cosy} if cosy is not None else {}))
 
 
 _SHRINKAGE_PARS = {"Horseshoe": ("zb", "hs_global", "hs_slab", "hs_local"), "R2D2": ("zb", "R2D2_R2", "R2D2_phi")}
@@ -1018,6 +1031,7 @@ def coordinate_map(fixture: Fixture, model: ab.Model, cmap: ColumnMap, gmap: Gro
     pars = fixture.points[0].pars
     seen_L: dict[str, int] = {}                                            # L_m coordinates met so far, in index order
     seen_thresholds = 0                                                    # Intercept coordinates met so far (B05)
+    seen_cortime = 0                                                       # Lcortime coordinates met so far (F03b)
     others = len(cmap.dpars)
     simplex_coordinates = _simplex_coordinates(fixture, model, cmap)       # B03: the coordinates the probe could not reach
     by_k = {k: c for c, k in (cmap.monotonic or {}).items()}               # B03: brms's special-term number -> column
@@ -1127,6 +1141,30 @@ def coordinate_map(fixture: Fixture, model: ab.Model, cmap: ColumnMap, gmap: Gro
                     raise OracleMismatch(f"point {q}: log(({par} - lb) / (ub - {par})) is {math.log((v - lo) / (hi - v))!r}; brms's "
                                          f"unconstrained value is {pt_.u[idx]!r}")
             target, expect = (f"{model.sar_names[par]}_interval__", 0), "other"
+        elif par == "Lcortime":                                # F03b: unstr()'s cholesky_factor_corr[n_unique_t] Lcortime
+            if "L" not in getattr(model, "timecor_names", {}):
+                raise OracleMismatch("brms samples Lcortime (unstr()) but the AutoBayes model has no unstr() term")
+            k = seen_cortime
+            seen_cortime += 1
+            for q, pt_ in enumerate(fixture.points):          # Stan's cholesky_corr coordinate k, recomputed and checked, as L_m's
+                u = cholesky_corr_free(np.atleast_2d(pt_.pars[par]))
+                if k >= u.size or abs(u[k] - pt_.u[idx]) > 1e-10:
+                    raise OracleMismatch(f"point {q}: Stan's cholesky_corr coordinate {k} of Lcortime is {u[k] if k < u.size else 'absent'!r}; "
+                                         f"brms's unconstrained value is {pt_.u[idx]!r}")
+            dim = int(np.atleast_2d(pars[par]).shape[0])
+            # the probe sees a later coordinate move several entries of a factor of three or more times ('joint'), as for L_m
+            target, expect = (f"{model.timecor_names['L']}_cholesky_corr__", k), ("joint" if transform == "joint" and dim > 2 else "other")
+        elif par == "cosy":                                    # F03b: cosy()'s real<lower=0,upper=1> cosy, Stan's logit (as zi)
+            if "cosy" not in getattr(model, "timecor_names", {}):
+                raise OracleMismatch("brms samples cosy but the AutoBayes model has no cosy() term")
+            if abs(float(e["du"]) - LOGIT_STEP) > 1e-9:
+                raise OracleMismatch(f"brms's probe moved the coordinate of cosy by {e['du']!r}; logit(cosy) moves it by {LOGIT_STEP!r}")
+            for q, pt_ in enumerate(fixture.points):
+                p = float(pt_.pars[par])
+                if abs(math.log(p / (1.0 - p)) - pt_.u[idx]) > 1e-10:
+                    raise OracleMismatch(f"point {q}: logit(cosy) is {math.log(p / (1.0 - p))!r}; brms's unconstrained value is {pt_.u[idx]!r}")
+            pmm = model.pymc_model
+            target, expect = (pmm.rvs_to_values[pmm[model.timecor_names["cosy"]]].name, 0), "other"
         elif par == "sigma":
             target, expect = (f"{names['sigma']}_log__", 0), "log"
         elif par == "shape":                                   # negative binomial / Gamma: PyMC's alpha, sampled on the log scale
@@ -1473,6 +1511,15 @@ def draws(fixture: Fixture, model: ab.Model, cmap: ColumnMap, gmap: GroupMap) ->
     for name, var in getattr(model, "sar_names", {}).items():   # F02b: brms's lagsar or errorsar
         data[var] = (("chain", "draw"), np.array([float(p.pars[name]) for p in pts])[None, :])
     car_draws(model, pts, data, coords)                         # F02a: a CAR term's parameters, latent vectors and rcar
+    timecor = getattr(model, "timecor_names", {})               # F03b: unstr()'s Lcortime and Cortime, or cosy
+    if "L" in timecor:
+        L = np.stack([np.atleast_2d(p.pars["Lcortime"]) for p in pts])
+        dims = ("chain", "draw", timecor["coordinate"], timecor["coordinate_T"])
+        data[timecor["L"]] = (dims, L[None])
+        data[timecor["cor"]] = (dims, (L @ np.swapaxes(L, -1, -2))[None])
+        coords[timecor["coordinate"]] = coords[timecor["coordinate_T"]] = model.design.timecor.labels
+    if "cosy" in timecor:
+        data[timecor["cosy"]] = (("chain", "draw"), np.array([float(p.pars["cosy"]) for p in pts])[None, :])
     for name, dmap in (cmap.distributional or {}).items():       # B01: an auxiliary parameter's own formula, raw-scale intercept and b
         ds, roles = model.spec.dpar(name), model.dpar_names[name]
         if ds.intercept:
@@ -2056,6 +2103,8 @@ def in_data_order(case: dict, fixture: Fixture, model: ab.Model, data: pd.DataFr
     matchers compare rows by content as for any other model and a wrong permutation fails them. An array of ``N`` rows
     that is not a known per-row array stops the oracle rather than being left sorted or moved blindly."""
     term = getattr(getattr(model, "spec", None), "autocor", None)   # a multivariate or non-linear model has none
+    if term is None:                                              # F03b: brms sorts a residual correlation term's rows alike
+        term = getattr(getattr(model, "spec", None), "timecor", None)
     if term is None:
         return fixture
     order = brms_row_order(case, data, term)
@@ -2069,7 +2118,7 @@ def in_data_order(case: dict, fixture: Fixture, model: ab.Model, data: pd.DataFr
                              f"{abs_err(sd['Y'], y[order])}")
     unsorted = {}
     for key, value in sd.items():
-        if key == "J_lag" or np.ndim(value) == 0 or value.shape[0] != N:
+        if key == "J_lag" or key.endswith("_tg") or np.ndim(value) == 0 or value.shape[0] != N:   # F03b: per-group arrays
             unsorted[key] = value
             continue
         if not _PER_ROW.match(key):
@@ -2444,3 +2493,53 @@ def car_draws(model: ab.Model, pts: list, data: dict, coords: dict) -> None:
         dim = names.get("zcar_coordinate", names["coordinate"]) if name == "zcar" else names["coordinate"]
         coords[dim] = loc[:values.shape[1]]
         data[names[name]] = (("chain", "draw", dim), values[None])
+
+
+# -- residual correlation terms (F03b) -----------------------------------------------------------------------------------
+_TIMECOR_DATA = ("N_tg", "begin_tg", "end_tg", "nobs_tg", "n_unique_t", "n_unique_cortime", "Jtime_tg")
+
+
+def check_timecor_design(fixture: Fixture, model: ab.Model) -> None:
+    """G1 of a residual correlation term (F03b): brms's ``N_tg`` groups, each the Stan rows ``begin_tg..end_tg`` (``nobs_tg``
+    of them), are the model's groups (``Design.timecor``), each brms group one of the model's with its rows in the model's
+    time order; ``unstr``'s ``n_unique_t`` and ``n_unique_cortime`` are the model's number of times and of correlations, and
+    each group's ``Jtime_tg`` its rows' 1-based time indices, then zeros. A model and a fixture of which only one has the
+    term's data are a mismatch."""
+    sd, term = fixture.standata, getattr(getattr(model, "spec", None), "timecor", None)
+    brms_has = [k for k in _TIMECOR_DATA if k in sd]
+    if term is None:
+        if [k for k in brms_has if k != "N_tg"]:              # a SAR or fcor() model has N_tg = 1 (F02b, F03a), a CAR model none
+            raise OracleMismatch(f"brms has a residual correlation term's data {brms_has}; the AutoBayes model has none")
+        return
+    wanted = _TIMECOR_DATA if term.call == "unstr" else _TIMECOR_DATA[:4]
+    if sorted(brms_has) != sorted(wanted):
+        raise OracleMismatch(f"the AutoBayes model has {term.term}; brms's standata has {brms_has}, not {list(wanted)}")
+    order, design = getattr(fixture, "stan_order", None), model.design.timecor
+    if order is None:
+        raise OracleMismatch("the fixture of a residual correlation model must be compared in data order (in_data_order)")
+    G = int(sd["N_tg"])
+    begin, end, nobs = (np.atleast_1d(sd[k]).astype(int) for k in ("begin_tg", "end_tg", "nobs_tg"))
+    if G != len(design.groups) or begin.shape != (G,) or not np.array_equal(end - begin + 1, nobs) or begin[0] != 1 \
+            or not np.array_equal(begin[1:], end[:-1] + 1) or end[-1] != design.n:
+        raise OracleMismatch(f"brms's {G} groups (begin_tg {begin.tolist()}, end_tg {end.tolist()}, nobs_tg {nobs.tolist()}) do not "
+                             f"tile its {design.n} rows as the model's {len(design.groups)} groups do")
+    if term.call == "unstr":
+        if int(sd["n_unique_t"]) != design.dim or int(sd["n_unique_cortime"]) != design.dim * (design.dim - 1) // 2:
+            raise OracleMismatch(f"brms has n_unique_t = {int(sd['n_unique_t'])}, n_unique_cortime = {int(sd['n_unique_cortime'])}; "
+                                 f"the model has {design.dim} times")
+        J = np.atleast_2d(sd["Jtime_tg"]).astype(int)
+        if J.shape != (G, int(nobs.max())):
+            raise OracleMismatch(f"brms's Jtime_tg is {J.shape}; {G} groups of at most {int(nobs.max())} rows")
+    for g in range(G):
+        rows = order[begin[g] - 1:end[g]]                          # brms's group g, as data rows in its Stan order
+        mine = design.group_index[rows]
+        if np.any(mine != mine[0]) or design.nobs[mine[0]] != rows.size:
+            raise OracleMismatch(f"brms's group {g + 1} (Stan rows {begin[g]}..{end[g]}) is not one group of the model")
+        own = design.order[design.group_index[design.order] == mine[0]]   # the model's rows of that group, in its time order
+        if not np.array_equal(own, rows):
+            raise OracleMismatch(f"brms's group {g + 1} lists data rows {rows.tolist()}; the model orders its group "
+                                 f"{design.groups[mine[0]]!r} as {own.tolist()}")
+        if term.call == "unstr":
+            expected = np.r_[design.index[rows] + 1, np.zeros(J.shape[1] - rows.size, dtype=int)]
+            if not np.array_equal(J[g], expected):
+                raise OracleMismatch(f"brms's Jtime_tg of group {g + 1} is {J[g].tolist()}; the model's time indices give {expected.tolist()}")

@@ -70,6 +70,7 @@ def _refuse_unsupported(model) -> None:
         (getattr(spec, "sar", None) is not None, lambda: f"the SAR term {spec.sar.term!r}"),                     # F02b (D143)
         (getattr(spec, "fcor", None) is not None, lambda: f"the fixed residual covariance {spec.fcor.term!r}"),   # F03a
         (getattr(spec, "car", None) is not None, lambda: f"the CAR term {spec.car.term!r}"),     # F02a
+        (getattr(spec, "timecor", None) is not None, lambda: f"the residual correlation term {spec.timecor.term!r}"),   # F03b
     ]
     for present, construct in constructs:
         if present:

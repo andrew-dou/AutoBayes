@@ -75,9 +75,10 @@ on the predictor at `ar = ma = 0` with every other variable moved off its initia
 
 ## Refused, naming the construct
 
-`cov = TRUE`, brms's covariance formulation (D68); `cosy()`, `unstr()` (D69; `sar()` is F02b's,
-[SAR terms](spatial-sar.md), and refused next to the ARMA terms there, D143; `fcor()` is F03a's, [fcor](fcor.md), and refused
-next to the ARMA terms there, D144; `car()` is F02a's, [CAR terms](spatial-car.md), refused next to them too, D141); families other
+`cov = TRUE`, brms's covariance formulation (D68); the other structures are offered (D69): `sar()` by F02b, [SAR
+terms](spatial-sar.md), refused next to the ARMA terms there, D143; `fcor()` by F03a, [fcor](fcor.md), refused next to them,
+D144; `car()` by F02a, [CAR terms](spatial-car.md), refused next to them, D141; `unstr()` and `cosy()` by F03b, [unstr and
+cosy](unstr-cosy.md), refused next to them, D146; families other
 than the Gaussian, an autocorrelation term next to or inside a distributional formula, with a response addition term
 (`weights()`, `cens()`, `trunc()`), a `gr` of two columns (`g:h`), a non-numeric time column (D70); the term in a
 multivariate formula (C01: brms gives each response its own ARMA term), in a non-linear expression (C02: brms adds one with

@@ -1,0 +1,42 @@
+{
+ "extras": [
+  "log_lik",
+  "loo"
+ ],
+ "factors": {
+  "g": [
+   "a",
+   "b",
+   "c",
+   "d",
+   "e",
+   "f"
+  ]
+ },
+ "family": {
+  "family": "student"
+ },
+ "formula": "y ~ x + cosy(time = t, gr = g)",
+ "id": "student_cosy_post",
+ "n_points": 8,
+ "point_halfwidth": 0.5,
+ "priors": [
+  {
+   "class": "Intercept",
+   "prior": "normal(0, 2)"
+  },
+  {
+   "class": "b",
+   "prior": "normal(0, 1)"
+  },
+  {
+   "class": "sigma",
+   "prior": "normal(0, 1)"
+  },
+  {
+   "class": "nu",
+   "prior": "gamma(2, 0.1)"
+  }
+ ],
+ "seed": 1027
+}

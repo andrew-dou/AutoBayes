@@ -41,6 +41,12 @@ def _log_likelihood(model, post, eta):
     return student_t(model.design.y, nu, eta, auxiliary(model, post, "sigma"))
 
 
+def _time_correlation():
+    from autobayes.timecor import STUDENT_TIME            # lazily, as autobayes.timecor imports the formula module
+
+    return STUDENT_TIME
+
+
 def _likelihood_lines(model) -> list[str]:
     sigma = scale_symbol(model)                                # "sigma", or "sigma_i" with its own formula (B01)
     if model.nu is None:                                       # learned (A13)
@@ -86,4 +92,5 @@ STUDENT = FamilySpec(
     default_distributional_intercept=lambda scale: StudentT(3, 0, scale),   # brms Intercept_sigma: student_t(3, 0, scale of log y)
     monotonic=True,                                                 # B03: mo(x), verified against student_monotonic
     log_likelihood=_log_likelihood,                                 # C07: log_lik(), checked against the model's own density (test_post_processing.py)
+    time_correlation=_time_correlation,                             # F03b: cosy(), verified against student_cosy and student_cosy_post
 )

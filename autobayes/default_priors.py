@@ -33,6 +33,8 @@ brms's rules (``default_prior()``, ``def_dpar_prior``, ``def_scale_prior``, ``pr
   ``ma``, no bounds in the regression formulation), ``Flat()``, one class row each.
 - A SAR term (F02b, ``sar(M, type = "lag" | "error")``): its ``lagsar`` or ``errorsar`` flat, ``Flat()``, on the class row with
   brms's bounds ``lb`` ``min_eigenMsar`` and ``ub`` ``max_eigenMsar`` (written as those names, as brms writes them).
+- A residual correlation term (F03b): ``unstr()``'s correlation matrix ``lkj(1)`` (class ``cortime``, no bounds),
+  ``LKJ(1)``; ``cosy()``'s correlation flat on its bounds 0 and 1 (class ``cosy``), ``Flat()``: one class row each.
 - An auxiliary parameter with its own formula (B01, ``sigma ~ z``; brms's ``def_dpar_prior`` under the formula's log link):
   its intercept ``student_t(3, 0, scale)`` with brms's scale of the response read on the log scale for ``sigma``
   (``max(2.5, round(mad(log y), 1))``, zeros read as 0.1, 2.5 when a response is negative) and ``student_t(3, 0, 2.5)``
@@ -454,12 +456,16 @@ def default_priors(formula: str | list[str], data: pd.DataFrame, *, family: str 
 
         car_layout(spec.car, data, data2)
         car = {c: {"sdcar": HalfStudentT(DF, scale), "car": Flat(), "rhocar": Beta(1, 1)}[c] for c in spec.car.classes}
+    timecor = {}                                                       # F03b: brms's lkj(1) on cortime, flat cosy on (0, 1)
+    if spec.timecor is not None:
+        timecor = {spec.timecor.prior_class: LKJ(1) if spec.timecor.call == "unstr" else Flat()}
     priors = Priors(intercept=mark(intercept), b=mark(Flat()) if spec.pop_terms else None, sd=mark(sd) or None,
                     cor=mark(cor) or None, nu=mark(learned.get("nu")), simo=mark(simo) or None,
                     sdgp=mark(sdgp) or None, lscale=mark(lscale) or None, meanme=mark(me) or None, sdme=mark(me) or None,
                     lncor=mark(lncor),
                     **{k: mark(v) for k, v in auxiliary.items()}, **{k: mark(v) for k, v in autocor.items()},
-                    **{k: mark(v) for k, v in sar.items()}, **{k: mark(v) for k, v in car.items()})
+                    **{k: mark(v) for k, v in sar.items()}, **{k: mark(v) for k, v in car.items()},
+                    **{k: mark(v) for k, v in timecor.items()})
     priors.validate(spec, fam)
     return priors
 
@@ -649,6 +655,8 @@ def prior_table(priors: Priors, spec, family="gaussian", *, center_predictors: b
         add(prior, name, lb="min_eigenMsar", ub="max_eigenMsar")
     for cls, prior in priors.car_priors(spec).items():                 # a CAR term's sdcar (lb 0), car and rhocar (in (0, 1); F02a)
         add(prior, cls, lb="0", ub="" if cls == "sdcar" else "1")
+    for cls, prior in priors.timecor_priors(spec).items():           # F03b: cortime (no bounds) or cosy (lb 0, ub 1), a class row
+        add(prior, cls, **({"lb": "0", "ub": "1"} if cls == "cosy" else {}))
     for cls, lb in (("meanme", ""), ("sdme", "0")):                    # C06: an me() term's latent values, brms's class rows
         me = priors.me_priors(spec, cls)                               # (lb 0 on sdme's) and one coefficient row me<x> each
         if me:

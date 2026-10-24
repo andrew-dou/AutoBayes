@@ -61,6 +61,7 @@ _SAR_RE = re.compile(r"(?<![A-Za-z0-9_.])sar\s*\(")                             
 _FCOR_RE = re.compile(r"(?<![A-Za-z0-9_.])fcor\s*\(")                                                 # brms's fcor() (F03a)
 _ME_RE = re.compile(r"(?<![A-Za-z0-9_.])me\s*\(")                                                 # brms's me() (C06)
 _CAR_RE = re.compile(r"(?<![A-Za-z0-9_.])car\s*\(")                                               # brms's car() (F02a)
+_TIMECOR_RE = re.compile(r"(?<![A-Za-z0-9_.])(unstr|cosy)\s*\(")                                    # brms's unstr(), cosy() (F03b)
 RESPONSE_DIM, RESPONSE_DIM_T = "__resp__", "__resp_T__"     # the graph's response coordinates (Lrescor, rescor, the joint response)
 PREDICTION_DIM = "response"                                 # predict()'s response dimension, brms's last axis of its prediction arrays
 
@@ -192,6 +193,9 @@ def parse_multivariate(formula, data: pd.DataFrame | None = None, family: str = 
             raise FormulaError(f"{formula!r}: {piece!r}: a fixed residual covariance in a multivariate formula is not verified in "
                                "this slice (brms gives each response its own matrix, Mfcor_y and Mfcor_y2); write it in a univariate "
                                "model (docs/fcor.md, divergence D144)")
+        if _TIMECOR_RE.search(piece):                     # F03b
+            raise FormulaError(f"{formula!r}: {piece!r}: a residual correlation term in a multivariate formula is not verified in this "
+                               "slice; write it in a univariate model (docs/unstr-cosy.md, divergence D146)")
         if _ME_RE.search(piece):
             raise FormulaError(f"{formula!r}: {piece!r}: a measurement-error term in a multivariate model is not supported in this "
                                "slice; me() belongs to a univariate Gaussian model here (docs/missing-and-measurement-error.md, "
@@ -307,6 +311,9 @@ def _parse_imputation(formulas, data, family, categorical, *, rescor) -> Multiva
         if getattr(s, "sar", None) is not None:               # F02b: likewise
             raise FormulaError(f"{s.formula!r}: the SAR term {s.sar.term!r} in a multivariate model is not verified in this slice; "
                                "write it in a univariate model (docs/spatial-sar.md, divergence D143)")
+        if s.timecor is not None:                             # F03b: likewise
+            raise FormulaError(f"{s.formula!r}: the residual correlation term {s.timecor.term!r} in a multivariate model is not verified "
+                               "in this slice; write it in a univariate model (docs/unstr-cosy.md, divergence D146)")
         for t in s.mi_terms:
             col = t.operands[0]
             if col not in responses:

@@ -245,6 +245,8 @@ def check_model(prior: Prior, spec, fam) -> None:
         refused.append(f"a fixed residual covariance {spec.fcor.term}")
     if getattr(spec, "car", None) is not None:                # F02a
         refused.append(f"a CAR term {spec.car.term}")
+    if getattr(spec, "timecor", None) is not None:                   # F03b: brms scales the prior by sigma; no case verifies the pair
+        refused.append(f"a residual correlation term {spec.timecor.term}")
     if refused:
         raise PriorError(f"{fn} is offered with population-level terms that are columns of the design only; this formula has "
                          + "; ".join(refused) + f", which no frozen case verifies with it ({DOC}, divergence D102)")

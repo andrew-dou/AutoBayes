@@ -2071,13 +2071,29 @@
    "depends_on": [
     "C04_autocor"
    ],
-   "status": "fixtures_frozen",
+   "status": "gates_green",
    "summary": "unstr(time, gr) and cosy(time, gr) residual correlation (cases gauss_unstr, gauss_cosy, student_cosy, gauss_unstr_post)",
    "pr": null,
    "attempts": 0,
    "divergences": [],
    "next_action": "implementing (wave F1)",
-   "reserved_divergences": "D146-D147"
+   "reserved_divergences": "D146-D147",
+   "gates": {
+    "sha": "b572b1db7795",
+    "dirty_tree": false,
+    "base": "origin/main",
+    "when": "2026-10-24T13:08Z",
+    "results": {
+     "immutability": {
+      "status": "pass",
+      "seconds": 0.0
+     },
+     "oracle": {
+      "status": "pass",
+      "seconds": 687.1
+     }
+    }
+   }
   },
   {
    "id": "F04_wiener",

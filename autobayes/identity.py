@@ -126,6 +126,13 @@ def _car_payload(model):
     term, design = model.spec.car, model.design.car
     return {'term': term.term, 'type': term.type, 'locations': list(design.locations), 'index': design.index, 'edges': design.edges,
             'scale': design.scale, 'priors': {c: _prior(p) for c, p in model.priors.car_priors(model.spec).items()}}
+def _timecor_payload(model):
+    """The target identity's entry of a residual correlation term (F03b): the term, its groups and each fitted row's group
+    and row of the correlation matrix (what the density reads), the times of ``unstr()`` and the prior of its parameter."""
+    term, design = model.spec.timecor, model.design.timecor
+    return {'term': term.term, 'call': term.call, 'time': term.time, 'gr': term.gr, 'groups': list(design.groups),
+            'times': list(design.times), 'group_index': design.group_index, 'index': design.index,
+            'priors': {cls: _prior(prior) for cls, prior in model.priors.timecor_priors(model.spec).items()}}
 
 
 def freeze_target(model):
@@ -201,6 +208,8 @@ def freeze_target(model):
         **({'fcor': {'term': s.fcor.term, 'M': d.fcor.M}} if getattr(s, 'fcor', None) is not None else {}),
         # So does a CAR term (F02a): its locations, graph and priors.
         **({'car': _car_payload(model)} if getattr(s, 'car', None) is not None else {}),
+        # So does a residual correlation term (F03b): its groups, each row's place in the correlation and its parameter's prior.
+        **({'time_correlation': _timecor_payload(model)} if getattr(s, 'timecor', None) is not None else {}),
         # So do an me() term (C06): its noisy values, known noise and the priors of its latent values; and each column whose
         # missing values are parameters (C06): its values with 0 at the missing rows, and those rows.
         **({'measurement_error': _measurement_payload(model)} if getattr(d, 'measurement_error', {}) else {}),

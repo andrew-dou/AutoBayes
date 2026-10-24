@@ -632,6 +632,9 @@ def parse_nonlinear(formulas, data: pd.DataFrame | None = None, family: str = "g
         if d.car is not None:                                          # F02a: not verified in a parameter's formula
             raise FormulaError(f"{text!r}: the CAR term {d.car.term!r} in a non-linear parameter's formula is not supported in this "
                                "slice (docs/spatial-car.md, divergence D141)")
+        if d.timecor is not None:                                      # F03b: brms refuses it too
+            raise FormulaError(f"{text!r}: the residual correlation term {d.timecor.term!r} in a non-linear parameter's formula is not "
+                               "supported, as in brms ('Explicit covariance terms can only be specified on mu'; docs/unstr-cosy.md)")
         if d.me_terms or d.mi_terms:                                   # C06: not verified in a parameter's formula
             t = (*d.me_terms, *d.mi_terms)[0]
             what, did = ("measurement-error", "D73") if t.kind == "measurement_error" else ("missing-value", "D72")
@@ -755,6 +758,8 @@ def check_nonlinear_priors(priors: Priors, spec: NonlinearSpec, fam) -> None:
                                 "a non-linear model takes no Gaussian process (divergence D61)"),
                                (("ar", "ma"), "an autocorrelation term ar(), ma(), arma() (docs/autocorrelation.md)",
                                 "a non-linear model takes no autocorrelation term (divergence D70)"),
+                               (("cortime", "cosy"), "a residual correlation term unstr(), cosy() (docs/unstr-cosy.md)",
+                                "a non-linear model takes no residual correlation term (divergence D146)"),
                                (("meanme", "sdme"), "a measurement-error term me(x, sdx) (docs/missing-and-measurement-error.md)",
                                 "a non-linear model takes no measurement-error term (divergence D73)"),
                                (("sdcar", "car", "rhocar"), "a CAR term car() (docs/spatial-car.md)",

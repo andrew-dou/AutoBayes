@@ -66,9 +66,5 @@
     "Flat"
    ]
   }
- },
- "gate": {
-  "expect": "fail",
-  "reason": "F03_residual_correlation not implemented; remove this field when it lands"
  }
 }
