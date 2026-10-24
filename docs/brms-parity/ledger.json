@@ -1917,12 +1917,15 @@
    "depends_on": [
     "B05_ordinal_categorical"
    ],
-   "status": "fixtures_frozen",
+   "status": "merged",
    "summary": "multinomial() and dirichlet_multinomial() with matrix responses and trials (cases multinomial_varint, multinomial_dpar_formula, multinomial_varint_post, dirichlet_multinomial_varint; fixtures #83)",
-   "pr": null,
+   "pr": 92,
    "attempts": 0,
-   "divergences": [],
-   "next_action": "implementing (wave F1)",
+   "divergences": [
+    "D136",
+    "D137"
+   ],
+   "next_action": "none",
    "reserved_divergences": "D136-D137"
   },
   {
