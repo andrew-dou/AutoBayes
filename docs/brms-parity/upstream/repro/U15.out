@@ -1,9 +1,0 @@
-brms 2.23.0, rstan 2.32.7, StanHeaders 2.32.10, R 4.5.2
-the number of chains is less than 1; sampling not done
-
-at a = 2, sigma = 1, y = 1
-  fitted log likelihood (Stan)  brms -1.418938533204673   with mu = 0.5 * a: -0.9189385332046728   with mu = 0 (integer 1 / 2): -1.418938533204673
-  posterior_epred (R)           brms 1   with mu = 0.5 * a: 1
-
-PROBLEM PRESENT: the fitted model and brms's predictions read (1 / 2) * a differently
-run time 34.6 s
