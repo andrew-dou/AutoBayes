@@ -1911,49 +1911,94 @@
    }
   },
   {
-   "id": "F01_multi_category_families",
+   "id": "F01a_multinomial",
    "tier": "F",
    "lane": "families",
    "depends_on": [
     "B05_ordinal_categorical"
    ],
-   "status": "queued",
-   "summary": "multinomial, dirichlet, dirichlet_multinomial, logistic_normal (matrix responses)",
+   "status": "fixtures_frozen",
+   "summary": "multinomial() and dirichlet_multinomial() with matrix responses and trials (cases multinomial_varint, multinomial_dpar_formula, multinomial_varint_post, dirichlet_multinomial_varint; fixtures #83)",
    "pr": null,
    "attempts": 0,
    "divergences": [],
-   "next_action": "fixtures (wave F0)",
-   "reserved_divergences": "D136-D139"
+   "next_action": "implementing (wave F1)",
+   "reserved_divergences": "D136-D137"
   },
   {
-   "id": "F02_spatial_car_sar",
+   "id": "F01b_dirichlet_logistic_normal",
+   "tier": "F",
+   "lane": "families",
+   "depends_on": [
+    "B05_ordinal_categorical"
+   ],
+   "status": "fixtures_frozen",
+   "summary": "dirichlet() and logistic_normal() on simplex responses (cases dirichlet_varint, logistic_normal_varint, logistic_normal_refcat)",
+   "pr": null,
+   "attempts": 0,
+   "divergences": [],
+   "next_action": "implementing (wave F1)",
+   "reserved_divergences": "D138-D139"
+  },
+  {
+   "id": "F02a_car",
    "tier": "F",
    "lane": "formula",
    "depends_on": [
     "C04_autocor"
    ],
-   "status": "queued",
-   "summary": "car() (escar, esicar, icar, bym2) and sar() (lag, error) with data2 adjacency/weight matrices",
+   "status": "fixtures_frozen",
+   "summary": "car(W, gr, type) escar, esicar, icar, bym2 with data2 adjacency (cases gauss_car_escar, gauss_car_esicar, gauss_car_icar, gauss_car_bym2, poisson_car_bym2)",
    "pr": null,
    "attempts": 0,
    "divergences": [],
-   "next_action": "fixtures (wave F0)",
-   "reserved_divergences": "D140-D143"
+   "next_action": "implementing (wave F1)",
+   "reserved_divergences": "D140-D141"
   },
   {
-   "id": "F03_residual_correlation",
+   "id": "F02b_sar",
    "tier": "F",
    "lane": "formula",
    "depends_on": [
     "C04_autocor"
    ],
-   "status": "queued",
-   "summary": "fcor() fixed residual covariance, unstr() and cosy() residual correlation structures",
+   "status": "fixtures_frozen",
+   "summary": "sar(M, type) lag and error with data2 weights (cases gauss_sar_lag, gauss_sar_error, gauss_sar_lag_post)",
    "pr": null,
    "attempts": 0,
    "divergences": [],
-   "next_action": "fixtures (wave F0)",
-   "reserved_divergences": "D144-D147"
+   "next_action": "implementing (wave F1)",
+   "reserved_divergences": "D142-D143"
+  },
+  {
+   "id": "F03a_fcor",
+   "tier": "F",
+   "lane": "formula",
+   "depends_on": [
+    "C04_autocor"
+   ],
+   "status": "fixtures_frozen",
+   "summary": "fcor(M) fixed residual covariance from data2 (case gauss_fcor)",
+   "pr": null,
+   "attempts": 0,
+   "divergences": [],
+   "next_action": "implementing (wave F1)",
+   "reserved_divergences": "D144-D145"
+  },
+  {
+   "id": "F03b_unstr_cosy",
+   "tier": "F",
+   "lane": "formula",
+   "depends_on": [
+    "C04_autocor"
+   ],
+   "status": "fixtures_frozen",
+   "summary": "unstr(time, gr) and cosy(time, gr) residual correlation (cases gauss_unstr, gauss_cosy, student_cosy, gauss_unstr_post)",
+   "pr": null,
+   "attempts": 0,
+   "divergences": [],
+   "next_action": "implementing (wave F1)",
+   "reserved_divergences": "D146-D147"
   },
   {
    "id": "F04_wiener",
@@ -1962,12 +2007,12 @@
    "depends_on": [
     "D01_continuous_families"
    ],
-   "status": "queued",
-   "summary": "wiener() diffusion model with dec() responses",
+   "status": "fixtures_frozen",
+   "summary": "wiener() with dec() responses (cases wiener_varint, wiener_distributional_bs); brms's posterior_epred is wrong (upstream)",
    "pr": null,
    "attempts": 0,
    "divergences": [],
-   "next_action": "fixtures (wave F0)",
+   "next_action": "implementing (wave F1)",
    "reserved_divergences": "D148-D151"
   },
   {
@@ -1977,13 +2022,43 @@
    "depends_on": [
     "E04_cens_trunc_families"
    ],
-   "status": "queued",
+   "status": "parked:needs splines2",
    "summary": "cox() proportional hazards with brms's M-spline baseline hazard",
    "pr": null,
    "attempts": 0,
    "divergences": [],
-   "next_action": "fixtures (wave F0)",
+   "next_action": "Andrew: install splines2 in R for the oracle (brms standata() requires it), then freeze cases",
    "reserved_divergences": "D152-D155"
+  },
+  {
+   "id": "F06_addition_terms",
+   "tier": "F",
+   "lane": "formula",
+   "depends_on": [
+    "B02_addition_terms"
+   ],
+   "status": "queued",
+   "summary": "addition terms se(), rate(), thres(gr = ), subset() (multivariate)",
+   "pr": null,
+   "attempts": 0,
+   "divergences": [],
+   "next_action": "fixtures (wave F0b)",
+   "reserved_divergences": "D156-D161"
+  },
+  {
+   "id": "F07_summaries",
+   "tier": "F",
+   "lane": "post",
+   "depends_on": [
+    "C07_post_processing"
+   ],
+   "status": "queued",
+   "summary": "fixef(), ranef(), coef(), VarCorr(), summary() table, prior_summary(), residuals(), predictive_error()",
+   "pr": null,
+   "attempts": 0,
+   "divergences": [],
+   "next_action": "fixtures (wave F0b)",
+   "reserved_divergences": "D162-D167"
   }
  ]
 }
