@@ -9092,12 +9092,13 @@
    "result": {
     "status": "error",
     "type": "FormulaError",
-    "message": "'sar(M_sar)': brms's simultaneous spatial autoregression, sar() is not offered here; the autocorrelation terms supported are ar(), ma() and arma() in brms's regression formulation (docs/autocorrelation.md, divergence D69)",
-    "raised_at": "autocor.py:106",
+    "message": "the SAR term 'sar(M_sar, type = \"lag\")' reads the matrix 'M_sar' from data2, and the model was given no data2: pass data2={'M_sar': matrix}, an 40 x 40 matrix over the fitted rows in data order (docs/spatial-sar.md)",
+    "raised_at": "sar.py:175",
     "stage": "default_priors",
     "mechanism": "refusal",
-    "outcome": "refused_named",
-    "gap": "capability"
+    "outcome": "refused_unclear",
+    "gap": "defect",
+    "pin": "the SAR term 'sar(M_sar, type = \"lag\")' reads the matrix 'M_sar' from data2, and"
    }
   },
   {
@@ -13410,15 +13411,15 @@
  "summary": {
   "outcomes": {
    "match": 114,
-   "refused_unclear": 16,
-   "refused_named": 116,
+   "refused_unclear": 17,
+   "refused_named": 115,
    "misread": 1,
    "differs": 1
   },
   "gaps": {
    "none": 117,
-   "defect": 17,
-   "capability": 113,
+   "defect": 18,
+   "capability": 112,
    "divergence": 1
   },
   "brms_refuses": 3
