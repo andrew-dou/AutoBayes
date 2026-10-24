@@ -2141,12 +2141,12 @@
    "depends_on": [
     "E04_cens_trunc_families"
    ],
-   "status": "queued",
+   "status": "fixtures_frozen",
    "summary": "cox() proportional hazards with brms's M-spline baseline hazard",
    "pr": null,
    "attempts": 0,
    "divergences": [],
-   "next_action": "fixtures: splines2 0.5.4 installed 2026-10-24 (Andrew approved)",
+   "next_action": "implementing; fixtures #101",
    "reserved_divergences": "D152-D155"
   },
   {
