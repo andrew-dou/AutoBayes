@@ -2071,19 +2071,49 @@
    "reserved_divergences": "D152-D155"
   },
   {
-   "id": "F06_addition_terms",
+   "id": "F06a_se_rate",
    "tier": "F",
    "lane": "formula",
    "depends_on": [
     "B02_addition_terms"
    ],
    "status": "fixtures_frozen",
-   "summary": "addition terms se(), rate(), thres(gr = ), subset() (multivariate)",
+   "summary": "se(sei) and se(sei, sigma = TRUE) (Gaussian, Student-t); rate(denom) (Poisson, negative binomial): cases gauss_se_meta, gauss_se_sigma, student_se_sigma, poisson_rate, negbinomial_rate",
    "pr": null,
    "attempts": 0,
    "divergences": [],
    "next_action": "implementing (wave F2); fixtures #89",
-   "reserved_divergences": "D156-D161"
+   "reserved_divergences": "D156-D157"
+  },
+  {
+   "id": "F06b_thres",
+   "tier": "F",
+   "lane": "families",
+   "depends_on": [
+    "B05_ordinal_categorical"
+   ],
+   "status": "fixtures_frozen",
+   "summary": "thres(gr = ) and thres(K, gr = ) group-specific thresholds for cumulative: cases cumulative_thres_gr, cumulative_thres_k_gr",
+   "pr": null,
+   "attempts": 0,
+   "divergences": [],
+   "next_action": "implementing (wave F2); fixtures #89",
+   "reserved_divergences": "D158-D159"
+  },
+  {
+   "id": "F06c_subset",
+   "tier": "F",
+   "lane": "formula",
+   "depends_on": [
+    "C01_multivariate"
+   ],
+   "status": "fixtures_frozen",
+   "summary": "subset() in a multivariate model with a formula per response, set_rescor(FALSE): case gauss_mv_subset",
+   "pr": null,
+   "attempts": 0,
+   "divergences": [],
+   "next_action": "implementing (wave F2); fixtures #89",
+   "reserved_divergences": "D160-D161"
   },
   {
    "id": "F07_summaries",
