@@ -1,0 +1,40 @@
+{
+ "factors": {
+  "g": [
+   "a",
+   "b",
+   "c",
+   "d",
+   "e",
+   "f"
+  ],
+  "z": [
+   "p",
+   "q",
+   "r"
+  ]
+ },
+ "family": {
+  "family": "cumulative",
+  "link": "logit"
+ },
+ "formula": "ord | thres(gr = z) ~ x + (1 | g)",
+ "id": "cumulative_thres_gr",
+ "n_points": 8,
+ "priors": [
+  {
+   "class": "Intercept",
+   "prior": "normal(0, 3)"
+  },
+  {
+   "class": "b",
+   "prior": "normal(0, 1.5)"
+  },
+  {
+   "class": "sd",
+   "group": "g",
+   "prior": "normal(0, 1)"
+  }
+ ],
+ "seed": 1066
+}

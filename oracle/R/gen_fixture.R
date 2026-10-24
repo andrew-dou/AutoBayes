@@ -78,6 +78,31 @@
 #                   of sar(type = "error")): each is called once per block and must fail, and brms's error message is recorded as
 #                   predictions$<block>$<kind>_refused (and <kind>_nogroup_refused) in place of the array; it stops if brms computes it
 #
+# Opt-in per case (Tier F, part 2); a case without these keys is generated exactly as before:
+#
+#   prediction_resp a list of response names: each block also records posterior_linpred / posterior_epred(resp = <name>) (and the
+#                   _nogroup kinds) as predictions$<block>$resp$<name>$<kind>, for a multivariate model whose joint predictions
+#                   brms refuses (subset(): list linpred and epred in prediction_refused); brms predicts each response on the
+#                   rows of its subset, of the fitted data or of newdata
+#   summary_draws   {chains, iter, seed, rho, sd, chain_sd}: a second fixed-parameter fit, for summaries, whose draws are seeded
+#                   unconstrained points arranged as `chains` chains of `iter` iterations, each chain a stationary AR(1) series
+#                   (coefficient rho, marginal sd `sd` in every coordinate) around its own centre (normal, sd chain_sd), so that
+#                   brms's Rhat and effective sample sizes are defined and not trivial. Stan's Fixed_param run keeps each chain at
+#                   its first draw, so the run's stored draws are then replaced by the seeded ones (rstan's sim$samples, every
+#                   parameter brm() saves: brms's exclude_pars() of the model are left out, as brm() leaves them out), lp__ by
+#                   rstan's log_prob() with the Jacobian (what a sampler records), and read back through rstan and brms to check
+#                   they are exactly the seeded ones; the fit is labelled algorithm "fixed_param" (brm()'s name for such a run).
+#                   Recorded as post$summary_draws: the chains and iterations, each draw as a seeded point is (u, the constrained
+#                   pars, lp and lp_nojac; chain by chain) and brms's draws array (iterations, chains, variables)
+#   summaries       a list of brms functions evaluated on that fit with their defaults, each recorded under its name in the post
+#                   block: "fixef", "ranef" and "coef" (by group), "VarCorr" (by group: sd, cor and cov where brms gives them),
+#                   "posterior_summary", "summary" (its tables fixed, spec_pars, cor_pars, random by group, and rescor_pars,
+#                   splines, mo, gp where present, with nobs, ngrps, chains, iter, warmup, thin and total_ndraws) and "residuals"
+#                   (type "ordinary", method "posterior_epred": brms's default method draws from posterior_predict). Each table
+#                   or array keeps its labels on every axis (dimnames; [] where brms gives none). The fit is built twice and
+#                   every summary must be identical between the two, and under two seeds; the meta records the posterior
+#                   package's version (brms's rhat, ess_bulk and ess_tail are posterior's)
+#
 # Nothing here samples, and nothing here evaluates code from the case: the formula is parsed with
 # as.formula(), the family is built with brms::brmsfamily() from named arguments, priors with set_prior().
 # Everything is deterministic given the case, the data and the package versions; a prediction or
@@ -289,6 +314,24 @@ if (length(refused)) pred_block <- function(newdata) {   # the kinds listed are 
     out[[paste0(kind, if (kind %in% refused) "_nogroup_refused" else "_nogroup")]] <- run(kind, re_formula = NA)
   out
 }
+pred_resp <- unlist(case$prediction_resp)             # opt-in (Tier F, part 2): each response's own predictions (subset())
+if (length(pred_resp)) {
+  if (is.null(case$mvbf)) stop("prediction_resp needs a multivariate model (mvbf)")
+  joint_block <- pred_block
+  pred_block <- function(newdata) {                   # predictions$<block>$resp$<name>$<kind>, on the rows of that response
+    out <- joint_block(newdata)
+    out$resp <- lapply(setNames(pred_resp, pred_resp), function(r) {
+      one <- function(f, ...) enc(deterministic(function() f(fit1, newdata = newdata, resp = r, ...)))
+      o <- list(linpred = one(posterior_linpred), epred = one(posterior_epred))
+      if (has_groups) {
+        o$linpred_nogroup <- one(posterior_linpred, re_formula = NA)
+        o$epred_nogroup <- one(posterior_epred, re_formula = NA)
+      }
+      o
+    })
+    out
+  }
+}
 predictions <- list(fitted = pred_block(NULL))
 if (!is.null(nd)) predictions$newdata <- pred_block(nd)
 
@@ -399,6 +442,103 @@ if (length(case$conditional_effects)) {               # D06: one table per effec
   post$conditional_effects <- lapply(ce, enc_frame)
 }
 
+# -- opt-in summaries (Tier F, part 2: F07) of a fixed-parameter fit whose draws are seeded chains --------------------------
+summaries <- unlist(case$summaries)
+summary_kinds <- c("fixef", "ranef", "coef", "VarCorr", "posterior_summary", "summary", "residuals")
+if (length(setdiff(summaries, summary_kinds))) stop("summaries lists functions other than ", paste(summary_kinds, collapse = ", "))
+if (length(summaries) && is.null(case$summary_draws)) stop("summaries needs summary_draws")
+if (!is.null(case$summary_draws)) {
+  if (!length(summaries)) stop("summary_draws needs summaries")
+  if (prior_gq) stop("summaries of a fit with prior draws are not supported (constrain_pars() draws them anew)")
+  spec <- case$summary_draws
+  n_chains <- as.integer(spec$chains); n_iter <- as.integer(spec$iter)
+  if (n_chains < 2 || n_iter < 4) stop("summary_draws: at least 2 chains of 4 iterations (Rhat splits each chain in two)")
+  set.seed(spec$seed)                                 # chain by chain: its centre, then its AR(1) series around it
+  U <- array(NA_real_, c(n_iter, n_chains, n))
+  for (ch in seq_len(n_chains)) {
+    centre <- rnorm(n, 0, spec$chain_sd)
+    u <- centre + rnorm(n, 0, spec$sd)
+    for (it in seq_len(n_iter)) {
+      if (it > 1) u <- centre + spec$rho * (u - centre) + sqrt(1 - spec$rho^2) * rnorm(n, 0, spec$sd)
+      U[it, ch, ] <- u
+    }
+  }
+  cps <- lapply(seq_len(n_chains), function(ch) lapply(seq_len(n_iter), function(t) constrain_pars(sf, U[t, ch, ])))
+  lps <- lapply(c(TRUE, FALSE), function(adj) apply(U, c(1, 2), function(u) as.numeric(log_prob(sf, u, adjust_transform = adj))))
+  if (any(!is.finite(unlist(lps)))) stop("non-finite log density at a summary draw")
+  excluded <- unlist(brms:::exclude_pars(fit0))       # the parameters brm() does not save (z_1, L_1, ...)
+  summary_fit <- function() {                         # the fixed-parameter run, its draws replaced by the seeded ones
+    sfs <- sampling(sf@stanmodel, data = sdat, algorithm = "Fixed_param", chains = n_chains, iter = n_iter, warmup = 0,
+                    init = lapply(cps, `[[`, 1), refresh = 0, seed = 1, cores = 1, pars = excluded, include = FALSE)
+    kept <- setdiff(names(sfs@sim$dims_oi), "lp__")
+    want <- array(NA_real_, c(n_iter, n_chains, length(sfs@sim$fnames_oi)))
+    for (ch in seq_len(n_chains)) {
+      smp <- sfs@sim$samples[[ch]]
+      for (t in seq_len(n_iter)) {
+        v <- c(unlist(lapply(kept, function(nm) as.vector(cps[[ch]][[t]][[nm]]))), lps[[1]][t, ch])
+        if (length(v) != length(smp)) stop("summary_draws: the constrained draw does not fill the run's parameters")
+        want[t, ch, ] <- v
+      }
+      first <- vapply(smp, function(s) s[1], 0.0)     # the run's own first draw is the chain's first point: the order of the
+      P <- length(smp)                                # flattened parameters is the run's, checked, not assumed (lp__ aside)
+      if (any(abs(first[-P] - want[1, ch, -P]) > 1e-10 * pmax(1, abs(want[1, ch, -P]))))
+        stop("summary_draws: the run's first draw is not the chain's first point (parameter order)")
+      for (k in seq_along(smp)) smp[[k]] <- want[, ch, k]
+      sfs@sim$samples[[ch]] <- smp
+    }
+    got <- as.array(sfs)                              # rstan's own read-back: (iterations, chains, parameters)
+    if (!identical(dimnames(got)[[3]], sfs@sim$fnames_oi) || !identical(as.vector(got), as.vector(want)))
+      stop("summary_draws: rstan does not return the draws written")
+    f <- fit0
+    f$fit <- sfs
+    f <- rename_pars(f)
+    f$algorithm <- "fixed_param"                      # brm()'s name for a Fixed_param run (summary() then reads no NUTS diagnostics)
+    da <- unclass(posterior::as_draws_array(f))
+    for (nm in intersect(c("lprior", "lp__"), dimnames(da)[[3]])) {   # the same draws through brms, checked
+      if (!identical(as.vector(da[, , nm]), as.vector(want[, , match(nm, sfs@sim$fnames_oi)])))
+        stop(sprintf("summary_draws: brms's draws of %s are not the draws written", nm))
+    }
+    if (dim(da)[3] != length(sfs@sim$fnames_oi)) stop("summary_draws: brms's draws have other variables than the run")
+    f
+  }
+  enc_labelled <- function(x) {                  # an array or table with its labels on every axis ([] where there are none)
+    if (is.data.frame(x)) x <- as.matrix(x)
+    out <- enc(unclass(x), dims = dim(x), allow_infinite = TRUE, allow_na = TRUE)
+    out$colnames <- NULL
+    out$dimnames <- lapply(seq_along(dim(x)), function(k) I(as.character(dimnames(x)[[k]])))
+    out
+  }
+  record_summaries <- function(f) {
+    out <- list()
+    if ("fixef" %in% summaries) out$fixef <- enc_labelled(fixef(f))
+    if ("ranef" %in% summaries) out$ranef <- lapply(ranef(f), enc_labelled)
+    if ("coef" %in% summaries) out$coef <- lapply(coef(f), enc_labelled)
+    if ("VarCorr" %in% summaries) out$VarCorr <- lapply(VarCorr(f), function(g) lapply(g, enc_labelled))
+    if ("posterior_summary" %in% summaries) out$posterior_summary <- enc_labelled(posterior_summary(f))
+    if ("summary" %in% summaries) {
+      s <- summary(f)
+      tables <- intersect(c("fixed", "spec_pars", "cor_pars", "rescor_pars", "splines", "mo", "gp"), names(s))
+      out$summary <- c(lapply(setNames(tables, tables), function(nm) enc_labelled(s[[nm]])),
+                       list(random = lapply(s$random, enc_labelled), nobs = s$nobs, ngrps = lapply(s$ngrps, as.integer),
+                            chains = s$chains, iter = s$iter, warmup = s$warmup, thin = s$thin, total_ndraws = s$total_ndraws))
+    }
+    if ("residuals" %in% summaries) out$residuals <- enc_labelled(residuals(f, method = "posterior_epred"))
+    out
+  }
+  fa <- summary_fit()
+  sums <- deterministic(function() record_summaries(fa))
+  if (!identical(sums, record_summaries(summary_fit()))) stop("summaries: two fits of the same draws give different summaries")
+  da <- posterior::as_draws_array(fa)
+  post$summary_draws <- list(
+    chains = n_chains, iter = n_iter, draws = enc_labelled(da),
+    points = unlist(lapply(seq_len(n_chains), function(ch) lapply(seq_len(n_iter), function(t) {
+      cp <- cps[[ch]][[t]]
+      list(u = enc(U[t, ch, ]), pars = lapply(setNames(names(cp), names(cp)), function(nm) enc(cp[[nm]], sf@par_dims[[nm]])),
+           lp = lps[[1]][t, ch], lp_nojac = lps[[2]][t, ch])
+    })), recursive = FALSE))
+  post <- c(post, sums)
+}
+
 # -- tables ------------------------------------------------------------------------------------------------
 groups <- list()
 if (has_groups) {
@@ -448,6 +588,8 @@ fixture <- list(
 )
 if (!is.null(data2))                                  # Tier F: the data2 files, as data.csv's
   fixture$meta$data2_sha256 <- lapply(setNames(data2_names, data2_names), function(nm) sha(file.path(dir, sprintf("data2_%s.csv", nm))))
+if (length(summaries))                                # Tier F, part 2: brms's rhat, ess_bulk and ess_tail are the posterior package's
+  fixture$meta$posterior <- as.character(packageVersion("posterior"))
 if ("responses" %in% extras) {                        # opt-in: the last axis of a multivariate model's predictions
   resp <- as.character(fit0$formula$responses)
   if (!identical(dimnames(posterior_linpred(fit1))[[3]], resp)) stop("brms's responses are not the prediction array's last axis")

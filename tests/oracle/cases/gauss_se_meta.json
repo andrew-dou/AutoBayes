@@ -1,0 +1,64 @@
+{
+ "id": "gauss_se_meta",
+ "tier": "F",
+ "feature": "F06_addition_terms",
+ "note": "F06 se(sdx) without sigma, a meta-analysis with a varying intercept per study g: brms's standata carries se (the sdx column) and sigma = 0 as data, there is no sigma parameter, each row's likelihood is N(Intercept + r_g, se_i) (checked on the frozen points by tests/oracle/test_harness.py), the default prior table has no sigma row, and epred equals linpred",
+ "seed": 1061,
+ "n_points": 8,
+ "data": {
+  "generator": "tier_f2",
+  "seed": 961,
+  "n": 36,
+  "newdata": {
+   "seed": 1061,
+   "n": 5
+  }
+ },
+ "brms": {
+  "formula": "y | se(sdx) ~ 1 + (1 | g)",
+  "family": {
+   "family": "gaussian"
+  },
+  "factors": {
+   "g": [
+    "a",
+    "b",
+    "c",
+    "d",
+    "e",
+    "f"
+   ]
+  },
+  "priors": [
+   {
+    "prior": "normal(0, 5)",
+    "class": "Intercept"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "sd",
+    "group": "g"
+   }
+  ]
+ },
+ "autobayes": {
+  "constructor": "gaussian",
+  "formula": "y | se(sdx) ~ 1 + (1 | g)",
+  "kwargs": {},
+  "priors": {
+   "intercept": [
+    "Normal",
+    0,
+    5
+   ],
+   "sd": [
+    "HalfNormal",
+    1
+   ]
+  }
+ },
+ "gate": {
+  "expect": "fail",
+  "reason": "F06_addition_terms not implemented; remove this field when it lands"
+ }
+}

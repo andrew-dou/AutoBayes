@@ -1,0 +1,140 @@
+{
+ "id": "gauss_mv_subset",
+ "tier": "F",
+ "feature": "F06_addition_terms",
+ "note": "F06 subset() in a multivariate model, bf(y | subset(sub1) ~ x + (1 | g)) + bf(y2 | subset(sub2) ~ x) + set_rescor(FALSE): Y_y holds the 26 rows with sub1 = 1 and Y_y2 the 18 with sub2 = 1, in data order (4 rows are in neither), N = 36, and the group term is indexed on y's rows (J_1_y, Z_1_y_1) (checked on the frozen points by tests/oracle/test_harness.py). brms refuses the joint posterior_linpred / posterior_epred (\"Argument 'resp' must be a single variable name for models using addition argument 'subset'.\", recorded through prediction_refused); prediction_resp records each response's predictions on its subset's rows, of the fitted data and of newdata (2 of the 5 new rows each, by newdata's own sub1 and sub2)",
+ "seed": 1068,
+ "n_points": 8,
+ "data": {
+  "generator": "tier_f2",
+  "seed": 968,
+  "n": 36,
+  "newdata": {
+   "seed": 1068,
+   "n": 5
+  }
+ },
+ "brms": {
+  "mvbf": [
+   "y | subset(sub1) ~ x + (1 | g)",
+   "y2 | subset(sub2) ~ x"
+  ],
+  "rescor": false,
+  "family": {
+   "family": "gaussian"
+  },
+  "factors": {
+   "g": [
+    "a",
+    "b",
+    "c",
+    "d",
+    "e",
+    "f"
+   ]
+  },
+  "priors": [
+   {
+    "prior": "normal(0, 5)",
+    "class": "Intercept",
+    "resp": "y"
+   },
+   {
+    "prior": "normal(0, 2)",
+    "class": "b",
+    "resp": "y"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "sd",
+    "group": "g",
+    "resp": "y"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "sigma",
+    "resp": "y"
+   },
+   {
+    "prior": "normal(0, 5)",
+    "class": "Intercept",
+    "resp": "y2"
+   },
+   {
+    "prior": "normal(0, 2)",
+    "class": "b",
+    "resp": "y2"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "sigma",
+    "resp": "y2"
+   }
+  ],
+  "prediction_refused": [
+   "linpred",
+   "epred"
+  ],
+  "prediction_resp": [
+   "y",
+   "y2"
+  ],
+  "extras": [
+   "group_scope"
+  ]
+ },
+ "autobayes": {
+  "constructor": "gaussian",
+  "formula": [
+   "y | subset(sub1) ~ x + (1 | g)",
+   "y2 | subset(sub2) ~ x"
+  ],
+  "kwargs": {
+   "rescor": false
+  },
+  "priors": {
+   "resp": {
+    "y": {
+     "intercept": [
+      "Normal",
+      0,
+      5
+     ],
+     "b": [
+      "Normal",
+      0,
+      2
+     ],
+     "sd": [
+      "HalfNormal",
+      1
+     ],
+     "sigma": [
+      "HalfNormal",
+      1
+     ]
+    },
+    "y2": {
+     "intercept": [
+      "Normal",
+      0,
+      5
+     ],
+     "b": [
+      "Normal",
+      0,
+      2
+     ],
+     "sigma": [
+      "HalfNormal",
+      1
+     ]
+    }
+   }
+  }
+ },
+ "gate": {
+  "expect": "fail",
+  "reason": "F06_addition_terms not implemented; remove this field when it lands"
+ }
+}

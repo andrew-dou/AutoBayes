@@ -36,6 +36,16 @@ their sha256 (`data2_sha256`); `read_data2` reads them back, labelled, and `gate
 as ``cbind(m1, m2, m3)`` over ordinary columns, which brms evaluates into the same matrix column it would take from the data.
 `prediction_refused` (a list of kinds, "linpred" or "epred") records a prediction brms fails to compute for the model as its error
 message, `predictions.<block>.<kind>_refused` (and `<kind>_nogroup_refused`), in place of the array (`Fixture.prediction_refusal`).
+
+Tier F part 2 cases (F06, F07; the data generator `tier_f2` adds subset() indicators) may add: `prediction_resp` (a list of response
+names; each block also holds `predictions.<block>.resp.<name>.<kind>`, brms's posterior_linpred / posterior_epred(resp = <name>) on
+the rows of that response's subset, for a multivariate model with subset() whose joint predictions brms refuses:
+`Fixture.response_prediction`), and `summary_draws` with `summaries` (a list of brms functions: fixef, ranef, coef, VarCorr,
+posterior_summary, summary, residuals). These record brms's summaries of a second fixed-parameter fit whose draws are seeded chains
+(``post.summary_draws``: the chains, the iterations, each draw as a seeded point is but without gradients, and brms's draws array
+(iterations, chains, variables): `Fixture.summary_draws`), each under its function's name in the post block, every table or array
+with its labels on every axis (``{"dims", "values", "dimnames"}``: `decode_labelled`); the meta records the posterior package's
+version (`posterior`), whose rhat, ess_bulk and ess_tail brms's summary() reports.
 """
 from __future__ import annotations
 
@@ -58,6 +68,12 @@ def decode(obj) -> np.ndarray:
     dims = [int(d) for d in obj["dims"]]
     values = np.asarray(obj["values"], dtype=float)         # strings "Inf"/"-Inf" (truncation bounds) parse as infinities
     return values.reshape(dims, order="F") if dims else values.reshape(())
+
+
+def decode_labelled(obj) -> tuple[np.ndarray, list[list[str]]]:
+    """A labelled array or table of the fixture (Tier F part 2: brms's summaries) and its labels, one list per axis ([] where brms
+    gives none, e.g. the rows of residuals())."""
+    return decode(obj), [list(labels) for labels in obj["dimnames"]]
 
 
 def case_ids() -> list[str]:
@@ -175,6 +191,28 @@ class Fixture:
     def prediction_refusal(self, block: str, kind: str) -> str | None:
         """brms's error message for a prediction it fails to compute (Tier F, a case's ``prediction_refused``), else None."""
         return self.raw["predictions"].get(block, {}).get(f"{kind}_refused")
+
+    def response_prediction(self, block: str, resp: str, kind: str) -> np.ndarray | None:
+        """(n_points, rows of the response's subset) for one response of a multivariate model (Tier F part 2, a case's
+        ``prediction_resp``): brms's posterior_linpred / posterior_epred(resp = ``resp``) of kind "linpred", "epred",
+        "linpred_nogroup" or "epred_nogroup"; None when the fixture has no such entry."""
+        entry = self.raw["predictions"].get(block, {}).get("resp", {}).get(resp, {}).get(kind)
+        return None if entry is None else decode(entry)
+
+    @cached_property
+    def summary_draws(self) -> dict | None:
+        """Tier F part 2 (a case's ``summary_draws``): the second fixed-parameter fit that brms's summaries are computed on, as
+        ``{"chains", "iter", "points", "draws", "variables"}``: its draws as seeded points (chain by chain, each chain's iterations
+        in order; ``grad`` and ``grad_nojac`` are None, as none are recorded) and brms's draws array (iterations, chains,
+        variables) with its variable names; None for a case without."""
+        block = self.raw.get("post", {}).get("summary_draws")
+        if block is None:
+            return None
+        draws, labels = decode_labelled(block["draws"])
+        points = [Point(u=decode(p["u"]), pars={k: decode(v) for k, v in p["pars"].items()}, lp=float(p["lp"]), grad=None,
+                        lp_nojac=float(p["lp_nojac"]), grad_nojac=None) for p in block["points"]]
+        return {"chains": int(block["chains"]), "iter": int(block["iter"]), "points": points, "draws": draws,
+                "variables": labels[2]}
 
     @property
     def prior_summary(self) -> list[dict]:
