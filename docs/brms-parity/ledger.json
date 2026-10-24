@@ -2258,12 +2258,17 @@
    "depends_on": [
     "C07_post_processing"
    ],
-   "status": "gates_green",
+   "status": "merged",
    "summary": "fixef(), ranef(), coef(), VarCorr(), summary() table, prior_summary(), residuals(), predictive_error()",
-   "pr": null,
+   "pr": 102,
    "attempts": 0,
-   "divergences": [],
-   "next_action": "implementing (wave F2); fixtures #89",
+   "divergences": [
+    "D162",
+    "D163",
+    "D164",
+    "D165"
+   ],
+   "next_action": "none",
    "reserved_divergences": "D162-D167",
    "gates": {
     "sha": "9f5d99502715",
