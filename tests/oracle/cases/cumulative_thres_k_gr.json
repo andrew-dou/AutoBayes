@@ -1,0 +1,62 @@
+{
+ "id": "cumulative_thres_k_gr",
+ "tier": "F",
+ "feature": "F06_addition_terms",
+ "note": "F06 thres(3, gr = z): three thresholds for every level of z, also for z = r, whose data (seed 989) has no category 4 (its third threshold is identified by the prior and the ordering alone); no centring, as with thres(gr = z) (checked on the frozen points by tests/oracle/test_harness.py). brms's thres() also takes a per-row vector constant within groups; a named vector thres(c(p = 3, q = 3, r = 2), gr = z) fails with \"Number of thresholds should be unique for each group.\"",
+ "seed": 1067,
+ "n_points": 8,
+ "data": {
+  "generator": "tier_f2",
+  "seed": 989,
+  "n": 36,
+  "newdata": {
+   "seed": 1067,
+   "n": 5
+  }
+ },
+ "brms": {
+  "formula": "ord | thres(3, gr = z) ~ x",
+  "family": {
+   "family": "cumulative",
+   "link": "logit"
+  },
+  "factors": {
+   "z": [
+    "p",
+    "q",
+    "r"
+   ]
+  },
+  "priors": [
+   {
+    "prior": "normal(0, 3)",
+    "class": "Intercept"
+   },
+   {
+    "prior": "normal(0, 1.5)",
+    "class": "b"
+   }
+  ]
+ },
+ "autobayes": {
+  "constructor": "cumulative",
+  "formula": "ord | thres(3, gr = z) ~ x",
+  "kwargs": {},
+  "priors": {
+   "intercept": [
+    "Normal",
+    0,
+    3
+   ],
+   "b": [
+    "Normal",
+    0,
+    1.5
+   ]
+  }
+ },
+ "gate": {
+  "expect": "fail",
+  "reason": "F06_addition_terms not implemented; remove this field when it lands"
+ }
+}

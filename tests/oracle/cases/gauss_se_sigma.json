@@ -1,0 +1,81 @@
+{
+ "id": "gauss_se_sigma",
+ "tier": "F",
+ "feature": "F06_addition_terms",
+ "note": "F06 se(sdx, sigma = TRUE): sigma is a parameter and each row's standard deviation is sqrt(sigma^2 + se_i^2) (checked on the frozen points by tests/oracle/test_harness.py); standata has se and no sigma",
+ "seed": 1062,
+ "n_points": 8,
+ "data": {
+  "generator": "tier_f2",
+  "seed": 962,
+  "n": 36,
+  "newdata": {
+   "seed": 1062,
+   "n": 5
+  }
+ },
+ "brms": {
+  "formula": "y | se(sdx, sigma = TRUE) ~ x + (1 | g)",
+  "family": {
+   "family": "gaussian"
+  },
+  "factors": {
+   "g": [
+    "a",
+    "b",
+    "c",
+    "d",
+    "e",
+    "f"
+   ]
+  },
+  "priors": [
+   {
+    "prior": "normal(0, 5)",
+    "class": "Intercept"
+   },
+   {
+    "prior": "normal(0, 2)",
+    "class": "b"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "sd",
+    "group": "g"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "sigma"
+   }
+  ]
+ },
+ "autobayes": {
+  "constructor": "gaussian",
+  "formula": "y | se(sdx, sigma = TRUE) ~ x + (1 | g)",
+  "kwargs": {},
+  "priors": {
+   "intercept": [
+    "Normal",
+    0,
+    5
+   ],
+   "b": [
+    "Normal",
+    0,
+    2
+   ],
+   "sd": [
+    "HalfNormal",
+    1
+   ],
+   "sigma": [
+    "HalfNormal",
+    1
+   ]
+  }
+ },
+ "gate": {
+  "expect": "fail",
+  "reason": "F06_addition_terms not implemented; remove this field when it lands"
+ }
+}

@@ -173,6 +173,13 @@ class Bundle:
         # gate that compares them with the fixture's ``post`` block (brms's log_lik(), bayes_R2(), loo()) lands with them; the
         # same holds for the names Tier E cases propose (``prior_draws``, ``loo_model_weights``)
         self.post = {name: getattr(ab, name) for name in self.case.get("autobayes", {}).get("post", ())}
+        # Tier F part 2: F07's summaries (fixef, ranef, coef, VarCorr, posterior_summary, summary, residuals) are names there too,
+        # compared on the fixture's summary draws; an F06 fixture with each response's own predictions (``prediction_resp``,
+        # subset(): brms refuses the joint ones) needs G4's comparison of them, ``check_response_predictions``, which lands with
+        # subset(): until then such a case fails here rather than leaving its predictions unchecked
+        if self.case["brms"].get("prediction_resp") and "check_response_predictions" not in globals():
+            raise OracleMismatch("the fixture records each response's predictions (prediction_resp); gates.py has no "
+                                 "check_response_predictions to compare them")
         self.cmap = adapter.match_columns(self.fixture, self.model)
         self.gmap = adapter.match_groups(self.fixture, self.model)
 

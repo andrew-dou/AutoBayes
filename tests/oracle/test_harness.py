@@ -217,6 +217,249 @@ def test_refused_predictions_are_recorded_as_brms_s_messages(case_id):
                     assert fixture.prediction(block, name) is not None and fixture.prediction_refusal(block, name) is None
 
 
+# -- Tier F part 2: F06 addition terms (se(), rate(), thres(gr = ), subset()) and F07 summaries ------------------------------
+def _formulas(case) -> list[str]:
+    """Every brms formula of a case: its formula (or its parts), or each of a multivariate case's ``mvbf`` formulas."""
+    brms = case["brms"]
+    parts = brms.get("mvbf") or brms.get("formula") or []
+    return [parts] if isinstance(parts, str) else list(parts)
+
+
+ADDITION = [cid for cid in FROZEN if any(re.search(r"\|.*\b(se|rate|thres|subset)\(", f) for f in _formulas(fx.load_case(cid)))]
+
+
+def _group_effects(sd, p, resp=""):
+    """The varying intercept of ``(1 | g)`` per row (r_1_1 or r_1_<resp>_1 at J_1, times Z_1_1), 0 without one."""
+    suffix = f"_{resp}" if resp else ""
+    if f"J_1{suffix}" not in sd:
+        return 0.0
+    return np.atleast_1d(p.pars[f"r_1{suffix}_1"])[sd[f"J_1{suffix}"].astype(int) - 1] * sd[f"Z_1{suffix}_1"]
+
+
+def _centred_eta(sd, p, resp=""):
+    """Intercept + (X without its intercept column, centred) b + group effects, brms's linear predictor of a centred design."""
+    suffix = f"_{resp}" if resp else ""
+    X = sd[f"X{suffix}"][:, 1:]
+    eta = float(p.pars[f"Intercept{suffix}"]) + _group_effects(sd, p, resp)
+    return eta + ((X - X.mean(0)) @ np.atleast_1d(p.pars[f"b{suffix}"]) if X.shape[1] else 0.0)
+
+
+def _addition_log_likelihood(case, sd, frame, p) -> float:
+    """F06: the log likelihood of a frozen point, written from the mathematics, with brms's data checked on the way: se(col) is a
+    known standard deviation per row, the scale itself without sigma (brms's data sigma = 0) or sqrt(sigma^2 + se^2) with
+    sigma = TRUE; rate(col) multiplies the mean exp(eta) by the row's denominator, and a negative binomial's shape too;
+    thres(gr = z) gives each level of z its own ordered thresholds, as many as the level's largest response category less one
+    (or the K of thres(K, gr = z)), on an uncentred design (brms does not centre with grouped thresholds); subset(col) puts the
+    rows whose indicator is 1 in that response's likelihood, in data order."""
+    stats = pytest.importorskip("scipy.stats")
+    from scipy.special import expit
+    family = case["brms"]["family"]["family"]
+    (formula, *_) = _formulas(case)
+    if "mvbf" in case["brms"]:                                  # subset(): one Gaussian likelihood per response, on its rows
+        total = 0.0
+        for f in _formulas(case):
+            resp, indicator = re.match(r"\s*(\w+)\s*\|\s*subset\((\w+)\)", f).groups()
+            rows = frame[indicator].to_numpy() == 1
+            assert int(sd[f"N_{resp}"]) == rows.sum() and np.array_equal(sd[f"Y_{resp}"], frame[resp].to_numpy()[rows])
+            total += stats.norm.logpdf(sd[f"Y_{resp}"], _centred_eta(sd, p, resp), float(p.pars[f"sigma_{resp}"])).sum()
+        return total
+    y = sd["Y"]
+    se = re.search(r"\bse\((\w+)(,\s*sigma\s*=\s*TRUE)?\)", formula)
+    if se:
+        assert np.array_equal(sd["se"], frame[se.group(1)].to_numpy())
+        if se.group(2):
+            assert "sigma" not in sd
+            scale = np.sqrt(float(p.pars["sigma"]) ** 2 + sd["se"] ** 2)
+        else:
+            assert float(sd["sigma"]) == 0.0
+            scale = sd["se"]
+        if family == "student":
+            return stats.t.logpdf(y, float(p.pars["nu"]), _centred_eta(sd, p), scale).sum()
+        return stats.norm.logpdf(y, _centred_eta(sd, p), scale).sum()
+    rate = re.search(r"\brate\((\w+)\)", formula)
+    if rate:
+        assert np.array_equal(sd["denom"], frame[rate.group(1)].to_numpy())
+        mean = np.exp(_centred_eta(sd, p)) * sd["denom"]
+        if family == "poisson":
+            return stats.poisson.logpmf(y, mean).sum()
+        shape = float(p.pars["shape"]) * sd["denom"]
+        return stats.nbinom.logpmf(y, shape, shape / (shape + mean)).sum()
+    thres = re.search(r"\bthres\((?:(\d+),\s*)?gr\s*=\s*(\w+)\)", formula)
+    assert thres and family == "cumulative"
+    levels = case["brms"]["factors"][thres.group(2)]
+    codes = frame[thres.group(2)].map(levels.index).to_numpy()
+    response = frame[formula.split("|")[0].strip()].to_numpy()
+    K = [int(thres.group(1))] * len(levels) if thres.group(1) else [int(response[codes == j].max()) - 1 for j in range(len(levels))]
+    assert np.atleast_1d(sd["nthres"]).astype(int).tolist() == K and np.array_equal(y, response)
+    starts = np.cumsum([0, *K])[:-1] + 1
+    assert np.array_equal(sd["Jthres"], np.column_stack([starts[codes], starts[codes] + np.array(K)[codes] - 1]))
+    mu = sd["X"] @ np.atleast_1d(p.pars["b"]) + _group_effects(sd, p)
+    total = 0.0
+    for i, (j, k) in enumerate(zip(codes, y.astype(int))):
+        th = np.atleast_1d(p.pars[f"Intercept_{j + 1}"])
+        assert np.array_equal(th, np.atleast_1d(p.pars[f"b_Intercept_{j + 1}"]))   # no centring: the thresholds are brms's b_Intercept
+        cdf = np.concatenate([[0.0], expit(th - mu[i]), [1.0]])
+        total += np.log(cdf[k] - cdf[k - 1])
+    return total
+
+
+@pytest.mark.parametrize("case_id", ADDITION)
+def test_addition_term_fixture_matches_a_hand_written_likelihood(case_id):
+    """F06: at every frozen point brms's log density without the Jacobian is its prior (lprior), the standard normal of the
+    group-level z, and the likelihood ``_addition_log_likelihood`` writes from the mathematics."""
+    case = fx.load_case(case_id)
+    f = fx.Fixture.load(case_id)
+    frame = fx.read_frame(case, fx.fixture_dir(case_id) / "data.csv")
+    sd = f.standata
+    for p in f.points:
+        z = sum(float(-0.5 * np.sum(np.ravel(v) ** 2) - 0.5 * np.size(v) * np.log(2 * np.pi)) for k, v in p.pars.items() if k.startswith("z_"))
+        expected = p.lp_nojac - float(p.pars["lprior"]) - z
+        assert rel_err(_addition_log_likelihood(case, sd, frame, p), expected) <= 1e-12
+
+
+PER_RESPONSE = [cid for cid in FROZEN if fx.load_case(cid)["brms"].get("prediction_resp")]
+
+
+@pytest.mark.parametrize("case_id", PER_RESPONSE)
+def test_per_response_predictions_are_on_each_response_s_subset(case_id):
+    """F06: a multivariate case with ``prediction_resp`` (subset(); brms refuses its joint predictions, which the case lists in
+    ``prediction_refused``) records each response's posterior_linpred and posterior_epred, with and without group effects, on
+    the rows of its subset: the fitted block on the data rows whose indicator is 1 (brms's linear predictor of that response at
+    every point, in data order), the newdata block on the new rows whose indicator is 1; a Gaussian's epred is its linpred."""
+    case = fx.load_case(case_id)
+    f = fx.Fixture.load(case_id)
+    d = fx.fixture_dir(case_id)
+    frames = {"fitted": fx.read_frame(case, d / "data.csv"), "newdata": fx.read_frame(case, d / "newdata.csv")}
+    assert set(case["brms"]["prediction_refused"]) == {"linpred", "epred"}
+    indicators = dict(re.match(r"\s*(\w+)\s*\|\s*subset\((\w+)\)", form).groups() for form in _formulas(case))
+    assert sorted(indicators) == sorted(case["brms"]["prediction_resp"])
+    for block, frame in frames.items():
+        for resp, indicator in indicators.items():
+            rows = int((frame[indicator] == 1).sum())
+            for kind in ("linpred", "epred", "linpred_nogroup", "epred_nogroup"):
+                arr = f.response_prediction(block, resp, kind)
+                assert arr.shape == (len(f.points), rows), (block, resp, kind)
+            np.testing.assert_array_equal(f.response_prediction(block, resp, "epred"), f.response_prediction(block, resp, "linpred"))
+            if block == "fitted":
+                eta = np.stack([_centred_eta(f.standata, p, resp) * np.ones(rows) for p in f.points])
+                np.testing.assert_allclose(f.response_prediction(block, resp, "linpred"), eta, rtol=1e-12, atol=1e-12)
+
+
+@pytest.mark.parametrize("case_id", PER_RESPONSE)
+def test_per_response_predictions_are_not_left_unchecked(case_id, monkeypatch):
+    """F06: until gates.py compares each response's predictions (``check_response_predictions``, with subset()), a bundle of a
+    case that records them fails with the oracle's mismatch, whatever model it is built with."""
+    if hasattr(gates, "check_response_predictions"):
+        pytest.skip("the per-response comparison has landed")
+    monkeypatch.setattr(adapter, "in_data_order", lambda case, fixture, model, data: fixture)
+    with pytest.raises(OracleMismatch, match="check_response_predictions"):
+        gates.Bundle(case_id, model=object())
+
+
+SUMMARIES = [cid for cid in FROZEN if fx.load_case(cid)["brms"].get("summaries")]
+
+
+@pytest.mark.parametrize("case_id", SUMMARIES)
+def test_summary_draws_are_the_seeded_chains(case_id):
+    """F07: a case with ``summary_draws`` records its second fixed-parameter fit as chains x iterations seeded points, chain by
+    chain, and brms's draws array (iterations, chains, variables) holds exactly those draws: lp__ is each point's log density
+    with the Jacobian (rstan's log_prob, as a sampler records it), lprior and b_Intercept the point's own; none of the
+    parameters brm() leaves out (z_, L_) is a variable; the draws move within and between chains; the meta records the posterior
+    package's version."""
+    case = fx.load_case(case_id)
+    f = fx.Fixture.load(case_id)
+    spec, block = case["brms"]["summary_draws"], f.summary_draws
+    assert (block["chains"], block["iter"]) == (spec["chains"], spec["iter"]) and len(block["points"]) == spec["chains"] * spec["iter"]
+    assert f.meta["posterior"] and block["draws"].shape == (spec["iter"], spec["chains"], len(block["variables"]))
+    assert not [v for v in block["variables"] if v.startswith(("z_", "L_"))]
+    column = {v: block["draws"][:, :, k] for k, v in enumerate(block["variables"])}
+    for c in range(spec["chains"]):
+        for t in range(spec["iter"]):
+            p = block["points"][c * spec["iter"] + t]
+            assert column["lp__"][t, c] == p.lp and column["lprior"][t, c] == float(p.pars["lprior"])
+            assert column["b_Intercept"][t, c] == float(np.ravel(p.pars["b_Intercept"])[0])
+            assert np.isfinite(p.lp_nojac) and p.grad is None
+    u = np.stack([p.u for p in block["points"]]).reshape(spec["chains"], spec["iter"], -1)
+    assert (np.diff(u, axis=1) != 0).all() and (u.mean(axis=1).std(axis=0) > 0).all()
+
+
+def _summary(draws: np.ndarray) -> np.ndarray:
+    """brms's posterior_summary of draws on the first axis: mean, sd (n - 1), and the 2.5 % and 97.5 % quantiles (R's type 7)."""
+    return np.stack([draws.mean(0), draws.std(0, ddof=1), *np.quantile(draws, [0.025, 0.975], axis=0)], axis=-1)
+
+
+def _close(ours, theirs):
+    np.testing.assert_allclose(ours, theirs, rtol=1e-12, atol=1e-13)
+
+
+@pytest.mark.parametrize("case_id", SUMMARIES)
+def test_summaries_are_moments_and_quantiles_of_the_draws(case_id):
+    """F07: on the summary draws (all chains together), posterior_summary() is ``_summary`` of every variable, fixef() of the
+    b_ variables, ranef() of r_<g>[level, coef], coef() of b_<coef> + r_<g>[level, coef] (b_<coef> alone for a coefficient
+    without group effects), VarCorr() of sd_<g>__<coef> (residual__: sigma), cor_<g>__<a>__<b> (1 on the diagonal) and
+    sd_a sd_b cor_ab (sd^2 on the diagonal); summary()'s first four columns are the same numbers for its rows (fixed b_<name>,
+    spec_pars <name>, random sd(<coef>) and cor(<a>,<b>)), its Rhat and ESS columns finite and positive; and residuals()
+    (ordinary, method posterior_epred) is ``_summary`` of Y - posterior_epred per draw, the inverse link of
+    b_Intercept + sum of b_<col> col + r_<g>[level, Intercept] (+ r_<g>[level, x] x), row by row."""
+    from scipy.special import expit
+    case = fx.load_case(case_id)
+    f = fx.Fixture.load(case_id)
+    post, block = f.raw["post"], f.summary_draws
+    D = block["draws"].reshape(-1, len(block["variables"]), order="F")       # (draws, variables), chain after chain
+    var = {v: D[:, k] for k, v in enumerate(block["variables"])}
+    table, (rows, cols) = fx.decode_labelled(post["posterior_summary"])
+    assert rows == block["variables"] and cols == ["Estimate", "Est.Error", "Q2.5", "Q97.5"]
+    _close(table, _summary(D))
+    fixef, (names, _) = fx.decode_labelled(post["fixef"])
+    _close(fixef, _summary(np.stack([var[f"b_{n}"] for n in names], 1)))
+    for g, entry in post["ranef"].items():
+        arr, (levels, _, coefs) = fx.decode_labelled(entry)
+        for j, c in enumerate(coefs):
+            _close(arr[:, :, j], _summary(np.stack([var[f"r_{g}[{lv},{c}]"] for lv in levels], 1)))
+    for g, entry in post["coef"].items():
+        arr, (levels, _, coefs) = fx.decode_labelled(entry)
+        assert coefs == names
+        for j, c in enumerate(coefs):
+            r = [var.get(f"r_{g}[{lv},{c}]", 0.0) for lv in levels]
+            _close(arr[:, :, j], _summary(np.stack([var[f"b_{c}"] + rv for rv in r], 1)))
+    for g, entry in post["VarCorr"].items():
+        sd_arr, (coefs, _) = fx.decode_labelled(entry["sd"])
+        sds = [var["sigma"]] if g == "residual__" else [var[f"sd_{g}__{c}"] for c in coefs]
+        _close(sd_arr, _summary(np.stack(sds, 1)))
+        assert set(entry) == ({"sd", "cor", "cov"} if len(coefs) > 1 else {"sd"})
+        if len(coefs) > 1:
+            cor = lambda a, b: np.ones(len(D)) if a == b else var.get(f"cor_{g}__{coefs[a]}__{coefs[b]}", var.get(f"cor_{g}__{coefs[b]}__{coefs[a]}"))
+            for key, value in (("cor", cor), ("cov", lambda a, b: sds[a] * sds[b] * cor(a, b))):
+                arr, _ = fx.decode_labelled(entry[key])
+                for a in range(len(coefs)):
+                    _close(arr[:, :, a], _summary(np.stack([value(b, a) for b in range(len(coefs))], 1)))
+    assert ("residual__" in post["VarCorr"]) == ("sigma" in var)
+    summary = post["summary"]
+    assert (summary["chains"], summary["iter"], summary["warmup"], summary["total_ndraws"]) == (block["chains"], block["iter"], 0, len(D))
+    lookups = [("fixed", lambda n: f"b_{n}"), ("spec_pars", lambda n: n)]
+    lookups += [(g, lambda n, g=g: f"sd_{g}__{n[3:-1]}" if n.startswith("sd(") else f"cor_{g}__" + "__".join(n[4:-1].split(","))) for g in summary["random"]]
+    for name, variable in lookups:
+        arr, (rows, cols) = fx.decode_labelled(summary[name] if name in ("fixed", "spec_pars") else summary["random"][name])
+        assert cols == ["Estimate", "Est.Error", "l-95% CI", "u-95% CI", "Rhat", "Bulk_ESS", "Tail_ESS"]
+        if rows:
+            _close(arr[:, :4], _summary(np.stack([var[variable(n)] for n in rows], 1)))
+            assert np.isfinite(arr[:, 4:]).all() and (arr[:, 4:] > 0).all()
+    frame = fx.read_frame(case, fx.fixture_dir(case_id) / "data.csv")
+    formula = _formulas(case)[0]
+    response = formula.split("~")[0].strip()
+    eta = var["b_Intercept"][:, None] + sum(var[f"b_{n}"][:, None] * frame[n].to_numpy()[None, :] for n in names
+                                             if n != "Intercept" and not n.startswith("sigma_"))
+    for g in post["ranef"]:
+        _, (levels, _, coefs) = fx.decode_labelled(post["ranef"][g])
+        for c in coefs:
+            r = np.stack([var[f"r_{g}[{lv},{c}]"] for lv in frame[g]], 1)
+            eta = eta + r * (1.0 if c == "Intercept" else frame[c].to_numpy()[None, :])
+    inverse_link = {"gaussian": lambda e: e, "bernoulli": expit}[case["brms"]["family"]["family"]]
+    resid, (rows, cols) = fx.decode_labelled(post["residuals"])
+    assert rows == [] and cols == ["Estimate", "Est.Error", "Q2.5", "Q97.5"]
+    _close(resid, _summary(frame[response].to_numpy()[None, :] - inverse_link(eta)))
+
+
 def _sorted_levels(fixture, group):
     (grp,) = [g for g in fixture.groups if g["group"] == group]
     assert list(grp["levels"]) == sorted(grp["levels"]), "the direct indexing below needs sorted brms levels"

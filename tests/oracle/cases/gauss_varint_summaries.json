@@ -1,0 +1,113 @@
+{
+ "id": "gauss_varint_summaries",
+ "tier": "F",
+ "feature": "F07_summaries",
+ "note": "F07 brms's summaries of the varying-intercept Gaussian; VarCorr has g's sd and residual__ (sigma), no correlations. summary_draws: 4 chains of 50 seeded unconstrained draws, each chain an AR(1) series (rho 0.6, marginal sd 0.5) around its own centre (sd 0.2), so Rhat and the ESS are defined and far from trivial (across the three F07 cases Rhat 1.01 to 1.24, bulk ESS 15 to 87 and tail ESS 27 to 146 of 200). fixef, ranef, coef, VarCorr, posterior_summary are the mean, sd and 2.5/97.5 % quantiles (type 7) over all 200 draws; summary() adds posterior 1.6.1's rhat, ess_bulk and ess_tail and its CIs come from posterior::quantile2 (equal to fixef's quantiles to rounding); residuals(method = \"posterior_epred\") is that summary of Y - posterior_epred per draw (all checked on the summary draws by tests/oracle/test_harness.py); posterior_summary includes the centred Intercept, lprior and lp__ (rstan's log_prob with the Jacobian at each draw); residuals(type = \"pearson\") is left out: brms 2.23.0 warns that the type is deprecated and divides by the Est.Error of predict(), which summarises posterior_predict draws (R's random-number stream: two seeds give different residuals)",
+ "seed": 1071,
+ "n_points": 8,
+ "data": {
+  "generator": "baseline",
+  "seed": 971,
+  "n": 36,
+  "newdata": {
+   "seed": 1071,
+   "n": 5
+  }
+ },
+ "brms": {
+  "formula": "y ~ x + (1 | g)",
+  "family": {
+   "family": "gaussian"
+  },
+  "factors": {
+   "g": [
+    "a",
+    "b",
+    "c",
+    "d",
+    "e",
+    "f"
+   ]
+  },
+  "priors": [
+   {
+    "prior": "normal(0, 5)",
+    "class": "Intercept"
+   },
+   {
+    "prior": "normal(0, 2)",
+    "class": "b"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "sd",
+    "group": "g"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "sigma"
+   }
+  ],
+  "summary_draws": {
+   "chains": 4,
+   "iter": 50,
+   "seed": 1171,
+   "rho": 0.6,
+   "sd": 0.5,
+   "chain_sd": 0.2
+  },
+  "summaries": [
+   "fixef",
+   "ranef",
+   "coef",
+   "VarCorr",
+   "posterior_summary",
+   "summary",
+   "residuals"
+  ]
+ },
+ "autobayes": {
+  "constructor": "gaussian",
+  "formula": "y ~ x + (1 | g)",
+  "kwargs": {},
+  "priors": {
+   "intercept": [
+    "Normal",
+    0,
+    5
+   ],
+   "b": [
+    "Normal",
+    0,
+    2
+   ],
+   "sd": [
+    "HalfNormal",
+    1
+   ],
+   "sigma": [
+    "HalfNormal",
+    1
+   ]
+  },
+  "post": [
+   "fixef",
+   "ranef",
+   "coef",
+   "VarCorr",
+   "posterior_summary",
+   "summary",
+   "residuals"
+  ],
+  "post_args": {
+   "residuals": {
+    "type": "ordinary",
+    "method": "posterior_epred"
+   }
+  }
+ },
+ "gate": {
+  "expect": "fail",
+  "reason": "F07_summaries not implemented; remove this field when it lands"
+ }
+}

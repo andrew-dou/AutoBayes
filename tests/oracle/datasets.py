@@ -6,7 +6,7 @@ in Python.
 Every frame has the same columns: numeric `x`, `w`; categorical `z` (p, q, r); grouping factors `g` (six
 levels) and `h` (four); responses `y` (Gaussian), `yb` (0/1), `k` successes out of `size` trials (never
 zero trials), and `cnt` (Poisson counts). A case uses the columns its formula names. The tier generators add
-columns after these; only `tier_c`'s `xm` (which `tier_d`, `tier_e` and `tier_f` inherit) has missing values (`NA_COLUMNS`):
+columns after these; only `tier_c`'s `xm` (which `tier_d`, `tier_e`, `tier_f` and `tier_f2` inherit) has missing values (`NA_COLUMNS`):
 empty fields in the CSV, NaN in Python, and NA in R for a case that declares the column in `brms.na_columns`. A Tier F case may
 also name matrices that brms receives as ``data2`` (`data2`, `DATA2`), each written next to `data.csv` as `data2_<name>.csv`.
 """
@@ -53,7 +53,7 @@ def baseline(seed: int, n: int = 36) -> pd.DataFrame:
 
 def newdata(seed: int, n: int = 5, *, tier_a: bool = False, pairs_from: pd.DataFrame | None = None,
             tier_b: bool = False, tier_c: bool = False, tier_d: bool = False, tier_e: bool = False,
-            tier_f: bool = False) -> pd.DataFrame:
+            tier_f: bool = False, tier_f2: bool = False) -> pd.DataFrame:
     """Rows to predict on, with fitted levels only (unseen levels need stochastic policies on both sides).
     ``pairs_from`` copies (g, h) from random rows of the fitted frame, so a nested factor ``g:h`` sees only fitted
     combinations (brms refuses new levels of a grouping factor by default)."""
@@ -92,6 +92,9 @@ def newdata(seed: int, n: int = 5, *, tier_a: bool = False, pairs_from: pd.DataF
         df["site"] = rng.choice(np.array(SITES, dtype=object), size=n)
         df["rt"] = np.round(0.35 + rng.gamma(2.0, 0.25, n), 4)
         df["dec"] = rng.integers(0, 2, n).astype(np.int64)
+    if tier_f2:                                                 # subset() indicators, both values present; drawn last
+        df["sub1"] = _every_level(rng.integers(0, 2, n).astype(np.int64), (0, 1)).astype(np.int64)
+        df["sub2"] = _every_level(rng.integers(0, 2, n).astype(np.int64), (0, 1)).astype(np.int64)
     return df
 
 
@@ -257,6 +260,18 @@ def tier_f(seed: int, n: int = 36) -> pd.DataFrame:
     return df
 
 
+def tier_f2(seed: int, n: int = 36) -> pd.DataFrame:
+    """`tier_f` plus the columns Tier F part 2 needs: subset indicators `sub1` (about 70 % ones) and `sub2` (about 60 %), 0/1
+    with both values present, for brms's subset() in a multivariate model (``bf(y | subset(sub1) ~ ...) + bf(y2 | subset(sub2) ~
+    ...)``; a row with neither is in no response's likelihood). Drawn after `tier_f`'s so the shared columns equal
+    `tier_f(seed, n)` exactly (its `xm` keeps its missing values)."""
+    df = tier_f(seed, n)
+    rng = np.random.default_rng(seed + 67867967)
+    df["sub1"] = _every_level((rng.uniform(size=n) < 0.7).astype(np.int64), (0, 1)).astype(np.int64)
+    df["sub2"] = _every_level((rng.uniform(size=n) < 0.6).astype(np.int64), (0, 1)).astype(np.int64)
+    return df
+
+
 def rook_adjacency() -> pd.DataFrame:
     """The 0/1 rook adjacency of `SITES` on their grid (1 for two sites that share an edge), labelled by site on both axes."""
     W = np.zeros((len(SITES), len(SITES)), dtype=np.int64)
@@ -324,8 +339,9 @@ def write_matrix(matrix: pd.DataFrame, path) -> None:
 
 
 GENERATORS = {"baseline": baseline, "tier_a": tier_a, "tier_b": tier_b, "tier_c": tier_c, "tier_d": tier_d, "tier_e": tier_e,
-              "tier_f": tier_f}
-NA_COLUMNS = {"tier_c": ("xm",), "tier_d": ("xm",), "tier_e": ("xm",), "tier_f": ("xm",)}   # the only columns with missing values, by design
+              "tier_f": tier_f, "tier_f2": tier_f2}
+NA_COLUMNS = {"tier_c": ("xm",), "tier_d": ("xm",), "tier_e": ("xm",), "tier_f": ("xm",),   # the only columns with missing values,
+              "tier_f2": ("xm",)}                                                            # by design
 
 
 def make(spec: dict) -> tuple[pd.DataFrame, pd.DataFrame | None]:
@@ -336,11 +352,12 @@ def make(spec: dict) -> tuple[pd.DataFrame, pd.DataFrame | None]:
     if not nd:
         return data, None
     tier = spec["generator"]
-    later = ("tier_e", "tier_f")
+    later = ("tier_e", "tier_f", "tier_f2")
     return data, newdata(int(nd["seed"]), int(nd.get("n", 5)), tier_a=tier in ("tier_a", "tier_b", "tier_c", "tier_d", *later),
                          pairs_from=data if nd.get("pairs_from_data") else None,
                          tier_b=tier in ("tier_b", "tier_c", "tier_d", *later), tier_c=tier in ("tier_c", "tier_d", *later),
-                         tier_d=tier in ("tier_d", *later), tier_e=tier in later, tier_f=tier == "tier_f")
+                         tier_d=tier in ("tier_d", *later), tier_e=tier in later, tier_f=tier in ("tier_f", "tier_f2"),
+                         tier_f2=tier == "tier_f2")
 
 
 def write_csv(frame: pd.DataFrame, path) -> None:

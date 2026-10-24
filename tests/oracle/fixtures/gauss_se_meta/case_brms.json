@@ -1,0 +1,30 @@
+{
+ "factors": {
+  "g": [
+   "a",
+   "b",
+   "c",
+   "d",
+   "e",
+   "f"
+  ]
+ },
+ "family": {
+  "family": "gaussian"
+ },
+ "formula": "y | se(sdx) ~ 1 + (1 | g)",
+ "id": "gauss_se_meta",
+ "n_points": 8,
+ "priors": [
+  {
+   "class": "Intercept",
+   "prior": "normal(0, 5)"
+  },
+  {
+   "class": "sd",
+   "group": "g",
+   "prior": "normal(0, 1)"
+  }
+ ],
+ "seed": 1061
+}
