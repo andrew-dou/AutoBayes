@@ -180,6 +180,20 @@ def autocor_predictor(model, post, eta: np.ndarray) -> np.ndarray:
     return arma_values(eta, model.design.y, coefficients.get("ar"), coefficients.get("ma"), model.design.autocor)
 
 
+def car_contribution(model, post, df: pd.DataFrame) -> np.ndarray | float:
+    """(chain, draw, row) draws of a CAR term's part of the linear predictor (F02a, docs/spatial-car.md) on the rows of ``df``:
+    each draw's ``rcar`` at the row's location, with or without group effects (brms keeps the term under ``re_formula = NA``);
+    a location the model was not fitted on is refused, as brms refuses it. 0 without the term."""
+    term = getattr(model.spec, "car", None)
+    if term is None:
+        return 0.0
+    from autobayes.car import location_index
+
+    names = model.car_names
+    rcar = post[names["rcar"]].transpose("chain", "draw", names["coordinate"]).to_numpy()
+    return rcar[..., location_index(model.design.car, df[term.gr], term)]
+
+
 def measurement_contribution(model, post, df: pd.DataFrame, *, in_sample: bool) -> np.ndarray | float:
     """(chain, draw, row) draws of the ``me()`` and ``mi()`` terms' part of the linear predictor (C06,
     docs/missing-and-measurement-error.md) on the rows of ``df``. On the fitted rows (``in_sample``) an ``me(x, sdx)`` term adds
@@ -267,6 +281,7 @@ def _check_newdata(model, newdata: pd.DataFrame, *, need_trials: bool = False, i
     operands = [c for t in s.group_terms for c in t.data_columns] if include_group_effects else []   # g and h, never g_h; D08:
     operands += [c for d in s.dpars for t in d.group_terms for c in t.data_columns] if include_group_effects else []   # mm(), by
     cols = [*s.model_columns] + ([s.offset.column] if s.offset is not None else []) + operands   # every formula's columns (B01)
+    cols += list(s.car.columns) if getattr(s, "car", None) is not None else []   # F02a: the locations, needed with or without groups
     cols = list(dict.fromkeys(cols))
     if need_trials:
         if s.trials not in newdata.columns:
@@ -405,6 +420,7 @@ def _predict_by_hand(model, idata, df: pd.DataFrame | None, kind: str, seed, pol
     mu = mu + monotonic_contribution(model, post, df)           # the monotonic terms (B03), population-level as well
     mu = mu + gp_contribution(model, post, df)                  # the Gaussian processes (C03), population-level as well
     mu = mu + measurement_contribution(model, post, df, in_sample=in_sample)   # the me() and mi() terms (C06)
+    mu = mu + car_contribution(model, post, df)                 # a CAR term (F02a), with or without group effects
     new_levels = {}
     for term in (model.spec.group_terms if include_group_effects else ()):
         g = term.factor
@@ -659,6 +675,7 @@ def predict(model, fit_result, *, newdata: pd.DataFrame | None = None, kind: str
               or model.spec.autocor is not None                # an autocorrelation term (C04): nor this one
               or getattr(model.spec, "sar", None) is not None  # nor a SAR term (F02b)
               or getattr(model.spec, "fcor", None) is not None  # nor the joint normal of fcor() (F03a)
+              or getattr(model.spec, "car", None) is not None  # nor a CAR term (F02a)
               or bool(model.spec.me_terms) or bool(model.spec.mi_terms)    # nor the me() and mi() terms (C06)
               or bool(model.spec.custom_group_terms))          # nor the mm() and gr(by = ) terms (D08)
     if dpar is not None:

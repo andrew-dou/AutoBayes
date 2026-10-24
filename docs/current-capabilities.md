@@ -223,7 +223,7 @@ the lagged residuals of earlier rows of its own series in time order, after ever
 positions of a series that the JAX backend compiles. Predictions on the fitted rows add the term from the observed
 residuals, in data order, as brms's `posterior_linpred` does; new rows are refused. Verified against `gauss_ar1`,
 `gauss_arma11` and `gauss_arma22_varint` (lags two deep next to a varying intercept); `ab.log_lik`, `ab.bayes_R2` and
-`ab.loo` (C07) read the predictor with the term, as brms's do; `cov = TRUE`, `cosy()`, `car()`,
+`ab.loo` (C07) read the predictor with the term, as brms's do; `cov = TRUE`, `cosy()`,
 `unstr()`, other families, distributional formulas, addition terms, multivariate formulas, non-linear models, mixtures,
 `gp()` next to the term and new rows are refused (D68-D71); see [autocorrelation](autocorrelation.md).
 
@@ -235,6 +235,15 @@ fitted rows and joint response draws. Verified against `gauss_fcor` and `gauss_f
 other families, distributional formulas, addition terms, ARMA and SAR terms, `mo()`, `gp()`, `me()`/`mi()`, `mm()`, `gr(by = )`,
 multivariate and non-linear use (D144), and `log_lik()`, `loo()`, `waic()`, `bayes_R2()` and new rows (D145) are refused; see
 [fcor](fcor.md).
+
+Spatial CAR terms (F02a, brms's `car(W, gr = site, type = ...)` for `escar`, `esicar`, `icar` and `bym2`, the adjacency in
+`data2={"W": W}`): one effect per location added to the Gaussian or Poisson linear predictor under the type's density (a
+potential of the graph) and `Priors(sdcar=..., car=... | rhocar=...)`, next to the term model's terms and `offset()`; brms's
+Stan data (locations, edges, `Nneigh`, `eigenMcar`, the BYM2 `car_scale`), default priors, predictions on fitted locations
+(with or without group effects), `log_lik()`, `bayes_R2()` and `loo()`. Verified against `gauss_car_escar`,
+`gauss_car_esicar`, `gauss_car_icar` (log densities within 3.5e-16 relative), `gauss_car_bym2` and `poisson_car_bym2`, whose G1
+stays an expected failure: brms's `car_scale` carries 1.7e-10 of rounding beyond G1's 1e-12 (D140); new locations, other
+families, disconnected graphs and the other contexts are refused (D141); see [spatial CAR terms](spatial-car.md).
 
 Missing values and measurement error (C06, brms's `mi()` and `me()`): a list of formulas, one per response,
 `ab.gaussian(["y ~ mi(xm) + w", "xm | mi() ~ w"], data, ab.Priors(resp={...}), rescor=False)`, makes the missing values (NaN) of

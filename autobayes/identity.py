@@ -120,6 +120,14 @@ def _sar_payload(model):
             'priors': {name: _prior(prior) for name, prior in model.priors.sar_priors(model.spec).items()}}
 
 
+def _car_payload(model):
+    """The target identity's entry of a CAR term (F02a): the term, its locations, each fitted row's location, the graph's edges,
+    the BYM2 scaling factor and the priors of its parameters."""
+    term, design = model.spec.car, model.design.car
+    return {'term': term.term, 'type': term.type, 'locations': list(design.locations), 'index': design.index, 'edges': design.edges,
+            'scale': design.scale, 'priors': {c: _prior(p) for c, p in model.priors.car_priors(model.spec).items()}}
+
+
 def freeze_target(model):
     """Call once immediately after construction; only the digest is retained."""
     s, d, pr = model.spec, model.design, model.priors
@@ -191,6 +199,8 @@ def freeze_target(model):
         **({'sar': _sar_payload(model)} if getattr(s, 'sar', None) is not None else {}),
         # So does a fixed residual covariance (F03a, fcor(M)): the term and its matrix, which the likelihood reads.
         **({'fcor': {'term': s.fcor.term, 'M': d.fcor.M}} if getattr(s, 'fcor', None) is not None else {}),
+        # So does a CAR term (F02a): its locations, graph and priors.
+        **({'car': _car_payload(model)} if getattr(s, 'car', None) is not None else {}),
         # So do an me() term (C06): its noisy values, known noise and the priors of its latent values; and each column whose
         # missing values are parameters (C06): its values with 0 at the missing rows, and those rows.
         **({'measurement_error': _measurement_payload(model)} if getattr(d, 'measurement_error', {}) else {}),

@@ -37,7 +37,9 @@ are added to the Gaussian linear predictor last, on the residuals of every other
 replaces the Gaussian likelihood with the joint SAR density of the responses (``autobayes.sar``; ``M`` comes in ``data2``,
 ``Design.sar`` holds it and its eigenvalues). brms's fixed residual covariance ``fcor(M)`` (F03a, docs/fcor.md) makes the
 Gaussian likelihood the rows' joint normal with covariance ``sigma^2 M``, ``M`` from ``data2`` (``autobayes.fcor``; ``Design.fcor``
-holds ``M`` and its Cholesky factor).
+holds ``M`` and its Cholesky factor). brms's spatial CAR term ``car(M, gr, type)`` (F02a, docs/spatial-car.md) adds one effect per
+location to the Gaussian or Poisson linear predictor through the same hook as ``mo()``, its adjacency matrix read from ``data2``
+(``autobayes.car``; ``Design.car`` holds the locations and the graph).
 """
 from __future__ import annotations
 
@@ -205,6 +207,7 @@ class Design:
     autocor: object | None = None      # autocor.AutocorDesign: the series of an autocorrelation term on the fitted rows (C04), or None
     sar: object | None = None          # sar.SarDesign: a SAR term's weight matrix and its eigenvalues on the fitted rows (F02b), or None
     fcor: object | None = None         # fcor.FcorDesign: the fixed residual covariance of an fcor(M) term on the fitted rows (F03a), or None
+    car: object | None = None          # car.CarDesign: a CAR term's locations and graph on the fitted rows (F02a), or None
     measurement_error: Mapping[str, MeasurementBlock] = field(default_factory=lambda: MappingProxyType({}))   # each me() term's block, by noisy column (C06)
     missing: Mapping[str, MissingBlock] = field(default_factory=lambda: MappingProxyType({}))   # each column whose missing values are parameters (C06)
     category_specific: Mapping[str, np.ndarray] = field(default_factory=lambda: MappingProxyType({}))   # each cs() term's column on the fitted rows (D04; brms's Xcs), by column
@@ -338,7 +341,8 @@ class Model:
                  quantile: float | None = None, data2: Mapping[str, object] | None = None):
         """``data2`` (Tier F) holds the matrices the formula's terms read by name, brms's ``data2``: ``sar(M, ...)``'s weight
         matrix (F02b) and ``fcor(M)``'s covariance (F03a, docs/fcor.md) over the fitted rows, ``data2={"M": matrix}`` (a NumPy array
-        or a DataFrame, in data order); an entry no term reads is refused (``formula.check_data2``). ``imputed`` (C06) is set by
+        or a DataFrame, in data order), and ``car(W, gr = site)``'s adjacency matrix (F02a, docs/spatial-car.md), a DataFrame labelled
+        by location; an entry no term reads is refused (``formula.check_data2``). ``imputed`` (C06) is set by
         ``MultivariateModel`` for the models of its responses: the responses of its
         ``col | mi() ~ ...`` formulas, whose missing values are parameters (``formula.check_imputation``); empty otherwise.
         ``quantile`` (E02) fixes the asymmetric Laplace family's quantile (brms's ``bf(y ~ ..., quantile = p)``): the model's
@@ -410,6 +414,7 @@ class Model:
                 + [c for d in spec0.dpars for c in d.pop_columns]          # the columns distributional formulas read (B01)
                 + [c for d in spec0.dpars for t in d.group_terms for c in t.data_columns])   # and their shared-ID terms (D08)
         cols += list(spec0.autocor.columns) if spec0.autocor is not None else []   # an autocorrelation term's time and series (C04)
+        cols += list(spec0.car.columns) if spec0.car is not None else []   # a CAR term's locations (F02a)
         cols = list(dict.fromkeys(cols))                        # the offset column may also be a predictor
         missing = [c for c in cols if c not in data.columns]
         if missing:
@@ -501,7 +506,13 @@ class Model:
 
         self._sar_design = sar_design(self.spec.sar, data2, len(self.data)) if self.spec.sar is not None else None
         self._fcor_design = fcor_design(self.spec.fcor, data2, len(self.data)) if self.spec.fcor is not None else None   # F03a
-        check_data2(self.spec, data2)                         # Tier F: data2 holds what sar() and fcor() read, and nothing else
+        check_data2(self.spec, data2)                         # Tier F: data2 holds what sar(), fcor() and car() read, nothing else
+
+        self._car_design = None                              # F02a: a CAR term's locations and graph on the fitted rows
+        if self.spec.car is not None:
+            from autobayes.car import car_layout
+            self._car_design, notes = car_layout(self.spec.car, self.data, data2)
+            self.warnings.extend(notes)
 
         bambi_family = fam.bambi_family()
         if any(a.kind not in ("mi", "dec") for a in self.spec.additions):   # brms's response addition terms act on the likelihood (B02;
@@ -550,6 +561,9 @@ class Model:
         if self.spec.custom_group_terms:                     # brms's mm() and gr(by = ) (D08): added the same way
             from autobayes.likelihoods import monotonic_family
             bambi_family = monotonic_family(bambi_family, self._add_custom_group_effects)
+        if self.spec.car is not None:                        # brms's car() (F02a): added the same way
+            from autobayes.likelihoods import monotonic_family
+            bambi_family = monotonic_family(bambi_family, self._add_car_effects)
         if self.spec.autocor is not None:                    # brms's ar(), ma(), arma() (C04): added last, on the residuals
             from autobayes.autocor import autocor_family
             bambi_family = autocor_family(bambi_family, self._add_autocor_effects)
@@ -579,6 +593,9 @@ class Model:
             self._check_autocor_effects()
         if self._fcor_design is not None:                    # F03a: the graph's likelihood against the dense multivariate normal
             self._check_fcor_likelihood()
+        if self.spec.car is not None:                        # F02a: the graph's CAR term against car.car_values
+            from autobayes.car import check_graph
+            check_graph(self)
         if fam.discrete:
             rv = self.pymc_model[self.names["y"]]
             obs = np.asarray(self.pymc_model.rvs_to_values[rv].eval())
@@ -627,6 +644,7 @@ class Model:
         variable_names += [roles[k] for roles in self.gp_names.values() for k in ("sdgp", "lscale", "zgp")]   # each GP's (C03)
         variable_names += [v for k, v in self.autocor_names.items() if not k.endswith("_coordinate")]   # ar and ma (C04)
         variable_names += list(self.sar_names.values())      # lagsar or errorsar (F02b)
+        variable_names += [v for k, v in self.car_names.items() if not k.endswith("coordinate")]   # a CAR term's (F02a)
         variable_names += [roles[k] for roles in self.me_names.values() for k in ("mean", "sd", "z", "latent", "noisy")]   # C06
         variable_names += [roles["values"] for roles in self.missing_names.values()]   # C06: the missing values Ymi_<col>
         shrinkage = self.shrinkage_names                    # D07: zb, sdb and the horseshoe's or R2D2's own variables
@@ -643,6 +661,7 @@ class Model:
         coords += [roles["coordinate"] for roles in self.mo_names.values()]
         coords += [roles["coordinate"] for roles in self.gp_names.values()]       # C03
         coords += [v for k, v in self.autocor_names.items() if k.endswith("_coordinate")]   # ar_dim and ma_dim (C04)
+        coords += [v for k, v in self.car_names.items() if k.endswith("coordinate")]   # rcar_dim, zcar_dim (F02a)
         coords += [roles["coordinate"] for roles in self.missing_names.values()]   # C06: the missing rows of each column
         coords += [shrinkage["coordinate"]] if shrinkage else []                    # D07: zb_dim
         coords += ["__obs__"]
@@ -894,6 +913,7 @@ class Model:
                       dpars=MappingProxyType({d.response: self._dpar_design(d) for d in self.spec.dpars}),
                       monotonic=MappingProxyType(self._monotonic_design()), gp=MappingProxyType(self._gp_design()),
                       autocor=self._autocor_design, sar=self._sar_design, fcor=self._fcor_design,   # F02b, F03a
+                      car=self._car_design,                                                          # F02a
                       measurement_error=MappingProxyType(self._measurement_design()),   # C06
                       missing=MappingProxyType(self._missing_design()),
                       category_specific=MappingProxyType(self._category_specific_design()))   # D04
@@ -1288,6 +1308,22 @@ class Model:
                 raise RuntimeError(f"the graph's {parent!r} does not move by the weighted effects of {factor!r} at its rows' levels; "
                                    f"largest difference {np.max(np.abs(moved - expected)) if moved.shape == expected.shape else moved.shape}")
 
+    # -- a spatial CAR term (F02a) -------------------------------------------------------
+    def _add_car_effects(self, eta):
+        """brms's ``car()`` (F02a, docs/spatial-car.md), built inside the model Bambi is building: ``car.car_effect``."""
+        from autobayes.car import car_effect
+
+        return car_effect(eta, self.spec.car, self._car_design, self.priors.car_priors(self.spec), self.car_names)
+
+    @property
+    def car_names(self) -> dict[str, str]:
+        """PyMC names of a CAR term (F02a, ``car.roles``): ``sdcar``, ``car`` or ``rhocar``, ``rcar``, ``zcar``, ``nszcar`` (those
+        the type has, brms's names), ``"coordinate"`` (``rcar_dim``), esicar's ``"zcar_coordinate"`` and ``"lpdf"`` (the
+        potential of its log density). Empty without one."""
+        from autobayes.car import roles
+
+        return roles(getattr(self.spec, "car", None))
+
     # -- autocorrelation terms (C04) -----------------------------------------------------
     def _add_autocor_effects(self, eta):
         """brms's ARMA term, built inside the model Bambi is building (``autocor.autocor_family``, which Bambi calls on the
@@ -1581,6 +1617,7 @@ class Model:
             out["mu"] = "mu"                                  # the continuous families whose parent is the location mu expose it by name (the Beta's parent is logit_mu)
         out.update({k: v for k, v in self.autocor_names.items() if not k.endswith("_coordinate")})   # "ar", "ma" (C04)
         out.update(self.sar_names)                            # "lagsar" or "errorsar" (F02b)
+        out.update({k: v for k, v in self.car_names.items() if not k.endswith("coordinate") and k != "lpdf"})   # F02a: sdcar, rcar, ...
         return out
 
     @property
@@ -1750,7 +1787,8 @@ class Model:
                     zi: float | None = None, hu: float | None = None, bsp=None, simo=None, theta=None,
                     sdgp=None, lscale=None, zgp=None, ar=None, ma=None, meanme=None, sdme=None, zme=None,
                     Ymi=None, alpha=None, beta=None, ndt=None, shrinkage=None, bcs=None, zoi=None, coi=None,
-                    kappa=None, quantile=None, tmp_xi=None, lagsar=None, errorsar=None, bs=None, bias=None) -> dict[str, np.ndarray]:
+                    kappa=None, quantile=None, tmp_xi=None, lagsar=None, errorsar=None, bs=None, bias=None,
+                    car=None) -> dict[str, np.ndarray]:
         """A point in PyMC's sampled (value) space, from natural-scale quantities.
 
         ``intercept`` is the *model* intercept (at the predictor means when centred),
@@ -1817,7 +1855,12 @@ class Model:
         F04:
         the wiener family's ``bs`` (the boundary separation, positive, stored as its log; or its formula's ``{"intercept": ...,
         "b": ...}``), ``ndt`` (as the shifted lognormal's) and ``bias`` (the relative starting point, in (0, 1), stored as its logit).
+        F02a: ``car`` maps a CAR term's parameters and latent vectors, by brms's names, to their values (``car.value_entries``):
+        ``{"sdcar": 0.8, "car": 0.4, "rcar": array(Nloc)}`` (escar), ``{"sdcar": ..., "zcar": array(Nloc - 1)}`` (esicar),
+        ``{"sdcar": ..., "zcar": array(Nloc)}`` (icar), ``{"sdcar": ..., "rhocar": ..., "zcar": ..., "nszcar": ...}`` (bym2).
         """
+        from autobayes.car import value_entries
+        car_point = value_entries(self, car)                  # F02a: a CAR term's values; refused for a model without one
         extras = {"alpha": alpha, "beta": beta, "ndt": ndt, "zoi": zoi, "coi": coi,   # D01, E01 (zero_one_inflated_beta)
                   "kappa": kappa, "quantile": quantile, "tmp_xi": tmp_xi,             # E01 (xbeta), E02
                   "bs": bs, "bias": bias}                                              # F04 (wiener)
@@ -2027,6 +2070,7 @@ class Model:
         point.update(self._measurement_point(None if mo else bsp, meanme, sdme, zme, Ymi))   # C06: me() and mi()
         point.update(cs_point)                                # D04
         point.update(self._sar_point(lagsar, errorsar))       # F02b: a SAR term's lagsar or errorsar
+        point.update(car_point)                               # F02a
         expected = {v.name for v in self.pymc_model.value_vars}
         if set(point) != expected:
             raise RuntimeError(f"value names {sorted(point)} do not match PyMC's {sorted(expected)}")
@@ -2309,6 +2353,7 @@ class Model:
             from autobayes.families.mixture import describe
             return describe(self)
         s, d, pr = self.spec, self.design, self.priors
+        from autobayes.car import describe as car_describe     # F02a: a CAR term's lines, [] without one
         from autobayes.shrinkage import brms_spelling          # D07: brms's name of a shrinkage prior on b
         def effect(g):
             return "u" if len(s.groups) == 1 else f"u_{g}"
@@ -2350,6 +2395,7 @@ class Model:
                     + ([f"autocorrelation term {s.autocor.term}"] if s.autocor is not None else [])
                     + ([f"simultaneous autoregressive term {s.sar.term}"] if s.sar is not None else [])          # F02b
                     + ([f"fixed residual covariance {s.fcor.term}"] if s.fcor is not None else [])    # F03a
+                    + ([f"spatial CAR term {s.car.term}"] if s.car is not None else [])                   # F02a
                     + (["measurement-error term(s)"] if s.me_terms else []) + (["missing-value term(s)"] if s.mi_terms else [])
                     + ([f"a shrinkage prior on b ({brms_spelling(pr.b).split('(')[0]})"] if self.shrinkage_names else [])   # D07
                     + (["category-specific effect(s) cs()"] if s.cs_terms else []))                      # D04
@@ -2386,6 +2432,7 @@ class Model:
             lines += [f"  fcor      : {s.fcor.term}: data2[{s.fcor.matrix!r}], the {d.n} x {d.n} covariance of the residuals before the "
                       f"factor sigma^2 (brms's Mfcor), its rows and columns the fitted rows in data order; diagonal {np.diag(M).min():.4g} "
                       f"to {np.diag(M).max():.4g}, log det {np.linalg.slogdet(M)[1]:.6g}"]
+        lines += car_describe(self, "data")                  # F02a: a CAR term's locations and graph
         for t in s.transform_terms:
             tr, col = t.transform, d.X_raw[:, s.columns.index(t.name)]
             lines += [f"  {t.name:<10}: in-formula transform of {tr.column!r}, {tr.expression(f'{tr.column}_i')}, range {col.min():.4f} to "
@@ -2442,6 +2489,7 @@ class Model:
              f" + {effect(t.factor)}[{t.factor}_i]") + "".join(f" + x_{c},i * {slope_effect(t.factor, c)}[{t.factor}_i]" for c in t.slopes)
             for t in s.group_terms)
         rest += " + arma_i" if s.autocor is not None else ""   # C04: the autocorrelation term, last
+        rest += f" + rcar[{s.car.gr}_i]" if s.car is not None else ""   # F02a: the CAR term
         if fam.thresholds:                                    # B05: no intercept in mu, the thresholds take its place
             body = (xs + rest) if xs else (rest[3:] or "0")
         else:
@@ -2458,6 +2506,7 @@ class Model:
         lines += self._monotonic_lines(lp)
         lines += self._gp_lines(lp)
         lines += self._autocor_lines(lp)                     # C04
+        lines += car_describe(self, "term", lp)              # F02a
         lines += self._measurement_lines(lp)                 # C06
         scale = fam.scale_phrase
         same_group = " (same group)" if len(s.groups) == 1 else (" (same group effects)" if s.groups else "")
@@ -2653,6 +2702,7 @@ class Model:
                           "on the scaled input)",
                           f"  {roles['zgp']}[j] ~ Normal(0, 1)   (brms's zgp)"]
         lines += self._autocor_prior_lines()                 # C04: ar and ma
+        lines += car_describe(self, "priors")                # F02a: sdcar, car, rhocar
         if s.me_terms or s.mi_terms:                         # C06: an me() / mi() term's coefficient (brms bsp, class b)
             from autobayes.default_priors import brms_rename
 
@@ -2775,6 +2825,7 @@ class Model:
                 roles[t.name] = f"b_{t.name}[{shown}] (vector; dims {t.name}_dim, posterior rows {rows})"
                 if fam.per_category:                          # B05: and one column per non-reference category
                     roles[t.name] = f"b_{t.name}[{shown}] (matrix; dims {t.name}_dim x {n['category_dim']})"
+        roles.update(car_describe(self, "roles"))            # F02a: a CAR term's value variables
         for part, order in (s.autocor.parts if s.autocor is not None else ()):   # C04: ar and ma, unconstrained vectors
             acn = self.autocor_names
             roles[acn[part]] = (f"{part}[1..{order}], the {_AUTOCOR_MEANING[part]} coefficients (brms's {part}; vector, dims "
@@ -3033,6 +3084,7 @@ class Model:
         found += [(f"sdgp:{c}", v) for c, v in pr.sdgp_priors(s).items()]          # a Gaussian process's SD and length-scale (C03)
         found += [(f"lscale:{c}", v) for c, v in pr.lscale_priors(s).items()]
         found += list(pr.autocor_priors(s).items())                                  # an ARMA term's ar and ma (C04)
+        found += list(pr.car_priors(s).items())                                      # a CAR term's sdcar, car, rhocar (F02a)
         found += [(f"{cls}:{x}", v) for cls in ("meanme", "sdme") for x, v in pr.me_priors(s, cls).items()]   # me() (C06)
         def formula_priors(name):                            # a parameter's own formula's priors (B01; E03: zi, hu, alpha)
             ds, sub = s.dpar(name), pr.dpar_priors(s, name)
@@ -3092,8 +3144,9 @@ def gaussian(formula: str | list[str], data: pd.DataFrame, priors: Priors, *, ce
     True, is offered: divergence D63), and a non-linear model takes no multivariate formula or ``rescor`` (divergence D62).
     ``data2`` (Tier F) holds the matrices the formula reads by name, brms's ``data2``: ``y ~ x + sar(M, type = "lag")`` with
     ``data2={"M": matrix}``, the weight matrix over the rows in data order, and ``Priors(..., lagsar=ab.Flat())`` (F02b,
-    docs/spatial-sar.md), or ``y ~ x + fcor(M)``, the residual covariance (F03a, docs/fcor.md); a non-linear or multivariate model
-    takes none (divergences D143, D144)."""
+    docs/spatial-sar.md), ``y ~ x + fcor(M)``, the residual covariance (F03a, docs/fcor.md), or ``y ~ x + car(W, gr = site)``, the
+    adjacency of the locations (F02a, docs/spatial-car.md); a non-linear or multivariate model takes none (divergences D141,
+    D143, D144)."""
     from autobayes.multivariate import MultivariateModel, is_multivariate_formula     # C01
 
     if data2 is not None and (nl or rescor is not None or is_multivariate_formula(formula)):   # F02b, F03a
@@ -3148,15 +3201,17 @@ def student(formula: str | list[str], data: pd.DataFrame, priors: Priors, *, nu:
 
 
 def poisson(formula: str, data: pd.DataFrame, priors: Priors, *, link: str = "log",
-            center_predictors: bool = True, categorical: Mapping[str, object] | None = None) -> Model:
+            center_predictors: bool = True, categorical: Mapping[str, object] | None = None,
+            data2: Mapping | None = None) -> Model:
     """Poisson count response with log link and explicit coefficient/group priors.
 
     Retains zero rows. Input counts must be integers in [0, 1e6]. An exposure enters as
     ``offset(log(exposure))`` (docs/offset.md). No sigma, nu or overdispersion parameter
     is supported in this slice. ``link="sqrt"`` is brms's ``poisson("sqrt")``, ``mu = eta^2`` (E06, docs/links.md).
+    ``data2`` (F02a) holds ``car(W, gr = site)``'s adjacency matrix, ``data2={"W": W}`` (docs/spatial-car.md).
     """
     return Model(formula, data, priors, family="poisson", link=link,
-                 center_predictors=center_predictors, categorical=categorical)
+                 center_predictors=center_predictors, categorical=categorical, data2=data2)
 
 
 def negbinomial(formula: str | list[str], data: pd.DataFrame, priors: Priors, *, link: str = "log",

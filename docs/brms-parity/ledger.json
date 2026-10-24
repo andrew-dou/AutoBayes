@@ -1950,13 +1950,29 @@
    "depends_on": [
     "C04_autocor"
    ],
-   "status": "fixtures_frozen",
+   "status": "gates_green",
    "summary": "car(W, gr, type) escar, esicar, icar, bym2 with data2 adjacency (cases gauss_car_escar, gauss_car_esicar, gauss_car_icar, gauss_car_bym2, poisson_car_bym2)",
    "pr": null,
    "attempts": 0,
    "divergences": [],
    "next_action": "implementing (wave F1)",
-   "reserved_divergences": "D140-D141"
+   "reserved_divergences": "D140-D141",
+   "gates": {
+    "sha": "d9525a7eb6f2",
+    "dirty_tree": false,
+    "base": "origin/main",
+    "when": "2026-10-24T11:15Z",
+    "results": {
+     "immutability": {
+      "status": "pass",
+      "seconds": 0.0
+     },
+     "oracle": {
+      "status": "pass",
+      "seconds": 738.7
+     }
+    }
+   }
   },
   {
    "id": "F02b_sar",

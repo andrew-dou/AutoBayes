@@ -131,6 +131,11 @@ brms's `b[k]`, `hs_global` and `hs_slab` to their logs, `R2D2_R2` (`real<lower=0
 step and Stan's logit checked as for `zi`, and the simplex `R2D2_phi` takes unreached coordinates as a monotonic term's simplex
 does, its stick-breaking coordinates recomputed and checked before they are mapped to `R2D2_phi_stickbreaking__` (which needs
 AutoBayes's design columns in brms's order of `b`: the stick-breaking map is not symmetric in the entries).
+
+F02a: a CAR term (brms's `car(M, gr, type)`, `Model.car_names`) is checked by its Stan data of the type (`CAR_DATA`,
+`check_car_design`, G1); brms's `sdcar` maps to `sdcar_log__`, `car` and `rhocar` (`real<lower=0,upper=1>`) to their PyMC
+coordinate with the probe's step and Stan's logit at every point checked as for `zi`, and `rcar`, `zcar`, `nszcar` entry by entry,
+brms's locations (its `Jloc`) checked to be the model's (`check_car_locations`); `car_draws` hands `predict()` brms's `rcar`.
 """
 from __future__ import annotations
 
@@ -149,6 +154,15 @@ from autobayes.correlation import cholesky_corr_free
 from autobayes.monotonic import stick_breaking_free
 from tests.oracle.fixture import Fixture, Point, decode
 from tests.oracle.tolerances import DESIGN_ABS, abs_err
+
+# F02a: a CAR term (brms's car(M, gr, type), Model.car_names): brms's Stan data of each type and its parameters, by brms's names.
+# brms's locations are the levels of gr in brms's order and Jloc each row's (1-based); the model's are its sorted labels and
+# Design.car.index, which must be the same (check_car_locations) for brms's vectors rcar, zcar and nszcar to map entry by entry.
+CAR_DATA = {"escar": ("Nloc", "Jloc", "Nedges", "edges1", "edges2", "Nneigh", "eigenMcar"),
+            "esicar": ("Nloc", "Jloc", "Nedges", "edges1", "edges2", "Nneigh", "eigenMcar"),
+            "icar": ("Nloc", "Jloc", "Nedges", "edges1", "edges2"),
+            "bym2": ("Nloc", "Jloc", "Nedges", "edges1", "edges2", "car_scale")}
+CAR_PARS = ("sdcar", "car", "rhocar", "rcar", "zcar", "nszcar")
 
 
 class OracleMismatch(AssertionError):
@@ -179,7 +193,7 @@ def priors_from_spec(spec: dict) -> ab.Priors:
     "theta": ["Dirichlet", a, ...]}``, each component's spec of this same form; ``nlpars`` each non-linear parameter's
     ``{"b": [...] | {term: ...}, "sd": [...] | {factor: ...}}`` (C02); ``ar`` and ``ma`` the priors of an
     autocorrelation term's coefficients (C04); ``dpars`` a count-matrix model's priors of a category's own formula, ``{"mum3":
-    {"intercept": [...], "b": [...], "sd": [...]}}`` (F01a)."""
+    {"intercept": [...], "b": [...], "sd": [...]}}`` (F01a); ``sdcar``, ``car`` and ``rhocar`` a CAR term's (F02a)."""
     # C01, a multivariate model: {"resp": {response: {<the classes above>}}, "cor": {factor: ["LKJ", eta]}, "rescor": ["LKJ", eta]}
     if "resp" in spec:
         return ab.Priors(resp={r: priors_from_spec(sub) for r, sub in spec["resp"].items()}, cor=_prior(spec.get("cor")),
@@ -205,7 +219,9 @@ def priors_from_spec(spec: dict) -> ab.Priors:
                      # F02b: a SAR term's {"lagsar": ["Flat"]} or {"errorsar": ["Flat"]}
                      lagsar=_prior(spec.get("lagsar")), errorsar=_prior(spec.get("errorsar")),
                      # F04: the wiener family's {"bs": [...]} (or bs's formula, {"bs": {"intercept": ..., "b": ...}}) and {"bias": [...]}
-                     bs=_prior(spec.get("bs")), bias=_prior(spec.get("bias")))
+                     bs=_prior(spec.get("bs")), bias=_prior(spec.get("bias")),
+                     # F02a: a CAR term's {"sdcar": [...], "car": ["Flat"]} (escar) or {"sdcar": [...], "rhocar": ["Beta", a, b]} (bym2)
+                     sdcar=_prior(spec.get("sdcar")), car=_prior(spec.get("car")), rhocar=_prior(spec.get("rhocar")))
 
 
 def build_model(case: dict, data: pd.DataFrame) -> ab.Model:
@@ -848,7 +864,8 @@ def natural_point(model: ab.Model, point: Point, cmap: ColumnMap, gmap: GroupMap
         extras["bcs"] = {c: bcs[k] for k, c in enumerate(cmap.cs)}
     return dict(intercept=intercept, b=b, sd=sd or None, z=z or None, L=L or None, sigma=sigma, shape=shape, phi=phi, nu=nu,
                 zi=zi, hu=hu, bsp=bsp, simo=simo, theta=theta, sdgp=sdgp, lscale=lscale, zgp=zgp, ar=ar, ma=ma, **special, **extras, **sar,
-                **({"shrinkage": shrinkage} if shrinkage is not None else {}))
+                **({"shrinkage": shrinkage} if shrinkage is not None else {}),
+                **({"car": car_point(model, pars)} if getattr(model, "car_names", {}) else {}))   # F02a
 
 
 _SHRINKAGE_PARS = {"Horseshoe": ("zb", "hs_global", "hs_slab", "hs_local"), "R2D2": ("zb", "R2D2_R2", "R2D2_phi")}
@@ -1144,6 +1161,8 @@ def coordinate_map(fixture: Fixture, model: ab.Model, cmap: ColumnMap, gmap: Gro
                 raise OracleMismatch(f"{par}[{elem + 1}]: brms has several {gp.group(1)} for one Gaussian process; AutoBayes has one")
             else:                                              # sdgp_k, lscale_k: real<lower=0>, sampled on the log scale
                 target, expect = (f"{roles[gp.group(1)]}_log__", 0), "log"
+        elif par in CAR_PARS:                                  # F02a: a CAR term's parameters and latent vectors
+            target, expect = car_coordinate(fixture, model, e, par, elem)
         elif (sh := getattr(model, "shrinkage_names", {})) and par in ("zb", "hs_global", "hs_slab", "hs_local", "R2D2_R2"):   # D07
             if par not in sh:
                 raise OracleMismatch(f"brms samples {par}, which the AutoBayes model's {sh['prior']} prior on b has not")
@@ -1353,6 +1372,7 @@ def draws(fixture: Fixture, model: ab.Model, cmap: ColumnMap, gmap: GroupMap) ->
         coords[roles[f"{part}_coordinate"]] = [str(k) for k in range(1, order + 1)]
     for name, var in getattr(model, "sar_names", {}).items():   # F02b: brms's lagsar or errorsar
         data[var] = (("chain", "draw"), np.array([float(p.pars[name]) for p in pts])[None, :])
+    car_draws(model, pts, data, coords)                         # F02a: a CAR term's parameters, latent vectors and rcar
     for name, dmap in (cmap.distributional or {}).items():       # B01: an auxiliary parameter's own formula, raw-scale intercept and b
         ds, roles = model.spec.dpar(name), model.dpar_names[name]
         if ds.intercept:
@@ -2212,3 +2232,85 @@ def brms_mu_values(fixture: Fixture, point: Point, name: str) -> np.ndarray:
         if Z is not None:
             eta = eta + np.atleast_1d(point.pars[f"r_{m}_{name}_1"])[sd[f"J_{m}"].astype(int) - 1] * Z
     return eta
+
+
+# -- a CAR term (F02a) ----------------------------------------------------------------------------------------------------
+def car_point(model: ab.Model, pars: dict) -> dict:
+    """``value_point``'s ``car`` at a brms point: brms's values of the term's parameters (scalars) and latent vectors, by name."""
+    term = model.spec.car
+    return {name: (float(np.ravel(pars[name])[0]) if name in term.classes else np.atleast_1d(pars[name]).astype(float))
+            for name in (*term.classes, *term.latent)}
+
+
+def check_car_locations(fixture: Fixture, model: ab.Model) -> None:
+    """brms's locations are the model's, in the same order: brms's ``Jloc - 1`` is ``Design.car.index`` on every row, and
+    ``Nloc`` the number of the model's locations (so that brms's ``rcar[k]`` is the model's ``rcar[k]``)."""
+    sd, design = fixture.standata, model.design.car
+    if int(sd["Nloc"]) != design.Nloc or not np.array_equal(np.asarray(sd["Jloc"], dtype=float) - 1, design.index):
+        raise OracleMismatch(f"brms's Nloc {int(sd['Nloc'])} and Jloc differ from the model's {design.Nloc} locations "
+                             f"{list(design.locations)[:5]}... and their rows")
+
+
+def check_car_design(fixture: Fixture, model: ab.Model) -> None:
+    """G1 of a CAR term (F02a): brms's Stan data of the term's type (``CAR_DATA``) and no other are the model's, each to
+    ``DESIGN_ABS``: ``Nloc``, ``Jloc`` (the rows' locations), ``Nedges``, ``edges1``/``edges2`` (the edges in brms's order),
+    ``Nneigh`` (the numbers of neighbours), ``eigenMcar`` (escar, esicar) and ``car_scale`` (bym2). A model and a fixture of
+    which only one has CAR data are a mismatch."""
+    sd, term = fixture.standata, getattr(getattr(model, "spec", None), "car", None)
+    brms_has = sorted(k for k in set(sum(CAR_DATA.values(), ())) if k in sd)
+    if term is None:
+        if brms_has:
+            raise OracleMismatch(f"brms has the CAR data {brms_has}; the AutoBayes model has no CAR term")
+        return
+    if brms_has != sorted(CAR_DATA[term.type]):
+        raise OracleMismatch(f"brms has the CAR data {brms_has}; the model's {term.term} has {sorted(CAR_DATA[term.type])}")
+    check_car_locations(fixture, model)
+    d = model.design.car
+    mine = {"Nedges": float(len(d.edges)), "edges1": d.edges[:, 0] + 1.0, "edges2": d.edges[:, 1] + 1.0, "Nneigh": d.neighbours,
+            "eigenMcar": d.eigenvalues, "car_scale": d.scale}
+    for key in CAR_DATA[term.type][2:]:
+        theirs, value = np.asarray(sd[key], dtype=float), np.asarray(mine[key], dtype=float)
+        if theirs.shape != value.shape or abs_err(theirs, value) > DESIGN_ABS:
+            raise OracleMismatch(f"{term.term}: brms {key} is {theirs.ravel()[:6].tolist()}...; the model has {value.ravel()[:6].tolist()}... "
+                                 f"(largest difference {abs_err(theirs, value) if theirs.shape == value.shape else 'of shape'})")
+
+
+def car_coordinate(fixture: Fixture, model: ab.Model, e: dict, par: str, elem: int) -> tuple[tuple[str, int], str]:
+    """G2's map of a CAR term's unconstrained coordinate (F02a): ``sdcar`` (``real<lower=0>``) to ``sdcar_log__``; ``car`` and
+    ``rhocar`` (``real<lower=0,upper=1>``, Stan's logit: the probe's step and the logit at every point checked, as for ``zi``) to
+    their PyMC coordinate; ``rcar``, ``zcar`` and ``nszcar`` entry by entry (identity), the locations checked to be the same."""
+    names = getattr(model, "car_names", {})
+    if par not in names:
+        raise OracleMismatch(f"brms samples {par}, which the AutoBayes model has not (its CAR term: {sorted(names) or 'none'})")
+    check_car_locations(fixture, model)
+    if par == "sdcar":
+        return (f"{names[par]}_log__", 0), "log"
+    if par in ("car", "rhocar"):
+        if abs(float(e["du"]) - LOGIT_STEP) > 1e-9:
+            raise OracleMismatch(f"brms's probe moved the coordinate of {par} by {e['du']!r}; logit({par}) moves it by {LOGIT_STEP!r}")
+        for q, pt_ in enumerate(fixture.points):
+            p = float(pt_.pars[par])
+            if abs(math.log(p / (1.0 - p)) - pt_.u[int(e["index"]) - 1]) > 1e-10:
+                raise OracleMismatch(f"point {q}: logit({par}) is {math.log(p / (1.0 - p))!r}; brms's unconstrained value is "
+                                     f"{pt_.u[int(e['index']) - 1]!r}")
+        pmm = model.pymc_model
+        return (pmm.rvs_to_values[pmm[names[par]]].name, 0), "other"
+    return (names[par], elem), "identity"
+
+
+def car_draws(model: ab.Model, pts: list, data: dict, coords: dict) -> None:
+    """``draws``'s entries of a CAR term (F02a): brms's parameters, latent vectors and ``rcar`` per point under the model's
+    names, the vectors on the locations (esicar's ``zcar`` on all but the last)."""
+    names = getattr(model, "car_names", {})
+    if not names:
+        return
+    term, loc = model.spec.car, list(model.design.car.locations)
+    coords[names["coordinate"]] = loc
+    for name in (*term.classes, *term.latent, "rcar"):
+        values = np.stack([np.atleast_1d(np.asarray(p.pars[name], dtype=float)) for p in pts])
+        if name in term.classes:
+            data[names[name]] = (("chain", "draw"), values[:, 0][None])
+            continue
+        dim = names.get("zcar_coordinate", names["coordinate"]) if name == "zcar" else names["coordinate"]
+        coords[dim] = loc[:values.shape[1]]
+        data[names[name]] = (("chain", "draw", dim), values[None])

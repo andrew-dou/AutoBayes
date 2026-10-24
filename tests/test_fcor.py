@@ -176,9 +176,9 @@ def test_multivariate_and_nonlinear_models_refuse_the_term():
     for kwargs in (dict(nl=True), dict(rescor=False)):          # data2 belongs to a univariate linear model
         for build in (lambda: ab.gaussian("y ~ x", FRAME, ab.Priors(**LINEAR), data2={"V": M}, **kwargs),
                       lambda: ab.default_priors("y ~ x", FRAME, data2={"V": M}, **kwargs)):
-            with pytest.raises(ab.FormulaError, match=r"data2 is read by a SAR term sar\(M, type = \.\.\.\) or a fixed residual "
-                                                      r"covariance fcor\(M\), which a non-linear or multivariate model does not take "
-                                                      r"in this slice .*divergences D143, D144"):
+            with pytest.raises(ab.FormulaError, match=r"data2 is read by a SAR term sar\(M, type = \.\.\.\), a fixed residual "
+                                                      r"covariance fcor\(M\) or a CAR term car\(W, gr = \.\.\.\), which a non-linear or "
+                                                      r"multivariate model does not take in this slice .*divergences D141, D143, D144"):
                 build()
 
 
@@ -240,8 +240,8 @@ def test_symmetry_is_read_to_rounding():
 def test_data2_refusals():
     with pytest.raises(ab.FormulaError, match=r"data2 must be a mapping from a matrix's name to the matrix, got list"):
         ab.gaussian("y ~ x + fcor(V)", FRAME, ab.Priors(**LINEAR), data2=[M])
-    with pytest.raises(ab.FormulaError, match=r"data2 holds \['W'\], which no term of the formula reads \(data2 is read by sar\(M, \.\.\.\) "
-                                              r"and fcor\(M\) here; docs/spatial-sar.md, docs/fcor.md\)"):
+    with pytest.raises(ab.FormulaError, match=r"data2 holds \['W'\], which no term of the formula reads \(data2 is read by sar\(M, \.\.\.\), "
+                                              r"fcor\(M\) and car\(W, \.\.\.\) here; docs/spatial-sar.md, docs/fcor.md, docs/spatial-car.md\)"):
         ab.gaussian("y ~ x + fcor(V)", FRAME, ab.Priors(**LINEAR), data2={"V": M, "W": M})
     with pytest.raises(ab.FormulaError, match=r"data2 holds \['V'\], which no term of the formula reads"):
         ab.gaussian("y ~ x", FRAME, ab.Priors(**LINEAR), data2={"V": M})

@@ -53,6 +53,7 @@ def _refuse_unsupported_effects(model) -> None:
         (s.autocor is not None, lambda: f"the autocorrelation term {s.autocor.term!r}"),
         (getattr(s, "sar", None) is not None, lambda: f"the SAR term {s.sar.term!r}"),                          # F02b (D143)
         (getattr(s, "fcor", None) is not None, lambda: f"the fixed residual covariance {s.fcor.term!r}"),   # F03a
+        (getattr(s, "car", None) is not None, lambda: f"the CAR term {s.car.term!r}"),      # F02a
         (bool(s.dpars), lambda: f"a distributional formula for {', '.join(s.dpar_names)}"),
         (bool(s.additions), lambda: f"the addition term(s) {', '.join(a.term for a in s.additions)}"),
     ]

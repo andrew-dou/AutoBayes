@@ -243,6 +243,8 @@ def check_model(prior: Prior, spec, fam) -> None:
         refused.append(f"a SAR term {spec.sar.term}")
     if getattr(spec, "fcor", None) is not None:              # F03a
         refused.append(f"a fixed residual covariance {spec.fcor.term}")
+    if getattr(spec, "car", None) is not None:                # F02a
+        refused.append(f"a CAR term {spec.car.term}")
     if refused:
         raise PriorError(f"{fn} is offered with population-level terms that are columns of the design only; this formula has "
                          + "; ".join(refused) + f", which no frozen case verifies with it ({DOC}, divergence D102)")
