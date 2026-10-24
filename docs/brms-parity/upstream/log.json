@@ -859,7 +859,7 @@
    "status": "not a bug after all",
    "repro": "docs/brms-parity/upstream/repro/U21.R",
    "upstream": "paul-buerkner/brms",
-   "fix": "None in brms. The divergence row D29 should be corrected to say that brms renormalises these priors.",
+   "fix": "None in brms. Divergence row D29 now says that brms renormalises these priors on (0, 1).",
    "known_upstream": {
     "status": "not found",
     "summary": "Not applicable (not a bug)",
@@ -1331,6 +1331,50 @@
     ],
     "fixed_in": null,
     "note": "PR #395 is in loo's development version only (CRAN has 2.10.1); whether it fixes this was not tested."
+   }
+  },
+  {
+   "id": "U31",
+   "title": "A one-row model with `trunc()` (a per-row or a constant bound) cannot be built: rstan stops at data initialisation",
+   "component": "brms",
+   "functions": [
+    "trunc(lb = )",
+    "brm()",
+    "make_standata()"
+   ],
+   "versions": {
+    "brms": "2.23.0",
+    "rstan": "2.32.7",
+    "StanHeaders": "2.32.10",
+    "R": "4.5.2"
+   },
+   "divergences": [],
+   "found": {
+    "feature": "upstream log (U22)",
+    "pr": null,
+    "note": "Found while writing U22, whose truncated rows use two identical rows for this reason."
+   },
+   "kind": "wrong result",
+   "what": "With a single data row, `make_standata()` gives the truncation bound `lb` as a plain number (no dim) while the program declares it with length N = 1, so rstan refuses the data (\"mismatch in number dimensions declared and found in context ... variable name=lb; dims declared=(1); dims found=()\") and `brm()` returns an object without a valid model. Rare in practice, but it breaks one-row checks and examples.",
+   "observed": "`y | trunc(lb = L) ~ 1` and `y | trunc(lb = 1) ~ 1` with one row (y = 1.5, L = 1): the rstan error above at `brm(..., chains = 0)`, then \"the model object is not created or not valid\" from `log_prob`.",
+   "expected": "A model whose log likelihood at mu = 0, sigma = 1 is `log phi(1.5) - log(1 - Phi(1))` = -0.2029168881954091, as the same model with two identical rows gives twice that (brms -0.4058337763908186) and a one-row model without truncation gives `log phi(1.5)` (brms -2.043938533204672, exact).",
+   "status": "reproduced",
+   "repro": "docs/brms-parity/upstream/repro/U31.R",
+   "upstream": "paul-buerkner/brms",
+   "fix": "Pass the bounds (and any other per-row data entry) to Stan as arrays of length N even when N = 1, e.g. with `as.array()`, as brms already does for the response.",
+   "known_upstream": {
+    "status": "related",
+    "summary": "Not found for truncation bounds; the same kind of one-row failure was reported for an offset in 2018",
+    "table": "related: #545 (closed 2018)",
+    "issues": [
+     {
+      "url": "https://github.com/paul-buerkner/brms/issues/545",
+      "state": "closed 2018-11-06",
+      "title": "Can't sample when using offset with a single data point"
+     }
+    ],
+    "fixed_in": null,
+    "note": null
    }
   }
  ]

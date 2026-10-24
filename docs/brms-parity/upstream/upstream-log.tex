@@ -24,7 +24,7 @@
 
 \noindent Versions: brms 2.23.0, rstan 2.32.7, StanHeaders 2.32.10, loo 2.9.0, R 4.5.2.
 
-\noindent Entries: 29 reproduced, 1 not a bug after all.
+\noindent Entries: 30 reproduced, 1 not a bug after all.
 
 \section{All entries}
 \label{sec:table}
@@ -81,6 +81,16 @@ Id & Component & Problem & Kind & Status & Known upstream \\
 \hyperref[U28]{U28} & loo & loo's \texttt{stacking\_\allowbreak{}weights(\allowbreak{})} stops short of the optimum (weights off by up to 3.7e-4, no exact zeros) & inexact numerics & reproduced & loo \#119, PR \#412 (open) \\
 \hyperref[U29]{U29} & loo & \texttt{loo\_\allowbreak{}compare(\allowbreak{})} compares a PSIS-LOO result with a WAIC result without an error or a warning & missing validation & reproduced & not found \\
 \hyperref[U30]{U30} & loo & loo's MCSE of an observation's elpd\_loo is NaN once that elpd is below about -372 & inexact numerics & reproduced & related: loo \#245, PR \#395 \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\begin{center}\small
+\begin{tabular}{@{}>{\raggedright\arraybackslash}p{0.05\textwidth}>{\raggedright\arraybackslash}p{0.10\textwidth}>{\raggedright\arraybackslash}p{0.38\textwidth}>{\raggedright\arraybackslash}p{0.11\textwidth}>{\raggedright\arraybackslash}p{0.10\textwidth}>{\raggedright\arraybackslash}p{0.12\textwidth}@{}}
+\toprule
+Id & Component & Problem & Kind & Status & Known upstream \\
+\midrule
+\hyperref[U31]{U31} & brms & A one-row model with \texttt{trunc(\allowbreak{})} (a per-row or a constant bound) cannot be built: rstan stops at data initialisation & wrong result & reproduced & related: \#545 (closed 2018) \\
 \bottomrule
 \end{tabular}
 \end{center}
@@ -387,7 +397,7 @@ Id & Component & Problem & Kind & Status & Known upstream \\
 \item[Observed] zi \textasciitilde{} normal(0.5, 1) at 0.3 with the Intercept at 0.2: lprior -2.50819864514782; zoi \textasciitilde{} normal(0.3, 0.1), coi \textasciitilde{} logistic(0, 1), phi \textasciitilde{} exponential(1): -3.27907096338989.
 \item[Expected] Renormalised on (0, 1): -2.50819864514782 and -3.27907096338989, equal (as written they would be -3.46811497884345 and -4.74550578682117).
 \item[Reproduce] \texttt{Rscript docs/brms-parity/upstream/repro/U21.R} from the repository root; it exits with status 1 while the problem is present. Output of one run: \texttt{docs/brms-parity/upstream/repro/U21.out}.
-\item[Fix] None in brms. The divergence row D29 should be corrected to say that brms renormalises these priors.
+\item[Fix] None in brms. Divergence row D29 now says that brms renormalises these priors on (0, 1).
 \item[Belongs in] \url{https://github.com/paul-buerkner/brms}
 \item[Known upstream] Not applicable (not a bug).
 \end{description}
@@ -546,6 +556,21 @@ Id & Component & Problem & Kind & Status & Known upstream \\
 \\ \url{https://github.com/stan-dev/loo/issues/245} (open): Improved mcse\_elpd\_loo
 \\ \url{https://github.com/stan-dev/loo/pull/395} (merged 2026-09-15): Improve floating point accuracy
 \\ PR \#395 is in loo's development version only (CRAN has 2.10.1); whether it fixes this was not tested.
+\end{description}
+
+\subsection{U31: A one-row model with \texttt{trunc(\allowbreak{})} (a per-row or a constant bound) cannot be built: rstan stops at data initialisation}
+\label{U31}
+\begin{description}[style=nextline, leftmargin=1.4em, itemsep=2pt]
+\item[Where] brms: trunc(lb = ), brm(), make\_standata(). Wrong result; reproduced. Versions: brms 2.23.0, rstan 2.32.7, StanHeaders 2.32.10, R 4.5.2.
+\item[Found by] upstream log (U22). Found while writing U22, whose truncated rows use two identical rows for this reason.
+\item[What] With a single data row, \texttt{make\_\allowbreak{}standata(\allowbreak{})} gives the truncation bound \texttt{lb} as a plain number (no dim) while the program declares it with length N = 1, so rstan refuses the data ("mismatch in number dimensions declared and found in context ... variable name=lb; dims declared=(1); dims found=()") and \texttt{brm(\allowbreak{})} returns an object without a valid model. Rare in practice, but it breaks one-row checks and examples.
+\item[Observed] \texttt{y \textbar{} trunc(\allowbreak{}lb =\allowbreak{} L) \textasciitilde{} 1} and \texttt{y \textbar{} trunc(\allowbreak{}lb =\allowbreak{} 1) \textasciitilde{} 1} with one row (y = 1.5, L = 1): the rstan error above at \texttt{brm(\allowbreak{}.\allowbreak{}.\allowbreak{}.\allowbreak{},\allowbreak{} chains =\allowbreak{} 0)}, then "the model object is not created or not valid" from \texttt{log\_\allowbreak{}prob}.
+\item[Expected] A model whose log likelihood at mu = 0, sigma = 1 is \texttt{log phi(\allowbreak{}1.\allowbreak{}5) -\allowbreak{} log(\allowbreak{}1 -\allowbreak{} Phi(\allowbreak{}1))} = -0.2029168881954091, as the same model with two identical rows gives twice that (brms -0.4058337763908186) and a one-row model without truncation gives \texttt{log phi(\allowbreak{}1.\allowbreak{}5)} (brms -2.043938533204672, exact).
+\item[Reproduce] \texttt{Rscript docs/brms-parity/upstream/repro/U31.R} from the repository root; it exits with status 1 while the problem is present. Output of one run: \texttt{docs/brms-parity/upstream/repro/U31.out}.
+\item[Fix] Pass the bounds (and any other per-row data entry) to Stan as arrays of length N even when N = 1, e.g. with \texttt{as.\allowbreak{}array(\allowbreak{})}, as brms already does for the response.
+\item[Belongs in] \url{https://github.com/paul-buerkner/brms}
+\item[Known upstream] Not found for truncation bounds; the same kind of one-row failure was reported for an offset in 2018.
+\\ \url{https://github.com/paul-buerkner/brms/issues/545} (closed 2018-11-06): Can't sample when using offset with a single data point
 \end{description}
 
 \end{document}
