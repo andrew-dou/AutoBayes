@@ -1,0 +1,13 @@
+brms 2.23.0, rstan 2.32.7, StanHeaders 2.32.10, R 4.5.2
+
+E[y | y > L] at mu = 0, sigma = 1
+  L =     0: brms 0.7978845608028654   exact 0.7978845608028653   relative error 1.4e-16
+  L =     3: brms 3.283098654930415   exact 3.283098654930434   relative error 5.8e-15
+  L =  6.17: brms 6.324502577466615   exact 6.32450286358622   relative error 4.5e-08
+  L =   7.5: brms 7.639864143170588   exact 7.628966391103763   relative error 0.0014
+  L =   8.2: brms 9.005738961208227   exact 8.318567530824906   relative error 0.083
+  L =     9: brms Inf   exact 9.108523105002844   relative error Inf
+  L =    40: brms NaN   exact 40.02496884720634   relative error NaN
+
+PROBLEM PRESENT: brms's truncated Gaussian mean loses its digits in the upper tail
+run time 31.6 s

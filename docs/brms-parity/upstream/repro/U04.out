@@ -1,0 +1,25 @@
+brms 2.23.0, rstan 2.32.7, StanHeaders 2.32.10, R 4.5.2
+the number of chains is less than 1; sampling not done
+the number of chains is less than 1; sampling not done
+
+link logit
+  eta =    1: 1 - mu = 0.269  brms -0.1629684777697662   exact -0.1629684777697668   relative error 3.6e-15
+  eta =   30: 1 - mu = 9.36e-14  brms -30.47102418467954   exact -30.47000362924486   relative error 3.3e-05
+  eta =   40: 1 - mu = 4.25e-18  brms: error (Exception: beta_lpdf: Second shape parameter[1] is 0, but must be positive finite! (in 'anon_model', line 28, column 4 to column 56))   exact -40.47000362924573
+the number of chains is less than 1; sampling not done
+the number of chains is less than 1; sampling not done
+
+link probit
+  eta =    1: 1 - mu = 0.159  brms -1.117366846210006   exact -1.117366846210004   relative error 1.6e-15
+  eta =    8: 1 - mu = 6.22e-16  brms -35.41504472969478   exact -35.48344078916028   relative error 0.0019
+  eta =    9: 1 - mu = 1.13e-19  brms: error (Exception: beta_lpdf: Second shape parameter[1] is 0, but must be positive finite! (in 'anon_model', line 28, column 4 to column 56))   exact -44.09815274257785
+the number of chains is less than 1; sampling not done
+the number of chains is less than 1; sampling not done
+
+link cloglog
+  eta =  0.5: 1 - mu = 0.192  brms -0.7652242570722789   exact -0.7652242570722794   relative error 5.8e-16
+  eta =  3.4: 1 - mu = 9.7e-14  brms -30.4337238232663   exact -30.43410367664173   relative error 1.2e-05
+  eta =  3.7: 1 - mu = 2.72e-18  brms: error (Exception: beta_lpdf: Second shape parameter[1] is 0, but must be positive finite! (in 'anon_model', line 46, column 4 to column 56))   exact -40.91730798931313
+
+PROBLEM PRESENT: brms's Beta density loses 1 - mu and rejects draws where it rounds to 0
+run time 149.3 s

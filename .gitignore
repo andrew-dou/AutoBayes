@@ -14,6 +14,8 @@ logs/
 slurm-*.out
 *.err
 *.out
+# the upstream log's saved reproduction outputs are records, not logs
+!docs/brms-parity/upstream/repro/*.out
 
 # compile cache of tools/parity_gate.py
 .pytensor-gate/

@@ -1,0 +1,25 @@
+brms 2.23.0, rstan 2.32.7, StanHeaders 2.32.10, R 4.5.2
+log(.Machine$double.eps) = -36.0437
+the number of chains is less than 1; sampling not done
+the number of chains is less than 1; sampling not done
+
+Weibull, scale 1
+the number of chains is less than 1; sampling not done
+  (0.5, 1] at shape 2 (control)            brms -0.8893534650403536   exact -0.889353465040354   relative error 3.7e-16
+the number of chains is less than 1; sampling not done
+  (5, 6] at shape 3                        brms -Inf   exact -125   relative error Inf
+the number of chains is less than 1; sampling not done
+  (6, 8] at shape 2                        brms -36.04365338911715   exact -36.00000000000069   relative error 0.0012
+the number of chains is less than 1; sampling not done
+  right-censored at 5, shape 3 (lccdf)     brms -125.0000000000001   exact -125   relative error 5.7e-16
+the number of chains is less than 1; sampling not done
+the number of chains is less than 1; sampling not done
+
+Gamma(shape 2, rate 1)
+the number of chains is less than 1; sampling not done
+  (1, 2] (control)                         brms -1.109411290662647   exact -1.109411290662647   relative error 4e-16
+the number of chains is less than 1; sampling not done
+  (40, 50]                                 brms -36.04365338911715   exact -36.28648440797372   relative error 0.0067
+
+PROBLEM PRESENT: brms's interval-censored log mass loses its digits in the upper tail
+run time 63.1 s

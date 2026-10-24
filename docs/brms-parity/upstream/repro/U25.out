@@ -1,0 +1,21 @@
+brms 2.23.0, rstan 2.32.7, StanHeaders 2.32.10, R 4.5.2
+the number of chains is less than 1; sampling not done
+the generated program calls gamma_lcdf: TRUE, gamma_lccdf: TRUE
+the number of chains is less than 1; sampling not done
+
+gradient in (log mu, log shape) of one censored row
+the number of chains is less than 1; sampling not done
+  left (lcdf)    y = 1, mu = 2, shape = 2: brms -1.392211191177, -0.6982738033678   exact -1.392211191174, -0.6982738033725   relative error 2.4e-12, 6.8e-12
+the number of chains is less than 1; sampling not done
+  left (lcdf)    y = 5, mu = 5, shape = 5: brms -1.568054190273, -0.05318738221122   exact -1.568054190271, -0.05318738221599   relative error 8.4e-13, 9e-11
+the number of chains is less than 1; sampling not done
+  right (lccdf)  y = 3, mu = 2, shape = 2: brms  2.25, -0.2673186566596   exact  2.250000000002, -0.2673022227384   relative error 1e-12, 6.1e-05
+the number of chains is less than 1; sampling not done
+  right (lccdf)  y = 7, mu = 5, shape = 5: brms  3.691412255656, -0.4868664317708   exact  3.691412255645, -0.4809855583225   relative error 2.9e-12, 0.012
+the number of chains is less than 1; sampling not done
+  right (lccdf)  y = 2, mu = 5, shape = 10: brms  0.05335869260781,  0.02944747557571   exact  0.05335869260782,  0.02945472493298   relative error 3.3e-14, 0.00025
+the number of chains is less than 1; sampling not done
+  interval       y = 2 to 4, mu = 3, shape = 3: brms -0.1020566706171,  0.4687092049717   exact -0.1020566706134,  0.4687092049701   relative error 3.7e-11, 3.6e-12
+
+PROBLEM PRESENT: Stan's gamma_lccdf shape derivative is inexact, and so are brms's censored Gamma gradients
+run time 34.6 s

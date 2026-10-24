@@ -1,0 +1,20 @@
+brms 2.23.0, rstan 2.32.7, StanHeaders 2.32.10, R 4.5.2
+the number of chains is less than 1; sampling not done
+the number of chains is less than 1; sampling not done
+
+bernoulli, y = 0
+  eta =   0: log lik brms -1 exact -1 (rel 4.4e-16); gradient brms -1 exact -1 (rel 0)
+  eta =   3: log lik brms -20.08553689560981 exact -20.08553692318767 (rel 1.4e-09); gradient brms -20.08553636927165 exact -20.08553692318767 (rel 2.8e-08)
+  eta = 3.5: log lik brms -33.12588265703288 exact -33.11545195869231 (rel 0.00031); gradient brms -33.46267700016426 exact -33.11545195869231 (rel 0.01)
+  eta =   4: log lik brms -Inf exact -54.59815003314424 (rel Inf); gradient brms  Inf exact -54.59815003314424 (rel Inf)
+the number of chains is less than 1; sampling not done
+the number of chains is less than 1; sampling not done
+
+binomial, y = 1 of 3
+  eta =   0: log lik brms -1.360062856718972 exact -1.360062856718972 (rel 1.6e-16); gradient brms -1.418023293130673 exact -1.418023293130674 (rel 1.6e-16)
+  eta =   3: log lik brms -39.07246150444369 exact -39.0724615595994 (rel 1.4e-09); gradient brms -40.17107270053787 exact -40.17107380836991 (rel 2.8e-08)
+  eta = 3.5: log lik brms -65.15315302539764 exact -65.13229162871652 (rel 0.00032); gradient brms -66.92535400032838 exact -66.23090391738448 (rel 0.01)
+  eta =   4: log lik brms -Inf exact -108.0976877776204 (rel Inf); gradient brms -Inf exact -109.1963000662885 (rel Inf)
+
+PROBLEM PRESENT: brms's cloglog likelihood loses a failure's log(1 - theta)
+run time 123.9 s

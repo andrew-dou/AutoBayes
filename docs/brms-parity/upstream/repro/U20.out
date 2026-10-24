@@ -1,0 +1,18 @@
+brms 2.23.0, rstan 2.32.7, StanHeaders 2.32.10, R 4.5.2
+the number of chains is less than 1; sampling not done
+largest basis frequency w_30 = 37.6991: S underflows for lscale above 1.024
+
+lscale = 0.5: log density -58.9630256308
+  gradient in (log sdgp, log lscale)  brms  2.8434862,  1.967645   finite difference  2.8434862,  1.967645
+  non-finite gradient entries: 0 of 34; largest difference from the finite difference elsewhere 6.6e-09
+
+lscale = 1.2: log density -58.8231174567
+  gradient in (log sdgp, log lscale)  brms  NaN,  NaN   finite difference  4.3837865, -4.6773439
+  non-finite gradient entries: 2 of 34; largest difference from the finite difference elsewhere 7.4e-09
+
+lscale = 2: log density -62.7055548738
+  gradient in (log sdgp, log lscale)  brms  NaN,  NaN   finite difference  1.9224068, -9.2924243
+  non-finite gradient entries: 2 of 34; largest difference from the finite difference elsewhere 3.4e-09
+
+PROBLEM PRESENT: the approximate GP's gradient is NaN where the spectral density underflows
+run time 31.8 s

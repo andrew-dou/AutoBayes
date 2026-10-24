@@ -1,0 +1,27 @@
+brms 2.23.0, rstan 2.32.7, StanHeaders 2.32.10, R 4.5.2
+the number of chains is less than 1; sampling not done
+likelihood at mu = 1.5, shape = 1: brms -7.24094229385856, sum log NB(y) - N log P(Y >= 1) = -7.24094229385855
+Computing posterior_epred values for truncated discrete models may take a while.
+
+mu = 1.5, shape = 1, max(y) in the data = 5
+  posterior_epred brms        2.673469388
+  exact E[Y | Y >= 1]         2.5   (relative difference 0.0694)
+  E[Y | Y >= 2]               3.5
+  mean over 2..M closest to brms's value at M = 4: 2.673469388
+Computing posterior_epred values for truncated discrete models may take a while.
+
+mu = 134, shape = 0.6, max(y) in the data = 5
+  posterior_epred brms        102.6108362
+  exact E[Y | Y >= 1]         139.4172675   (relative difference 0.264)
+  E[Y | Y >= 2]               142.8425226
+  mean over 2..M closest to brms's value at M = 402: 102.6108362
+Computing posterior_epred values for truncated discrete models may take a while.
+
+mu = 134, shape = 0.6, max(y) in the data = 300
+  posterior_epred brms        102.6108362
+  exact E[Y | Y >= 1]         139.4172675   (relative difference 0.264)
+  E[Y | Y >= 2]               142.8425226
+  mean over 2..M closest to brms's value at M = 402: 102.6108362
+
+PROBLEM PRESENT: posterior_epred of trunc(lb = 1) is not E[Y | Y >= 1]
+run time 120.8 s

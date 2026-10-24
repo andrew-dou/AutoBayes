@@ -1,0 +1,10 @@
+brms 2.23.0, rstan 2.32.7, StanHeaders 2.32.10, R 4.5.2
+quantile = 0    make_standata: accepted
+quantile = 1    make_standata: accepted
+quantile = 1.5  make_standata: refused: Parameter 'quantile' must be between 0 and 1.
+brms's dasym_laplace(y, mu = 0, sigma = 1, quantile = 0) at y = -0.3, 0.1, 0.5: 0, 0, 0
+the number of chains is less than 1; sampling not done
+log_prob of the quantile = 0 model at Intercept = 0, sigma = 1: -Inf
+
+PROBLEM PRESENT: brms accepts a fixed quantile of 0 or 1, where the density is 0 everywhere
+run time 29.4 s

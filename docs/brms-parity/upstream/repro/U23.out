@@ -1,0 +1,23 @@
+brms 2.23.0, rstan 2.32.7, StanHeaders 2.32.10, R 4.5.2
+the number of chains is less than 1; sampling not done
+the generated program calls normal_lcdf: TRUE, normal_lccdf: TRUE
+the number of chains is less than 1; sampling not done
+
+gradient in (mu, log sigma) of one censored row at mu = 0, sigma = 1
+the number of chains is less than 1; sampling not done
+  right (lccdf)  z =     0: brms  0.7978845608028654,  0   exact  0.7978845608028653,  0   largest relative error 1.4e-16
+the number of chains is less than 1; sampling not done
+  left (lcdf)    z =     1: brms -0.2875997629137071, -0.2875997629137071   exact -0.2875999709391784, -0.2875999709391784   largest relative error 7.2e-07
+the number of chains is less than 1; sampling not done
+  left (lcdf)    z =     2: brms -0.0552482144761343, -0.1104964289522686   exact -0.05524786267898995, -0.1104957253579799   largest relative error 6.4e-06
+the number of chains is less than 1; sampling not done
+  left (lcdf)    z =   -10: brms -10.0978573856826,  100.978573856826   exact -10.09809323396249,  100.9809323396249   largest relative error 2.3e-05
+the number of chains is less than 1; sampling not done
+  left (lcdf)    z =   -38: brms -38.02678427176812,  1445.017802327189   exact -38.02627946657331,  1444.998619729786   largest relative error 1.3e-05
+the number of chains is less than 1; sampling not done
+  right (lccdf)  z =  6.17: brms  6.324502577466614,  39.02218090296901   exact  6.32450286358622,  39.02218266832698   largest relative error 4.5e-08
+the number of chains is less than 1; sampling not done
+  right (lccdf)  z =     8: brms  8.273965879706052,  66.19172703764842   exact  8.121368112236123,  64.97094489788898   largest relative error 0.019
+
+PROBLEM PRESENT: Stan's normal_lcdf / normal_lccdf derivatives are inexact, and so are brms's censored gradients
+run time 26.6 s
