@@ -1,4 +1,4 @@
-"""M1: Bernoulli varying-intercept model with a logit link. Checks A1-A8 of docs/m1-decision.md."""
+"""M1: Bernoulli varying-intercept model with a logit link. Checks A1-A8 of docs/history/m1-decision.md."""
 import numpy as np
 import pandas as pd
 import pytest
@@ -125,7 +125,7 @@ def test_jax_logp_matches_pytensor(bmodel):
         assert abs(float(jf([point[n] for n in names])) - float(logp(point))) < 1e-8
 
 
-# -- A5 (replaced by R1/R2 after the review; see docs/m1-decision.md, repair record) --------
+# -- A5 (replaced by R1/R2 after the review; see docs/history/m1-decision.md, repair record) --------
 EXTREME = [0.0, 0.5, -0.5, 12.0, -12.0, 40.0, -40.0, 300.0, -300.0, 1000.0, -1000.0, 1e6, -1e6]
 
 
@@ -327,7 +327,7 @@ def test_gpu_unavailable_is_error_for_this_family(bmodel):
         bmodel.fit(backend="numpyro", device="gpu", chains=1, draws=5, tune=5)
 
 
-# -- U1-U4 (docs/m1-decision.md, follow-up unit): unseen-label identity, Bernoulli ------
+# -- U1-U4 (docs/history/m1-decision.md, follow-up unit): unseen-label identity, Bernoulli ------
 def test_resample_observed_keeps_distinct_unseen_labels_bernoulli(bmodel, bfit):
     from tests.test_predict import check_resample_observed_identity, synthetic_posterior
 

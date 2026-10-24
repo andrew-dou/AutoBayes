@@ -2,7 +2,7 @@
 
 The library's milestone record before the brms-parity loop (September 2026), moved here verbatim from the README on
 17 October 2026: only the link targets were re-pointed for this file's location. The current state of the library is
-the [README](../README.md); where this record calls a construct unsupported, the README supersedes it.
+the [README](../../README.md); where this record calls a construct unsupported, the README supersedes it.
 
 ---
 
@@ -35,7 +35,7 @@ written, so reruns and retries cannot touch the committed `docs/m*-evidence/` hi
 
 ### Supported paths
 
-See the [current capability and test map](current-capabilities.md) for the
+See the [current capability and test map](../current-capabilities.md) for the
 September 27 merged baseline, family extensions, provenance checks and remaining gaps.
 
 "CPU-validated" means the checks in `docs/m0-decision.md` / `docs/m1-decision.md` passed on
@@ -53,13 +53,13 @@ versions.
 | Binomial (logit), `k \| trials(n) ~ [1 +] x… + (1 \| g)`, integer counts up to 1e6 per row | CPU-validated | CPU-validated | **pending** (same code path, not run on a GPU) | M2 |
 | Declared categorical predictors `z` (treatment coding, `categorical={"z": reference}`), all three families | CPU-validated (`docs/m3a1-decision.md`) | CPU-validated | **pending** | M3a-1, merged (PR #6) |
 | One numeric-by-categorical interaction `x:z` (`x*z`) with both main effects, all three families | CPU-validated (`docs/m3a2-decision.md`) | CPU-validated | **pending** | M3a-2, merged (PR #7) |
-| Multiple numeric-by-categorical interactions, shared or disjoint sides; existing families, intercept controls and multiple groups | deterministic checks; one Gaussian CPU example independently accepted | same deterministic coverage and Gaussian CPU example | **pending** | M3a-3, merged (PR #12); [evidence summary](current-capabilities.md#validation-boundaries) |
+| Multiple numeric-by-categorical interactions, shared or disjoint sides; existing families, intercept controls and multiple groups | deterministic checks; one Gaussian CPU example independently accepted | same deterministic coverage and Gaussian CPU example | **pending** | M3a-3, merged (PR #12); [evidence summary](../current-capabilities.md#validation-boundaries) |
 | Population-only models, no group-level term: `y ~ 1`, `y ~ x`, `y ~ x + z + x:z`, `k \| trials(n) ~ x`, all three families | deterministic density/gradient/design/prediction checks for all three families; Gaussian example CPU sampling accepted after explicit finite-statistic policy correction ([review](m3c1-decision.md#independent-acceptance-review-2026-09-19)) | same deterministic coverage; Gaussian example CPU sampling and seven-mean agreement accepted in the same review | **pending** | M3c-1, PR #9; merged; one Gaussian development example, not calibration |
 | One independent varying slope `(1 + x \|\| g)` | under independent review, not merged | same | same | M3b-1, PR #8 open (superseded: A01, #29, merged; PR #8 closed) |
 | No population intercept: `0 + x`, `x - 1`, categorical and one interaction, optional group | three-family deterministic checks; one Gaussian CPU example accepted at `target_accept=0.99` | same deterministic coverage and Gaussian CPU acceptance | **pending** | M3c-2, PR #10; [review and preserved initial failures](m3c2-decision.md#independent-acceptance-review-2026-09-20-utc) |
 | Multiple independent intercepts `(1 \| county) + (1 \| year)`, all three families | three-family deterministic checks; one crossed Gaussian CPU example independently accepted | same deterministic coverage and Gaussian CPU acceptance | **pending** | M3c-3, merged (PR #11); [decision](m3c3-decision.md) |
-| Fixed-nu Student-t, identity link | deterministic graph/density/gradient/prediction checks | deterministic CPU JAX checks; recovery sampling pending | **pending** | merged (PR #14); [semantics](student-responses.md) |
-| Poisson, log link | deterministic graph/density/gradient/prediction checks | deterministic CPU JAX checks; recovery sampling pending | **pending** | merged (PR #15); [semantics](poisson-responses.md) |
+| Fixed-nu Student-t, identity link | deterministic graph/density/gradient/prediction checks | deterministic CPU JAX checks; recovery sampling pending | **pending** | merged (PR #14); [semantics](../student-responses.md) |
+| Poisson, log link | deterministic graph/density/gradient/prediction checks | deterministic CPU JAX checks; recovery sampling pending | **pending** | merged (PR #15); [semantics](../poisson-responses.md) |
 | Correlated effects, grouping `/` or `:`, varying slopes, additional families and links | refused with an error naming the construct | same | same | later slices, `docs/coordination/NEXT_MILESTONES_PROPOSAL.md` (superseded: supported since Tier A, see Current status) |
 
 Device rules on every path: `device="gpu"` without a visible GPU raises `DeviceError`
@@ -90,7 +90,7 @@ higher-order interactions and transforms remain unsupported (superseded: two-way
 the transforms in `docs/transforms.md` are supported since A04/A05; three-way interactions are still refused). Changing a reference
 can change independent-prior meaning; the library does not transport priors.
 Unseen categorical levels are always refused, independently of any new-group policy.
-See the build-only [example](../examples/m3a3_multiple_interactions.py) and
+See the build-only [example](../../examples/m3a3_multiple_interactions.py) and
 [decision/test matrix](m3a3-decision.md) and [execution evidence](m3a3-evidence/README.md).
 The focused checks passed; the one local fast suite was interrupted after a wall-deadline
 supervision failure and was not rerun. Hosted checks remain required. New-feature CPU sampling, calibration
@@ -127,7 +127,7 @@ Distinct additive factors can describe crossed or observationally nested members
 the library never expands nesting syntax or combines labels with their parent. Slopes,
 duplicate factors, correlation IDs, `||`, grouping `/` or `:` and multimembership remain
 refused. (Superseded: `||`, `/` and `:` are supported since A01/A03;
-correlation IDs and multimembership are still refused.) See the build-only [example](../examples/m3c3_multiple_intercepts.py) and
+correlation IDs and multimembership are still refused.) See the build-only [example](../../examples/m3c3_multiple_intercepts.py) and
 [decision](m3c3-decision.md). One crossed Gaussian CPU example passed independent
 validation on PyMC and NumPyro at `target_accept=0.99`; see the [evidence and limits](m3c3-evidence/cpu-validation/README.md).
 Other-family sampling, calibration and GPU validation remain pending.
@@ -156,7 +156,7 @@ an error; `value_point(b=..., sigma=...)` omits it.
 At least one population predictor is required. Conflicting `1` and intercept-removal
 tokens, general subtraction, and group-only/zero-only models remain refused. See
 [the decision and test map](m3c2-decision.md) and the
-[build-only example](../examples/m3c2_no_intercept.py). Its Gaussian model passed a bounded
+[build-only example](../../examples/m3c2_no_intercept.py). Its Gaussian model passed a bounded
 two-backend CPU check at `target_accept=0.99`; the initial `0.9` run had divergences.
 The library default is unchanged. Inspect diagnostics for each fitted model; this one
 example does not establish calibration, rare-tail accuracy or GPU coverage.
@@ -234,14 +234,14 @@ their evidence are in those records and `docs/m0-evidence/`, `docs/m1-evidence/`
 `docs/coordination/NEXT_MILESTONES_PROPOSAL.md`. No speed claim is made anywhere.
 
 
-Fit comparisons now require a [frozen target identity](record-identity.md). Historical records remain readable; metadata-only comparison requires explicit `allow_legacy=True` and is labeled unverified.
+Fit comparisons now require a [frozen target identity](../record-identity.md). Historical records remain readable; metadata-only comparison requires explicit `allow_legacy=True` and is labeled unverified.
 
-New results carry [fit provenance](fit-binding.md) through saved draws. Record creation rejects mismatched or unbound fits unless the documented unverified legacy mode is explicitly selected.
+New results carry [fit provenance](../fit-binding.md) through saved draws. Record creation rejects mismatched or unbound fits unless the documented unverified legacy mode is explicitly selected.
 
 ### Prior-predictive checks
 
-Use `model.prior_predictive(draws=100, seed=42)` for graph-native CPU forward draws before fitting. See [semantics and validation](prior-predictive.md).
+Use `model.prior_predictive(draws=100, seed=42)` for graph-native CPU forward draws before fitting. See [semantics and validation](../prior-predictive.md).
 
-Use `model.predict(fit, kind="linear")` for draws before inverse-link transformation; see [linear prediction](linear-prediction.md).
+Use `model.predict(fit, kind="linear")` for draws before inverse-link transformation; see [linear prediction](../linear-prediction.md).
 
-Set `include_group_effects=False` in predictions to set all group contributions to zero; see [semantics](group-exclusion.md). This does not marginalize over groups.
+Set `include_group_effects=False` in predictions to set all group contributions to zero; see [semantics](../group-exclusion.md). This does not marginalize over groups.

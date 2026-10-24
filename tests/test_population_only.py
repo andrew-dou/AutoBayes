@@ -1,4 +1,4 @@
-"""M3c-1: population-only models, no group-level term (docs/m3c1-decision.md). Deterministic checks only: no
+"""M3c-1: population-only models, no group-level term (docs/history/m3c1-decision.md). Deterministic checks only: no
 sampling. Predictions and records use synthetic fixed draws; densities and gradients are compared with the
 independent references of tests/reference_logp.py and tests/reference_binomial.py extended to ``group=None``."""
 import copy

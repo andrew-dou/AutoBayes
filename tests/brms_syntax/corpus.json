@@ -528,7 +528,7 @@
    "result": {
     "status": "error",
     "type": "FormulaError",
-    "message": "column 'f' has dtype str; a predictor is numeric unless it is declared categorical with its reference level, for example categorical={'f': <level>} (treatment coding; docs/m3a1-decision.md).",
+    "message": "column 'f' has dtype str; a predictor is numeric unless it is declared categorical with its reference level, for example categorical={'f': <level>} (treatment coding; docs/history/m3a1-decision.md).",
     "raised_at": "formula.py:3407",
     "stage": "default_priors",
     "mechanism": "refusal",
@@ -879,7 +879,7 @@
    "result": {
     "status": "error",
     "type": "FormulaError",
-    "message": "column 'fcat' has dtype category; a predictor is numeric unless it is declared categorical with its reference level, for example categorical={'fcat': <level>} (treatment coding; docs/m3a1-decision.md).",
+    "message": "column 'fcat' has dtype category; a predictor is numeric unless it is declared categorical with its reference level, for example categorical={'fcat': <level>} (treatment coding; docs/history/m3a1-decision.md).",
     "raised_at": "formula.py:3407",
     "stage": "default_priors",
     "mechanism": "refusal",
@@ -1030,7 +1030,7 @@
    "result": {
     "status": "error",
     "type": "FormulaError",
-    "message": "column 'fo' has dtype category; a predictor is numeric unless it is declared categorical with its reference level, for example categorical={'fo': <level>} (treatment coding; docs/m3a1-decision.md).",
+    "message": "column 'fo' has dtype category; a predictor is numeric unless it is declared categorical with its reference level, for example categorical={'fo': <level>} (treatment coding; docs/history/m3a1-decision.md).",
     "raised_at": "formula.py:3407",
     "stage": "default_priors",
     "mechanism": "refusal",
@@ -1078,7 +1078,7 @@
    "result": {
     "status": "error",
     "type": "FormulaError",
-    "message": "column 'lgl' has dtype bool; a predictor is numeric unless it is declared categorical with its reference level, for example categorical={'lgl': <level>} (treatment coding; docs/m3a1-decision.md).",
+    "message": "column 'lgl' has dtype bool; a predictor is numeric unless it is declared categorical with its reference level, for example categorical={'lgl': <level>} (treatment coding; docs/history/m3a1-decision.md).",
     "raised_at": "formula.py:3407",
     "stage": "default_priors",
     "mechanism": "refusal",
@@ -1262,7 +1262,7 @@
    "result": {
     "status": "error",
     "type": "FormulaError",
-    "message": "'x:z': the main effect 'x' is missing. This slice requires both main effects of an interaction ('x + z + x:z' or 'x*z'): omitting one is a different model (the level intercepts or the reference slope are forced to zero and formulae changes the interaction's coding) and is not part of the verified subset (docs/m3a2-decision.md).",
+    "message": "'x:z': the main effect 'x' is missing. This slice requires both main effects of an interaction ('x + z + x:z' or 'x*z'): omitting one is a different model (the level intercepts or the reference slope are forced to zero and formulae changes the interaction's coding) and is not part of the verified subset (docs/history/m3a2-decision.md).",
     "raised_at": "formula.py:2774",
     "stage": "default_priors",
     "mechanism": "refusal",
@@ -1425,7 +1425,7 @@
    "result": {
     "status": "error",
     "type": "FormulaError",
-    "message": "'f:f2': the main effect 'f' is missing. This slice requires both main effects of an interaction ('f + f2 + f:f2' or 'f*f2'): omitting one is a different model (the level intercepts or the reference slope are forced to zero and formulae changes the interaction's coding) and is not part of the verified subset (docs/m3a2-decision.md).",
+    "message": "'f:f2': the main effect 'f' is missing. This slice requires both main effects of an interaction ('f + f2 + f:f2' or 'f*f2'): omitting one is a different model (the level intercepts or the reference slope are forced to zero and formulae changes the interaction's coding) and is not part of the verified subset (docs/history/m3a2-decision.md).",
     "raised_at": "formula.py:2774",
     "stage": "default_priors",
     "mechanism": "refusal",
@@ -1479,7 +1479,7 @@
    "result": {
     "status": "error",
     "type": "FormulaError",
-    "message": "'x:f': the main effect 'f' is missing. This slice requires both main effects of an interaction ('x + f + x:f' or 'x*f'): omitting one is a different model (the level intercepts or the reference slope are forced to zero and formulae changes the interaction's coding) and is not part of the verified subset (docs/m3a2-decision.md).",
+    "message": "'x:f': the main effect 'f' is missing. This slice requires both main effects of an interaction ('x + f + x:f' or 'x*f'): omitting one is a different model (the level intercepts or the reference slope are forced to zero and formulae changes the interaction's coding) and is not part of the verified subset (docs/history/m3a2-decision.md).",
     "raised_at": "formula.py:2774",
     "stage": "default_priors",
     "mechanism": "refusal",
@@ -2281,7 +2281,7 @@
    "result": {
     "status": "error",
     "type": "FormulaError",
-    "message": "'x:f': the main effect 'x' is missing. This slice requires both main effects of an interaction ('x + f + x:f' or 'x*f'): omitting one is a different model (the level intercepts or the reference slope are forced to zero and formulae changes the interaction's coding) and is not part of the verified subset (docs/m3a2-decision.md).",
+    "message": "'x:f': the main effect 'x' is missing. This slice requires both main effects of an interaction ('x + f + x:f' or 'x*f'): omitting one is a different model (the level intercepts or the reference slope are forced to zero and formulae changes the interaction's coding) and is not part of the verified subset (docs/history/m3a2-decision.md).",
     "raised_at": "formula.py:2774",
     "stage": "default_priors",
     "mechanism": "refusal",

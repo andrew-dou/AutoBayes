@@ -55,7 +55,7 @@ def test_new_groups_semantics(model, small_fit):
     assert is_obs.all()
 
 
-# -- U1-U4 (docs/m1-decision.md, follow-up unit): unseen-label identity, Gaussian ------
+# -- U1-U4 (docs/history/m1-decision.md, follow-up unit): unseen-label identity, Gaussian ------
 def synthetic_posterior(model, *, draws=1500, effects=None, sigma=0.3):
     """A posterior whose group effects are distinct constants across draws, so that identity
     and sharing of unseen-label effects can be checked exactly."""

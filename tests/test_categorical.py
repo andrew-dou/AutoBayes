@@ -1,4 +1,4 @@
-"""M3a-1: one treatment-coded categorical predictor. Checks C1-C8 and C12 of docs/m3a1-decision.md."""
+"""M3a-1: one treatment-coded categorical predictor. Checks C1-C8 and C12 of docs/history/m3a1-decision.md."""
 import json
 
 import numpy as np
@@ -233,7 +233,7 @@ def test_density_jacobian_and_gradients_both_paths(family, priors, center):
 # -- C4: what a change of reference level does and does not preserve ------------------------------
 def reference_map(levels, ref, new_ref, centered):
     """theta = (intercept, beta over sorted non-reference levels) -> theta' for the new reference,
-    from the derivation in docs/m3a1-decision.md: beta'_l = beta_l - beta_new (l not in {ref, new}),
+    from the derivation in docs/history/m3a1-decision.md: beta'_l = beta_l - beta_new (l not in {ref, new}),
     beta'_ref = -beta_new; centred intercept invariant, raw intercept a' = a + beta_new."""
     old = [l for l in levels if l != ref]
     new = [l for l in levels if l != new_ref]

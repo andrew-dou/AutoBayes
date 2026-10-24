@@ -1,4 +1,5 @@
-"""The diagnostic panel from ``reference/diagnostics.md``, with its thresholds."""
+"""The diagnostic panel from ``reference/diagnostics.md`` (https://github.com/andrew-dou/autobayes-scaffold), with its
+thresholds."""
 from __future__ import annotations
 
 import numpy as np
@@ -57,7 +58,7 @@ def format_panel(p: dict) -> str:
         ("min E-BFMI", f"{v['min_bfmi']:.3f}", s["min_bfmi"]),
         ("tree-depth saturation", f"{100 * v['treedepth_saturation']:.2f}%", s["treedepth_saturation"]),
     ]
-    out = ["Diagnostic panel (thresholds from reference/diagnostics.md)"]
+    out = ["Diagnostic panel (thresholds from reference/diagnostics.md in https://github.com/andrew-dou/autobayes-scaffold)"]
     out += [f"  {name:<22} {val:<28} {st}" for name, val, st in rows]
     out.append(f"  overall: {p['overall']}")
     return "\n".join(out)

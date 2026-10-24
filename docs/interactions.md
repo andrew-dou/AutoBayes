@@ -2,7 +2,7 @@
 
 brms-parity feature A04. An interaction `a:b` (or the shorthand `a*b` = `a + b + a:b`) may now join any two main
 effects of the formula, not only a numeric and a categorical one: `x:w` between two numeric columns and `z:h`
-between two declared categorical columns, next to the `x:z` form that existed before (docs/m3a2-decision.md).
+between two declared categorical columns, next to the `x:z` form that existed before (docs/history/m3a2-decision.md).
 Both main effects are still required and interactions stay two-way.
 
 ## The model

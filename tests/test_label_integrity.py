@@ -1,4 +1,4 @@
-"""M3a-1 repair record: categorical labels keep their identity (R1-R6 of docs/m3a1-decision.md)."""
+"""M3a-1 repair record: categorical labels keep their identity (R1-R6 of docs/history/m3a1-decision.md)."""
 import numpy as np
 import pandas as pd
 import pytest

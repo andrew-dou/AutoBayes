@@ -7,7 +7,7 @@
     uv run --no-sync python examples/m3c1_population_only.py --backend numpyro  # JAX/NumPyro on CPU
 
 The frozen model was sampled on both CPU backends in the bounded validation recorded in
-docs/m3c1-decision.md; its independent review and explicit gate correction are recorded there.
+docs/history/m3c1-decision.md; its independent review and explicit gate correction are recorded there.
 The priors have no ``sd`` (there is no varying intercept) and predictions take rows without any grouping column.
 """
 import argparse

@@ -40,7 +40,8 @@ import os as _os
 # Two JAX settings that must precede anything else, done at import because that is the
 # one place that reliably precedes a researcher's first jax.devices() call:
 # - float64. JAX defaults to float32, which is not acceptable for a log density you
-#   intend to trust (reference/failure-atlas.md, "Silent float32"). fit() re-asserts it.
+#   intend to trust (reference/failure-atlas.md, "Silent float32", in https://github.com/andrew-dou/autobayes-scaffold).
+#   fit() re-asserts it.
 # - the host device count, so CPU chains on the NumPyro path run in parallel. This is
 #   a no-op if JAX is already initialised (fit() then reports sequential chains and
 #   says why) and is skipped when AUTOBAYES_HOST_DEVICES=0.

@@ -33,5 +33,5 @@ Validation:14 tests passed with exactly9 forward calls,8draws/call,6rows/model,
 covering five families, seeded repeatability, response-value invariance and a
 categorical/interacting varying-intercept Gaussian arithmetic check. Another17
 stub/fit-binding tests passed without forward generation. Source hashes, exact
-scripts and outputs are in prior-predictive-evidence/. No MCMC, GPU, broad prior
+scripts and outputs are in history/prior-predictive-evidence/. No MCMC, GPU, broad prior
 calibration or distributional goodness-of-fit claim follows from these tiny tests.

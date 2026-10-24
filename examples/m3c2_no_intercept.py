@@ -18,4 +18,4 @@ if __name__ == "__main__":
     model = build_example()
     print(model.describe())
     print("Coefficient order:", model.spec.columns)
-    print("This command builds only; see docs/m3c2-decision.md for bounded CPU evidence and GPU limitations.")
+    print("This command builds only; see docs/history/m3c2-decision.md for bounded CPU evidence and GPU limitations.")

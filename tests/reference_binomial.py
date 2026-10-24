@@ -3,7 +3,7 @@
 Imports nothing from ``autobayes``, PyMC or Bambi, and does not use ``scipy.special.gammaln``:
 the row terms are computed in 60-digit ``decimal`` arithmetic, including ``log C(n, k)`` from
 ``lnGamma`` values that are exact sums for arguments up to 2000 and a Stirling series with a
-stated remainder bound above that (docs/m2-decision.md, "Independent reference and its error
+stated remainder bound above that (docs/history/m2-decision.md, "Independent reference and its error
 budget"). Prior terms and the Jacobian reuse the SciPy reference of ``tests/reference_logp.py``.
 """
 from __future__ import annotations
