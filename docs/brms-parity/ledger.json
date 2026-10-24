@@ -2171,12 +2171,15 @@
    "depends_on": [
     "B05_ordinal_categorical"
    ],
-   "status": "gates_green",
+   "status": "merged",
    "summary": "thres(gr = ) and thres(K, gr = ) group-specific thresholds for cumulative: cases cumulative_thres_gr, cumulative_thres_k_gr",
-   "pr": null,
+   "pr": 97,
    "attempts": 0,
-   "divergences": [],
-   "next_action": "implementing (wave F2); fixtures #89",
+   "divergences": [
+    "D158",
+    "D159"
+   ],
+   "next_action": "none",
    "reserved_divergences": "D158-D159",
    "gates": {
     "sha": "b38cdc46fcd3",
