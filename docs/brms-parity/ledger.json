@@ -1996,13 +1996,29 @@
    "depends_on": [
     "C04_autocor"
    ],
-   "status": "fixtures_frozen",
+   "status": "gates_green",
    "summary": "fcor(M) fixed residual covariance from data2 (case gauss_fcor)",
    "pr": null,
    "attempts": 0,
    "divergences": [],
    "next_action": "implementing (wave F1)",
-   "reserved_divergences": "D144-D145"
+   "reserved_divergences": "D144-D145",
+   "gates": {
+    "sha": "80acc176758e",
+    "dirty_tree": false,
+    "base": "origin/main",
+    "when": "2026-10-24T10:41Z",
+    "results": {
+     "immutability": {
+      "status": "pass",
+      "seconds": 0.0
+     },
+     "oracle": {
+      "status": "pass",
+      "seconds": 600.9
+     }
+    }
+   }
   },
   {
    "id": "F03b_unstr_cosy",

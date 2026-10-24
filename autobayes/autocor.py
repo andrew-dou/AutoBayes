@@ -31,14 +31,14 @@ import pandas as pd
 
 from autobayes.formula import _IDENT, FormulaError, _split_top_level, categorical_labels, reject_complex
 
-# brms's other autocorrelation structures, refused by name (divergence D69)
+# brms's other autocorrelation structures, refused by name (divergence D69); sar() and fcor() are taken (F02b, autobayes.sar;
+# F03a, autobayes.fcor)
 UNSUPPORTED_STRUCTURES = {
     "cosy": "compound symmetry, cosy()", "car": "spatial conditional autoregression, car()",
-    "fcor": "a fixed residual covariance matrix, fcor()",          # sar() is taken (F02b, autobayes.sar)
     "unstr": "an unstructured residual covariance, unstr()",
 }
 _CALL_RE = re.compile(r"^(ar|ma|arma)\s*\((.*)\)$", re.S)
-_OTHER_RE = re.compile(r"^(cosy|car|fcor|unstr)\s*\(", re.S)
+_OTHER_RE = re.compile(r"^(cosy|car|unstr)\s*\(", re.S)
 _FORMALS = {"ar": ("time", "gr", "p", "cov"), "ma": ("time", "gr", "q", "cov"), "arma": ("time", "gr", "p", "q", "cov")}
 _DEFAULT_ORDER = {"ar": (1, 0), "ma": (0, 1), "arma": (1, 1)}       # brms's defaults of (p, q) for each call
 

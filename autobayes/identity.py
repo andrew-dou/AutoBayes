@@ -189,6 +189,8 @@ def freeze_target(model):
         **({'autocorrelation': _autocor_payload(model)} if getattr(s, 'autocor', None) is not None else {}),
         # So does a SAR term (F02b): its weight matrix, eigenvalues and parameter's prior.
         **({'sar': _sar_payload(model)} if getattr(s, 'sar', None) is not None else {}),
+        # So does a fixed residual covariance (F03a, fcor(M)): the term and its matrix, which the likelihood reads.
+        **({'fcor': {'term': s.fcor.term, 'M': d.fcor.M}} if getattr(s, 'fcor', None) is not None else {}),
         # So do an me() term (C06): its noisy values, known noise and the priors of its latent values; and each column whose
         # missing values are parameters (C06): its values with 0 at the missing rows, and those rows.
         **({'measurement_error': _measurement_payload(model)} if getattr(d, 'measurement_error', {}) else {}),

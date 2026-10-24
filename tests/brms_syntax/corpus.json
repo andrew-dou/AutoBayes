@@ -9145,8 +9145,8 @@
    "result": {
     "status": "error",
     "type": "FormulaError",
-    "message": "'fcor(V_fcor)': brms's a fixed residual covariance matrix, fcor() is not offered here; the autocorrelation terms supported are ar(), ma() and arma() in brms's regression formulation (docs/autocorrelation.md, divergence D69)",
-    "raised_at": "autocor.py:106",
+    "message": "fcor(V_fcor) reads the matrix 'V_fcor' from data2, which is not given: pass data2={'V_fcor': matrix} (fcor() reads its matrix from data2; brms: \"Object 'V_fcor' was not found in 'data2'\"; docs/fcor.md)",
+    "raised_at": "fcor.py:152",
     "stage": "default_priors",
     "mechanism": "refusal",
     "outcome": "refused_named",

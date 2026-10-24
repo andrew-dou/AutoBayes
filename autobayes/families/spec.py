@@ -409,6 +409,9 @@ class FamilySpec:
     # brms's simultaneous autoregressive term sar(M, type = "lag" | "error") (F02b, docs/spatial-sar.md): whether the family takes
     # it, set where a frozen brms case verifies it. Its likelihood is the joint SAR density (autobayes.sar.sar_family).
     sar: bool = False
+    # brms's fixed residual covariance fcor(M) (F03a, docs/fcor.md): whether the family's likelihood takes the known covariance
+    # sigma^2 M of its residuals over the fitted rows, set where a frozen brms case verifies it.
+    fcor: bool = False
     # brms's measurement-error term me(x, sdx) and missing-value term mi(col) with the response's mi() (C06,
     # docs/missing-and-measurement-error.md): whether the family's linear predictor takes them, set where a frozen case verifies
     # it (the response's own mi() is an addition term, "mi" in ``addition_terms``).

@@ -223,9 +223,18 @@ the lagged residuals of earlier rows of its own series in time order, after ever
 positions of a series that the JAX backend compiles. Predictions on the fitted rows add the term from the observed
 residuals, in data order, as brms's `posterior_linpred` does; new rows are refused. Verified against `gauss_ar1`,
 `gauss_arma11` and `gauss_arma22_varint` (lags two deep next to a varying intercept); `ab.log_lik`, `ab.bayes_R2` and
-`ab.loo` (C07) read the predictor with the term, as brms's do; `cov = TRUE`, `cosy()`, `car()`, `fcor()`,
+`ab.loo` (C07) read the predictor with the term, as brms's do; `cov = TRUE`, `cosy()`, `car()`,
 `unstr()`, other families, distributional formulas, addition terms, multivariate formulas, non-linear models, mixtures,
 `gp()` next to the term and new rows are refused (D68-D71); see [autocorrelation](autocorrelation.md).
+
+Fixed residual covariance (F03a, brms's `fcor(M)`): `ab.gaussian("y ~ x + (1 | g) + fcor(V)", data, priors, data2={"V": V})`
+makes the fitted rows jointly normal, `y ~ MultiNormal(mu, sigma^2 V)`, `V` the known `N` by `N` matrix from `data2` (read by
+position; a vector is its diagonal), through its Cholesky factor (a triangular solve that the JAX backend compiles); no
+parameter or prior class of its own; brms's checks of `V` (size, symmetry; Stan's positive definiteness); predictions on the
+fitted rows and joint response draws. Verified against `gauss_fcor` and `gauss_fcor_varint` (G1 compares brms's `Mfcor`);
+other families, distributional formulas, addition terms, ARMA and SAR terms, `mo()`, `gp()`, `me()`/`mi()`, `mm()`, `gr(by = )`,
+multivariate and non-linear use (D144), and `log_lik()`, `loo()`, `waic()`, `bayes_R2()` and new rows (D145) are refused; see
+[fcor](fcor.md).
 
 Missing values and measurement error (C06, brms's `mi()` and `me()`): a list of formulas, one per response,
 `ab.gaussian(["y ~ mi(xm) + w", "xm | mi() ~ w"], data, ab.Priors(resp={...}), rescor=False)`, makes the missing values (NaN) of

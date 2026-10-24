@@ -9,7 +9,8 @@ G1 `check_design`        standata equals the model's design, response, trials, o
                          dmax_k, cmeans_k; an approximate GP's slambda_k, Lgp_k, NBgp_k; C03);
                          an autocorrelation term's Kar, Kma and J_lag, with brms's rows sorted by series and time
                          compared through the permutation derived from the data (C04, adapter.in_data_order);
-                         a SAR term's Msar, eigenMsar, N_tg and its parameter's bounds (F02b, adapter.check_sar_design)
+                         a SAR term's Msar, eigenMsar, N_tg and its parameter's bounds (F02b, adapter.check_sar_design);
+                         an fcor() term's Mfcor and N_tg (F03a, adapter.check_fcor_design)
 G2 `check_logp`          log density with and without the Jacobian, and its prior part, at every point
 G2 `check_gradient`      every gradient coordinate, mapped through the probed parameter table
 G3 `check_derived`       the graph's linear predictor, group effects and correlation matrices, and the raw-scale intercept
@@ -311,6 +312,7 @@ def check_design(b: Bundle) -> None:
                 raise OracleMismatch(f"Gaussian process {g.term!r}: brms {key} is {sd.get(key)!r}; AutoBayes has {value!r}")
     adapter.check_autocor_design(b.fixture, b.model)             # C04: Kar, Kma, J_lag and each sorted row's series and position
     adapter.check_sar_design(b.fixture, b.model)                 # F02b: Msar, eigenMsar, N_tg and the parameter's bounds
+    adapter.check_fcor_design(b.fixture, b.model)                # F03a: Mfcor and N_tg
     check_shrinkage_data(b)                                      # D07: Kscales and a shrinkage prior's data
     check_fixed_parameters(b)                                    # E02: a parameter the formula fixes (bf(quantile = p))
     # the design columns (every formula's), the group partitions and the monotonic codes were matched by content when the

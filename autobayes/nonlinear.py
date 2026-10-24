@@ -615,6 +615,9 @@ def parse_nonlinear(formulas, data: pd.DataFrame | None = None, family: str = "g
         if d.gp_terms:                                                 # C03: brms adds gp_pred_<nlpar>_1 to the parameter
             raise FormulaError(f"{text!r}: the Gaussian process {d.gp_terms[0].term!r} in a non-linear parameter's formula is not "
                                "supported in this slice (divergence D61)")
+        if d.fcor is not None:                                         # F03a: a covariance of the response, not of a parameter
+            raise FormulaError(f"{text!r}: {d.fcor.term} in a non-linear parameter's formula is not supported: a non-linear model "
+                               "takes no fixed residual covariance in this slice (docs/fcor.md, divergence D144)")
         if d.autocor is not None:                                      # C04: brms refuses it too
             raise FormulaError(f"{text!r}: the autocorrelation term {d.autocor.term!r} in a non-linear parameter's formula is not "
                                "supported, as in brms ('Explicit covariance terms can only be specified on mu'; docs/autocorrelation.md)")

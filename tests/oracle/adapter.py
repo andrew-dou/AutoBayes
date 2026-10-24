@@ -115,6 +115,8 @@ F02b: a SAR term (`sar(M, type = "lag" | "error")`) is brms's `Msar` and `eigenM
 and eigenvalues (`check_sar_design`); its parameter, brms's `real<lower=min_eigenMsar,upper=max_eigenMsar>` `lagsar` or `errorsar`,
 maps to `<name>_interval__` (Stan's lower-upper coordinate, recomputed from the value at every point and checked against the
 fixture's `u`, and the probe's step checked, as for `ndt`).
+F03a: an `fcor(M)` term is brms's `Mfcor` (`N` by `N`, the rows in data order: brms does not reorder them) and `N_tg = 1`,
+checked against the model's `Design.fcor` by `check_fcor_design`; it has no parameter of its own.
 
 D07: under a shrinkage prior on b (brms's `horseshoe()` or `R2D2()`, `Model.shrinkage_names`) brms's `b` is a transformed parameter
 `zb .* sdb`: the point gives the model `zb` and the prior's scales (`shrinkage_point`, each vector put in AutoBayes's design-column
@@ -1971,3 +1973,23 @@ def check_sar_design(fixture: Fixture, model: ab.Model) -> None:
     if declared != f"real<lower=min_eigenMsar,upper=max_eigenMsar> {d.parameter};":
         raise OracleMismatch(f"brms declares {declared!r}; the AutoBayes model bounds {d.parameter} by the smallest and largest "
                              "eigenvalue of M")
+
+
+# -- a fixed residual covariance (F03a) ---------------------------------------------------------------------------------
+def check_fcor_design(fixture: Fixture, model: ab.Model) -> None:
+    """G1 of an ``fcor(M)`` term (F03a): brms's ``Mfcor`` is the model's matrix (``Design.fcor.M``) entry by entry, both in data
+    order, and ``N_tg`` is 1 (one block of every row). A model and a fixture of which only one has ``Mfcor`` are a mismatch."""
+    sd = fixture.standata
+    design = getattr(getattr(model, "design", None), "fcor", None)
+    if design is None:
+        if "Mfcor" in sd:
+            raise OracleMismatch("brms has the fixed residual covariance Mfcor; the AutoBayes model has no fcor() term")
+        return
+    if "Mfcor" not in sd:
+        raise OracleMismatch(f"the AutoBayes model has {design.term}; brms's standata has no Mfcor")
+    theirs = np.asarray(sd["Mfcor"], dtype=float)
+    if theirs.shape != design.M.shape or abs_err(theirs, design.M) > DESIGN_ABS:
+        raise OracleMismatch(f"brms's Mfcor ({theirs.shape}) differs from {design.term}'s matrix ({design.M.shape})"
+                             + (f" by {abs_err(theirs, design.M)}" if theirs.shape == design.M.shape else ""))
+    if int(np.asarray(sd.get("N_tg", -1))) != 1:
+        raise OracleMismatch(f"brms has N_tg = {sd.get('N_tg')!r}; {design.term} is one block of every row (N_tg = 1)")

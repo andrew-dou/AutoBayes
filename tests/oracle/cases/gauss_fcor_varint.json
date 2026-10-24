@@ -1,0 +1,79 @@
+{
+ "id": "gauss_fcor_varint",
+ "tier": "F",
+ "feature": "F03_residual_correlation",
+ "note": "F03a, frozen with the feature: brms fcor(V) next to a varying intercept, y ~ x + (1 | g) + fcor(V), on gauss_fcor's data and V (data2_V.csv, the same file); standata Mfcor (36 x 36), N_tg = 1, Z_1_1, J_1; parameters b, Intercept, sigma, sd_1, z_1; normal_fcor_hom(Y | mu, sigma, Lfcor), mu with the group effect r_1_1[J_1] (brms's Stan code, probed); linpred = epred = b_Intercept + b x + r_1_1[J_1], and without the group effect b_Intercept + b x (checked); no newdata (Mfcor is N by N)",
+ "seed": 1022,
+ "n_points": 8,
+ "data": {
+  "generator": "tier_f",
+  "seed": 921,
+  "n": 36,
+  "data2": {
+   "V": "ar1_covariance"
+  }
+ },
+ "brms": {
+  "formula": "y ~ x + (1 | g) + fcor(V)",
+  "family": {
+   "family": "gaussian"
+  },
+  "factors": {
+   "g": [
+    "a",
+    "b",
+    "c",
+    "d",
+    "e",
+    "f"
+   ]
+  },
+  "data2": [
+   "V"
+  ],
+  "priors": [
+   {
+    "prior": "normal(0, 2)",
+    "class": "Intercept"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "b"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "sd",
+    "group": "g"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "sigma"
+   }
+  ]
+ },
+ "autobayes": {
+  "constructor": "gaussian",
+  "formula": "y ~ x + (1 | g) + fcor(V)",
+  "kwargs": {},
+  "priors": {
+   "intercept": [
+    "Normal",
+    0,
+    2
+   ],
+   "b": [
+    "Normal",
+    0,
+    1
+   ],
+   "sd": [
+    "HalfNormal",
+    1
+   ],
+   "sigma": [
+    "HalfNormal",
+    1
+   ]
+  }
+ }
+}

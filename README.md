@@ -60,14 +60,14 @@ refused with an error naming the construct.
 | Ordinal and categorical | `cumulative` (logit, probit, cloglog), `sratio`, `cratio`, `acat`, `hurdle_cumulative`, `cs(x)`, `categorical` | [ordinal and categorical](docs/ordinal-categorical.md) |
 | Population-level terms | numeric and categorical predictors, interactions, `log()`, `exp()`, `sqrt()`, `I(...)`, `offset()`, `mo(x)` | [interactions](docs/interactions.md), [transforms](docs/transforms.md), [offset](docs/offset.md), [monotonic](docs/monotonic.md) |
 | Group-level terms | `(1 \| g)`, `(1 + x \|\| g)`, `(1 + x \| g)` with LKJ, `g:h`, `g/h`, `mm(g, g2)`, `gr(g, by = )`, shared correlation IDs | [varying slopes](docs/varying-slopes.md), [correlated slopes](docs/correlated-slopes.md), [grouping syntax](docs/grouping-syntax.md), [multi-membership and by](docs/multi-membership-and-by.md) |
-| Other terms | `gp(x)` (exact and Hilbert-space), `ar()`, `ma()`, `arma()`, `me(x, sdx)`, `mi(x)` | [Gaussian processes](docs/gaussian-processes.md), [autocorrelation](docs/autocorrelation.md), [missing values and measurement error](docs/missing-and-measurement-error.md) |
+| Other terms | `gp(x)` (exact and Hilbert-space), `ar()`, `ma()`, `arma()`, `fcor(M)`, `me(x, sdx)`, `mi(x)` | [Gaussian processes](docs/gaussian-processes.md), [autocorrelation](docs/autocorrelation.md), [fcor](docs/fcor.md), [missing values and measurement error](docs/missing-and-measurement-error.md) |
 | Model structure | distributional formulas (`sigma ~ z`; `shape`, `phi`, `zi`, `hu`, `alpha`), multivariate Gaussian models with residual correlation, non-linear formulas (`nl = TRUE`), finite mixtures | [distributional](docs/distributional.md), [contexts of the newer families](docs/contexts-newer-families.md), [multivariate](docs/multivariate.md), [non-linear](docs/nonlinear.md), [mixtures](docs/mixtures.md) |
 | Addition terms | `weights()`; `cens()`, including `cens(c, y2)`, for the Gaussian, Weibull, lognormal and Gamma families; `trunc()` for the Gaussian family and `trunc(ub = )` for counts | [addition terms](docs/addition-terms.md), [censoring and truncation](docs/cens-trunc-families.md) |
 | Priors | explicit priors on every class; brms's defaults with `ab.default_priors()`; `horseshoe()` and `R2D2()` on `b` | [default priors](docs/default-priors.md), [shrinkage priors](docs/shrinkage-priors.md) |
 | Post-processing | `predict()` (`posterior_linpred`, `posterior_epred`, `posterior_predict`), `log_lik`, `loo`, `waic`, `loo_compare`, `model_weights`, `bayes_R2`, `hypothesis` (with Savage-Dickey evidence ratios), `conditional_effects` | [post-processing](docs/post-processing.md), [prediction](docs/linear-prediction.md) |
 
 Not yet: `s()` and `t2()`; `multinomial`, `dirichlet`, `dirichlet_multinomial`, `logistic_normal` and `cox`;
-`car`, `fcor`, `unstr` and `cosy`; K-fold cross-validation and stacking weights. Combinations no frozen brms case
+`car`, `unstr` and `cosy`; K-fold cross-validation and stacking weights. Combinations no frozen brms case
 checks yet are refused, each naming its divergence row. The full map is
 [current capabilities](docs/current-capabilities.md).
 
