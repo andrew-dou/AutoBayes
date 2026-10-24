@@ -15,7 +15,9 @@
 - predictions (the truncated means and draws of counts by hand, censoring changing none), ``log_lik()`` as each model's own
   pointwise density (and the Gaussian's censored and truncated rows, which E04 brings into ``log_lik()``), ``loo()``,
   ``hypothesis()``, ``conditional_effects()``'s refusal, prior-predictive draws, ``describe()``, the target identity, the fit
-  record and default priors; every refusal by message.
+  record and default priors; every refusal by message;
+- the branches no frozen case reaches: the shape derivative's Python ``impl`` and its JAX lowering in a gradient graph, an
+  unconverged series, the Gaussian's one-sided truncation in ``log_lik()``, a count lower bound at or below 0.
 
 Nothing samples; the comparisons with brms are the oracle's (tests/oracle: ``weibull_censored``, ``lognormal_censored``,
 ``poisson_truncated``, ``lognormal_censored_interval_weighted``, ``poisson_truncated_weighted_post``,
@@ -31,6 +33,7 @@ import arviz as az
 import numpy as np
 import pandas as pd
 import pytensor
+import pytensor.scalar as ps
 import pytensor.tensor as pt
 import pytest
 from scipy import stats
@@ -489,6 +492,7 @@ def test_the_links_multivariate_and_nonlinear_models_refuse_them():
     ([0, 1, -1, 2] + [0] * 6, None, r"code 2 \(interval censoring\) needs brms's cens\(cc, y2\)"),
     ([0, 1, -1, 3] + [0] * 6, "ypos2", r"censoring codes must be -1 \(left\), 0 \(none\), 1 \(right\) or 2 \(interval\); found 3.0"),
     ([0, 1, -1, 2] + [0] * 6, "x", r"an interval-censored row of 'cens\(cc, x\)' lies in \(y, y2\] with y2 > y; row 3 has y = 0.4 and y2 = 0.3"),
+    ([0, 1, -1, 2] + [0] * 6, "g", r"column 'g' has dtype \w+; the upper bounds of 'cens\(cc, g\)' must be numeric"),
 ])
 def test_censoring_codes_and_upper_bounds_are_validated(codes, y2, needle):
     lhs = f"ypos | cens(cc, {y2})" if y2 else "ypos | cens(cc)"
@@ -753,3 +757,84 @@ def test_weibull_cens_with_weights_and_with_a_shape_formula_equal_scipy():
     obs, mu, shape = _observed_logp_and_parameters(formula)
     assert shape.shape == (len(df),)
     assert abs(obs - float(np.sum(_weibull_censored_rows(df, mu, shape)))) <= 1e-12 * abs(obs)
+
+
+# -- 7. the branches no frozen case reaches ------------------------------------------------------------------------------------
+@pytest.mark.parametrize("a,x", [(0.31, 0.2), (2.24, 2.45), (7.5, 24.6)])
+def test_shape_derivative_op_runs_its_python_impl_on_a_scalar_graph(a, x):
+    """On a graph of PyTensor scalars (a tensor graph's Elemwise calls the vectorised NumPy function of the op's
+    ``nfunc_spec`` instead) the shape derivative op runs its Python ``impl``: a float64 equal to ``dP/da``, from the 80-digit
+    reference as ``P d log P/da`` in the series regime (``x < a + 1``) and ``-Q d log Q/da`` in the continued fraction's."""
+    av, xv = ps.float64("a"), ps.float64("x")
+    got = pytensor.function([av, xv], T._gammainc_da(av, xv))(a, x)
+    if x < a + 1.0:
+        lp, dlp, _ = exact(_log_p, a, x)
+        ref = math.exp(lp) * dlp
+    else:
+        lq, dlq, _ = exact(_log_q, a, x)
+        ref = -math.exp(lq) * dlq
+    assert type(got) is np.float64 and abs(got - ref) <= 1e-13 * abs(ref), (a, x, got, ref)
+
+
+def test_shape_derivative_lowers_to_jax_in_a_compiled_gradient_graph():
+    """A gradient graph of ``gammainc_exact`` and ``gammaincc_exact`` compiled to JAX (not JAX's autodiff of the jaxified value,
+    which the tests above take and which needs no lowering) carries the shape derivative op, lowered to XLA's
+    ``igamma_grad_a``: equal to PyTensor's gradient (this module's series and continued fraction) to 2e-13 relative."""
+    pytest.importorskip("jax")
+    a, x = (np.array([p[k] for p in GAMMAINC_GRID]) for k in range(2))
+    av, xv = pt.dvector("a"), pt.dvector("x")
+    grads = [pt.grad(pt.log(T.gammainc_exact(av, xv)).sum(), av), pt.grad(pt.log(T.gammaincc_exact(av, xv)).sum(), av)]
+    on_jax, on_pytensor = pytensor.function([av, xv], grads, mode="JAX"), pytensor.function([av, xv], grads)
+    assert any(isinstance(getattr(node.op, "scalar_op", None), type(T._gammainc_da)) for node in on_jax.maker.fgraph.toposort())
+    for got, ref in zip(on_jax(a, x), on_pytensor(a, x)):
+        np.testing.assert_allclose(np.asarray(got), np.asarray(ref), rtol=2e-13)
+
+
+def test_an_unconverged_series_is_nan_not_a_partial_sum():
+    """Near ``x = a`` the terms of the series of ``P`` fall off as ``exp(-n^2 / (2 a))``, so it needs about 8 sqrt(a) of them,
+    2.6e5 at ``a = 1e9``: beyond the cap of 100,000 steps, that row is NaN rather than a partial sum, while the other rows of
+    the same call converge and are exact."""
+    assert T._MAX_STEPS == 100_000
+    out = T.gammainc_shape_derivative(np.array([1e9, 2.24]), np.array([1e9 - 0.5, 2.45]))
+    lp, dlp, _ = exact(_log_p, 2.24, 2.45)
+    assert np.isnan(out[0]) and abs(out[1] - math.exp(lp) * dlp) <= 1e-13 * abs(math.exp(lp) * dlp), out
+
+
+def test_log_lik_of_a_model_without_cens_or_trunc_is_its_density_unchanged():
+    """``censored_truncated_log_lik`` returns the family's density of a model with neither term as it is, the same array
+    (``log_lik()`` itself calls it only when one of them is present)."""
+    m = ab.gaussian("ypos ~ x", FRAME, ab.Priors(intercept=ab.Normal(0, 2), b=ab.Normal(0, 1), sigma=ab.HalfNormal(1)))
+    ll = np.arange(20.0).reshape(1, 2, 10)
+    assert m.design.cens is None and m.design.lb is None
+    assert lk.censored_truncated_log_lik(m, None, None, ll) is ll
+
+
+@pytest.mark.parametrize("term,side", [("trunc(lb = 0.1)", "lb"), ("trunc(ub = 5)", "ub")])
+def test_gaussian_log_lik_under_one_sided_truncation_by_hand(term, side):
+    """log_lik() of a Gaussian truncated on one side (a family without ``log_truncation``): each row's Normal log density
+    minus the log mass above the lower bound, ``log Phi((mu - lb) / sigma)``, or below the upper bound, ``log Phi((ub - mu) /
+    sigma)``."""
+    m = ab.gaussian(f"ypos | {term} ~ x", FRAME, ab.Priors(intercept=ab.Normal(0, 2), b=ab.Normal(0, 1), sigma=ab.HalfNormal(1)))
+    post = az.from_dict(posterior={"Intercept": np.full((1, 2), 0.3), "x": np.full((1, 2), -0.4), "sigma": np.full((1, 2), 0.7)})
+    eta, y = 0.3 - 0.4 * FRAME.x.to_numpy(), FRAME.ypos.to_numpy()
+    mass = log_ndtr((eta - 0.1) / 0.7) if side == "lb" else log_ndtr((5.0 - eta) / 0.7)
+    np.testing.assert_allclose(ab.log_lik(m, post).to_numpy(), np.broadcast_to(stats.norm.logpdf(y, eta, 0.7) - mass, (1, 2, 10)),
+                               rtol=1e-13)
+    assert (m.design.lb[0], m.design.ub[0]) == ((0.1, np.inf) if side == "lb" else (-np.inf, 5.0))
+
+
+@pytest.mark.parametrize("family,lb", [("poisson", 0), ("negbinomial", -2)])
+def test_a_count_lower_bound_at_or_below_zero_truncates_nothing(family, lb):
+    """With the park lifted (D121), ``trunc(lb = 0)`` or a negative lower bound keeps the whole support, ``P(Y >= lb) = 1``:
+    each row's log density and ``log_lik()`` are the untruncated log mass (SciPy's), the truncated mean is the untruncated
+    model's ``mu`` itself."""
+    m, plain = build_lifted(family, f"cnt | trunc(lb = {lb}) ~ x"), build_lifted(family, "cnt ~ x")
+    eta = 0.3 - 0.4 * FRAME.x.to_numpy()
+    logpmf = scipy_distribution(family, eta, NAT[family]).logpmf(FRAME.cnt.to_numpy())
+    point = m.value_point(intercept=0.3 - 0.4 * XBAR, b=[-0.4], **NAT[family])     # the raw-scale intercept 0.3
+    np.testing.assert_allclose(np.asarray(_rowwise(m)(point), dtype=float), logpmf, rtol=1e-12)
+    post = draws(m, family, n_draws=2)
+    np.testing.assert_allclose(ab.log_lik(m, post).to_numpy(), np.broadcast_to(logpmf, (1, 2, 10)), rtol=1e-12)
+    mean = m.predict(post, kind="mean")["mu"].to_numpy()
+    np.testing.assert_array_equal(mean, plain.predict(post, kind="mean")["mu"].to_numpy())
+    np.testing.assert_allclose(mean[0, 0], np.exp(eta), rtol=1e-14)
