@@ -2036,7 +2036,7 @@
     "D150",
     "D151"
    ],
-   "next_action": "P6 50-digit reference for the exact mean (G4 epred), then ungate g4",
+   "next_action": "none (P6 reference #90)",
    "reserved_divergences": "D148-D151",
    "gates": {
     "sha": "5db6b17a3b2d",
