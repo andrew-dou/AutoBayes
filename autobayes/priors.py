@@ -429,6 +429,12 @@ class Priors:
     docs/spatial-car.md): ``sdcar`` a positive-support prior, ``car`` (escar) and ``rhocar`` (bym2) a ``Beta`` or ``Flat()``,
     the uniform on (0, 1), required exactly for the type (``car_priors``) and refused for every other model.
 
+    ``cortime`` and ``cosy`` are the priors of a residual correlation term (F03b, docs/unstr-cosy.md): ``unstr(time, gr)``'s
+    correlation matrix over the times, ``LKJ(eta)`` (brms's class ``cortime``, placed on its Cholesky factor as
+    ``lkj_corr_cholesky``; default ``lkj(1)``), and ``cosy(time, gr)``'s correlation, ``Flat()`` (brms's default flat prior on
+    its ``real<lower=0,upper=1>``: uniform, proper) or ``Beta(a, b)`` (brms's class ``cosy``); each required exactly for its
+    term and refused for every other model.
+
     A measurement-error term ``me(x, sdx)`` (C06, docs/missing-and-measurement-error.md) has a coefficient of class ``b``
     (brms's ``bsp``, coefficient ``mexsdx``), covered by ``b`` under the term's name, and its latent values a location and a
     scale, ``meanme`` (a location prior) and ``sdme`` (a positive-support prior, or ``Flat()``, brms's default, flat on the
@@ -479,6 +485,10 @@ class Priors:
     nlpars: Mapping[str, Mapping[str, object]] | None = None   # each non-linear parameter's {"b": ..., "sd": ...} (brms's nlpar =; C02)
     ar: Prior | None = None          # an autocorrelation term's autoregressive coefficients (brms class ``ar``; C04)
     ma: Prior | None = None          # an autocorrelation term's moving-average coefficients (brms class ``ma``; C04)
+    # F03b, a residual correlation term (docs/unstr-cosy.md): unstr()'s correlation matrix over the times (brms class ``cortime``,
+    # an LKJ prior) and cosy()'s correlation (brms class ``cosy``, Flat() or a Beta prior on (0, 1))
+    cortime: Prior | None = None
+    cosy: Prior | None = None
     # C06, a measurement-error term me(x, sdx) (docs/missing-and-measurement-error.md): the location and the scale of its latent
     # values, by noisy column (brms classes ``meanme`` and ``sdme``, coefficient ``mex``); a single me() term takes the bare prior
     meanme: Prior | Mapping[str, Prior] | None = None
@@ -591,6 +601,9 @@ class Priors:
         if any(getattr(self, k) is not None for k in _CAR_CLASSES):    # F02a
             raise PriorError("sdcar, car and rhocar are the priors of a CAR term car() (docs/spatial-car.md); a multivariate model "
                              "takes none: a CAR term in a multivariate formula is not supported (divergence D141)")
+        if self.cortime is not None or self.cosy is not None:         # F03b
+            raise PriorError("cortime and cosy are the priors of a residual correlation term unstr(), cosy() (docs/unstr-cosy.md); a "
+                             "multivariate model takes neither: the term in a multivariate formula is not supported (divergence D146)")
         if self.sdgp is not None or self.lscale is not None:          # C03: a multivariate formula takes no gp()
             raise PriorError("sdgp and lscale are the priors of a Gaussian process gp(x) (docs/gaussian-processes.md); a multivariate "
                              "model takes neither: a Gaussian process in a multivariate formula is not supported (divergence D56)")
@@ -992,6 +1005,32 @@ class Priors:
             out[name] = prior
         return out
 
+    def timecor_priors(self, spec) -> dict[str, Prior]:
+        """The prior of a residual correlation term's parameter (F03b, ``spec.timecor``): ``{"cortime": LKJ(eta)}`` for
+        ``unstr()`` (brms's class ``cortime``) or ``{"cosy": Flat() | Beta(a, b)}`` for ``cosy()`` (brms's class ``cosy``).
+        Coverage is exact: the term's class needs its prior, and the other, or either without the term, is refused."""
+        term = getattr(spec, "timecor", None)
+        wanted = term.prior_class if term is not None else None
+        out: dict[str, Prior] = {}
+        for name, allowed, what in (("cortime", _CORRELATION, "an LKJ prior, ab.LKJ(eta) (brms's default lkj(1))"),
+                                    ("cosy", {"Flat", *_UNIT}, "Flat() (brms's default: uniform on (0, 1)) or a Beta prior")):
+            prior = getattr(self, name)
+            if name != wanted:
+                if prior is not None:
+                    has = (f"; '{term.term}' has the class {wanted}" if term is not None else
+                           "; the formula has no residual correlation term unstr() or cosy()")
+                    raise PriorError(f"do not pass {name}{has}")
+                continue
+            if prior is None:
+                raise PriorError(f"the residual correlation term '{term.term}' needs a prior on its {'correlation matrix' if name == 'cortime' else 'correlation'}: "
+                                 f"pass {name}=..., {what} (brms class {name}; docs/unstr-cosy.md)")
+            if not isinstance(prior, Prior):
+                raise PriorError(f"prior for {name!r} must be a Prior, got {type(prior).__name__}")
+            if prior.name not in allowed:
+                raise PriorError(f"prior for {name!r} must be {what}; got {prior}")
+            out[name] = prior
+        return out
+
     def me_priors(self, spec, cls: str) -> dict[str, Prior]:
         """The prior of class ``cls`` (``"meanme"``, the location of a measurement-error term's latent values, or ``"sdme"``,
         their scale; C06) of each ``me(x, sdx)`` term, keyed by its noisy column ``x`` in formula order: a location prior
@@ -1148,6 +1187,7 @@ class Priors:
         self.me_priors(spec, "meanme")                                # and of the measurement-error terms' latent values (C06)
         self.me_priors(spec, "sdme")
         self.car_priors(spec)                                         # and of a CAR term's parameters (F02a)
+        self.timecor_priors(spec)                                     # and of a residual correlation term's parameter (F03b)
         scale = fam.scale_parameter                                   # "sigma", "shape", "phi" or None
         zero = fam.zero_parameter                                     # "zi", "hu" or None (B06)
         extras = {e.name: e for e in fam.extra_parameters}            # alpha, beta or ndt (D01)
@@ -1377,6 +1417,9 @@ class Priors:
             raise PriorError(f"a mixture's priors are per component, {form}; {top} at the top level do not apply")
         if self.ar is not None or self.ma is not None:              # C04: as brms, a mixture takes no autocorrelation term
             raise PriorError("ar and ma are the priors of an autocorrelation term ar(), ma(), arma() (docs/autocorrelation.md); a "
+                             "mixture takes neither, as in brms")
+        if self.cortime is not None or self.cosy is not None:         # F03b: as brms, a mixture takes no residual correlation term
+            raise PriorError("cortime and cosy are the priors of a residual correlation term unstr(), cosy() (docs/unstr-cosy.md); a "
                              "mixture takes neither, as in brms")
         if self.sdgp is not None or self.lscale is not None:          # C03: gp() in a mixture is refused (D55)
             raise PriorError("sdgp and lscale are the priors of a Gaussian process gp() (docs/gaussian-processes.md); a mixture takes "

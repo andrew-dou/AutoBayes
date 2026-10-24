@@ -223,8 +223,8 @@ the lagged residuals of earlier rows of its own series in time order, after ever
 positions of a series that the JAX backend compiles. Predictions on the fitted rows add the term from the observed
 residuals, in data order, as brms's `posterior_linpred` does; new rows are refused. Verified against `gauss_ar1`,
 `gauss_arma11` and `gauss_arma22_varint` (lags two deep next to a varying intercept); `ab.log_lik`, `ab.bayes_R2` and
-`ab.loo` (C07) read the predictor with the term, as brms's do; `cov = TRUE`, `cosy()`,
-`unstr()`, other families, distributional formulas, addition terms, multivariate formulas, non-linear models, mixtures,
+`ab.loo` (C07) read the predictor with the term, as brms's do; `cov = TRUE`,
+other families, distributional formulas, addition terms, multivariate formulas, non-linear models, mixtures,
 `gp()` next to the term and new rows are refused (D68-D71); see [autocorrelation](autocorrelation.md).
 
 Fixed residual covariance (F03a, brms's `fcor(M)`): `ab.gaussian("y ~ x + (1 | g) + fcor(V)", data, priors, data2={"V": V})`
@@ -244,6 +244,18 @@ Stan data (locations, edges, `Nneigh`, `eigenMcar`, the BYM2 `car_scale`), defau
 `gauss_car_esicar`, `gauss_car_icar` (log densities within 3.5e-16 relative), `gauss_car_bym2` and `poisson_car_bym2`, whose G1
 stays an expected failure: brms's `car_scale` carries 1.7e-10 of rounding beyond G1's 1e-12 (D140); new locations, other
 families, disconnected graphs and the other contexts are refused (D141); see [spatial CAR terms](spatial-car.md).
+
+Residual correlation over time (F03b, brms's `unstr(time = tt, gr = subj)` and `cosy(time = tt, gr = subj)`): for the
+Gaussian and Student-t families, each group's residuals are jointly multivariate normal (or t) with covariance
+`sigma^2 Cor_g`. `unstr` takes the group's rows and columns of one correlation matrix over the times, under
+`Priors(cortime=ab.LKJ(eta))`, sampled through its Cholesky factor `Lcortime`. `cosy` is compound symmetry with one
+correlation `cosy` in (0, 1), under `Priors(cosy=ab.Flat())` or a Beta prior. `ab.log_lik` gives each row's density given
+its group's other rows, as brms's does, and `predict(kind="response")` draws each group jointly. Verified against
+`gauss_unstr`, `gauss_cosy`, `student_cosy`, `gauss_unstr_post`, `gauss_unstr_site_varint_post` (unbalanced, unsorted, next to
+a varying intercept) and `student_cosy_post`. Refused: other families, distributional formulas, addition terms, `gp()`,
+`me()`, `mi()`, ARMA, SAR, CAR and `fcor()` terms next to the term, multivariate and non-linear models, mixtures, shrinkage priors,
+`conditional_effects()`, `prior_draws()` and new rows (D146). brms's own `bayes_R2()` misaligns the rows when it sorts them
+(D147). See [unstr and cosy](unstr-cosy.md).
 
 Missing values and measurement error (C06, brms's `mi()` and `me()`): a list of formulas, one per response,
 `ab.gaussian(["y ~ mi(xm) + w", "xm | mi() ~ w"], data, ab.Priors(resp={...}), rescor=False)`, makes the missing values (NaN) of

@@ -38,6 +38,12 @@ def _tails():
     return NORMAL_TAILS
 
 
+def _time_correlation():
+    from autobayes.timecor import NORMAL_TIME             # lazily, as autobayes.timecor imports the formula module
+
+    return NORMAL_TIME
+
+
 def _nonlinear_likelihood(model, mu, scales):
     """A non-linear model's likelihood (C02, docs/nonlinear.md): ``y ~ Normal(mu, sigma)`` with ``mu`` the non-linear predictor
     under the identity link, brms's ``normal_lpdf(Y | mu, sigma)``."""
@@ -80,6 +86,7 @@ GAUSSIAN = FamilySpec(
     sar=True,                                                       # F02b: sar(M, type = ), verified against gauss_sar_lag, gauss_sar_error
     fcor=True,                                                      # F03a: fcor(M), verified against gauss_fcor and gauss_fcor_varint
     car=True,                                                       # F02a: car(), verified against gauss_car_escar, _esicar, _icar, _bym2
+    time_correlation=_time_correlation,                             # F03b: unstr(), cosy(), verified against gauss_unstr, gauss_cosy
     measurement_error=True,                                         # C06: me(x, sdx), verified against gauss_me
     missing_values=True,                                            # C06: mi(col) with col | mi() ~ ..., verified against gauss_mi
     shrinkage=True,                                                 # D07: horseshoe() and R2D2() on b, verified against gauss_horseshoe and gauss_r2d2

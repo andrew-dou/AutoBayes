@@ -65,6 +65,8 @@ formulation (C04, docs/autocorrelation.md) are held in ``ModelSpec.autocor`` (``
 a population-level term (no design column, no ``b`` coefficient), the coefficients ``ar`` and ``ma`` are its own.
 brms's fixed residual covariance ``fcor(M)`` (F03a, docs/fcor.md) is held in ``ModelSpec.fcor`` (``fcor.Fcor``), one per
 formula: no design column and no parameter, the name of a matrix in ``data2`` that the likelihood reads.
+brms's residual correlation structures ``unstr(time, gr)`` and ``cosy(time, gr)`` (F03b, docs/unstr-cosy.md) are held in
+``ModelSpec.timecor`` (``timecor.TimeCor``), one per formula, likewise without a design column.
 
 ``me(x, sdx)`` and ``mi(col)`` are brms's measurement-error and missing-value terms (C06,
 docs/missing-and-measurement-error.md), special terms like ``mo()``: kinds ``"measurement_error"`` and ``"missing"``, a
@@ -140,6 +142,7 @@ _AUTOCOR_RE = re.compile(r"^(ar|ma|arma|cosy|car|sar|unstr)\s*\(", re.S)   # brm
 _SAR_RE = re.compile(r"^sar\s*\(", re.S)                                                              # brms's sar(M, type) (F02b; autobayes.sar)
 _FCOR_RE = re.compile(r"^fcor\s*\(", re.S)                  # brms's fixed residual covariance fcor(M) (F03a; autobayes.fcor)
 _CAR_RE = re.compile(r"^car\s*\(", re.S)                       # brms's spatial CAR term (F02a; autobayes.car), read before the others
+_TIMECOR_RE = re.compile(r"^(unstr|cosy)\s*\(", re.S)                                               # brms's unstr() and cosy() (F03b; autobayes.timecor)
 SUPPORTED_TRANSFORMS = ("only log(col), exp(col), sqrt(col), I(col^k) with integer k, and I(col * k), I(col + k), I(col - k) with a "
                         "numeric constant k are supported as in-formula transforms of one numeric column (A05, docs/transforms.md); "
                         "other function calls and transformations inside the formula are not supported: compute the column in the "
@@ -1495,7 +1498,8 @@ class ModelSpec:
     spatial CAR term (F02a, ``car(M, gr, type)``; ``car.Car``), or None.
     ``response_columns`` (F01b) are the K columns of a response written ``cbind(y1, ..., yK)`` (brms's matrix response of the
     simplex families, ``FamilySpec.simplex``), in the order written; ``response`` is then the synthetic name of that response
-    (``matrix_response_name``), which no data frame holds. Empty for a response of one column."""
+    (``matrix_response_name``), which no data frame holds. Empty for a response of one column.
+    ``timecor`` is its residual correlation term (F03b, ``unstr()`` or ``cosy()``; ``timecor.TimeCor``), or None."""
 
     formula: str
     response: str
@@ -1516,11 +1520,13 @@ class ModelSpec:
     fcor: "Fcor | None" = None
     car: "Car | None" = None
     response_columns: tuple[str, ...] = ()
+    timecor: "TimeCor | None" = None
 
     def __init__(self, formula, response, predictors=(), group=None, intercept=True,
                  levels=(), trials=None, rhs="", terms=(), categoricals=(), interactions=(),
                  *, groups=None, levels_by_group=None, pop_terms=None, group_terms=None, offset=None, additions=(), dpars=(),
-                 monotonics=None, gp_terms=(), autocor=None, sar=None, fcor=None, car=None, response_columns=()):
+                 monotonics=None, gp_terms=(), autocor=None, sar=None, fcor=None, car=None, response_columns=(),
+                 timecor=None):
         """Keep the original positional constructor: without ``pop_terms`` / ``group_terms`` the term model is
         built from the flat ``predictors``, ``terms``, ``categoricals``, ``interactions`` and ``group(s)``.
         Terms given as mappings (``dataclasses.asdict`` output) are rebuilt, the distributional formulas and the
@@ -1546,6 +1552,10 @@ class ModelSpec:
             from autobayes.car import Car
             if not isinstance(car, Car):
                 car = Car(**car)
+        if timecor is not None:                                  # F03b: rebuilt from a mapping (dataclasses.asdict output)
+            from autobayes.timecor import TimeCor
+            if not isinstance(timecor, TimeCor):
+                timecor = TimeCor(**timecor)
         if group_terms is not None:
             if groups is not None or group is not None:
                 raise ValueError("supply group_terms or group/groups, not both")
@@ -1586,7 +1596,7 @@ class ModelSpec:
                       trials=trials, rhs=rhs, categoricals=categoricals,
                       pop_terms=pop_terms, group_terms=group_terms, offset=offset, additions=additions, dpars=dpars,
                       monotonics=monotonics, gp_terms=gp_terms, autocor=autocor, sar=sar, fcor=fcor, car=car,
-                      response_columns=tuple(response_columns))   # F01b: cbind(y1, ..., yK)
+                      response_columns=tuple(response_columns), timecor=timecor)   # F01b: cbind(y1, ..., yK)
         for key, value in values.items():
             object.__setattr__(self, key, value)
 
@@ -1601,7 +1611,8 @@ class ModelSpec:
                     + ((self.sar,) if self.sar is not None else ())
                     + ((self.fcor,) if self.fcor is not None else ())
                     + ((self.car,) if self.car is not None else ())
-                    + ((self.response_columns,) if self.response_columns else ()))
+                    + ((self.response_columns,) if self.response_columns else ())
+                    + ((self.timecor,) if self.timecor is not None else ()))
 
     @property
     def data2_names(self) -> tuple[str, ...]:
@@ -2356,6 +2367,11 @@ def _parse_formulas(formulas, data: pd.DataFrame | None, family: str, categorica
             f"{main!r}: {main0.fcor.term} with a distributional formula is not supported in this slice (brms accepts "
             "bf(y ~ x + fcor(M), sigma ~ z), its normal_fcor_het; docs/fcor.md, divergence D144)"
         )
+    if main0.timecor is not None:                             # F03b: brms's heterogeneous sigma is not verified (D146)
+        raise FormulaError(
+            f"{main!r}: the residual correlation term {main0.timecor.term!r} with a distributional formula is not supported in this "
+            "slice (brms accepts bf(y ~ x + unstr(...), sigma ~ z); docs/unstr-cosy.md, divergence D146)"
+        )
     dpar0 = [parse_formula(f"{name} ~ {rhs}", None, family, None, _ids=True, _dpar=True) for name, rhs, _ in parsed]
     mains = [{t.name for t in s.pop_terms if t.kind == "numeric"} for s in (main0, *dpar0)]
     if isinstance(categorical, Mapping):                    # a declared column is categorical in every formula
@@ -2437,6 +2453,11 @@ def _parse_formulas(formulas, data: pd.DataFrame | None, family: str, categorica
             raise FormulaError(
                 f"{text!r}: {d.fcor.term} in a distributional formula is not supported: it belongs to the response formula, as in "
                 "brms ('Explicit covariance terms can only be specified on mu'; docs/fcor.md)"
+            )
+        if d.timecor is not None:                             # F03b: brms too ('Explicit covariance terms can only be specified on mu')
+            raise FormulaError(
+                f"{text!r}: a residual correlation term in a distributional formula ({d.timecor.term}) is not supported: it belongs "
+                "to the response formula, as in brms (docs/unstr-cosy.md, divergence D146)"
             )
         if d.me_terms:                                       # C06
             raise FormulaError(
@@ -2710,6 +2731,7 @@ def parse_formula(formula: str | list[str], data: pd.DataFrame | None = None, fa
     sars: list = []                                        # (SAR term, piece as written); at most one (F02b)
     fcors: list = []                                       # (fcor() term, piece as written); at most one (F03a)
     cars: list = []                                        # (CAR term, piece as written); at most one (F02a)
+    timecors: list = []                                    # (residual correlation term, piece as written); at most one (F03b)
     saw_intercept_token = False
     remove_intercept = False
 
@@ -2790,7 +2812,12 @@ def parse_formula(formula: str | list[str], data: pd.DataFrame | None = None, fa
 
             cars.append((parse_car(piece, formula), piece))
             continue
-        if _AUTOCOR_RE.match(piece):                            # brms's ar(), ma(), arma() (C04); its other structures refused (D69)
+        if _TIMECOR_RE.match(piece):                            # brms's unstr() and cosy() (F03b, autobayes.timecor)
+            from autobayes.timecor import parse_timecor
+
+            timecors.append((parse_timecor(piece, formula), piece))
+            continue
+        if _AUTOCOR_RE.match(piece):                            # brms's ar(), ma(), arma() (C04)
             from autobayes.autocor import parse_autocor
 
             term = parse_autocor(piece, formula)
@@ -3054,6 +3081,7 @@ def parse_formula(formula: str | list[str], data: pd.DataFrame | None = None, fa
         what = "the multi-membership term" if t.is_mm else "the term with gr(by = )"
         others = ([f"the monotonic term {next(iter(monotonics))!r}"] if monotonics else []) + [f"the Gaussian process {g.term!r}" for g, _ in gps]
         others += [f"the term {name!r}" for name in special_columns] + [f"the autocorrelation term {a.term!r}" for a, _ in autocors]
+        others += [f"the residual correlation term {t.term!r}" for t, _ in timecors]   # F03b
         others += [f"the addition term {a.term!r}" for a in additions]
         if others:
             raise FormulaError(f"{formula!r}: {what} '{p}' next to {others[0]} is not supported in this slice: no frozen brms case "
@@ -3097,6 +3125,19 @@ def parse_formula(formula: str | list[str], data: pd.DataFrame | None = None, fa
                   + [f"the group term '{t.canonical}'" for t in group_terms if t.custom]
                   + [f"the SAR term {s.term!r}" for s, _ in sars] + [f"the fixed residual covariance {f.term!r}" for f, _ in fcors])
         check_car(car, cars[0][1], response=response, trials=trials, fam=fam, others=others, formula=formula)
+    timecor = None
+    if timecors:                                             # F03b: one residual correlation term, for a family that takes it
+        from autobayes.timecor import check_timecor
+
+        if len(timecors) > 1:
+            raise FormulaError(f"{formula!r}: {timecors[0][1]!r} and {timecors[1][1]!r}: one residual correlation term per formula in "
+                               "this slice (docs/unstr-cosy.md, divergence D146)")
+        timecor = timecors[0][0]
+        others = ([f"the Gaussian process {g.term!r}" for g, _ in gps] + [f"the term {name!r}" for name in special_columns]
+                  + [f"the autocorrelation term {a.term!r}" for a, _ in autocors] + [f"the SAR term {t.term!r}" for t, _ in sars]
+                  + [f"the fixed residual covariance {t.term!r}" for t, _ in fcors] + [f"the CAR term {t.term!r}" for t, _ in cars])
+        check_timecor(timecor, timecors[0][1], response=response, trials=trials, fam=fam, additions=additions, formula=formula,
+                      others=others)
     for name, cols in special_columns.items():                # C06: a column me() or mi() reads is read by nothing else
         elsewhere = [*(p for p in predictors if p != name and p not in special_columns), *transform_columns, *mo_columns, *gp_columns,
                      *(c for other, oc in special_columns.items() if other != name for c in oc),
@@ -3125,6 +3166,7 @@ def parse_formula(formula: str | list[str], data: pd.DataFrame | None = None, fa
               *([offset.column] if offset is not None else []), *(c for a in additions for c in a.columns)}
     in_use |= set(autocor.columns) if autocor is not None else set()   # the time and series columns (C04)
     in_use |= set(car.columns) if car is not None else set()   # the column of locations (F02a)
+    in_use |= set(timecor.columns) if timecor is not None else set()   # the time and grouping columns (F03b)
     derived_columns: dict[str, GroupTerm] = {}
     for term in group_terms:
         if not term.derived:
@@ -3210,6 +3252,7 @@ def parse_formula(formula: str | list[str], data: pd.DataFrame | None = None, fa
     parts += [sar.term] if sar is not None else []                # the SAR term, after it (F02b)
     parts += [fcors[0][0].term] if fcors else []                  # the fixed residual covariance, after it (F03a)
     parts += [car.term] if car is not None else []                # the CAR term, last (F02a)
+    parts += [timecor.term] if timecor is not None else []        # the residual correlation term, last (F03b)
     canonical_rhs = " + ".join(parts) if parts else "1"           # intercept-only population model: 'y ~ 1'
     if remove_intercept:
         canonical_rhs = "0 + " + canonical_rhs
@@ -3221,7 +3264,7 @@ def parse_formula(formula: str | list[str], data: pd.DataFrame | None = None, fa
     spec = ModelSpec(
         formula=formula.strip(), response=response, intercept=not remove_intercept, trials=trials,
         rhs=canonical_rhs, categoricals=categoricals, pop_terms=pop_terms, group_terms=tuple(group_terms),
-        offset=offset, additions=additions, gp_terms=tuple(g for g, _ in gps), autocor=autocor, sar=sar, car=car,
+        offset=offset, additions=additions, gp_terms=tuple(g for g, _ in gps), autocor=autocor, sar=sar, car=car, timecor=timecor,
         fcor=fcors[0][0] if fcors else None,
     )
     if sar is not None:                                      # F02b: the family and the terms next to it (D143)
@@ -3698,6 +3741,10 @@ def validate_data(spec: ModelSpec, data: pd.DataFrame, family: str = "gaussian",
         from autobayes.autocor import series_layout
 
         series_layout(spec.autocor, data)
+    if spec.timecor is not None:                                  # F03b: the groups and their time order, or refused
+        from autobayes.timecor import time_layout
+
+        time_layout(spec.timecor, data)
     levels_by_group = {}
     for t in spec.group_terms:                                    # a derived factor's levels: the observed combinations
         if t.is_mm:                                               # D08: the union of the member columns' labels, sorted
@@ -3739,4 +3786,5 @@ def validate_data(spec: ModelSpec, data: pd.DataFrame, family: str = "gaussian",
         group_terms=spec.group_terms, offset=spec.offset, additions=spec.additions, dpars=spec.dpars, monotonics=monotonics,
         gp_terms=gp_terms,
         autocor=spec.autocor, sar=spec.sar, fcor=spec.fcor, car=spec.car, response_columns=getattr(spec, "response_columns", ()),   # F01b
+        timecor=spec.timecor,                                                                                                     # F03b
     )

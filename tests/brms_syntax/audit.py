@@ -511,6 +511,16 @@ def compare_univariate(model, reading: Reading, issues: list, notes: list, what:
             issues.append(f"{what}brms has Kar, Kma = {int(reading.get('Kar'))}, {int(reading.get('Kma'))}; AutoBayes p, q = {ac.p}, {ac.q}")
         if not _close(reading.get("J_lag"), ac.J_lag) or not np.array_equal(ac.order, np.arange(ac.n)):
             issues.append(f"{what}brms's J_lag differs from AutoBayes's (the data are in brms's series and time order)")
+    if getattr(spec, "timecor", None) is not None:                   # unstr()/cosy() (F03b): N_tg, begin_tg, end_tg, nobs_tg,
+        tc = d.timecor                                               # and unstr()'s n_unique_t, n_unique_cortime, Jtime_tg
+        mine = {"N_tg": len(tc.groups), "nobs_tg": tc.nobs, "begin_tg": tc.begin + 1, "end_tg": tc.begin + tc.nobs}
+        if tc.call == "unstr":
+            mine.update(n_unique_t=tc.dim, n_unique_cortime=tc.dim * (tc.dim - 1) // 2, Jtime_tg=tc.Jtime)
+        for key, value in mine.items():
+            if not reading.has(key) or not _close(reading.get(key), value):
+                issues.append(f"{what}brms's {key} differs from AutoBayes's groups of {spec.timecor.term}")
+        if not np.array_equal(tc.order, np.arange(tc.n)):
+            issues.append(f"{what}the data are not in brms's group and time order")
     q = getattr(model, "quantile", None)
     if q is not None:
         if not reading.has("quantile") or not _close(reading.get("quantile"), q):

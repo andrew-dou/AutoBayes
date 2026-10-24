@@ -10,10 +10,13 @@ G1 `check_design`        standata equals the model's design, response, trials, o
                          an autocorrelation term's Kar, Kma and J_lag, with brms's rows sorted by series and time
                          compared through the permutation derived from the data (C04, adapter.in_data_order);
                          a SAR term's Msar, eigenMsar, N_tg and its parameter's bounds (F02b, adapter.check_sar_design);
-                         an fcor() term's Mfcor and N_tg (F03a, adapter.check_fcor_design)
+                         an fcor() term's Mfcor and N_tg (F03a, adapter.check_fcor_design);
+                         a residual correlation term's groups (N_tg, begin_tg, end_tg, nobs_tg; unstr's n_unique_t,
+                         n_unique_cortime, Jtime_tg) through the same permutation (F03b, adapter.check_timecor_design)
 G2 `check_logp`          log density with and without the Jacobian, and its prior part, at every point
 G2 `check_gradient`      every gradient coordinate, mapped through the probed parameter table
 G3 `check_derived`       the graph's linear predictor, group effects and correlation matrices, and the raw-scale intercept
+                         (F03b: unstr's Cortime and cosy's Cholesky factor, check_timecor)
                          (the cumulative thresholds and a categorical model's per-category intercepts, B05); an
                          auxiliary parameter's own formula: its per-row values and raw-scale intercept (B01); E03: a zi, hu or
                          alpha formula's values, the inverse of brms's default link of that parameter (_BRMS_DPAR_LINK)
@@ -116,7 +119,8 @@ def prior_names(model) -> list[str]:
     intercept, each component's density as brms adds it, C05);
     the marginal SD and length-scale of every Gaussian process (not its standardised ``zgp``, which brms adds in the model
     block, C03); for a non-linear model (C02), every parameter's coefficients, group SDs and correlation factors, and the
-    auxiliary parameter; an autocorrelation term's ``ar`` and ``ma`` (C04)."""
+    auxiliary parameter; an autocorrelation term's ``ar`` and ``ma`` (C04); a residual correlation term's ``Lcortime``
+    (``lkj_corr_cholesky_lpdf``) or ``cosy`` (F03b)."""
     if adapter.is_multivariate(model):                       # C01: each response's, under its names, and the residual correlation's
         return [model.variable(r, name) for r, sub in model.submodels.items() for name in prior_names(sub)] + (["Lrescor"] if model.rescor else [])
     if adapter.is_nonlinear(model):
@@ -162,6 +166,7 @@ def prior_names(model) -> list[str]:
     out += [v for k, v in getattr(model, "autocor_names", {}).items() if not k.endswith("_coordinate")]   # an ARMA term's ar and ma (C04)
     # F02a: a CAR term's sdcar, car and rhocar (brms's lprior; its latent vectors' densities are in brms's model block)
     out += [v for k, v in getattr(model, "car_names", {}).items() if k in ("sdcar", "car", "rhocar")]
+    out += [v for k, v in getattr(model, "timecor_names", {}).items() if k in ("L", "cosy")]   # F03b: Lcortime or cosy
     # C06: an me() term's meanme and sdme (brms's lprior; its zme and the noisy values' density are in the model block, and the
     # missing values Ymi have no prior); an me() / mi() term's coefficient is among the terms
     out += [roles[k] for roles in getattr(model, "me_names", {}).values() for k in ("mean", "sd")]
@@ -335,6 +340,7 @@ def check_design(b: Bundle) -> None:
     adapter.check_sar_design(b.fixture, b.model)                 # F02b: Msar, eigenMsar, N_tg and the parameter's bounds
     adapter.check_fcor_design(b.fixture, b.model)                # F03a: Mfcor and N_tg
     adapter.check_car_design(b.fixture, b.model)                 # F02a: a CAR term's locations, edges, Nneigh, eigenMcar, car_scale
+    adapter.check_timecor_design(b.fixture, b.model)             # F03b: N_tg, begin_tg, end_tg, nobs_tg, Jtime_tg and the groups
     check_shrinkage_data(b)                                      # D07: Kscales and a shrinkage prior's data
     check_fixed_parameters(b)                                    # E02: a parameter the formula fixes (bf(quantile = p))
     # the design columns (every formula's), the group partitions and the monotonic codes were matched by content when the
@@ -542,6 +548,7 @@ def check_derived(b: Bundle) -> None:
     check_shrinkage(b)                                               # D07: b, sdb and R2D2_tau2 of a shrinkage prior on b
     check_derived_parameters(b)                                      # E02: the GEV's xi against brms's dpar_epred record
     check_car_effects(b)                                             # F02a: a CAR term's rcar against brms's
+    check_timecor(b)                                                 # F03b: unstr's Cortime, cosy's Cholesky factor
 
 
 def check_car_effects(b: Bundle) -> None:
@@ -569,6 +576,28 @@ def check_category_effects(b: Bundle, k: int, p, g: str, coef: str, eff) -> None
         err = rel_err(eff[b.gmap.level_of[g], c], np.atleast_1d(p.pars[f"r_{m}_{dp}_{cn}"]))
         if err > PRED_REL:
             raise OracleMismatch(f"point {k}: group effects of {coef!r} of {g!r} in {dp} differ from brms r_{m}_{dp}_{cn} by {err}")
+
+
+def check_timecor(b: Bundle) -> None:
+    """G3 of a residual correlation term (F03b): ``unstr``'s graph deterministic ``Cortime`` and its ``Lcortime`` equal brms's
+    ``Cortime`` and ``Lcortime`` at every point; for ``cosy``, the Cholesky factor the graph builds from its ``cosy`` (the
+    compound-symmetric matrix of the largest group) equals brms's ``Lcortime``. Nothing for a model without the term."""
+    from autobayes.timecor import cosy_cholesky
+
+    roles = getattr(b.model, "timecor_names", {})
+    if not roles:
+        return
+    pmm = b.model.pymc_model
+    if "L" in roles:
+        outs, refs = [pmm[roles["cor"]], pmm[roles["L"]]], ("Cortime", "Lcortime")
+    else:
+        outs, refs = [cosy_cholesky(pmm[roles["cosy"]], b.model.design.timecor.dim)], ("Lcortime",)
+    fn = pmm.compile_fn(pmm.replace_rvs_by_values(outs), inputs=pmm.value_vars, point_fn=True, on_unused_input="ignore")
+    for k, p, vp in b.points():
+        for name, value in zip(refs, fn(vp)):
+            err = rel_err(np.asarray(value, dtype=float), np.atleast_2d(p.pars[name]))
+            if err > PRED_REL:
+                raise OracleMismatch(f"point {k}: the graph's {name} differs from brms's by {err}")
 
 
 _SHRINKAGE_DATA = ("Kscales", "hs_df", "hs_df_global", "hs_df_slab", "hs_scale_global", "hs_scale_slab", "R2D2_mean_R2",
@@ -778,6 +807,8 @@ def check_default_prior(b: Bundle) -> None:
     expected |= {*mixture["sigma"], "theta"} if mixture else set()
     expected |= {part for part in ("ar", "ma") if part in getattr(b.model, "autocor_names", {})}   # C04: an ARMA term's ar and ma
     expected |= set(getattr(b.model, "sar_names", {}))     # F02b: a SAR term's lagsar or errorsar
+    timecor = getattr(b.model.spec, "timecor", None)       # F03b: unstr()'s cortime or cosy()'s cosy
+    expected |= {timecor.prior_class} if timecor is not None else set()
     expected |= {"meanme", "sdme"} if b.model.spec.me_terms else set()     # C06: an me() term's latent values
     expected |= set(b.model.spec.car.classes) if getattr(b.model.spec, "car", None) is not None else set()   # F02a: sdcar, car, rhocar
     if not expected <= classes:

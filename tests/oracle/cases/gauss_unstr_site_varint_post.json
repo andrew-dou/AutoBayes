@@ -1,0 +1,116 @@
+{
+ "id": "gauss_unstr_site_varint_post",
+ "tier": "F",
+ "feature": "F03_residual_correlation",
+ "note": "F03b: unstr(time = tt, gr = site) on an unbalanced panel (25 sites of one or two rows, each pair two of the four times, rows in neither site nor time order) next to a varying intercept of h: brms sorts the rows by site and time, Jtime_tg pads a short group with 0, and the flex density takes each group's rows and columns of Cortime (checked on the frozen points); log_lik is each row's density given its site's other rows, in data order. brms's bayes_R2 (recorded) pairs the response in data order with posterior_epred in its sorted order (it equals var(epred) / (var(epred) + var(y - epred[, sorted rows])) to 5e-16 and differs from the aligned R2 by up to 24%; divergence D147): the case compares log_lik and loo only. Seeded points on (-0.5, 0.5) (point_halfwidth), as gauss_unstr_post",
+ "seed": 1026,
+ "n_points": 8,
+ "data": {
+  "generator": "tier_f",
+  "seed": 937,
+  "n": 36
+ },
+ "brms": {
+  "formula": "y ~ x + (1 | h) + unstr(time = tt, gr = site)",
+  "family": {
+   "family": "gaussian"
+  },
+  "factors": {
+   "site": [
+    "s01",
+    "s02",
+    "s03",
+    "s04",
+    "s05",
+    "s06",
+    "s07",
+    "s08",
+    "s09",
+    "s10",
+    "s11",
+    "s12",
+    "s13",
+    "s14",
+    "s15",
+    "s16",
+    "s17",
+    "s18",
+    "s19",
+    "s20",
+    "s21",
+    "s22",
+    "s23",
+    "s24",
+    "s25"
+   ],
+   "h": [
+    "h1",
+    "h2",
+    "h3",
+    "h4"
+   ]
+  },
+  "priors": [
+   {
+    "prior": "normal(0, 2)",
+    "class": "Intercept"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "b"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "sd",
+    "group": "h"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "sigma"
+   },
+   {
+    "prior": "lkj(2)",
+    "class": "cortime"
+   }
+  ],
+  "extras": [
+   "log_lik",
+   "bayes_R2",
+   "loo"
+  ],
+  "point_halfwidth": 0.5
+ },
+ "autobayes": {
+  "constructor": "gaussian",
+  "formula": "y ~ x + (1 | h) + unstr(time = tt, gr = site)",
+  "kwargs": {},
+  "priors": {
+   "intercept": [
+    "Normal",
+    0,
+    2
+   ],
+   "b": [
+    "Normal",
+    0,
+    1
+   ],
+   "sd": [
+    "HalfNormal",
+    1
+   ],
+   "sigma": [
+    "HalfNormal",
+    1
+   ],
+   "cortime": [
+    "LKJ",
+    2
+   ]
+  },
+  "post": [
+   "log_lik",
+   "loo"
+  ]
+ }
+}

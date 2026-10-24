@@ -123,6 +123,15 @@ the rows (`AutocorDesign`: each row's series and position in time order, brms's 
 `Design.autocor` holds on the fitted rows; the model adds the term to the parent's linear predictor while Bambi builds it,
 after every other term, and Bambi's formula never sees it.
 
+## The residual correlation term: `ModelSpec.timecor`
+
+brms's `unstr(time, gr)` and `cosy(time, gr)` (F03b, docs/unstr-cosy.md) are not population-level terms either: one per
+formula, held as `timecor.TimeCor(call, time, gr)` (`term` its canonical spelling, written last; `columns` the time and
+grouping columns; `prior_class` `cortime` or `cosy`), or None. `timecor.time_layout(term, frame)` gives the groups of the rows
+(`TimeCorDesign`: each row's group and row of the correlation matrix, brms's sorted Stan rows, `nobs_tg`, `Jtime_tg` and the
+patterns of rows the groups share), which `Design.timecor` holds on the fitted rows; the term changes the likelihood, not the
+linear predictor, and Bambi's formula never sees it.
+
 ## Distributional formulas: `ModelSpec.dpars`
 
 A model given a list of formulas (B01, docs/distributional.md), `["y ~ x + (1 | g)", "sigma ~ z"]`, holds each formula

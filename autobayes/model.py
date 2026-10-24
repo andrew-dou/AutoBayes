@@ -39,7 +39,9 @@ replaces the Gaussian likelihood with the joint SAR density of the responses (``
 Gaussian likelihood the rows' joint normal with covariance ``sigma^2 M``, ``M`` from ``data2`` (``autobayes.fcor``; ``Design.fcor``
 holds ``M`` and its Cholesky factor). brms's spatial CAR term ``car(M, gr, type)`` (F02a, docs/spatial-car.md) adds one effect per
 location to the Gaussian or Poisson linear predictor through the same hook as ``mo()``, its adjacency matrix read from ``data2``
-(``autobayes.car``; ``Design.car`` holds the locations and the graph).
+(``autobayes.car``; ``Design.car`` holds the locations and the graph). brms's residual correlation structures ``unstr(time, gr)`` and
+``cosy(time, gr)`` (F03b, docs/unstr-cosy.md) replace the Gaussian or Student-t likelihood by the joint density of each
+group's rows (``autobayes.timecor``; ``Design.timecor`` holds the groups of the fitted rows).
 """
 from __future__ import annotations
 
@@ -208,6 +210,7 @@ class Design:
     sar: object | None = None          # sar.SarDesign: a SAR term's weight matrix and its eigenvalues on the fitted rows (F02b), or None
     fcor: object | None = None         # fcor.FcorDesign: the fixed residual covariance of an fcor(M) term on the fitted rows (F03a), or None
     car: object | None = None          # car.CarDesign: a CAR term's locations and graph on the fitted rows (F02a), or None
+    timecor: object | None = None      # timecor.TimeCorDesign: the groups of a residual correlation term on the fitted rows (F03b), or None
     measurement_error: Mapping[str, MeasurementBlock] = field(default_factory=lambda: MappingProxyType({}))   # each me() term's block, by noisy column (C06)
     missing: Mapping[str, MissingBlock] = field(default_factory=lambda: MappingProxyType({}))   # each column whose missing values are parameters (C06)
     category_specific: Mapping[str, np.ndarray] = field(default_factory=lambda: MappingProxyType({}))   # each cs() term's column on the fitted rows (D04; brms's Xcs), by column
@@ -422,6 +425,7 @@ class Model:
                 + [c for d in spec0.dpars for t in d.group_terms for c in t.data_columns])   # and their shared-ID terms (D08)
         cols += list(spec0.autocor.columns) if spec0.autocor is not None else []   # an autocorrelation term's time and series (C04)
         cols += list(spec0.car.columns) if spec0.car is not None else []   # a CAR term's locations (F02a)
+        cols += list(spec0.timecor.columns) if spec0.timecor is not None else []   # a residual correlation term's (F03b)
         cols = list(dict.fromkeys(cols))                        # the offset column may also be a predictor
         missing = [c for c in cols if c not in data.columns]
         if missing:
@@ -530,6 +534,10 @@ class Model:
             from autobayes.car import car_layout
             self._car_design, notes = car_layout(self.spec.car, self.data, data2)
             self.warnings.extend(notes)
+        self._timecor_design = None                          # F03b: the groups of the fitted rows, brms's sorted Stan rows
+        if self.spec.timecor is not None:
+            from autobayes.timecor import time_layout
+            self._timecor_design = time_layout(self.spec.timecor, self.data)
 
         bambi_family = fam.bambi_family()
         if any(a.kind not in ("mi", "dec") for a in self.spec.additions):   # brms's response addition terms act on the likelihood (B02;
@@ -587,6 +595,9 @@ class Model:
         if self.spec.sar is not None:                        # brms's sar(M, type) (F02b): the joint SAR likelihood
             from autobayes.sar import sar_family
             bambi_family = sar_family(bambi_family, self._sar_design)
+        if self.spec.timecor is not None:                    # brms's unstr(), cosy() (F03b): each group's rows jointly
+            from autobayes.timecor import timecor_family
+            bambi_family = timecor_family(bambi_family, self)
         self.bambi_model = bmb.Model(
             bambi_formula, bambi_data, family=bambi_family,
             priors=bambi_priors,
@@ -665,6 +676,7 @@ class Model:
         variable_names += [v for k, v in self.autocor_names.items() if not k.endswith("_coordinate")]   # ar and ma (C04)
         variable_names += list(self.sar_names.values())      # lagsar or errorsar (F02b)
         variable_names += [v for k, v in self.car_names.items() if not k.endswith("coordinate")]   # a CAR term's (F02a)
+        variable_names += [v for k, v in self.timecor_names.items() if not k.startswith("coordinate")]   # Lcortime, Cortime, cosy (F03b)
         variable_names += [roles[k] for roles in self.me_names.values() for k in ("mean", "sd", "z", "latent", "noisy")]   # C06
         variable_names += [roles["values"] for roles in self.missing_names.values()]   # C06: the missing values Ymi_<col>
         shrinkage = self.shrinkage_names                    # D07: zb, sdb and the horseshoe's or R2D2's own variables
@@ -682,6 +694,7 @@ class Model:
         coords += [roles["coordinate"] for roles in self.gp_names.values()]       # C03
         coords += [v for k, v in self.autocor_names.items() if k.endswith("_coordinate")]   # ar_dim and ma_dim (C04)
         coords += [v for k, v in self.car_names.items() if k.endswith("coordinate")]   # rcar_dim, zcar_dim (F02a)
+        coords += [v for k, v in self.timecor_names.items() if k.startswith("coordinate")]   # cortime_dim, cortime_dim_T (F03b)
         coords += [roles["coordinate"] for roles in self.missing_names.values()]   # C06: the missing rows of each column
         coords += [shrinkage["coordinate"]] if shrinkage else []                    # D07: zb_dim
         coords += ["__obs__"]
@@ -940,6 +953,7 @@ class Model:
                       monotonic=MappingProxyType(self._monotonic_design()), gp=MappingProxyType(self._gp_design()),
                       autocor=self._autocor_design, sar=self._sar_design, fcor=self._fcor_design,   # F02b, F03a
                       car=self._car_design,                                                          # F02a
+                      timecor=self._timecor_design,                                               # F03b
                       measurement_error=MappingProxyType(self._measurement_design()),   # C06
                       missing=MappingProxyType(self._missing_design()),
                       category_specific=MappingProxyType(self._category_specific_design()))   # D04
@@ -1649,6 +1663,7 @@ class Model:
         out.update({k: v for k, v in self.autocor_names.items() if not k.endswith("_coordinate")})   # "ar", "ma" (C04)
         out.update(self.sar_names)                            # "lagsar" or "errorsar" (F02b)
         out.update({k: v for k, v in self.car_names.items() if not k.endswith("coordinate") and k != "lpdf"})   # F02a: sdcar, rcar, ...
+        out.update({v: v for k, v in self.timecor_names.items() if not k.startswith("coordinate")})   # F03b: "Lcortime", "Cortime", "cosy"
         return out
 
     @property
@@ -1711,6 +1726,21 @@ class Model:
         scalar sampled as ``<name>_interval__``, also ``names["lagsar"]``). Empty without one."""
         term = getattr(self.spec, "sar", None)                # a non-linear model's spec has none (C02)
         return {term.parameter: term.parameter} if term is not None else {}
+
+    @property
+    def timecor_names(self) -> dict[str, str]:
+        """PyMC names of a residual correlation term (F03b, docs/unstr-cosy.md): ``unstr()``'s ``"L"`` (``Lcortime``, brms's
+        Cholesky factor of the correlation matrix over the times, sampled on Stan's ``cholesky_corr`` coordinates
+        ``Lcortime_cholesky_corr__``), ``"cor"`` (``Cortime``, the matrix, a deterministic) and their dimensions
+        ``"coordinate"`` / ``"coordinate_T"`` (``cortime_dim``, ``cortime_dim_T``, coordinates the times); ``cosy()``'s
+        ``"cosy"`` (brms's ``cosy``). ``names`` holds them under their own names (``names["Lcortime"]``, ``names["Cortime"]``,
+        ``names["cosy"]``; ``"L"`` and ``"cor"`` there are a correlated group term's). Empty without one."""
+        term = getattr(self.spec, "timecor", None)            # a non-linear model's spec has none (C02)
+        if term is None:
+            return {}
+        if term.call == "cosy":
+            return {"cosy": "cosy"}
+        return {"L": "Lcortime", "cor": "Cortime", "coordinate": "cortime_dim", "coordinate_T": "cortime_dim_T"}
 
     @property
     def shrinkage_names(self) -> dict:
@@ -1831,7 +1861,7 @@ class Model:
                     sdgp=None, lscale=None, zgp=None, ar=None, ma=None, meanme=None, sdme=None, zme=None,
                     Ymi=None, alpha=None, beta=None, ndt=None, shrinkage=None, bcs=None, zoi=None, coi=None,
                     kappa=None, quantile=None, tmp_xi=None, lagsar=None, errorsar=None, bs=None, bias=None,
-                    car=None, Llncor=None) -> dict[str, np.ndarray]:
+                    car=None, Llncor=None, Lcortime=None, cosy=None) -> dict[str, np.ndarray]:
         """A point in PyMC's sampled (value) space, from natural-scale quantities.
 
         ``intercept`` is the *model* intercept (at the predictor means when centred),
@@ -1907,6 +1937,9 @@ class Model:
         ``z_m`` of each category's group term in column k). The dirichlet family's precision is ``phi``; the logistic_normal
         family's SDs are ``sigma``, K - 1 positive numbers in category order (brms's ``sigma<k>``, stored as their logs), and
         ``Llncor`` the Cholesky factor of their correlation (brms's ``Llncor``, stored on Stan's ``cholesky_corr`` coordinates).
+        F03b (docs/unstr-cosy.md): ``Lcortime`` is ``unstr()``'s Cholesky factor of the correlation matrix over the times (brms's
+        ``Lcortime``: lower triangular, unit-norm rows), stored on Stan's ``cholesky_corr`` coordinates, and ``cosy`` is
+        ``cosy()``'s correlation, strictly between 0 and 1, stored as its logit; each given exactly for its term.
         """
         from autobayes.car import value_entries
         car_point = value_entries(self, car)                  # F02a: a CAR term's values; refused for a model without one
@@ -1920,6 +1953,8 @@ class Model:
                                  "and wiener families' parameters; a mixture has none")
             if ar is not None or ma is not None:              # C04: a mixture has no autocorrelation term
                 raise ValueError("ar and ma are an autocorrelation term's coefficients; a mixture has none")
+            if Lcortime is not None or cosy is not None:      # F03b: nor a residual correlation term
+                raise ValueError("Lcortime and cosy are a residual correlation term's parameters; a mixture has none")
             if shrinkage is not None:                         # D07: a mixture takes no shrinkage prior
                 raise ValueError("shrinkage holds the variables of a shrinkage prior on b; a mixture has none")
             if sdgp is not None or lscale is not None or zgp is not None:   # C03: a mixture has no Gaussian process
@@ -2135,6 +2170,7 @@ class Model:
         point.update(self._monotonic_point(bsp if mo or not (self.spec.me_terms or self.spec.mi_terms) else None, simo))
         point.update(self._gp_point(sdgp, lscale, zgp))      # C03: each Gaussian process's sdgp, lscale and zgp
         point.update(self._autocor_point(ar, ma))            # C04: an autocorrelation term's ar and ma
+        point.update(self._timecor_point(Lcortime, cosy))    # F03b: a residual correlation term's Lcortime or cosy
         point.update(self._measurement_point(None if mo else bsp, meanme, sdme, zme, Ymi))   # C06: me() and mi()
         point.update(cs_point)                                # D04
         point.update(self._sar_point(lagsar, errorsar))       # F02b: a SAR term's lagsar or errorsar
@@ -2278,6 +2314,30 @@ class Model:
             if arr.shape != (orders[part],) or not np.isfinite(arr).all():
                 raise ValueError(f"{part} must have {orders[part]} finite entries ('{term.term}'), got shape {arr.shape}")
             point[roles[part]] = arr
+        return point
+
+    def _timecor_point(self, Lcortime, cosy) -> dict[str, np.ndarray]:
+        """``value_point``'s entries of a residual correlation term (F03b): ``unstr()``'s ``Lcortime`` on Stan's
+        ``cholesky_corr`` coordinates, or ``cosy()``'s ``cosy`` as its logit (the coordinate of PyMC's ``Uniform(0, 1)`` and
+        ``Beta`` alike), exactly for the term the model has."""
+        roles, point = self.timecor_names, {}
+        given = {"L": Lcortime, "cosy": cosy}
+        for key, label in (("L", "Lcortime"), ("cosy", "cosy")):
+            if key not in roles:
+                if given[key] is not None:
+                    raise ValueError(f"this model has no {label}" + (f" ('{self.spec.timecor.term}')" if self.spec.timecor is not None
+                                     else " (no residual correlation term unstr() or cosy())") + f"; {label} does not apply")
+                continue
+            if given[key] is None:
+                raise ValueError(f"{label} is required: the model has the term '{self.spec.timecor.term}'")
+            value = self.pymc_model.rvs_to_values[self.pymc_model[roles[key]]].name
+            if key == "L":
+                point[value] = cholesky_corr_free(check_correlation_cholesky(Lcortime, self.design.timecor.dim, "Lcortime"))
+                continue
+            p = np.asarray(cosy, dtype=float)
+            if p.shape != () or not np.isfinite(p) or not 0 < p < 1:
+                raise ValueError("cosy must be a finite scalar strictly between 0 and 1")
+            point[value] = np.asarray(np.log(p) - np.log1p(-p))
         return point
 
     def _measurement_point(self, bsp, meanme, sdme, zme, Ymi) -> dict[str, np.ndarray]:
@@ -2464,6 +2524,7 @@ class Model:
                     + ([f"simultaneous autoregressive term {s.sar.term}"] if s.sar is not None else [])          # F02b
                     + ([f"fixed residual covariance {s.fcor.term}"] if s.fcor is not None else [])    # F03a
                     + ([f"spatial CAR term {s.car.term}"] if s.car is not None else [])                   # F02a
+                    + ([f"residual correlation term {s.timecor.term}"] if s.timecor is not None else [])   # F03b
                     + (["measurement-error term(s)"] if s.me_terms else []) + (["missing-value term(s)"] if s.mi_terms else [])
                     + ([f"a shrinkage prior on b ({brms_spelling(pr.b).split('(')[0]})"] if self.shrinkage_names else [])   # D07
                     + (["category-specific effect(s) cs()"] if s.cs_terms else []))                      # D04
@@ -2504,6 +2565,7 @@ class Model:
                       f"factor sigma^2 (brms's Mfcor), its rows and columns the fitted rows in data order; diagonal {np.diag(M).min():.4g} "
                       f"to {np.diag(M).max():.4g}, log det {np.linalg.slogdet(M)[1]:.6g}"]
         lines += car_describe(self, "data")                  # F02a: a CAR term's locations and graph
+        lines += self._timecor_data_lines()                  # F03b: the groups of a residual correlation term
         for t in s.transform_terms:
             tr, col = t.transform, d.X_raw[:, s.columns.index(t.name)]
             lines += [f"  {t.name:<10}: in-formula transform of {tr.column!r}, {tr.expression(f'{tr.column}_i')}, range {col.min():.4f} to "
@@ -2778,6 +2840,7 @@ class Model:
                           f"  {roles['zgp']}[j] ~ Normal(0, 1)   (brms's zgp)"]
         lines += self._autocor_prior_lines()                 # C04: ar and ma
         lines += car_describe(self, "priors")                # F02a: sdcar, car, rhocar
+        lines += self._timecor_prior_lines()                 # F03b: cortime or cosy
         if s.me_terms or s.mi_terms:                         # C06: an me() / mi() term's coefficient (brms bsp, class b)
             from autobayes.default_priors import brms_rename
 
@@ -2812,6 +2875,7 @@ class Model:
         else:                                                # F02b: the joint SAR density in place of the family's
             from autobayes.sar import likelihood_lines
             lines += likelihood_lines(self)
+        lines += self._timecor_lines()                       # F03b: each group's rows jointly
         lines += self._addition_likelihood_lines()
         if self.default_prior_labels:                         # priors filled in by ab.default_priors() (A07)
             from autobayes.default_priors import BRMS_VERSION
@@ -2919,6 +2983,7 @@ class Model:
             sd_ = d.sar
             roles[f"{sd_.parameter}_interval__"] = (f"log(({sd_.parameter} - lower) / (upper - {sd_.parameter})), lower and upper the "
                                                     f"smallest and largest eigenvalue of {sd_.matrix} (Stan's lower-upper coordinate)")
+        roles.update(self._timecor_roles())                  # F03b: Lcortime's cholesky_corr coordinates, or logit(cosy)
         shrinkage_note = ""
         if self.shrinkage_names:                             # D07: zb and the shrinkage prior's scales; b, sdb deterministic
             from autobayes.shrinkage import deterministic_note, value_roles
@@ -2933,6 +2998,7 @@ class Model:
                      + "".join(f"; {dn['value']} = {_DPAR_INVERSE[self.design.dpars[name].link].format(name)}, one {name} per row (B01)"
                                for name, dn in self.dpar_names.items())
                      + "".join(f"; {me['latent']} = meanme_{x} + sdme_{x} * zme_{x}, one per row (brms's Xme)" for x, me in self.me_names.items())
+                     + (f"; {self.timecor_names['cor']} = Lcortime Lcortime^T (brms's Cortime)" if "cor" in self.timecor_names else "")
                      + shrinkage_note
                      + (f"; {n['linpred']} = mu_i[k], one per row and threshold (D04)" if s.cs_terms else ""))
         return "\n".join(lines)
@@ -3049,6 +3115,57 @@ class Model:
                 residual,
                 f"  {' and '.join(part for part, _ in term.parts)} {'are' if len(term.parts) > 1 else 'is'} unbounded (brms's vector[K] "
                 f"{term.parts[0][0]})" + (": |ar| < 1 is not imposed, so the AR part need not be stationary." if term.p else ".")]
+
+    def _timecor_data_lines(self) -> list[str]:
+        """``describe()``'s data line of a residual correlation term (F03b): its groups, their sizes and the times."""
+        term, d = self.spec.timecor, self.design.timecor
+        if term is None:
+            return []
+        rows = (f"its times {', '.join(d.labels)} (brms's n_unique_t = {d.dim}: the rows and columns of Cortime)" if term.call == "unstr"
+                else f"its positions 1..{d.dim} in time order (the largest group)")
+        return [f"  timecor   : {term.term}: {len(d.groups)} group(s) of {term.gr!r} of {d.nobs.min()} to {d.nobs.max()} rows, each "
+                f"ordered by {term.time!r}; each row is {rows}; {len(d.patterns)} distinct set(s) of rows of the correlation "
+                "matrix; brms's Stan data list the rows sorted by group and then time (N_tg, begin_tg, nobs_tg)"]
+
+    def _timecor_lines(self) -> list[str]:
+        """``describe()``'s paragraph of a residual correlation term (F03b): the joint density of each group's rows."""
+        term = self.spec.timecor
+        if term is None:
+            return []
+        kernel = self.family_spec.time_correlation()
+        nu = "nu, " if kernel.parameters else ""
+        cor = ("Cortime[J_g, J_g], the rows and columns of the group's times J_g in Cortime (unstr: one correlation per pair of "
+               "times)" if term.call == "unstr" else
+               "the compound-symmetric matrix of the group's size, 1 on the diagonal and cosy everywhere else (cosy)")
+        return ["", f"Residual correlation ({term.term}; brms {term.call}())",
+                f"  The rows of different groups of {term.gr!r} are independent; the residuals e_g = y_g - mu_g of group g are jointly",
+                f"  e_g ~ {kernel.name}({nu}0, sigma^2 Cor_g), Cor_g = {cor},",
+                "  so each row is marginally the likelihood above. log_lik() is each row's density given its group's other rows,",
+                "  as brms's log_lik() of this non-factorised model is."]
+
+    def _timecor_prior_lines(self) -> list[str]:
+        """``describe()``'s prior line of a residual correlation term's parameter (F03b)."""
+        term = self.spec.timecor
+        if term is None:
+            return []
+        prior = self.priors.timecor_priors(self.spec)[term.prior_class]
+        if term.call == "unstr":
+            return [f"  Cortime ~ {prior} (brms lkj({prior.params['eta']:g}) on the correlation matrix, class cortime, placed on "
+                    "Lcortime as lkj_corr_cholesky)" + ("   (brms default)" if prior.source == "default" else "")]
+        text = ("Flat(): uniform on (0, 1), proper (brms's flat prior on its real<lower=0,upper=1>)" if prior.name == "Flat"
+                else str(prior))
+        return [f"  cosy ~ {text}   (brms class cosy, lb 0, ub 1)" + ("   (brms default)" if prior.source == "default" else "")]
+
+    def _timecor_roles(self) -> dict[str, str]:
+        """``describe()``'s value variables of a residual correlation term (F03b)."""
+        roles = self.timecor_names
+        if not roles:
+            return {}
+        value = self.pymc_model.rvs_to_values[self.pymc_model[roles.get("L", roles.get("cosy"))]].name
+        if "L" in roles:
+            return {value: f"Lcortime, the Cholesky factor of Cortime, on Stan's cholesky_corr coordinates (canonical partial "
+                           f"correlations, arctanh scale); dims {roles['coordinate']} x {roles['coordinate_T']}"}
+        return {value: "logit(cosy), the compound-symmetric correlation (brms's cosy)"}
 
     def _autocor_prior_lines(self) -> list[str]:
         """``describe()``'s prior lines of an autocorrelation term's ``ar`` and ``ma`` (C04)."""
@@ -3170,6 +3287,7 @@ class Model:
         found += [(f"lscale:{c}", v) for c, v in pr.lscale_priors(s).items()]
         found += list(pr.autocor_priors(s).items())                                  # an ARMA term's ar and ma (C04)
         found += list(pr.car_priors(s).items())                                      # a CAR term's sdcar, car, rhocar (F02a)
+        found += list(pr.timecor_priors(s).items())                                  # cortime or cosy (F03b)
         found += [(f"{cls}:{x}", v) for cls in ("meanme", "sdme") for x, v in pr.me_priors(s, cls).items()]   # me() (C06)
         def formula_priors(name):                            # a parameter's own formula's priors (B01; E03: zi, hu, alpha)
             ds, sub = s.dpar(name), pr.dpar_priors(s, name)

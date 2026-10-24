@@ -31,14 +31,9 @@ import pandas as pd
 
 from autobayes.formula import _IDENT, FormulaError, _split_top_level, categorical_labels, reject_complex
 
-# brms's other autocorrelation structures, refused by name (divergence D69); sar(), fcor() and car() are taken (F02b,
-# autobayes.sar; F03a, autobayes.fcor; F02a, autobayes.car)
-UNSUPPORTED_STRUCTURES = {
-    "cosy": "compound symmetry, cosy()",
-    "unstr": "an unstructured residual covariance, unstr()",
-}
+# brms's other autocorrelation structures (divergence D69) are all taken: sar() (F02b, autobayes.sar), fcor() (F03a,
+# autobayes.fcor), car() (F02a, autobayes.car), unstr() and cosy() (F03b, autobayes.timecor)
 _CALL_RE = re.compile(r"^(ar|ma|arma)\s*\((.*)\)$", re.S)
-_OTHER_RE = re.compile(r"^(cosy|unstr)\s*\(", re.S)
 _FORMALS = {"ar": ("time", "gr", "p", "cov"), "ma": ("time", "gr", "q", "cov"), "arma": ("time", "gr", "p", "q", "cov")}
 _DEFAULT_ORDER = {"ar": (1, 0), "ma": (0, 1), "arma": (1, 1)}       # brms's defaults of (p, q) for each call
 
@@ -98,15 +93,9 @@ def parse_autocor(piece: str, formula: str) -> Autocor | None:
     """brms's autocorrelation term ``piece`` as written in ``formula``: an ``Autocor``, or None when ``piece`` is not one.
     The arguments match R's rules for ``ar(time = NA, gr = NA, p = 1, cov = FALSE)``, ``ma(time = NA, gr = NA, q = 1, cov =
     FALSE)`` and ``arma(time = NA, gr = NA, p = 1, q = 1, cov = FALSE)``: named ones first, then the positional ones in
-    order. Refused, naming the construct: brms's other autocorrelation structures (D69), ``cov = TRUE`` (D68), a ``time``
+    order. Refused, naming the construct: ``cov = TRUE`` (D68), a ``time``
     or ``gr`` that is not one column name (D70), an argument the function does not have, and ``p = q = 0`` (brms refuses
     it too)."""
-    other = _OTHER_RE.match(piece)
-    if other:
-        raise FormulaError(
-            f"{piece!r}: brms's {UNSUPPORTED_STRUCTURES[other.group(1)]} is not offered here; the autocorrelation terms "
-            "supported are ar(), ma() and arma() in brms's regression formulation (docs/autocorrelation.md, divergence D69)"
-        )
     m = _CALL_RE.match(piece)
     if not m:
         return None
