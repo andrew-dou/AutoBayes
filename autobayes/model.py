@@ -204,6 +204,7 @@ class Design:
     measurement_error: Mapping[str, MeasurementBlock] = field(default_factory=lambda: MappingProxyType({}))   # each me() term's block, by noisy column (C06)
     missing: Mapping[str, MissingBlock] = field(default_factory=lambda: MappingProxyType({}))   # each column whose missing values are parameters (C06)
     category_specific: Mapping[str, np.ndarray] = field(default_factory=lambda: MappingProxyType({}))   # each cs() term's column on the fitted rows (D04; brms's Xcs), by column
+    dec: np.ndarray | None = None      # (n,) brms ``dec`` of a ``dec(col)`` term: each wiener row's decision, 1 upper, 0 lower (F04), or None
 
     def __post_init__(self):
         if not self.columns:
@@ -298,7 +299,8 @@ class Model:
     family : str               a registered family name: "gaussian", "student", "poisson", "negbinomial", "gamma", "lognormal", "beta", "bernoulli", "binomial",
                                "zero_inflated_poisson", "hurdle_poisson", "cumulative", "categorical", "mixture", and (D01) "weibull",
                                "exponential", "skew_normal", "shifted_lognormal", "exgaussian", and (D02) "beta_binomial", "geometric",
-                               "negbinomial2", and (E02) "inverse_gaussian", "von_mises", "asym_laplace", "frechet", "gen_extreme_value"
+                               "negbinomial2", and (E02) "inverse_gaussian", "von_mises", "asym_laplace", "frechet", "gen_extreme_value",
+                               and (F04) "wiener"
     categories : tuple[str]    the response's categories in order (the cumulative and categorical families, B05); () otherwise
     hurdle_category : str      hurdle_cumulative's hurdle category, brms's Y = 0 (E01); None otherwise
     family_spec : FamilySpec   the specification of that family under the model's link (autobayes/families/; the registered spec unless ``link`` names another of the family's links, or, E02, ``quantile`` fixes the asymmetric Laplace quantile)
@@ -485,7 +487,8 @@ class Model:
         check_data2(self.spec, data2)                         # F02b: data2 holds what sar() reads, and nothing else
 
         bambi_family = fam.bambi_family()
-        if any(a.kind != "mi" for a in self.spec.additions):   # brms's response addition terms act on the likelihood (B02)
+        if any(a.kind not in ("mi", "dec") for a in self.spec.additions):   # brms's response addition terms act on the likelihood (B02;
+                                                                          # F04: the wiener likelihood reads dec() itself)
             from autobayes.likelihoods import addition_family
             bambi_family = addition_family(bambi_family, fam, addition_data(self.spec, self.data))
         bambi_data = self.data
@@ -865,6 +868,7 @@ class Model:
                       columns=self.spec.columns, categoricals=self.spec.categoricals, offset=offset,
                       weights=additions.get("weights"), cens=additions.get("cens"), lb=additions.get("lb"), ub=additions.get("ub"),
                       rcens=additions.get("rcens"),                                         # E04: cens(col, y2)'s upper bounds
+                      dec=additions.get("dec"),                                             # F04: the wiener decisions
                       dpars=MappingProxyType({d.response: self._dpar_design(d) for d in self.spec.dpars}),
                       monotonic=MappingProxyType(self._monotonic_design()), gp=MappingProxyType(self._gp_design()),
                       autocor=self._autocor_design, sar=self._sar_design,                    # F02b
@@ -1701,7 +1705,7 @@ class Model:
                     zi: float | None = None, hu: float | None = None, bsp=None, simo=None, theta=None,
                     sdgp=None, lscale=None, zgp=None, ar=None, ma=None, meanme=None, sdme=None, zme=None,
                     Ymi=None, alpha=None, beta=None, ndt=None, shrinkage=None, bcs=None, zoi=None, coi=None,
-                    kappa=None, quantile=None, tmp_xi=None, lagsar=None, errorsar=None) -> dict[str, np.ndarray]:
+                    kappa=None, quantile=None, tmp_xi=None, lagsar=None, errorsar=None, bs=None, bias=None) -> dict[str, np.ndarray]:
         """A point in PyMC's sampled (value) space, from natural-scale quantities.
 
         ``intercept`` is the *model* intercept (at the predictor means when centred),
@@ -1765,14 +1769,18 @@ class Model:
         generalized extreme value shape, any finite number, stored as given; the graph derives ``xi`` from it) likewise.
         F02b: ``lagsar`` or ``errorsar``, a SAR term's parameter (brms's), strictly between the smallest and largest eigenvalue of
         its ``M``, stored on PyMC's interval coordinate ``log((rho - lower) / (upper - rho))`` (Stan's), given exactly with the term.
+        F04:
+        the wiener family's ``bs`` (the boundary separation, positive, stored as its log; or its formula's ``{"intercept": ...,
+        "b": ...}``), ``ndt`` (as the shifted lognormal's) and ``bias`` (the relative starting point, in (0, 1), stored as its logit).
         """
         extras = {"alpha": alpha, "beta": beta, "ndt": ndt, "zoi": zoi, "coi": coi,   # D01, E01 (zero_one_inflated_beta)
-                  "kappa": kappa, "quantile": quantile, "tmp_xi": tmp_xi}             # E01 (xbeta), E02
+                  "kappa": kappa, "quantile": quantile, "tmp_xi": tmp_xi,             # E01 (xbeta), E02
+                  "bs": bs, "bias": bias}                                              # F04 (wiener)
         if self.family_spec.mixture:                          # C05: the components' parameters and theta
             if any(v is not None for v in extras.values()):   # D01, E01, E02: a mixture's Gaussian components have none
-                raise ValueError("alpha, beta, ndt, zoi, coi, kappa, quantile and tmp_xi are the skew_normal, exgaussian, "
-                                 "shifted_lognormal, zero_one_inflated_beta, xbeta, von_mises, asym_laplace and gen_extreme_value "
-                                 "families' parameters; a mixture has none")
+                raise ValueError("alpha, beta, ndt, zoi, coi, kappa, quantile, tmp_xi, bs and bias are the skew_normal, exgaussian, "
+                                 "shifted_lognormal, zero_one_inflated_beta, xbeta, von_mises, asym_laplace, gen_extreme_value "
+                                 "and wiener families' parameters; a mixture has none")
             if ar is not None or ma is not None:              # C04: a mixture has no autocorrelation term
                 raise ValueError("ar and ma are an autocorrelation term's coefficients; a mixture has none")
             if shrinkage is not None:                         # D07: a mixture takes no shrinkage prior
@@ -2897,6 +2905,11 @@ class Model:
         for a in self.spec.additions:
             if a.kind == "mi":                               # C06: the response's missing rows, _measurement_data_lines
                 continue
+            if a.kind == "dec":                              # F04: the wiener decisions (brms's dec)
+                upper = int((d.dec == 1).sum())
+                out += [f"  decisions : {a.term}: {upper} row(s) at the upper boundary (1), {d.n - upper} at the lower one (0); "
+                        "predict() needs no decisions (the mean response time is over both boundaries)"]
+                continue
             if a.kind == "weights":
                 out += [f"  weights   : {a.column}, each fitted row's log likelihood multiplied by its weight (brms weights()); weights "
                         f"{d.weights.min():.4f} to {d.weights.max():.4f}, sum {d.weights.sum():.4f} over {d.n} rows; the priors are not "
@@ -2928,6 +2941,8 @@ class Model:
         """The likelihood paragraph's lines for the response addition terms (B02)."""
         out = []
         for a in self.spec.additions:
+            if a.kind == "dec":                              # F04: the wiener likelihood's own lines say how it reads dec
+                continue
             if a.kind == "mi":                               # C06: the likelihood at the observed and imputed values
                 out += [f"  mi(): the likelihood is evaluated at {self.spec.response}'s observed values and, at its missing rows, the parameters "
                         f"{self.missing_names[self.spec.response]['values'] if self.spec.response in self.missing_names else '(none missing)'} "
@@ -3317,6 +3332,23 @@ def gen_extreme_value(formula: str, data: pd.DataFrame, priors: Priors, *,
     ``xi >= 1``, D114); ``kind="linear"`` returns ``mu``. No other link, distributional formula or addition term (D112).
     """
     return Model(formula, data, priors, family="gen_extreme_value", center_predictors=center_predictors, categorical=categorical)
+
+
+def wiener(formula: str | list[str], data: pd.DataFrame, priors: Priors, *,
+           center_predictors: bool = True, categorical: Mapping[str, object] | None = None) -> Model:
+    """Wiener diffusion model of response times and decisions (brms ``wiener()``, F04, docs/wiener.md): ``rt | dec(dec) ~ ...``
+    with ``dec`` 1 for the upper boundary and 0 for the lower one, the identity link on the drift rate ``mu``, the boundary
+    separation ``bs``, the non-decision time ``0 < ndt < min(rt)`` and the relative starting point ``0 < bias < 1``.
+
+    ``bs`` takes a positive-support prior (brms's default ``gamma(1, 1)``), ``ndt`` a prior truncated to (0, min(rt)) and
+    renormalised there, as for the shifted lognormal (``Uniform(0, "min_Y")`` is brms's default), and ``bias`` a prior on (0, 1)
+    (brms's default ``beta(1, 1)``): ``Priors(bs=ab.Gamma(1, 1), ndt=ab.Normal(0, 0.3), bias=ab.Beta(2, 2))``. ``bs`` may have
+    its own formula under the log link, ``["rt | dec(dec) ~ x", "bs ~ z"]`` with ``Priors(bs={"intercept": ..., "b": ...})``.
+    ``predict(kind="mean")`` returns the mean response time ``ndt + E[T]`` as ``mean`` (not brms's posterior_epred, D148);
+    ``kind="linear"`` returns ``mu``; response draws are refused (D149). No formula on ``ndt`` or ``bias``, other link or other
+    addition term (D151).
+    """
+    return Model(formula, data, priors, family="wiener", center_predictors=center_predictors, categorical=categorical)
 
 
 def zero_inflated_poisson(formula: str, data: pd.DataFrame, priors: Priors, *,

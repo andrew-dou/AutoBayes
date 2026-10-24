@@ -55,7 +55,7 @@ refused with an error naming the construct.
 
 | Area | What you can write | Docs |
 |---|---|---|
-| Families | Gaussian, Student-t (fixed or learned `nu`), Poisson (log, sqrt), negative binomial (`negbinomial`, `negbinomial2`), geometric, Gamma (log, inverse, identity), lognormal, Beta (logit, probit, cloglog), Bernoulli and binomial (logit, probit, cloglog), beta-binomial, Weibull, exponential, skew-normal, shifted lognormal, ex-Gaussian, inverse Gaussian, von Mises, asymmetric Laplace, Frechet, generalized extreme value, `xbeta` | [families](docs/families.md), [continuous](docs/continuous-families.md), [discrete](docs/discrete-families.md), [bounded](docs/bounded-families.md), [links](docs/links.md) |
+| Families | Gaussian, Student-t (fixed or learned `nu`), Poisson (log, sqrt), negative binomial (`negbinomial`, `negbinomial2`), geometric, Gamma (log, inverse, identity), lognormal, Beta (logit, probit, cloglog), Bernoulli and binomial (logit, probit, cloglog), beta-binomial, Weibull, exponential, skew-normal, shifted lognormal, ex-Gaussian, inverse Gaussian, von Mises, asymmetric Laplace, Frechet, generalized extreme value, `xbeta`, the Wiener diffusion model (`rt \| dec(dec)`) | [families](docs/families.md), [continuous](docs/continuous-families.md), [discrete](docs/discrete-families.md), [bounded](docs/bounded-families.md), [links](docs/links.md), [Wiener](docs/wiener.md) |
 | Zero-inflated and hurdle | zero-inflated Poisson, negative binomial, binomial, beta-binomial and Beta; zero-one-inflated Beta; hurdle Poisson, negative binomial, Gamma, lognormal and cumulative | [zero-inflated and hurdle](docs/zero-inflated-hurdle.md), [bounded](docs/bounded-families.md) |
 | Ordinal and categorical | `cumulative` (logit, probit, cloglog), `sratio`, `cratio`, `acat`, `hurdle_cumulative`, `cs(x)`, `categorical` | [ordinal and categorical](docs/ordinal-categorical.md) |
 | Population-level terms | numeric and categorical predictors, interactions, `log()`, `exp()`, `sqrt()`, `I(...)`, `offset()`, `mo(x)` | [interactions](docs/interactions.md), [transforms](docs/transforms.md), [offset](docs/offset.md), [monotonic](docs/monotonic.md) |
@@ -66,7 +66,7 @@ refused with an error naming the construct.
 | Priors | explicit priors on every class; brms's defaults with `ab.default_priors()`; `horseshoe()` and `R2D2()` on `b` | [default priors](docs/default-priors.md), [shrinkage priors](docs/shrinkage-priors.md) |
 | Post-processing | `predict()` (`posterior_linpred`, `posterior_epred`, `posterior_predict`), `log_lik`, `loo`, `waic`, `loo_compare`, `model_weights`, `bayes_R2`, `hypothesis` (with Savage-Dickey evidence ratios), `conditional_effects` | [post-processing](docs/post-processing.md), [prediction](docs/linear-prediction.md) |
 
-Not yet: `s()` and `t2()`; `multinomial`, `dirichlet`, `dirichlet_multinomial`, `logistic_normal`, `cox` and `wiener`;
+Not yet: `s()` and `t2()`; `multinomial`, `dirichlet`, `dirichlet_multinomial`, `logistic_normal` and `cox`;
 `car`, `fcor`, `unstr` and `cosy`; K-fold cross-validation and stacking weights. Combinations no frozen brms case
 checks yet are refused, each naming its divergence row. The full map is
 [current capabilities](docs/current-capabilities.md).

@@ -175,8 +175,8 @@ def test_inverse_gamma_is_stan_inv_gamma():
 
 
 def test_refusals():
-    with pytest.raises(ValueError, match=r"family must be one of \[.*\], got 'wiener'"):    # brms's, not offered (von_mises is since E02)
-        ab.default_priors("y ~ x", FRAME, family="wiener")
+    with pytest.raises(ValueError, match=r"family must be one of \[.*\], got 'cox'"):    # brms's, not offered (von_mises since E02, wiener F04)
+        ab.default_priors("y ~ x", FRAME, family="cox")
     with pytest.raises(ValueError, match=r"link must be one of \['cloglog', 'logit', 'probit'\] for the bernoulli family, got 'cauchit'"):
         ab.default_priors("yb ~ x", FRAME, family="bernoulli", link="cauchit")    # the cloglog link is offered since P6 (G6 checks it)
     with pytest.raises(ValueError, match="nu applies only to the student or frechet family"):   # E02: the Frechet nu

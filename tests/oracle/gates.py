@@ -2,7 +2,7 @@
 Each raises `OracleMismatch` naming the point and the quantities that differ; a passing gate returns None.
 
 G1 `check_design`        standata equals the model's design, response, trials, offsets, group coding and addition-term
-                         data (weights, cens, lb, ub; B02; rcens, E04), each distributional formula's X_<dpar> (B01), each
+                         data (weights, cens, lb, ub; B02; rcens, E04; dec, F04), each distributional formula's X_<dpar> (B01), each
                          monotonic term's codes, number of steps and Dirichlet concentrations (Xmo_k, Jmo, con_simo_k; B03),
                          and a mixture's component designs X_mu<k> and theta's concentrations (con_theta; C05),
                          and each Gaussian process's row index, inputs or basis and scaling (Jgp_k, Xgp_k, Xgp_prior_k,
@@ -274,6 +274,11 @@ def check_design(b: Bundle) -> None:
         err = abs_err(theirs[~inf], mine[~inf])
         if not err <= DESIGN_ABS:
             raise OracleMismatch(f"{key} differ by {err}")
+    mine = getattr(d, "dec", None)                              # F04: brms's dec of dec(col), each wiener row's decision
+    if (mine is None) != ("dec" not in sd):
+        raise OracleMismatch("brms has dec but AutoBayes does not" if mine is None else "AutoBayes has dec but brms standata has none")
+    if mine is not None and (np.shape(sd["dec"]) != np.shape(mine) or abs_err(sd["dec"], mine) > DESIGN_ABS):
+        raise OracleMismatch(f"dec differs: brms {np.asarray(sd['dec'])[:8]}..., AutoBayes {np.asarray(mine)[:8]}...")
     for name, dd in d.dpars.items():                            # an auxiliary parameter's own formula (B01): X_sigma
         key = f"X_{name}"
         if key not in sd:
@@ -390,7 +395,8 @@ def check_gradient(b: Bundle) -> None:
 # linear predictor of the parameter; the model's DparDesign.link must be the same
 _BRMS_DPAR_LINK = {"sigma": ("log", np.exp), "shape": ("log", np.exp), "phi": ("log", np.exp),
                    "zi": ("logit", expit), "hu": ("logit", expit),
-                   "alpha": ("identity", lambda eta: eta)}
+                   "alpha": ("identity", lambda eta: eta),
+                   "bs": ("log", np.exp)}                      # F04: wiener()'s link_bs
 
 
 def check_derived(b: Bundle) -> None:

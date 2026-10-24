@@ -378,3 +378,13 @@ responses (`log|I - rho M|` from `M`'s eigenvalues; brms's `lagsar` or `errorsar
 and special terms, offsets, addition terms, distributional, multivariate and non-linear models, other priors, matrices with
 complex eigenvalues or eigenvalues outside [-1, 1], new rows and `bayes_R2()` are refused (D143); see
 [SAR terms](spatial-sar.md).
+
+The Wiener diffusion model (F04, brms's `wiener()`): `rt | dec(dec) ~ ...` with each row's decision (`dec()`, 1 upper, 0 lower),
+the drift `mu` (identity link), the boundary separation `bs` (or its own formula `bs ~ z`, log link), the non-decision time
+`ndt` below the smallest response time and the relative starting point `bias`, each with brms's default prior; the Navarro-Fuss
+first-passage time density exact to 4e-15 on both paths (where Stan's is within 1.5e-10, D150), the exact mean response time
+for `predict(kind="mean")` (brms's `posterior_epred` misplaces the starting point, D148), `log_lik()`, `loo()` and
+`bayes_R2()` (which brms computes only with RWiener), `describe()`. Verified against `wiener_varint` and
+`wiener_distributional_bs` (G4's expected values fail against brms by D148, an expected failure until a 50-digit reference
+stands in); response draws are refused (D149), as are formulas on `ndt` and `bias` and the other contexts (D151); see
+[the Wiener diffusion model](wiener.md).

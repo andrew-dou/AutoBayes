@@ -119,7 +119,7 @@ def test_the_registry_offers_exactly_the_verified_formulas():
     assert scale == {"gaussian", "student", "lognormal", "negbinomial", "gamma", "beta", "weibull", "beta_binomial"}
     others = {(name, f.parameter, f.link) for name, spec in FAMILIES.items() for f in spec.distributional_formulas}
     assert others == {("zero_inflated_negbinomial", "zi", "logit"), ("hurdle_lognormal", "hu", "logit"),
-                      ("skew_normal", "alpha", "identity")}
+                      ("skew_normal", "alpha", "identity"), ("wiener", "bs", "log")}   # F04: wiener's bs ~ z
     for family, (_, name, _, _) in SPECS.items():
         fam = get_family(family)
         assert fam.distributional_parameters == (name,) and fam.distributional_parameter_link(name) == LINK[family]
@@ -132,7 +132,7 @@ def test_the_registry_offers_exactly_the_verified_formulas():
 
 REFUSED = [
     ("zero_inflated_negbinomial", ["zcnt ~ x", "shape ~ w"], r"brms's shape ~ \.\.\. is not offered here.*D33.*and for the "
-     r"skew_normal \(alpha, identity link\), zero_inflated_negbinomial \(zi, logit link\), hurdle_lognormal \(hu, logit link\) families.*D116"),
+     r"skew_normal \(alpha, identity link\), zero_inflated_negbinomial \(zi, logit link\), hurdle_lognormal \(hu, logit link\), wiener \(bs, log link\) families.*D116"),
     ("hurdle_lognormal", ["zpos ~ x", "sigma ~ w"], r"brms's sigma ~ \.\.\. is not offered here"),
     ("skew_normal", ["y ~ x", "sigma ~ w"], r"brms's sigma ~ \.\.\. is not offered here"),
     ("exgaussian", ["y ~ x", "beta ~ w"], r"brms's beta ~ \.\.\. is not offered here"),

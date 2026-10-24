@@ -42,6 +42,7 @@ from autobayes.families.spec import FamilySpec
 from autobayes.families.student import STUDENT
 from autobayes.families.von_mises import VON_MISES
 from autobayes.families.weibull import WEIBULL
+from autobayes.families.wiener import WIENER
 from autobayes.families.xbeta import XBETA
 from autobayes.families.zero_inflated_beta import ZERO_INFLATED_BETA
 from autobayes.families.zero_inflated_beta_binomial import ZERO_INFLATED_BETA_BINOMIAL
@@ -59,7 +60,8 @@ FAMILIES = MappingProxyType({spec.name: spec for spec in (GAUSSIAN, STUDENT, POI
                                                           ZERO_INFLATED_BETA, HURDLE_GAMMA, HURDLE_LOGNORMAL,
                                                           ZERO_ONE_INFLATED_BETA, ZERO_INFLATED_BETA_BINOMIAL, HURDLE_CUMULATIVE,   # E01
                                                           XBETA,
-                                                          INVERSE_GAUSSIAN, VON_MISES, ASYM_LAPLACE, FRECHET, GEN_EXTREME_VALUE)})   # E02
+                                                          INVERSE_GAUSSIAN, VON_MISES, ASYM_LAPLACE, FRECHET, GEN_EXTREME_VALUE,   # E02
+                                                          WIENER)})   # F04
 
 
 def get_family(name: str, link: str | None = None) -> FamilySpec:

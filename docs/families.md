@@ -255,6 +255,24 @@ default priors read through (`1 / y^2`) or not at all.
 | Addition terms, distributional formulas, mo(), multivariate, non-linear, autocorrelation, me()/mi(), mm() and gr(by = ), shrinkage priors, other links | none (D112) | none (D112) | none (D112) | none (D112) | none (D112) |
 | Post-processing (C07) | `log_likelihood`: inverse Gaussian | von Mises | asymmetric Laplace | Frechet | GEV at the posterior's xi |
 
+The Wiener diffusion model (F04, docs/wiener.md) is a continuous family whose likelihood reads a second column of each row, brms's
+decision `dec()`: `addition_terms` holds `"dec"` (a response addition term the family's own likelihood reads, `Design.dec`, not
+one `likelihoods.addition_family` applies), so `bambi_family` is None and `bambi_setup` builds the likelihood per model from the
+fitted rows' decisions (`wiener_diffusion.wiener_family`). It has no scale parameter and three extra parameters (`bs` positive,
+`ndt` below the smallest response, `bias` on (0, 1)), `bs` with its own formula through `distributional_formulas` (log link), and
+`prediction_kinds` without `"response"`: response draws and prior-predictive draws are refused (D149).
+
+| Group | wiener |
+| --- | --- |
+| Names | `mu` / identity / `mean` |
+| Response | continuous, finite and strictly positive, with `dec(col)` (0 / 1 per row) required |
+| Parameters | none; `extra_parameters`: bs (positive, or its formula `bs ~ ...`), ndt (below min y), bias (unit) |
+| Graph | `wiener_diffusion.wiener_family(upper)` (the Navarro-Fuss series, exact to 4e-15), built per model by `bambi_setup` |
+| Prediction | `expected_response` `ndt + E[T]`, the mean response time over both boundaries (not brms's epred, D148); no draws (D149) |
+| Default priors | identity; bs `Gamma(1, 1)`, its formula's intercept `Normal(-0.6, 1.3)`; ndt `Uniform(0, "min_Y")`; bias `Beta(1, 1)` |
+| Addition terms, formulas on ndt and bias, mo(), cs(), multivariate, non-linear, autocorrelation, me()/mi(), mm() and gr(by = ), mixtures, shrinkage priors, other links | none (D151) |
+| Post-processing (C07) | `log_likelihood` from the model's own density (brms needs RWiener, D150) |
+
 ## Adding a family
 
 1. Write `autobayes/families/<name>.py` building one `FamilySpec`; keep the response validation primitives in

@@ -109,11 +109,12 @@ EXPECTED = {                               # family -> (Bambi parent, link, pred
     "asym_laplace": ("mu", "identity", "mean"),
     "frechet": ("log_mu", "log", "mu"),
     "gen_extreme_value": ("mu", "identity", "mean"),
+    "wiener": ("mu", "identity", "mean"),                 # F04: the drift rate mu; the mean response time is "mean"
 }
 
 
 def test_registry_lists_exactly_the_registered_families():
-    assert set(FAMILIES) == set(EXPECTED) and len(FAMILIES) == 40
+    assert set(FAMILIES) == set(EXPECTED) and len(FAMILIES) == 41
     for name, (parent, link, mean) in EXPECTED.items():
         spec = get_family(name)
         assert isinstance(spec, FamilySpec) and spec is FAMILIES[name]
@@ -131,7 +132,8 @@ def test_registry_lists_exactly_the_registered_families():
                                                                             "weibull", "exponential", "skew_normal", "shifted_lognormal",
                                                                             "exgaussian", "zero_inflated_beta", "hurdle_gamma", "hurdle_lognormal",
                                                                             "zero_one_inflated_beta", "xbeta",          # E01
-                                                                            "inverse_gaussian", "von_mises", "asym_laplace", "frechet", "gen_extreme_value"}   # E02
+                                                                            "inverse_gaussian", "von_mises", "asym_laplace", "frechet", "gen_extreme_value",   # E02
+                                                                            "wiener"}                                    # F04
     assert {spec.bambi_scale_parameter for spec in FAMILIES.values() if spec.scale_parameter == "shape"} == {"alpha"}
     assert {spec.bambi_scale_parameter for spec in FAMILIES.values() if spec.scale_parameter == "phi"} == {"phi"}
     assert all((spec.scale_parameter is None) == (spec.bambi_scale_parameter is None) for spec in FAMILIES.values())
@@ -142,6 +144,8 @@ def test_registry_lists_exactly_the_registered_families():
     assert {name for name, spec in FAMILIES.items() if spec.has_trials} == {"binomial", "beta_binomial", "zero_inflated_binomial",
                                                                             "zero_inflated_beta_binomial"}             # E01
     assert {name for name, spec in FAMILIES.items() if "probability" in spec.prediction_kinds} == {"binomial", "beta_binomial"}
+    assert {name for name, spec in FAMILIES.items() if "response" not in spec.prediction_kinds} == {"wiener"}   # F04: no draws (D149)
+    assert {name for name, spec in FAMILIES.items() if "dec" in spec.addition_terms} == {"wiener"}             # F04: brms's dec()
     assert {name for name, spec in FAMILIES.items() if spec.expected_response is not None} == {"lognormal", "zero_inflated_poisson", "hurdle_poisson",
                                                                                                "cumulative", "mixture", "shifted_lognormal",
                                                                                                "sratio", "cratio", "acat",   # D04
@@ -151,7 +155,8 @@ def test_registry_lists_exactly_the_registered_families():
                                                                                                "zero_one_inflated_beta",   # E01
                                                                                                "zero_inflated_beta_binomial",
                                                                                                "hurdle_cumulative", "xbeta",
-                                                                                               "asym_laplace", "gen_extreme_value"}   # E02
+                                                                                               "asym_laplace", "gen_extreme_value",   # E02
+                                                                                               "wiener"}                              # F04
     assert {name for name, spec in FAMILIES.items() if spec.mixture} == {"mixture"}
     assert {name for name, spec in FAMILIES.items() if spec.response_categories is not None} == {"cumulative", "categorical", "sratio",
                                                                                                  "cratio", "acat", "hurdle_cumulative"}
@@ -166,10 +171,11 @@ def test_registry_lists_exactly_the_registered_families():
     assert {name: tuple(e.name for e in spec.extra_parameters) for name, spec in FAMILIES.items() if spec.extra_parameters} == {
         "skew_normal": ("alpha",), "exgaussian": ("beta",), "shifted_lognormal": ("ndt",),          # D01
         "zero_one_inflated_beta": ("zoi", "coi"), "xbeta": ("kappa",),                            # E01
-        "von_mises": ("kappa",), "asym_laplace": ("quantile",), "gen_extreme_value": ("xi",)}       # E02
+        "von_mises": ("kappa",), "asym_laplace": ("quantile",), "gen_extreme_value": ("xi",),       # E02
+        "wiener": ("bs", "ndt", "bias")}                                                            # F04
     assert {name: e.variable for name, spec in FAMILIES.items() for e in spec.extra_parameters if e.derived} == {
         "gen_extreme_value": "tmp_xi"}                                                               # E02: brms's tmp_xi
-    with pytest.raises(ValueError, match=r"family must be one of \['acat', 'asym_laplace', 'bernoulli', 'beta', 'beta_binomial', 'binomial', 'categorical', 'cratio', 'cumulative', 'exgaussian', 'exponential', 'frechet', 'gamma', 'gaussian', 'gen_extreme_value', 'geometric', 'hurdle_cumulative', 'hurdle_gamma', 'hurdle_lognormal', 'hurdle_negbinomial', 'hurdle_poisson', 'inverse_gaussian', 'lognormal', 'mixture', 'negbinomial', 'negbinomial2', 'poisson', 'shifted_lognormal', 'skew_normal', 'sratio', 'student', 'von_mises', 'weibull', 'xbeta', 'zero_inflated_beta', 'zero_inflated_beta_binomial', 'zero_inflated_binomial', 'zero_inflated_negbinomial', 'zero_inflated_poisson', 'zero_one_inflated_beta'\], got 'tweedie'"):
+    with pytest.raises(ValueError, match=r"family must be one of \['acat', 'asym_laplace', 'bernoulli', 'beta', 'beta_binomial', 'binomial', 'categorical', 'cratio', 'cumulative', 'exgaussian', 'exponential', 'frechet', 'gamma', 'gaussian', 'gen_extreme_value', 'geometric', 'hurdle_cumulative', 'hurdle_gamma', 'hurdle_lognormal', 'hurdle_negbinomial', 'hurdle_poisson', 'inverse_gaussian', 'lognormal', 'mixture', 'negbinomial', 'negbinomial2', 'poisson', 'shifted_lognormal', 'skew_normal', 'sratio', 'student', 'von_mises', 'weibull', 'wiener', 'xbeta', 'zero_inflated_beta', 'zero_inflated_beta_binomial', 'zero_inflated_binomial', 'zero_inflated_negbinomial', 'zero_inflated_poisson', 'zero_one_inflated_beta'\], got 'tweedie'"):
         get_family("tweedie")
     with pytest.raises(TypeError):
         FAMILIES["tweedie"] = None
@@ -185,7 +191,8 @@ def frame() -> pd.DataFrame:
                          "ord": [1, 2, 3, 4] * (n // 4), "cat": ["a", "b", "c"] * (n // 3),
                          "zprop": np.r_[0.0, rng.uniform(0.05, 0.95, n - 1)], "zpos": np.r_[0.0, rng.gamma(2.0, 1.0, n - 1)],
                          "zoprop": np.r_[0.0, 1.0, rng.uniform(0.05, 0.95, n - 2)], "ordh": [0, 1, 2, 3] * (n // 4)}   # E01
-                        ).assign(ang=np.linspace(-3.0, 3.0, n))   # E02: von Mises angles in [-pi, pi]
+                        ).assign(ang=np.linspace(-3.0, 3.0, n),   # E02: von Mises angles in [-pi, pi]
+                                 rt=np.linspace(0.4, 1.5, n), dec=[1, 0, 0] * (n // 3))   # F04: response times and decisions
 
 
 EXAMPLES = {                               # family -> (formula, extra prior classes, constructor keywords)
@@ -231,6 +238,7 @@ EXAMPLES = {                               # family -> (formula, extra prior cla
     "asym_laplace": ("y ~ x", {"sigma": ab.HalfNormal(1), "quantile": ab.Beta(2, 2)}, {}),
     "frechet": ("ypos ~ x", {"nu": ab.Gamma(2, 0.1)}, {}),
     "gen_extreme_value": ("y ~ x", {"sigma": ab.HalfNormal(1), "xi": ab.Normal(0, 0.5)}, {}),
+    "wiener": ("rt | dec(dec) ~ x", {"bs": ab.Gamma(1, 1), "ndt": ab.Uniform(0, "min_Y"), "bias": ab.Beta(2, 2)}, {}),   # F04
 }
 
 

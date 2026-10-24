@@ -10,7 +10,7 @@ the three sequential and adjacent-category ordinal families, ``sratio``, ``crati
 ``zero_inflated_negbinomial.py``, ``hurdle_negbinomial.py``, ``zero_inflated_binomial.py``, ``zero_inflated_beta.py``,
 ``hurdle_gamma.py``, ``hurdle_lognormal.py``; E01's ``zero_one_inflated_beta.py``, ``zero_inflated_beta_binomial.py``,
 ``hurdle_cumulative.py``, ``xbeta.py``; E02's ``inverse_gaussian.py``, ``von_mises.py``, ``asym_laplace.py``,
-``frechet.py``, ``gen_extreme_value.py``);
+``frechet.py``, ``gen_extreme_value.py``; F04's ``wiener.py``);
 ``autobayes.families.FAMILIES`` is the registry and ``get_family(name)`` the lookup. Callable fields
 take the built ``Model`` (or the frame being validated) because that is what the call sites have in
 hand; none of them is called before ``Model.__init__`` has resolved the spec.

@@ -2026,13 +2026,29 @@
    "depends_on": [
     "D01_continuous_families"
    ],
-   "status": "fixtures_frozen",
+   "status": "gates_green",
    "summary": "wiener() with dec() responses (cases wiener_varint, wiener_distributional_bs); brms's posterior_epred is wrong (upstream)",
    "pr": null,
    "attempts": 0,
    "divergences": [],
    "next_action": "implementing (wave F1)",
-   "reserved_divergences": "D148-D151"
+   "reserved_divergences": "D148-D151",
+   "gates": {
+    "sha": "5db6b17a3b2d",
+    "dirty_tree": false,
+    "base": "origin/main",
+    "when": "2026-10-24T09:43Z",
+    "results": {
+     "immutability": {
+      "status": "pass",
+      "seconds": 0.0
+     },
+     "oracle": {
+      "status": "pass",
+      "seconds": 569.6
+     }
+    }
+   }
   },
   {
    "id": "F05_cox",
