@@ -2224,12 +2224,15 @@
    "depends_on": [
     "C01_multivariate"
    ],
-   "status": "gates_green",
+   "status": "merged",
    "summary": "subset() in a multivariate model with a formula per response, set_rescor(FALSE): case gauss_mv_subset",
-   "pr": null,
+   "pr": 99,
    "attempts": 0,
-   "divergences": [],
-   "next_action": "implementing (wave F2); fixtures #89",
+   "divergences": [
+    "D160",
+    "D161"
+   ],
+   "next_action": "none",
    "reserved_divergences": "D160-D161",
    "gates": {
     "sha": "394933d1a400",
