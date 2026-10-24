@@ -67,6 +67,7 @@ def _refuse_unsupported(model) -> None:
         (bool(getattr(spec, "mi_terms", ())) or bool(getattr(spec, "missing_columns", ())), lambda: "missing values modelled by mi()"),
         (bool(getattr(spec, "cs_terms", ())), lambda: f"the category-specific term {spec.cs_terms[0].name!r}"),
         (spec.autocor is not None, lambda: f"the autocorrelation term {spec.autocor.term!r}"),
+        (getattr(spec, "sar", None) is not None, lambda: f"the SAR term {spec.sar.term!r}"),                     # F02b (D143)
     ]
     for present, construct in constructs:
         if present:

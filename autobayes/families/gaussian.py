@@ -70,6 +70,7 @@ GAUSSIAN = FamilySpec(
     multivariate=True,                                              # C01: mvbind(y, y2) ~ ..., verified against gauss_mv_rescor and gauss_mv_norescor
     nonlinear_likelihood=_nonlinear_likelihood,                     # C02: nl = TRUE, verified against gauss_nonlinear_exp and _terms
     autocorrelation=True,                                           # C04: ar(), ma(), arma(), verified against gauss_ar1, gauss_arma11
+    sar=True,                                                       # F02b: sar(M, type = ), verified against gauss_sar_lag, gauss_sar_error
     measurement_error=True,                                         # C06: me(x, sdx), verified against gauss_me
     missing_values=True,                                            # C06: mi(col) with col | mi() ~ ..., verified against gauss_mi
     shrinkage=True,                                                 # D07: horseshoe() and R2D2() on b, verified against gauss_horseshoe and gauss_r2d2

@@ -1962,13 +1962,29 @@
    "depends_on": [
     "C04_autocor"
    ],
-   "status": "fixtures_frozen",
+   "status": "gates_green",
    "summary": "sar(M, type) lag and error with data2 weights (cases gauss_sar_lag, gauss_sar_error, gauss_sar_lag_post)",
    "pr": null,
    "attempts": 0,
    "divergences": [],
    "next_action": "implementing (wave F1)",
-   "reserved_divergences": "D142-D143"
+   "reserved_divergences": "D142-D143",
+   "gates": {
+    "sha": "d5446e965796",
+    "dirty_tree": false,
+    "base": "origin/main",
+    "when": "2026-10-24T08:18Z",
+    "results": {
+     "immutability": {
+      "status": "pass",
+      "seconds": 0.0
+     },
+     "oracle": {
+      "status": "pass",
+      "seconds": 601.3
+     }
+    }
+   }
   },
   {
    "id": "F03a_fcor",

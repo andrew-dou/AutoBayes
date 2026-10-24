@@ -83,6 +83,7 @@ def _summary_rows(model, idata) -> dict:
     names += [*mixture["sigma"], mixture["theta"]] if mixture else []
     names += [roles[k] for roles in getattr(model, "gp_names", {}).values() for k in ("sdgp", "lscale")]   # each GP's (C03)
     names += [v for k, v in getattr(model, "autocor_names", {}).items() if not k.endswith("_coordinate")]   # ar and ma (C04)
+    names += list(getattr(model, "sar_names", {}).values())     # lagsar or errorsar (F02b)
     zero = family_of(model).zero_parameter                      # the zero-inflation / hurdle probability (B06)
     own = model.spec.dpar_names                                 # E03: zi, hu or alpha with a formula: its intercept and coefficients
     for name in ([zero] if zero is not None else []) + [e.name for e in family_of(model).extra_parameters]:   # alpha, beta, ndt (D01)
@@ -179,7 +180,8 @@ def fit_record(model, fit, *, panel: dict | None = None, max_treedepth: int = 10
                        **{k: v for e in fam.extra_parameters for k, v in _scale_priors(model, e.name).items()},   # alpha, beta, ndt (D01)
                        **({"nu": str(pr.nu)} if pr.nu is not None else {}),
                        **({label: str(prior) for label, prior in prior_labels(model).items()} if mixture else {}),
-                       **{part: str(prior) for part, prior in pr.autocor_priors(s).items()}},   # an ARMA term's ar and ma (C04)
+                       **{part: str(prior) for part, prior in pr.autocor_priors(s).items()},   # an ARMA term's ar and ma (C04)
+                       **{name: str(prior) for name, prior in pr.sar_priors(s).items()}},      # a SAR term's lagsar / errorsar (F02b)
             # a mixture (C05): its component families, identification and PyMC names
             **({"mixture": {"families": list(model.components), "order": ORDER,
                             "names": {k: list(v) if isinstance(v, tuple) else v for k, v in model.mixture_names.items()}}}
@@ -211,6 +213,10 @@ def fit_record(model, fit, *, panel: dict | None = None, max_treedepth: int = 10
             **({"autocorrelation": {"term": s.autocor.term, "time": s.autocor.time, "gr": s.autocor.gr, "p": s.autocor.p,
                                     "q": s.autocor.q, "series": len(d.autocor.series), "names": model.autocor_names}}
                if getattr(s, "autocor", None) is not None else {}),
+            # a SAR term (F02b): the term, its matrix's name and size, the parameter's bounds and its PyMC name
+            **({"sar": {"term": s.sar.term, "type": s.sar.type, "matrix": s.sar.matrix, "n": d.sar.n,
+                        "bounds": [d.sar.lower, d.sar.upper], "names": model.sar_names}}
+               if getattr(s, "sar", None) is not None else {}),
             # each measurement-error term (C06): its columns and PyMC names
             **({"measurement_error": {t.name: {"column": t.operands[0], "noise_column": t.operands[1], "names": model.me_names[t.operands[0]]}
                                       for t in s.me_terms}} if s.me_terms else {}),

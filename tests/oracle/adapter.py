@@ -108,6 +108,11 @@ E03: a formula on a family's zero-inflation or hurdle probability or extra param
 coefficients are handed to `value_point` as `zi=`, `hu=` or `alpha=`, and brms's `X_<p>` of any family parameter without a
 formula in the model is a mismatch.
 
+F02b: a SAR term (`sar(M, type = "lag" | "error")`) is brms's `Msar` and `eigenMsar`, checked against the model's weight matrix
+and eigenvalues (`check_sar_design`); its parameter, brms's `real<lower=min_eigenMsar,upper=max_eigenMsar>` `lagsar` or `errorsar`,
+maps to `<name>_interval__` (Stan's lower-upper coordinate, recomputed from the value at every point and checked against the
+fixture's `u`, and the probe's step checked, as for `ndt`).
+
 D07: under a shrinkage prior on b (brms's `horseshoe()` or `R2D2()`, `Model.shrinkage_names`) brms's `b` is a transformed parameter
 `zb .* sdb`: the point gives the model `zb` and the prior's scales (`shrinkage_point`, each vector put in AutoBayes's design-column
 order through the column map) and no `b`; `zb[k]` maps to `zb` and `hs_local[k]` to `hs_local_log__` at the AutoBayes column of
@@ -184,7 +189,9 @@ def priors_from_spec(spec: dict) -> ab.Priors:
                      # E01: zero_one_inflated_beta's {"zoi": [...], "coi": [...]} and xbeta's {"kappa": [...]}; E02: {"kappa": [...]},
                      # {"quantile": ["Beta", a, b]} or {"xi": [...]} (the prior of brms's tmp_xi)
                      zoi=_prior(spec.get("zoi")), coi=_prior(spec.get("coi")), kappa=_prior(spec.get("kappa")),
-                     quantile=_prior(spec.get("quantile")), xi=_prior(spec.get("xi")))
+                     quantile=_prior(spec.get("quantile")), xi=_prior(spec.get("xi")),
+                     # F02b: a SAR term's {"lagsar": ["Flat"]} or {"errorsar": ["Flat"]}
+                     lagsar=_prior(spec.get("lagsar")), errorsar=_prior(spec.get("errorsar")))
 
 
 def build_model(case: dict, data: pd.DataFrame) -> ab.Model:
@@ -806,6 +813,7 @@ def natural_point(model: ab.Model, point: Point, cmap: ColumnMap, gmap: GroupMap
         lscale = {c: float(np.ravel(pars[f"lscale_{k}"])[0]) for c, k in cmap.gp.items()}
         zgp = {c: np.ravel(pars[f"zgp_{k}"]).astype(float) for c, k in cmap.gp.items()}
     ar, ma = (np.atleast_1d(pars[part]).astype(float) if part in model.autocor_names else None for part in ("ar", "ma"))   # C04
+    sar = {name: float(pars[name]) for name in getattr(model, "sar_names", {})}            # F02b: brms's lagsar or errorsar
     special = {}
     if cmap.special:                                       # C06: the me() / mi() term's coefficient, brms's bsp[1], by its column
         terms = {t.name: t for t in model.spec.pop_terms}
@@ -820,7 +828,7 @@ def natural_point(model: ab.Model, point: Point, cmap: ColumnMap, gmap: GroupMap
         bcs = np.atleast_2d(pars["bcs"]).astype(float)
         extras["bcs"] = {c: bcs[k] for k, c in enumerate(cmap.cs)}
     return dict(intercept=intercept, b=b, sd=sd or None, z=z or None, L=L or None, sigma=sigma, shape=shape, phi=phi, nu=nu,
-                zi=zi, hu=hu, bsp=bsp, simo=simo, theta=theta, sdgp=sdgp, lscale=lscale, zgp=zgp, ar=ar, ma=ma, **special, **extras,
+                zi=zi, hu=hu, bsp=bsp, simo=simo, theta=theta, sdgp=sdgp, lscale=lscale, zgp=zgp, ar=ar, ma=ma, **special, **extras, **sar,
                 **({"shrinkage": shrinkage} if shrinkage is not None else {}))
 
 
@@ -992,6 +1000,20 @@ def coordinate_map(fixture: Fixture, model: ab.Model, cmap: ColumnMap, gmap: Gro
             if par not in model.autocor_names:
                 raise OracleMismatch(f"brms samples {par} but the AutoBayes model has no {par} coefficients")
             target, expect = (model.autocor_names[par], elem), "identity"
+        elif par in getattr(model, "sar_names", {}):           # F02b: brms's real<lower=min_eigenMsar,upper=max_eigenMsar> lagsar /
+            eigen = np.atleast_1d(fixture.standata["eigenMsar"])  # errorsar: Stan's lower-upper coordinate, as ndt's (D01)
+            lo, hi = float(eigen.min()), float(eigen.max())
+            v0 = lo + (hi - lo) / (1.0 + math.exp(-0.3))      # the probe moves the value at u = 0.3 to 1.5 times itself
+            step = math.log((1.5 * v0 - lo) / (hi - 1.5 * v0)) - 0.3
+            if abs(float(e["du"]) - step) > 1e-9:
+                raise OracleMismatch(f"brms's probe moved the coordinate of {par} by {e['du']!r}; log(({par} - lb) / (ub - {par})) "
+                                     f"moves it by {step!r}")
+            for q, pt_ in enumerate(fixture.points):          # and at every point, brms's coordinate is that of its value
+                v = float(pt_.pars[par])
+                if abs(math.log((v - lo) / (hi - v)) - pt_.u[idx]) > 1e-10:
+                    raise OracleMismatch(f"point {q}: log(({par} - lb) / (ub - {par})) is {math.log((v - lo) / (hi - v))!r}; brms's "
+                                         f"unconstrained value is {pt_.u[idx]!r}")
+            target, expect = (f"{model.sar_names[par]}_interval__", 0), "other"
         elif par == "sigma":
             target, expect = (f"{names['sigma']}_log__", 0), "log"
         elif par == "shape":                                   # negative binomial / Gamma: PyMC's alpha, sampled on the log scale
@@ -1304,6 +1326,8 @@ def draws(fixture: Fixture, model: ab.Model, cmap: ColumnMap, gmap: GroupMap) ->
         roles = model.autocor_names
         data[roles[part]] = (("chain", "draw", roles[f"{part}_coordinate"]), np.stack([np.atleast_1d(p.pars[part]) for p in pts])[None])
         coords[roles[f"{part}_coordinate"]] = [str(k) for k in range(1, order + 1)]
+    for name, var in getattr(model, "sar_names", {}).items():   # F02b: brms's lagsar or errorsar
+        data[var] = (("chain", "draw"), np.array([float(p.pars[name]) for p in pts])[None, :])
     for name, dmap in (cmap.distributional or {}).items():       # B01: an auxiliary parameter's own formula, raw-scale intercept and b
         ds, roles = model.spec.dpar(name), model.dpar_names[name]
         if ds.intercept:
@@ -1915,3 +1939,30 @@ def check_autocor_design(fixture: Fixture, model: ab.Model) -> None:
     if J_lag.shape != expected.shape or abs_err(J_lag, expected) > 0:
         raise OracleMismatch(f"brms's J_lag {J_lag.astype(int).tolist()} differs from the lags of AutoBayes's series positions "
                              f"{expected.tolist()}")
+
+
+def check_sar_design(fixture: Fixture, model: ab.Model) -> None:
+    """F02b: brms's SAR data are the model's: ``Msar`` its weight matrix (data order), ``eigenMsar`` its eigenvalues (in decreasing
+    order, R's), ``N_tg`` one, and the parameter declared ``real<lower=min_eigenMsar,upper=max_eigenMsar>``; a model without a SAR
+    term meets no ``Msar``."""
+    sd, d = fixture.standata, getattr(model.design, "sar", None)
+    if d is None:
+        if "Msar" in sd:
+            raise OracleMismatch("brms has a SAR term (Msar, eigenMsar); the AutoBayes model has none")
+        return
+    if "Msar" not in sd or "eigenMsar" not in sd:
+        raise OracleMismatch(f"the AutoBayes model has the SAR term {d.term!r}; brms's Stan data have no Msar / eigenMsar")
+    M = np.atleast_2d(sd["Msar"])
+    if M.shape != d.M.shape or abs_err(M, d.M) > DESIGN_ABS:
+        raise OracleMismatch(f"brms's Msar ({M.shape}) differs from the model's weight matrix ({d.M.shape})"
+                             + (f" by {abs_err(M, d.M)}" if M.shape == d.M.shape else ""))
+    eigen = np.sort(np.atleast_1d(sd["eigenMsar"]).astype(float))[::-1]
+    if eigen.shape != d.eigenvalues.shape or abs_err(eigen, d.eigenvalues) > DESIGN_ABS:
+        raise OracleMismatch(f"brms's eigenMsar differs from the model's eigenvalues of {d.matrix}")
+    n_tg = int(sd["N_tg"]) if "N_tg" in sd else None
+    if n_tg != 1:
+        raise OracleMismatch(f"brms's N_tg is {n_tg}; the AutoBayes SAR term has one group of rows")
+    declared = fixture.declarations.get(d.parameter)
+    if declared != f"real<lower=min_eigenMsar,upper=max_eigenMsar> {d.parameter};":
+        raise OracleMismatch(f"brms declares {declared!r}; the AutoBayes model bounds {d.parameter} by the smallest and largest "
+                             "eigenvalue of M")

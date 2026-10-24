@@ -55,6 +55,12 @@ series, as brms's ``posterior_linpred`` and ``posterior_epred`` add it (without 
 the predictor without them, as under brms's ``re_formula = NA``), and ``kind="response"`` draws around that predictor. New
 rows are refused: brms computes the term on them from their own responses (divergence D71).
 
+A model with a SAR term (F02b, docs/spatial-sar.md: brms's ``sar(M, type = "lag" | "error")``) is predicted in this layer on its
+fitted rows: ``kind="linear"`` is the linear predictor ``mu`` (brms's ``posterior_linpred``), ``kind="mean"`` the expected
+response, ``(I - rho M)^-1 mu`` under the lag model (brms's ``posterior_epred``) and ``mu`` under the error model (where brms's
+fails, divergence D142), and ``kind="response"`` draws from the joint SAR distribution of the rows. New rows are refused: ``M``
+is a matrix over the fitted rows (divergence D143).
+
 ``new_groups`` decides what happens when ``newdata`` contains a level of the grouping
 factor that was not in the training data (a population-only model has no grouping factor: it
 needs no such column, its result carries ``new_groups = "not_applicable"``, and any value other
@@ -460,6 +466,10 @@ def _predict_by_hand(model, idata, df: pd.DataFrame | None, kind: str, seed, pol
         else:                                                    # brms's posterior_epred of a truncated model: the truncated mean (B02)
             lb, ub = (-np.inf if trunc.lb is None else trunc.lb), (np.inf if trunc.ub is None else trunc.ub)
             mean = fam.tails().truncated_mean(model, post, mu, lb, ub)
+        sar = getattr(model.design, "sar", None)
+        if sar is not None:                                      # F02b: (I - rho M)^-1 mu (lag), mu (error)
+            from autobayes.sar import sar_mean
+            mean = sar_mean(mu, post[sar.parameter].to_numpy(), sar)
         if model.categories:                                     # B05: the probability of every category
             out = {fam.mean_name: (dims + ("category",), mean)}
             coords["category"] = outcome_categories(model)   # E01: the hurdle category first
@@ -467,7 +477,10 @@ def _predict_by_hand(model, idata, df: pd.DataFrame | None, kind: str, seed, pol
             out = {fam.mean_name: (dims, mean)}
         if fam.has_trials and kind in ("mean", "response"):      # binomial: expected = n p beside p
             out["expected"] = (dims, mean * df[model.spec.trials].to_numpy(dtype=np.int64))
-        if kind == "response":                                   # brms's posterior_predict ignores weights and censoring
+        if kind == "response" and sar is not None:               # F02b: the rows' joint SAR distribution
+            from autobayes.sar import sar_draws
+            out["y"] = (dims, sar_draws(model, post, mu, rng))
+        elif kind == "response":                                 # brms's posterior_predict ignores weights and censoring
             out["y"] = (dims, fam.draw_response(model, post, mu, mean, df, rng) if trunc is None
                         else fam.tails().draw_truncated(model, post, mu, lb, ub, rng))   # and draws from the truncated distribution
     ds = xr.Dataset(out, coords=coords)
@@ -590,6 +603,12 @@ def predict(model, fit_result, *, newdata: pd.DataFrame | None = None, kind: str
             "the new rows' own responses, sorted by series and time, as a series of their own; docs/autocorrelation.md, "
             "divergence D71); predict on the fitted rows (newdata=None)"
         )
+    if getattr(model.spec, "sar", None) is not None and newdata is not None:   # F02b: M is a matrix over the fitted rows (D143)
+        raise FormulaError(
+            f"predictions on new data are not offered for a model with the SAR term {model.spec.sar.term!r}: its weight matrix "
+            f"{model.spec.sar.matrix} relates the fitted rows to one another, and new rows have no place in it; predict on the "
+            "fitted rows (newdata=None) (docs/spatial-sar.md, divergence D143)"
+        )
     from autobayes.identity import check_fit_binding
     binding = check_fit_binding(model, fit_result, allow_unverified=True)
     idata = getattr(fit_result, "idata", fit_result)
@@ -618,6 +637,7 @@ def predict(model, fit_result, *, newdata: pd.DataFrame | None = None, kind: str
               or bool(model.spec.mo_terms)                     # monotonic terms (B03): Bambi's predictions do not know them
               or bool(model.spec.gp_terms)                     # nor the Gaussian processes (C03)
               or model.spec.autocor is not None                # an autocorrelation term (C04): nor this one
+              or getattr(model.spec, "sar", None) is not None  # nor a SAR term (F02b)
               or bool(model.spec.me_terms) or bool(model.spec.mi_terms)    # nor the me() and mi() terms (C06)
               or bool(model.spec.custom_group_terms))          # nor the mm() and gr(by = ) terms (D08)
     if dpar is not None:

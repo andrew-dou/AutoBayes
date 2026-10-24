@@ -239,6 +239,8 @@ def check_model(prior: Prior, spec, fam) -> None:
         refused.append(f"Gaussian processes {[g.term for g in spec.gp_terms]}")
     if spec.autocor is not None:
         refused.append(f"an autocorrelation term {spec.autocor.term}")
+    if getattr(spec, "sar", None) is not None:                # F02b: not verified with it either (D143)
+        refused.append(f"a SAR term {spec.sar.term}")
     if refused:
         raise PriorError(f"{fn} is offered with population-level terms that are columns of the design only; this formula has "
                          + "; ".join(refused) + f", which no frozen case verifies with it ({DOC}, divergence D102)")

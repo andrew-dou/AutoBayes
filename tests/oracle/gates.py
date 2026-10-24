@@ -8,7 +8,8 @@ G1 `check_design`        standata equals the model's design, response, trials, o
                          and each Gaussian process's row index, inputs or basis and scaling (Jgp_k, Xgp_k, Xgp_prior_k,
                          dmax_k, cmeans_k; an approximate GP's slambda_k, Lgp_k, NBgp_k; C03);
                          an autocorrelation term's Kar, Kma and J_lag, with brms's rows sorted by series and time
-                         compared through the permutation derived from the data (C04, adapter.in_data_order)
+                         compared through the permutation derived from the data (C04, adapter.in_data_order);
+                         a SAR term's Msar, eigenMsar, N_tg and its parameter's bounds (F02b, adapter.check_sar_design)
 G2 `check_logp`          log density with and without the Jacobian, and its prior part, at every point
 G2 `check_gradient`      every gradient coordinate, mapped through the probed parameter table
 G3 `check_derived`       the graph's linear predictor, group effects and correlation matrices, and the raw-scale intercept
@@ -297,6 +298,7 @@ def check_design(b: Bundle) -> None:
             if key not in sd or np.shape(sd[key]) != np.shape(value) or abs_err(sd[key], value) > DESIGN_ABS:
                 raise OracleMismatch(f"Gaussian process {g.term!r}: brms {key} is {sd.get(key)!r}; AutoBayes has {value!r}")
     adapter.check_autocor_design(b.fixture, b.model)             # C04: Kar, Kma, J_lag and each sorted row's series and position
+    adapter.check_sar_design(b.fixture, b.model)                 # F02b: Msar, eigenMsar, N_tg and the parameter's bounds
     check_shrinkage_data(b)                                      # D07: Kscales and a shrinkage prior's data
     check_fixed_parameters(b)                                    # E02: a parameter the formula fixes (bf(quantile = p))
     # the design columns (every formula's), the group partitions and the monotonic codes were matched by content when the
@@ -705,6 +707,7 @@ def check_default_prior(b: Bundle) -> None:
     mixture = getattr(b.model, "mixture_names", {})        # C05: each component's sigma<k> and theta (Intercept, b above)
     expected |= {*mixture["sigma"], "theta"} if mixture else set()
     expected |= {part for part in ("ar", "ma") if part in getattr(b.model, "autocor_names", {})}   # C04: an ARMA term's ar and ma
+    expected |= set(getattr(b.model, "sar_names", {}))     # F02b: a SAR term's lagsar or errorsar
     expected |= {"meanme", "sdme"} if b.model.spec.me_terms else set()     # C06: an me() term's latent values
     if not expected <= classes:
         raise OracleMismatch(f"brms default_prior classes {sorted(classes)} lack {sorted(expected - classes)}")

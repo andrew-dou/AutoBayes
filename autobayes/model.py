@@ -33,7 +33,9 @@ added to the parent's linear predictor the same way, under Bambi's names of a va
 correlation ID shared with sigma's formula is Bambi's two components' terms correlated by the post-build edit of A02.
 brms's autocorrelation terms ``ar()``, ``ma()`` and ``arma()`` in the regression formulation (C04, docs/autocorrelation.md)
 are added to the Gaussian linear predictor last, on the residuals of every other term (``autobayes.autocor``;
-``Design.autocor`` holds the series of the fitted rows).
+``Design.autocor`` holds the series of the fitted rows). brms's ``sar(M, type = "lag" | "error")`` (F02b, docs/spatial-sar.md)
+replaces the Gaussian likelihood with the joint SAR density of the responses (``autobayes.sar``; ``M`` comes in ``data2``,
+``Design.sar`` holds it and its eigenvalues).
 """
 from __future__ import annotations
 
@@ -198,6 +200,7 @@ class Design:
     monotonic: Mapping[str, MonotonicBlock] = field(default_factory=lambda: MappingProxyType({}))   # each monotonic term's block, by column (B03)
     gp: Mapping[str, GPBlock] = field(default_factory=lambda: MappingProxyType({}))   # each Gaussian process's block, by column (C03)
     autocor: object | None = None      # autocor.AutocorDesign: the series of an autocorrelation term on the fitted rows (C04), or None
+    sar: object | None = None          # sar.SarDesign: a SAR term's weight matrix and its eigenvalues on the fitted rows (F02b), or None
     measurement_error: Mapping[str, MeasurementBlock] = field(default_factory=lambda: MappingProxyType({}))   # each me() term's block, by noisy column (C06)
     missing: Mapping[str, MissingBlock] = field(default_factory=lambda: MappingProxyType({}))   # each column whose missing values are parameters (C06)
     category_specific: Mapping[str, np.ndarray] = field(default_factory=lambda: MappingProxyType({}))   # each cs() term's column on the fitted rows (D04; brms's Xcs), by column
@@ -316,8 +319,10 @@ class Model:
                  family: str = "gaussian", center_predictors: bool = True,
                  categorical: Mapping[str, object] | None = None, nu: float | None = None, link: str | None = None,
                  families: list[str] | None = None, order: str | bool | None = None, imputed: tuple[str, ...] = (),
-                 quantile: float | None = None):
-        """``imputed`` (C06) is set by ``MultivariateModel`` for the models of its responses: the responses of its
+                 quantile: float | None = None, data2: Mapping[str, object] | None = None):
+        """``data2`` (F02b) holds the matrices the formula's terms read by name, brms's ``data2``: ``sar(M, ...)``'s weight
+        matrix over the fitted rows, ``data2={"M": matrix}`` (a NumPy array or a DataFrame, in data order); an entry no term
+        reads is refused. ``imputed`` (C06) is set by ``MultivariateModel`` for the models of its responses: the responses of its
         ``col | mi() ~ ...`` formulas, whose missing values are parameters (``formula.check_imputation``); empty otherwise.
         ``quantile`` (E02) fixes the asymmetric Laplace family's quantile (brms's ``bf(y ~ ..., quantile = p)``): the model's
         spec is then the family's with that parameter fixed (``FamilySpec.with_fixed``) and ``self.quantile`` its value."""
@@ -474,6 +479,10 @@ class Model:
                     f"no series of {self.spec.autocor.term} has more than {longest} row(s): {unread} multiply no lagged residual and "
                     "are informed by their prior alone (brms keeps them too)"
                 )
+        from autobayes.sar import check_data2, sar_design
+
+        self._sar_design = sar_design(self.spec.sar, data2, len(self.data)) if self.spec.sar is not None else None
+        check_data2(self.spec, data2)                         # F02b: data2 holds what sar() reads, and nothing else
 
         bambi_family = fam.bambi_family()
         if any(a.kind != "mi" for a in self.spec.additions):   # brms's response addition terms act on the likelihood (B02)
@@ -521,6 +530,9 @@ class Model:
         if self.spec.autocor is not None:                    # brms's ar(), ma(), arma() (C04): added last, on the residuals
             from autobayes.autocor import autocor_family
             bambi_family = autocor_family(bambi_family, self._add_autocor_effects)
+        if self.spec.sar is not None:                        # brms's sar(M, type) (F02b): the joint SAR likelihood
+            from autobayes.sar import sar_family
+            bambi_family = sar_family(bambi_family, self._sar_design)
         self.bambi_model = bmb.Model(
             bambi_formula, bambi_data, family=bambi_family,
             priors=bambi_priors,
@@ -589,6 +601,7 @@ class Model:
         variable_names += [roles["simplex"] for roles in self.mo_names.values()]   # each monotonic term's simplex (B03)
         variable_names += [roles[k] for roles in self.gp_names.values() for k in ("sdgp", "lscale", "zgp")]   # each GP's (C03)
         variable_names += [v for k, v in self.autocor_names.items() if not k.endswith("_coordinate")]   # ar and ma (C04)
+        variable_names += list(self.sar_names.values())      # lagsar or errorsar (F02b)
         variable_names += [roles[k] for roles in self.me_names.values() for k in ("mean", "sd", "z", "latent", "noisy")]   # C06
         variable_names += [roles["values"] for roles in self.missing_names.values()]   # C06: the missing values Ymi_<col>
         shrinkage = self.shrinkage_names                    # D07: zb, sdb and the horseshoe's or R2D2's own variables
@@ -854,7 +867,7 @@ class Model:
                       rcens=additions.get("rcens"),                                         # E04: cens(col, y2)'s upper bounds
                       dpars=MappingProxyType({d.response: self._dpar_design(d) for d in self.spec.dpars}),
                       monotonic=MappingProxyType(self._monotonic_design()), gp=MappingProxyType(self._gp_design()),
-                      autocor=self._autocor_design,
+                      autocor=self._autocor_design, sar=self._sar_design,                    # F02b
                       measurement_error=MappingProxyType(self._measurement_design()),   # C06
                       missing=MappingProxyType(self._missing_design()),
                       category_specific=MappingProxyType(self._category_specific_design()))   # D04
@@ -1518,6 +1531,7 @@ class Model:
         if fam.continuous and fam.parent == "mu":
             out["mu"] = "mu"                                  # the continuous families whose parent is the location mu expose it by name (the Beta's parent is logit_mu)
         out.update({k: v for k, v in self.autocor_names.items() if not k.endswith("_coordinate")})   # "ar", "ma" (C04)
+        out.update(self.sar_names)                            # "lagsar" or "errorsar" (F02b)
         return out
 
     @property
@@ -1561,6 +1575,13 @@ class Model:
         for part, _ in (term.parts if term is not None else ()):
             out[part], out[f"{part}_coordinate"] = part, f"{part}_dim"
         return out
+
+    @property
+    def sar_names(self) -> dict[str, str]:
+        """PyMC name of a SAR term's parameter (F02b): ``{"lagsar": "lagsar"}`` or ``{"errorsar": "errorsar"}`` (brms's name; a
+        scalar sampled as ``<name>_interval__``, also ``names["lagsar"]``). Empty without one."""
+        term = getattr(self.spec, "sar", None)                # a non-linear model's spec has none (C02)
+        return {term.parameter: term.parameter} if term is not None else {}
 
     @property
     def shrinkage_names(self) -> dict:
@@ -1680,7 +1701,7 @@ class Model:
                     zi: float | None = None, hu: float | None = None, bsp=None, simo=None, theta=None,
                     sdgp=None, lscale=None, zgp=None, ar=None, ma=None, meanme=None, sdme=None, zme=None,
                     Ymi=None, alpha=None, beta=None, ndt=None, shrinkage=None, bcs=None, zoi=None, coi=None,
-                    kappa=None, quantile=None, tmp_xi=None) -> dict[str, np.ndarray]:
+                    kappa=None, quantile=None, tmp_xi=None, lagsar=None, errorsar=None) -> dict[str, np.ndarray]:
         """A point in PyMC's sampled (value) space, from natural-scale quantities.
 
         ``intercept`` is the *model* intercept (at the predictor means when centred),
@@ -1742,6 +1763,8 @@ class Model:
         model has one. E02: ``kappa`` (the von Mises precision, positive, stored as its log), ``quantile`` (the asymmetric
         Laplace quantile, in (0, 1), stored as its logit; omitted when the model fixes it) and ``tmp_xi`` (brms's unscaled
         generalized extreme value shape, any finite number, stored as given; the graph derives ``xi`` from it) likewise.
+        F02b: ``lagsar`` or ``errorsar``, a SAR term's parameter (brms's), strictly between the smallest and largest eigenvalue of
+        its ``M``, stored on PyMC's interval coordinate ``log((rho - lower) / (upper - rho))`` (Stan's), given exactly with the term.
         """
         extras = {"alpha": alpha, "beta": beta, "ndt": ndt, "zoi": zoi, "coi": coi,   # D01, E01 (zero_one_inflated_beta)
                   "kappa": kappa, "quantile": quantile, "tmp_xi": tmp_xi}             # E01 (xbeta), E02
@@ -1756,6 +1779,8 @@ class Model:
                 raise ValueError("shrinkage holds the variables of a shrinkage prior on b; a mixture has none")
             if sdgp is not None or lscale is not None or zgp is not None:   # C03: a mixture has no Gaussian process
                 raise ValueError("sdgp, lscale and zgp are a Gaussian process's values; a mixture has none")
+            if lagsar is not None or errorsar is not None:    # F02b: a mixture has no SAR term
+                raise ValueError("lagsar and errorsar are a SAR term's parameters; a mixture has none")
             from autobayes.families.mixture import value_point
             return value_point(self, intercept=intercept, b=b, sigma=sigma, theta=theta, sd=sd, z=z, L=L, shape=shape, phi=phi,
                                nu=nu, zi=zi, hu=hu, bsp=bsp, simo=simo,
@@ -1948,9 +1973,29 @@ class Model:
         point.update(self._autocor_point(ar, ma))            # C04: an autocorrelation term's ar and ma
         point.update(self._measurement_point(None if mo else bsp, meanme, sdme, zme, Ymi))   # C06: me() and mi()
         point.update(cs_point)                                # D04
+        point.update(self._sar_point(lagsar, errorsar))       # F02b: a SAR term's lagsar or errorsar
         expected = {v.name for v in self.pymc_model.value_vars}
         if set(point) != expected:
             raise RuntimeError(f"value names {sorted(point)} do not match PyMC's {sorted(expected)}")
+        return point
+
+    def _sar_point(self, lagsar, errorsar) -> dict[str, np.ndarray]:
+        """``value_point``'s entry of a SAR term (F02b): its parameter as given, strictly between the bounds, on PyMC's interval
+        coordinate."""
+        d, point = self.design.sar, {}
+        for name, value in (("lagsar", lagsar), ("errorsar", errorsar)):
+            if d is None or d.parameter != name:
+                if value is not None:
+                    raise ValueError(f"this model has no {name}" + (f" ('{d.term}' has {d.parameter})" if d is not None else
+                                     " (no SAR term sar(M, type = ...))") + f"; {name} does not apply")
+                continue
+            if value is None:
+                raise ValueError(f"{name} is required: the term '{d.term}' has it")
+            rho = np.asarray(value, dtype=float)
+            if rho.shape != () or not d.lower < float(rho) < d.upper:
+                raise ValueError(f"{name} must be a scalar strictly between {d.lower!r} and {d.upper!r} (the smallest and largest "
+                                 f"eigenvalue of {d.matrix}), got {value!r}")
+            point[f"{name}_interval__"] = np.asarray(np.log(rho - d.lower) - np.log(d.upper - rho))
         return point
 
     def _category_specific_point(self, bcs) -> dict[str, np.ndarray]:
@@ -2250,6 +2295,7 @@ class Model:
                     + ([f"response addition term(s) {', '.join(a.term for a in s.additions)}"] if s.additions else [])
                     + ([f"distributional formula(s) for {', '.join(s.dpar_names)}"] if s.dpars else [])
                     + ([f"autocorrelation term {s.autocor.term}"] if s.autocor is not None else [])
+                    + ([f"simultaneous autoregressive term {s.sar.term}"] if s.sar is not None else [])          # F02b
                     + (["measurement-error term(s)"] if s.me_terms else []) + (["missing-value term(s)"] if s.mi_terms else [])
                     + ([f"a shrinkage prior on b ({brms_spelling(pr.b).split('(')[0]})"] if self.shrinkage_names else [])   # D07
                     + (["category-specific effect(s) cs()"] if s.cs_terms else []))                      # D04
@@ -2278,6 +2324,9 @@ class Model:
                       f"never centred; brms offset()); range {d.offset.min():.4f} to {d.offset.max():.4f} over the fitted rows"]
         lines += self._addition_lines()
         lines += self._autocor_data_lines()                  # C04: the series of an autocorrelation term
+        if s.sar is not None:                                # F02b: the SAR term's weight matrix
+            from autobayes.sar import data_lines
+            lines += data_lines(self)
         for t in s.transform_terms:
             tr, col = t.transform, d.X_raw[:, s.columns.index(t.name)]
             lines += [f"  {t.name:<10}: in-formula transform of {tr.column!r}, {tr.expression(f'{tr.column}_i')}, range {col.min():.4f} to "
@@ -2574,7 +2623,11 @@ class Model:
             lines += [f"  b_{name}_{col} ~ {describe_prior(prior)}" for col, prior in sub.coefficient_priors(ds).items()]
             lines += [f"  sd_{name},{g} ~ {describe_prior(prior, lb=0)}   (brms class sd with dpar = {name})"   # D08: a shared ID's terms
                       for (g, c), prior in (sub.sd_priors(ds).items() if ds.group_terms else ())]
-        lines += fam.likelihood_lines(self)
+        if s.sar is None:
+            lines += fam.likelihood_lines(self)
+        else:                                                # F02b: the joint SAR density in place of the family's
+            from autobayes.sar import likelihood_lines
+            lines += likelihood_lines(self)
         lines += self._addition_likelihood_lines()
         if self.default_prior_labels:                         # priors filled in by ab.default_priors() (A07)
             from autobayes.default_priors import BRMS_VERSION
@@ -2667,6 +2720,10 @@ class Model:
             acn = self.autocor_names
             roles[acn[part]] = (f"{part}[1..{order}], the {_AUTOCOR_MEANING[part]} coefficients (brms's {part}; vector, dims "
                                 f"{acn[part + '_coordinate']}, unconstrained)")
+        if s.sar is not None:                                # F02b: lagsar / errorsar on its interval coordinate
+            sd_ = d.sar
+            roles[f"{sd_.parameter}_interval__"] = (f"log(({sd_.parameter} - lower) / (upper - {sd_.parameter})), lower and upper the "
+                                                    f"smallest and largest eigenvalue of {sd_.matrix} (Stan's lower-upper coordinate)")
         shrinkage_note = ""
         if self.shrinkage_names:                             # D07: zb and the shrinkage prior's scales; b, sdb deterministic
             from autobayes.shrinkage import deterministic_note, value_roles
@@ -2954,7 +3011,7 @@ class Model:
 
 def gaussian(formula: str | list[str], data: pd.DataFrame, priors: Priors, *, center_predictors: bool = True,
              categorical: Mapping[str, object] | None = None, rescor: bool | None = None, nl: bool = False,
-             loop: bool = True) -> "Model | MultivariateModel":
+             loop: bool = True, data2: Mapping[str, object] | None = None) -> "Model | MultivariateModel":
     """Build the Gaussian model (identity link, residual SD ``sigma``), with a varying intercept when the
     formula has ``(1 | group)`` and population-only otherwise (M3c-1).
     ``categorical={column: reference_level}`` declares treatment-coded categorical predictors. ``sigma`` may have its own
@@ -2966,9 +3023,15 @@ def gaussian(formula: str | list[str], data: pd.DataFrame, priors: Priors, *, ce
     ``nl=True`` (C02, docs/nonlinear.md) builds a non-linear model, ``ab.NonlinearModel``: ``["y ~ a * exp(b * x)",
     "a ~ 1 + (1 | g)", "b ~ 1"]`` with ``Priors(nlpars={"a": {"b": ..., "sd": ...}, "b": {"b": ...}}, sigma=...)``, brms's
     ``bf(y ~ a * exp(b * x), a ~ 1 + (1 | g), b ~ 1, nl = TRUE)``; ``loop`` is brms's option of that name (only its default,
-    True, is offered: divergence D63), and a non-linear model takes no multivariate formula or ``rescor`` (divergence D62)."""
+    True, is offered: divergence D63), and a non-linear model takes no multivariate formula or ``rescor`` (divergence D62).
+    ``data2`` (F02b, docs/spatial-sar.md) holds the matrices the formula reads by name, brms's ``data2``: ``y ~ x + sar(M, type =
+    "lag")`` with ``data2={"M": matrix}``, the weight matrix over the rows in data order, and ``Priors(..., lagsar=ab.Flat())``;
+    a non-linear or multivariate model takes none (divergence D143)."""
     from autobayes.multivariate import MultivariateModel, is_multivariate_formula     # C01
 
+    if data2 is not None and (nl or rescor is not None or is_multivariate_formula(formula)):   # F02b
+        raise FormulaError("data2 is read by a SAR term sar(M, type = ...), which a non-linear or multivariate model does not take "
+                           "in this slice (docs/spatial-sar.md, divergence D143)")
     if nl:                                                             # C02: a non-linear model
         from autobayes.nonlinear import NonlinearModel
 
@@ -2982,7 +3045,7 @@ def gaussian(formula: str | list[str], data: pd.DataFrame, priors: Priors, *, ce
     if rescor is not None or is_multivariate_formula(formula):
         return MultivariateModel(formula, data, priors, family="gaussian", rescor=rescor, center_predictors=center_predictors,
                                  categorical=categorical)
-    return Model(formula, data, priors, family="gaussian", center_predictors=center_predictors, categorical=categorical)
+    return Model(formula, data, priors, family="gaussian", center_predictors=center_predictors, categorical=categorical, data2=data2)
 
 
 def bernoulli(formula: str, data: pd.DataFrame, priors: Priors, *, link: str = "logit", center_predictors: bool = True,
