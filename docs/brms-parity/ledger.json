@@ -1996,12 +1996,15 @@
    "depends_on": [
     "C04_autocor"
    ],
-   "status": "gates_green",
+   "status": "merged",
    "summary": "fcor(M) fixed residual covariance from data2 (case gauss_fcor)",
-   "pr": null,
+   "pr": 91,
    "attempts": 0,
-   "divergences": [],
-   "next_action": "implementing (wave F1)",
+   "divergences": [
+    "D144",
+    "D145"
+   ],
+   "next_action": "none",
    "reserved_divergences": "D144-D145",
    "gates": {
     "sha": "80acc176758e",
