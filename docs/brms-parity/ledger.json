@@ -2071,12 +2071,15 @@
    "depends_on": [
     "C04_autocor"
    ],
-   "status": "gates_green",
+   "status": "merged",
    "summary": "unstr(time, gr) and cosy(time, gr) residual correlation (cases gauss_unstr, gauss_cosy, student_cosy, gauss_unstr_post)",
-   "pr": null,
+   "pr": 96,
    "attempts": 0,
-   "divergences": [],
-   "next_action": "implementing (wave F1)",
+   "divergences": [
+    "D146",
+    "D147"
+   ],
+   "next_action": "none",
    "reserved_divergences": "D146-D147",
    "gates": {
     "sha": "b572b1db7795",
