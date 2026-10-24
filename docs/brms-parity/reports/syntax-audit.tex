@@ -1,0 +1,463 @@
+\documentclass[11pt]{article}
+\usepackage[margin=1in]{geometry}
+\usepackage[T1]{fontenc}
+\usepackage{amsmath,amssymb,mathtools}
+\usepackage{booktabs,array,enumitem,caption}
+\usepackage{xcolor,hyperref}
+\sloppy
+\hypersetup{colorlinks=true, linkcolor=blue!50!black, urlcolor=blue!50!black}
+\newcommand{\code}[1]{\texttt{#1}}
+\newcommand{\file}[1]{\texttt{#1}}
+\newcommand{\f}[1]{\texttt{\detokenize{#1}}}
+\newcolumntype{L}[1]{>{\raggedright\arraybackslash}p{#1}}
+\setlist{nosep, leftmargin=1.4em}
+\newcommand{\allname}{\_\_all\_\_}
+
+\title{AutoBayes against brms's syntax: an audit}
+\author{Prepared for Andrew}
+\date{24 October 2026}
+
+\begin{document}
+\maketitle
+
+\noindent You asked: \emph{``I'm trusting that the code we have really matches a lot of the brms syntax (without
+extraneous things)?''} This report answers with a corpus of 248 brms formulas, each read by brms 2.23.0 itself and by
+AutoBayes on \code{main} (\code{a72647e}), and with a review of the call surface, the post-processing names and everything
+the package and the repository ship beyond a brms-like library. Nothing under \file{autobayes/} was changed.
+
+\section{The short answer}\label{sec:answer}
+
+\paragraph{What AutoBayes accepts, it reads as brms does, with one exception.} Of the 245 corpus formulas that brms accepts,
+AutoBayes builds 116. For 114 of them its model has exactly brms's reading: the same design columns, the same group-level
+partitions, covariates and level labels, the same addition-term and special-term data, the same centring, family and links
+(Section~\ref{sec:method} says how this is checked). One differs in a documented way (\f{family = Gamma()} from R's
+\code{stats} package has the inverse link, \code{ab.gamma} the log link, D9). One is a \textbf{silent misreading}: an
+ordered factor predictor, \f{y ~ fo}, is coded with treatment dummies where brms uses R's polynomial contrasts
+(\code{fo.L}, \code{fo.Q}). Nothing crashed.
+
+\paragraph{It refuses about half of brms's syntax, nearly always by name.} The other 129 formulas are refused: 113 with a
+message naming the construct, 16 with a message that does not name it or names it wrongly (Table~\ref{tab:unclear}). The
+worst of these is \f{(x | g)}: AutoBayes says it has no varying intercept, but brms's \f{(x | g)} \emph{is}
+\f{(1 + x | g)}. The core of brms's language is covered and matches: numeric and factor terms, interactions with their main
+effects, cell-means coding, intercept controls, the supported transforms, offsets, \f{(1 | g)}, \f{||}, \f{|}, \f{g:h},
+\f{g/h}, \f{gr(g, by = )}, \f{mm()}, distributional and non-linear formulas, \f{mvbind()} with \f{set_rescor()}, \f{mi()},
+\f{me()}, \f{mo()}, \f{cs()}, \f{gp()}, \f{ar()}/\f{ma()}/\f{arma()}, \f{weights()}, \f{trials()}, \f{cens()} and
+\f{trunc()}. What is refused includes smooths (\f{s()}, \f{t2()}), \f{se()}, \f{rate()}, \f{thres()}, most \f{gr()}
+options and several cheap spellings of things AutoBayes already has (\f{gr(g, cor = FALSE)} for \f{||},
+\f{trials(10)}, \f{(x | g)}).
+
+\paragraph{It is not free of extraneous things.} The top-level namespace exports a reproducibility and diagnostics API
+from the agent-scaffold era (\code{environment}, \code{fit\_record}, \code{compare\_records}, \code{format\_comparison},
+\code{format\_environment}, \code{panel}) and the term model's internals (\code{ModelSpec}, \code{PopTerm},
+\code{GroupTerm}, \code{Categorical}, \code{parse\_formula}, \code{NonlinearSpec}); user-facing text carries project jargon
+(\code{describe()} prints ``AutoBayes M0 model''; 36 of the 132 refusal messages in the corpus say ``this slice'' or
+``this subset'', 17 cite a milestone id, 8 a milestone decision document); and the repository still carries the agent
+scaffold (\file{SKILL.md}, \file{skills/}, \file{scaffold/}, \file{reference/}, \file{bin/}, \file{install.sh},
+\file{cluster/}) and 2.8~MB of milestone evidence. The library does not read any of it at run time
+(Section~\ref{sec:extraneous}). Recommendations, ranked, are in Section~\ref{sec:recs}.
+
+\section{How the corpus was read}\label{sec:method}
+
+\paragraph{The corpus.} \file{tests/brms\_syntax/corpus.json} has 248 entries in ten areas (Table~\ref{tab:counts}). Each
+holds a brms call, written for this audit from brms 2.23's help pages (\code{brmsformula}, \code{addition-terms},
+\code{brmsformula-helpers}, \code{gr}, \code{mm}, \code{mmc}, \code{gp}, \code{s}, \code{mo}, \code{me}, \code{mi},
+\code{cs}, the autocorrelation pages, \code{mvbrmsformula}, \code{brmsfamily}, \code{mixture}, \code{custom\_family}); no
+brms source was read. Each also holds the AutoBayes translation a user would write: the constructor for the family, the
+same formula string (a list of strings for \f{bf()} with several formulas), \code{categorical=\{column: first level\}}
+for a factor predictor, and \f{bf()}'s options as keyword arguments (\code{center} as \code{center\_predictors},
+\code{nl}, \code{loop}, \code{quantile}; any other option under its brms name). Priors are \code{ab.default\_priors()}
+for the same formula, so the formula is the only thing under test. The data are one seeded 40-row frame with 60 columns
+(\code{audit.make\_data}, committed as \file{data.csv}): numeric, integer, logical, text, factor, ordered-factor and
+pandas-categorical columns, five grouping levels with eight time points each, counts, trials, ordinal and categorical
+responses, censoring codes, weights and a column with missing values.
+
+\paragraph{brms's reading.} \file{tests/brms\_syntax/brms\_reading.R} builds each entry's formula and family with
+\code{as.formula()} and brms's helpers (no text is evaluated as code) and calls \code{make\_standata()} and
+\code{brm(..., empty = TRUE)}, which builds the fit object without compiling, for brms's table of group-level terms and
+its resolved family and links. The output is \file{standata.json} (0.8~MB): every Stan-data name with its dimensions, the
+arrays, the design matrices' column names, the group-level terms with their level labels, and the family. Reading all
+248 entries takes about 25 seconds, and the output is the same byte for byte on a second run.
+
+\paragraph{The comparison} (\code{audit.compare}). An accepted model matches brms when
+\begin{itemize}
+\item every AutoBayes design column equals exactly one column of brms's \code{X} (or \code{X\_sigma}, \code{X\_y},
+\code{X\_a}, \code{X\_muc2}, \code{X\_mu1}, \dots) to $10^{-12}$, and brms's only other column is its intercept;
+\item every group-level coefficient meets exactly one brms term whose \code{J} induces the same partition of the rows and
+whose \code{Z} is the same covariate (\code{J\_m\_k}, \code{W\_m\_k} per member for \f{mm()}; \code{Jby} for \f{by}), with
+the same level labels and the same correlation flag;
+\item trials, offsets, weights, censoring codes and bounds, \code{Xmo}/\code{Jmo}, \code{Xcs}, \code{Jgp}/\code{Xgp} and
+the GP scaling, \code{Xn}/\code{noise}, \code{Jmi}, \code{Kar}/\code{Kma}/\code{J\_lag}, \code{nthres}, \code{ncat} and a
+fixed \code{quantile} agree;
+\item brms centres the design (\code{Kc}) exactly when AutoBayes does, and the family and every link agree;
+\item \emph{no brms Stan-data name is left over}: a name the AutoBayes model does not account for (\code{se},
+\code{denom}, a fixed \code{sigma}, \code{X\_mu}, \dots) is a mismatch. This is what would catch a construct read and
+silently dropped.
+\end{itemize}
+Group-level labels in another order (brms orders integer labels numerically, AutoBayes as text, D3) are recorded as a
+note, not a mismatch. On 43 deliberate mismatches (each model against a neighbouring entry's brms reading: an extra
+column, \f{|} against \f{||}, exact against approximate GP, centred against uncentred, logit against probit, \dots) the
+comparison reported a difference every time.
+
+\paragraph{Refusals.} A refusal is AutoBayes's own \code{FormulaError}, \code{PriorError}, \code{ValueError} or
+\code{NotImplementedError} raised in \file{autobayes/}, or Python's \code{TypeError} for a keyword the constructor does not
+have; anything else would be a crash. Each refusal message was read; \code{tokens} records what a message naming the
+construct contains, and \code{unclear} says why one that quotes the construct still misnames it.
+
+\paragraph{The test.} \file{tests/test\_brms\_syntax\_corpus.py} (250 tests, 5~s, no R) rebuilds every entry: an accepted
+formula must still match brms's reading, a refusal must still name its construct, and each known gap is pinned as it is
+today. Every test id starts with the entry's gap: \code{defect:} (a misreading, an unclear refusal or a crash: a fix shows
+up as a failure of \code{test\_known\_gap\_is\_pinned}), \code{capability:} (refused by name), \code{divergence:}
+(documented) or \code{ok:}. \code{python -m tests.brms\_syntax.audit} re-records the AutoBayes side.
+
+\section{The formula language}\label{sec:formula}
+
+\begin{table}[tbp]
+\small
+\begin{center}\begin{tabular}{@{}lrrrrrrr@{}}
+\toprule
+ & & & & & \multicolumn{2}{c}{refused} & brms \\
+\cmidrule(lr){6-7}
+Area & entries & match & differs & misread & named & unclear & refuses \\
+\midrule
+population-level terms & 73 & 39 & & 1 & 26 & 7 & \\
+group-level terms & 35 & 13 & & & 17 & 5 & \\
+addition terms & 31 & 11 & & & 20 & & \\
+special terms (\f{s}, \f{gp}, \f{mo}, \f{me}, \f{cs}) & 25 & 9 & & & 16 & & \\
+autocorrelation terms & 13 & 6 & & & 7 & & \\
+\f{bf()} options and helpers & 12 & 6 & & & 6 & & \\
+distributional formulas & 14 & 7 & & & 5 & 2 & \\
+non-linear formulas & 10 & 6 & & & 3 & 1 & \\
+multivariate formulas & 10 & 3 & & & 6 & 1 & \\
+families and their responses & 25 & 14 & 1 & & 7 & & 3 \\
+\midrule
+total & 248 & 114 & 1 & 1 & 113 & 16 & 3 \\
+\bottomrule
+\end{tabular}\end{center}
+\caption{\small Outcomes by area. ``brms refuses'': brms stops (\f{k ~ x} for a binomial without trials; a text response
+for \code{cumulative}; \code{cox()}, which needs the uninstalled \code{splines2}); AutoBayes refuses those three by name too.
+No entry crashed.}\label{tab:counts}
+\end{table}
+
+\subsection{The silent misreading, and the documented difference}
+
+\paragraph{Ordered factors as predictors} (\code{pop\_ordered\_factor}). With \code{fo} an ordered factor
+(\code{lo} $<$ \code{mid} $<$ \code{hi}), brms's \f{y ~ fo} has the columns \code{Intercept}, \code{fo.L}, \code{fo.Q}:
+R's \code{contr.poly}, orthogonal linear and quadratic contrasts over the three ordered levels. AutoBayes, given the pandas
+ordered Categorical with \code{categorical=\{"fo": "lo"\}}, builds \code{fo[hi]} and \code{fo[mid]}, treatment dummies
+against \code{lo}, and says nothing. The two designs span the same column space, so the likelihood is the same family of
+models, but the coefficients mean different things: brms's \code{b\_fo.L} is a linear trend across the levels,
+AutoBayes's \code{fo[hi]} the difference of \code{hi} from \code{lo}. A prior on \code{b}, a \code{hypothesis()} on a
+coefficient or a reported estimate therefore refers to another quantity than the brms model it was ported from. No
+divergence row or document mentions it. (An unordered factor, and a pandas Categorical declared with its first level, match
+brms exactly.)
+
+\paragraph{The Gamma family's link} (\code{fam\_gamma\_stats}, D9). A brms user who writes \f{family = Gamma()} gets the
+\code{stats} package's family, whose default link is \code{inverse}; \code{ab.gamma} defaults to \code{log}. That is D9. But
+D9 (and \code{ab.gamma}'s docstring) say ``\code{brmsfamily("Gamma")} defaults to the inverse link'', which is wrong:
+\code{brmsfamily("Gamma")} defaults to \code{log} (its help page: ``when calling the \code{Gamma} family function of the
+\code{stats} package, the default link will be \code{inverse} instead of \code{log} although the latter is the default in
+brms''), and the corpus entry \code{fam\_gamma\_default\_link} matches. Only the documentation needs fixing.
+
+\subsection{Refusals that do not name the construct}
+
+\begin{table}[tbp]
+\footnotesize
+\begin{center}\begin{tabular}{@{}L{0.25\textwidth}L{0.33\textwidth}L{0.36\textwidth}@{}}
+\toprule
+brms formula & AutoBayes says & What is wrong with it \\
+\midrule
+\f{y ~ x + (x | g)}, \f{(x || g)} & ``varying slopes without the varying intercept are not supported; write
+\f{(1 + x | g)}'' & brms's \f{(x | g)} has the intercept: it is \f{(1 + x | g)}, which AutoBayes takes \\
+\f{(1 | g) + (0 + x | g)} & refuses \f{(0 + x | g)}, advises \f{(1 + x | g)} & that adds a correlation; brms's reading is
+uncorrelated, AutoBayes's \f{(1 + x || g)} \\
+\f{(1 + x |p| g) + (0 + z |p| g)} & the same slope-only rule, advises \f{(1 + z | g)} & a second term of \code{g}, refused in
+turn; brms's reading is one block, \f{(1 + x + z | g)} \\
+\f{(x - 1 | g)} & ``\f{'x - 1'} is not a column name'' & intercept removal in a group term \\
+\f{y ~ 0 + Intercept + x} & ``columns not in data: [\f{'Intercept'}]'' & brms's reserved \code{Intercept} \\
+\f{y ~ splines::ns(x, df = 3)} & ``only a two-way interaction is supported \dots\ names 3 terms'' & reads \f{::} as
+interaction colons \\
+\f{y ~ (x + z + w)^2} & ``parenthesised term is not a \f{(1 | group)} term'' & the \f{^} expansion \\
+\f{y ~ x }\code{\%in\%}\f{ f}, \f{y ~ .}, \f{y ~ `x.dot`} & ``\dots\ is not a column name'' & the operator, R's dot, backticks
+(the column \code{x.dot} exists) \\
+\f{log(ypos) ~ x}, \f{cbind(y, y2) ~ x} & ``expected \f{'response ~ terms'}'' & a transformed or matrix response \\
+\f{bf(yord ~ x, disc ~ z)} (cumulative) & ``the cumulative family has no parameter \f{'disc'}'' & brms's has one (fixed at 1;
+D38 is the real reason) \\
+\f{bf(y ~ x) + nlf(sigma ~ a * exp(c * z))} & refuses \f{a ~ 1}: ``the gaussian family has no parameter \f{'a'}'' & the
+non-linear formula of \code{sigma} \\
+\f{+ nlf(a ~ c * z)} (nested) & ``\f{'c'} does not appear in the non-linear formula'' & a nested non-linear parameter
+(D60) \\
+\bottomrule
+\end{tabular}\end{center}
+\caption{\small The 16 unclear refusals (\code{defect:} in the test ids). Each is a refusal, so none is unsafe; each would
+send a brms user the wrong way.}\label{tab:unclear}
+\end{table}
+
+\noindent Table~\ref{tab:unclear} lists them. Besides these, six refusals name the term but give a generic reason:
+\f{s(x)}, \f{s(x, k = 5)}, \f{s(x, by = f)}, \f{s(x, z)}, \f{t2(x, z)} and \f{sigma ~ s(z)} get the transforms message
+(``only \code{log(col)}, \code{exp(col)}, \dots\ are supported as in-formula transforms \dots\ compute the column in the data
+frame''), which treats a smooth as a transform and gives advice that cannot apply; \f{(cs(1) | g)} gets ``function calls
+inside a group term are not supported''. They are counted as named.
+
+\subsection{What matches, and what is refused by name}
+
+\noindent\textbf{Accepted and identical to brms's reading} (114): \f{y ~ x}, \f{x + z}, \f{1}, \f{1 + x}, \f{x + 1},
+\f{0 + x}, \f{x - 1}, \f{-1 + x}, \f{x + 0}; a factor (declared) alone, with a numeric term, two factors; cell-means coding
+\f{0 + f}, \f{0 + f + x}, \f{0 + x + f}, \f{0 + f + f2}, \f{0 + f * x}; a factor with an unused declared level; brms's
+\f{factor(o)} written as \code{categorical=\{"o": 0\}}; \f{x * z}, \f{x + z + x:z}, \f{z:x}, \f{x * f}, \f{f * f2};
+\f{I(x^2)}, \f{I(x^3)}, \f{I(2 * x)}, \f{I(x - 1)}, \f{log()}, \f{exp()}, \f{sqrt()}; \f{offset(col)},
+\f{offset(log(col))}; a dotted column name; no spaces, line breaks and extra spaces; \f{(1 | g)}, \f{1 + (1 | g)},
+\f{(1 | g) + (1 | h)}, \f{(1 + x | g)}, \f{(1 + x || g)}, \f{(1 + x + z | g)}, \f{(1 | g:h)}, \f{(1 | g/h)},
+\f{gr(g)}, \f{gr(g, by = gby)}, \f{mm(g, g2)} with and without weights, integer group labels (levels in another order, D3);
+\f{weights()}, \f{trials()}, \f{trials() + weights()}, \f{cens(c)}, \f{cens(c, y2)}, \f{weights() + cens()}, Weibull
+\f{cens()}, \f{trunc()} with one or both numeric bounds, count \f{trunc(ub = )}; \f{gp(x)}, \f{gp(x, k = 10, c = 5/4)},
+\f{gp()} of repeated inputs, \f{mo()} of integers and of an ordered factor, \f{x + mo(o)}, \f{me(x, sdx)}, \f{cs()} in
+\code{sratio} and \code{acat}; \f{ar()} (named, positional, \f{p = 2}, one series), \f{ma()}, \f{arma()}; \f{bf()}, \f{center
+= FALSE} (with groups too), \f{quantile = 0.25}, \f{+ lf(sigma ~ z)}, \f{+ set_nl()}; \f{sigma ~ z}, \f{sigma ~ 0 + z},
+\f{sigma ~ f}, an ID shared by \code{mu} and \code{sigma}, \f{shape ~}, \f{phi ~}, \f{zi ~} (zero-inflated negative
+binomial); five non-linear models (group terms, a factor in a parameter, \f{inv_logit}, powers, unary minus); \f{mvbind()}
+with \f{set_rescor(TRUE)} and \f{(FALSE)} and groups, \f{mi()} with its sub-model; and the families: Bernoulli (logit,
+probit), Student-t, \code{brmsfamily("Gamma")}, Poisson with groups, cumulative with groups, with an ordered-factor response
+and with a response coded 1, 2, 4 (brms's \code{1..max(y)}, matched), categorical (text and integer codes), a two-Gaussian
+mixture, zero-inflated and hurdle Poisson.
+
+\medskip\noindent\textbf{Refused by name} (113, \code{capability:} in the test ids), by area:
+\begin{itemize}
+\item \emph{Population-level}: an undeclared factor, pandas Categorical, ordered factor or logical column (the message
+says to declare \code{categorical=}); \f{bf(cmc = FALSE)}; interactions without both main effects (\f{x:z},
+\f{f:f2}, \f{x + x:f}, \f{f + x:f}); three-way; \f{- z}; a duplicated term or interaction; missing values in a predictor or
+the response (brms drops the rows with a warning); \f{I(x * z)}, \f{I(xp^0.5)}, \f{I(x > 0)}, \f{log(xp + 1)},
+\f{abs()}, \f{poly()}, \f{scale()}, \f{factor()}; two offsets; \f{offset(2 * off)}.
+\item \emph{Group-level}: \f{(0 + x | g)}; the same term twice; a slope without its population-level term (D8); factor,
+transform, interaction and \f{mo()} slopes; three grouping columns; \f{|p|} on one term; \f{gr()}'s \code{cor}, \code{id},
+\code{dist}, \code{cov}; \f{mm()}'s \code{scale = FALSE}, slopes and \f{mmc()}.
+\item \emph{Addition}: \f{se()} (three forms), \f{weights(scale = TRUE)}, \f{trials(15)}, text censoring codes, per-row
+\f{trunc()} bounds, a count's lower bound, \f{cens() + trunc()}, \f{rate()}, \f{y | mi()}, \f{mi(sdy)}, \f{index()},
+\f{subset()}, \f{thres()}, \f{thres(gr = )}, \f{cat()}, \f{dec()}, \f{vreal()}, \f{vint()}.
+\item \emph{Special}: \f{s()}, \f{t2()} (generic message), \f{gp()} with two inputs, \f{by}, another kernel or \f{scale =
+FALSE}; \f{mo():x}, \f{mo(id = )}; \f{me(gr = )}, \f{me() * z}; \f{cs()} in \code{cumulative}, \f{cs(x + z)}, \f{(cs(1) |
+g)}.
+\item \emph{Autocorrelation}: \f{cov = TRUE}, \f{cosy()}, \f{unstr()}, \f{car()}, \f{sar()}, \f{fcor()},
+\f{bf(autocor = )}.
+\item \emph{\f{bf()}}: \code{sparse}, \code{decomp}, \code{unused}, a fixed \f{sigma = 2} (each a \code{TypeError} naming
+the keyword), \f{loop = FALSE}, \f{mu ~ x}.
+\item \emph{Distributional, non-linear, multivariate}: \f{sigma ~} with a group term, an offset or \f{s()}; \f{nu ~};
+\f{zi ~} for the zero-inflated Poisson; \f{a + b ~ 1}; a non-linear Poisson model; \f{sigma ~} in a non-linear model;
+\f{mvbind()} without \f{set_rescor()} (D58); an ID across responses; one formula per response (\f{bf() + bf()},
+\f{mvbf()}, \f{subset()}); addition terms after \f{mvbind()}.
+\item \emph{Families}: \f{poisson("identity")}, a logical Bernoulli response, categorical with groups, multinomial,
+Dirichlet, a mixture with \f{mu2 ~} or a Student-t component, Wiener, custom families, \code{cox}.
+\end{itemize}
+
+\noindent brms itself accepts some things quietly that AutoBayes refuses, which is the better behaviour:
+\f{cbind(y, y2) ~ x} gives brms a univariate Gaussian model with a two-column \code{Y} (its help page warns that
+\f{cbind()} is ``reserved for other purposes''), and \f{y ~ x + x} and \f{(1 | g) + (1 | g)} are silently merged.
+
+\section{The call surface}\label{sec:call}
+
+\begin{table}[tbp]
+\footnotesize
+\begin{center}\begin{tabular}{@{}L{0.24\textwidth}L{0.31\textwidth}L{0.11\textwidth}L{0.24\textwidth}@{}}
+\toprule
+brms & AutoBayes & deliberate? & what a brms user trips over \\
+\midrule
+\f{brm(formula, data, family = , prior = )}: build, compile and sample in one call & \code{m = ab.<family>(formula, data,
+priors, **options)}, then \code{ab.fit(m, ...)} (or \code{m.fit(...)}) & design (no row) & two steps; the family is the
+function name, not an argument (\code{ab.Model(..., family=)} exists) \\
+\f{prior = NULL}: defaults filled in & \code{priors} is required; \code{ab.default\_priors(formula, data, family=)} returns
+brms's defaults & D1 & ``\code{gaussian() missing 1 required positional argument: 'priors'}'' \\
+\f{set_prior("normal(0, 1)", class = "b", coef = "x")}, \f{prior(normal(0, 1), class = b)} & \code{ab.Priors(b=\{"x":
+ab.Normal(0, 1)\})}: one keyword per class, mappings by coefficient, factor or parameter (\code{sd=\{"g": ...\}},
+\code{sigma=\{"intercept": ..., "b": ...\}}, \code{nlpars=}, \code{resp=}) & design (no row) & strings are refused
+(``\code{b must be a Prior or a mapping}''); a class-wide prior plus one coefficient's own is not possible: a \code{b}
+mapping must cover every term (``nothing is broadcast''); \f{class = sd} without \code{group} must be keyed by factor once
+there are two factors; \f{class = cor} likewise (D20) \\
+any Stan density, \f{lb}/\f{ub}, \f{constant()} & 16 constructors: \code{Normal}, \code{StudentT}, \code{HalfNormal},
+\code{HalfStudentT}, \code{HalfCauchy}, \code{Exponential}, \code{Gamma}, \code{InverseGamma}, \code{Beta}, \code{Logistic},
+\code{Dirichlet}, \code{LKJ}, \code{Uniform} (\code{ndt} only), \code{Flat}, \code{Horseshoe}, \code{R2D2} & partly (D22,
+D29, D78, D118) & brms's \f{normal(0, 2)} on an SD is \code{HalfNormal(2)}; no \code{Cauchy}, \code{lognormal},
+\code{constant()} or bounds; arguments are positional in Stan's order (\code{StudentT(nu, mu, sigma)}), keywords are PyMC's
+(\code{sigma=}, not \code{sd=}) \\
+\f{get_prior()}, \f{default_prior()}: a table & \code{ab.default\_priors()} returns a \code{Priors};
+\code{m.prior\_table()} is brms's table (\code{prior}, \code{class}, \code{coef}, \code{group}, \dots, \code{source}) & D1 &
+the table needs a built model \\
+\f{bf(y ~ x, sigma ~ z, nl = , center = )}; \f{lf()}, \f{nlf()}, \f{set_nl()}, \f{mvbf()}, \f{set_rescor()} & a list of
+formula strings; keywords \code{nl=}, \code{loop=}, \code{center\_predictors=}, \code{quantile=}, \code{rescor=} & partly
+(D34, D58, D63) & \code{cmc}, \code{sparse}, \code{decomp}, \code{unused}, \code{autocor}, fixed parameters: no spelling;
+\code{rescor} has no default (D58) \\
+\f{family = poisson()}, \f{brmsfamily("Gamma")}, \f{Gamma()}, \f{bernoulli("probit")} & \code{ab.poisson},
+\code{ab.gamma(..., link="inverse")}, \code{ab.bernoulli(..., link="probit")} & D9, D19 & \code{stats::Gamma()} is inverse,
+\code{ab.gamma} log (D9 misstates brms's own default, Section~\ref{sec:formula}) \\
+\bottomrule
+\end{tabular}\end{center}
+\caption{\small The call surface, part 1: building a model and its priors. ``no row'': the difference is deliberate in the library's design but has no divergence row.}\label{tab:call1}
+\end{table}
+
+\begin{table}[tbp]
+\footnotesize
+\begin{center}\begin{tabular}{@{}L{0.24\textwidth}L{0.31\textwidth}L{0.11\textwidth}L{0.24\textwidth}@{}}
+\toprule
+brms & AutoBayes & deliberate? & what a brms user trips over \\
+\midrule
+factors and characters are coded automatically & \code{categorical=\{column: reference\}} is required; \code{str},
+\code{bool} and \code{category} columns are refused without it & design (M3a-1; no row) & an ordered factor is then
+treatment-coded, not \code{contr.poly} (silent) \\
+rows with \code{NA} are dropped with a warning & refused: ``missing values in columns [...]; M0 does not handle missing
+data'' & no row & drop the rows yourself; the message's ``M0'' is a milestone name \\
+\f{data2 = list(M = ...)} & none & D69, D105 & \f{car()}, \f{sar()}, \f{fcor()}, \f{gr(cov = )} are refused \\
+\f{chains = 4, iter = 2000, warmup = iter/2, thin, cores, seed, control = list(adapt\_delta = 0.8, max\_treedepth = 10),
+init, backend} & \code{ab.fit(m, backend="pymc", device="cpu", chains=4, draws=1000, tune=1000, seed=None,
+target\_accept=0.9, cores=None, chain\_method=None, **sample\_kwargs)} & no row & \code{draws} are the kept draws (brms's
+\code{iter} includes warm-up); \code{target\_accept} defaults to 0.9, brms's \code{adapt\_delta} to 0.8; no \code{thin};
+other keywords are passed on to Bambi's and PyMC's sampler (not checked here) \\
+\f{sample_prior = "yes"}, \f{"only"} & \code{ab.prior\_draws(m)}, \code{ab.prior\_predictive(m)} & D124 & prior draws are
+drawn after the fact, not stored in the fit \\
+a \code{brmsfit}; \code{print()}, \code{summary()} & a \code{FitResult}: ArviZ \code{idata}, \code{report()} of the sampler
+run & no row & the posterior's names are Bambi's and PyMC's (\code{Intercept}, \code{x}, \code{1|g}, \code{1|g\_sigma}),
+not brms's (\code{b\_Intercept}, \code{sd\_g\_\_Intercept}, \code{r\_g[g1,Intercept]}); rows D21, D43, D59, D75 cover some \\
+\bottomrule
+\end{tabular}\end{center}
+\caption{\small The call surface, part 2: data, sampling and results.}\label{tab:call}
+\end{table}
+
+\section{Post-processing names}\label{sec:post}
+
+\begin{table}[tbp]
+\footnotesize
+\begin{center}\begin{tabular}{@{}L{0.24\textwidth}L{0.34\textwidth}L{0.36\textwidth}@{}}
+\toprule
+brms & AutoBayes & notes \\
+\midrule
+\code{posterior\_epred} & \code{ab.predict(m, fit, kind="mean")} & draws; binomial: \code{p}, with \code{expected = trials p}
+(D5); \code{dpar=}, \code{nlpar=} \\
+\code{posterior\_linpred} & \code{kind="linear"} & \\
+\code{posterior\_predict} & \code{kind="response"} & \code{re\_formula = NA} is \code{include\_group\_effects=False};
+\code{allow\_new\_levels}/\code{sample\_new\_levels} are \code{new\_groups=} (refuses by default, D6) \\
+\code{fitted}, \code{predict} (summaries) & none & summarise the draws yourself \\
+\code{residuals}, \code{predictive\_error} & none & \\
+\code{log\_lik}, \code{loo}, \code{waic} & \code{ab.log\_lik}, \code{ab.loo}, \code{ab.waic} & fitted rows only, no
+\code{newdata}, \code{moment\_match} or \code{reloo} (D48) \\
+\code{loo\_compare}, \code{model\_weights} & \code{ab.loo\_compare(\{name: loo, ...\})}, \code{ab.model\_weights(results,
+weights)} & \code{weights} has no default; stacking, brms's default, is built and withheld (D92, D126) \\
+\code{loo\_model\_weights}, \code{kfold}, \code{loo\_R2} & none & D48, D126 \\
+\code{bayes\_R2} & \code{ab.bayes\_R2} & per draw (brms's \code{summary = FALSE}) \\
+\code{hypothesis} & \code{ab.hypothesis(m, fit, "x > 0", prior=)} & brms's coefficient names; class \code{b} only (D97) \\
+\code{conditional\_effects} & \code{ab.conditional\_effects(m, fit, ["x"])} & tables, no plots; effects must be named
+(D98) \\
+\code{prior\_draws}, \code{prior\_summary} & \code{ab.prior\_draws(m)}; \code{m.prior\_table()}, \code{m.describe()} &
+\\
+\code{fixef}, \code{ranef}, \code{coef}, \code{VarCorr}, \code{summary}, \code{as\_draws\_df}, \code{ngrps}, \code{nobs} &
+none & \code{fit.idata} with ArviZ (\code{az.summary}); names differ from brms's (Section~\ref{sec:call}) \\
+\code{pp\_check}, \code{plot}, \code{mcmc\_plot} & none & no plotting \\
+\code{stancode}, \code{standata} & \code{m.describe()}, \code{m.pymc\_model}, \code{m.design} & \\
+\code{update}, \code{add\_criterion}, \code{bridge\_sampler}, \code{bayes\_factor}, \code{post\_prob}, \code{emmeans} & none
+& \\
+\bottomrule
+\end{tabular}\end{center}
+\caption{\small Post-processing. The names that exist are brms's (\code{ab.<name>}); the outputs are draws or pandas tables
+rather than brms's printed summaries.}\label{tab:post}
+\end{table}
+
+\section{Extraneous things}\label{sec:extraneous}
+
+\begin{table}[tbp]
+\footnotesize
+\begin{center}\begin{tabular}{@{}L{0.27\textwidth}L{0.40\textwidth}L{0.25\textwidth}@{}}
+\toprule
+item & what it is; does the library depend on it & recommendation \\
+\midrule
+family constructors, \code{Priors} and the prior constructors, \code{default\_priors}, \code{fit}, \code{predict} and the
+post-processing functions, \code{FormulaError}, \code{PriorError} & the brms-like surface & keep \\
+\code{Model}, \code{MultivariateModel}, \code{NonlinearModel}, \code{FitResult}, \code{Loo}, \code{Waic}, \code{Hypothesis},
+\code{Prior}, \code{DeviceError} & the types these return or raise & keep \\
+\code{environment}, \code{format\_environment}, \code{fit\_record}, \code{compare\_records}, \code{format\_comparison}
+(\file{session.py}) & the resumable-session records of the agent scaffold: what was fit, on what, with which seed;
+nothing in the library calls them (\file{nonlinear.py} has a hook for \code{fit\_record}); 50 test files and the milestone
+examples use them & move under \code{autobayes.session} (still importable), drop from \code{\allname} after a
+deprecation \\
+\code{panel} (\file{diagnostics.py}) & a diagnostic panel with thresholds from \file{reference/diagnostics.md}; used by
+\code{fit\_record} only & with \code{session} \\
+\code{ModelSpec}, \code{PopTerm}, \code{GroupTerm}, \code{Categorical}, \code{parse\_formula}, \code{NonlinearSpec} & the
+term model's internals; used inside the library and by tests, by no example & leave in \code{autobayes.formula}, drop from
+\code{\allname} \\
+import-time JAX settings (\file{\_\_init\_\_.py}) & \code{import autobayes} enables float64 and sets NumPyro's host
+device count for the whole process & keep (the comment's reason holds), document in the README \\
+milestone jargon in output & \code{describe()} prints ``AutoBayes M0 model'' (M1, M2 for Bernoulli and binomial; the family
+\code{tag}); ``M0 does not handle missing data''; ``this slice''/``this subset'' in 36 of 132 corpus refusals, 8 citing
+\file{docs/m*-decision.md} & rewrite: the family's name, ``not supported'', current documentation pages \\
+\bottomrule
+\end{tabular}\end{center}
+\caption{\small What the package exports and prints beyond a brms-like library (\code{ab.\allname} has 93 names).}\label{tab:names}
+\end{table}
+
+\begin{table}[tbp]
+\footnotesize
+\begin{center}\begin{tabular}{@{}L{0.27\textwidth}L{0.40\textwidth}L{0.25\textwidth}@{}}
+\toprule
+item & what it is; does the library depend on it & recommendation \\
+\midrule
+\file{SKILL.md}, \file{skills/}, \file{install.sh}, \file{bin/autobayes-init}, \file{scaffold/}, \file{reference/},
+\file{cluster/} (41 files) & the agent-scaffold and pre-research pack (\file{docs/agent-scaffold.md}); the library reads
+none of it; two strings cite \file{reference/*.md} (\file{diagnostics.py}'s docstring, a \code{fit()} note) &
+move to a repository of its own (or one \file{agent-scaffold/} directory); your decision \\
+\file{docs/*-evidence/} (17 directories, 365 files, 2.8~MB) & milestone evidence; \file{tests/test\_sampling.py} and
+\file{tests/test\_evidence\_provenance.py} check \file{docs/m0-evidence} and \file{docs/m1-evidence} byte for byte; a comment
+in \file{likelihoods.py} cites \file{docs/m2-evidence} & move under \file{docs/history/} with those tests' paths \\
+\file{docs/*-decision.md} (17), \file{docs/milestones.md}, \file{docs/why-autobayes.md}, \file{docs/m0-gpu-\allowbreak validation.md} &
+milestone records; 11 citations in library error messages and docstrings & \file{docs/history/}; re-point the citations \\
+\file{docs/coordination/} (\file{STATUS.md}, \file{NEXT\_MILESTONES\_\allowbreak PROPOSAL.md}) & agent coordination state; nothing
+depends on it & \file{docs/history/} or out of the repository \\
+\file{examples/m*.py} (9) & milestone examples built on \code{fit\_record}, \code{compare\_records} & \file{examples/history/};
+\file{examples/brms\_parity/} is the current tour \\
+\file{tests/evidence.py}, \file{test\_evidence\_\allowbreak provenance.py}, \file{test\_session.py}, \file{test\_fresh\_process.py},
+\file{test\_diagnostics\_\allowbreak panel.py} & tests of the above & move with what they test \\
+\file{autobayes/identity.py} & the model's frozen target identity and the fit binding: \code{predict()}, \code{log\_lik()}
+and \code{hypothesis()} refuse a fit of another model; not in brms & keep (a safety check, not scaffold) \\
+\file{oracle/}, \file{tests/oracle/}, \file{tools/} & the brms oracle and the parity loop's tooling & keep \\
+\bottomrule
+\end{tabular}\end{center}
+\caption{\small What the repository ships beyond a brms-like library. Nothing was deleted.}\label{tab:extraneous}
+\end{table}
+
+\section{Recommendations, ranked}\label{sec:recs}
+
+\begin{enumerate}
+\item \textbf{Ordered factors} (the one silent misreading; small). Refuse \code{categorical=} on an ordered pandas
+Categorical with a message naming brms's polynomial contrasts, or build \code{contr.poly} columns and freeze a G1 case.
+The refusal is a few lines in \file{formula.py}; the coding is a small feature.
+\item \textbf{Correct D9 and \code{ab.gamma}'s docstring} (minutes): brms's default Gamma link is \code{log}; only
+\code{stats::Gamma()} is \code{inverse}, so a brms user who wrote \f{family = Gamma()} needs \code{link="inverse"}. Also
+D20 still says \f{gr()} is refused; \f{gr(g)} and \f{gr(g, by = )} are taken since D08.
+\item \textbf{The 16 unclear refusals} (small). Accept \f{(x | g)} and \f{(x || g)} as \f{(1 + x | g)} and \f{(1 + x ||
+g)}, which they are in brms (the same model; no new likelihood); fix the advice for \f{(1 | g) + (0 + x | g)} to
+\f{(1 + x || g)} and for a shared ID to one term; give \f{0 + Intercept}, \f{::}, \f{^}, \code{\%in\%}, \f{.},
+backticks, transformed and \f{cbind()} responses, \f{(x - 1 | g)}, \code{disc} and \f{nlf()} messages that name them; give
+\f{s()}/\f{t2()} their own ``smooths are not offered'' message. Each is a message in \file{formula.py} plus a re-run of
+the audit.
+\item \textbf{Cheap brms spellings} of constructs already offered (small each, an oracle case where the likelihood is
+touched): \f{gr(g, cor = FALSE)} as \f{||}; \f{gr(g, id = "p")} as \f{|p|} where \f{|p|} is taken; \f{trials(<number>)};
+\f{rate(denom)} for the Poisson family (\f{offset(log(denom))} there; brms notes it is not an offset for the negative
+binomial); brms's text censoring codes; \f{cat(K)}/\f{thres(K)} when \code{K} is the data's.
+\item \textbf{Project jargon out of user-facing text} (small to medium; tests that pin messages move with it): the family's
+name instead of \code{M0}/\code{M1}/\code{M2} in \code{describe()}, ``not supported'' instead of ``this slice'',
+current documentation pages instead of milestone decision documents. Keep the divergence ids.
+\item \textbf{Divergence rows for the undocumented call-surface differences} (small): the required \code{categorical=} and
+its treatment coding, priors that are never broadcast, refused missing values, \code{fit()}'s \code{draws}/\code{tune} and
+\code{target\_accept = 0.9}, the posterior's names.
+\item \textbf{The top-level namespace} (medium): \code{session}, \code{panel} and the term-model names out of
+\code{\allname}, importable from their modules, with one release of deprecation warnings.
+\item \textbf{brms-named draws} (medium to large): an \code{as\_draws\_df}-like export with brms's names (the oracle
+adapter already maps every parameter by role), then \code{fixef}, \code{ranef}, \code{VarCorr} and \code{summary} on top.
+This is what a brms user will look for first after \code{posterior\_epred}.
+\item \textbf{The repository} (medium, your decision): the scaffold to its own repository; the milestone history under
+\file{docs/history/}, with the two evidence tests' paths and the 11 citations re-pointed.
+\item \textbf{Capabilities by likely demand} (large): \f{s()}/\f{t2()}, \f{se()} for meta-analysis, group-level terms in
+categorical and distributional formulas, a formula per response. These are on the roadmap already.
+\end{enumerate}
+
+\section*{Reproducing}
+
+\noindent From the repository root: \code{Rscript tests/brms\_syntax/brms\_reading.R} (brms's side, about 25~s, needs R and brms
+2.23), \code{python -m tests.brms\_syntax.audit} (AutoBayes's side, about 12~s), \code{pytest
+tests/test\_brms\_syntax\_corpus.py} (250 tests, 5~s, no R).
+
+\end{document}
