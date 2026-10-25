@@ -15,6 +15,7 @@ priors = ab.Priors(intercept=ab.Normal(0, 5), b=ab.Normal(0, 2), sd=ab.HalfNorma
 model = ab.gaussian("y | weights(w) ~ x + (1 | g)", data, priors)
 counts = ab.binomial("k | trials(n) + weights(w) ~ x", data, ab.Priors(intercept=ab.Normal(0, 2.5), b=ab.Normal(0, 1.5)))
 censored = ab.gaussian("y | cens(cens_ind) ~ x + (1 | g)", data, priors)        # cens_ind: -1 left, 0 none, 1 right
+# F08: brms's labels "left", "none", "right" ("interval" with cens(c, y2)) and TRUE / FALSE are read as those codes too
 truncated = ab.gaussian("ypos | trunc(lb = 0) ~ x + (1 | g)", data, priors)
 ```
 

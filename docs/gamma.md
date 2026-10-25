@@ -20,11 +20,12 @@ oracle shows that round trip is inside the tolerance. The sampled variable is `a
 is `"alpha"`. Coefficients are on the log-mean scale; the centred intercept is the log expected response at the
 predictor means.
 
-**Link (divergence D9).** brms's default link for `Gamma` is `inverse` (`mu = 1 / eta`); this library offers the
-`log` link only, which keeps `mu > 0` for every `eta` and puts the coefficients on the same scale as the Poisson
-and negative binomial families. The fixture `gamma_varint` was frozen with `link = "log"`, so the oracle compares
-like with like. The default stays `log`; since E06 brms's `inverse` and `identity` links are offered on request,
-`ab.gamma(..., link="inverse")` and `link="identity"`, each needing a positive linear predictor ([links](links.md)).
+**Link (divergence D9).** brms's own default link for `brmsfamily("Gamma")` is `log`, as `ab.gamma`'s, which keeps `mu > 0`
+for every `eta` and puts the coefficients on the same scale as the Poisson and negative binomial families; R's
+`stats::Gamma()`, which brms also takes as `family = Gamma()`, defaults to `inverse` (`mu = 1 / eta`), so a model ported from
+that spelling needs `ab.gamma(..., link="inverse")`. The fixture `gamma_varint` was frozen with `link = "log"`. Since E06
+the `inverse` and `identity` links are offered on request, `ab.gamma(..., link="inverse")` and `link="identity"`, each needing
+a positive linear predictor ([links](links.md)).
 
 ## Using it
 

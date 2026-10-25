@@ -104,6 +104,7 @@ import re
 import math
 from collections.abc import Mapping
 from dataclasses import dataclass, replace
+from functools import lru_cache
 from types import MappingProxyType
 
 import numpy as np
@@ -130,6 +131,8 @@ _ME_RE = re.compile(r"^me\s*\((.*)\)$", re.S)                                   
 _ME_TERM_RE = re.compile(rf"^me\(({_IDENT}), ({_IDENT})\)$")                                         # the canonical spelling me(x, sdx)
 _MI_RE = re.compile(r"^mi\s*\((.*)\)$", re.S)                                                        # mi(<inside>), brms's missing values (C06)
 _MI_TERM_RE = re.compile(rf"^mi\(({_IDENT})\)$")                                                    # the canonical spelling mi(col)
+_ORDERED_RE = re.compile(r"^ordered\s*\((.*)\)$", re.S)                                              # F08: R's ordered(col) in a formula
+_SMOOTH_RE = re.compile(r"^(s|t2|te|ti)\s*\(", re.S)                                                  # F08: brms's (mgcv's) smooth terms
 MI_CALL_RE = re.compile(r"(?<![A-Za-z0-9_.])mi\s*\(")                                                 # an mi( call anywhere in a formula (C06)
 MVBIND_RE = re.compile(r"^\s*mvbind\s*\(", re.S)                                                       # brms's multivariate mvbind(y, y2) ~ ... (C01)
 # F01b: the refusal of a one-column response for a simplex family (a matrix column of the data is not read)
@@ -156,6 +159,40 @@ class FormulaError(ValueError):
     """A formula outside the M0 subset, or one that does not match the data."""
 
 
+POLY_LEVELS_MAX = 16   # F08: an ordered factor of more levels is refused (docs/ordered-factors.md, divergence D168)
+
+
+def poly_contrast_labels(k: int) -> tuple[str, ...]:
+    """R's names of the ``k - 1`` polynomial contrasts of ``k`` ordered levels (F08): ``.L``, ``.Q``, ``.C``, then ``^4``,
+    ``^5``, ... for the degrees from 4 (brms renames ``^`` to ``E`` in its coefficient names: ``foE4``)."""
+    return tuple({1: ".L", 2: ".Q", 3: ".C"}.get(d, f"^{d}") for d in range(1, k))
+
+
+@lru_cache(maxsize=None)
+def poly_contrasts(k: int) -> np.ndarray:
+    """R's ``contr.poly(k)`` from its definition (F08, docs/ordered-factors.md): column ``d`` (degree ``d = 1 .. k - 1``) is
+    the polynomial of degree ``d`` in the scores ``1 .. k`` that is orthogonal to every polynomial of lower degree over those
+    ``k`` points with equal weights, has a positive leading coefficient and unit Euclidean norm. The polynomials are built
+    by the three-term recurrence of monic orthogonal polynomials, ``p_{d+1}(x) = (x - a_d) p_d(x) - b_d p_{d-1}(x)`` with
+    ``a_d = <x p_d, p_d> / <p_d, p_d>`` and ``b_d = <p_d, p_d> / <p_{d-1}, p_{d-1}>``, in exact rational arithmetic on the
+    centred scores ``2i - (k + 1)`` (so every ``a_d`` is 0); only the final division by the norm is rounded."""
+    from fractions import Fraction
+
+    if not 2 <= k <= POLY_LEVELS_MAX:
+        raise ValueError(f"polynomial contrasts are built for 2 to {POLY_LEVELS_MAX} levels, got {k}")
+    x = [Fraction(2 * i - (k + 1)) for i in range(1, k + 1)]
+    prev, cur = [Fraction(0)] * k, [Fraction(1)] * k
+    prev_norm, cols = None, []
+    for _ in range(1, k):
+        norm = sum(v * v for v in cur)
+        a = sum(xi * v * v for xi, v in zip(x, cur)) / norm
+        b = norm / prev_norm if prev_norm is not None else Fraction(0)
+        prev, cur, prev_norm = cur, [(xi - a) * v - b * u for xi, v, u in zip(x, cur, prev)], norm
+        scale = math.sqrt(sum(v * v for v in cur))
+        cols.append([float(v) / scale for v in cur])
+    return np.array(cols, dtype=float).T
+
+
 @dataclass(frozen=True)
 class Categorical:
     """A categorical main effect: treatment or full-level coding (docs/history/m3c2-decision.md).
@@ -166,6 +203,12 @@ class Categorical:
     one dummy column and one coefficient each, unless ``full_rank`` includes every level
     in reference-first order; ``unused`` lists a pandas Categorical's
     declared categories that do not occur in the fitted rows.
+
+    F08 (docs/ordered-factors.md): ``coding="poly"`` is an ordered factor coded with R's polynomial contrasts, as brms codes
+    an ordered factor predictor: an ordered pandas Categorical declared with ``categorical=``, or ``ordered(col)`` written in
+    the formula (``term``, the term as written; the column's own name otherwise). Its ``levels`` are then the fitted levels
+    in their order, its ``reference`` the lowest of them, and its term is one population-level term per contrast
+    (``PopTerm`` kind ``"contrast"``, named ``contrast_columns``) rather than a categorical term.
     """
 
     name: str
@@ -173,6 +216,28 @@ class Categorical:
     levels: tuple[str, ...] = ()
     unused: tuple[str, ...] = ()
     full_rank: bool = False
+    coding: str = "treatment"
+    term: str | None = None
+
+    @property
+    def term_name(self) -> str:
+        """F08: the term as written, ``ordered(z)`` or the column's name: the key of its priors."""
+        return self.term or self.name
+
+    @property
+    def is_poly(self) -> bool:
+        """F08: coded with R's polynomial contrasts (an ordered factor that is not the full-rank factor of a ``0 +`` formula)."""
+        return self.coding == "poly"
+
+    @property
+    def contrast_labels(self) -> tuple[str, ...]:
+        """F08: R's names of the polynomial contrasts, ``.L``, ``.Q``, ``.C``, ``^4``, ... (empty until the levels are known)."""
+        return poly_contrast_labels(len(self.levels)) if self.is_poly and self.levels else ()
+
+    @property
+    def contrast_columns(self) -> tuple[str, ...]:
+        """F08: the design columns of the polynomial contrasts, R's model-matrix names ``fo.L``, ``ordered(z).Q``, ``fo^4``."""
+        return tuple(f"{self.term_name}{label}" for label in self.contrast_labels)
 
     @property
     def coefficients(self) -> tuple[str, ...]:
@@ -195,7 +260,7 @@ class Categorical:
 
 
 POP_TERM_KINDS = ("numeric", "categorical", "interaction", "transform", "monotonic", "measurement_error", "missing",
-                  "category_specific")
+                  "category_specific", "contrast")
 # brms's special terms (its bsp coefficients, and D04's category-specific bcs): a coefficient and no design column, built by
 # this library, never by Bambi
 SPECIAL_KINDS = ("monotonic", "measurement_error", "missing", "category_specific")
@@ -705,7 +770,10 @@ class PopTerm:
     coefficient (brms's ``bsp``) and simplex act through its own block, ``ModelSpec.monotonic(col)`` its coding. brms's
     ``"measurement_error"`` term ``me(x, sdx)`` and ``"missing"`` term ``mi(col)`` (C06, docs/missing-and-measurement-error.md)
     are special terms like it: a coefficient (brms's ``bsp``) and no design column; the first multiplies the latent values of
-    a predictor observed with known noise, the second a column whose missing values are parameters of the model.
+    a predictor observed with known noise, the second a column whose missing values are parameters of the model. F08's
+    ``"contrast"`` term is one polynomial contrast of an ordered factor (docs/ordered-factors.md): ``fo.L``, ``fo.Q``, ... of the
+    ordered factor ``fo`` (``factor``, the column), brms's ``b_fo.L``: one design column, the contrast's value at each row's level
+    (``Categorical.contrast_columns``); before the data are seen, ``ordered(z)`` is one placeholder term of this kind.
 
     ``columns`` are the design-column labels the term expands to, Bambi/formulae's own, in design order:
     ``x``; ``z[l]`` per coefficient level ``l``; ``x:z[l]``; ``x:w``; ``z[l]:h[m]`` per cell, the first operand's
@@ -724,6 +792,7 @@ class PopTerm:
     columns: tuple[str, ...]
     levels: tuple[str, ...] = ()
     categorical: tuple[str, ...] | None = None
+    factor: str | None = None          # F08: the ordered factor column a "contrast" term codes
 
     def __post_init__(self):
         if self.kind not in POP_TERM_KINDS:
@@ -740,9 +809,11 @@ class PopTerm:
             raise ValueError(f"PopTerm: a missing-value term is spelled 'mi(col)' and has no design column or level, got {self.name!r}")
         if self.kind == "category_specific" and (category_specific_column(self.name) is None or self.columns or self.levels):
             raise ValueError(f"PopTerm: a category-specific term is spelled 'cs(col)' and has no design column or level, got {self.name!r}")
+        if (self.kind == "contrast") != (self.factor is not None) or (self.kind == "contrast" and (self.columns != (self.name,) or self.levels)):
+            raise ValueError(f"PopTerm: a contrast term (F08) has its factor column and one design column of its own name, got {self.name!r}")
         if self.categorical is None:
             default = {"numeric": (), "categorical": (self.name,), "interaction": (self.operands[-1],), "transform": (), "monotonic": (),
-                       "measurement_error": (), "missing": (), "category_specific": ()}
+                       "measurement_error": (), "missing": (), "category_specific": (), "contrast": ()}
             object.__setattr__(self, "categorical", default[self.kind])
         else:
             object.__setattr__(self, "categorical", tuple(self.categorical))
@@ -764,6 +835,8 @@ class PopTerm:
             return (missing_column(self.name),)
         if self.kind == "category_specific":                      # D04: cs(col)
             return (category_specific_column(self.name),)
+        if self.kind == "contrast":                               # F08: a polynomial contrast of an ordered factor
+            return (self.factor,)
         return tuple(self.name.split(":"))
 
     @property
@@ -791,8 +864,8 @@ class PopTerm:
     def bambi_name(self) -> str:
         """The term as handed to Bambi: a transform's evaluated column is named as written and quoted in backticks
         (the fitted frame carries it under that name), so Bambi's term and PyMC's variable carry the term's own
-        name; every other term is itself."""
-        return f"`{self.name}`" if self.kind == "transform" else self.name
+        name, and so is a polynomial contrast's (F08: ``fo.L``, ``ordered(z).Q``); every other term is itself."""
+        return f"`{self.name}`" if self.kind in ("transform", "contrast") else self.name
 
     @property
     def is_vector(self) -> bool:
@@ -1033,7 +1106,9 @@ class Offset:
 
 ADDITION_KINDS = ("weights", "cens", "trunc", "mi", "dec", "thres",   # brms's response addition terms besides trials() that are parsed (B02;
                   "se", "rate",       # mi(), C06; dec(), F04; thres(), F06b; se() and rate(), F06a, autobayes/se_rate.py;
-                  "bhaz")             # bhaz(), F05, autobayes/baseline_hazard.py)
+                  "bhaz",             # bhaz(), F05, autobayes/baseline_hazard.py;
+                  "cat")              # cat(K), F08: an ordinal response's number of categories, the data's (docs/syntax-fixes.md))
+_TRIALS_NUMBER_RE = re.compile(r"\d+")                    # F08: brms's trials(15), the same number of trials on every row
 
 # Addition terms that are parsed, represented and implemented but withheld, each with the reason its refusal carries
 # (docs/addition-terms.md): none since P6, which lifted the parks of cens() and trunc() (divergences D24 and D25).
@@ -1081,7 +1156,9 @@ class AdditionTerm:
     sigma = TRUE)``), added to sigma in quadrature; ``"rate"`` (``rate(col)``) each row's denominator, which multiplies the mean
     (``autobayes/se_rate.py``). ``"bhaz"`` (``bhaz(df = K)``, ``bhaz(knots = c(...), Boundary.knots = c(lo, hi))``, F05,
     docs/cox.md) sets a cox model's baseline hazard: ``df`` its number of bases, ``knots`` the interior knots and ``boundary``
-    the boundary knots (None for brms's defaults); it reads no column (``autobayes/baseline_hazard.py``)."""
+    the boundary knots (None for brms's defaults); it reads no column (``autobayes/baseline_hazard.py``). ``"cat"`` (``cat(K)``,
+    F08, docs/syntax-fixes.md) is an ordinal response's number of categories ``count``, brms's deprecated spelling of
+    ``thres(K - 1)``: taken where it is the data's own number of categories, so it changes nothing; it reads no column."""
 
     kind: str
     column: str | None = None
@@ -1109,6 +1186,8 @@ class AdditionTerm:
             return f"thres({'' if self.count is None else f'{self.count}, '}gr = {self.column})"
         if self.kind == "se" and self.sigma:                    # F06a
             return f"se({self.column}, sigma = TRUE)"
+        if self.kind == "cat":                                  # F08
+            return f"cat({self.count})"
         if self.kind == "bhaz":                                 # F05: bhaz(df = 7), bhaz(knots = c(1.5, 3), Boundary.knots = c(0, 6))
             def numbers(v):
                 return f"c({', '.join(_number_text(x) for x in v)})"
@@ -1184,6 +1263,14 @@ def _parse_additions(text: str, formula: str) -> tuple[str | None, tuple[Additio
             from autobayes.baseline_hazard import parse_bhaz
             additions.append(parse_bhaz(args, piece, formula))
             continue
+        if kind == "cat":                                       # F08: cat(K), an ordinal response's number of categories
+            if len(args) != 1 or not _TRIALS_NUMBER_RE.fullmatch(args[0]) or int(args[0]) < 2:
+                raise FormulaError(f"{formula!r}: {piece!r}: cat() takes the number of categories, a whole number of at least 2")
+            additions.append(AdditionTerm("cat", count=int(args[0])))
+            continue
+        if kind == "trials" and len(args) == 1 and _TRIALS_NUMBER_RE.fullmatch(args[0]):   # F08: trials(15), every row's number
+            trials = str(int(args[0]))
+            continue
         if kind == "mi":                                        # C06: the response's missing values are parameters (brms's Ymi)
             if args:
                 raise FormulaError(
@@ -1209,7 +1296,8 @@ def _parse_additions(text: str, formula: str) -> tuple[str | None, tuple[Additio
         if len(args) != 1 or not re.fullmatch(_IDENT, args[0]):
             hint = {"weights": "; brms's weights(col, scale = TRUE), which rescales the weights to sum to the number of rows, "
                                "is not supported: rescale the column",
-                    "cens": " or, for interval censoring, cens(col, y2)", "trials": "", "dec": " of decisions, 1 or 0",
+                    "cens": " or, for interval censoring, cens(col, y2)", "trials": " or a whole number, trials(15)",
+                    "dec": " of decisions, 1 or 0",
                     "se": " of standard errors, and sigma = TRUE to learn sigma as well (brms evaluates an expression; compute the "
                           "column; docs/se-rate.md, divergence D157)",
                     "rate": " of denominators (brms evaluates an expression; compute the column; docs/se-rate.md, divergence D157)"}[kind]
@@ -1229,6 +1317,11 @@ def _check_additions(additions: tuple[AdditionTerm, ...], fam, formula: str) -> 
     from autobayes.families import FAMILIES
 
     for a in additions:
+        if a.kind == "cat":                                     # F08: an ordinal family's, without grouped thresholds
+            if not fam.thresholds or fam.hurdle_category is not None or any(b.kind == "thres" for b in additions):
+                raise FormulaError(f"{formula!r}: {a.term!r}: brms's cat(), an ordinal response's number of categories, is taken here "
+                                   "for the cumulative, sratio, cratio and acat families without thres() (docs/syntax-fixes.md)")
+            continue
         if a.kind in PARKED_ADDITIONS:
             raise FormulaError(f"{formula!r}: {a.term!r}: brms's {a.kind}() is withheld: {PARKED_ADDITIONS[a.kind]}")
         if a.kind in fam.parked_additions:                     # E04: implemented for the family and withheld (the Gamma's cens())
@@ -1296,13 +1389,22 @@ def _weights_values(column: str, s: pd.Series, where: str) -> np.ndarray:
     return v
 
 
+CENS_LABELS = MappingProxyType({"left": -1, "none": 0, "right": 1, "interval": 2})   # F08: brms's censoring labels
+
+
 def _cens_values(column: str, s: pd.Series, where: str, interval: bool = False) -> np.ndarray:
+    """The censoring codes of ``cens(col)``: -1 (left), 0 (none), 1 (right) and, under ``cens(col, y2)``, 2 (interval); F08: brms's
+    labels ``"left"``, ``"none"``, ``"right"``, ``"interval"`` and a logical column (TRUE right-censored, FALSE not) read as those."""
     reject_complex(f"{where} {column!r}", s)
+    if pd.api.types.is_bool_dtype(s):
+        return s.to_numpy(dtype=np.int64)
     if not _is_numeric(s):
-        raise FormulaError(
-            f"{where} {column!r} has dtype {s.dtype}; the censoring indicator of 'cens({column})' must be numeric, -1 (left), "
-            "0 (none) or 1 (right); recode brms's labels 'left' / 'none' / 'right' and TRUE / FALSE explicitly"
-        )
+        values = s.astype(object).tolist()
+        bad = next((v for v in values if not isinstance(v, str) or v not in CENS_LABELS), None)
+        if bad is not None:
+            raise FormulaError(f"{where} {column!r}: the censoring labels of 'cens({column})' are brms's 'left', 'none', 'right' and "
+                               f"'interval' (or the codes -1, 0, 1 and 2, or TRUE / FALSE); found {bad!r}")
+        s = pd.Series([CENS_LABELS[v] for v in values], index=s.index, dtype=float)
     v = s.to_numpy(dtype=float)
     if not np.all(np.isfinite(v)):
         raise FormulaError(f"{where} {column!r} of 'cens({column})' has missing or non-finite values")
@@ -1369,8 +1471,8 @@ def addition_data(spec: "ModelSpec", df: pd.DataFrame, *, where: str = "column")
             out["cens"] = _cens_values(a.column, df[a.column], where, interval=a.y2 is not None)
             if a.y2 is not None:
                 out["rcens"] = _rcens_values(a, df[spec.response].to_numpy(dtype=float), out["cens"], df[a.y2], where)
-        elif a.kind in ("mi", "thres", "bhaz"):                # F06b: thres()'s levels are the model's Design.thresholds; F05:
-            continue                                           # bhaz()'s bases its Design.bhaz
+        elif a.kind in ("mi", "thres", "bhaz", "cat"):         # F06b: thres()'s levels are the model's Design.thresholds; F05:
+            continue                                           # bhaz()'s bases its Design.bhaz; F08: cat(K) is the data's
         elif a.kind == "dec":                                  # F04: the wiener family's decisions
             out["dec"] = _dec_values(a.column, df[a.column], where)
         elif a.kind == "se":                                   # F06a: brms's se, each row's known standard error
@@ -1458,6 +1560,26 @@ def pop_term(name: str, kind: str, categoricals=()) -> PopTerm:
     return PopTerm(name, kind, columns, levels, cats)
 
 
+def contrast_terms(cat: Categorical) -> tuple[PopTerm, ...]:
+    """F08: the population-level terms of an ordered factor coded with polynomial contrasts, one per contrast, in degree order
+    (``fo.L``, ``fo.Q``, ...); before its levels are known, the one placeholder term of its name."""
+    return tuple(PopTerm(col, "contrast", (col,), factor=cat.name) for col in (cat.contrast_columns or (cat.term_name,)))
+
+
+def contrast_values(term: PopTerm, df: pd.DataFrame, categoricals, *, where: str = "column") -> np.ndarray:
+    """F08: the design column of the polynomial contrast ``term`` on ``df``: R's ``contr.poly`` over the ordered factor's fitted
+    levels, at each row's level; a level the factor was not fitted with is refused."""
+    cat = _find_categorical(categoricals, term.factor)
+    j = cat.contrast_columns.index(term.name)
+    labels = df[cat.name].astype(str).to_numpy()
+    index = {lvl: i for i, lvl in enumerate(cat.levels)}
+    unseen = sorted(set(labels.tolist()) - set(index))
+    if unseen:
+        raise FormulaError(f"{where} {cat.name!r} has levels {unseen} that the ordered factor {cat.term_name!r} was not fitted with "
+                           f"(levels {list(cat.levels)}); its polynomial contrasts are defined on those levels only")
+    return poly_contrasts(len(cat.levels))[[index[v] for v in labels], j]
+
+
 def pop_term_design(term: PopTerm, df: pd.DataFrame, categoricals=()) -> np.ndarray:
     """The raw design block of one population-level term on ``df``: ``(n, len(term.columns))``, one column per
     entry of ``term.columns``. A numeric term is its column as given; a categorical term one 0/1 indicator
@@ -1474,6 +1596,8 @@ def pop_term_design(term: PopTerm, df: pd.DataFrame, categoricals=()) -> np.ndar
         return np.zeros((n, 0))
     if term.kind == "transform":                                 # evaluated from the raw column, never read from a column of its name
         return term.transform.values(df)[:, None]
+    if term.kind == "contrast":                                  # F08: from the ordered factor's labels, never from a column of its name
+        return contrast_values(term, df, categoricals)[:, None]
     if term.kind == "interaction" and not term.categorical:
         a, b = (df[c].to_numpy(dtype=float) for c in term.operands)
         return (a * b)[:, None]
@@ -2020,7 +2144,82 @@ def _split_top_level(rhs: str, sep: str = "+") -> list[str]:
     return parts
 
 
-def _parse_group_term(inner: str, bars: str, factor: str, piece: str, response: str, trials: str | None) -> list[GroupTerm]:
+def _refuse_r_construct(piece: str) -> None:
+    """F08 (docs/syntax-fixes.md): R's formula operators and brms's reserved names that this grammar does not read, each refused
+    naming it rather than as a column name or an interaction: ``.``, backticks, brms's ``Intercept``, ``::``, ``%in%`` and ``^``."""
+    if piece == ".":
+        raise FormulaError("'.': R's '.' (every column of the data not otherwise in the formula) is not supported; name the predictors")
+    if "`" in piece:
+        inner = piece.strip("`")
+        hint = (f"; {inner!r} is a column name as it stands: write it without the backticks" if re.fullmatch(_IDENT, inner)
+                else "; rename the column to a name of letters, digits, '.' and '_'")
+        raise FormulaError(f"{piece!r}: backtick-quoted names are not supported{hint}")
+    if piece == "Intercept":
+        raise FormulaError(
+            "'Intercept': brms's reserved term 'Intercept' (y ~ 0 + Intercept + x: the intercept as an ordinary coefficient of class "
+            "b, with b's prior and an uncentred design) is not supported; write 'y ~ 1 + x', with center_predictors=False for an "
+            "uncentred design (the intercept then keeps its own prior class)")
+    if "::" in piece:
+        raise FormulaError(f"{piece!r}: R's namespace operator '::' (a function of another package, such as a spline basis) is not "
+                           "supported in a formula; compute the columns in the data frame and name them")
+    om = re.search(r"%[^%\s]*%", piece)
+    if om:
+        raise FormulaError(f"{piece!r}: R's operator {om.group(0)} is not supported in a formula" +
+                           ("; nesting x %in% f is the interaction x:f, with the main effects x and f (docs/interactions.md)"
+                            if om.group(0) == "%in%" else ""))
+    if len(_split_top_level(piece, "^")) > 1:
+        raise FormulaError(f"{piece!r}: R's formula operator '^' (the terms and all their interactions up to that order) is not "
+                           "supported; write the terms and their two-way interactions out, 'x + z + x:z' (docs/interactions.md), or "
+                           "I(x^2) for a power (docs/transforms.md)")
+
+
+def _group_piece_parts(piece: str) -> tuple[str, str, str | None, str] | None:
+    """F08: ``(inner, bars, ID, grouping)`` of a group-level piece as written, for the advice of a slope-only term's refusal."""
+    gm = _GROUP_RE.match(piece)
+    if gm is None:
+        return None
+    inner, bars, rest = gm.group(1).strip(), gm.group(2), gm.group(3).strip()
+    term_id, grouping = (p.strip() for p in rest.split("|", 1)) if "|" in rest else (None, rest)
+    return inner, bars, term_id, grouping
+
+
+def _slope_only_refusal(piece: str, slopes: list[str], bars: str, factor: str, term_id: str | None, removal: str,
+                        siblings: tuple[str, ...]) -> FormulaError:
+    """The refusal of a group-level term without its varying intercept, ``(0 + x | g)`` or ``(x - 1 | g)`` (``removal``, what
+    removed it), with the advice that gives brms's model (F08): next to ``(1 | g)`` it is brms's uncorrelated intercept and slope,
+    ``(1 + x || g)``; sharing an ID with a term of ``g`` that has the intercept, brms's one correlated block, ``(1 + w + x | g)``."""
+    others = [p for p in (_group_piece_parts(x) for x in siblings if x != piece) if p is not None and p[3] == factor]
+    tokens = [[t.strip() for t in _split_top_level(p[0])] for p in others]
+    with_intercept = [(p, t) for p, t in zip(others, tokens) if "1" in t or "0" not in t]
+    what = f"{piece!r}: {removal} removes the varying intercept of {factor!r}"
+    if term_id is not None and any(p[2] == term_id for p, _ in with_intercept):
+        p, t = next((p, t) for p, t in with_intercept if p[2] == term_id)
+        block = " + ".join(["1", *(x for x in t if x not in ("0", "1")), *slopes])
+        return FormulaError(f"{what}; brms reads the terms of {factor!r} that share the correlation ID {term_id!r} as one block of "
+                            f"correlated coefficients, which is one term here: write '({block} | {factor})' (docs/varying-slopes.md)")
+    plain = [(p, t) for p, t in with_intercept if p[2] is None and term_id is None and [x for x in t if x not in ("0", "1")] == []]
+    if plain:
+        return FormulaError(f"{what}; next to '({plain[0][0][0]} {plain[0][0][1]} {factor})' it is brms's varying intercept and slope "
+                            f"without a correlation, which is one term here: write '(1 + {' + '.join(slopes)} || {factor})' "
+                            "(docs/varying-slopes.md)")
+    return FormulaError(f"{what}: varying slopes without the varying intercept are not supported; write "
+                        f"'(1 + {' + '.join(slopes)} {bars} {factor})' so that the intercept varies by {factor!r} as well")
+
+
+def _gr_option(name: str, value: str, piece: str) -> str | bool:
+    """F08: brms's gr() options offered as the spellings they are: ``cor = FALSE`` (``||``) and ``id = "p"`` (``|p|``)."""
+    if name == "cor":
+        if value not in ("TRUE", "FALSE"):
+            raise FormulaError(f"{piece!r}: gr()'s cor = takes TRUE or FALSE, got {value!r}")
+        return value == "TRUE"
+    im = re.fullmatch(rf"(['\"])({_IDENT})\1", value)
+    if im is None:
+        raise FormulaError(f"{piece!r}: gr()'s id = takes a quoted name, id = \"p\" (brms's |p|), got {value!r}")
+    return im.group(2)
+
+
+def _parse_group_term(inner: str, bars: str, factor: str, piece: str, response: str, trials: str | None,
+                      siblings: tuple[str, ...] = ()) -> list[GroupTerm]:
     """The ``GroupTerm``s of one ``(inner | factor)`` or ``(inner || factor)`` piece: the varying intercept
     ``(1 | g)`` (``(1 || g)`` is the same term, one coefficient having nothing to correlate with), the
     independent varying intercept and numeric slopes ``(1 + x [+ w ...] || g)`` (A01), or the correlated ones
@@ -2032,7 +2231,11 @@ def _parse_group_term(inner: str, bars: str, factor: str, piece: str, response: 
 
     D08: brms's correlation ID ``(1 + x |p| g)`` (``id``), the multi-membership term ``(1 | mm(g, g2, weights = cbind(w1,
     w2)))`` and ``(1 | gr(g, by = gby))``, each in the subset docs/multi-membership-and-by.md describes (divergences
-    D104-D106); ``gr(g)`` alone is ``g``."""
+    D104-D106); ``gr(g)`` alone is ``g``.
+
+    F08 (docs/syntax-fixes.md): the intercept is implied as in brms, ``(x | g)`` is ``(1 + x | g)`` and ``(x || g)`` is ``(1 + x ||
+    g)``; ``gr(g, cor = FALSE)`` is ``||`` and ``gr(g, id = "p")`` is ``|p|``. ``siblings`` are the formula's other pieces, for the
+    advice of a slope-only term's refusal (``_slope_only_refusal``)."""
     term_id = None
     if "|" in factor:                                            # D08: brms's correlation ID, (1 + x |p| g)
         term_id, factor = (p.strip() for p in factor.split("|", 1))
@@ -2056,13 +2259,22 @@ def _parse_group_term(inner: str, bars: str, factor: str, piece: str, response: 
             if not na:
                 raise FormulaError(f"{piece!r}: gr() takes the grouping column and by = <column> here (docs/multi-membership-and-by.md)")
             named[na.group(1)] = na.group(2).strip()
-        other = [k for k in named if k != "by"]
+        other = [k for k in named if k not in ("by", "cor", "id")]
         if other or not args or not re.fullmatch(_IDENT, args[0]):
             raise FormulaError(
-                f"{piece!r}: brms's gr() options {other or ''} are not supported; gr() takes one grouping column and by = <column> "
-                "here (gr(g, cor = FALSE) is '||', gr(g, id = 'p') is '|p|'; cov, dist and a grouping expression are not "
-                "offered; docs/multi-membership-and-by.md, divergence D105)"
+                f"{piece!r}: brms's gr() options {other or ''} are not supported; gr() takes one grouping column, by = <column>, "
+                "cor = FALSE (brms's '||') and id = \"p\" (brms's '|p|') here; cov, dist and a grouping expression are not "
+                "offered (docs/multi-membership-and-by.md, divergence D105)"
             )
+        if named.get("cor") is not None and not _gr_option("cor", named["cor"], piece):   # F08: gr(g, cor = FALSE) is '||'
+            bars = "||"
+        elif named.get("cor") is not None and bars == "||":
+            raise FormulaError(f"{piece!r}: '||' leaves the coefficients uncorrelated and gr()'s cor = TRUE correlates them; write one")
+        if "id" in named:                                        # F08: gr(g, id = "p") is '|p|' ('|p| gr(...)' is refused above)
+            if bars == "||":
+                raise FormulaError(f"{piece!r}: a correlation ID is written '(1 + x |p| g)'; '||' with an ID is not brms syntax ('Invalid "
+                                   "syntax used in group-level terms')")
+            term_id = _gr_option("id", named["id"], piece)
         factor = args[0]
         if "by" in named:
             by = named["by"]
@@ -2095,9 +2307,17 @@ def _parse_group_term(inner: str, bars: str, factor: str, piece: str, response: 
         raise FormulaError(f"{piece!r}: a grouping factor cannot be combined with itself ({factor!r})")
     combined = ":".join(operands)                                   # the derived factor as the term model spells it
     factors = [operands[0], combined] if sep == "/" else [combined]  # (1 | g/h) is (1 | g) + (1 | g:h)
+    removal = "'0'"
+    minus = _split_top_level(inner, "-")
+    if len(minus) > 1:                                          # F08: R's '- 1' inside a group term, (x - 1 | g)
+        if any(not re.fullmatch(r"\s*1\s*", m) for m in minus[1:]) or not minus[0]:
+            raise FormulaError(f"{piece!r}: '-' inside a group term removes only the varying intercept, '- 1' (brms's (0 + x | g))")
+        inner, removal = " + ".join([minus[0], "0"]), "'- 1'"
     tokens = [t.strip() for t in _split_top_level(inner)]
     if any(t == "" for t in tokens):
         raise FormulaError(f"{piece!r}: empty term inside the group term")
+    if "0" not in tokens and "1" not in tokens:                 # F08: the intercept is implied, as in brms: (x | g) is (1 + x | g)
+        tokens = ["1", *tokens]
     slopes = [t for t in tokens if t not in ("0", "1")]
     for s in slopes:                                            # each slope token is a column name
         if _OFFSET_RE.match(s):
@@ -2139,16 +2359,13 @@ def _parse_group_term(inner: str, bars: str, factor: str, piece: str, response: 
     duplicated = [s for s in dict.fromkeys(slopes) if slopes.count(s) > 1]
     if duplicated:
         raise FormulaError(f"{piece!r}: duplicated varying slope {duplicated[0]!r}")
-    if "0" in tokens or "1" not in tokens:
+    if "0" in tokens:
         if not slopes:
             raise FormulaError(
                 f"{piece!r}: '0' removes the varying intercept and leaves no group-level coefficient; a group term is "
                 f"'(1 | {factor})', or '(1 + x || {factor})' for varying slopes"
             )
-        raise FormulaError(                                     # the hint keeps the bars as written: '|' correlated (A02), '||' not
-            f"{piece!r}: varying slopes without the varying intercept are not supported; write "
-            f"'(1 + {' + '.join(slopes)} {bars} {factor})' so that the intercept varies by {factor!r} as well"
-        )
+        raise _slope_only_refusal(piece, slopes, bars, factor, term_id, removal, siblings)   # F08: brms's model, where there is one
     if tokens.count("1") > 1:
         raise FormulaError(f"{piece!r}: '1' appears more than once in the group term")
     if (by is not None or term_id is not None) and sep is not None:
@@ -2390,6 +2607,16 @@ def _parse_formulas(formulas, data: pd.DataFrame | None, family: str, categorica
         if name not in fam.distributional_parameters:              # B01's scale parameter, or E03's zi, hu, alpha
             nl_hint = ""
             extras = [e.name for e in fam.extra_parameters]            # D01: beta, ndt take no formula here (D79); E03: alpha may
+            owner = next((m.group(1) for m in (_FORMULA_RE.match(t) for t in rest if t != text) if m is not None
+                          and m.group(1) in fam.distributional_parameters
+                          and re.search(rf"(?<![A-Za-z0-9_.]){re.escape(name)}(?![A-Za-z0-9_.(])", m.group(2))), None)
+            if owner is not None:                                       # F08: brms's nlf(sigma ~ a * exp(c * z)) + lf(a ~ 1, ...)
+                raise FormulaError(
+                    f"{text!r}: {name!r} is a parameter of a non-linear formula of {owner} (brms's nlf({owner} ~ ...) with lf({name} ~ "
+                    f"...)); a non-linear formula of a distributional parameter is not supported (docs/nonlinear.md, divergence D62)")
+            if name == "disc" and fam.thresholds:                       # F08: the ordinal families' discrimination
+                raise FormulaError(f"{text!r}: brms's disc ~ ... (the discrimination of an ordinal family, 1 unless it has a formula) is "
+                                   f"not offered for the {fam.name} family here (docs/ordinal-categorical.md, divergence D38)")
             if name in (fam.scale_parameter, fam.zero_parameter, *fam.fixed_parameters, *fam.learnable_parameters, *extras):
                 why = f"brms's {name} ~ ... is not offered here"
             else:
@@ -2652,6 +2879,8 @@ def _parse_matrix_response(formula: str, data: pd.DataFrame | None, family: str,
             f"(proportions; docs/dirichlet-logistic-normal.md)" + (f" and of the {' and '.join(counts)} families (counts with "
                                                                     f"trials(); docs/multinomial.md)" if counts else "")
             + f"; the {fam.name} family takes one response column"
+            + ("; several Gaussian responses are brms's mvbind(y, y2) ~ ..., ab.gaussian(..., rescor=...) (docs/multivariate.md; "
+               "brms reads cbind(y, y2) ~ x as one response with a two-column Y)" if fam.multivariate else "")
         )
     if not m:
         raise FormulaError(f"{formula!r}: expected 'cbind(y1, y2, ...) ~ terms', the response's columns named inside cbind()")
@@ -2768,6 +2997,12 @@ def parse_formula(formula: str | list[str], data: pd.DataFrame | None = None, fa
                 "'successes | trials(n)' for a binomial response; docs/addition-terms.md)."
             )
         m = _FORMULA_RE.match(formula)
+        lhs = formula.split("~", 1)[0].strip() if "~" in formula else ""
+        if not m and "(" in lhs:                                # F08: brms evaluates a transformed response; not here
+            raise FormulaError(
+                f"{formula!r}: the response {lhs!r} is an expression; a transformed response (brms evaluates it, log(y) ~ x) is not "
+                "supported: compute the column in the data frame and name it, or choose the family for the response as it is "
+                "(ab.lognormal for log(y) ~ x with y positive; docs/families.md)")
         if not m:
             raise FormulaError(
                 f"{formula!r}: expected 'response ~ terms'. Supported: "
@@ -2796,6 +3031,7 @@ def parse_formula(formula: str | list[str], data: pd.DataFrame | None = None, fa
     monotonics: dict[str, str] = {}                        # the monotonic terms among them (B03): canonical name -> column
     special_columns: dict[str, tuple[str, ...]] = {}       # the me() and mi() terms among them (C06): canonical name -> columns
     category_specific: dict[str, str] = {}                 # the cs() terms among them (D04): canonical name -> column
+    ordered_terms: dict[str, str] = {}                     # the ordered() terms among them (F08): canonical name -> column
     group_terms: list[GroupTerm] = []
     group_pieces: list[str] = []                           # each group term as written, for the messages below
     groups: list[str] = []                                 # the factors of group_terms, for the checks below
@@ -2832,10 +3068,12 @@ def parse_formula(formula: str | list[str], data: pd.DataFrame | None = None, fa
         if piece == "0":
             remove_intercept = True
             continue
+        _refuse_r_construct(piece)                              # F08: R's formula operators and brms's reserved names, by name
         gm = _GROUP_RE.match(piece)
         if gm:
             inner, bars, factor = gm.group(1).strip(), gm.group(2), gm.group(3).strip()
-            for term in _parse_group_term(inner, bars, factor, piece, response, trials):   # '(1 | g)', '(1 + x || g)', '(1 | g:h)'; '(1 | g/h)' gives two
+            for term in _parse_group_term(inner, bars, factor, piece, response, trials,   # '(1 | g)', '(1 + x || g)', '(1 | g:h)';
+                                          tuple(_split_top_level(rhs))):                   # '(1 | g/h)' gives two
                 group_terms.append(term)
                 group_pieces.append(piece)
                 groups.append(term.factor)
@@ -2943,6 +3181,12 @@ def parse_formula(formula: str | list[str], data: pd.DataFrame | None = None, fa
                         f"{piece!r}: an interaction with {which[0]} ({side!r}) is not supported in this slice: brms gives it a "
                         "special coefficient of its own times the product, which is not verified here "
                         f"(docs/missing-and-measurement-error.md, divergence {which[1]})"
+                    )
+                if _ORDERED_RE.match(side):                         # F08
+                    raise FormulaError(
+                        f"{piece!r}: an interaction with an ordered factor ({side!r}) is not supported: brms gives each "
+                        "of its polynomial contrasts its own interaction column, which no frozen case verifies here "
+                        "(docs/ordered-factors.md, divergence D168)"
                     )
                 if "(" in side or ")" in side:
                     if parse_transform(side) is None:
@@ -3063,6 +3307,24 @@ def parse_formula(formula: str | list[str], data: pd.DataFrame | None = None, fa
             _main(f"mi({inner})", piece, call=True)
             special_columns[f"mi({inner})"] = (inner,)
             continue
+        orm = _ORDERED_RE.match(piece)
+        if orm:                                                 # F08: R's ordered(col), polynomial contrasts (docs/ordered-factors.md)
+            inner = orm.group(1).strip()
+            if not re.fullmatch(_IDENT, inner):
+                raise FormulaError(f"{piece!r}: ordered() takes one column name here, not {inner!r} (brms evaluates an expression): "
+                                   "compute the column in the data frame and write ordered(<column>) (docs/ordered-factors.md)")
+            if inner in (response, trials):
+                raise FormulaError(f"{piece!r}: the {'response' if inner == response else 'trials column'} {inner!r} cannot be an "
+                                   "ordered factor predictor")
+            _main(f"ordered({inner})", piece, call=True)            # under its canonical spelling, 'ordered( z )' is 'ordered(z)'
+            ordered_terms[f"ordered({inner})"] = inner
+            continue
+        sm = _SMOOTH_RE.match(piece)
+        if sm:                                                  # F08: brms's smooth terms, refused by name (not as a transform)
+            raise FormulaError(
+                f"{piece!r}: brms's smooth term {sm.group(1)}() (mgcv's penalised splines, a basis whose coefficients have their own "
+                "standard deviation, brms's sds_ and zs_) is not supported; a smooth function of one column can be approached with "
+                "gp(col) or with polynomial terms I(col^2) (docs/gaussian-processes.md, docs/transforms.md)")
         if "(" in piece or ")" in piece:                       # an in-formula transform, log(col), I(col^2), ... (A05)
             tr = parse_transform(piece)
             if tr is None:
@@ -3131,6 +3393,7 @@ def parse_formula(formula: str | list[str], data: pd.DataFrame | None = None, fa
     gp_columns = [g.column for g, _ in gps]                          # and the Gaussian processes (C03)
     special_cols = [c for cols in special_columns.values() for c in cols]   # and the me() and mi() terms (C06)
     special_cols += list(category_specific.values())                 # and the cs() terms (D04)
+    special_cols += list(ordered_terms.values())                     # and the ordered() terms (F08)
     for col in operands_all:
         if (col in predictors or col in transform_columns or col in mo_columns or col in gp_columns or col in special_cols
                 or col == response):
@@ -3235,6 +3498,15 @@ def parse_formula(formula: str | list[str], data: pd.DataFrame | None = None, fa
                 "term alone in this slice (brms accepts x + cs(x), whose b_x and bcs_x are not separately identified; "
                 "docs/ordinal-categorical.md, divergence D89)"
             )
+    for name, col in ordered_terms.items():                   # F08: a column inside ordered() is read by that term alone
+        elsewhere = [*(p for p in predictors if p != name and p not in ordered_terms), *transform_columns, *mo_columns, *gp_columns,
+                     *(c for cols in special_columns.values() for c in cols), *category_specific.values(),
+                     *(c for other, oc in ordered_terms.items() if other != name for c in [oc]),
+                     *([offset.column] if offset is not None else []), *(c for a in additions for c in a.columns),
+                     *(c for left, right, _ in raw_interactions for c in (left, right)), *(s for t in group_terms for s in t.slopes)]
+        if col in elsewhere:
+            raise FormulaError(f"{formula!r}: {col!r} is read by {name!r} and by another term of the formula; a column inside ordered() "
+                               "is read by that term alone here (docs/ordered-factors.md, divergence D168)")
     # A derived factor's column (g_h) is added to the fitted frame: it must not shadow a column the formula uses.
     in_use = {response, *predictors, *transform_columns, *mo_columns, *gp_columns, *special_cols, *operands_all,
               *([trials] if trials is not None else []),
@@ -3279,17 +3551,30 @@ def parse_formula(formula: str | list[str], data: pd.DataFrame | None = None, fa
             declared = [c for c in cols if c in categorical]
             if declared:
                 raise FormulaError(f"{name!r}: {declared[0]!r} is declared categorical; {name.split('(')[0]}() reads numbers")
+        for name, col in ordered_terms.items():              # nor does ordered(), which declares the column a factor itself (F08)
+            if col in categorical:
+                raise FormulaError(f"{name!r}: {col!r} is declared categorical; ordered() reads it as an ordered factor with polynomial "
+                                   "contrasts itself, and one column cannot be both (docs/ordered-factors.md)")
         for name, col in category_specific.items():          # nor does cs() here (D04): brms's cs(z) of a factor is not verified
             if col in categorical:
                 raise FormulaError(f"{name!r}: {col!r} is declared categorical; cs() takes a numeric column in this slice (brms's cs() "
                                    "of a factor, one coefficient per level and threshold, is not verified here; divergence D89)")
     categoricals = _normalise_categorical(categorical, predictors, response, operands_all, trials, formula)
+    if ordered_terms:                                        # F08: ordered(col)'s factor, in formula order with the declared ones
+        own = {name: Categorical(name=col, reference="", coding="poly", term=name) for name, col in ordered_terms.items()}
+        declared = {c.name: c for c in categoricals}
+        categoricals = tuple(own[p] if p in own else declared[p] for p in predictors if p in own or p in declared)
     if offset is not None and any(c.name == offset.column for c in categoricals):
         raise FormulaError(
             f"{offsets[0][1]!r}: {offset.column!r} is declared categorical; an offset is a known numeric column added "
             "to the linear predictor"
         )
     if remove_intercept and categoricals:
+        if categoricals[0].is_poly:                          # F08: R codes the first factor of a '0 +' formula by indicators
+            raise FormulaError(
+                f"{formula!r}: '{categoricals[0].term_name}' is the first factor of a formula without an intercept, which R codes with "
+                "one indicator per level rather than polynomial contrasts; declare the column instead, categorical="
+                f"{{{categoricals[0].name!r}: <level>}}, for that coding (docs/ordered-factors.md)")
         categoricals = (replace(categoricals[0], full_rank=True), *categoricals[1:])
     cat_names = {c.name for c in categoricals}
     for term, piece in zip(group_terms, group_pieces):
@@ -3334,7 +3619,8 @@ def parse_formula(formula: str | list[str], data: pd.DataFrame | None = None, fa
     kinds = {**{p: "transform" for p in transforms}, **{p: "monotonic" for p in monotonics}, **{p: "categorical" for p in cat_names},
              **{p: "measurement_error" if p.startswith("me(") else "missing" for p in special_columns},   # C06
              **{p: "category_specific" for p in category_specific}}                                     # D04
-    pop_terms = (*(pop_term(p, kinds.get(p, "numeric"), categoricals) for p in predictors),
+    pop_terms = (*(t for p in predictors for t in ((pop_term(p, kinds.get(p, "numeric"), categoricals),) if p not in ordered_terms
+                                                  else contrast_terms(_find_categorical(categoricals, ordered_terms[p])))),
                  *(pop_term(name, "interaction", categoricals) for name in interactions))
     spec = ModelSpec(
         formula=formula.strip(), response=response, intercept=not remove_intercept, trials=trials,
@@ -3686,6 +3972,19 @@ def check_counts(label: str, s: pd.Series, *, cap: int = COUNT_CAP, domain: str 
     return vf.astype(np.int64)
 
 
+def trials_number(spec) -> int | None:
+    """F08: the number of brms's ``trials(15)`` (``spec.trials`` is then its text, ``"15"``), or None for a column of trials."""
+    t = getattr(spec, "trials", None)
+    return int(t) if t is not None and _TRIALS_NUMBER_RE.fullmatch(t) else None
+
+
+def with_trials(spec, df: pd.DataFrame) -> pd.DataFrame:
+    """F08: ``df`` with ``trials(15)``'s number on every row under the name ``"15"`` (``spec.trials``), which every reader of the
+    trials column then finds; ``df`` itself for a column of trials."""
+    n = trials_number(spec)
+    return df if n is None else df.assign(**{spec.trials: np.full(len(df), n, dtype=np.int64)})
+
+
 def binomial_counts(spec: ModelSpec, data: pd.DataFrame) -> tuple[np.ndarray, np.ndarray]:
     """Validated ``(successes, trials)`` for a binomial formula, without dropping any row.
 
@@ -3764,6 +4063,7 @@ def validate_data(spec: ModelSpec, data: pd.DataFrame, family: str = "gaussian",
     fam = get_family(family)
     if not dpar and (spec.trials is not None) != fam.has_trials:
         raise FormulaError("a trials column is present exactly for the binomial family")
+    data = with_trials(spec, data)                               # F08: trials(15)
     operands = [c for t in spec.group_terms for c in t.data_columns]   # the columns the grouping factors are read from (D08: and
     response = list(getattr(spec, "response_columns", ())) or [spec.response]   # F01b: the K columns of cbind(y1, ..., yK)
     needed = (([] if dpar else response) + [*spec.pop_columns] + operands      # mm()'s weights, gr()'s by column)
@@ -3792,6 +4092,10 @@ def validate_data(spec: ModelSpec, data: pd.DataFrame, family: str = "gaussian",
         levels = tuple(sorted(set(labels.tolist())))
         if len(levels) < 2:
             raise FormulaError(f"predictor {cat.name!r} is constant (single level {levels[0]!r} in the fitted rows)")
+        s = data[cat.name]
+        if cat.is_poly or (isinstance(s.dtype, pd.CategoricalDtype) and s.dtype.ordered and not cat.full_rank):
+            categoricals.append(_poly_categorical(cat, s, labels, unused))   # F08: an ordered factor, R's polynomial contrasts
+            continue
         if cat.reference not in levels:
             raise FormulaError(
                 f"reference level {cat.reference!r} of {cat.name!r} does not occur in the fitted rows; "
@@ -3860,12 +4164,67 @@ def validate_data(spec: ModelSpec, data: pd.DataFrame, family: str = "gaussian",
     return ModelSpec(
         formula=spec.formula, response=spec.response, intercept=spec.intercept, levels_by_group=levels_by_group,
         trials=spec.trials, rhs=spec.rhs, categoricals=tuple(categoricals),
-        pop_terms=tuple(pop_term(t.name, t.kind, categoricals) for t in spec.pop_terms),   # levels now known
+        pop_terms=_seen_pop_terms(spec, categoricals),                                        # levels now known
         group_terms=spec.group_terms, offset=spec.offset, additions=_seen_additions(spec, data), dpars=spec.dpars, monotonics=monotonics,
         gp_terms=gp_terms,
         autocor=spec.autocor, sar=spec.sar, fcor=spec.fcor, car=spec.car, response_columns=getattr(spec, "response_columns", ()),   # F01b
         timecor=spec.timecor,                                                                                                     # F03b
     )
+
+
+def _poly_categorical(cat: Categorical, s: pd.Series, labels: np.ndarray, unused: tuple[str, ...]) -> Categorical:
+    """F08 (docs/ordered-factors.md): an ordered factor coded with R's polynomial contrasts, as brms codes one, once the data are
+    seen: its levels are the fitted ones in the factor's order (a pandas Categorical's declared order; for ``ordered(col)`` of
+    another column, R's ``ordered()``, numbers in numeric order and text sorted), the lowest is its reference, and the declared
+    reference of an ordered pandas Categorical (``categorical=``) must be that lowest level, as polynomial contrasts have none.
+    More than ``POLY_LEVELS_MAX`` levels are refused (divergence D168)."""
+    observed = set(labels.tolist())
+    if isinstance(s.dtype, pd.CategoricalDtype):
+        levels = tuple(c for c in (_label(v) for v in s.cat.categories) if c in observed)
+    elif {_kind(v) for v in s.astype(object).tolist()} == {"number"}:
+        levels = tuple(sorted(observed, key=int))
+    else:
+        levels = tuple(sorted(observed))
+    if not cat.is_poly and cat.reference != levels[0]:
+        raise FormulaError(
+            f"categorical predictor {cat.name!r} is an ordered pandas Categorical: brms codes an ordered factor with polynomial contrasts "
+            f"over its levels {list(levels)} ({cat.name}.L, {cat.name}.Q, ...), which have no reference level; declare its lowest "
+            f"level, categorical={{{cat.name!r}: {levels[0]!r}}}, or pass the column unordered (data[{cat.name!r}].cat.as_unordered()) "
+            f"for treatment coding against {cat.reference!r} (docs/ordered-factors.md)")
+    if len(levels) > POLY_LEVELS_MAX:
+        raise FormulaError(
+            f"the ordered factor {cat.term_name!r} has {len(levels)} levels; polynomial contrasts are offered for at most "
+            f"{POLY_LEVELS_MAX}: beyond that R's contr.poly, which brms uses, departs from the polynomial contrasts by more than "
+            "1e-12 (and from 23 levels is no longer polynomial), so no model here could match brms's (docs/ordered-factors.md, "
+            "divergence D168); declare it unordered for treatment coding")
+    return Categorical(name=cat.name, reference=levels[0], levels=levels, unused=unused, coding="poly", term=cat.term)
+
+
+def _seen_pop_terms(spec: ModelSpec, categoricals) -> tuple[PopTerm, ...]:
+    """The population-level terms once the categorical levels are known: an ordered factor's term (a declared ordered pandas
+    Categorical, or ``ordered(col)``'s placeholder) becomes its polynomial contrasts (F08); an interaction with one is refused."""
+    out, seen = [], set()
+    for t in spec.pop_terms:
+        cat = next((c for c in categoricals if c.is_poly and c.name in ((t.factor,) if t.kind == "contrast" else t.categorical)), None)
+        if cat is not None and t.kind == "interaction":
+            raise FormulaError(
+                f"{t.name!r}: an interaction with the ordered factor {cat.name!r} is not supported: brms codes an ordered "
+                f"factor with polynomial contrasts and gives each its own interaction column ({t.name}.L, ...), which no frozen case "
+                "verifies here (docs/ordered-factors.md, divergence D168)")
+        if cat is None:
+            out.append(pop_term(t.name, t.kind, categoricals))
+        elif cat.name not in seen:
+            seen.add(cat.name)
+            out.extend(contrast_terms(cat))
+    names = [t.name for t in out]
+    reads = {spec.response, *spec.pop_columns, *(c for g in spec.group_terms for c in g.data_columns),
+             *([spec.trials] if spec.trials else []), *([spec.offset.column] if spec.offset is not None else []),
+             *(c for a in spec.additions for c in a.columns)}
+    clash = next((n for t in out if t.kind == "contrast" for n in [t.name] if names.count(n) > 1 or n in reads), None)
+    if clash is not None:
+        raise FormulaError(f"the polynomial contrast {clash!r} of an ordered factor (docs/ordered-factors.md) has the name of another "
+                           "term or column of the formula; rename that column")
+    return tuple(out)
 
 
 def _seen_additions(spec: ModelSpec, data: pd.DataFrame) -> tuple[AdditionTerm, ...]:

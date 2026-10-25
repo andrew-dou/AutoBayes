@@ -42,9 +42,13 @@ deviation into `u_g + c v_x|g`, which is correlated with `v_x|g`. `describe()` s
   its own `Normal(0, sd)`; `new_groups="resample_observed"` reuses one observed level's whole effect vector
   (intercept and slopes from the same level, as brms's `sample_new_levels = "uncertainty"`).
 
+As in brms, the intercept is implied (F08, docs/syntax-fixes.md): `(x || g)` is `(1 + x || g)` and `(x | g)` is `(1 + x | g)`,
+and `gr(g, cor = FALSE)` is `||`.
+
 ## Refused, with the construct named
 
-`(0 + x || g)` and `(x || g)` (a slope without the varying intercept); a slope that is not a numeric population-level term; a
+`(0 + x || g)` and `(x - 1 || g)` (a slope without the varying intercept; next to `(1 | g)` the refusal gives brms's reading,
+`(1 + x || g)`, F08); a slope that is not a numeric population-level term; a
 categorical or interaction slope; a slope equal to the factor, the response or the trials column; a factor in two
 group terms; function calls inside the group term.
 

@@ -104,7 +104,7 @@ import xarray as xr
 from autobayes.families import family_of
 from autobayes.families.spec import DISTRIBUTIONAL_INVERSE_LINKS
 from autobayes.formula import (FormulaError, by_levels_of, categorical_labels, check_counts, group_labels, mm_weights, pop_term_design,
-                               reject_complex)
+                               reject_complex, with_trials)
 
 _NEW_GROUPS = {"error", "resample_observed", "population"}
 
@@ -293,6 +293,7 @@ def _check_newdata(model, newdata: pd.DataFrame, *, need_trials: bool = False, i
     cols += list(extra)                                          # F06a: se()'s and rate()'s columns where the kind needs them
     cols = list(dict.fromkeys(cols))
     if need_trials:
+        newdata = with_trials(s, newdata)                        # F08: trials(15)'s number on every new row
         if s.trials not in newdata.columns:
             raise FormulaError(
                 f"newdata lacks the trials column {s.trials!r}, which kind='mean' and kind='response' need "
@@ -343,6 +344,8 @@ def _check_newdata(model, newdata: pd.DataFrame, *, need_trials: bool = False, i
                 "new_groups does not apply to it."
             )
         df[cat.name] = pd.Categorical(labels, categories=list(cat.categories), ordered=True)
+    for t in (t for f in (s, *s.dpars) for t in f.pop_terms if t.kind == "contrast"):   # F08: an ordered factor's contrast columns,
+        df[t.name] = pop_term_design(t, df, s.all_categoricals)[:, 0]                       # which Bambi reads by name
     if need_trials:
         df[s.trials] = check_counts(f"newdata trials {s.trials!r}", df[s.trials])
     for t in (s.group_terms if include_group_effects else ()):   # labels as text; a derived factor's column is built here

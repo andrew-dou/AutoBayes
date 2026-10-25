@@ -366,7 +366,7 @@ def test_grammar_prior_refusals_and_exact_identity():
     df=inputs();m,c=build()
     # A04 accepts 'x+w+z+x:w' and 'z+v+z:v' (tests/test_general_interactions.py); their duplicated spellings stay refused
     for rhs in ['x*z+w*z','x*z+x*v','x+w+z+x:z+z:x','x+z+x:w','x+w+z+x:w+w:x',
-                'z+v+z:v+v:z','x+w+z+x:z:w','x+z+x:x','x+z+log(x):z','x+z+x:z+(x|g)']:
+                'z+v+z:v+v:z','x+w+z+x:z:w','x+z+x:x','x+z+log(x):z','x+z+x:z+(0+x|g)']:   # F08 reads '(x|g)' as '(1+x|g)'
         with pytest.raises(ab.FormulaError):ab.parse_formula('y~'+rhs,df,categorical={'z':'middle','v':'right'} if 'v' in rhs else {'z':'middle'})
     for bad in [dict(m.priors.b,**{'z:x':ab.Normal(0,1)}),
                 {k:v for k,v in m.priors.b.items() if k!='w:z'},

@@ -56,8 +56,8 @@ def two_factor():
 # -- 1. the grammar: what is accepted and every refusal by message -------------------------------------------
 REFUSALS = [                                   # '(1 + x | g)', once refused here, is brms's correlated form (A02, tests/test_correlated_slopes.py)
     ("y ~ x + (0 + x || g)", {}, "varying slopes without the varying intercept are not supported; write '(1 + x || g)' so that the intercept varies by 'g' as well"),
-    ("y ~ x + (x || g)", {}, "varying slopes without the varying intercept are not supported; write '(1 + x || g)'"),
-    ("y ~ x + (x | g)", {}, "varying slopes without the varying intercept are not supported"),
+    ("y ~ x + (x - 1 || g)", {}, "varying slopes without the varying intercept are not supported; write '(1 + x || g)'"),   # F08:
+    ("y ~ x + (0 + x | g)", {}, "varying slopes without the varying intercept are not supported"),   # '(x || g)' is '(1 + x || g)'
     ("y ~ x + (0 | g)", {}, "'0' removes the varying intercept and leaves no group-level coefficient; a group term is '(1 | g)', or '(1 + x || g)' for varying slopes"),
     ("y ~ w + (1 + x || g)", {}, "the varying slope 'x' must also be a population-level term of the formula, as in 'y ~ x + (1 + x || g)'"),
     ("y ~ (1 + x || g)", {}, "the varying slope 'x' must also be a population-level term of the formula"),
@@ -96,8 +96,8 @@ def test_refusals_name_the_construct(formula, kwargs, message):
 
 def test_slope_only_refusals_still_mention_varying_slopes():
     """The needles of the pre-existing tests (``"varying slopes"``) keep matching the kept refusals; ``(1 + x | g)`` is
-    no longer among them (A02)."""
-    for formula in ("y ~ x + (x | g)", "y ~ x + (0 + x || g)"):
+    no longer among them (A02), nor ``(x | g)``, brms's ``(1 + x | g)`` (F08)."""
+    for formula in ("y ~ x + (0 + x | g)", "y ~ x + (0 + x || g)"):
         with pytest.raises(ab.FormulaError, match="varying slopes"):
             ab.parse_formula(formula)
     assert ab.parse_formula("y ~ x + (1 + x | g)").group_terms == (GroupTerm("g", ("Intercept", "x"), True),)

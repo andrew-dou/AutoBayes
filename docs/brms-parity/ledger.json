@@ -2333,7 +2333,27 @@
    "attempts": 0,
    "divergences": [],
    "next_action": "after wave F1 merges (touches the parser and messages)",
-   "reserved_divergences": "D168-D171"
+   "reserved_divergences": "D168-D171",
+   "gates": {
+    "sha": "844a1943af30",
+    "dirty_tree": false,
+    "base": "origin/main",
+    "when": "2026-10-25T11:11Z",
+    "results": {
+     "immutability": {
+      "status": "pass",
+      "seconds": 0.0
+     },
+     "oracle": {
+      "status": "pass",
+      "seconds": 775.6
+     },
+     "diff_coverage": {
+      "status": "pass",
+      "seconds": 670.2
+     }
+    }
+   }
   },
   {
    "id": "F09_namespace_and_messages",

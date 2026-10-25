@@ -57,7 +57,8 @@ from autobayes.correlation import check_correlation_cholesky, cholesky_corr_free
 from autobayes.families import FAMILIES, FamilySpec, get_family
 from autobayes.formula import (Categorical, FormulaError, ModelSpec, addition_data, bambi_group_name, binomial_counts, by_levels_of,
                                categorical_labels, check_imputation, factor_column, group_labels, interaction_cells,
-                               measurement_values, missing_values, mm_weights, parse_formula, pop_term_design, sd_tag)
+                               measurement_values, missing_values, mm_weights, parse_formula, poly_contrasts, pop_term_design, sd_tag,
+                               with_trials)
 from autobayes.formula import DATA2_UNIVARIATE, check_data2   # Tier F: brms's data2 (F02b, F03a)
 from autobayes.priors import AUXILIARY, PriorError, Priors, describe_prior
 
@@ -300,6 +301,9 @@ def _linear_terms(spec: ModelSpec, centered: bool, b: str = "b") -> list[str]:
             parts.append(f"{b}_{term} * {t.operands[0]}_i")
         elif t.kind == "category_specific":                  # D04: one coefficient per threshold, in mu_i[k] (the family's lines)
             continue
+        elif t.kind == "contrast":                           # F08: a polynomial contrast of an ordered factor, at row i's level
+            value = f"{term}[{t.factor}_i]"
+            parts.append(f"({value} - mean({term})) * {b}_{term}" if centered else f"{value} * {b}_{term}")
         else:
             parts.append(f"(x_{term} - mean(x_{term})) * {b}_{term}" if centered else f"x_{term} * {b}_{term}")
     return parts
@@ -439,6 +443,7 @@ class Model:
         cols += list(spec0.car.columns) if spec0.car is not None else []   # a CAR term's locations (F02a)
         cols += list(spec0.timecor.columns) if spec0.timecor is not None else []   # a residual correlation term's (F03b)
         cols = list(dict.fromkeys(cols))                        # the offset column may also be a predictor
+        data = with_trials(spec0, data)                         # F08: trials(15)'s number, under its name
         missing = [c for c in cols if c not in data.columns]
         if missing:
             raise FormulaError(f"columns not in data: {missing}")
@@ -506,6 +511,12 @@ class Model:
             self.categories, codes, notes = fam.response_categories(self.spec, df[self.spec.response])
             df[self.spec.response] = codes
             self.warnings.extend(notes)
+            cat_term = self.spec.addition("cat")             # F08: brms's cat(K), taken where K is the data's number of categories
+            if cat_term is not None and cat_term.count != len(self.categories):
+                raise FormulaError(
+                    f"{self.spec.formula!r}: {cat_term.term!r}: the response has {len(self.categories)} categories here "
+                    f"({', '.join(self.categories)}); cat() with another number (brms then has thresholds no row reaches, or refuses) "
+                    "is not offered (docs/syntax-fixes.md, divergence D169)")
         if fam.response_dtype is not None:
             df[self.spec.response] = df[self.spec.response].astype(fam.response_dtype)
         self.warnings.extend(fam.response_warnings(self.spec, df))   # separation, all-zero counts
@@ -522,6 +533,8 @@ class Model:
                     f"declared categories {list(cat.unused)} of {cat.name!r} do not occur in the fitted rows: "
                     "they get no coefficient, and predictions for them are refused."
                 )
+        for t in (t for s in (self.spec, *self.spec.dpars) for t in s.pop_terms if t.kind == "contrast"):
+            df[t.name] = pop_term_design(t, df, self.spec.all_categoricals)[:, 0]   # F08: the contrast column Bambi is handed
         self.data = df
         self._threshold_groups = None                        # F06b: thres(gr = z)'s levels on the fitted rows
         if self.spec.addition("thres") is not None:
@@ -560,7 +573,7 @@ class Model:
             self._bhaz_design = baseline_design(self.spec, self.data)
 
         bambi_family = fam.bambi_family()
-        if any(a.kind not in ("mi", "dec", "thres") and a.kind not in fam.own_additions   # brms's response addition terms act on the
+        if any(a.kind not in ("mi", "dec", "thres", "cat") and a.kind not in fam.own_additions   # brms's response addition terms act on the
                for a in self.spec.additions):                     # likelihood (B02; F04: the wiener likelihood reads dec() itself; F06b:
                                                                   # thres(); F05: the cox likelihood its cens() and bhaz())
             from autobayes.likelihoods import addition_family
@@ -2552,7 +2565,9 @@ class Model:
                          f"{grouping}; {len(self.dropped_rows)} zero-trial row(s) dropped"
                          + (f" (positions {list(self.dropped_rows)[:10]}{'...' if len(self.dropped_rows) > 10 else ''})"
                             if self.dropped_rows else ""))
-        features = ((["categorical predictor(s)"] if s.categoricals else []) + (["interaction(s)"] if s.interactions else [])
+        treat = tuple(c for c in s.categoricals if not c.is_poly)   # F08: the treatment-coded ones; an ordered factor's are contrasts
+        features = ((["categorical predictor(s)"] if treat else []) + (["interaction(s)"] if s.interactions else [])
+                    + (["ordered factor(s) with polynomial contrasts"] if len(treat) < len(s.categoricals) else [])
                     + (["in-formula transform(s)"] if s.transform_terms else []) + (["monotonic effect(s)"] if s.mo_terms else [])
                     + (["Gaussian process(es)"] if s.gp_terms else [])
                     + (["independent varying slope(s)"] if any(t.slopes and not t.has_correlation and t.id is None for t in s.group_terms) else [])
@@ -2657,6 +2672,17 @@ class Model:
                       if cat.name in f.categorical_names]
             labels = self.data[cat.name].astype(str).to_numpy()
             props = ", ".join(f"{l} {np.mean(labels == l):.3f}" for l in cat.levels)
+            if cat.is_poly:                                  # F08: an ordered factor, R's polynomial contrasts (docs/ordered-factors.md)
+                C = poly_contrasts(len(cat.levels))
+                values = "; ".join(f"{l}: " + ", ".join(f"{v:.4f}" for v in C[i]) for i, l in enumerate(cat.levels))
+                lines += [
+                    f"  {cat.term_name:<10}: ordered factor, polynomial contrasts (R's contr.poly over its levels {' < '.join(cat.levels)}, as "
+                    f"brms codes an ordered factor): columns {', '.join(cat.contrast_columns)}, the orthonormal polynomials of degree 1 to "
+                    f"{len(cat.levels) - 1} in the level's rank; their values by level ({values})"
+                    + (f"; unused declared categories {list(cat.unused)}" if cat.unused else ""),
+                    f"              proportions among fitted rows: {props}",
+                ]
+                continue
             lines += [
                 f"  {cat.name:<10}: categorical, {'full-level coding' if cat.full_rank else 'treatment coding'}, reference {cat.reference!r}; levels (sorted) "
                 f"{', '.join(cat.levels)}; coefficients " + "; ".join(f"{b}_{cat.name}[{', '.join(c.coefficients)}]" for b, c in owners)
@@ -2690,6 +2716,12 @@ class Model:
         scale = fam.scale_phrase
         same_group = " (same group)" if len(s.groups) == 1 else (" (same group effects)" if s.groups else "")
         for cat in s.categoricals:
+            if cat.is_poly:                                   # F08
+                from autobayes.default_priors import brms_rename
+                lines += [f"  {', '.join(f'b_{c}' for c in cat.contrast_columns)}: the coefficients of {cat.term_name}'s polynomial contrasts "
+                          f"(brms's b_{', b_'.join(brms_rename(c) for c in cat.contrast_columns)}), the linear, quadratic, ... trend across its "
+                          f"ordered levels on the {fam.scale_phrase} scale; level l adds sum_d C[l, d] b_d, C the contrasts above."]
+                continue
             partners = [xn for xn, zn in pairs if zn == cat.name]
             changes = "".join(f" + {xn} * b_{xn}:{cat.name}[l]" for xn in partners)
             if cat.full_rank:
@@ -2747,15 +2779,15 @@ class Model:
             lines += fam.intercept_lines(self)
         elif d.centered:
             what = fam.intercept_meaning
-            where = "at the predictor means" if not s.categoricals else \
+            where = "at the predictor means" if not treat else \
                 "at the numeric predictor means and at the sample proportions of the categorical levels"
             if s.interactions:
-                expanded = ((["x"] if s.predictors else []) + (["1[z = l]"] if s.categoricals else []) + (["x * 1[z = l]"] if num_cat else [])
+                expanded = ((["x"] if s.predictors else []) + (["1[z = l]"] if treat else []) + (["x * 1[z = l]"] if num_cat else [])
                             + (["x * w"] if num_num else []) + (["1[z = l] * 1[h = m]"] if cat_cat else []))
                 where = f"at the fitted-row means of every expanded design column ({', '.join(expanded)})"
             lines += [
                 "  Predictors are centred at their sample means (center_predictors=True, as in",
-                f"  brms and Bambi)" + ("; a dummy column's mean is its level's proportion p_z[l]." if s.categoricals else "."),
+                f"  brms and Bambi)" + ("; a dummy column's mean is its level's proportion p_z[l]." if treat else "."),
             ]
             if num_cat:
                 qs = []
@@ -2778,7 +2810,7 @@ class Model:
                 lz_all, lh_all = self.original_labels[zn], self.original_labels[hn]
                 ps = ", ".join(f"p_{t.name}[{lvl}] = {np.mean((lz_all == lz) & (lh_all == lh)):.3f}" for lvl, lz, lh in cells(t))
                 lines += [f"  Each cell column 1[{zn} = l] * 1[{hn} = m] is centred at the cell's proportion of the fitted rows: {ps}."]
-            correction = (" - sum_l p_z[l] * b_z[l]" if s.categoricals else "")
+            correction = (" - sum_l p_z[l] * b_z[l]" if treat else "")
             correction += (" - sum_(x,z),l q_x:z[l] * b_x:z[l]" if len(num_cat) > 1 else (" - sum_l q_x:z[l] * b_x:z[l]" if num_cat else ""))
             correction += "".join(f" - q_{t.name} * b_{t.name}" for t in num_num)
             correction += "".join(f" - sum_(l,m) p_{t.name}[l, m] * b_{t.name}[l, m]" for t in cat_cat)
@@ -2786,9 +2818,9 @@ class Model:
                 f"  a_c is the {what} {where}{' (group effect zero)' if s.has_group else ''}; the",
                 "  prior on the intercept applies to a_c. The posterior reports the raw-scale",
                 "  intercept a = a_c - sum_p mean(x_p) * b_p" + correction + ", computed after sampling"
-                + (": the linear predictor at x = 0 and at the reference level." if s.categoricals else "."),
+                + (": the linear predictor at x = 0 and at the reference level." if treat else "."),
             ]
-            if s.categoricals:
+            if treat:
                 lines += list(fam.centred_intercept_note)
         elif not s.intercept:
             lines += ["  No population intercept or intercept prior. The raw design is used without back-transformation;",
@@ -2797,7 +2829,7 @@ class Model:
                 lines += ["  Only the first categorical main effect is full-level coded. Reordering factors changes independent prior meaning."]
         else:
             lines += ["  Predictors are not centred (center_predictors=False); a is the raw-scale intercept"
-                      + ((" (x = 0, reference level" + (", group effect zero)." if s.has_group else ").")) if s.categoricals else ".")]
+                      + ((" (x = 0, reference level" + (", group effect zero)." if s.has_group else ").")) if treat else ".")]
         for ds in s.dpars:                                   # each distributional parameter's own linear predictor (B01)
             lines += self._dpar_lines(ds)
         if s.has_group:
@@ -3265,6 +3297,10 @@ class Model:
             if a.kind in ("mi", "thres", "bhaz"):            # C06: the response's missing rows, _measurement_data_lines; F06b: the
                 continue                                     # levels of thres(gr = z), grouped_thresholds.data_lines; F05: the cox
                                                              # family's lines say what bhaz() set
+            if a.kind == "cat":                              # F08: brms's cat(K), the data's own number of categories
+                out += [f"  categories: {a.term}: the response's {a.count} categories, the data's own (brms's deprecated cat(K), its "
+                        f"thres({a.count - 1})); it changes nothing"]
+                continue
             if a.kind == "dec":                              # F04: the wiener decisions (brms's dec)
                 upper = int((d.dec == 1).sum())
                 out += [f"  decisions : {a.term}: {upper} row(s) at the upper boundary (1), {d.n - upper} at the lower one (0); "
@@ -3305,7 +3341,7 @@ class Model:
         """The likelihood paragraph's lines for the response addition terms (B02)."""
         out = []
         for a in self.spec.additions:
-            if a.kind in ("dec", "thres") or a.kind in self.family_spec.own_additions:   # F04: the wiener likelihood's own lines
+            if a.kind in ("dec", "thres", "cat") or a.kind in self.family_spec.own_additions:   # F04: the wiener likelihood's own lines
                 continue                                     # say how it reads dec; F06b: the grouped cumulative likelihood's how it
                                                              # reads thres(); F05: the cox likelihood's its cens() and bhaz()
             if a.kind in ("se", "rate"):                     # F06a
@@ -3506,9 +3542,10 @@ def gamma(formula: str | list[str], data: pd.DataFrame, priors: Priors, *, link:
 
     Responses are strictly positive finite reals. The shape parameter takes its own positive-support prior,
     ``Priors(shape=ab.Gamma(0.01, 0.01))``, or its own formula under a log link (B01, ``["y ~ x", "shape ~ z"]``,
-    docs/distributional.md); no sigma or nu. ``link`` is ``"log"`` by default (brms's default Gamma link is inverse;
-    docs/brms-parity/divergences.md, D9); ``"inverse"`` (``mu = 1 / eta``) and ``"identity"`` (``mu = eta``) are brms's
-    ``Gamma("inverse")`` and ``Gamma("identity")``, which need a positive linear predictor (E06, docs/links.md).
+    docs/distributional.md); no sigma or nu. ``link`` is ``"log"`` by default, as brms's ``brmsfamily("Gamma")``; R's
+    ``stats::Gamma()``, which brms takes as ``family = Gamma()``, defaults to the inverse link, so a model ported from it needs
+    ``link="inverse"`` (docs/brms-parity/divergences.md, D9). ``"inverse"`` (``mu = 1 / eta``) and ``"identity"`` (``mu = eta``)
+    are brms's ``Gamma("inverse")`` and ``Gamma("identity")``, which need a positive linear predictor (E06, docs/links.md).
     """
     return Model(formula, data, priors, family="gamma", link=link,
                  center_predictors=center_predictors, categorical=categorical)

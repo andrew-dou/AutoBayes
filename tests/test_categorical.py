@@ -117,9 +117,15 @@ def test_dtypes_levels_and_unused_categories():
     assert any("['unused']" in w for w in m.warnings) and "unused declared categories ['unused']" in m.describe()
     with pytest.raises(ab.FormulaError, match="does not occur in the fitted rows"):
         ab.gaussian("y ~ x + z + (1 | g)", d, G_PRIORS, categorical={"z": "unused"})
+    # F08: an ordered Categorical is brms's ordered factor, polynomial contrasts over its declared order (docs/ordered-factors.md);
+    # unordered, it is treatment-coded as above
     d["z"] = pd.Categorical(d["z"].astype(str), categories=["c", "b", "a"], ordered=True)
-    m3 = ab.gaussian("y ~ x + z + (1 | g)", d, G_PRIORS, categorical={"z": "b"})
-    assert m3.spec.categorical("z").levels == ("a", "b", "c") and np.array_equal(m3.design.X_raw, m.design.X_raw)
+    with pytest.raises(ab.FormulaError, match="ordered pandas Categorical: brms codes an ordered factor with polynomial contrasts"):
+        ab.gaussian("y ~ x + z + (1 | g)", d, G_PRIORS, categorical={"z": "b"})
+    m3 = ab.gaussian("y ~ x + z + (1 | g)", d, G_PRIORS, categorical={"z": "c"})
+    assert m3.spec.categorical("z").levels == ("c", "b", "a") and m3.spec.columns == ("x", "z.L", "z.Q")
+    m4 = ab.gaussian("y ~ x + z + (1 | g)", d.assign(z=d["z"].cat.as_unordered()), G_PRIORS, categorical={"z": "b"})
+    assert m4.spec.categorical("z").levels == ("a", "b", "c") and np.array_equal(m4.design.X_raw, m.design.X_raw)
 
 
 # -- C2: the design equals an independent construction ------------------------------------------
