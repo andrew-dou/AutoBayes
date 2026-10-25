@@ -51,7 +51,7 @@ refused with an error naming the construct.
 
 ## What it covers
 
-44 of the 45 response families brms 2.23 documents, and most of brms's formula language:
+All 45 response families brms 2.23 documents, and most of brms's formula language:
 
 | Area | What you can write | Docs |
 |---|---|---|
