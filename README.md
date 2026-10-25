@@ -73,37 +73,45 @@ checks yet are refused, each naming its divergence row. The full map is
 
 ## Speed versus brms
 
-Ten models, each fitted by both libraries with the same formula, family, priors, data and sampler settings (four
+18 models, each fitted by both libraries with the same formula, family, priors, data and sampler settings (four
 parallel chains, 1000 warm-up and 1000 kept draws, target acceptance 0.9). brms 2.23.0 used rstan 2.32.7 and AutoBayes
-used NumPyro on the CPU, on an Apple M1 Pro laptop, one run each (17 October 2026):
+used NumPyro on the CPU, on an Apple M1 Pro laptop, one run each (25 October 2026). Times are seconds; "sampler" is the
+samplers' execution alone, compilation excluded; "gradient" is the cost of one log-density gradient in brms over
+AutoBayes, measured inside each sampler.
 
-| Model | Rows | brms: compile + sample (s) | AutoBayes (s) | Faster |
-|---|---:|---:|---:|---:|
-| Bernoulli, `(1 + x \| g)` | 2,000 | 36.2 + 5.8 = 42.0 | 5.3 | 7.9× |
-| Gaussian, `(1 + x \| g)` | 20,000 | 35.5 + 87.0 = 122.5 | 29.6 | 4.1× |
-| cumulative, five categories | 1,500 | 27.0 + 33.4 = 60.4 | 7.1 | 8.5× |
-| zero-inflated Poisson | 2,000 | 26.2 + 15.0 = 41.2 | 5.9 | 7.0× |
-| Weibull | 2,000 | 27.1 + 6.4 = 33.5 | 6.0 | 5.6× |
-| zero-inflated negative binomial | 2,000 | 26.6 + 16.4 = 43.0 | 14.7 | 2.9× |
-| sratio, five categories | 1,500 | 26.1 + 17.6 = 43.6 | 7.1 | 6.2× |
-| Gaussian, horseshoe on 20 predictors | 400 | 26.6 + 3.0 = 29.6 | 5.3 | 5.6× |
-| beta-binomial with trials | 2,000 | 27.7 + 24.4 = 52.1 | 22.3 | 2.3× |
-| Gaussian, `(1 \| mm(g1, g2))` | 1,000 | 26.8 + 3.2 = 30.0 | 2.4 | 12.7× |
+| Model | Rows | brms (s) | AutoBayes (s) | Faster | Sampler | Gradient |
+|---|---:|---:|---:|---:|---:|---:|
+| Bernoulli, `(1 + x \| g)` | 2,000 | 36.8 | 7.0 | 5.3× | 1.8× | 1.9× |
+| Gaussian, `(1 + x \| g)` | 20,000 | 105.9 | 30.5 | 3.5× | 4.3× | 7.2× |
+| cumulative, five categories | 1,500 | 58.9 | 6.7 | 8.8× | 6.6× | 7.4× |
+| zero-inflated Poisson | 2,000 | 40.6 | 6.0 | 6.8× | 3.6× | 3.2× |
+| Weibull | 2,000 | 32.7 | 6.0 | 5.5× | 1.4× | 1.5× |
+| zero-inflated negative binomial | 2,000 | 42.7 | 15.2 | 2.8× | 1.3× | 1.3× |
+| sratio, five categories | 1,500 | 43.5 | 7.1 | 6.1× | 3.1× | 3.2× |
+| Gaussian, horseshoe on 20 predictors | 400 | 27.9 | 5.1 | 5.5× | 0.6× | 0.4× |
+| beta-binomial with trials | 2,000 | 49.1 | 22.6 | 2.2× | 1.2× | 1.7× |
+| Gaussian, `(1 \| mm(g1, g2))` | 1,000 | 27.6 | 1.9 | 14.4× | 4.9× | 9.7× |
+| mixture of two Gaussians | 1,000 | 31.5 | 3.1 | 10.1× | 4.0× | 6.3× |
+| exact GP, `gp(x)` | 200 | 497.6 | 619.8 | 0.8× | 0.8× | 0.9× |
+| AR(1) panel | 2,000 | 28.3 | 1.6 | 18.1× | 9.8× | 12.1× |
+| non-linear, `a * exp(b * x)` | 1,000 | 31.6 | 2.2 | 14.3× | 6.9× | 11.6× |
+| `mvbind(y1, y2)` with residual correlation | 1,000 | 43.8 | 3.6 | 12.2× | 13.2× | 17.7× |
+| monotonic `mo(edu)` | 1,500 | 35.7 | 3.4 | 10.6× | 6.6× | 8.2× |
+| Weibull with `cens()` | 2,000 | 35.6 | 6.8 | 5.2× | 1.1× | 1.1× |
+| distributional, `sigma ~ z` | 2,000 | 36.2 | 3.7 | 9.9× | 5.4× | 6.1× |
 
-- **End to end** AutoBayes was 2.3 to 12.7 times faster (median 5.9). On small models most of the gap is brms's Stan
-  compile, 26 to 36 seconds per model, against 2 to 4 seconds of JAX compilation.
-- **Sampling alone** was 1.2 to 7.9 times faster (median 3.9). Effective samples per second were higher on nine of the
-  ten models; the exception was the beta-binomial (9 against 11).
-- **The posteriors agree:** every compared mean is within 2.8 combined Monte Carlo standard errors.
-- **Post-processing** in brms took longer, by these median factors:
+- **End to end** AutoBayes was faster on 17 of the 18 models: 2.2 to 18.1 times (median 6.5). Most of the gap on
+  small models is brms's Stan compile, 25 to 31 seconds per model, against 1 to 2 seconds of JAX compilation.
+- **Where the sampling speed comes from:** both samplers take the same number of leapfrog steps (within 5% on 15 models),
+  so the difference is the cost of each step. JAX's compiled gradient is 1.1 to 17.7 times cheaper than Stan's on 16
+  models. On the horseshoe model a gradient costs microseconds and JAX's per-step overhead dominates; on the exact GP
+  (200 rows, a dense Cholesky per step) brms is faster.
+- **The posteriors agree:** every compared mean is within 2.71 combined Monte Carlo standard errors.
 
-  | `posterior_epred` | `log_lik` | `loo` | `waic` | `bayes_R2` | `conditional_effects` |
-  |---:|---:|---:|---:|---:|---:|
-  | 2.8× | 2.3× | 2.0× | 5.1× | 4.0× | 6.9× |
-
-Caveats: brms can refit new data without recompiling, so for many fits of one model only the sampling comparison
-matters. cmdstanr and GPUs were not tested. These are single runs on a laptop in use. Write-up:
-[benchmark-2026-10-17.pdf](docs/brms-parity/reports/benchmark-2026-10-17.pdf); scripts:
+Caveats: brms can refit new data without recompiling, so for many fits of one model only the sampler column matters.
+cmdstanr and GPUs were not tested. These are single runs on a laptop in use. Write-up:
+[benchmark-2026-10-25.pdf](docs/brms-parity/reports/benchmark-2026-10-25.pdf) (the 17 October run of the first ten
+models: [benchmark-2026-10-17.pdf](docs/brms-parity/reports/benchmark-2026-10-17.pdf)); scripts:
 [examples/brms_parity](examples/brms_parity/README.md).
 
 ## How it is checked
