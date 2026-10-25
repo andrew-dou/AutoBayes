@@ -2327,12 +2327,15 @@
     "F03a_fcor",
     "F03b_unstr_cosy"
    ],
-   "status": "queued",
+   "status": "merged",
    "summary": "syntax audit (#85) fixes: ordered factors with contr.poly (corpus pop_ordered_factor), (x | g) and (x || g) as brms reads them, the 16 unclear refusals, gr(g, cor = FALSE), gr(g, id = ), trials(<number>), text censoring codes, cat(K); D9 and D20 doc fixes",
-   "pr": null,
+   "pr": 105,
    "attempts": 0,
-   "divergences": [],
-   "next_action": "after wave F1 merges (touches the parser and messages)",
+   "divergences": [
+    "D168",
+    "D169"
+   ],
+   "next_action": "none",
    "reserved_divergences": "D168-D171",
    "gates": {
     "sha": "844a1943af30",
@@ -2362,12 +2365,12 @@
    "depends_on": [
     "F08_syntax_fixes"
    ],
-   "status": "queued",
+   "status": "implementing",
    "summary": "syntax audit (#85): scaffold names out of __all__ (deprecated top-level access), milestone jargon out of describe() and messages, divergence rows for the undocumented call-surface differences",
    "pr": null,
    "attempts": 0,
    "divergences": [],
-   "next_action": "after wave F1 merges (touches the parser and messages)",
+   "next_action": "implementing off 2b41c2d",
    "reserved_divergences": "D172-D175"
   }
  ]
