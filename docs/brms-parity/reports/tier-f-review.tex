@@ -1,0 +1,296 @@
+\documentclass[11pt]{article}
+\usepackage[margin=1in]{geometry}
+\usepackage[T1]{fontenc}
+\usepackage{amsmath,amssymb,mathtools}
+\usepackage{booktabs,array,enumitem,caption}
+\usepackage{xcolor,hyperref}
+\sloppy
+\hypersetup{colorlinks=true, linkcolor=blue!50!black, urlcolor=blue!50!black}
+\newcommand{\code}[1]{\texttt{#1}}
+\newcommand{\file}[1]{\texttt{#1}}
+\setlist{nosep, leftmargin=1.4em}
+
+\title{AutoBayes brms-parity loop: Tier F review}
+\author{Status at the Tier F boundary, prepared for Andrew}
+\date{25 October 2026}
+
+\begin{document}
+\maketitle
+
+\noindent This is the Tier F boundary review. Since 21 October you asked for six things: continue with Tier F, benchmark
+against brms, keep a log of brms's bugs for a later pull request, check that the library reads brms's syntax without
+extraneous parts, write unit tests for all code before it merges, and move the agent scaffold out of the repository. All of
+Tier F is on \code{main}, and every one of the 45 response families brms 2.23 documents now has a verified model.
+Section~\ref{sec:brms} is what brms gets wrong, Section~\ref{sec:syntax} answers the syntax question, and
+Section~\ref{sec:decisions} is what needs you.
+
+\section{What was built}
+
+\begin{table}[tbp]
+\small
+\begin{center}\begin{tabular}{@{}>{\raggedright\arraybackslash}p{0.17\textwidth}>{\raggedright\arraybackslash}p{0.07\textwidth}>{\raggedright\arraybackslash}p{0.52\textwidth}>{\raggedright\arraybackslash}p{0.13\textwidth}@{}}
+\toprule
+Feature & PR & What a user can now write & Diverg. \\
+\midrule
+F01a multinomial & \#92 & \code{ab.multinomial("cbind(m1, m2, m3) | trials(size) \textasciitilde{} x + (1 | g)", ...)}, and \code{ab.dirichlet\_multinomial} & D136--D137 \\
+F01b simplex & \#95 & \code{ab.dirichlet("cbind(s1, s2, s3) \textasciitilde{} x + (1 | g)", ...)}; \code{ab.logistic\_normal(..., refcat="s2")} & D138--D139 \\
+F02a CAR & \#93 & \code{car(W, gr = site, type = "bym2")} (also escar, esicar, icar), \code{data2=\{"W": W\}} & D140--D141 \\
+F02b SAR & \#87 & \code{sar(M, type = "lag")} and \code{"error"} & D142--D143 \\
+F03a fcor & \#91 & \code{fcor(V)}, a fixed residual covariance & D144--D145 \\
+F03b unstr, cosy & \#96 & \code{unstr(time = tt, gr = subj)}, \code{cosy(time = tt, gr = subj)} & D146--D147 \\
+F04 wiener & \#88, \#90 & \code{ab.wiener("rt | dec(dec) \textasciitilde{} x + (1 | g)", ...)}, with formulas on \code{bs} & D148--D151 \\
+F05 cox & \#101, \#103 & \code{ab.cox("time | cens(c) + bhaz(df = 7) \textasciitilde{} x + (1 | g)", ...)} & D152--D155 \\
+F06a se, rate & \#98 & \code{y | se(sdx) \textasciitilde{} 1 + (1 | g)}, \code{se(sdx, sigma = TRUE)}; \code{cnt | rate(exposure) \textasciitilde{} x} & D156--D157 \\
+F06b thres & \#97 & \code{ab.cumulative("ord | thres(gr = z) \textasciitilde{} x + (1 | g)", ...)}, \code{thres(3, gr = z)} & D158--D159 \\
+F06c subset & \#99 & \code{["y | subset(sub1) \textasciitilde{} x + (1 | g)", "y2 | subset(sub2) \textasciitilde{} x"]} & D160--D161 \\
+F07 summaries & \#102 & \code{ab.fixef}, \code{ranef}, \code{coef}, \code{VarCorr}, \code{summary}, \code{prior\_summary}, \code{residuals}, \code{predictive\_error} & D162--D165 \\
+F08 syntax fixes & \#105 & ordered factors (\code{orderedz.L}, \code{.Q}); \code{(x | g)}; \code{gr(g, cor = FALSE)}; \code{trials(15)} & D168--D169 \\
+F09 names, messages & \#106 & \code{from autobayes.session import fit\_record}: twelve internal names leave the top level; messages without milestone names & D172--D175 \\
+\bottomrule
+\end{tabular}\end{center}
+\caption{\small The Tier F features, verified on 45 frozen brms cases: \#83, \#89 and \#101 froze 38 before the features
+began, and the features added 7.}\label{tab:built}
+\end{table}
+
+\noindent Table~\ref{tab:built} lists the features. Seven more pull requests changed how the loop works rather than what the
+library does:
+\begin{itemize}
+\item \textbf{Diff coverage (\#86).} A feature merges only if every library line it changes runs under the tests. This is
+  how I read your ``unit tests for all code before merging''. The rule is: 100\% of the changed executable lines under
+  \file{autobayes/}, with exemptions only as a pragma that states its reason. \#94 then covered the 13 lines \#77 had left
+  unrun.
+\item \textbf{The syntax corpus (\#85).} 248 brms formulas, each read by brms and by AutoBayes; a test fails if any reading
+  changes (Section~\ref{sec:syntax}).
+\item \textbf{The upstream log (\#81).} Every problem in brms, Stan Math, loo and posterior gets a standalone R
+  reproduction. It is kept out of git since \#82, as you asked.
+\item \textbf{The benchmark (\#84, \#104)}: Section~\ref{sec:speed}.
+\item \textbf{The tidy (\#100).} The agent scaffold moved to \href{https://github.com/andrew-dou/autobayes-scaffold}{andrew-dou/autobayes-scaffold}
+  (private), and the milestone history to \file{docs/history/}. The top level is now \file{autobayes}, \file{docs},
+  \file{examples}, \file{oracle}, \file{tests}, \file{tools} and the packaging files.
+\end{itemize}
+
+\paragraph{How close.} I measured with the gates' own comparisons on \code{main} after F08 (\code{203f5db}). Every gate
+passed on all 45 Tier F cases, with two exceptions described in Section~\ref{sec:checks}: the two bym2 G1 failures,
+which are expected, and wiener's expected values, which are accepted against references. The worst relative errors over
+the Tier F cases:
+\begin{itemize}
+\item $6.7\times10^{-16}$ in G1;
+\item $1.9\times10^{-9}$ in G2's log density (\code{cox\_uncensored\_default\_priors}), a fifth of the tolerance. I have
+  not traced its cause.
+\item $1.2\times10^{-8}$ in G2's gradient (\code{wiener\_distributional\_bs}). This is brms's error: Stan's
+  \code{wiener\_lpdf} truncates its series, and AutoBayes's density is exact to $4\times10^{-15}$ against a 60-digit
+  evaluation (D150).
+\item $6.1\times10^{-10}$ in G3 (\code{poisson\_car\_bym2}), which comes through brms's inexact bym2 scaling factor;
+\item $8.8\times10^{-16}$ in predictions;
+\item $2.2\times10^{-15}$ between the JAX and PyTensor densities;
+\item $1.4\times10^{-14}$ in the post-processing tables (\code{gauss\_sar\_lag\_post}).
+\end{itemize}
+Both G2 figures are also the worst over all cases, Tier A to F, outside the cases whose gates are expected to fail.
+Everything is inside the unchanged tolerances.
+The full non-sampling suite on \code{main} after F09 (\code{5cfcb0b}) passed: 6798 tests passed and none failed, with 193 skipped and 28 expected failures.
+\code{oracle/regen.py check --all} regenerated all 216 frozen fixtures from R on \code{a9b5cf3}, and every one was
+identical. F08's new case, regenerated on its own afterwards, was identical too.
+
+\section{What brms gets wrong}
+\label{sec:brms}
+
+The upstream log now has 52 entries: 41 in brms (one of them not a bug after all), 6 in Stan Math, 3 in loo, and one each
+in posterior and R. Tier F added 21 of them (U32--U52), each with a script that prints the library's value next to the
+exact one and exits non-zero while the problem is present. The ones that give a wrong value, or stop where a value
+exists:
+\begin{itemize}
+\item \textbf{SAR models (U32, U33, U36).} A row-standardised weight matrix, the usual kind, cannot be built: R's
+  \code{eigen()} returns complex eigenvalues and rstan refuses them. \code{posterior\_epred()} of an error-type SAR model
+  stops. Both SAR log densities leave out the Gaussian constant $-\tfrac{N}{2}\log 2\pi$.
+\item \textbf{The Wiener mean (U34).} \code{posterior\_epred()} uses the relative starting point where the absolute one
+  belongs, so a mean response time can come out negative. AutoBayes's mean is accepted against a 50-digit reference
+  (\#90).
+\item \textbf{\code{bayes\_R2()} with \code{unstr()} or ARMA terms (U41).} When the data are not sorted by group and time,
+  brms pairs the responses with the means in a different order. On one frozen case its value is up to 23.5\% off.
+\item \textbf{Cox models (U45--U47).}
+  \begin{itemize}
+  \item Interval censoring gives a log density of $-\infty$ at every point.
+  \item \code{trunc(lb = L)} normalises each row by its own survival $S(y)$ instead of $S(L)$, which cancels the row's
+    survival term.
+  \item The default Intercept prior is centred at $\log(\text{median time})$, so it moves with the unit of time although
+    the intercept does not.
+  \item \code{posterior\_linpred()} on new rows stops without the time column, which it does not use (U50).
+  \end{itemize}
+  AutoBayes refuses the first two, records the third, and predicts without the time column.
+\item \textbf{\code{factor()} and \code{ordered()} written in a formula (U51).} New rows that lack one of the levels fail
+  with ``non-conformable arguments'', and so does a single new row. F08 found it while freezing its ordered-factor case.
+  \code{lm()} handles the same formula through its recorded levels. AutoBayes keeps the levels it was fitted with (for
+  declared categoricals and for \code{ordered()}), so new rows need not hold every level.
+\end{itemize}
+The rest are inputs brms should refuse and does not:
+\begin{itemize}
+\item disconnected graphs in \code{car()}, and a diagonal entry counted as an edge (U38, U39);
+\item SAR bounds of $(\lambda_{\min}, \lambda_{\max})$ where $(1/\lambda_{\min}, 1/\lambda_{\max})$ belongs (U35);
+\item \code{dec()} reading any non-zero number as the upper boundary (U40);
+\item negative multinomial counts (U42), and per-category formulas silently dropping the response formula's terms (U43);
+\item a zero standard error in \code{se()} (U44);
+\item \code{bhaz(df = 7, knots = c(1.5, 3))}, which silently ignores \code{df} (U49).
+\end{itemize}
+Three are inexact:
+\begin{itemize}
+\item bym2's scaling factor is INLA's perturbed value, not Riebler's exact one: $1.5\times10^{-8}$ to $2.3\times10^{-7}$
+  low (U37);
+\item posterior's \code{rhat()} and ESS return numbers for chains of two or three iterations (U48);
+\item R's \code{contr.poly()}, which brms uses for ordered factors, drifts from the polynomial contrasts as the levels
+  grow: $1.6\times10^{-12}$ at 17 levels, and from 23 levels on its top columns are not polynomial at all (U52). R core
+  answered a related report in 2002 that such polynomials cannot be represented accurately, but the exact ones can be:
+  the script computes them to $10^{-15}$. AutoBayes builds them from the definition and refuses more than 16 levels
+  (D168).
+\end{itemize}
+Your rule of 24 October settled how AutoBayes treats these: follow brms where it is logical, and otherwise do the sensible
+thing and record the difference. One case went the other way. For bym2, AutoBayes keeps INLA's definition, computed
+exactly, because the exact factor would buy nothing practical and would make the model unverifiable against brms (D140).
+
+The drafts in \file{upstream-drafts/} are ready to post: the maintainer note, the pull-request plan and the log's PDF
+(Section~\ref{sec:decisions}).
+
+\section{Speed}
+\label{sec:speed}
+
+The benchmark of 25 October (\#104) fitted 18 models with both libraries: the same formulas, priors and data, 4 chains of
+1000 warm-up and 1000 kept draws, and target acceptance 0.9.
+\begin{itemize}
+\item \textbf{End to end}, compiling and sampling, brms took 0.8 to 18.1 times as long (median 6.5).
+\item \textbf{Its sampler alone} took 0.6 to 13.2 times as long (median 3.8).
+\item \textbf{Where the gain comes from.} The two samplers take about the same number of leapfrog steps. The gain is the
+  gradient: on the median model, B11, one gradient costs 32.8\,$\mu$s in JAX and 206.9\,$\mu$s in Stan.
+\item \textbf{Where brms wins.} brms is faster on the horseshoe model (B8) and the exact Gaussian process (B12).
+\item \textbf{Agreement.} The largest difference of posterior means over their combined Monte Carlo error was
+  $|z| = 2.71$ across all 18 models.
+\end{itemize}
+
+\section{Does AutoBayes read brms's syntax?}
+\label{sec:syntax}
+
+You asked on 24 October whether the code really matches brms's syntax, without extraneous parts. The audit (\#85) read 248
+formulas with both libraries and compared what each builds, \code{make\_standata()} against AutoBayes's design. The
+corpus is now a test that fails if any reading changes.
+\begin{itemize}
+\item \textbf{Before F08:} 114 of the 116 formulas AutoBayes accepted built brms's data. One differed by design (D9), and
+  one was a silent misreading: an ordered factor was treatment-coded where brms uses polynomial contrasts. Of the 132
+  refused, 16 were refused without naming the construct.
+\item \textbf{After F08:} 134 formulas match, 113 are refused with the construct named, and the one documented difference
+  remains. Nothing is misread. Ordered factors now use R's polynomial contrasts, built from their definition and checked
+  against brms on a new frozen case. \code{(x | g)} now means \code{(1 + x | g)}, as in brms.
+\item \textbf{Extraneous parts (F09).} Twelve names of the scaffold's session records and of the term model's internals (\code{fit\_record},
+  \code{environment}, \code{ModelSpec}, \code{parse\_formula} and others) left \code{\_\_all\_\_}. Each is still
+  importable from its module, and \code{ab.<name>} still works with a deprecation warning. \code{describe()} names the
+  family instead of M0, M1, M2, and about 145 refusals say ``not supported'' instead of ``in this slice'' and cite current
+  docs instead of milestone decisions. No refusal changed what it refuses, and the corpus totals are unchanged. The
+  call-surface differences that had no divergence row now have one: declared factors (D172), how priors cover a class
+  (D173), rows with missing values (D174), and \code{fit()}'s defaults and the posterior's names (D175).
+  Section~\ref{sec:decisions} lists the four changes F09 proposes but did not make.
+\end{itemize}
+What remains refused is listed construct by construct in \file{docs/current-capabilities.md}. The largest gaps are
+\code{s()} and \code{t2()} smooths, three-way interactions, \code{poly()}, and many family--context pairs: a family
+added late often takes the common terms but not \code{cens()}, \code{weights()} or a distributional formula.
+
+\section{What combining the features found}
+
+\begin{itemize}
+\item \textbf{One \code{data2}.} CAR, SAR and fcor each read a matrix from \code{data2}, and fcor's and SAR's branches
+  conflicted in 47 places. Their agents unified them into one mechanism used by all three. Since then each agent rebases
+  onto \code{main} itself and reruns its own checks before reporting, which ended the large conflicts at merge time.
+\item \textbf{Lost lines in rebases.} Resolving conflicts silently dropped three lines: a \code{continue}, which let
+  \code{sar()} fall through to the autocorrelation parser, a \code{@property}, and a function's \code{return}. The reruns
+  after each rebase caught all three before merge. Agents now check every function both sides touched against
+  \code{main}.
+\item \textbf{The corpus.} Re-recording all 248 entries rewrote unrelated ones whenever brms's message for some other
+  construct changed. A helper now re-records only the entries a feature changes.
+\item \textbf{A hash-seed-dependent \code{describe()}.} The order of two lines of one hurdle-cumulative model changes with
+  \code{PYTHONHASHSEED}. Several agents found it. F09 traced it to Bambi, not brms: \code{Family.auxiliary\_parameters} is a Python set, and
+  \code{bmb.Model} creates the parameters' variables in its iteration order. It reached past \code{describe()}: in 25
+  cases (learned Student-t \code{nu}, the hurdle and zero-inflated families, wiener and others) the free variables came in
+  a different order in each process. An existing reordering hid it everywhere but that one \code{describe()}. A seeded
+  fit of those models was then probably not reproducible across processes; this is inferred, since nothing was sampled.
+  The family handed to Bambi now lists them in its likelihood's order, tested in fresh interpreters under two hash
+  seeds.
+\end{itemize}
+
+\section{How the claims were checked, and their limits}
+\label{sec:checks}
+
+\begin{itemize}
+\item \textbf{Per feature.} The gate tool ran G1--G6 on the tree that merged. Diff coverage reached 100\% on every feature
+  from \#87 on, and the corpus test passed. F01a's gate record was lost from the ledger in its rebase; its gate log
+  (GATES GREEN on \code{f138205}) survives, and the record is restored. Each agent ran the
+  full non-sampling suite on its own branch. I re-ran the focused tests after any rebase.
+\item \textbf{Where brms's number is not the target.} Four Tier F cases are not checked against brms alone:
+  \begin{itemize}
+  \item the two bym2 cases, frozen with G1 expected to fail: brms's scaling factor is $1.7\times10^{-10}$ from its own
+    definition, beyond G1's $10^{-12}$; every other gate passes (D140);
+  \item the two wiener cases, whose expected values are accepted against 50-digit references instead of brms's wrong
+    means (D148).
+  \end{itemize}
+\item \textbf{Exceptions.} The full suite ran on \code{main} only at boundaries, not after every merge. Between
+  boundaries a merge rested on the agent's own full suite and my focused re-run.
+\item \textbf{Limits.} Nothing in the loop samples. The only fits are the benchmark's 18 models. No Tier F family has been
+  fitted outside its frozen points, so whether NUTS samples a CAR, SAR or cox posterior well is untested.
+\end{itemize}
+
+\section{Process and cost}
+
+Agent tokens reported, in millions:
+\begin{itemize}
+\item fixtures: 1.20 (three agents);
+\item features: F01a 0.94, F01b 0.92, F03b 0.90, F02a 0.84, F04 0.81, F08 0.73, F05 0.72, F06a 0.72, F07 0.67,
+  F06b 0.66, F06c 0.65, F03a 0.63, F02b 0.63, F09 0.53;
+\item the loop's own tools: upstream log 0.97, syntax audit 0.57, stage benchmark 0.43, tidy 0.27,
+  diff coverage 0.25, \#77's lines 0.23;
+\item about 14.3M in all, against Tier E's 4.6 for six features.
+\end{itemize}
+Up to ten agents ran at once. Two things limited the pace: two full suites at a time on this 16\,GB machine, and, on
+24 October, a disk at 8.9\,GB free with swap almost full. Network outages, an expired login and stalled streams stopped
+agents several times; each resumed from its own context without losing work. I paused three agents once, at 56\% of a five-hour window, and
+resumed them after it reset.
+
+\section{Decisions}
+\label{sec:decisions}
+
+\begin{enumerate}
+\item \textbf{Posting to brms.} The maintainer note, the pull-request plan and the log's PDF are in
+  \file{upstream-drafts/}. They go out under your account. I suggest posting the note alone first, as an issue, and
+  writing code only after Paul says how he wants it split.
+\item \textbf{The scaffold repository} is private. Make it public? Either way, AutoBayes's public history before \#100
+  still contains the scaffold, and \#81's history contains the upstream log.
+\item \textbf{Two withheld results, under your 24 October rule.} Both are places where brms is wrong and AutoBayes computes
+  the right answer, which your rule now covers:
+  \begin{itemize}
+  \item the truncated count mean $E[Y \mid Y \ge lb]$, where brms gives $E[Y \mid Y \ge lb + 1]$ (D121);
+  \item stacking weights at the exact optimum, where loo stops $1.0\times10^{-8}$ short (D126).
+  \end{itemize}
+  Unless you object, I will release both, each with its divergence row and a 50-digit reference.
+\item \textbf{Splines.} \code{s()} and \code{t2()} are the largest syntax gap left. B04's phase 1 (a basis port checked
+  against R) is on its branch, waiting on the licensing question: GPL'd mgcv, and whether a port written from mgcv's
+  documentation and Wood's papers is acceptable.
+\item \textbf{CI billing} is still blocking hosted runs; every merge has been verified locally.
+\item \textbf{Four call-surface changes F09 proposes.} Each departs from today's refusal toward brms; none is made yet.
+  \begin{itemize}
+  \item Accept an undeclared pandas \code{Categorical}, its first category the reference, as R does for a factor; and
+    accept a declared boolean column, which is refused today although brms codes it \code{FALSE}/\code{TRUE} (D172).
+  \item Allow a prior on a whole class plus overrides for single coefficients, brms's \code{coef} rows, in place of
+    today's mapping that must name every term (D173).
+  \item An opt-in to drop rows with missing values and report them, as zero-trial rows already are (D174).
+  \item Change \code{target\_accept}'s default from 0.9 to brms's 0.8 (D175).
+  \end{itemize}
+  I suggest the first three, under your rule, and keeping 0.9: it costs a little speed and gives fewer divergent
+  transitions, and anyone matching brms can pass 0.8.
+\item \textbf{Tier G.} Candidates, in the order I would take them:
+  \begin{enumerate}
+  \item[(a)] the common syntax still refused: three-way interactions, interactions with transforms, and \code{poly()},
+    which is built like the ordered-factor contrasts;
+  \item[(b)] the family--context matrix: \code{cens()}, \code{weights()}, distributional formulas and group-level terms
+    for the families that do not yet take them;
+  \item[(c)] the two releases in item 3, and whichever changes in item 6 you accept;
+  \item[(d)] a first real fit of each Tier F family, on the GPU or the cluster, which needs your approval for compute;
+  \item[(e)] splines, once item 4 is decided.
+  \end{enumerate}
+  At Tier F's rate, about 0.75M tokens a feature, (a) and (b) together are perhaps 8--12M.
+\end{enumerate}
+
+\end{document}
