@@ -127,7 +127,7 @@ def check_sar(spec, fam, formula: str) -> None:
     others += [f"the autocorrelation term {spec.autocor.term!r}"] if spec.autocor is not None else []
     if others:
         raise FormulaError(
-            f"{formula!r}: the SAR term {term!r} next to {others[0]} is not supported in this slice: no frozen brms case verifies "
+            f"{formula!r}: the SAR term {term!r} next to {others[0]} is not supported: no frozen brms case verifies "
             "the pair (brms takes it); a SAR model takes population-level terms here (docs/spatial-sar.md, divergence D143)"
         )
 

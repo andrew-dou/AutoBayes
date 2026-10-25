@@ -124,7 +124,7 @@ def test_ordered_pandas_categorical_has_polynomial_contrasts():
     assert m0.spec.columns == ("fo[lo]", "fo[hi]", "fo[mid]")
     # and an ordered factor next to a treatment-coded one: both kinds of text in describe()
     both = ab.gaussian("y ~ f2 + fo", df.assign(f2=df["g"]), PRIORS, categorical={"fo": "lo", "f2": "g0"}).describe()
-    assert both.splitlines()[0].startswith("AutoBayes M0 model with categorical predictor(s) and ordered factor(s) with polynomial")
+    assert both.splitlines()[0].startswith("AutoBayes Gaussian model with categorical predictor(s) and ordered factor(s) with polynomial")
     assert "treatment coding" in both and "a dummy column's mean is its level's proportion" in both
     inter = ab.gaussian("y ~ x * f2 + fo", df.assign(f2=df["g"]), PRIORS, categorical={"fo": "lo", "f2": "g0"}).describe()
     assert "every expanded design column (x, 1[z = l], x * 1[z = l])" in inter and "(fo.L[fo_i] - mean(fo.L))" in inter

@@ -68,7 +68,7 @@ def _likelihood_lines(link: str, model) -> list[str]:
             f"  log p({s.response}_i | {s.trials}_i, eta_i) = log C({s.trials}_i, {s.response}_i)"
             f" - {s.response}_i softplus(-eta_i) - ({s.trials}_i - {s.response}_i) softplus(eta_i)",
             "  with log C computed inside the graph from the evaluated value and a softplus whose gradient",
-            "  is finite on both the PyTensor and the JAX path. Validated (docs/history/m2-decision.md) for counts",
+            "  is finite on both the PyTensor and the JAX path. Validated for counts",
             "  up to 1e6 per row at logits to 1e6 against a 60-digit reference; larger counts are refused.",
             "  Zero-trial rows are dropped before design construction; centering, when effective, uses only fitted rows.",
         ]
@@ -89,7 +89,7 @@ def _likelihood_lines(link: str, model) -> list[str]:
 def _spec(link: str) -> FamilySpec:
     L = LINKS[link]
     return FamilySpec(
-        name="binomial", tag="M2", parent=L.parent, link=link, link_scale=link, mean_name="p",
+        name="binomial", tag="binomial", parent=L.parent, link=link, link_scale=link, mean_name="p",
         response_kind="binomial", response_dtype=np.int64,
         scale_parameter=None, bambi_scale_parameter=None, fixed_parameters=NO_FIXED_PARAMETERS,
         bambi_family=partial(_bambi_family, link),

@@ -296,7 +296,7 @@ class FamilySpec:
     """One response family. Fields in the order the model consults them."""
 
     name: str                                    # the registry key and ``model.family``
-    tag: str                                     # the ``describe()`` heading: "M0", "M1", "M2", "Student-t", "Poisson"
+    tag: str                                     # the ``describe()`` heading: "Gaussian", "Bernoulli", "Student-t", "Poisson"
     parent: str                                  # Bambi's parent parameter, the linear predictor's name: "mu", "logit_p", "probit_p"; E06: "sqrt_mu", "inverse_mu", "probit_mu", "cloglog_mu"
     link: str                                    # "identity", "logit", "log", "probit", "cloglog"; E06: "sqrt", "inverse"
     link_scale: str | None                       # the scale the location priors live on when it is not the response ("logit", "log", "probit")

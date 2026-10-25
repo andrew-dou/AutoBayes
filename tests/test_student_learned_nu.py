@@ -276,9 +276,10 @@ print(json.dumps({"describe": m.describe(), "identity": m.target_identity, "valu
 
 
 def test_describe_does_not_depend_on_the_hash_seed():
-    """Bambi creates sigma and nu in the iteration order of the set of their names (``Family.auxiliary_parameters``), so
-    PyMC's order of ``sigma_log__`` and ``nu_interval__`` follows ``PYTHONHASHSEED``. Built under two hash seeds that order
-    that set differently, the PyMC orders differ and ``describe()`` (sigma, then nu) and the target identity do not."""
+    """Bambi iterates the set of the auxiliary parameters' names (``Family.auxiliary_parameters``), whose order follows
+    ``PYTHONHASHSEED``; the family the model hands Bambi lists sigma and nu in its likelihood's order (F09,
+    ``likelihoods.ordered_family``). Built under two hash seeds that order that set differently, PyMC's order
+    (``sigma_log__``, then ``nu_interval__``), ``describe()`` and the target identity are the same."""
     seeds = {}
     for seed in range(32):
         seeds.setdefault(tuple(_fresh(seed, SET_ORDER)["order"]), seed)
@@ -286,7 +287,8 @@ def test_describe_does_not_depend_on_the_hash_seed():
             break
     assert len(seeds) == 2, "no two hash seeds order {'sigma', 'nu'} differently"
     first, second = (_fresh(seed, BUILD) for seed in seeds.values())
-    assert first["value_vars"] != second["value_vars"] and sorted(first["value_vars"]) == sorted(second["value_vars"])
+    assert first["value_vars"] == second["value_vars"]
+    assert first["value_vars"].index("sigma_log__") < first["value_vars"].index("nu_interval__")
     assert first["describe"] == second["describe"] and first["identity"] == second["identity"]
     text = first["describe"]
     assert text.index("  sigma_log__ ") < text.index("  nu_interval__ ")

@@ -494,7 +494,7 @@ def test_fit_record_identity_and_describe(two, three):
     same = ab.gaussian("y ~ x + (1 + x | g)", frame(), PRIORS2)
     assert m.target_identity != ind.target_identity != other.target_identity and m.target_identity == same.target_identity
     text = m.describe()
-    for s in ["AutoBayes M0 model with correlated varying slope(s)",
+    for s in ["AutoBayes Gaussian model with correlated varying slope(s)",
               "mu_i = a_c + (x_x - mean(x_x)) * b_x + u[g_i] + x_x,i * v_x|g[g_i]",
               "u_g[j] = sd_g * z_g[j], z_g[j] ~ Normal(0, 1), j = 0..3",
               "v_x|g[j] = sd_x|g * (L_g[1,0] * z_g[j] + L_g[1,1] * z_x|g[j]), z_x|g[j] ~ Normal(0, 1), j = 0..3: the slope of x varies by g ('|': correlated with u_g)",

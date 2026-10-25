@@ -637,6 +637,8 @@ class Model:
         if self.spec.timecor is not None:                    # brms's unstr(), cosy() (F03b): each group's rows jointly
             from autobayes.timecor import timecor_family
             bambi_family = timecor_family(bambi_family, self)
+        from autobayes.likelihoods import ordered_family     # F09: the auxiliary parameters' variables in a fixed order
+        bambi_family = ordered_family(bambi_family)
         self.bambi_model = bmb.Model(
             bambi_formula, bambi_data, family=bambi_family,
             priors=bambi_priors,
@@ -3082,12 +3084,12 @@ class Model:
                                                  for (g, c), names in self.group_coefficient_names.items())
                      + "".join(f"{names['group_effect']} = u_{name},{g}, " for (name, g, _), names in self.dpar_group_names.items())   # D08
                      + "".join(f"{names['cor']} = Cor_{g} = L_{g} L_{g}^T, " for g, names in self.correlation_names.items()) + fam.deterministic_note
-                     + "".join(f"; {dn['value']} = {_DPAR_INVERSE[self.design.dpars[name].link].format(name)}, one {name} per row (B01)"
+                     + "".join(f"; {dn['value']} = {_DPAR_INVERSE[self.design.dpars[name].link].format(name)}, one {name} per row"
                                for name, dn in self.dpar_names.items())
                      + "".join(f"; {me['latent']} = meanme_{x} + sdme_{x} * zme_{x}, one per row (brms's Xme)" for x, me in self.me_names.items())
                      + (f"; {self.timecor_names['cor']} = Lcortime Lcortime^T (brms's Cortime)" if "cor" in self.timecor_names else "")
                      + shrinkage_note
-                     + (f"; {n['linpred']} = mu_i[k], one per row and threshold (D04)" if s.cs_terms else ""))
+                     + (f"; {n['linpred']} = mu_i[k], one per row and threshold" if s.cs_terms else ""))
         return "\n".join(lines)
 
     def _measurement_data_lines(self) -> list[str]:
@@ -3514,8 +3516,8 @@ def poisson(formula: str, data: pd.DataFrame, priors: Priors, *, link: str = "lo
     """Poisson count response with log link and explicit coefficient/group priors.
 
     Retains zero rows. Input counts must be integers in [0, 1e6]. An exposure enters as
-    ``offset(log(exposure))`` (docs/offset.md). No sigma, nu or overdispersion parameter
-    is supported in this slice. ``link="sqrt"`` is brms's ``poisson("sqrt")``, ``mu = eta^2`` (E06, docs/links.md).
+    ``offset(log(exposure))`` (docs/offset.md). The Poisson family has no sigma, nu or overdispersion parameter
+    (``ab.negbinomial`` has one). ``link="sqrt"`` is brms's ``poisson("sqrt")``, ``mu = eta^2`` (E06, docs/links.md).
     ``data2`` (F02a) holds ``car(W, gr = site)``'s adjacency matrix, ``data2={"W": W}`` (docs/spatial-car.md).
     """
     return Model(formula, data, priors, family="poisson", link=link,
@@ -4016,8 +4018,8 @@ def categorical(formula: str, data: pd.DataFrame, priors: Priors, *,
     category has its own intercept and coefficients on the same design, all under the one ``Priors(intercept=...)`` and
     ``b`` (one prior per class shared by the categories, divergence D37). ``predict(kind="linear")`` returns ``mu`` with a
     ``category`` dimension over the non-reference categories, ``kind="mean"`` the probabilities ``p`` over all categories,
-    ``kind="response"`` 1-based categories. Population-level terms only: group-level terms and the offset are refused in
-    this slice (D37). ``categorical={column: reference}`` declares categorical predictors as for every family.
+    ``kind="response"`` 1-based categories. Population-level terms only: group-level terms and the offset are refused
+    (divergence D37). ``categorical={column: reference}`` declares categorical predictors as for every family.
     """
     return Model(formula, data, priors, family="categorical", center_predictors=center_predictors, categorical=categorical)
 

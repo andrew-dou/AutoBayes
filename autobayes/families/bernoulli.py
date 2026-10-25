@@ -66,7 +66,7 @@ _LIKELIHOOD_LINES = {
 def _spec(link: str) -> FamilySpec:
     L = LINKS[link]
     return FamilySpec(
-        name="bernoulli", tag="M1", parent=L.parent, link=link, link_scale=link, mean_name="p",
+        name="bernoulli", tag="Bernoulli", parent=L.parent, link=link, link_scale=link, mean_name="p",
         response_kind="binary", response_dtype=np.int64,
         scale_parameter=None, bambi_scale_parameter=None, fixed_parameters=NO_FIXED_PARAMETERS,
         bambi_family=partial(_bambi_family, link),

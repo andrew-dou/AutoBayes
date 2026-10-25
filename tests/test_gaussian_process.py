@@ -165,7 +165,7 @@ def test_a_boundary_inside_the_inputs_is_refused():
 
 FORMULA_REFUSALS = [
     ("y ~ gp(x, w)", r"one covariate per gp\(\) here; brms's gp\(x, w, \.\.\.\) is one Gaussian process of several covariates.*D64"),
-    ("y ~ gp(x, by = g)", r"brms's by = g .* is not part of this slice.*D64"),
+    ("y ~ gp(x, by = g)", r"brms's by = g .* is not supported.*D64"),
     ("y ~ gp(x, cov = \"matern32\")", r"cov = \"matern32\" is not offered here; only brms's default squared-exponential kernel.*D64"),
     ("y ~ gp(x, cov = exp_quad)", r"cov = exp_quad is not offered here"),
     ("y ~ gp(x, iso = FALSE)", r"gp\(\)'s iso decides whether several covariates share one length-scale.*drop it.*D64"),
@@ -442,7 +442,7 @@ def test_predictions_of_the_approximate_process():
 def test_describe_and_names():
     m = gaussian("y ~ w + gp(x) + (1 | g)", b=ab.Normal(0, 1), sd=ab.HalfNormal(1))
     text = m.describe()
-    for line in ("AutoBayes M0 model with Gaussian process(es)",
+    for line in ("AutoBayes Gaussian model with Gaussian process(es)",
                  "  gp(x)     : exact Gaussian process of 'x' (brms gp(x)), squared-exponential kernel; 8 distinct inputs from -0.9 to 3.1, "
                  "scaled by dmax = 4, their largest distance, so that it is 1 (brms's scale = TRUE)",
                  "  mu_i = a_c + (x_w - mean(x_w)) * b_w + gp(x)_i + u[g_i]",

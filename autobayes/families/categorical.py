@@ -33,11 +33,11 @@ def _response_categories(spec, column):
 
 def _check_formula(spec) -> None:
     if spec.group_terms:
-        raise FormulaError(f"{spec.formula!r}: the categorical family takes population-level terms only in this slice; a "
+        raise FormulaError(f"{spec.formula!r}: the categorical family takes population-level terms only; a "
                            f"group-level term ('{spec.group_terms[0].canonical}') would give every non-reference category its "
                            "own group effects and SD (brms's group term in each mu<k>), which is not verified here (divergence D37)")
     if spec.offset is not None:
-        raise FormulaError(f"{spec.formula!r}: the categorical family takes no offset term in this slice (brms adds it to "
+        raise FormulaError(f"{spec.formula!r}: the categorical family takes no offset term (brms adds it to "
                            "every non-reference category's linear predictor; divergence D37)")
 
 

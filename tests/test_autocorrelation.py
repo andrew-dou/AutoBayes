@@ -132,7 +132,7 @@ FORMULA_REFUSALS = [
                                     r"class'\); write arma\(time, gr, p, q\)"),
     ("y ~ x + ar(y, g)", r"the response 'y' cannot be the time or series column"),
     ("y ~ x + ar(t, y)", r"the response 'y' cannot be the time or series column"),
-    ("y | weights(t) ~ x + ar(t, g)", r"with the response addition term\(s\) weights\(t\) is not supported in this slice .* D70"),
+    ("y | weights(t) ~ x + ar(t, g)", r"with the response addition term\(s\) weights\(t\) is not supported.* D70"),
 ]
 
 
@@ -159,7 +159,7 @@ def test_distributional_formulas_refuse_the_term():
     pr = ab.Priors(intercept=ab.Normal(0, 5), b=ab.Normal(0, 2), sigma={"intercept": ab.Normal(0, 1), "b": ab.Normal(0, 1)},
                    ar=ab.Normal(0, 0.5))
     with pytest.raises(ab.FormulaError, match=r"the autocorrelation term 'ar\(time = t, gr = g, p = 1\)' with a distributional formula "
-                                              r"is not supported in this slice \(brms accepts .*D70"):
+                                              r"is not supported \(brms accepts .*D70"):
         ab.gaussian(["y ~ x + ar(t, g)", "sigma ~ x"], FRAME, pr)
     with pytest.raises(ab.FormulaError, match=r"an autocorrelation term in a distributional formula \(ar\(time = t, gr = g, p = 1\)\) "
                                               r"is not supported: it belongs to the response formula, as in brms"):
@@ -450,7 +450,7 @@ def test_new_rows_are_refused():
 def test_describe_and_names():
     m = gaussian("y ~ x + (1 | h) + arma(t, g, 2, 1)", sd=ab.HalfNormal(1))
     text = m.describe()
-    for line in ("AutoBayes M0 model with autocorrelation term arma(time = t, gr = g, p = 2, q = 1)",
+    for line in ("AutoBayes Gaussian model with autocorrelation term arma(time = t, gr = g, p = 2, q = 1)",
                  "  expanded  : y ~ x + (1 | h) + arma(time = t, gr = g, p = 2, q = 1)   (canonical form handed to Bambi)",
                  "  autocor   : arma(time = t, gr = g, p = 2, q = 1): 4 series (the levels of g) of 3 to 3 rows, each ordered by t; brms's Stan "
                  "data list the rows sorted by series and then time, predictions keep the data order",
@@ -620,7 +620,7 @@ def test_multivariate_formulas_refuse_the_term():
     resp = {"y": dict(LINEAR), "y2": dict(LINEAR)}
     for formula in ("mvbind(y, y2) ~ x + ar(t, g)", "mvbind(y, y2) ~ x + (1 | h) + arma(time = t, gr = g, p = 1, q = 1)",
                     "mvbind(y, y2) ~ x + ma(gr = g)"):
-        with pytest.raises(ab.FormulaError, match=r"an autocorrelation term in a multivariate formula is not verified in this slice "
+        with pytest.raises(ab.FormulaError, match=r"an autocorrelation term in a multivariate formula is not supported "
                                                   r"\(brms gives each response its own ARMA term, ar_y and ar_y2.*divergence D70"):
             ab.gaussian(formula, FRAME_C, ab.Priors(resp=resp, rescor=ab.LKJ(2)), rescor=True)
     with pytest.raises(ab.FormulaError, match=r"if 'y2' is a second response, a formula of its own per response"):
@@ -662,7 +662,7 @@ def test_nonlinear_models_refuse_the_term():
     autocor = ~ ar(...)), which is not offered here, D70); in a parameter's formula brms refuses it too; a non-linear model's
     priors refuse ar and ma."""
     priors = ab.Priors(nlpars=NLPARS, sigma=ab.HalfNormal(1))
-    with pytest.raises(ab.FormulaError, match=r"ar\(\) at position 17 is brms's autocorrelation term \(C04\), not a function of the "
+    with pytest.raises(ab.FormulaError, match=r"ar\(\) at position 17 is brms's autocorrelation term, not a function of the "
                                               r"non-linear expression; .* bf\(\.\.\., autocor = ~ ar\(\.\.\.\)\).*divergence D70"):
         ab.gaussian(["ypos ~ a * exp(b * x) + ar(t, g)", "a ~ 1", "b ~ 1"], FRAME_C, priors, nl=True)
     with pytest.raises(ab.FormulaError, match=r"arma\(\) at position \d+ is brms's autocorrelation term"):
@@ -682,7 +682,7 @@ def test_gaussian_processes_are_refused_next_to_the_term():
     for formula in ("y ~ x + gp(w) + ar(t, g)", "y ~ x + ma(t, g) + gp(w, k = 5, c = 5/4)"):
         for build in (lambda f: gaussian(f, frame=FRAME_C, sdgp=ab.HalfNormal(1), lscale=ab.InverseGamma(3, 1)),
                       lambda f: ab.default_priors(f, FRAME_C)):
-            with pytest.raises(ab.FormulaError, match=r"next to the Gaussian process 'gp\(w.*\)' is not supported in this slice: no frozen "
+            with pytest.raises(ab.FormulaError, match=r"next to the Gaussian process 'gp\(w.*\)' is not supported: no frozen "
                                                       r"brms case verifies the pair .*divergence D70"):
                 build(formula)
 

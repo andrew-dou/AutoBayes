@@ -64,7 +64,7 @@ from autobayes.priors import AUXILIARY, Prior, PriorError, Priors, describe_prio
 # -- the expression grammar ----------------------------------------------------------------------------------------------
 FUNCTIONS = MappingProxyType({"exp": 1, "log": 1, "sqrt": 1, "inv_logit": 1, "plogis": 1, "pow": 2})   # name -> arguments
 _ALIASES = MappingProxyType({"plogis": "inv_logit"})          # R's name of the logistic CDF, which Stan does not have
-_SPECIAL_TERMS = MappingProxyType({"gp": "Gaussian process (C03)", "mo": "monotonic term (B03)"})   # brms's terms, not functions
+_SPECIAL_TERMS = MappingProxyType({"gp": "Gaussian process", "mo": "monotonic term"})   # brms's terms, not functions
 GRAMMAR = ("the non-linear expression takes non-linear parameters, numeric data columns and numeric constants, combined with "
            "+ - * / ^ (R's ** is ^), parentheses, unary minus and the functions exp(), log(), sqrt(), inv_logit() (or plogis()) "
            "and pow(x, y) (docs/nonlinear.md, divergence D61)")
@@ -222,28 +222,28 @@ class _Parser:
 
     def _call(self, name: str, pos: int):
         if name == "car":                                                  # F02a: brms's CAR term, not a function
-            raise FormulaError(f"{self.text!r}: car() at position {pos} is brms's spatial CAR term (F02a), not a function of the "
-                               "non-linear expression; a non-linear model takes no CAR term in this slice (docs/spatial-car.md, "
+            raise FormulaError(f"{self.text!r}: car() at position {pos} is brms's spatial CAR term, not a function of the "
+                               "non-linear expression; a non-linear model takes no CAR term (docs/spatial-car.md, "
                                "divergence D141)")
         if name in ("ar", "ma", "arma"):                                   # C04: brms's autocorrelation term, not a function
-            raise FormulaError(f"{self.text!r}: {name}() at position {pos} is brms's autocorrelation term (C04), not a function of the "
-                               "non-linear expression; a non-linear model takes no autocorrelation term in this slice (brms adds one "
+            raise FormulaError(f"{self.text!r}: {name}() at position {pos} is brms's autocorrelation term, not a function of the "
+                               "non-linear expression; a non-linear model takes no autocorrelation term (brms adds one "
                                "with bf(..., autocor = ~ ar(...)); docs/autocorrelation.md, divergence D70)")
         if name == "sar":                                                  # F02b: brms's SAR term, not a function
-            raise FormulaError(f"{self.text!r}: sar() at position {pos} is brms's SAR term (F02b), not a function of the non-linear "
-                               "expression; a non-linear model takes no SAR term in this slice (docs/spatial-sar.md, divergence D143)")
+            raise FormulaError(f"{self.text!r}: sar() at position {pos} is brms's SAR term, not a function of the non-linear "
+                               "expression; a non-linear model takes no SAR term (docs/spatial-sar.md, divergence D143)")
         if name in ("nlf", "lf"):
             raise FormulaError(f"{self.text!r}: brms's {name}() is not supported here (divergence D60): give each non-linear "
                                "parameter its own linear formula in the list, and write the non-linear expression once")
         if name in ("me", "mi"):                                           # C06: brms's special terms, not functions
             what, did = ("measurement-error term", "D73") if name == "me" else ("missing-value term", "D72")
-            raise FormulaError(f"{self.text!r}: {name}() at position {pos} is brms's {what} (C06), a term of a linear formula, not a "
-                               "function of the non-linear expression; a non-linear model takes no such term in this slice, in a "
+            raise FormulaError(f"{self.text!r}: {name}() at position {pos} is brms's {what}, a term of a linear formula, not a "
+                               "function of the non-linear expression; a non-linear model takes no such term, in a "
                                f"parameter's formula either (docs/missing-and-measurement-error.md, divergence {did})")
         if name in _SPECIAL_TERMS:
             raise FormulaError(f"{self.text!r}: {name}() at position {pos} is brms's {_SPECIAL_TERMS[name]}, a term of a linear "
                                "formula, not a function of the non-linear expression (brms writes it into its Stan program as a "
-                               "call of a function Stan does not have); a non-linear model takes no such term in this slice, in a "
+                               "call of a function Stan does not have); a non-linear model takes no such term, in a "
                                f"parameter's formula either (divergence D61); {GRAMMAR}")
         if name not in FUNCTIONS:
             raise FormulaError(f"{self.text!r}: {name}() at position {pos} is outside the grammar; {GRAMMAR}")
@@ -545,11 +545,11 @@ def parse_nonlinear(formulas, data: pd.DataFrame | None = None, family: str = "g
     lhs = main.split("~", 1)[0] if "~" in main else ""
     if "|" in lhs and MI_CALL_RE.search(lhs.split("|", 1)[1]):           # C06
         raise FormulaError(f"{main!r}: the response's mi() ('{lhs.split('|', 1)[0].strip()} | mi()', its missing values as parameters) "
-                           "with a non-linear formula is not supported in this slice (docs/missing-and-measurement-error.md, "
+                           "with a non-linear formula is not supported (docs/missing-and-measurement-error.md, "
                            "divergence D72)")
     if "|" in lhs:
         raise FormulaError(f"{main!r}: response addition terms (trials(), weights(), cens(), trunc()) with a non-linear formula are "
-                           "not supported in this slice (divergence D61); the left-hand side is the response column alone")
+                           "not supported (divergence D61); the left-hand side is the response column alone")
     head = _FORMULA_RE.match(main)
     if not head:
         raise FormulaError(f"{main!r}: the non-linear formula is '<response> ~ <expression>'; {NL_FORM}")
@@ -571,7 +571,7 @@ def parse_nonlinear(formulas, data: pd.DataFrame | None = None, family: str = "g
             raise FormulaError(f"{text!r}: {name!r} is the response; the non-linear formula comes first ({main!r})")
         if name in dpars or name in ("mu", fam.parent):
             raise FormulaError(f"{text!r}: a formula of the distributional parameter {name!r} with a non-linear formula is not "
-                               "supported in this slice (divergence D62): a non-linear model's parameters are the names of its "
+                               "supported (divergence D62): a non-linear model's parameters are the names of its "
                                f"expression, and {name!r} keeps its single prior")
         if name in (p for p, _, _ in parsed):
             raise FormulaError(f"{text!r}: {name!r} has two formulas; give each non-linear parameter one")
@@ -615,36 +615,36 @@ def parse_nonlinear(formulas, data: pd.DataFrame | None = None, family: str = "g
     for (name, prhs, text), cat in zip(parsed, routed):
         d = parse_formula(f"{name} ~ {prhs}", None, family, cat)
         if d.custom_group_terms:                                       # D08: brms's mm() and gr(by = ) are verified in linear models
-            raise FormulaError(f"{text!r}: '{d.custom_group_terms[0].canonical}' in a non-linear parameter's formula is not supported in "
-                               "this slice (docs/multi-membership-and-by.md, divergences D104, D105)")
+            raise FormulaError(f"{text!r}: '{d.custom_group_terms[0].canonical}' in a non-linear parameter's formula is not supported"
+                               " (docs/multi-membership-and-by.md, divergences D104, D105)")
         if d.offset is not None:
-            raise FormulaError(f"{text!r}: {d.offset.term!r} in a non-linear parameter's formula is not supported in this slice "
+            raise FormulaError(f"{text!r}: {d.offset.term!r} in a non-linear parameter's formula is not supported "
                                "(divergence D61)")
         if d.mo_terms:
             raise FormulaError(f"{text!r}: the monotonic term {d.mo_terms[0].name!r} in a non-linear parameter's formula is not "
-                               "supported in this slice (divergence D61)")
+                               "supported (divergence D61)")
         if d.gp_terms:                                                 # C03: brms adds gp_pred_<nlpar>_1 to the parameter
             raise FormulaError(f"{text!r}: the Gaussian process {d.gp_terms[0].term!r} in a non-linear parameter's formula is not "
-                               "supported in this slice (divergence D61)")
+                               "supported (divergence D61)")
         if d.fcor is not None:                                         # F03a: a covariance of the response, not of a parameter
             raise FormulaError(f"{text!r}: {d.fcor.term} in a non-linear parameter's formula is not supported: a non-linear model "
-                               "takes no fixed residual covariance in this slice (docs/fcor.md, divergence D144)")
+                               "takes no fixed residual covariance (docs/fcor.md, divergence D144)")
         if d.autocor is not None:                                      # C04: brms refuses it too
             raise FormulaError(f"{text!r}: the autocorrelation term {d.autocor.term!r} in a non-linear parameter's formula is not "
                                "supported, as in brms ('Explicit covariance terms can only be specified on mu'; docs/autocorrelation.md)")
         if getattr(d, "sar", None) is not None:                        # F02b: not verified in a parameter's formula
-            raise FormulaError(f"{text!r}: the SAR term {d.sar.term!r} in a non-linear parameter's formula is not supported in this "
-                               "slice (docs/spatial-sar.md, divergence D143)")
+            raise FormulaError(f"{text!r}: the SAR term {d.sar.term!r} in a non-linear parameter's formula is not supported"
+                               " (docs/spatial-sar.md, divergence D143)")
         if d.car is not None:                                          # F02a: not verified in a parameter's formula
-            raise FormulaError(f"{text!r}: the CAR term {d.car.term!r} in a non-linear parameter's formula is not supported in this "
-                               "slice (docs/spatial-car.md, divergence D141)")
+            raise FormulaError(f"{text!r}: the CAR term {d.car.term!r} in a non-linear parameter's formula is not supported"
+                               " (docs/spatial-car.md, divergence D141)")
         if d.timecor is not None:                                      # F03b: brms refuses it too
             raise FormulaError(f"{text!r}: the residual correlation term {d.timecor.term!r} in a non-linear parameter's formula is not "
                                "supported, as in brms ('Explicit covariance terms can only be specified on mu'; docs/unstr-cosy.md)")
         if d.me_terms or d.mi_terms:                                   # C06: not verified in a parameter's formula
             t = (*d.me_terms, *d.mi_terms)[0]
             what, did = ("measurement-error", "D73") if t.kind == "measurement_error" else ("missing-value", "D72")
-            raise FormulaError(f"{text!r}: the {what} term {t.name!r} in a non-linear parameter's formula is not supported in this slice "
+            raise FormulaError(f"{text!r}: the {what} term {t.name!r} in a non-linear parameter's formula is not supported "
                                f"(docs/missing-and-measurement-error.md, divergence {did})")
         reads = [*d.pop_columns, *(c for t in d.group_terms for c in t.operands)]
         nested = [c for c in reads if c in nl_names]

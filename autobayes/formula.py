@@ -148,15 +148,15 @@ _FCOR_RE = re.compile(r"^fcor\s*\(", re.S)                  # brms's fixed resid
 _CAR_RE = re.compile(r"^car\s*\(", re.S)                       # brms's spatial CAR term (F02a; autobayes.car), read before the others
 _TIMECOR_RE = re.compile(r"^(unstr|cosy)\s*\(", re.S)                                               # brms's unstr() and cosy() (F03b; autobayes.timecor)
 SUPPORTED_TRANSFORMS = ("only log(col), exp(col), sqrt(col), I(col^k) with integer k, and I(col * k), I(col + k), I(col - k) with a "
-                        "numeric constant k are supported as in-formula transforms of one numeric column (A05, docs/transforms.md); "
-                        "other function calls and transformations inside the formula are not supported: compute the column in the "
-                        "data frame and name it instead.")
+                        "numeric constant k are supported as in-formula transforms of one numeric column (docs/transforms.md, "
+                        "divergence D16); other function calls and transformations inside the formula are not supported: compute "
+                        "the column in the data frame and name it instead.")
 
 COUNT_CAP = 10**6   # the validated domain for binomial counts per row (docs/history/m2-decision.md, repair record)
 
 
 class FormulaError(ValueError):
-    """A formula outside the M0 subset, or one that does not match the data."""
+    """A formula AutoBayes does not support (the message names the construct), or one that does not match the data."""
 
 
 POLY_LEVELS_MAX = 16   # F08: an ordered factor of more levels is refused (docs/ordered-factors.md, divergence D168)
@@ -625,8 +625,8 @@ def _parse_gp(piece: str, inner: str, response: str, trials: str | None) -> Gaus
         if km is None:
             raise FormulaError(
                 f"{piece!r}: one covariate per gp() here; brms's gp({column}, {arg}, ...) is one Gaussian process of several "
-                f"covariates (one kernel over their joint distance, or one length-scale each with iso = FALSE), which is not part "
-                f"of this slice; add a separate gp() per covariate if that is the model meant {hint}")
+                f"covariates (one kernel over their joint distance, or one length-scale each with iso = FALSE), which is not supported"
+                f"; add a separate gp() per covariate if that is the model meant {hint}")
         name, value = km.group(1), km.group(2).strip()
         if name in named:
             raise FormulaError(f"{piece!r}: gp()'s argument {name!r} is given twice")
@@ -650,7 +650,7 @@ def _parse_gp(piece: str, inner: str, response: str, trials: str | None) -> Gaus
             kernel = value.strip("'\"")
             if value[:1] not in "'\"" or value[-1:] != value[:1] or kernel != "exp_quad":
                 raise FormulaError(f"{piece!r}: cov = {value} is not offered here; only brms's default squared-exponential kernel "
-                                   f"cov = \"exp_quad\" is part of this slice (brms's matern32, matern52 and exponential kernels "
+                                   f"cov = \"exp_quad\" is offered (brms's matern32, matern52 and exponential kernels "
                                    f"are not) {hint}")
         elif name in ("gr", "scale"):
             if value in _FALSE:
@@ -663,10 +663,10 @@ def _parse_gp(piece: str, inner: str, response: str, trials: str | None) -> Gaus
                 raise FormulaError(f"{piece!r}: {name} takes TRUE or FALSE, got {value!r}")
         elif name == "by":
             raise FormulaError(f"{piece!r}: brms's by = {value} (a Gaussian process scaled by a numeric column, or one per level "
-                               f"of a factor) is not part of this slice {hint}")
+                               f"of a factor) is not supported {hint}")
         elif name in ("iso", "cmc"):
             why = ("decides whether several covariates share one length-scale, and with one covariate brms ignores it"
-                   if name == "iso" else "only matters with a factor by =, which is not part of this slice")
+                   if name == "iso" else "only matters with a factor by =, which is not supported")
             raise FormulaError(f"{piece!r}: gp()'s {name} {why}: drop it {hint}")
         else:
             raise FormulaError(f"{piece!r}: gp() has no argument {name!r}; brms's gp() takes {_GP_ARGUMENTS}")
@@ -810,7 +810,8 @@ class PopTerm:
         if self.kind == "category_specific" and (category_specific_column(self.name) is None or self.columns or self.levels):
             raise ValueError(f"PopTerm: a category-specific term is spelled 'cs(col)' and has no design column or level, got {self.name!r}")
         if (self.kind == "contrast") != (self.factor is not None) or (self.kind == "contrast" and (self.columns != (self.name,) or self.levels)):
-            raise ValueError(f"PopTerm: a contrast term (F08) has its factor column and one design column of its own name, got {self.name!r}")
+            raise ValueError(f"PopTerm: a contrast term (an ordered factor's polynomial contrast) has its factor column and one design "
+                             f"column of its own name, got {self.name!r}")
         if self.categorical is None:
             default = {"numeric": (), "categorical": (self.name,), "interaction": (self.operands[-1],), "transform": (), "monotonic": (),
                        "measurement_error": (), "missing": (), "category_specific": (), "contrast": ()}
@@ -1221,7 +1222,7 @@ def _parse_trunc(args: list[str], piece: str, formula: str) -> AdditionTerm:
         else:
             raise FormulaError(
                 f"{formula!r}: {piece!r}: a truncation bound must be a number; per-row bounds read from a column "
-                f"({value!r}) are not part of this slice (docs/addition-terms.md)"
+                f"({value!r}) are not supported (docs/addition-terms.md)"
             )
     lb, ub = bounds.get("lb", -math.inf), bounds.get("ub", math.inf)
     if not lb < ub:
@@ -1275,7 +1276,7 @@ def _parse_additions(text: str, formula: str) -> tuple[str | None, tuple[Additio
             if args:
                 raise FormulaError(
                     f"{formula!r}: {piece!r}: mi() on the response takes no argument here; brms's mi(sdy), a response measured "
-                    "with known noise, is not part of this slice (docs/missing-and-measurement-error.md, divergence D72)"
+                    "with known noise, is not supported (docs/missing-and-measurement-error.md, divergence D72)"
                 )
             additions.append(AdditionTerm("mi"))
             continue
@@ -1351,7 +1352,7 @@ def _check_additions(additions: tuple[AdditionTerm, ...], fam, formula: str) -> 
     others = [a.term for a in additions if a.kind != "mi"]
     if others and len(others) < len(additions):                # C06: mi() is verified alone on the left-hand side
         raise FormulaError(
-            f"{formula!r}: mi() together with {', '.join(others)} on the left-hand side is not verified in this slice: brms "
+            f"{formula!r}: mi() together with {', '.join(others)} on the left-hand side is not supported: brms "
             "would weight, censor or truncate the imputed rows too (docs/missing-and-measurement-error.md, divergence D72)"
         )
 
@@ -2102,7 +2103,7 @@ class ModelSpec:
 
 # -- Tier F: brms's data2, the matrices a formula's terms read by name ----------------------------------------------------
 DATA2_UNIVARIATE = ("data2 is read by a SAR term sar(M, type = ...), a fixed residual covariance fcor(M) or a CAR term car(W, gr = "
-                    "...), which a non-linear or multivariate model does not take in this slice (docs/spatial-sar.md, docs/fcor.md, "
+                    "...), which a non-linear or multivariate model does not take (docs/spatial-sar.md, docs/fcor.md, "
                     "docs/spatial-car.md, divergences D141, D143, D144)")
 
 
@@ -2245,7 +2246,7 @@ def _parse_group_term(inner: str, bars: str, factor: str, piece: str, response: 
         if not re.fullmatch(_IDENT, term_id) or "|" in factor:
             raise FormulaError(f"{piece!r}: a correlation ID is a name between two bars, '(1 + x |p| g)'")
         if "(" in factor:
-            raise FormulaError(f"{piece!r}: a correlation ID with mm() or gr() is not supported in this slice; the ID's grouping "
+            raise FormulaError(f"{piece!r}: a correlation ID with mm() or gr() is not supported; the ID's grouping "
                                "factor is a column (docs/multi-membership-and-by.md, divergence D106)")
     if re.match(r"mm\s*\(", factor):                              # D08: brms's multi-membership grouping
         return [_parse_mm_term(inner, bars, factor, piece, response, trials)]
@@ -2285,19 +2286,19 @@ def _parse_group_term(inner: str, bars: str, factor: str, piece: str, response: 
             if by in (response, trials):
                 raise FormulaError(f"{piece!r}: the {'response' if by == response else 'trials column'} {by!r} cannot be the by column")
             if term_id is not None:
-                raise FormulaError(f"{piece!r}: a correlation ID with gr(by = ) is not supported in this slice (divergence D106)")
+                raise FormulaError(f"{piece!r}: a correlation ID with gr(by = ) is not supported (divergence D106)")
     if "(" in factor:
         raise FormulaError(f"{piece!r}: transformed grouping factors are not supported; use a column name")
     if "/" in factor and ":" in factor:
         raise FormulaError(
-            f"{piece!r}: mixing '/' and ':' in a grouping factor ({factor!r}) is not supported in this slice; write the "
+            f"{piece!r}: mixing '/' and ':' in a grouping factor ({factor!r}) is not supported; write the "
             "group terms out, '(1 | g) + (1 | g:h)'"
         )
     sep = "/" if "/" in factor else ":" if ":" in factor else None
     operands = [p.strip() for p in factor.split(sep)] if sep else [factor]
     if len(operands) > 2:
         raise FormulaError(
-            f"{piece!r}: only two factors can be combined in a grouping factor in this slice ({factor!r} names "
+            f"{piece!r}: only two factors can be combined in a grouping factor ({factor!r} names "
             f"{len(operands)} columns); three-way nesting or interaction of grouping factors is not supported"
         )
     for p in operands:
@@ -2327,14 +2328,14 @@ def _parse_group_term(inner: str, bars: str, factor: str, piece: str, response: 
             )
         if _MO_RE.match(s):
             raise FormulaError(
-                f"{piece!r}: a monotonic effect cannot vary by {factor!r} in this slice: brms's '(1 + {s} {bars} {factor})' gives "
+                f"{piece!r}: a monotonic effect cannot vary by {factor!r}: brms's '(1 + {s} {bars} {factor})' gives "
                 "every level its own coefficient of the monotonic term, which is not verified here (docs/monotonic.md, "
                 f"divergence D41); keep {s} as a population-level term, '{response} ~ ... + {s} + (1 | {factor})'"
             )
         if _ME_RE.match(s) or _MI_RE.match(s):                   # C06
             which = ("a measurement-error term", "D73") if _ME_RE.match(s) else ("a missing-value term", "D72")
             raise FormulaError(
-                f"{piece!r}: {which[0]} cannot vary by {factor!r} in this slice: brms's '(1 + {s} {bars} {factor})' gives every "
+                f"{piece!r}: {which[0]} cannot vary by {factor!r}: brms's '(1 + {s} {bars} {factor})' gives every "
                 f"level its own coefficient of it, which is not verified here (docs/missing-and-measurement-error.md, divergence "
                 f"{which[1]}); keep {s} as a population-level term"
             )
@@ -2345,7 +2346,7 @@ def _parse_group_term(inner: str, bars: str, factor: str, piece: str, response: 
             )
         if ":" in s or "*" in s:
             raise FormulaError(
-                f"{piece!r}: an interaction cannot be a varying slope in this subset; only a numeric "
+                f"{piece!r}: an interaction cannot be a varying slope; only a numeric "
                 f"population-level term of the formula can vary by {factor!r}"
             )
         if not re.fullmatch(_IDENT, s):
@@ -2370,10 +2371,10 @@ def _parse_group_term(inner: str, bars: str, factor: str, piece: str, response: 
         raise FormulaError(f"{piece!r}: '1' appears more than once in the group term")
     if (by is not None or term_id is not None) and sep is not None:
         raise FormulaError(f"{piece!r}: {'gr(by = )' if by is not None else 'a correlation ID'} with a combined grouping factor "
-                           f"({factor!r}) is not supported in this slice (docs/multi-membership-and-by.md)")
+                           f"({factor!r}) is not supported (docs/multi-membership-and-by.md)")
     if by is not None and slopes:
         raise FormulaError(
-            f"{piece!r}: varying slopes with gr(by = ) are not supported in this slice: brms gives each level of {by!r} its own "
+            f"{piece!r}: varying slopes with gr(by = ) are not supported: brms gives each level of {by!r} its own "
             "SD of every coefficient and, with '|', its own correlation matrix, which no frozen case verifies; "
             f"'(1 | gr({factor}, by = {by}))' is offered (docs/multi-membership-and-by.md, divergence D105)"
         )
@@ -2406,7 +2407,7 @@ def _parse_mm_term(inner: str, bars: str, factor: str, piece: str, response: str
         key, value = na.group(1), na.group(2).strip()
         if key != "weights":
             raise FormulaError(
-                f"{piece!r}: mm()'s argument {key!r} is not supported in this slice; mm(g, g2, ..., weights = cbind(w1, w2, ...)) "
+                f"{piece!r}: mm()'s argument {key!r} is not supported; mm(g, g2, ..., weights = cbind(w1, w2, ...)) "
                 "with brms's default scale = TRUE is offered (docs/multi-membership-and-by.md, divergence D104)")
         cm = re.fullmatch(r"cbind\s*\((.*)\)", value, re.S)
         cols = [c.strip() for c in _split_top_level(cm.group(1), ",")] if cm else []
@@ -2428,7 +2429,7 @@ def _parse_mm_term(inner: str, bars: str, factor: str, piece: str, response: str
     tokens = [t.strip() for t in _split_top_level(inner)]
     if tokens != ["1"]:
         raise FormulaError(
-            f"{piece!r}: only the varying intercept '(1 | mm(...))' is supported for a multi-membership term in this slice; varying "
+            f"{piece!r}: only the varying intercept '(1 | mm(...))' is supported for a multi-membership term; varying "
             "slopes (and brms's mmc()) are not verified by a frozen case (docs/multi-membership-and-by.md, divergence D104)")
     return GroupTerm("mm" + "".join(members), ("Intercept",), correlated=True, members=tuple(members), weights=tuple(weights))
 
@@ -2641,12 +2642,12 @@ def _parse_formulas(formulas, data: pd.DataFrame | None, family: str, categorica
     # refuses it as it always has.
     main0 = parse_formula(main, None, family, None, _ids=True)
     if main0.car is not None:                                 # F02a: not next to a distributional formula (D141)
-        raise FormulaError(f"{main!r}: the CAR term {main0.car.term!r} with a distributional formula is not supported in this slice "
+        raise FormulaError(f"{main!r}: the CAR term {main0.car.term!r} with a distributional formula is not supported "
                            "(docs/spatial-car.md, divergence D141)")
     if main0.autocor is not None:                             # C04: not next to a distributional formula (D70)
         raise FormulaError(
-            f"{main!r}: the autocorrelation term {main0.autocor.term!r} with a distributional formula is not supported in this "
-            "slice (brms accepts bf(y ~ x + ar(...), sigma ~ z); docs/autocorrelation.md, divergence D70)"
+            f"{main!r}: the autocorrelation term {main0.autocor.term!r} with a distributional formula is not supported"
+            " (brms accepts bf(y ~ x + ar(...), sigma ~ z); docs/autocorrelation.md, divergence D70)"
         )
     if main0.sar is not None:                                 # F02b: brms refuses it too ('SAR models are not implemented when
         raise FormulaError(                                   # predicting 'sigma' or 'nu'')
@@ -2655,13 +2656,13 @@ def _parse_formulas(formulas, data: pd.DataFrame | None, family: str, categorica
         )
     if main0.fcor is not None:                                # F03a: brms's heterogeneous normal_fcor_het, not verified (D144)
         raise FormulaError(
-            f"{main!r}: {main0.fcor.term} with a distributional formula is not supported in this slice (brms accepts "
+            f"{main!r}: {main0.fcor.term} with a distributional formula is not supported (brms accepts "
             "bf(y ~ x + fcor(M), sigma ~ z), its normal_fcor_het; docs/fcor.md, divergence D144)"
         )
     if main0.timecor is not None:                             # F03b: brms's heterogeneous sigma is not verified (D146)
         raise FormulaError(
-            f"{main!r}: the residual correlation term {main0.timecor.term!r} with a distributional formula is not supported in this "
-            "slice (brms accepts bf(y ~ x + unstr(...), sigma ~ z); docs/unstr-cosy.md, divergence D146)"
+            f"{main!r}: the residual correlation term {main0.timecor.term!r} with a distributional formula is not supported"
+            " (brms accepts bf(y ~ x + unstr(...), sigma ~ z); docs/unstr-cosy.md, divergence D146)"
         )
     dpar0 = [parse_formula(f"{name} ~ {rhs}", None, family, None, _ids=True, _dpar=True) for name, rhs, _ in parsed]
     mains = [{t.name for t in s.pop_terms if t.kind == "numeric"} for s in (main0, *dpar0)]
@@ -2690,7 +2691,7 @@ def _parse_formulas(formulas, data: pd.DataFrame | None, family: str, categorica
         if unshared:
             raise FormulaError(
                 f"{text!r}: group-level terms in a distributional formula ({', '.join(t.canonical for t in unshared)}) are "
-                f"not supported in this slice: brms would give {name} its own varying effects; a distributional formula "
+                f"not supported: brms would give {name} its own varying effects; a distributional formula "
                 "takes population-level terms only here, and group-level terms only with a correlation ID shared with the "
                 f"response formula's term of the same factor, '{name} ~ ... + (1 |p| g)' next to '... + (1 + x |p| g)' "
                 "(docs/distributional.md, divergence D32; docs/multi-membership-and-by.md, D106)"
@@ -2698,7 +2699,7 @@ def _parse_formulas(formulas, data: pd.DataFrame | None, family: str, categorica
         if d.group_terms and (name != fam.scale_parameter or not fam.distributional_group_terms):   # E03: no case of these
             raise FormulaError(
                 f"{text!r}: group-level terms in the formula of {name} of the {fam.name} family "
-                f"({', '.join(t.canonical for t in d.group_terms)}) are not supported in this slice: no frozen brms case verifies "
+                f"({', '.join(t.canonical for t in d.group_terms)}) are not supported: no frozen brms case verifies "
                 f"a correlation ID shared with that formula; it takes population-level terms only "
                 "(docs/contexts-newer-families.md, divergence D116)"
             )
@@ -2711,23 +2712,23 @@ def _parse_formulas(formulas, data: pd.DataFrame | None, family: str, categorica
                 raise FormulaError(f"{text!r}: the correlation ID {t.id!r} joins '{partner.canonical}' and '{t.canonical}', two grouping "
                                    "factors; brms refuses it too ('Can only combine group-level terms of the same grouping factors')")
             if t.slopes:
-                raise FormulaError(f"{text!r}: '{t.canonical}': varying slopes in a distributional formula are not supported in this "
-                                   f"slice; '(1 |{t.id}| {t.factor})' is offered (docs/multi-membership-and-by.md, divergence D106)")
+                raise FormulaError(f"{text!r}: '{t.canonical}': varying slopes in a distributional formula are not supported"
+                                   f"; '(1 |{t.id}| {t.factor})' is offered (docs/multi-membership-and-by.md, divergence D106)")
         if d.offset is not None:
             raise FormulaError(
-                f"{text!r}: {d.offset.term!r} in a distributional formula is not supported in this slice; an offset belongs "
+                f"{text!r}: {d.offset.term!r} in a distributional formula is not supported; an offset belongs "
                 "to the response formula here (docs/distributional.md, divergence D32)"
             )
         if d.mo_terms:
             raise FormulaError(
-                f"{text!r}: a monotonic term in a distributional formula ({', '.join(t.name for t in d.mo_terms)}) is not supported "
-                f"in this slice: brms would give {name} a monotonic coefficient and simplex of its own; mo() belongs to the response "
+                f"{text!r}: a monotonic term in a distributional formula ({', '.join(t.name for t in d.mo_terms)}) is not supported"
+                f": brms would give {name} a monotonic coefficient and simplex of its own; mo() belongs to the response "
                 "formula here (docs/monotonic.md, divergence D42)"
             )
         if d.gp_terms:
             raise FormulaError(
-                f"{text!r}: a Gaussian process in a distributional formula ({', '.join(g.term for g in d.gp_terms)}) is not supported "
-                f"in this slice: brms would give {name} a Gaussian process of its own; gp() belongs to the response formula here "
+                f"{text!r}: a Gaussian process in a distributional formula ({', '.join(g.term for g in d.gp_terms)}) is not supported"
+                f": brms would give {name} a Gaussian process of its own; gp() belongs to the response formula here "
                 "(docs/gaussian-processes.md, divergence D64)"
             )
         if d.car is not None:                                 # F02a: the term belongs to the response formula (D141)
@@ -2756,7 +2757,7 @@ def _parse_formulas(formulas, data: pd.DataFrame | None, family: str, categorica
         if d.me_terms:                                       # C06
             raise FormulaError(
                 f"{text!r}: a measurement-error term in a distributional formula ({', '.join(t.name for t in d.me_terms)}) is not "
-                "supported in this slice; me() belongs to the response formula of a univariate Gaussian model here "
+                "supported; me() belongs to the response formula of a univariate Gaussian model here "
                 "(docs/missing-and-measurement-error.md, divergence D73)"
             )
         for col in d.pop_columns:
@@ -2764,7 +2765,7 @@ def _parse_formulas(formulas, data: pd.DataFrame | None, family: str, categorica
                     else "a grouping factor of the response formula" if col in operands else None)
             if role is not None:
                 raise FormulaError(
-                    f"{text!r}: {col!r} is {role}; it cannot also be a predictor of {name} in this slice "
+                    f"{text!r}: {col!r} is {role}; it cannot also be a predictor of {name} "
                     "(docs/distributional.md, divergence D35)"
                 )
         if data is not None:
@@ -2778,7 +2779,7 @@ def _parse_formulas(formulas, data: pd.DataFrame | None, family: str, categorica
                                f"term of {t.factor!r} here (write '{t.canonical.replace(f'|{t.id}|', '|')}' without one; divergence D106)")
     custom = [t for t in spec.group_terms if t.custom]
     if custom:                                               # D08: mm() and gr(by = ) are verified without distributional formulas
-        raise FormulaError(f"{main!r}: '{custom[0].canonical}' next to a distributional formula is not supported in this slice: no "
+        raise FormulaError(f"{main!r}: '{custom[0].canonical}' next to a distributional formula is not supported: no "
                            "frozen brms case verifies the pair (docs/multi-membership-and-by.md, divergences D104, D105)")
     return replace(spec, dpars=tuple(dpars))
 
@@ -2803,30 +2804,30 @@ def _check_special_terms(spec: ModelSpec, fam, formula: str) -> None:
             )
     if len(spec.me_terms) > 1:
         raise FormulaError(
-            f"{formula!r}: several measurement-error terms ({', '.join(t.name for t in spec.me_terms)}) are not supported in this "
-            "slice: brms correlates their latent values by default (set_mecor(TRUE), a correlation matrix Lme), which is not "
+            f"{formula!r}: several measurement-error terms ({', '.join(t.name for t in spec.me_terms)}) are not supported"
+            ": brms correlates their latent values by default (set_mecor(TRUE), a correlation matrix Lme), which is not "
             "verified here; one me() term per formula (docs/missing-and-measurement-error.md, divergence D73)"
         )
     kinds = [k for k, terms in (("mo()", spec.mo_terms), ("me()", spec.me_terms), ("mi()", spec.mi_terms)) if terms]
     if len(kinds) > 1:
         raise FormulaError(
-            f"{formula!r}: {' and '.join(kinds)} terms in one formula are not supported in this slice: they share brms's vector of "
+            f"{formula!r}: {' and '.join(kinds)} terms in one formula are not supported: they share brms's vector of "
             "special coefficients (bsp), whose order is verified for one kind of term only "
             f"(docs/missing-and-measurement-error.md, divergence {'D73' if 'me()' in kinds else 'D72'})"
         )
     if spec.me_terms and spec.addition("mi") is not None:
         raise FormulaError(
-            f"{formula!r}: a measurement-error term in a formula whose response has mi() is not supported in this slice; me() "
+            f"{formula!r}: a measurement-error term in a formula whose response has mi() is not supported; me() "
             "belongs to a univariate Gaussian model here (docs/missing-and-measurement-error.md, divergence D73)"
         )
     special = ([f"the measurement-error term {t.name!r}" for t in spec.me_terms]
                + [f"the missing-value term {t.name!r}" for t in spec.mi_terms]
                + ([f"the response's mi() ('{spec.response} | mi()')"] if spec.addition("mi") is not None else []))
-    others = ([f"the Gaussian process {g.term!r} (C03)" for g in spec.gp_terms]
-              + ([f"the autocorrelation term {spec.autocor.term!r} (C04)"] if spec.autocor is not None else []))
+    others = ([f"the Gaussian process {g.term!r}" for g in spec.gp_terms]
+              + ([f"the autocorrelation term {spec.autocor.term!r}"] if spec.autocor is not None else []))
     if special and others:                                   # C03 / C04: no frozen brms case verifies either pair
         raise FormulaError(
-            f"{formula!r}: {special[0]} next to {others[0]} is not supported in this slice: no frozen brms case verifies the pair "
+            f"{formula!r}: {special[0]} next to {others[0]} is not supported: no frozen brms case verifies the pair "
             f"(docs/missing-and-measurement-error.md, divergence {'D73' if spec.me_terms else 'D72'})"
         )
 
@@ -2849,7 +2850,7 @@ def check_imputation(spec: ModelSpec, imputed=()) -> None:
         raise FormulaError(
             f"{spec.formula!r}: the response's own missing values are imputed here only by the formula of an mi() predictor of "
             f"another response, ab.gaussian(['y ~ mi({spec.response}) + ...', '{spec.formula}'], data, priors, rescor=False); a "
-            "univariate y | mi() ~ ... model is not part of this slice (docs/missing-and-measurement-error.md, divergence D72)"
+            "univariate y | mi() ~ ... model is not supported (docs/missing-and-measurement-error.md, divergence D72)"
         )
 
 
@@ -3093,7 +3094,7 @@ def parse_formula(formula: str | list[str], data: pd.DataFrame | None = None, fa
             else:
                 raise FormulaError(
                     f"{piece!r}: only 'offset(col)' and 'offset(log(col))' are supported inside offset(); other "
-                    "expressions (general in-formula transforms) are not part of this slice. Compute the column in "
+                    "expressions (general in-formula transforms) are not supported. Compute the column in "
                     "the data frame and write 'offset(<column>)'."
                 )
             if offsets:
@@ -3145,7 +3146,7 @@ def parse_formula(formula: str | list[str], data: pd.DataFrame | None = None, fa
             factors = [f.strip() for f in (stars if len(stars) > 1 else colons)]
             if len(factors) != 2 or any(f == "" for f in factors):
                 raise FormulaError(
-                    f"{piece!r}: only a two-way interaction is supported in this slice ({piece!r} names {len(factors)} terms); "
+                    f"{piece!r}: only a two-way interaction is supported ({piece!r} names {len(factors)} terms); "
                     "three-way and higher-order interactions are not."
                 )
             left, right = factors
@@ -3159,26 +3160,26 @@ def parse_formula(formula: str | list[str], data: pd.DataFrame | None = None, fa
                     )
                 if _MO_RE.match(side):
                     raise FormulaError(
-                        f"{piece!r}: an interaction with a monotonic term ({side!r}) is not supported in this slice: brms's "
+                        f"{piece!r}: an interaction with a monotonic term ({side!r}) is not supported: brms's "
                         "mo(x):z gives each interaction its own coefficient (and mo(x):mo(w) a simplex per factor), which is not "
                         "verified here (docs/monotonic.md, divergence D40)"
                     )
                 if _CS_RE.match(side):                              # D04
                     raise FormulaError(
-                        f"{piece!r}: an interaction with a category-specific term ({side!r}) is not supported in this slice: brms's "
+                        f"{piece!r}: an interaction with a category-specific term ({side!r}) is not supported: brms's "
                         "cs(x):z is not verified here; compute the product column in the data frame and write cs(<column>) "
                         "(docs/ordinal-categorical.md, divergence D89)"
                     )
                 if _GP_RE.match(side):
                     raise FormulaError(
-                        f"{piece!r}: an interaction with a Gaussian process ({side!r}) is not supported in this slice; a Gaussian "
+                        f"{piece!r}: an interaction with a Gaussian process ({side!r}) is not supported; a Gaussian "
                         "process that changes with another variable is brms's gp(x, by = z), which is not offered either "
                         "(docs/gaussian-processes.md, divergence D64)"
                     )
                 if _ME_RE.match(side) or _MI_RE.match(side):        # C06
                     which = ("a measurement-error term", "D73") if _ME_RE.match(side) else ("a missing-value term", "D72")
                     raise FormulaError(
-                        f"{piece!r}: an interaction with {which[0]} ({side!r}) is not supported in this slice: brms gives it a "
+                        f"{piece!r}: an interaction with {which[0]} ({side!r}) is not supported: brms gives it a "
                         "special coefficient of its own times the product, which is not verified here "
                         f"(docs/missing-and-measurement-error.md, divergence {which[1]})"
                     )
@@ -3192,7 +3193,7 @@ def parse_formula(formula: str | list[str], data: pd.DataFrame | None = None, fa
                     if parse_transform(side) is None:
                         raise FormulaError(f"{side!r}: {SUPPORTED_TRANSFORMS}")
                     raise FormulaError(
-                        f"{piece!r}: an interaction with a transformed term ({side!r}) is not supported in this slice; "
+                        f"{piece!r}: an interaction with a transformed term ({side!r}) is not supported; "
                         "compute the column in the data frame and interact the column instead."
                     )
             if left == right:
@@ -3217,7 +3218,7 @@ def parse_formula(formula: str | list[str], data: pd.DataFrame | None = None, fa
             if not re.fullmatch(_IDENT, inner):
                 raise FormulaError(
                     f"{piece!r}: cs() takes one column name here, not {inner!r}; brms's cs(x + w), cs(1) and expressions inside cs() "
-                    "are not supported in this slice: write one cs(<column>) per numeric column (docs/ordinal-categorical.md, "
+                    "are not supported: write one cs(<column>) per numeric column (docs/ordinal-categorical.md, "
                     "divergence D89)"
                 )
             if inner == response:
@@ -3241,7 +3242,7 @@ def parse_formula(formula: str | list[str], data: pd.DataFrame | None = None, fa
             if len(_split_top_level(inner, ",")) > 1:
                 raise FormulaError(
                     f"{piece!r}: mo() takes one column here; brms's id argument (mo(x, id = 'a'), one simplex shared by the "
-                    "terms with the same id) is not supported in this slice (docs/monotonic.md, divergence D42)"
+                    "terms with the same id) is not supported (docs/monotonic.md, divergence D42)"
                 )
             if not re.fullmatch(_IDENT, inner):
                 raise FormulaError(
@@ -3262,8 +3263,8 @@ def parse_formula(formula: str | list[str], data: pd.DataFrame | None = None, fa
             if named or len(args) > 2:
                 raise FormulaError(
                     f"{piece!r}: me() takes the noisy column and the column of its known standard deviations here, me(x, sdx); "
-                    "brms's gr argument (me(x, sdx, gr = g), latent values shared within the levels of g) is not supported in "
-                    "this slice (docs/missing-and-measurement-error.md, divergence D73)"
+                    "brms's gr argument (me(x, sdx, gr = g), latent values shared within the levels of g) is not supported"
+                    " (docs/missing-and-measurement-error.md, divergence D73)"
                 )
             if len(args) != 2:
                 raise FormulaError(f"{piece!r}: me() takes two column names, the noisy values and their known standard deviations, "
@@ -3292,7 +3293,7 @@ def parse_formula(formula: str | list[str], data: pd.DataFrame | None = None, fa
             if len(_split_top_level(inner, ",")) > 1:
                 raise FormulaError(
                     f"{piece!r}: mi() takes one column here; brms's idx argument (mi(x, idx), the rows of x's own formula that "
-                    "each row of this one reads) is not supported in this slice (docs/missing-and-measurement-error.md, "
+                    "each row of this one reads) is not supported (docs/missing-and-measurement-error.md, "
                     "divergence D72)"
                 )
             if not re.fullmatch(_IDENT, inner):
@@ -3347,18 +3348,18 @@ def parse_formula(formula: str | list[str], data: pd.DataFrame | None = None, fa
             if s not in predictors:
                 raise FormulaError(
                     f"{piece!r}: the varying slope {s!r} must also be a population-level term of the formula, "
-                    f"as in '{response} ~ {s} + (1 + {s} {'|' if term.correlated else '||'} {term.factor})' (brms would add the group-level slope "
-                    "without the population-level one; this subset does not)"
+                    f"as in '{response} ~ {s} + (1 + {s} {'|' if term.correlated else '||'} {term.factor})' (brms adds the group-level slope "
+                    "without the population-level one; AutoBayes does not, divergence D8)"
                 )
 
     for left, right, piece in raw_interactions:              # both main effects are required in this slice
         for side in (left, right):
             if side not in predictors and re.fullmatch(_IDENT, side) and side not in operands_all:
                 raise FormulaError(
-                    f"{piece!r}: the main effect {side!r} is missing. This slice requires both main effects of an "
+                    f"{piece!r}: the main effect {side!r} is missing. AutoBayes requires both main effects of an "
                     f"interaction ('{left} + {right} + {left}:{right}' or '{left}*{right}'): omitting one is a different "
                     "model (the level intercepts or the reference slope are forced to zero and formulae changes the "
-                    "interaction's coding) and is not part of the verified subset (docs/history/m3a2-decision.md)."
+                    "interaction's coding) and is not supported (docs/interactions.md, divergence D14)."
                 )
     if remove_intercept and not predictors and not gps:     # 'y ~ 0 + gp(x)' leaves the Gaussian process (C03)
         raise FormulaError(f"{formula!r}: no intercept requires at least one population-level predictor")
@@ -3403,7 +3404,7 @@ def parse_formula(formula: str | list[str], data: pd.DataFrame | None = None, fa
             if (col in predictors or col in transform_columns or col in mo_columns or col in gp_columns or col in special_cols
                     or col in operands_all):
                 raise FormulaError(f"{piece!r}: {col!r} is a {'weight' if col in term.weights else 'by'} column of the group term and "
-                                   "cannot also be a predictor or a grouping column in this slice")
+                                   "cannot also be a predictor or a grouping column")
     ids: dict[str, GroupTerm] = {}
     for term, piece in zip(group_terms, group_pieces):       # D08: one grouping factor per correlation ID, as brms requires
         if term.id is None:
@@ -3422,7 +3423,7 @@ def parse_formula(formula: str | list[str], data: pd.DataFrame | None = None, fa
         others += [f"the residual correlation term {t.term!r}" for t, _ in timecors]   # F03b
         others += [f"the addition term {a.term!r}" for a in additions]
         if others:
-            raise FormulaError(f"{formula!r}: {what} '{p}' next to {others[0]} is not supported in this slice: no frozen brms case "
+            raise FormulaError(f"{formula!r}: {what} '{p}' next to {others[0]} is not supported: no frozen brms case "
                                "verifies the pair (docs/multi-membership-and-by.md, divergences D104, D105)")
         if fam.link not in ("identity", "log") or not fam.monotonic or fam.per_category or fam.thresholds or fam.mixture:
             raise FormulaError(
@@ -3446,7 +3447,7 @@ def parse_formula(formula: str | list[str], data: pd.DataFrame | None = None, fa
         if gps:                                              # C03: not verified together (brms accepts the pair; D70)
             raise FormulaError(
                 f"{formula!r}: the autocorrelation term {autocor.term!r} next to the Gaussian process {gps[0][0].term!r} is not "
-                "supported in this slice: no frozen brms case verifies the pair (brms takes it, the residuals then those of the "
+                "supported: no frozen brms case verifies the pair (brms takes it, the residuals then those of the "
                 "predictor with the process); docs/autocorrelation.md, divergence D70"
             )
     car = None
@@ -3468,8 +3469,8 @@ def parse_formula(formula: str | list[str], data: pd.DataFrame | None = None, fa
         from autobayes.timecor import check_timecor
 
         if len(timecors) > 1:
-            raise FormulaError(f"{formula!r}: {timecors[0][1]!r} and {timecors[1][1]!r}: one residual correlation term per formula in "
-                               "this slice (docs/unstr-cosy.md, divergence D146)")
+            raise FormulaError(f"{formula!r}: {timecors[0][1]!r} and {timecors[1][1]!r}: one residual correlation term per formula"
+                               " (docs/unstr-cosy.md, divergence D146)")
         timecor = timecors[0][0]
         others = ([f"the Gaussian process {g.term!r}" for g, _ in gps] + [f"the term {name!r}" for name in special_columns]
                   + [f"the autocorrelation term {a.term!r}" for a, _ in autocors] + [f"the SAR term {t.term!r}" for t, _ in sars]
@@ -3485,7 +3486,7 @@ def parse_formula(formula: str | list[str], data: pd.DataFrame | None = None, fa
         if shared:
             raise FormulaError(
                 f"{formula!r}: {shared[0]!r} is read by {name!r} and by another term of the formula; a column inside me() or "
-                "mi() is read by that term alone in this slice (docs/missing-and-measurement-error.md)"
+                "mi() is read by that term alone (docs/missing-and-measurement-error.md)"
             )
     for name, col in category_specific.items():                # D04: a column inside cs() is read by that term alone
         elsewhere = [*(p for p in predictors if p != name and p not in category_specific), *transform_columns, *mo_columns, *gp_columns,
@@ -3495,7 +3496,7 @@ def parse_formula(formula: str | list[str], data: pd.DataFrame | None = None, fa
         if col in elsewhere:
             raise FormulaError(
                 f"{formula!r}: {col!r} is read by {name!r} and by another term of the formula; a column inside cs() is read by that "
-                "term alone in this slice (brms accepts x + cs(x), whose b_x and bcs_x are not separately identified; "
+                "term alone (brms accepts x + cs(x), whose b_x and bcs_x are not separately identified; "
                 "docs/ordinal-categorical.md, divergence D89)"
             )
     for name, col in ordered_terms.items():                   # F08: a column inside ordered() is read by that term alone
@@ -3557,7 +3558,7 @@ def parse_formula(formula: str | list[str], data: pd.DataFrame | None = None, fa
                                    "contrasts itself, and one column cannot be both (docs/ordered-factors.md)")
         for name, col in category_specific.items():          # nor does cs() here (D04): brms's cs(z) of a factor is not verified
             if col in categorical:
-                raise FormulaError(f"{name!r}: {col!r} is declared categorical; cs() takes a numeric column in this slice (brms's cs() "
+                raise FormulaError(f"{name!r}: {col!r} is declared categorical; cs() takes a numeric column (brms's cs() "
                                    "of a factor, one coefficient per level and threshold, is not verified here; divergence D89)")
     categoricals = _normalise_categorical(categorical, predictors, response, operands_all, trials, formula)
     if ordered_terms:                                        # F08: ordered(col)'s factor, in formula order with the declared ones
@@ -3582,7 +3583,7 @@ def parse_formula(formula: str | list[str], data: pd.DataFrame | None = None, fa
             if s in cat_names:
                 raise FormulaError(
                     f"{piece!r}: {s!r} is declared categorical; a categorical varying slope (one varying coefficient "
-                    f"per level of {s!r}) is not supported in this subset; only a numeric population-level term can "
+                    f"per level of {s!r}) is not supported; only a numeric population-level term can "
                     f"vary by {term.factor!r}"
                 )
     interactions: list[str] = []                             # canonical interaction names, in formula order
@@ -3639,7 +3640,7 @@ def parse_formula(formula: str | list[str], data: pd.DataFrame | None = None, fa
     if spec.gp_terms and fam.per_category:                   # one linear predictor per category (C03)
         raise FormulaError(
             f"{formula!r}: a Gaussian process ({spec.gp_terms[0].term}) is not available for the {fam.name} family: brms would give "
-            "each non-reference category its own Gaussian process, which is not part of this slice (docs/gaussian-processes.md, "
+            "each non-reference category its own Gaussian process, which is not supported (docs/gaussian-processes.md, "
             "divergence D64)"
         )
     _check_special_terms(spec, fam, formula)                 # C06: me() and mi() where a frozen brms case verifies them
@@ -3808,7 +3809,7 @@ def validate_binary_response(name: str, s: pd.Series) -> None:
     if not vals <= {0.0, 1.0}:
         raise FormulaError(
             f"response {name!r} takes values outside {{0, 1}}: {sorted(vals - {0.0, 1.0})[:5]}. "
-            "The Bernoulli family needs exactly 0/1 (binomial trials are not supported in M1)."
+            "The Bernoulli family needs exactly 0/1 (successes out of several trials are ab.binomial's 'k | trials(n) ~ ...')."
         )
     if vals != {0.0, 1.0}:
         raise FormulaError(
@@ -3962,10 +3963,10 @@ def check_counts(label: str, s: pd.Series, *, cap: int = COUNT_CAP, domain: str 
         raise FormulaError(f"{label} has a negative value ({vf[vf < 0][0]!r}); counts must be non-negative")
     if np.any(vf > cap):
         if domain == "poisson":
-            raise FormulaError(f"{label} exceeds the Poisson input-count limit {cap}; see docs/history/poisson-decision.md")
+            raise FormulaError(f"{label} exceeds the Poisson input-count limit {cap}; see docs/poisson-responses.md")
         raise FormulaError(
             f"{label} has a value above the tested limit {cap} ({vf[vf > cap][0]:.0f}); larger counts per row "
-            "are outside the validated domain (the float64 density and gradient checks in docs/history/m2-decision.md) "
+            "are outside the validated domain (the float64 density and gradient are checked up to it; docs/families.md) "
             "and are refused rather than assumed. Note that splitting a row into several rows changes the "
             "unweighted centring and therefore what the centred-intercept prior refers to."
         )
@@ -4044,7 +4045,7 @@ def measurement_values(term: str, x: pd.Series, sd: pd.Series, *, where: str = "
         v = s.to_numpy(dtype=float, na_value=np.nan)
         if not np.isfinite(v).all():
             raise FormulaError(f"{where} {s.name!r} ({what} of {term!r}) has missing or non-finite values (missing noisy values "
-                               "are brms's me() with mi(), not part of this slice; docs/missing-and-measurement-error.md, "
+                               "are brms's me() with mi(), not supported; docs/missing-and-measurement-error.md, "
                                "divergence D73)")
         out.append(v)
     if np.any(out[1] <= 0):
@@ -4080,7 +4081,8 @@ def validate_data(spec: ModelSpec, data: pd.DataFrame, family: str = "gaussian",
             raise FormulaError(
                 f"column {c!r} has dtype {data[c].dtype}; a predictor is numeric unless it is declared "
                 f"categorical with its reference level, for example categorical={{{c!r}: <level>}} "
-                "(treatment coding; docs/history/m3a1-decision.md)."
+                "(treatment coding, or R's polynomial contrasts for an ordered pandas Categorical declared with its lowest "
+                "level, docs/ordered-factors.md; divergence D172)."
             )
     if spec.offset is not None:
         spec.offset.values(data)                                 # numeric, finite and (for log) positive, or refused
@@ -4113,8 +4115,9 @@ def validate_data(spec: ModelSpec, data: pd.DataFrame, family: str = "gaussian",
     na = data[[c for c in needed if c not in spec.missing_columns]].isna().any()
     if na.any():
         raise FormulaError(
-            f"missing values in columns {list(na[na].index)}; M0 does not handle missing "
-            "data. Drop or impute them explicitly before fitting."
+            f"missing values in columns {list(na[na].index)}; rows with missing values are not dropped here (brms drops "
+            "them with a warning): drop or impute them explicitly before fitting, or model a missing predictor with mi() "
+            "(docs/missing-and-measurement-error.md, divergence D174)."
         )
     if len(data) < 2:
         raise FormulaError("need at least two observations")
@@ -4146,7 +4149,7 @@ def validate_data(spec: ModelSpec, data: pd.DataFrame, family: str = "gaussian",
         c = t.operands[0]
         reject_complex(f"column {c!r}", data[c])
         if not _is_numeric(data[c]):
-            raise FormulaError(f"column {c!r} of {t.name!r} has dtype {data[c].dtype}; cs() takes a numeric column in this slice "
+            raise FormulaError(f"column {c!r} of {t.name!r} has dtype {data[c].dtype}; cs() takes a numeric column "
                                "(divergence D89)")
         values = data[c].to_numpy(dtype=float)
         if not np.isfinite(values).all():

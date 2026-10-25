@@ -176,23 +176,23 @@ def test_parameters_covariates_and_their_formulas():
     (["ypos ~ a * exp(b * x)", "a ~ 1", "b ~ 1", "c ~ 1"], r"'c' does not appear in the non-linear formula"),
     (["ypos ~ a * exp(b * x)", "a ~ 1", "a ~ x"], r"'a' has two formulas"),
     (["ypos ~ a * exp(b * x)", "a ~ 1", "b ~ 1", "sigma ~ x"], r"a formula of the distributional parameter 'sigma' with a non-linear "
-                                                              r"formula is not supported in this slice \(divergence D62\)"),
+                                                              r"formula is not supported \(divergence D62\)"),
     (["ypos ~ a * exp(mu * x)", "a ~ 1", "mu ~ 1"], r"distributional parameter 'mu'"),
     (["ypos ~ a * exp(b * x)", "ypos ~ 1", "b ~ 1"], r"'ypos' is the response"),
     (["ypos ~ a * exp(b * ypos)", "a ~ 1", "b ~ 1"], r"the response 'ypos' cannot be a covariate of its own non-linear predictor"),
     (["ypos ~ a * exp(b * x)", "a ~ 1 + ypos", "b ~ 1"], r"the response 'ypos' cannot be a predictor of a non-linear parameter"),
-    (["ypos | weights(w) ~ a * exp(b * x)", "a ~ 1", "b ~ 1"], r"response addition terms .* with a non-linear formula are not supported "
-                                                              r"in this slice \(divergence D61\)"),
-    (["ypos ~ a * exp(b * x)", "a ~ 1 + offset(w)", "b ~ 1"], r"'offset\(w\)' in a non-linear parameter's formula is not supported in "
-                                                             r"this slice \(divergence D61\)"),
+    (["ypos | weights(w) ~ a * exp(b * x)", "a ~ 1", "b ~ 1"], r"response addition terms .* with a non-linear formula are not supported"
+                                                              r" \(divergence D61\)"),
+    (["ypos ~ a * exp(b * x)", "a ~ 1 + offset(w)", "b ~ 1"], r"'offset\(w\)' in a non-linear parameter's formula is not supported"
+                                                             r" \(divergence D61\)"),
     (["ypos ~ a * exp(b * x)", "a ~ 1 + mo(w)", "b ~ 1"], r"the monotonic term 'mo\(w\)' in a non-linear parameter's formula"),
     (["ypos ~ a * exp(b * x)", "a ~ 1 + gp(w)", "b ~ 1"], r"the Gaussian process 'gp\(w\)' in a non-linear parameter's formula is not "
-                                                         r"supported in this slice \(divergence D61\)"),
+                                                         r"supported \(divergence D61\)"),
     (["ypos ~ a * exp(b * x)", "a ~ 1", "b ~ 1 + gp(w, k = 5, c = 1.5)"], r"the Gaussian process 'gp\(w, k = 5, c = 1.5\)' in a "
                                                                           r"non-linear parameter's formula is not supported"),
-    (["ypos ~ a * gp(x)", "a ~ 1"], r"gp\(\) at position 4 is brms's Gaussian process \(C03\), a term of a linear formula, not a "
+    (["ypos ~ a * gp(x)", "a ~ 1"], r"gp\(\) at position 4 is brms's Gaussian process, a term of a linear formula, not a "
                                     r"function of the non-linear expression .* \(divergence D61\)"),
-    (["ypos ~ a * exp(b * mo(w))", "a ~ 1", "b ~ 1"], r"mo\(\) at position 12 is brms's monotonic term \(B03\), a term of a linear "
+    (["ypos ~ a * exp(b * mo(w))", "a ~ 1", "b ~ 1"], r"mo\(\) at position 12 is brms's monotonic term, a term of a linear "
                                                       r"formula"),
     (["ypos ~ a * abs(b * x)", "a ~ 1", "b ~ 1"], r"abs\(\) at position 4 is outside the grammar"),
     (["ypos ~ a * exp(b * x)", "a | weights(w) ~ 1", "b ~ 1"], r"a non-linear parameter's formula is '<parameter> ~ <terms>'"),
@@ -506,7 +506,7 @@ def test_prediction_refusals():
 # -- describe, identity, records, prior predictive -------------------------------------------------------------------------
 def test_describe_writes_the_model_out():
     text = rich().describe()
-    for line in ("AutoBayes M0 model with a non-linear formula: 3 non-linear parameter(s) (a, b, c), covariate(s) x (brms's C_1), "
+    for line in ("AutoBayes Gaussian model with a non-linear formula: 3 non-linear parameter(s) (a, b, c), covariate(s) x (brms's C_1), "
                  "w (brms's C_2)",
                  "  mu_i = a_i * exp(-b_i * x_i) + c_i / (1 + w_i^2)",
                  "  a_i = b_a[Intercept] + 1[z_i = q] * b_a[zq] + 1[z_i = r] * b_a[zr] + w_i * b_a[w] + u_a_g[g_i] + v_a_w|g[g_i] * w_i",

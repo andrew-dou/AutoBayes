@@ -113,8 +113,8 @@ def test_parse_multivariate(data):
     ("mvbind(y, log(y2)) ~ x", "expected 'mvbind(y1, y2, ...) ~ <terms>', the responses as column names inside mvbind()"),
     ("mvbind(y, 2y) ~ x", "mvbind() takes response column names, got ['2y']"),
     ("mvbind(y, y2) | weights(w) ~ x", "addition terms (weights(), cens(), trunc(), ...) on the responses of a multivariate model are not supported"),
-    ("mvbind(y, y2) ~ x + mi(w)", "brms's mi() (missing values modelled by a response's own formula) is not part of this slice (feature C06"),
-    ("mvbind(y, y2) ~ x + mo(w)", "a monotonic term in a multivariate formula is not verified in this slice"),
+    ("mvbind(y, y2) ~ x + mi(w)", "brms's mi() (missing values modelled by a response's own formula) is not supported (docs/multivariate.md"),
+    ("mvbind(y, y2) ~ x + mo(w)", "a monotonic term in a multivariate formula is not supported"),
     ("mvbind(y, y2) ~ x + (1 |p| g)", "a correlation ID, brms's (1 |ID| g), which correlates the responses' group-level effects, is not supported"),
     ("mvbind(y, y2) ~ x + y2", "the response(s) ['y2'] cannot also be predictors, grouping factors or offsets"),
     ("mvbind(y, y2) ~ x + y", "the formula of the response 'y' ('y ~ x + y'): 'y': the response cannot also be a predictor"),
@@ -127,7 +127,7 @@ def test_grammar_refusals(data, formula, message):
 
 def test_refused_forms_and_families(data):
     with pytest.raises(ab.FormulaError, match=re.escape("a formula of its own per response (brms's bf(y ~ ...) + bf(y2 ~ ...)) is not "
-                                                        "supported in this slice") + ".*divergence D56"):
+                                                        "supported") + ".*divergence D56"):
         ab.gaussian(["y ~ x", "y2 ~ w"], data, priors(), rescor=True)
     with pytest.raises(ab.FormulaError, match=re.escape("a distributional formula in a multivariate model")):
         ab.gaussian(["mvbind(y, y2) ~ x", "sigma ~ w"], data, priors(), rescor=True)
@@ -448,7 +448,7 @@ def test_default_priors(data):
 
 def test_describe(rescor, norescor):
     text = rescor.describe()
-    for line in ["AutoBayes multivariate M0 model of 2 responses (y, y2), with residual correlation (brms set_rescor(TRUE))",
+    for line in ["AutoBayes multivariate Gaussian model of 2 responses (y, y2), with residual correlation (brms set_rescor(TRUE))",
                  "  (y_i, y2_i) ~ MultiNormal((mu_y,i, mu_y2,i), Sigma), Sigma = diag(sigma) Rescor diag(sigma), sigma = (sigma_y, sigma_y2):",
                  "  Lrescor ~ LKJ(eta=2) (brms lkj(2) on Rescor, placed on Lrescor as lkj_corr_cholesky), sampled on Stan's cholesky_corr coordinates",
                  "Response y2: its univariate model; in the multivariate graph its PyMC variables are named y2_<name> and its likelihood is the joint one above",
@@ -471,7 +471,7 @@ def test_target_identity(rescor, norescor, data):
 
 
 def test_what_the_slice_does_not_offer(rescor):
-    with pytest.raises(ValueError, match=re.escape("prior_predictive() of a multivariate model is not part of this slice")):
+    with pytest.raises(ValueError, match=re.escape("prior_predictive() of a multivariate model is not supported")):
         ab.prior_predictive(rescor, draws=10)
-    with pytest.raises(ValueError, match=re.escape("fit_record() of a multivariate model is not part of this slice")):
+    with pytest.raises(ValueError, match=re.escape("fit_record() of a multivariate model is not supported")):
         ab.fit_record(rescor, None)

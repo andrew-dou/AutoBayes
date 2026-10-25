@@ -94,7 +94,7 @@ def check_thres(spec, formula: str) -> None:
             + ([spec.trials] if spec.trials else []) + ([spec.offset.column] if spec.offset is not None else []))
     if a.column in read:
         raise FormulaError(f"{formula!r}: {a.column!r} is the grouping column of {a.term!r} and cannot also be the response, a "
-                           f"predictor, a grouping factor or the offset in this slice ({_DOC}, divergence {DIVERGENCE})")
+                           f"predictor, a grouping factor or the offset ({_DOC}, divergence {DIVERGENCE})")
 
 
 def level_labels(column: str, s: pd.Series, where: str = "column") -> np.ndarray:

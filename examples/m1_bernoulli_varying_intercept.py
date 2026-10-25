@@ -25,6 +25,7 @@ from scipy.special import expit
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import autobayes as ab
 from autobayes.diagnostics import format_panel, panel
+from autobayes.session import compare_records, environment, fit_record, format_comparison, format_environment
 
 TRUTH = dict(a=-0.5, b=0.8, sd=0.7)
 
@@ -50,7 +51,7 @@ def main():
     ap.add_argument("--compare", type=Path, default=None, help="an earlier fit record to agree with")
     args = ap.parse_args()
 
-    print(ab.format_environment(ab.environment()))
+    print(format_environment(environment()))
     print()
     df = simulate()
     print(f"outcome rate {df.y.mean():.3f} over n = {len(df)} in {df.clinic.nunique()} clinics")
@@ -84,7 +85,7 @@ def main():
           f"a new clinic (population draw) mean {p1.mean():.3f} (SD {p1.std():.3f})")
     print("the wider SD for the new clinic is the between-clinic variance on the probability scale")
 
-    record = ab.fit_record(model, fit)
+    record = fit_record(model, fit)
     if args.record is not None:
         if args.record.exists():
             sys.exit(f"refusing to overwrite {args.record}")
@@ -94,7 +95,7 @@ def main():
     if args.compare is not None:
         earlier = json.loads(args.compare.read_text())
         print()
-        print(ab.format_comparison(ab.compare_records(record, earlier)))
+        print(format_comparison(compare_records(record, earlier)))
 
 
 if __name__ == "__main__":

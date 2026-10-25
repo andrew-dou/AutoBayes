@@ -142,11 +142,11 @@ def check_timecor(term: TimeCor, piece: str, *, response: str, trials: str | Non
                            f"{CONTEXTS})")
     if additions:
         raise FormulaError(f"{formula!r}: the residual correlation term {term.term!r} with the response addition term(s) "
-                           f"{', '.join(a.term for a in additions)} is not supported in this slice: no frozen brms case verifies "
+                           f"{', '.join(a.term for a in additions)} is not supported: no frozen brms case verifies "
                            f"the pair ({DOC}, divergence {CONTEXTS})")
     if others:
-        raise FormulaError(f"{formula!r}: the residual correlation term {term.term!r} next to {others[0]} is not supported in this "
-                           f"slice: no frozen brms case verifies the pair ({DOC}, divergence {CONTEXTS})")
+        raise FormulaError(f"{formula!r}: the residual correlation term {term.term!r} next to {others[0]} is not supported"
+                           f": no frozen brms case verifies the pair ({DOC}, divergence {CONTEXTS})")
 
 
 # -- the groups of the fitted rows -------------------------------------------------------------------------------------

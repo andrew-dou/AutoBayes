@@ -65,7 +65,7 @@ def _nonlinear_likelihood(model, mu, scales):
 
 
 GAUSSIAN = FamilySpec(
-    name="gaussian", tag="M0", parent="mu", link="identity", link_scale=None, mean_name="mu",
+    name="gaussian", tag="Gaussian", parent="mu", link="identity", link_scale=None, mean_name="mu",
     response_kind="continuous", response_dtype=None,
     scale_parameter="sigma", bambi_scale_parameter="sigma", fixed_parameters=NO_FIXED_PARAMETERS,
     bambi_family=lambda: "gaussian",

@@ -103,7 +103,7 @@ def test_rate_grammar_and_canonical_form():
     ("y | rate(exposure) ~ x", "gaussian", r"'rate\(exposure\)' is not available for the gaussian family; brms's rate\(\) is verified "
                                            r"here for the poisson, negbinomial families"),
     ("ypos | se(sdx) ~ x", "lognormal", r"'se\(sdx\)' is not available for the lognormal family"),
-    ("y | se(sdx) + weights(w) ~ x", "gaussian", r"'se\(sdx\)' together with 'weights\(w\)' is not supported in this slice.*D157"),
+    ("y | se(sdx) + weights(w) ~ x", "gaussian", r"'se\(sdx\)' together with 'weights\(w\)' is not supported.*D157"),
     ("y | weights(w) + se(sdx, sigma = TRUE) ~ x", "gaussian", r"'se\(sdx, sigma = TRUE\)' together with 'weights\(w\)'"),
     ("y | se(sdx) + cens(cens_ind) ~ x", "gaussian", r"'se\(sdx\)' together with 'cens\(cens_ind\)'"),
     ("cnt | rate(exposure) + trunc(ub = 30) ~ x", "poisson", r"'rate\(exposure\)' together with 'trunc\(ub = 30\)'"),
@@ -468,7 +468,7 @@ def test_prior_predictive_draws_with_each_row_s_scale(models):
 # -- 6. describe(), identity, the fit record ----------------------------------------------------------------------------------
 def test_describe(models):
     text = models["meta"].describe()
-    for s in ["AutoBayes M0 model with response addition term(s) se(sdx)",
+    for s in ["AutoBayes Gaussian model with response addition term(s) se(sdx)",
               "  se        : se(sdx): each row's known standard error sdx_i, 0.2011 to 0.5877 (brms se); row i's scale is sdx_i itself, "
               "and the model has no sigma (brms fixes it at 0)",
               "  y_i ~ Normal(mu_i, sdx_i)",

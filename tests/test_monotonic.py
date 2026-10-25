@@ -139,7 +139,7 @@ FORMULA_REFUSALS = [
     ("y ~ x + mo(ord) + x:mo(ord)", r"an interaction with a monotonic term \('mo\(ord\)'\) is not supported.*D40"),
     ("y ~ mo(ord) * x", r"an interaction with a monotonic term.*D40"),
     ("y ~ mo(ord):mo(neg)", r"an interaction with a monotonic term.*D40"),
-    ("y ~ mo(ord) + (1 + mo(ord) | g)", r"a monotonic effect cannot vary by 'g' in this slice.*D41"),
+    ("y ~ mo(ord) + (1 + mo(ord) | g)", r"a monotonic effect cannot vary by 'g'.*D41"),
     ("y ~ mo(ord, id = 'a')", r"mo\(\) takes one column here; brms's id argument.*D42"),
     ("y ~ mo(log(ord))", r"mo\(\) takes a column name here, not an expression \('log\(ord\)'.*D42"),
     ("y ~ mo(ord + 1)", r"not an expression"),
@@ -417,7 +417,7 @@ def test_predictions_add_the_monotonic_term():
 def test_describe_and_names():
     m = gaussian("y ~ x + mo(ord) + (1 | g)", sd=ab.HalfNormal(1))
     text = m.describe()
-    for line in ("AutoBayes M0 model with monotonic effect(s)",
+    for line in ("AutoBayes Gaussian model with monotonic effect(s)",
                  "  mo(ord)   : monotonic effect of 'ord' (brms mo()): whole numbers 1..4 coded as the value minus 1, 0..3 (brms's Xmo), "
                  "D = 3 steps (brms's Jmo)",
                  "  mu_i = a_c + (x_x - mean(x_x)) * b_x + b_mo(ord) * mo(ord)_i + u[g_i]",

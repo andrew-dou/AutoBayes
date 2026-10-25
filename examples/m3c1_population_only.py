@@ -22,6 +22,7 @@ import pandas as pd
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import autobayes as ab
 from autobayes.diagnostics import format_panel, panel
+from autobayes.session import environment, fit_record, format_environment
 
 TRUTH = dict(a=2.0, b=0.5, low=-0.6, high=0.9, dlow=0.3, dhigh=-0.8, sigma=0.4)
 DOSE_MEAN = {"control": 0.0, "low": 1.0, "high": -0.5}
@@ -48,7 +49,7 @@ def main():
     ap.add_argument("--record", type=Path, default=None)
     args = ap.parse_args()
 
-    print(ab.format_environment(ab.environment()))
+    print(format_environment(environment()))
     df = simulate()
     priors = ab.Priors(
         intercept=ab.Normal(0, 5),                  # a_c: expected y at the means of every expanded design column
@@ -65,7 +66,7 @@ def main():
     new = pd.DataFrame({"dose": [0.0, 1.0, 0.0, 1.0], "arm": ["high", "high", "control", "low"]})      # no grouping column
     out = model.predict(fit, newdata=new, kind="mean")
     print("expected y:", np.round(out["mu"].mean(("chain", "draw")).to_numpy(), 3), "| new_groups:", out.attrs["new_groups"])
-    record = ab.fit_record(model, fit)
+    record = fit_record(model, fit)
     if args.record is not None:
         if args.record.exists():
             sys.exit(f"refusing to overwrite {args.record}")

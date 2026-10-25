@@ -71,7 +71,7 @@ FORM = ("'cbind(y1, ..., yK) | trials(n) ~ terms' (brms's matrix response: the c
 
 
 def _refuse(text: str, what: str) -> None:
-    raise FormulaError(f"{text!r}: {what} is not supported for the multinomial families in this slice (docs/multinomial.md, "
+    raise FormulaError(f"{text!r}: {what} is not supported for the multinomial families (docs/multinomial.md, "
                        f"divergence {DIVERGENCE})")
 
 
@@ -530,10 +530,10 @@ class MultinomialModel(Model):
         if imputed:
             raise FormulaError(f"a {fam.name} model in a multivariate formula is not supported (divergence {DIVERGENCE})")
         if data2:
-            raise FormulaError(f"data2 holds the matrices of terms such as sar(M), which a {fam.name} model does not take in this slice "
+            raise FormulaError(f"data2 holds the matrices of terms such as sar(M), which a {fam.name} model does not take "
                                f"(docs/multinomial.md, divergence {DIVERGENCE})")
         if not center_predictors:
-            raise FormulaError(f"center_predictors=False with the {fam.name} family is not supported in this slice: brms's bf(..., "
+            raise FormulaError(f"center_predictors=False with the {fam.name} family is not supported: brms's bf(..., "
                                "center = FALSE) makes each category's intercept a coefficient of class b, which no frozen case "
                                f"verifies (docs/multinomial.md, divergence {DIVERGENCE})")
         if not isinstance(priors, Priors):
@@ -1139,7 +1139,7 @@ def multinomial_default_priors(formula, data: pd.DataFrame, *, family: str, cate
 
     fam = get_family(family)
     if not center_predictors:
-        raise FormulaError(f"center_predictors=False with the {fam.name} family is not supported in this slice (docs/multinomial.md, "
+        raise FormulaError(f"center_predictors=False with the {fam.name} family is not supported (docs/multinomial.md, "
                            f"divergence {DIVERGENCE})")
     if imputed:
         raise FormulaError(f"a {fam.name} model in a multivariate formula is not supported (divergence {DIVERGENCE})")

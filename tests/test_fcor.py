@@ -120,9 +120,9 @@ FORMULA_REFUSALS = [
     ("y | weights(w) ~ x + fcor(V)", r"fcor\(V\) with the response addition term\(s\) weights\(w\) is not supported \(brms refuses "
                                      r"weights\(\) with it too: 'Invalid addition arguments for this model'.*D144"),
     ("y | trunc(lb = -5) ~ x + fcor(V)", r"with the response addition term\(s\) trunc\(lb = -5\) is not supported"),
-    ("y ~ x + sar(W) + fcor(V)", r"fcor\(V\) next to the SAR term 'sar\(W, type = \"lag\"\)' is not supported in this slice: "
+    ("y ~ x + sar(W) + fcor(V)", r"fcor\(V\) next to the SAR term 'sar\(W, type = \"lag\"\)' is not supported: "
                                  r"no frozen brms case verifies the pair \(docs/fcor.md, divergence D144\)"),
-    ("y ~ x + ar(t) + fcor(V)", r"fcor\(V\) next to the autocorrelation term 'ar\(time = t, p = 1\)' is not supported in this slice: "
+    ("y ~ x + ar(t) + fcor(V)", r"fcor\(V\) next to the autocorrelation term 'ar\(time = t, p = 1\)' is not supported: "
                                 r"no frozen brms case verifies the pair \(docs/fcor.md, divergence D144\)"),
     ("y ~ x + mo(k) + fcor(V)", r"fcor\(V\) next to the monotonic term 'mo\(k\)'"),
     ("y ~ x + gp(z) + fcor(V)", r"fcor\(V\) next to the Gaussian process 'gp\(z\)'"),
@@ -144,8 +144,8 @@ def test_mixtures_and_distributional_formulas_refuse_the_term():
     with pytest.raises(ab.FormulaError, match=r"fcor\(V\) in a mixture is not supported, as in brms \('Explicit covariance terms can "
                                               r"only be specified on mu'"):
         parse_formula("y ~ x + fcor(V)", None, "mixture")
-    with pytest.raises(ab.FormulaError, match=r"'y ~ x \+ fcor\(V\)': fcor\(V\) with a distributional formula is not supported in this "
-                                              r"slice \(brms accepts bf\(y ~ x \+ fcor\(M\), sigma ~ z\), its normal_fcor_het.*D144"):
+    with pytest.raises(ab.FormulaError, match=r"'y ~ x \+ fcor\(V\)': fcor\(V\) with a distributional formula is not supported"
+                                              r" \(brms accepts bf\(y ~ x \+ fcor\(M\), sigma ~ z\), its normal_fcor_het.*D144"):
         gaussian(["y ~ x + fcor(V)", "sigma ~ z"], sigma={"intercept": ab.Normal(0, 1), "b": ab.Normal(0, 1)})
     with pytest.raises(ab.FormulaError, match=r"'sigma ~ z \+ fcor\(V\)': fcor\(V\) in a distributional formula is not supported: it "
                                               r"belongs to the response formula, as in brms"):
@@ -156,11 +156,11 @@ def test_multivariate_and_nonlinear_models_refuse_the_term():
     """brms gives each response of mvbind() its own Mfcor_y (D144); a list of response formulas reads each formula and refuses
     it there; a non-linear model takes no fcor() in its expression (outside the grammar) or in a parameter's formula."""
     resp = {"y": dict(LINEAR), "y2": dict(LINEAR)}
-    with pytest.raises(ab.FormulaError, match=r"'fcor\(V\)': a fixed residual covariance in a multivariate formula is not verified in "
-                                              r"this slice \(brms gives each response its own matrix, Mfcor_y and Mfcor_y2\).*D144"):
+    with pytest.raises(ab.FormulaError, match=r"'fcor\(V\)': a fixed residual covariance in a multivariate formula is not supported"
+                                              r" \(brms gives each response its own matrix, Mfcor_y and Mfcor_y2\).*D144"):
         ab.gaussian("mvbind(y, y2) ~ x + fcor(V)", FRAME, ab.Priors(resp=resp, rescor=ab.LKJ(2)), rescor=True)
-    with pytest.raises(ab.FormulaError, match=r"'w ~ x \+ fcor\(V\)': fcor\(V\) in a multivariate model is not verified in this "
-                                              r"slice; write it in a univariate model.*D144"):
+    with pytest.raises(ab.FormulaError, match=r"'w ~ x \+ fcor\(V\)': fcor\(V\) in a multivariate model is not supported"
+                                              r"; write it in a univariate model.*D144"):
         ab.gaussian(["y ~ mi(xm) + x", "xm | mi() ~ z", "w ~ x + fcor(V)"], FRAME, ab.Priors(resp={**resp, "xm": dict(LINEAR),
                                                                                                       "w": dict(LINEAR)}), rescor=False)
     with pytest.raises(ab.FormulaError, match=r"'xm \| mi\(\) ~ z \+ fcor\(V\)': fcor\(V\) with the response addition term\(s\) "
@@ -171,14 +171,14 @@ def test_multivariate_and_nonlinear_models_refuse_the_term():
     with pytest.raises(ab.FormulaError, match=r"fcor\(\) at position \d+ is outside the grammar"):
         ab.gaussian(["y ~ a * exp(b * x) + fcor(V)", "a ~ 1", "b ~ 1"], FRAME, priors, nl=True)
     with pytest.raises(ab.FormulaError, match=r"'a ~ 1 \+ fcor\(V\)': fcor\(V\) in a non-linear parameter's formula is not supported: "
-                                              r"a non-linear model takes no fixed residual covariance in this slice.*D144"):
+                                              r"a non-linear model takes no fixed residual covariance.*D144"):
         ab.gaussian(["y ~ a * exp(b * x)", "a ~ 1 + fcor(V)", "b ~ 1"], FRAME, priors, nl=True)
     for kwargs in (dict(nl=True), dict(rescor=False)):          # data2 belongs to a univariate linear model
         for build in (lambda: ab.gaussian("y ~ x", FRAME, ab.Priors(**LINEAR), data2={"V": M}, **kwargs),
                       lambda: ab.default_priors("y ~ x", FRAME, data2={"V": M}, **kwargs)):
             with pytest.raises(ab.FormulaError, match=r"data2 is read by a SAR term sar\(M, type = \.\.\.\), a fixed residual "
                                                       r"covariance fcor\(M\) or a CAR term car\(W, gr = \.\.\.\), which a non-linear or "
-                                                      r"multivariate model does not take in this slice .*divergences D141, D143, D144"):
+                                                      r"multivariate model does not take .*divergences D141, D143, D144"):
                 build()
 
 
@@ -423,7 +423,7 @@ def test_new_rows_are_refused():
 # -- describe(), identity, records, prior predictive ------------------------------------------------------------------
 def test_describe():
     text = gaussian().describe()
-    for line in ("AutoBayes M0 model with fixed residual covariance fcor(V) (population-level only)",
+    for line in ("AutoBayes Gaussian model with fixed residual covariance fcor(V) (population-level only)",
                  "  formula   : y ~ x + fcor(V)",
                  "  fcor      : fcor(V): data2['V'], the 8 x 8 covariance of the residuals before the factor sigma^2 (brms's Mfcor), its "
                  "rows and columns the fitted rows in data order; diagonal 0.64 to 1.44, log det "

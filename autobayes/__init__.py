@@ -58,7 +58,7 @@ try:
 except ImportError:
     pass
 
-from autobayes.formula import Categorical, FormulaError, GroupTerm, ModelSpec, PopTerm, parse_formula
+from autobayes.formula import FormulaError
 from autobayes.priors import (
     Beta,
     Dirichlet,
@@ -89,9 +89,8 @@ from autobayes.post_processing import Waic, loo_compare, model_weights, waic   #
 from autobayes.hypothesis import Hypothesis, hypothesis                       # D06, docs/post-processing.md
 from autobayes.conditional_effects import conditional_effects                # D06
 from autobayes.prior_draws import prior_draws                                # E05: brms's sample_prior draws, docs/post-processing.md
-from autobayes.diagnostics import panel
-from autobayes.session import compare_records, environment, fit_record, format_comparison, format_environment
-from autobayes.nonlinear import NonlinearModel, NonlinearSpec        # non-linear formulas, nl=True (C02, docs/nonlinear.md)
+from autobayes import diagnostics, session   # their functions are imported from these modules (F09, docs/namespace-and-messages.md)
+from autobayes.nonlinear import NonlinearModel        # non-linear formulas, nl=True (C02, docs/nonlinear.md)
 from autobayes.model import exgaussian, exponential, shifted_lognormal, skew_normal, weibull   # D01, docs/continuous-families.md
 from autobayes.model import beta_binomial, geometric, negbinomial2   # D02, docs/discrete-families.md
 from autobayes.shrinkage import Horseshoe, R2D2   # D07: brms's horseshoe() and R2D2() on b, docs/shrinkage-priors.md
@@ -109,15 +108,15 @@ from autobayes.summaries import Summary, VarCorr, coef, fixef, posterior_summary
 from autobayes.model import cox   # F05, docs/cox.md
 
 __all__ = [
-    "Beta", "Categorical", "DeviceError", "Dirichlet", "Exponential", "FitResult", "Flat", "FormulaError", "Gamma", "GroupTerm", "HalfCauchy",
-    "HalfNormal", "HalfStudentT", "InverseGamma", "LKJ", "Model", "ModelSpec", "MultivariateModel", "Normal", "PopTerm", "Prior",
-    "PriorError", "Priors", "StudentT", "bernoulli", "beta", "binomial", "compare_records", "default_priors", "environment", "fit", "fit_record",
-    "gamma", "lognormal", "negbinomial", "student", "poisson", "format_comparison", "format_environment", "gaussian", "panel",
-    "parse_formula", "predict", "prior_predictive", "zero_inflated_poisson", "hurdle_poisson", "cumulative", "categorical",
+    "Beta", "DeviceError", "Dirichlet", "Exponential", "FitResult", "Flat", "FormulaError", "Gamma", "HalfCauchy",
+    "HalfNormal", "HalfStudentT", "InverseGamma", "LKJ", "Model", "MultivariateModel", "Normal", "Prior",
+    "PriorError", "Priors", "StudentT", "bernoulli", "beta", "binomial", "default_priors", "fit",
+    "gamma", "lognormal", "negbinomial", "student", "poisson", "gaussian",
+    "predict", "prior_predictive", "zero_inflated_poisson", "hurdle_poisson", "cumulative", "categorical",
     "mixture",
     "Loo", "bayes_R2", "log_lik", "loo",
 ]
-__all__ += ["NonlinearModel", "NonlinearSpec"]         # C02
+__all__ += ["NonlinearModel"]                          # C02
 __all__ += ["Waic", "loo_compare", "model_weights", "waic"]   # D05
 __all__ += ["Uniform", "exgaussian", "exponential", "shifted_lognormal", "skew_normal", "weibull"]   # D01
 __all__ += ["Hypothesis", "conditional_effects", "hypothesis"]   # D06
@@ -136,3 +135,29 @@ __all__ += ["dirichlet", "logistic_normal"]            # F01b
 __all__ += ["Summary", "VarCorr", "coef", "fixef", "posterior_summary", "ranef", "residuals", "summary"]   # F07
 __all__ += ["cox"]                                     # F05
 __version__ = "0.8.0"
+
+# F09 (docs/namespace-and-messages.md): names of the scaffold era's session records and of the term model's internals, no
+# longer exported (``from autobayes import *`` leaves them out). Each stays importable from its module; reaching it as
+# ``autobayes.<name>`` still works and warns once per name with a DeprecationWarning naming that module.
+_MOVED = {
+    "compare_records": "autobayes.session", "environment": "autobayes.session", "fit_record": "autobayes.session",
+    "format_comparison": "autobayes.session", "format_environment": "autobayes.session",
+    "panel": "autobayes.diagnostics",
+    "Categorical": "autobayes.formula", "GroupTerm": "autobayes.formula", "ModelSpec": "autobayes.formula",
+    "PopTerm": "autobayes.formula", "parse_formula": "autobayes.formula",
+    "NonlinearSpec": "autobayes.nonlinear",
+}
+
+
+def __getattr__(name):
+    module = _MOVED.get(name)
+    if module is None:
+        raise AttributeError(f"module 'autobayes' has no attribute {name!r}")
+    import importlib
+    import warnings
+
+    value = getattr(importlib.import_module(module), name)
+    warnings.warn(f"autobayes.{name} is deprecated and will be removed from the top-level namespace; import it from its "
+                  f"module: from {module} import {name}", DeprecationWarning, stacklevel=2)
+    globals()[name] = value                                  # found here from now on: one warning per name
+    return value
