@@ -1926,7 +1926,23 @@
     "D137"
    ],
    "next_action": "none",
-   "reserved_divergences": "D136-D137"
+   "reserved_divergences": "D136-D137",
+   "gates": {
+    "sha": "f138205573c1",
+    "dirty_tree": false,
+    "base": "origin/main",
+    "when": "2026-10-24T11:01Z",
+    "results": {
+     "immutability": {
+      "status": "pass",
+      "seconds": 0.0
+     },
+     "oracle": {
+      "status": "pass",
+      "seconds": 722.0
+     }
+    }
+   }
   },
   {
    "id": "F01b_dirichlet_logistic_normal",
@@ -2365,12 +2381,17 @@
    "depends_on": [
     "F08_syntax_fixes"
    ],
-   "status": "gates_green",
+   "status": "merged",
    "summary": "syntax audit (#85): scaffold names out of __all__ (deprecated top-level access), milestone jargon out of describe() and messages, divergence rows for the undocumented call-surface differences",
-   "pr": null,
+   "pr": 106,
    "attempts": 0,
-   "divergences": [],
-   "next_action": "implementing off 2b41c2d",
+   "divergences": [
+    "D172",
+    "D173",
+    "D174",
+    "D175"
+   ],
+   "next_action": "none",
    "reserved_divergences": "D172-D175",
    "gates": {
     "sha": "c0832cc44867",
