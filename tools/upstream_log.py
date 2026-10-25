@@ -25,10 +25,12 @@ TEX = DIR / "upstream-log.tex"
 SCHEMA = "autobayes-upstream-log-v1"
 FIELDS = ["id", "title", "component", "functions", "versions", "divergences", "found", "kind", "what", "observed",
           "expected", "status", "repro", "upstream", "fix", "known_upstream"]
-COMPONENTS = ["brms", "Stan Math", "rstan", "loo", "posterior"]
+COMPONENTS = ["brms", "Stan Math", "rstan", "loo", "posterior", "R"]
 KINDS = ["wrong result", "inexact numerics", "missing validation"]
 STATUSES = ["reproduced", "recorded only", "not a bug after all"]
-UPSTREAMS = ["paul-buerkner/brms", "stan-dev/math", "stan-dev/rstan", "stan-dev/loo", "stan-dev/posterior"]
+UPSTREAMS = ["paul-buerkner/brms", "stan-dev/math", "stan-dev/rstan", "stan-dev/loo", "stan-dev/posterior",
+             "R (bugs.r-project.org)"]
+UPSTREAM_URLS = {"R (bugs.r-project.org)": "https://bugs.r-project.org"}   # the others are GitHub repositories
 KNOWN = ["not found", "related", "known", "known, fixed upstream"]
 ROWS = 10
 
@@ -162,7 +164,7 @@ def render(log: dict) -> str:
                 r"\item[Expected] " + tex(e["expected"]),
                 r"\item[Reproduce] " + repro,
                 r"\item[Fix] " + tex(e["fix"]),
-                r"\item[Belongs in] \url{https://github.com/" + e["upstream"] + "}",
+                r"\item[Belongs in] \url{" + UPSTREAM_URLS.get(e["upstream"], "https://github.com/" + e["upstream"]) + "}",
                 r"\item[Known upstream] " + known_block(e["known_upstream"]),
                 r"\end{description}", ""]
     out += [r"\end{document}", ""]
