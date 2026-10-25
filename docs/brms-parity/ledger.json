@@ -2141,12 +2141,17 @@
    "depends_on": [
     "E04_cens_trunc_families"
    ],
-   "status": "gates_green",
+   "status": "merged",
    "summary": "cox() proportional hazards with brms's M-spline baseline hazard",
-   "pr": null,
+   "pr": 103,
    "attempts": 0,
-   "divergences": [],
-   "next_action": "implementing; fixtures #101",
+   "divergences": [
+    "D152",
+    "D153",
+    "D154",
+    "D155"
+   ],
+   "next_action": "none",
    "reserved_divergences": "D152-D155",
    "gates": {
     "sha": "5c1f267384d9",
