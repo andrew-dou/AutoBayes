@@ -502,7 +502,8 @@ def _r_variable_order(spec) -> dict[str, int]:
 def brms_coefficient_names(spec) -> dict[str, str]:
     """brms's name of each design column of ``spec`` (its ``b`` coefficient labels, ``rename()`` of R's model-matrix
     column names): ``x``; ``zq`` for level ``q`` of ``z``; ``x:zq``, ``x:w`` and ``zq:hh2`` with the operands in the order
-    R writes them; ``logxpos`` and ``IxE2`` for transforms; and of each monotonic term (B03), keyed by its name, its
+    R writes them; ``logxpos`` and ``IxE2`` for transforms; ``fo.L``, ``orderedz.Q``, ``foE4`` for the polynomial contrasts of an
+    ordered factor (F08); and of each monotonic term (B03), keyed by its name, its
     coefficient's ``moord`` (brms's ``bsp_moord``); of each category-specific term ``cs(x)`` (D04), keyed by its name, ``x``
     (brms's class ``b`` row of its ``bcs``). ``spec`` must have seen the data (the levels name columns)."""
     from autobayes.formula import interaction_cells
@@ -520,6 +521,8 @@ def brms_coefficient_names(spec) -> dict[str, str]:
             out[t.name] = brms_rename(t.name)
         elif t.kind == "transform":
             out[t.columns[0]] = brms_rename(t.transform.term)
+        elif t.kind == "contrast":                                    # F08: fo.L, ordered(z).Q -> orderedz.Q, fo^4 -> foE4
+            out[t.columns[0]] = brms_rename(t.name)
         elif t.kind == "categorical":
             for level, col in zip(t.levels, t.columns):
                 out[col] = brms_rename(f"{t.name}{level}")

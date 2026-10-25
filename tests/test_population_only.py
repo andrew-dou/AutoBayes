@@ -139,8 +139,8 @@ def test_grammar_accepts_population_only_forms_and_keeps_refusals():
     with pytest.raises(ValueError, match="no group-level term"):
         ab.parse_formula("y ~ x").group_term
     for formula, needle in [("y ~ x + (1 | g) + (1 | g)", "duplicate grouping"),
-                            ("y ~ x + (x | g)", "varying slopes"), ("y ~ (1 | g)", "no population-level predictor"),   # A02 accepts '(1 + x | g)'
-                            ("y ~ x + (x || g)", "without the varying intercept"),
+                            ("y ~ x + (0 + x | g)", "varying slopes"), ("y ~ (1 | g)", "no population-level predictor"),   # A02 accepts '(1 + x | g)'
+                            ("y ~ x + (0 + x || g)", "without the varying intercept"),   # F08 accepts '(x | g)' and '(x || g)' as brms reads them
                             ("y ~ sin(x)", "function calls"), ("y ~ x + x", "duplicated"), ("y ~ y", "response cannot also be"),   # A05 accepts log(x)
                             ("y ~ x:z", "main effect 'x' is missing"), ("y ~ x + (1 | g/h/k)", "only two factors"), ("y x", "expected 'response ~ terms'")]:   # A03 accepts '(1 | g/h)'
         with pytest.raises(ab.FormulaError, match=needle):

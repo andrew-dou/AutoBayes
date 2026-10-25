@@ -181,8 +181,8 @@ def test_weights_column_must_exist_and_may_be_any_numeric_column():
 def test_censoring_codes_and_truncation_bounds_are_validated():
     for codes, needle in [([2] + [0] * 39, r"code 2 \(interval censoring\) needs brms's cens\(c, y2\)"),
                           ([0.5] + [0] * 39, r"censoring codes must be -1 \(left\), 0 \(none\) or 1 \(right\); found 0.5"),
-                          (["left"] * 40, r"must be numeric, -1 \(left\), 0 \(none\) or 1 \(right\); recode brms's labels"),
-                          ([True, False] * 20, r"must be numeric")]:
+                          (["Left"] * 40, r"the censoring labels of 'cens\(c\)' are brms's 'left', 'none', 'right' and 'interval'"),
+                          ([1.5, "none"] * 20, r"the censoring labels .*; found 1.5")]:   # F08 reads brms's labels and TRUE / FALSE
         with pytest.raises(ab.FormulaError, match=needle):
             ab.gaussian("y | cens(c) ~ x + (1 | g)", DATA.assign(c=codes), GAUSS)
     with pytest.raises(ab.FormulaError, match=r"response 'y' at row \d+ is .*, outside the bounds of 'trunc\(lb = 0\)' \(\d+ row\(s\) outside\)"):

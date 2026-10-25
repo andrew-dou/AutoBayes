@@ -73,9 +73,9 @@ def test_grammar_accepts_the_correlated_form():
     assert nested.group_terms == (GroupTerm("g", ("Intercept", "x"), True), GroupTerm("g:h", ("Intercept", "x"), True))
     assert ab.parse_formula("y ~ x + w + (1 + x + w | g:h)").group_terms == (GroupTerm("g:h", ("Intercept", "x", "w"), True),)
     for formula, message in [("y ~ x + (1 + x |p| g)", "in a formula on its own it is not supported here"),   # D08: shared with sigma ~ only
-                             ("y ~ x + (1 + x | gr(g, cor = FALSE))", "brms's gr() options ['cor'] are not supported; gr() takes one "
-                                                                      "grouping column and by = <column> here (gr(g, cor = FALSE) is '||'"),
-                             ("y ~ x + (x | g)", "varying slopes without the varying intercept are not supported; write '(1 + x | g)'"),
+                             ("y ~ x + (1 | gr(g, cov = A))", "brms's gr() options ['cov'] are not supported; gr() takes one grouping "
+                                                              "column, by = <column>, cor = FALSE (brms's '||')"),   # F08 takes cor and id
+                             ("y ~ x + (0 + x | g)", "varying slopes without the varying intercept are not supported; write '(1 + x | g)'"),
                              ("y ~ w + (1 + x | g)", "the varying slope 'x' must also be a population-level term")]:
         with pytest.raises(ab.FormulaError, match=re.escape(message)):
             ab.parse_formula(formula)

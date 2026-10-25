@@ -91,7 +91,7 @@ REFUSALS = [
     ("y ~ x + (1 | mm(g, g))", {}, "a member column appears twice in mm()"),
     ("y ~ x + (1 | mm(g, g2, weights = cbind(w1)))", {}, "2 member columns and 1 weight columns"),
     ("y ~ x + (1 | mm(g, g2, weights = w1))", {}, "weights = takes cbind(<column>, <column>, ...)"),
-    ("y ~ x + (1 | gr(g, cor = FALSE))", {}, "brms's gr() options ['cor'] are not supported"),
+    ("y ~ x + (1 | gr(g, dist = 'student'))", {}, "brms's gr() options ['dist'] are not supported"),   # F08 takes cor = FALSE as '||'
     ("y ~ x + (1 + x | gr(g, by = gby))", {}, "varying slopes with gr(by = ) are not supported in this slice"),
     ("y ~ x + (1 | gr(g, by = g))", {}, "cannot be its own by column"),
     ("y ~ x + gby + (1 | gr(g, by = gby))", {}, "'gby' is a by column of the group term and cannot also be a predictor"),

@@ -658,8 +658,9 @@ class Priors:
         if not isinstance(self.b, Mapping):
             raise PriorError(f"b must be a Prior or a mapping from term to prior, got {type(self.b).__name__}")
         given = dict(self.b)
-        missing = [t for t in spec.terms if t not in given]
-        extra = [k for k in given if k not in spec.terms]
+        keys = list(dict.fromkeys(_prior_key(spec, t) for t in spec.pop_terms))   # F08: an ordered factor's contrasts share one key
+        missing = [t for t in keys if t not in given]
+        extra = [k for k in given if k not in keys]
         if missing or extra:
             hint = ""
             for k in extra:
@@ -678,11 +679,14 @@ class Priors:
                     hint = f"; the monotonic term's coefficient is keyed by the term, b={{{mo.name!r}: prior}}"
                     break
             raise PriorError(
-                f"coefficient priors must cover exactly the predictor terms {list(spec.terms)}; "
+                f"coefficient priors must cover exactly the predictor terms {keys}; "
                 f"missing {missing}, unexpected {extra}{hint}"
             )
         out: dict[str, Prior] = {}
         for t in spec.pop_terms:
+            if t.kind == "contrast":                          # F08: keyed by the ordered factor's term, one prior or one per contrast
+                out[t.name] = _contrast_prior(spec, t, given)
+                continue
             term, entry = t.name, given[t.name]
             if not t.is_vector:
                 if not isinstance(entry, Prior):
@@ -1478,3 +1482,37 @@ class Priors:
             params = {k: np.array([[float(pr.params[k]) for pr in row] for row in grid]) for k in grid[0][0].params}
             out[term.name] = component_prior(grid[0][0].name, params if term.levels else {k: v[0] for k, v in params.items()})
         return out
+
+
+def _prior_key(spec, t) -> str:
+    """The key of a population-level term's priors in ``Priors(b={...})``: the term's name, or for a polynomial contrast of an
+    ordered factor (F08) the factor's term as written, ``fo`` or ``ordered(z)``, which keys all of its contrasts."""
+    return spec.categorical(t.factor).term_name if t.kind == "contrast" else t.name
+
+
+def _contrast_prior(spec, t, given) -> "Prior":
+    """F08: the prior of the polynomial contrast ``t`` (``fo.L``) from its factor's entry: one ``Prior`` for every contrast, or a
+    mapping by R's contrast labels, ``{".L": ..., ".Q": ...}``, covering exactly the factor's contrasts (only their structure is
+    checked before the levels are known)."""
+    cat = spec.categorical(t.factor)
+    key = cat.term_name
+    entry = given[key]
+    if isinstance(entry, Prior):
+        return entry
+    if not isinstance(entry, Mapping):
+        raise PriorError(f"the ordered factor {key!r} takes one prior or a mapping {{contrast: prior}} by R's contrast labels "
+                         f"('.L', '.Q', ...), got {type(entry).__name__}")
+    bad = next((v for v in entry.values() if not isinstance(v, Prior)), None)
+    if bad is not None:
+        raise PriorError(f"prior of a polynomial contrast of {key!r} must be a Prior, got {type(bad).__name__}")
+    if not entry:
+        raise PriorError(f"per-contrast priors for the ordered factor {key!r} are empty: give one Prior, or one per polynomial "
+                         "contrast by R's labels ('.L', '.Q', ...)")
+    if not cat.levels:                                         # structure only; the contrasts need the data
+        return next(iter(entry.values()))
+    wanted = list(cat.contrast_labels)
+    missing, extra = [k for k in wanted if k not in entry], [k for k in entry if k not in wanted]
+    if missing or extra:
+        raise PriorError(f"per-contrast priors for the ordered factor {key!r} must cover exactly its polynomial contrasts {wanted} "
+                         f"(R's labels: {', '.join(cat.contrast_columns)}); missing {missing}, unexpected {extra}")
+    return entry[t.name[len(key):]]

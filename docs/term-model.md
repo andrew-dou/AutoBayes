@@ -22,7 +22,12 @@ One entry per term as written, in design order (main effects, then interactions)
 | `me(x, sdx)` (C06, docs/missing-and-measurement-error.md) | `measurement_error` | `()`: its coefficient (brms's `bsp`) multiplies the latent values of `x` | `()` | `()` |
 | `mi(col)` (C06) | `missing` | `()`: its coefficient (brms's `bsp`) multiplies `col` completed by its missing values | `()` | `()` |
 | `cs(x)` (D04, docs/ordinal-categorical.md) | `category_specific` | `()`: one coefficient per threshold (brms's `bcs` row of `x`, a vector `cs(x)`) multiplies `x` in each threshold's predictor `mu_cs` | `()` | `()` |
+| `fo`, an ordered pandas Categorical declared `categorical={"fo": "lo"}`, or `ordered(z)` (F08, docs/ordered-factors.md) | `contrast`, one term per polynomial contrast | `("fo.L",)`, `("fo.Q",)`, ...: R's model-matrix names (`ordered(z).L`, `fo^4`) | `()` | `()`; `term.factor` is the column, whose `Categorical` has `coding="poly"` |
 
+F08: an ordered factor is one `contrast` term per polynomial contrast once the data are seen (`Categorical.contrast_columns`;
+before that one placeholder term of its name), each a scalar coefficient with one design column, `pop_term_design` its contrast
+(`formula.poly_contrasts`, R's `contr.poly`) at each row's level, handed to Bambi in backticks like a transform; its priors are
+keyed by the factor's term (`b={"fo": ...}`, a mapping by R's labels `.L`, `.Q`, ...), and brms names it `b_fo.L`.
 `term.operands` are the data columns the term is built from (`(x,)`, `(z,)`, `(x, z)`, `(x, w)`, `(z, h)`, and
 `(xpos,)` for `log(xpos)`); `term.categorical` names the operands declared categorical and `term.is_vector` (one
 coefficient per level) is whether there are any, which is known before the data are seen. A transform term's

@@ -579,6 +579,12 @@ def parse_nonlinear(formulas, data: pd.DataFrame | None = None, family: str = "g
     used = names_in_order(expression)
     nl_names = [p for p, _, _ in parsed]
     for name, _, text in parsed:
+        owner = next((p for p, r, _ in parsed if p != name and re.search(rf"(?<![A-Za-z0-9_.]){re.escape(name)}(?![A-Za-z0-9_.(])", r)),
+                     None)
+        if name not in used and owner is not None:             # F08: brms's nlf(a ~ c * z) + lf(c ~ 1), named
+            raise FormulaError(f"{text!r}: {name!r} is a parameter of the formula of the non-linear parameter {owner!r} (brms's "
+                               f"nlf({owner} ~ ...), a non-linear parameter nested in another); nested non-linear parameters are not "
+                               "supported (docs/nonlinear.md, divergence D60)")
         if name not in used:
             raise FormulaError(f"{text!r}: {name!r} does not appear in the non-linear formula {main.strip()!r}; every formula after "
                                "the first is a non-linear parameter's (brms: 'The parameter ... is not a valid distributional or "
@@ -1305,6 +1311,8 @@ def _column_text(t, level) -> str:
         return t.transform.expression(f"{t.transform.column}_i")
     if t.kind == "categorical":
         return f"1[{t.name}_i = {level}]"
+    if t.kind == "contrast":                               # F08: an ordered factor's polynomial contrast at row i's level
+        return f"{t.name}[{t.factor}_i]"
     if not t.categorical:                                  # x:w
         return " * ".join(f"{c}_i" for c in t.operands)
     if len(t.categorical) == 1:                            # x:z

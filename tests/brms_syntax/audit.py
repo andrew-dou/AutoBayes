@@ -12,7 +12,8 @@ Outcomes (the ``autobayes.outcome`` of an entry):
 
 - ``match``: AutoBayes builds the model and its reading equals brms's Stan data (``compare``: the population-level
   design columns by content, the group-level terms by the partition of the rows and the covariate column, the level
-  labels, and the addition and special-term data the model carries).
+  labels, the addition and special-term data the model carries, and the Stan data of the terms that read ``data2``,
+  ``car()``, ``sar()`` and ``fcor()``, whose matrices ``make_data2`` builds as ``brms_reading.R`` does; F08).
 - ``differs``: AutoBayes builds a model whose reading differs from brms's in a way a divergence row documents.
 - ``misread``: AutoBayes builds a model whose reading differs from brms's, silently.
 - ``refused_named``: AutoBayes refuses with a deliberate error whose message names the construct.
@@ -187,7 +188,23 @@ def decode(obj) -> np.ndarray:
 
 # -- the AutoBayes side -------------------------------------------------------------------------------------
 DEFAULT_PRIOR_KWARGS = ("categorical", "nu", "link", "center_predictors", "families", "order", "rescor", "nl", "imputed",
-                        "quantile")
+                        "quantile", "data2")
+
+
+def make_data2(n: int = N_ROWS) -> dict:
+    """The ``data2`` objects the entries name, built as ``brms_reading.R`` builds them: ``M_car``, a path adjacency over the
+    levels of ``g`` labelled by level (car()); ``M_sar``, the row-standardised path adjacency over the rows (sar());
+    ``V_fcor``, 0.5 on the diagonal plus 0.1 everywhere, over the rows (fcor()); ``A_cov``, 0.5 to the power of the distance
+    between the levels of ``g``, labelled by level (gr(cov = ))."""
+    lev = FACTORS["g"]
+    k = len(lev)
+    path = lambda m: np.eye(m, k=1) + np.eye(m, k=-1)
+    M_sar = path(n)
+    idx = np.arange(k)
+    return {"M_car": pd.DataFrame(path(k), index=lev, columns=lev),
+            "M_sar": M_sar / M_sar.sum(axis=1, keepdims=True),
+            "V_fcor": np.full((n, n), 0.1) + np.diag(np.full(n, 0.5)),
+            "A_cov": pd.DataFrame(0.5 ** np.abs(idx[:, None] - idx[None, :]), index=lev, columns=lev)}
 DESIGN_ABS = 1e-12            # tests/oracle/tolerances.py's G1 tolerance
 
 
@@ -198,12 +215,16 @@ def family_of(entry: dict) -> str:
 
 def build(entry: dict, df: pd.DataFrame):
     """Build the entry's AutoBayes model as a user would: ``ab.default_priors`` for the formula (unless the entry gives
-    explicit priors), then ``ab.<constructor>(formula, data, priors, **kwargs)``. Returns ``(model, stage)``; an exception
-    propagates with ``stage`` set on it ("default_priors" or "constructor")."""
+    explicit priors), then ``ab.<constructor>(formula, data, priors, **kwargs)``, with ``data2`` (``make_data2``) for an
+    entry whose brms call names it. Returns ``(model, stage)``; an exception propagates with ``stage`` set on it
+    ("default_priors" or "constructor")."""
     import autobayes as ab
 
     a = entry["autobayes"]
     kwargs = dict(a["kwargs"])
+    if entry["brms"].get("data2"):                                   # the matrices brms received as data2, built alike
+        objects = make_data2(len(df))
+        kwargs["data2"] = {name: objects[name] for name in entry["brms"]["data2"]}
     stage = "default_priors"
     try:
         if a["priors"] == "default":
@@ -532,6 +553,12 @@ def compare_univariate(model, reading: Reading, issues: list, notes: list, what:
                 issues.append(f"{what}brms's {key} differs from AutoBayes's groups of {spec.timecor.term}")
         if not np.array_equal(tc.order, np.arange(tc.n)):
             issues.append(f"{what}the data are not in brms's group and time order")
+    for key, mine in data2_data(model).items():                     # F08: what car(), sar() and fcor() read from data2
+        theirs = np.asarray(reading.get(key), dtype=float) if reading.has(key) else None
+        if key.startswith("eigen") and theirs is not None:           # a set of eigenvalues (R orders a non-symmetric matrix's by modulus)
+            theirs, mine = np.sort(theirs), np.sort(mine)
+        if theirs is None or not _close(theirs, mine):
+            issues.append(f"{what}brms's {key} differs from AutoBayes's {key} of its data2 term")
     bhaz = getattr(d, "bhaz", None)                                  # F05: a cox model's Zbhaz, Zcbhaz, Kbhaz and con_sbhaz
     if bhaz is not None:
         from autobayes.priors import dirichlet_concentration
@@ -543,6 +570,26 @@ def compare_univariate(model, reading: Reading, issues: list, notes: list, what:
     if q is not None:
         if not reading.has("quantile") or not _close(reading.get("quantile"), q):
             issues.append(f"{what}brms's fixed quantile differs from AutoBayes's {q}")
+
+
+def data2_data(model) -> dict:
+    """F08: brms's Stan data of a model's data2 terms, from the model's designs as the oracle adapter reads them: a CAR term's
+    ``Nloc``, ``Jloc``, ``Nedges``, ``edges1``, ``edges2``, ``Nneigh``, ``eigenMcar`` (escar, esicar) or ``car_scale`` (bym2); a SAR
+    term's ``Msar``, ``eigenMsar`` (compared as sets) and ``N_tg`` (one group of rows); an fcor() term's ``Mfcor`` and ``N_tg``."""
+    d, out = model.design, {}
+    car = getattr(model.spec, "car", None)
+    if car is not None:
+        c = d.car
+        mine = {"Nloc": float(c.Nloc), "Jloc": c.index + 1.0, "Nedges": float(len(c.edges)), "edges1": c.edges[:, 0] + 1.0,
+                "edges2": c.edges[:, 1] + 1.0, "Nneigh": c.neighbours, "eigenMcar": c.eigenvalues, "car_scale": c.scale}
+        keys = ("Nloc", "Jloc", "Nedges", "edges1", "edges2") + {"escar": ("Nneigh", "eigenMcar"), "esicar": ("Nneigh", "eigenMcar"),
+                                                                  "bym2": ("car_scale",)}.get(car.type, ())
+        out.update({k: np.asarray(mine[k], dtype=float) for k in keys})
+    if getattr(d, "sar", None) is not None:
+        out.update(Msar=np.asarray(d.sar.M, dtype=float), eigenMsar=np.asarray(d.sar.eigenvalues, dtype=float), N_tg=np.asarray(1.0))
+    if getattr(d, "fcor", None) is not None:
+        out.update(Mfcor=np.asarray(d.fcor.M, dtype=float), N_tg=np.asarray(1.0))
+    return out
 
 
 def match_group_scope(model, blocks, terms, reading, scope, issues, notes, what):

@@ -70,7 +70,7 @@ verified against the frozen fixture `gauss_transforms`; see [transforms](transfo
 Negative binomial counts (A08, `ab.negbinomial`, brms's `negbinomial` with its `shape` parameter under an explicit
 `Priors(shape=...)`) landed through the brms-parity loop, verified against the frozen fixture `negbinomial_varint`;
 see [negative binomial](negbinomial.md). Gamma responses with a log link (A09, `ab.gamma`, the same `shape` prior;
-brms's default inverse link is not offered, divergence D9) followed, verified against `gamma_varint`; see
+brms's own default `brmsfamily("Gamma")` link; `stats::Gamma()`'s inverse link is `link="inverse"`, divergence D9) followed, verified against `gamma_varint`; see
 [Gamma](gamma.md). Lognormal responses (A10, `ab.lognormal`, brms's `lognormal()`: the identity link on the log-scale
 location `mu`, `sigma` the SD of `log y` under `Priors(sigma=...)`, `predict(kind="mean")` returning brms's
 `posterior_epred` `exp(mu + sigma^2 / 2)` as `mean`) followed, verified against `lognormal_varint`; see
@@ -489,3 +489,11 @@ names, `lprior` and `lp__` included. Verified against `gauss_varint_summaries`, 
 eight further structures and posterior's diagnostics on 136 probes; Gaussian and Bernoulli models with ordinary population- and
 group-level terms and a formula of sigma are taken, everything else is refused naming the construct (D162 to D165); see
 [summaries](summaries.md).
+
+The syntax audit's fixes (F08, docs/syntax-fixes.md): an ordered factor predictor (an ordered pandas Categorical declared with its
+lowest level, or `ordered(col)`) is coded with R's polynomial contrasts as brms codes it (`fo.L`, `fo.Q`, ...; docs/ordered-factors.md,
+verified against `gauss_ordered_factor`; more than 16 levels and interactions are refused, D168); `(x | g)` is `(1 + x | g)`, `gr(g,
+cor = FALSE)` is `||` and `gr(g, id = "p")` is `|p|`; `trials(15)`, brms's censoring labels (`"left"`, `"none"`, `"right"`,
+`"interval"`, TRUE/FALSE) and `cat(K)` of the data's number of categories (D169) are taken; R's `.`, backticks, `Intercept`, `::`,
+`%in%`, `^`, smooths, a transformed response, `disc ~` and `nlf()` are refused by name. The syntax corpus now has no silent
+misreading or unclear refusal.

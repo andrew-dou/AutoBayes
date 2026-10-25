@@ -458,7 +458,9 @@
     "kwargs": {},
     "priors": "default"
    },
-   "unclear": "'columns not in data: ['Intercept']': brms's reserved Intercept variable (0 + Intercept + x) is taken for a missing column",
+   "tokens": [
+    "'Intercept'"
+   ],
    "brms_reading": {
     "status": "ok",
     "stan_data": [
@@ -478,13 +480,12 @@
    "result": {
     "status": "error",
     "type": "FormulaError",
-    "message": "columns not in data: ['Intercept']",
-    "raised_at": "formula.py:3403",
+    "message": "'Intercept': brms's reserved term 'Intercept' (y ~ 0 + Intercept + x: the intercept as an ordinary coefficient of class b, with b's prior and an uncentred design) is not supported; write 'y ~ 1 + x', with center_predictors=False for an uncentred design (the intercept then keeps its own prior class)",
+    "raised_at": "formula.py:2158",
     "stage": "default_priors",
     "mechanism": "refusal",
-    "outcome": "refused_unclear",
-    "gap": "defect",
-    "pin": "columns not in data: ['Intercept']"
+    "outcome": "refused_named",
+    "gap": "capability"
    }
   },
   {
@@ -979,14 +980,10 @@
     "status": "built",
     "model": "Model",
     "model_warnings": [],
-    "issues": [
-     "X: AutoBayes column 'fo[hi]' matches no brms column ['Intercept', 'fo.L', 'fo.Q']",
-     "X: AutoBayes column 'fo[mid]' matches no brms column ['Intercept', 'fo.L', 'fo.Q']",
-     "X: brms columns without an AutoBayes counterpart: ['fo.L', 'fo.Q']"
-    ],
+    "issues": [],
     "notes": [],
-    "outcome": "misread",
-    "gap": "defect"
+    "outcome": "match",
+    "gap": null
    }
   },
   {
@@ -1558,7 +1555,9 @@
     "kwargs": {},
     "priors": "default"
    },
-   "unclear": "reads (x + z + w)^2 as a malformed group-level term; the ^ expansion is not named",
+   "tokens": [
+    "'^'"
+   ],
    "brms_reading": {
     "status": "ok",
     "stan_data": [
@@ -1584,13 +1583,12 @@
    "result": {
     "status": "error",
     "type": "FormulaError",
-    "message": "'(x + z + w)^2': parenthesised term is not a '(1 | group)' or '(1 + x || group)' term",
-    "raised_at": "formula.py:2546",
+    "message": "'(x + z + w)^2': R's formula operator '^' (the terms and all their interactions up to that order) is not supported; write the terms and their two-way interactions out, 'x + z + x:z' (docs/interactions.md), or I(x^2) for a power (docs/transforms.md)",
+    "raised_at": "formula.py:2171",
     "stage": "default_priors",
     "mechanism": "refusal",
-    "outcome": "refused_unclear",
-    "gap": "defect",
-    "pin": "'(x + z + w)^2': parenthesised term is not a '(1 | group)' or '(1 + x || group)'"
+    "outcome": "refused_named",
+    "gap": "capability"
    }
   },
   {
@@ -1614,7 +1612,9 @@
     },
     "priors": "default"
    },
-   "unclear": "calls 'x %in% f' a column name; the %in% operator is not named",
+   "tokens": [
+    "%in%"
+   ],
    "brms_reading": {
     "status": "ok",
     "stan_data": [
@@ -1637,13 +1637,12 @@
    "result": {
     "status": "error",
     "type": "FormulaError",
-    "message": "'x %in% f': 'x %in% f' is not a column name",
-    "raised_at": "formula.py:2517",
+    "message": "'x %in% f': R's operator %in% is not supported in a formula; nesting x %in% f is the interaction x:f, with the main effects x and f (docs/interactions.md)",
+    "raised_at": "formula.py:2167",
     "stage": "default_priors",
     "mechanism": "refusal",
-    "outcome": "refused_unclear",
-    "gap": "defect",
-    "pin": "'x %in% f': 'x %in% f' is not a column name"
+    "outcome": "refused_named",
+    "gap": "capability"
    }
   },
   {
@@ -2306,7 +2305,9 @@
     "kwargs": {},
     "priors": "default"
    },
-   "unclear": "calls '.' a column name; R's dot shorthand is not named",
+   "tokens": [
+    "'.'"
+   ],
    "brms_reading": {
     "status": "ok",
     "warnings": [
@@ -2325,13 +2326,12 @@
    "result": {
     "status": "error",
     "type": "FormulaError",
-    "message": "'.': '.' is not a column name",
-    "raised_at": "formula.py:2517",
+    "message": "'.': R's '.' (every column of the data not otherwise in the formula) is not supported; name the predictors",
+    "raised_at": "formula.py:2151",
     "stage": "default_priors",
     "mechanism": "refusal",
-    "outcome": "refused_unclear",
-    "gap": "defect",
-    "pin": "'.': '.' is not a column name"
+    "outcome": "refused_named",
+    "gap": "capability"
    }
   },
   {
@@ -3098,7 +3098,9 @@
     "kwargs": {},
     "priors": "default"
    },
-   "unclear": "reads splines::ns(x, df = 3) as a three-way interaction (the :: as interaction colons)",
+   "tokens": [
+    "'::'"
+   ],
    "brms_reading": {
     "status": "ok",
     "stan_data": [
@@ -3121,13 +3123,12 @@
    "result": {
     "status": "error",
     "type": "FormulaError",
-    "message": "'splines::ns(x, df = 3)': only a two-way interaction is supported in this slice ('splines::ns(x, df = 3)' names 3 terms); three-way and higher-order interactions are not.",
-    "raised_at": "formula.py:2588",
+    "message": "'splines::ns(x, df = 3)': R's namespace operator '::' (a function of another package, such as a spline basis) is not supported in a formula; compute the columns in the data frame and name them",
+    "raised_at": "formula.py:2163",
     "stage": "default_priors",
     "mechanism": "refusal",
-    "outcome": "refused_unclear",
-    "gap": "defect",
-    "pin": "'splines::ns(x, df = 3)': only a two-way interaction is supported in this slice "
+    "outcome": "refused_named",
+    "gap": "capability"
    }
   },
   {
@@ -3379,7 +3380,9 @@
     "kwargs": {},
     "priors": "default"
    },
-   "unclear": "calls the backticked name not a column name, though the column exists; backticks are not named",
+   "tokens": [
+    "backtick"
+   ],
    "brms_reading": {
     "status": "ok",
     "stan_data": [
@@ -3400,13 +3403,12 @@
    "result": {
     "status": "error",
     "type": "FormulaError",
-    "message": "'`x.dot`': '`x.dot`' is not a column name",
-    "raised_at": "formula.py:2517",
+    "message": "'`x.dot`': backtick-quoted names are not supported; 'x.dot' is a column name as it stands: write it without the backticks",
+    "raised_at": "formula.py:2156",
     "stage": "default_priors",
     "mechanism": "refusal",
-    "outcome": "refused_unclear",
-    "gap": "defect",
-    "pin": "'`x.dot`': '`x.dot`' is not a column name"
+    "outcome": "refused_named",
+    "gap": "capability"
    }
   },
   {
@@ -3426,7 +3428,9 @@
     "kwargs": {},
     "priors": "default"
    },
-   "unclear": "'expected response ~ terms': a transformed response, log(ypos), is not named",
+   "tokens": [
+    "'log(ypos)'"
+   ],
    "brms_reading": {
     "status": "ok",
     "stan_data": [
@@ -3447,13 +3451,12 @@
    "result": {
     "status": "error",
     "type": "FormulaError",
-    "message": "'log(ypos) ~ x': expected 'response ~ terms'. Supported: 'y ~ [1 +] x1 [+ x2 ...] [+ (1 | factor) ...]' and, for ab.binomial, 'successes | trials(n) ~ [1 +] x1 [+ x2 ...] [+ (1 | factor) ...]'.",
-    "raised_at": "formula.py:2478",
+    "message": "'log(ypos) ~ x': the response 'log(ypos)' is an expression; a transformed response (brms evaluates it, log(y) ~ x) is not supported: compute the column in the data frame and name it, or choose the family for the response as it is (ab.lognormal for log(y) ~ x with y positive; docs/families.md)",
+    "raised_at": "formula.py:3004",
     "stage": "default_priors",
     "mechanism": "refusal",
-    "outcome": "refused_unclear",
-    "gap": "defect",
-    "pin": "'log(ypos) ~ x': expected 'response ~ terms'. Supported: 'y ~ [1 +] x1 [+ x2 ..."
+    "outcome": "refused_named",
+    "gap": "capability"
    }
   },
   {
@@ -3894,7 +3897,6 @@
     "kwargs": {},
     "priors": "default"
    },
-   "unclear": "says (x | g) has no varying intercept; brms's (x | g) has one (it is (1 + x | g)); the advice to write (1 + x | g) is right",
    "brms_reading": {
     "status": "ok",
     "stan_data": [
@@ -3922,15 +3924,13 @@
     ]
    },
    "result": {
-    "status": "error",
-    "type": "FormulaError",
-    "message": "'(x | g)': varying slopes without the varying intercept are not supported; write '(1 + x | g)' so that the intercept varies by 'g' as well",
-    "raised_at": "formula.py:1982",
-    "stage": "default_priors",
-    "mechanism": "refusal",
-    "outcome": "refused_unclear",
-    "gap": "defect",
-    "pin": "'(x | g)': varying slopes without the varying intercept are not supported; write"
+    "status": "built",
+    "model": "Model",
+    "model_warnings": [],
+    "issues": [],
+    "notes": [],
+    "outcome": "match",
+    "gap": null
    }
   },
   {
@@ -3950,7 +3950,6 @@
     "kwargs": {},
     "priors": "default"
    },
-   "unclear": "says (x || g) has no varying intercept; brms's (x || g) has one (it is (1 + x || g))",
    "brms_reading": {
     "status": "ok",
     "stan_data": [
@@ -3978,15 +3977,13 @@
     ]
    },
    "result": {
-    "status": "error",
-    "type": "FormulaError",
-    "message": "'(x || g)': varying slopes without the varying intercept are not supported; write '(1 + x || g)' so that the intercept varies by 'g' as well",
-    "raised_at": "formula.py:1982",
-    "stage": "default_priors",
-    "mechanism": "refusal",
-    "outcome": "refused_unclear",
-    "gap": "defect",
-    "pin": "'(x || g)': varying slopes without the varying intercept are not supported; writ"
+    "status": "built",
+    "model": "Model",
+    "model_warnings": [],
+    "issues": [],
+    "notes": [],
+    "outcome": "match",
+    "gap": null
    }
   },
   {
@@ -4036,8 +4033,8 @@
    "result": {
     "status": "error",
     "type": "FormulaError",
-    "message": "'(0 + x | g)': varying slopes without the varying intercept are not supported; write '(1 + x | g)' so that the intercept varies by 'g' as well",
-    "raised_at": "formula.py:1982",
+    "message": "'(0 + x | g)': '0' removes the varying intercept of 'g': varying slopes without the varying intercept are not supported; write '(1 + x | g)' so that the intercept varies by 'g' as well",
+    "raised_at": "formula.py:2370",
     "stage": "default_priors",
     "mechanism": "refusal",
     "outcome": "refused_named",
@@ -4061,7 +4058,9 @@
     "kwargs": {},
     "priors": "default"
    },
-   "unclear": "calls 'x - 1' a column name; the intercept removal inside a group term is not named",
+   "tokens": [
+    "'- 1'"
+   ],
    "brms_reading": {
     "status": "ok",
     "stan_data": [
@@ -4089,13 +4088,12 @@
    "result": {
     "status": "error",
     "type": "FormulaError",
-    "message": "'(x - 1 | g)': 'x - 1' is not a column name",
-    "raised_at": "formula.py:1966",
+    "message": "'(x - 1 | g)': '- 1' removes the varying intercept of 'g': varying slopes without the varying intercept are not supported; write '(1 + x | g)' so that the intercept varies by 'g' as well",
+    "raised_at": "formula.py:2370",
     "stage": "default_priors",
     "mechanism": "refusal",
-    "outcome": "refused_unclear",
-    "gap": "defect",
-    "pin": "'(x - 1 | g)': 'x - 1' is not a column name"
+    "outcome": "refused_named",
+    "gap": "capability"
    }
   },
   {
@@ -4172,9 +4170,8 @@
     "priors": "default"
    },
    "tokens": [
-    "'(0 + x | g)'"
+    "(1 + x || g)"
    ],
-   "unclear": "names (0 + x | g) but advises (1 + x | g), which correlates the intercept and slope; brms's (1 | g) + (0 + x | g) is uncorrelated, AutoBayes's (1 + x || g)",
    "brms_reading": {
     "status": "ok",
     "stan_data": [
@@ -4208,13 +4205,12 @@
    "result": {
     "status": "error",
     "type": "FormulaError",
-    "message": "'(0 + x | g)': varying slopes without the varying intercept are not supported; write '(1 + x | g)' so that the intercept varies by 'g' as well",
-    "raised_at": "formula.py:1982",
+    "message": "'(0 + x | g)': '0' removes the varying intercept of 'g'; next to '(1 | g)' it is brms's varying intercept and slope without a correlation, which is one term here: write '(1 + x || g)' (docs/varying-slopes.md)",
+    "raised_at": "formula.py:2370",
     "stage": "default_priors",
     "mechanism": "refusal",
-    "outcome": "refused_unclear",
-    "gap": "defect",
-    "pin": "'(0 + x | g)': varying slopes without the varying intercept are not supported; w"
+    "outcome": "refused_named",
+    "gap": "capability"
    }
   },
   {
@@ -4816,9 +4812,8 @@
     "priors": "default"
    },
    "tokens": [
-    "'(0 + z |p| g)'"
+    "(1 + x + z | g)"
    ],
-   "unclear": "refuses (0 + z |p| g) as a slope without an intercept and advises (1 + z | g), a second term of g that is refused in turn; brms's shared ID is one correlated block, AutoBayes's (1 + x + z | g)",
    "brms_reading": {
     "status": "ok",
     "stan_data": [
@@ -4851,13 +4846,12 @@
    "result": {
     "status": "error",
     "type": "FormulaError",
-    "message": "'(0 + z |p| g)': varying slopes without the varying intercept are not supported; write '(1 + z | g)' so that the intercept varies by 'g' as well",
-    "raised_at": "formula.py:1982",
+    "message": "'(0 + z |p| g)': '0' removes the varying intercept of 'g'; brms reads the terms of 'g' that share the correlation ID 'p' as one block of correlated coefficients, which is one term here: write '(1 + x + z | g)' (docs/varying-slopes.md)",
+    "raised_at": "formula.py:2370",
     "stage": "default_priors",
     "mechanism": "refusal",
-    "outcome": "refused_unclear",
-    "gap": "defect",
-    "pin": "'(0 + z |p| g)': varying slopes without the varying intercept are not supported;"
+    "outcome": "refused_named",
+    "gap": "capability"
    }
   },
   {
@@ -5015,14 +5009,13 @@
     ]
    },
    "result": {
-    "status": "error",
-    "type": "FormulaError",
-    "message": "'(1 + x | gr(g, cor = FALSE))': brms's gr() options ['cor'] are not supported; gr() takes one grouping column and by = <column> here (gr(g, cor = FALSE) is '||', gr(g, id = 'p') is '|p|'; cov, dist and a grouping expression are not offered; docs/multi-membership-and-by.md, divergence D105)",
-    "raised_at": "formula.py:1895",
-    "stage": "default_priors",
-    "mechanism": "refusal",
-    "outcome": "refused_named",
-    "gap": "capability"
+    "status": "built",
+    "model": "Model",
+    "model_warnings": [],
+    "issues": [],
+    "notes": [],
+    "outcome": "match",
+    "gap": null
    }
   },
   {
@@ -5096,7 +5089,7 @@
     "priors": "default"
    },
    "tokens": [
-    "['id']"
+    "|a|"
    ],
    "brms_reading": {
     "status": "ok",
@@ -5127,8 +5120,8 @@
    "result": {
     "status": "error",
     "type": "FormulaError",
-    "message": "'(1 + x | gr(g, id = \"a\"))': brms's gr() options ['id'] are not supported; gr() takes one grouping column and by = <column> here (gr(g, cor = FALSE) is '||', gr(g, id = 'p') is '|p|'; cov, dist and a grouping expression are not offered; docs/multi-membership-and-by.md, divergence D105)",
-    "raised_at": "formula.py:1895",
+    "message": "'y ~ x + (1 + x | gr(g, id = \"a\"))': the correlation ID 'a' of '(1 + x |a| g)' is offered between the response formula and a distributional formula of a list, ['y ~ x + (1 + x |a| g)', 'sigma ~ (1 |a| g)'] (brms's bf(...)); in a formula on its own it is not supported here (docs/multi-membership-and-by.md, divergence D106)",
+    "raised_at": "formula.py:3664",
     "stage": "default_priors",
     "mechanism": "refusal",
     "outcome": "refused_named",
@@ -5182,8 +5175,8 @@
    "result": {
     "status": "error",
     "type": "FormulaError",
-    "message": "'(1 | gr(g, dist = \"student\"))': brms's gr() options ['dist'] are not supported; gr() takes one grouping column and by = <column> here (gr(g, cor = FALSE) is '||', gr(g, id = 'p') is '|p|'; cov, dist and a grouping expression are not offered; docs/multi-membership-and-by.md, divergence D105)",
-    "raised_at": "formula.py:1895",
+    "message": "'(1 | gr(g, dist = \"student\"))': brms's gr() options ['dist'] are not supported; gr() takes one grouping column, by = <column>, cor = FALSE (brms's '||') and id = \"p\" (brms's '|p|') here; cov, dist and a grouping expression are not offered (docs/multi-membership-and-by.md, divergence D105)",
+    "raised_at": "formula.py:2264",
     "stage": "default_priors",
     "mechanism": "refusal",
     "outcome": "refused_named",
@@ -5248,8 +5241,8 @@
    "result": {
     "status": "error",
     "type": "FormulaError",
-    "message": "'(1 | gr(g, cov = A_cov))': brms's gr() options ['cov'] are not supported; gr() takes one grouping column and by = <column> here (gr(g, cor = FALSE) is '||', gr(g, id = 'p') is '|p|'; cov, dist and a grouping expression are not offered; docs/multi-membership-and-by.md, divergence D105)",
-    "raised_at": "formula.py:1895",
+    "message": "'(1 | gr(g, cov = A_cov))': brms's gr() options ['cov'] are not supported; gr() takes one grouping column, by = <column>, cor = FALSE (brms's '||') and id = \"p\" (brms's '|p|') here; cov, dist and a grouping expression are not offered (docs/multi-membership-and-by.md, divergence D105)",
+    "raised_at": "formula.py:2264",
     "stage": "default_priors",
     "mechanism": "refusal",
     "outcome": "refused_named",
@@ -5928,14 +5921,13 @@
     "group_terms": []
    },
    "result": {
-    "status": "error",
-    "type": "FormulaError",
-    "message": "'k | trials(15) ~ x': 'trials(15)': trials() takes one column name",
-    "raised_at": "formula.py:1154",
-    "stage": "default_priors",
-    "mechanism": "refusal",
-    "outcome": "refused_named",
-    "gap": "capability"
+    "status": "built",
+    "model": "Model",
+    "model_warnings": [],
+    "issues": [],
+    "notes": [],
+    "outcome": "match",
+    "gap": null
    }
   },
   {
@@ -6068,14 +6060,13 @@
     "group_terms": []
    },
    "result": {
-    "status": "error",
-    "type": "FormulaError",
-    "message": "column 'ccs' has dtype str; the censoring indicator of 'cens(ccs)' must be numeric, -1 (left), 0 (none) or 1 (right); recode brms's labels 'left' / 'none' / 'right' and TRUE / FALSE explicitly",
-    "raised_at": "formula.py:1232",
-    "stage": "default_priors",
-    "mechanism": "refusal",
-    "outcome": "refused_named",
-    "gap": "capability"
+    "status": "built",
+    "model": "Model",
+    "model_warnings": [],
+    "issues": [],
+    "notes": [],
+    "outcome": "match",
+    "gap": null
    }
   },
   {
@@ -6943,14 +6934,13 @@
     "group_terms": []
    },
    "result": {
-    "status": "error",
-    "type": "FormulaError",
-    "message": "'yord | cat(4) ~ x': 'cat(4)' is not a supported response addition term. brms's left-hand side 'response | term + term' takes weights(col), cens(col) and trunc(lb = a, ub = b) here (docs/addition-terms.md), and mi() in a multivariate list of formulas (docs/missing-and-measurement-error.md); a binomial response is exactly 'successes | trials(n)', with any other terms after it.",
-    "raised_at": "formula.py:1120",
-    "stage": "default_priors",
-    "mechanism": "refusal",
-    "outcome": "refused_named",
-    "gap": "capability"
+    "status": "built",
+    "model": "Model",
+    "model_warnings": [],
+    "issues": [],
+    "notes": [],
+    "outcome": "match",
+    "gap": null
    }
   },
   {
@@ -7165,8 +7155,8 @@
    "result": {
     "status": "error",
     "type": "FormulaError",
-    "message": "'s(x)': only log(col), exp(col), sqrt(col), I(col^k) with integer k, and I(col * k), I(col + k), I(col - k) with a numeric constant k are supported as in-formula transforms of one numeric column (A05, docs/transforms.md); other function calls and transformations inside the formula are not supported: compute the column in the data frame and name it instead.",
-    "raised_at": "formula.py:2748",
+    "message": "'s(x)': brms's smooth term s() (mgcv's penalised splines, a basis whose coefficients have their own standard deviation, brms's sds_ and zs_) is not supported; a smooth function of one column can be approached with gp(col) or with polynomial terms I(col^2) (docs/gaussian-processes.md, docs/transforms.md)",
+    "raised_at": "formula.py:3326",
     "stage": "default_priors",
     "mechanism": "refusal",
     "outcome": "refused_named",
@@ -7221,8 +7211,8 @@
    "result": {
     "status": "error",
     "type": "FormulaError",
-    "message": "'s(x, k = 5)': only log(col), exp(col), sqrt(col), I(col^k) with integer k, and I(col * k), I(col + k), I(col - k) with a numeric constant k are supported as in-formula transforms of one numeric column (A05, docs/transforms.md); other function calls and transformations inside the formula are not supported: compute the column in the data frame and name it instead.",
-    "raised_at": "formula.py:2748",
+    "message": "'s(x, k = 5)': brms's smooth term s() (mgcv's penalised splines, a basis whose coefficients have their own standard deviation, brms's sds_ and zs_) is not supported; a smooth function of one column can be approached with gp(col) or with polynomial terms I(col^2) (docs/gaussian-processes.md, docs/transforms.md)",
+    "raised_at": "formula.py:3326",
     "stage": "default_priors",
     "mechanism": "refusal",
     "outcome": "refused_named",
@@ -7291,8 +7281,8 @@
    "result": {
     "status": "error",
     "type": "FormulaError",
-    "message": "'s(x, by = f)': only log(col), exp(col), sqrt(col), I(col^k) with integer k, and I(col * k), I(col + k), I(col - k) with a numeric constant k are supported as in-formula transforms of one numeric column (A05, docs/transforms.md); other function calls and transformations inside the formula are not supported: compute the column in the data frame and name it instead.",
-    "raised_at": "formula.py:2748",
+    "message": "'s(x, by = f)': brms's smooth term s() (mgcv's penalised splines, a basis whose coefficients have their own standard deviation, brms's sds_ and zs_) is not supported; a smooth function of one column can be approached with gp(col) or with polynomial terms I(col^2) (docs/gaussian-processes.md, docs/transforms.md)",
+    "raised_at": "formula.py:3326",
     "stage": "default_priors",
     "mechanism": "refusal",
     "outcome": "refused_named",
@@ -7348,8 +7338,8 @@
    "result": {
     "status": "error",
     "type": "FormulaError",
-    "message": "'s(x, z)': only log(col), exp(col), sqrt(col), I(col^k) with integer k, and I(col * k), I(col + k), I(col - k) with a numeric constant k are supported as in-formula transforms of one numeric column (A05, docs/transforms.md); other function calls and transformations inside the formula are not supported: compute the column in the data frame and name it instead.",
-    "raised_at": "formula.py:2748",
+    "message": "'s(x, z)': brms's smooth term s() (mgcv's penalised splines, a basis whose coefficients have their own standard deviation, brms's sds_ and zs_) is not supported; a smooth function of one column can be approached with gp(col) or with polynomial terms I(col^2) (docs/gaussian-processes.md, docs/transforms.md)",
+    "raised_at": "formula.py:3326",
     "stage": "default_priors",
     "mechanism": "refusal",
     "outcome": "refused_named",
@@ -7408,8 +7398,8 @@
    "result": {
     "status": "error",
     "type": "FormulaError",
-    "message": "'t2(x, z)': only log(col), exp(col), sqrt(col), I(col^k) with integer k, and I(col * k), I(col + k), I(col - k) with a numeric constant k are supported as in-formula transforms of one numeric column (A05, docs/transforms.md); other function calls and transformations inside the formula are not supported: compute the column in the data frame and name it instead.",
-    "raised_at": "formula.py:2748",
+    "message": "'t2(x, z)': brms's smooth term t2() (mgcv's penalised splines, a basis whose coefficients have their own standard deviation, brms's sds_ and zs_) is not supported; a smooth function of one column can be approached with gp(col) or with polynomial terms I(col^2) (docs/gaussian-processes.md, docs/transforms.md)",
+    "raised_at": "formula.py:3326",
     "stage": "default_priors",
     "mechanism": "refusal",
     "outcome": "refused_named",
@@ -9029,15 +9019,13 @@
     "group_terms": []
    },
    "result": {
-    "status": "error",
-    "type": "FormulaError",
-    "message": "'car(M_car, gr = g, type = \"escar\")' reads the adjacency matrix 'M_car' from data2: pass data2={'M_car': <a pandas DataFrame labelled by location on both axes>} (brms's data2 = list(...))",
-    "raised_at": "car.py:178",
-    "stage": "default_priors",
-    "mechanism": "refusal",
-    "outcome": "refused_unclear",
-    "gap": "defect",
-    "pin": "'car(M_car, gr = g, type = \"escar\")' reads the adjacency matrix 'M_car' from dat"
+    "status": "built",
+    "model": "Model",
+    "model_warnings": [],
+    "issues": [],
+    "notes": [],
+    "outcome": "match",
+    "gap": null
    }
   },
   {
@@ -9084,15 +9072,13 @@
     "group_terms": []
    },
    "result": {
-    "status": "error",
-    "type": "FormulaError",
-    "message": "the SAR term 'sar(M_sar, type = \"lag\")' reads the matrix 'M_sar' from data2, and the model was given no data2: pass data2={'M_sar': matrix}, an 40 x 40 matrix over the fitted rows in data order (docs/spatial-sar.md)",
-    "raised_at": "sar.py:175",
-    "stage": "default_priors",
-    "mechanism": "refusal",
-    "outcome": "refused_unclear",
-    "gap": "defect",
-    "pin": "the SAR term 'sar(M_sar, type = \"lag\")' reads the matrix 'M_sar' from data2, and"
+    "status": "built",
+    "model": "Model",
+    "model_warnings": [],
+    "issues": [],
+    "notes": [],
+    "outcome": "match",
+    "gap": null
    }
   },
   {
@@ -9138,14 +9124,13 @@
     "group_terms": []
    },
    "result": {
-    "status": "error",
-    "type": "FormulaError",
-    "message": "fcor(V_fcor) reads the matrix 'V_fcor' from data2, which is not given: pass data2={'V_fcor': matrix} (fcor() reads its matrix from data2; brms: \"Object 'V_fcor' was not found in 'data2'\"; docs/fcor.md)",
-    "raised_at": "fcor.py:152",
-    "stage": "default_priors",
-    "mechanism": "refusal",
-    "outcome": "refused_named",
-    "gap": "capability"
+    "status": "built",
+    "model": "Model",
+    "model_warnings": [],
+    "issues": [],
+    "notes": [],
+    "outcome": "match",
+    "gap": null
    }
   },
   {
@@ -10309,8 +10294,8 @@
    "result": {
     "status": "error",
     "type": "FormulaError",
-    "message": "'s(z)': only log(col), exp(col), sqrt(col), I(col^k) with integer k, and I(col * k), I(col + k), I(col - k) with a numeric constant k are supported as in-formula transforms of one numeric column (A05, docs/transforms.md); other function calls and transformations inside the formula are not supported: compute the column in the data frame and name it instead.",
-    "raised_at": "formula.py:2748",
+    "message": "'s(z)': brms's smooth term s() (mgcv's penalised splines, a basis whose coefficients have their own standard deviation, brms's sds_ and zs_) is not supported; a smooth function of one column can be approached with gp(col) or with polynomial terms I(col^2) (docs/gaussian-processes.md, docs/transforms.md)",
+    "raised_at": "formula.py:3326",
     "stage": "default_priors",
     "mechanism": "refusal",
     "outcome": "refused_named",
@@ -10634,7 +10619,9 @@
     "kwargs": {},
     "priors": "default"
    },
-   "unclear": "says the cumulative family has no parameter 'disc'; brms's has one (fixed at 1 unless given a formula), which AutoBayes does not offer (D38)",
+   "tokens": [
+    "disc ~"
+   ],
    "brms_reading": {
     "status": "ok",
     "stan_data": [
@@ -10662,13 +10649,12 @@
    "result": {
     "status": "error",
     "type": "FormulaError",
-    "message": "'disc ~ z': the cumulative family has no parameter 'disc' (it has no parameter besides the mean); if 'disc' is a second response, a formula of its own per response (brms's bf(y ~ ...) + bf(disc ~ ...) + set_rescor(FALSE)) is a multivariate model: pass rescor=False (docs/subset.md; with rescor=True the responses share one right-hand side, 'mvbind(y, disc) ~ ...', docs/multivariate.md, divergence D56); a distributional formula is offered for the auxiliary parameter of the gaussian (sigma), student (sigma), negbinomial (shape), gamma (shape), lognormal (sigma), beta (phi), weibull (shape), beta_binomial (phi) families, with a log link (docs/distributional.md, divergence D33), and for the skew_normal (alpha, identity link), zero_inflated_negbinomial (zi, logit link), hurdle_lognormal (hu, logit link), wiener (bs, log link) families (docs/contexts-newer-families.md, divergence D116). If 'disc' is a non-linear parameter of the first formula, build the model with nl=True (brms's nl = TRUE; docs/nonlinear.md)",
-    "raised_at": "formula.py:2389",
+    "message": "'disc ~ z': brms's disc ~ ... (the discrimination of an ordinal family, 1 unless it has a formula) is not offered for the cumulative family here (docs/ordinal-categorical.md, divergence D38)",
+    "raised_at": "formula.py:2620",
     "stage": "default_priors",
     "mechanism": "refusal",
-    "outcome": "refused_unclear",
-    "gap": "defect",
-    "pin": "'disc ~ z': the cumulative family has no parameter 'disc' (it has no parameter b"
+    "outcome": "refused_named",
+    "gap": "capability"
    }
   },
   {
@@ -10710,7 +10696,9 @@
     "kwargs": {},
     "priors": "default"
    },
-   "unclear": "refuses 'a ~ 1' as a parameter the Gaussian family lacks; the non-linear formula of sigma (brms's nlf()) is not named",
+   "tokens": [
+    "nlf(sigma"
+   ],
    "brms_reading": {
     "status": "ok",
     "stan_data": [
@@ -10742,13 +10730,12 @@
    "result": {
     "status": "error",
     "type": "FormulaError",
-    "message": "'a ~ 1': the gaussian family has no parameter 'a' (its parameters besides the mean are ['sigma']); if 'a' is a second response, a formula of its own per response (brms's bf(y ~ ...) + bf(a ~ ...) + set_rescor(FALSE)) is a multivariate model: pass rescor=False (docs/subset.md; with rescor=True the responses share one right-hand side, 'mvbind(y, a) ~ ...', docs/multivariate.md, divergence D56); a distributional formula is offered for the auxiliary parameter of the gaussian (sigma), student (sigma), negbinomial (shape), gamma (shape), lognormal (sigma), beta (phi), weibull (shape), beta_binomial (phi) families, with a log link (docs/distributional.md, divergence D33), and for the skew_normal (alpha, identity link), zero_inflated_negbinomial (zi, logit link), hurdle_lognormal (hu, logit link), wiener (bs, log link) families (docs/contexts-newer-families.md, divergence D116). If 'a' is a non-linear parameter of the first formula, build the model with nl=True (brms's nl = TRUE; docs/nonlinear.md)",
-    "raised_at": "formula.py:2389",
+    "message": "'a ~ 1': 'a' is a parameter of a non-linear formula of sigma (brms's nlf(sigma ~ ...) with lf(a ~ ...)); a non-linear formula of a distributional parameter is not supported (docs/nonlinear.md, divergence D62)",
+    "raised_at": "formula.py:2616",
     "stage": "default_priors",
     "mechanism": "refusal",
-    "outcome": "refused_unclear",
-    "gap": "defect",
-    "pin": "'a ~ 1': the gaussian family has no parameter 'a' (its parameters besides the me"
+    "outcome": "refused_named",
+    "gap": "capability"
    }
   },
   {
@@ -11237,7 +11224,9 @@
     },
     "priors": "default"
    },
-   "unclear": "refuses 'c ~ 1' because c is not in the top-level expression; a nested non-linear parameter (brms's nlf()) is not named",
+   "tokens": [
+    "nlf(a"
+   ],
    "brms_reading": {
     "status": "ok",
     "stan_data": [
@@ -11263,13 +11252,12 @@
    "result": {
     "status": "error",
     "type": "FormulaError",
-    "message": "'c ~ 1': 'c' does not appear in the non-linear formula 'y ~ a * exp(b * x)'; every formula after the first is a non-linear parameter's (brms: 'The parameter ... is not a valid distributional or non-linear parameter')",
-    "raised_at": "nonlinear.py:575",
+    "message": "'c ~ 1': 'c' is a parameter of the formula of the non-linear parameter 'a' (brms's nlf(a ~ ...), a non-linear parameter nested in another); nested non-linear parameters are not supported (docs/nonlinear.md, divergence D60)",
+    "raised_at": "nonlinear.py:585",
     "stage": "default_priors",
     "mechanism": "refusal",
-    "outcome": "refused_unclear",
-    "gap": "defect",
-    "pin": "'c ~ 1': 'c' does not appear in the non-linear formula 'y ~ a * exp(b * x)'; eve"
+    "outcome": "refused_named",
+    "gap": "capability"
    }
   },
   {
@@ -12099,7 +12087,9 @@
     "kwargs": {},
     "priors": "default"
    },
-   "unclear": "the generic 'expected response ~ terms'; cbind() is not named (brms itself reads cbind(y, y2) ~ x as a univariate model with a two-column Y, so a refusal is the right outcome)",
+   "tokens": [
+    "cbind("
+   ],
    "brms_reading": {
     "status": "ok",
     "stan_data": [
@@ -12120,13 +12110,12 @@
    "result": {
     "status": "error",
     "type": "FormulaError",
-    "message": "'cbind(y, y2) ~ x': a cbind(...) response of several columns is the response of the dirichlet and logistic_normal families (proportions; docs/dirichlet-logistic-normal.md) and of the multinomial and dirichlet_multinomial families (counts with trials(); docs/multinomial.md); the gaussian family takes one response column",
-    "raised_at": "formula.py:2562",
+    "message": "'cbind(y, y2) ~ x': a cbind(...) response of several columns is the response of the dirichlet and logistic_normal families (proportions; docs/dirichlet-logistic-normal.md) and of the multinomial and dirichlet_multinomial families (counts with trials(); docs/multinomial.md); the gaussian family takes one response column; several Gaussian responses are brms's mvbind(y, y2) ~ ..., ab.gaussian(..., rescor=...) (docs/multivariate.md; brms reads cbind(y, y2) ~ x as one response with a two-column Y)",
+    "raised_at": "formula.py:2879",
     "stage": "default_priors",
     "mechanism": "refusal",
-    "outcome": "refused_unclear",
-    "gap": "defect",
-    "pin": "'cbind(y, y2) ~ x': a cbind(...) response of several columns is the response of "
+    "outcome": "refused_named",
+    "gap": "capability"
    }
   },
   {
@@ -13432,16 +13421,13 @@
  ],
  "summary": {
   "outcomes": {
-   "match": 124,
-   "refused_unclear": 18,
-   "refused_named": 104,
-   "misread": 1,
+   "match": 134,
+   "refused_named": 113,
    "differs": 1
   },
   "gaps": {
-   "none": 126,
-   "defect": 19,
-   "capability": 102,
+   "none": 136,
+   "capability": 111,
    "divergence": 1
   },
   "brms_refuses": 2

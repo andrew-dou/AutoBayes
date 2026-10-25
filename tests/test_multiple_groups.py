@@ -305,7 +305,7 @@ def test_prior_value_refusals_and_collisions():
 
 
 @pytest.mark.parametrize('rhs', ['x+(1|g)+(1|g)','x+(1|g/h/j)','x+(1|g:h:j)','x+(0+x||g)',   # A03: two-factor '/' and ':' are accepted
-    'x+(1|id|g)','x+(1|log(g))','x+(1+x|mm(g,h))','x+(x|g)','x+(0|g)',   # A02 accepts 'x+(1+x|g)'; D08 '(1|mm(g,h))'
+    'x+(1|id|g)','x+(1|log(g))','x+(1+x|mm(g,h))','x+(x-1|g)','x+(0|g)',   # A02 accepts 'x+(1+x|g)'; D08 '(1|mm(g,h))'; F08 '(x|g)'
     '(1|g)+(1|h)','0+(1|g)+(1|h)','x+(1|g)+(1|x)','x+(1|g)+(1|y)'])
 def test_scoped_formula_refusals(rhs):
     with pytest.raises(ab.FormulaError):
