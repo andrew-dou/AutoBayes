@@ -137,6 +137,11 @@ fixture's `u`, and the probe's step checked, as for `ndt`).
 F03a: an `fcor(M)` term is brms's `Mfcor` (`N` by `N`, the rows in data order: brms does not reorder them) and `N_tg = 1`,
 checked against the model's `Design.fcor` by `check_fcor_design`; it has no parameter of its own.
 
+F05: a cox model's baseline hazard simplex, brms's `simplex[Kbhaz] sbhaz`, takes the unreached coordinates as a monotonic term's
+simplex does, its stick-breaking coordinates recomputed from `sbhaz` at every point and checked against the fixture's `u` before
+they are mapped to `sbhaz_stickbreaking__`; `sbhaz` is handed to `value_point` and to the draws (G1 checks `Zbhaz`, `Zcbhaz`, `Kbhaz`
+and `con_sbhaz` in gates.py).
+
 F01a: a count-matrix model (brms's `multinomial()` and `dirichlet_multinomial()`, `MultinomialModel`) has one design `X_<mu>` per
 non-reference category, centred by brms (`Intercept_<mu>`, `Kc_<mu>`), matched by content to the category's design
 (`ColumnMap.mus`, `match_multinomial_columns`); each group-level term of each category's formula is a brms group of its own, labelled
@@ -242,7 +247,8 @@ def priors_from_spec(spec: dict) -> ab.Priors:
                      bs=_prior(spec.get("bs")), bias=_prior(spec.get("bias")),
                      # F02a: a CAR term's {"sdcar": [...], "car": ["Flat"]} (escar) or {"sdcar": [...], "rhocar": ["Beta", a, b]} (bym2)
                      sdcar=_prior(spec.get("sdcar")), car=_prior(spec.get("car")), rhocar=_prior(spec.get("rhocar")),
-                     lncor=_prior(spec.get("lncor")))                    # F01b: the logistic_normal family's {"lncor": ["LKJ", eta]}
+                     lncor=_prior(spec.get("lncor")),                    # F01b: the logistic_normal family's {"lncor": ["LKJ", eta]}
+                     sbhaz=_prior(spec.get("sbhaz")))                    # F05: the cox baseline hazard's {"sbhaz": ["Dirichlet", a]}
 
 
 def build_model(case: dict, data: pd.DataFrame) -> ab.Model:
@@ -1018,6 +1024,8 @@ def natural_point(model: ab.Model, point: Point, cmap: ColumnMap, gmap: GroupMap
     if cmap.cs:                                            # D04: brms's bcs, one row per Xcs column, one column per threshold
         bcs = np.atleast_2d(pars["bcs"]).astype(float)
         extras["bcs"] = {c: bcs[k] for k, c in enumerate(cmap.cs)}
+    if getattr(model.design, "bhaz", None) is not None:   # F05: the cox baseline hazard's simplex, brms's sbhaz
+        extras["sbhaz"] = np.atleast_1d(pars["sbhaz"]).astype(float)
     return dict(intercept=intercept, b=b, sd=sd or None, z=z or None, L=L or None, sigma=sigma, shape=shape, phi=phi, nu=nu,
                 zi=zi, hu=hu, bsp=bsp, simo=simo, theta=theta, sdgp=sdgp, lscale=lscale, zgp=zgp, ar=ar, ma=ma, **special, **extras, **sar,
                 **({"shrinkage": shrinkage} if shrinkage is not None else {}),
@@ -1455,6 +1463,20 @@ def _simplex_coordinates(fixture: Fixture, model: ab.Model, cmap: ColumnMap) -> 
             for j, i in enumerate(index):
                 out[i] = (f"{model.shrinkage_names['R2D2_phi']}_stickbreaking__", j)
             continue
+        if name == "sbhaz" and getattr(model.design, "bhaz", None) is not None:   # F05: the cox baseline hazard's simplex
+            size = model.design.bhaz.K - 1
+            index = unreached[pos:pos + size]
+            pos += size
+            if len(index) != size:
+                raise OracleMismatch(f"brms's simplex {name!r} needs {size} unreached coordinates; {len(index)} are left")
+            for q, pt_ in enumerate(fixture.points):
+                u = stick_breaking_free(np.atleast_1d(pt_.pars[name]))
+                if np.max(np.abs(u - pt_.u[index])) > 1e-10:
+                    raise OracleMismatch(f"point {q}: Stan's stick-breaking coordinates of {name} are {u!r}; brms's unconstrained "
+                                         f"values at {[i + 1 for i in index]} are {pt_.u[index]!r}")
+            for j, i in enumerate(index):
+                out[i] = ("sbhaz_stickbreaking__", j)
+            continue
         k = int(name[len("simo_"):]) if name.startswith("simo_") and name[len("simo_"):].isdigit() else None
         if k not in by_k:
             raise OracleMismatch(f"brms's simplex {name!r} ({declaration}) is not the simplex of a monotonic term of the AutoBayes model")
@@ -1521,6 +1543,9 @@ def draws(fixture: Fixture, model: ab.Model, cmap: ColumnMap, gmap: GroupMap) ->
         data[roles["b"]] = (("chain", "draw"), np.array([float(np.atleast_1d(p.pars["bsp"])[k - 1]) for p in pts])[None, :])
         data[roles["simplex"]] = (("chain", "draw", roles["coordinate"]), np.stack([np.atleast_1d(p.pars[f"simo_{k}"]) for p in pts])[None])
         coords[roles["coordinate"]] = [str(j) for j in range(1, model.design.monotonic[column].D + 1)]
+    if getattr(model.design, "bhaz", None) is not None:          # F05: the cox baseline hazard's simplex, brms's sbhaz
+        data["sbhaz"] = (("chain", "draw", "sbhaz_dim"), np.stack([np.atleast_1d(p.pars["sbhaz"]) for p in pts])[None])
+        coords["sbhaz_dim"] = list(model.design.bhaz.labels)
     for column, k in (cmap.gp or {}).items():                   # C03: each Gaussian process's sdgp_k, lscale_k and zgp_k
         roles = model.gp_names[column]
         for key in ("sdgp", "lscale"):

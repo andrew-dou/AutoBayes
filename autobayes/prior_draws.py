@@ -55,6 +55,8 @@ def _refuse_unsupported(model) -> None:
         refuse(f"the {model.family} family's {'thresholds' if fam.thresholds else 'categories'}")
     if fam.extra_parameters:
         refuse(f"the {model.family} family's {', '.join(e.name for e in fam.extra_parameters)}")
+    if fam.baseline_hazard:                                   # F05: the cox baseline hazard's simplex
+        refuse(f"the {model.family} family's baseline hazard simplex sbhaz")
     if not model.center_predictors and spec.intercept:
         refuse("center_predictors=False (brms's center = FALSE makes the intercept a coefficient of class b)")
     if getattr(model, "shrinkage_names", None):

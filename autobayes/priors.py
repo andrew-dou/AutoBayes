@@ -458,6 +458,10 @@ class Priors:
     docs/spatial-sar.md): brms's classes of those names, bounded by the smallest and largest eigenvalue of ``M``; ``Flat()``, brms's
     default (flat on that interval), is the prior offered (divergence D143), required exactly for the term's type and refused for
     every other model.
+
+    ``sbhaz`` is the prior of a cox model's baseline hazard simplex (F05, docs/cox.md): a ``Dirichlet`` (brms's class ``sbhaz``,
+    default ``dirichlet(1)``), one concentration for every basis or one per basis, required for the cox family and refused for
+    every other.
     """
 
     intercept: Prior | None = None
@@ -532,6 +536,9 @@ class Priors:
     # ``lncor``, placed on its Cholesky factor ``Llncor``); that family's SDs take ``sigma`` (one prior for every sigma<k>). Refused
     # for every other family.
     lncor: Prior | None = None
+    # F05 (docs/cox.md): the Dirichlet prior of the cox family's baseline hazard simplex (brms class ``sbhaz``, default
+    # ``dirichlet(1)``; one concentration for every basis or one per basis); required for the cox family, refused for every other
+    sbhaz: Prior | None = None
 
     def __post_init__(self):
         if isinstance(self.components, list):                         # one value for equal component lists (C05)
@@ -1152,6 +1159,8 @@ class Priors:
         check_prior(self)                                             # D07: a shrinkage prior anywhere but the bare b is refused
         self.sar_priors(spec)                                         # F02b: lagsar / errorsar exactly with a SAR term, every model
         self._refuse_lncor(fam)                                       # F01b: the logistic-normal family's alone
+        from autobayes.baseline_hazard import check_priors as check_sbhaz
+        check_sbhaz(self, spec, fam)                                  # F05: the cox family's sbhaz alone, and required there
         if getattr(spec, "is_multinomial", False):                     # F01a: the count-matrix families, priors per category
             from autobayes.multinomial import check_multinomial_priors
 

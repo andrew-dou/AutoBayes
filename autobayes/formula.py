@@ -1032,7 +1032,8 @@ class Offset:
 
 
 ADDITION_KINDS = ("weights", "cens", "trunc", "mi", "dec", "thres",   # brms's response addition terms besides trials() that are parsed (B02;
-                  "se", "rate")       # mi(), C06; dec(), F04; thres(), F06b; se() and rate(), F06a, autobayes/se_rate.py)
+                  "se", "rate",       # mi(), C06; dec(), F04; thres(), F06b; se() and rate(), F06a, autobayes/se_rate.py;
+                  "bhaz")             # bhaz(), F05, autobayes/baseline_hazard.py)
 
 # Addition terms that are parsed, represented and implemented but withheld, each with the reason its refusal carries
 # (docs/addition-terms.md): none since P6, which lifted the parks of cens() and trunc() (divergences D24 and D25).
@@ -1078,7 +1079,9 @@ class AdditionTerm:
     are seen ``levels`` are the column's levels and ``nthres`` each level's number of thresholds. ``"se"`` (``se(col)``, F06a,
     docs/se-rate.md) is each row's known standard error, the row's scale without ``sigma`` or, with ``sigma`` True (``se(col,
     sigma = TRUE)``), added to sigma in quadrature; ``"rate"`` (``rate(col)``) each row's denominator, which multiplies the mean
-    (``autobayes/se_rate.py``)."""
+    (``autobayes/se_rate.py``). ``"bhaz"`` (``bhaz(df = K)``, ``bhaz(knots = c(...), Boundary.knots = c(lo, hi))``, F05,
+    docs/cox.md) sets a cox model's baseline hazard: ``df`` its number of bases, ``knots`` the interior knots and ``boundary``
+    the boundary knots (None for brms's defaults); it reads no column (``autobayes/baseline_hazard.py``)."""
 
     kind: str
     column: str | None = None
@@ -1089,6 +1092,9 @@ class AdditionTerm:
     levels: tuple[str, ...] = ()               # F06b: thres()'s levels on the fitted rows, and each one's number of thresholds
     nthres: tuple[int, ...] = ()
     sigma: bool = False                # F06a: se(col, sigma = TRUE)
+    df: int | None = None                      # F05: bhaz(df = K)
+    knots: tuple[float, ...] | None = None     # F05: bhaz(knots = c(...)), the interior knots
+    boundary: tuple[float, float] | None = None   # F05: bhaz(Boundary.knots = c(lo, hi))
 
     @property
     def term(self) -> str:
@@ -1103,6 +1109,13 @@ class AdditionTerm:
             return f"thres({'' if self.count is None else f'{self.count}, '}gr = {self.column})"
         if self.kind == "se" and self.sigma:                    # F06a
             return f"se({self.column}, sigma = TRUE)"
+        if self.kind == "bhaz":                                 # F05: bhaz(df = 7), bhaz(knots = c(1.5, 3), Boundary.knots = c(0, 6))
+            def numbers(v):
+                return f"c({', '.join(_number_text(x) for x in v)})"
+            parts = ([f"df = {self.df}"] if self.df is not None else []) + (
+                [f"knots = {numbers(self.knots)}"] if self.knots is not None else []) + (
+                [f"Boundary.knots = {numbers(self.boundary)}"] if self.boundary is not None else [])
+            return f"bhaz({', '.join(parts)})"
         if self.y2 is not None:
             return f"{self.kind}({self.column}, {self.y2})"
         return f"{self.kind}({self.column})"
@@ -1151,7 +1164,8 @@ def _parse_additions(text: str, formula: str) -> tuple[str | None, tuple[Additio
                 f"{formula!r}: {piece!r} is not a supported response addition term. brms's left-hand side "
                 "'response | term + term' takes weights(col), cens(col) and trunc(lb = a, ub = b) here "
                 "(docs/addition-terms.md), se(col) and rate(col) (docs/se-rate.md), dec(col) for the wiener family (docs/wiener.md), "
-                "thres(gr = z) for the cumulative family (docs/grouped-thresholds.md), and mi() in a multivariate list of formulas "
+                "thres(gr = z) for the cumulative family (docs/grouped-thresholds.md), bhaz(...) for the cox family (docs/cox.md), "
+                "and mi() in a multivariate list of formulas "
                 "(docs/missing-and-measurement-error.md); "
                 "a binomial response is exactly 'successes | trials(n)', with any other terms after it."
             )
@@ -1165,6 +1179,10 @@ def _parse_additions(text: str, formula: str) -> tuple[str | None, tuple[Additio
         if kind == "thres":                                     # F06b: grouped thresholds of the cumulative family
             from autobayes.grouped_thresholds import parse_thres
             additions.append(parse_thres(args, piece, formula))
+            continue
+        if kind == "bhaz":                                      # F05: the cox family's baseline hazard
+            from autobayes.baseline_hazard import parse_bhaz
+            additions.append(parse_bhaz(args, piece, formula))
             continue
         if kind == "mi":                                        # C06: the response's missing values are parameters (brms's Ymi)
             if args:
@@ -1215,6 +1233,8 @@ def _check_additions(additions: tuple[AdditionTerm, ...], fam, formula: str) -> 
             raise FormulaError(f"{formula!r}: {a.term!r}: brms's {a.kind}() is withheld: {PARKED_ADDITIONS[a.kind]}")
         if a.kind in fam.parked_additions:                     # E04: implemented for the family and withheld (the Gamma's cens())
             raise FormulaError(f"{formula!r}: {a.term!r}: {fam.parked_additions[a.kind]}")
+        if a.kind in fam.refused_additions:                    # F05: refused with the family's own reason (cox's trunc())
+            raise FormulaError(f"{formula!r}: {a.term!r}: {fam.refused_additions[a.kind]}")
         if a.kind == "thres" and a.kind not in fam.addition_terms:   # F06b
             raise FormulaError(f"{formula!r}: {a.term!r}: grouped thresholds are offered for the cumulative family's logit link only; "
                                f"brms's thres() in the {fam.name} family is not verified here (docs/grouped-thresholds.md, divergence D158)")
@@ -1349,8 +1369,8 @@ def addition_data(spec: "ModelSpec", df: pd.DataFrame, *, where: str = "column")
             out["cens"] = _cens_values(a.column, df[a.column], where, interval=a.y2 is not None)
             if a.y2 is not None:
                 out["rcens"] = _rcens_values(a, df[spec.response].to_numpy(dtype=float), out["cens"], df[a.y2], where)
-        elif a.kind in ("mi", "thres"):                        # F06b: thres()'s levels are the model's Design.thresholds
-            continue
+        elif a.kind in ("mi", "thres", "bhaz"):                # F06b: thres()'s levels are the model's Design.thresholds; F05:
+            continue                                           # bhaz()'s bases its Design.bhaz
         elif a.kind == "dec":                                  # F04: the wiener family's decisions
             out["dec"] = _dec_values(a.column, df[a.column], where)
         elif a.kind == "se":                                   # F06a: brms's se, each row's known standard error

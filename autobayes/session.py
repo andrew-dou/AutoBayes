@@ -192,7 +192,8 @@ def fit_record(model, fit, *, panel: dict | None = None, max_treedepth: int = 10
                        **{part: str(prior) for part, prior in pr.autocor_priors(s).items()},   # an ARMA term's ar and ma (C04)
                        **{name: str(prior) for name, prior in pr.sar_priors(s).items()},       # a SAR term's lagsar / errorsar (F02b)
                        **{cls: str(prior) for cls, prior in pr.car_priors(s).items()},    # a CAR term's sdcar, car, rhocar (F02a)
-                       **{cls: str(prior) for cls, prior in pr.timecor_priors(s).items()}},   # cortime or cosy (F03b)
+                       **{cls: str(prior) for cls, prior in pr.timecor_priors(s).items()},   # cortime or cosy (F03b)
+                       **({"sbhaz": str(pr.sbhaz)} if getattr(pr, "sbhaz", None) is not None else {})},   # the cox baseline hazard's (F05)
             # a mixture (C05): its component families, identification and PyMC names
             **({"mixture": {"families": list(model.components), "order": ORDER,
                             "names": {k: list(v) if isinstance(v, tuple) else v for k, v in model.mixture_names.items()}}}
@@ -241,6 +242,10 @@ def fit_record(model, fit, *, panel: dict | None = None, max_treedepth: int = 10
             **({"time_correlation": {"term": s.timecor.term, "time": s.timecor.time, "gr": s.timecor.gr,
                                      "groups": len(d.timecor.groups), "dim": d.timecor.dim, "names": model.timecor_names}}
                if getattr(s, "timecor", None) is not None else {}),
+            # a cox model's baseline hazard (F05): its bhaz() term, knots, number of bases and events
+            **({"baseline_hazard": {"term": d.bhaz.term.term, "knots": [float(v) for v in d.bhaz.knots],
+                                    "boundary": [float(v) for v in d.bhaz.boundary], "K": d.bhaz.K, "events": int(d.bhaz.event.sum())}}
+               if getattr(d, "bhaz", None) is not None else {}),
             # each measurement-error term (C06): its columns and PyMC names
             **({"measurement_error": {t.name: {"column": t.operands[0], "noise_column": t.operands[1], "names": model.me_names[t.operands[0]]}
                                       for t in s.me_terms}} if s.me_terms else {}),

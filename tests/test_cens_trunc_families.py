@@ -444,7 +444,7 @@ def test_weights_distributional_formulas_and_the_term_model_compose():
 # -- 4. refusals and the parks ------------------------------------------------------------------------------------------------
 REFUSALS = [
     ("cnt | cens(c) ~ x", "poisson", r"'cens\(c\)' is not available for the poisson family; brms's cens\(\) is verified here for the gaussian, "
-                                     r"gamma, lognormal, weibull families"),
+                                     r"gamma, lognormal, weibull, cox families"),   # F05: cox's right censoring
     ("cnt | cens(c) ~ x", "negbinomial", r"'cens\(c\)' is not available for the negbinomial family"),
     ("ypos | cens(c) ~ x", "exponential", r"'cens\(c\)' is not available for the exponential family"),
     ("ypos | cens(c) ~ x", "student", r"'cens\(c\)' is not available for the student family"),

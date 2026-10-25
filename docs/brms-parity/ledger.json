@@ -2141,13 +2141,33 @@
    "depends_on": [
     "E04_cens_trunc_families"
    ],
-   "status": "fixtures_frozen",
+   "status": "gates_green",
    "summary": "cox() proportional hazards with brms's M-spline baseline hazard",
    "pr": null,
    "attempts": 0,
    "divergences": [],
    "next_action": "implementing; fixtures #101",
-   "reserved_divergences": "D152-D155"
+   "reserved_divergences": "D152-D155",
+   "gates": {
+    "sha": "5c1f267384d9",
+    "dirty_tree": false,
+    "base": "origin/main",
+    "when": "2026-10-25T07:09Z",
+    "results": {
+     "immutability": {
+      "status": "pass",
+      "seconds": 0.0
+     },
+     "oracle": {
+      "status": "pass",
+      "seconds": 742.3
+     },
+     "diff_coverage": {
+      "status": "pass",
+      "seconds": 376.2
+     }
+    }
+   }
   },
   {
    "id": "F06a_se_rate",

@@ -284,6 +284,23 @@ fitted rows' decisions (`wiener_diffusion.wiener_family`). It has no scale param
 | Addition terms, formulas on ndt and bias, mo(), cs(), multivariate, non-linear, autocorrelation, me()/mi(), mm() and gr(by = ), mixtures, shrinkage priors, other links | none (D151) |
 | Post-processing (C07) | `log_likelihood` from the model's own density (brms needs RWiener, D150) |
 
+The Cox proportional hazards model (F05, docs/cox.md) adds `FamilySpec.baseline_hazard`: the model's `Design.bhaz` holds the
+knots, the cubic M- and I-spline bases of the fitted rows' times and the events (`baseline_hazard.baseline_design`), `Priors(sbhaz=...)`
+the Dirichlet prior of the simplex `sbhaz`, `Model.value_point(sbhaz=...)` its value; `own_additions` names the addition terms the
+family's likelihood reads itself (`cens()` and `bhaz()`, which `likelihoods.addition_family` and the censored `log_lik()` do not
+wrap) and `refused_additions` those refused with its own reason (`trunc()`, D153; `weights()`, D155).
+
+| Group | cox |
+| --- | --- |
+| Names | `log_mu` / log / `mu` (`kind="relative_hazard"`, `exp(eta)`) |
+| Response | continuous, finite and strictly positive times; `cens(c)` 0 an event, 1 right-censored; `bhaz(df = , knots = , Boundary.knots = )` |
+| Parameters | none; the simplex `sbhaz` (`Kbhaz` weights of the bases, a Dirichlet prior) |
+| Graph | `baseline_hazard.cox_family(block, concentration)`: the likelihood and `sbhaz` on Stan's stick-breaking coordinates, built per model by `bambi_setup` |
+| Prediction | `kind="linear"` and `kind="relative_hazard"` only; no expected time, no draws (brms refuses both, D154) |
+| Default priors | log (the Intercept from `log(time)`); sbhaz `Dirichlet(1)` |
+| Interval censoring, trunc(), left censoring, weights(), bhaz(gr = ), mo(), cs(), multivariate, non-linear, autocorrelation, me()/mi(), mm() and gr(by = ), mixtures, shrinkage priors, other links | none (D153, D155) |
+| Post-processing (C07) | `log_likelihood`: each row's event or censored term (brms's `log_lik`, `cox_varint_post`) |
+
 F01b (docs/dirichlet-logistic-normal.md) adds `FamilySpec.simplex`, a `families.simplex.Simplex` for a response written
 `cbind(y1, ..., yK)` of K proportions per row (F01a's count matrices are `FamilySpec.matrix_response`): the formula's `ModelSpec.response_columns` and the
 synthetic `response`, `Model.response_matrix` (brms's `Y`, the columns' order), `model.categories` the reference first

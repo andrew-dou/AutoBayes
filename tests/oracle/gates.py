@@ -95,6 +95,10 @@ hs_df_slab, hs_scale_global, hs_scale_slab; R2D2_mean_R2, R2D2_prec_R2, R2D2_con
 now transformed parameters (zb, hs_local and R2D2_phi are in brms's model block); G3 checks the graph's coefficients, sdb and
 R2D2_tau2 against brms's b, sdb and R2D2_tau2 (`check_shrinkage`).
 
+F05, a cox model: G1 checks brms's baseline hazard data (`check_baseline_hazard`: Zbhaz, Zcbhaz, Kbhaz, con_sbhaz) and its cens; G2
+maps sbhaz (in the prior part, dirichlet_lpdf(sbhaz | con_sbhaz)); G3 and G4 compare the linear predictor (brms refuses
+posterior_epred for cox); G6 the class sbhaz.
+
 F02a: G1 checks a CAR term's Stan data (`adapter.check_car_design`: Nloc, Jloc, Nedges, edges1, edges2, Nneigh, eigenMcar,
 car_scale), G2 maps sdcar, car, rhocar, rcar, zcar and nszcar (sdcar, car and rhocar in the prior part), G3 checks the graph's rcar
 against brms's (`check_car_effects`), G4 reads rcar from the draws and G6 the classes sdcar, car and rhocar.
@@ -185,6 +189,7 @@ def prior_names(model) -> list[str]:
     # F01b: the logistic_normal family's sigma<k> and Llncor (lkj_corr_cholesky_lpdf(Llncor | eta)); the dirichlet phi is above
     simplex = getattr(model, "simplex_names", {})
     out += [*simplex.get("sigma", ()), *([simplex["L"]] if "L" in simplex else [])]
+    out += ["sbhaz"] if getattr(model.design, "bhaz", None) is not None else []   # F05: dirichlet_lpdf(sbhaz | con_sbhaz)
     return out
 
 
@@ -359,12 +364,40 @@ def check_design(b: Bundle) -> None:
     adapter.check_fcor_design(b.fixture, b.model)                # F03a: Mfcor and N_tg
     adapter.check_car_design(b.fixture, b.model)                 # F02a: a CAR term's locations, edges, Nneigh, eigenMcar, car_scale
     adapter.check_timecor_design(b.fixture, b.model)             # F03b: N_tg, begin_tg, end_tg, nobs_tg, Jtime_tg and the groups
+    check_baseline_hazard(b)                                     # F05: a cox model's Zbhaz, Zcbhaz, Kbhaz and con_sbhaz
     check_shrinkage_data(b)                                      # D07: Kscales and a shrinkage prior's data
     check_fixed_parameters(b)                                    # E02: a parameter the formula fixes (bf(quantile = p))
     # the design columns (every formula's), the group partitions and the monotonic codes were matched by content when the
     # maps were built
     adapter.match_columns(b.fixture, b.model)
     adapter.match_groups(b.fixture, b.model)
+
+
+def check_baseline_hazard(b: Bundle) -> None:
+    """G1 of a cox model (F05): brms's baseline hazard data exactly when the model has one, its ``Zbhaz`` (the M-spline bases of
+    each row's time) and ``Zcbhaz`` (the I-spline bases) equal to the model's to DESIGN_ABS, ``Kbhaz`` the number of bases and
+    ``con_sbhaz`` the concentrations of the model's prior on ``sbhaz``."""
+    sd, block = b.fixture.standata, getattr(b.model.design, "bhaz", None)
+    keys = ("Zbhaz", "Zcbhaz", "Kbhaz", "con_sbhaz")
+    if block is None:
+        present = [k for k in keys if k in sd]
+        if present:
+            raise OracleMismatch(f"brms has the baseline hazard data {present}; the AutoBayes model has no baseline hazard")
+        return
+    missing = [k for k in keys if k not in sd]
+    if missing:
+        raise OracleMismatch(f"the AutoBayes model has a baseline hazard; brms's Stan data lack {missing}")
+    if int(sd["Kbhaz"]) != block.K:
+        raise OracleMismatch(f"brms has Kbhaz = {int(sd['Kbhaz'])}; the AutoBayes baseline hazard has {block.K} bases")
+    for key, mine in (("Zbhaz", block.Zbhaz), ("Zcbhaz", block.Zcbhaz)):
+        theirs = np.asarray(sd[key], dtype=float)
+        if theirs.shape != mine.shape or abs_err(theirs, mine) > DESIGN_ABS:
+            raise OracleMismatch(f"{key} differs from the AutoBayes bases ({theirs.shape} vs {mine.shape}"
+                                 + (f", by {abs_err(theirs, mine)}" if theirs.shape == mine.shape else "") + ")")
+    con = dirichlet_concentration(b.model.priors.sbhaz, block.K)
+    theirs = np.atleast_1d(sd["con_sbhaz"])
+    if theirs.shape != con.shape or abs_err(theirs, con) > DESIGN_ABS:
+        raise OracleMismatch(f"brms con_sbhaz is {theirs!r}; the prior of sbhaz gives {con!r}")
 
 
 def check_fixed_sigma(b: Bundle) -> None:
@@ -894,6 +927,7 @@ def check_default_prior(b: Bundle) -> None:
     expected |= {timecor.prior_class} if timecor is not None else set()
     expected |= {"meanme", "sdme"} if b.model.spec.me_terms else set()     # C06: an me() term's latent values
     expected |= set(b.model.spec.car.classes) if getattr(b.model.spec, "car", None) is not None else set()   # F02a: sdcar, car, rhocar
+    expected |= {"sbhaz"} if getattr(b.model.design, "bhaz", None) is not None else set()   # F05: the cox baseline hazard's simplex
     if not expected <= classes:
         raise OracleMismatch(f"brms default_prior classes {sorted(classes)} lack {sorted(expected - classes)}")
     if adapter.is_nonlinear(b.model):                              # C02: each parameter's b (and sd) rows, cor by group

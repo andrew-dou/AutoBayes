@@ -470,6 +470,16 @@ binomial families under the log link (the mean `exp(eta_i) d_i`, the negative bi
 `sigma = TRUE` (where brms's likelihood is undefined, D156), another addition term next to either, a distributional formula, an
 expression inside the call, other links and families are refused (D157); see [se() and rate()](se-rate.md).
 
+The Cox proportional hazards model (F05, brms's `cox()`): `ab.cox("time | cens(c) ~ ...")` with right censoring (0 an event, 1
+right-censored; every row an event without `cens()`), the hazard `h0(t) exp(eta)` and brms's baseline hazard, a cubic M-spline
+basis of the time with its intercept and its I-spline integral (built from the definitions, within 7e-16 of brms's) weighted by
+the simplex `sbhaz` (`Priors(sbhaz=ab.Dirichlet(1))`), with brms's knots and `bhaz(df = )`, `bhaz(knots = )` and
+`bhaz(Boundary.knots = )`; `predict(kind="linear")` and `kind="relative_hazard"` (`exp(eta)`), `log_lik()`, `loo()`, brms's
+default priors and `describe()`. Verified against `cox_varint`, `cox_uncensored_default_priors`, `cox_bhaz_df`, `cox_bhaz_knots`
+and `cox_varint_post`; interval censoring and `trunc()`, which brms computes wrongly, are refused (D153), as are expected times
+and draws (brms refuses them, D154), left censoring, `weights()`, `bhaz(gr = )` and the other contexts (D155); see
+[the Cox model](cox.md).
+
 brms's summaries of a fit (F07): `ab.fixef`, `ab.ranef`, `ab.coef`, `ab.VarCorr`, `ab.posterior_summary`, `ab.summary` (its
 tables `fixed`, `spec_pars`, `cor_pars` and `random`, with posterior 1.6.1's rank-normalised `Rhat`, `Bulk_ESS` and `Tail_ESS`,
 `autobayes.convergence`, written from Vehtari et al. 2021) and `ab.residuals(type="ordinary", method="posterior_epred")`, each a
