@@ -127,7 +127,8 @@ def log_lik(model, fit_result) -> xr.DataArray:
         else:
             ll = np.asarray(fam.log_likelihood(model, post, eta), dtype=float)
     ll = np.broadcast_to(ll, eta.shape[:3]).copy()
-    if model.design.cens is not None or model.design.lb is not None:   # E04: brms's censored / truncated log_lik
+    if (model.design.cens is not None or model.design.lb is not None) and "cens" not in fam.own_additions:   # E04: brms's censored /
+                                                                                       # truncated log_lik (F05: cox's is its own)
         from autobayes.likelihoods import censored_truncated_log_lik
         ll = np.asarray(censored_truncated_log_lik(model, post, eta, ll), dtype=float)
     if model.design.weights is not None:                       # brms multiplies each row's log density by its weight (B02)
@@ -166,6 +167,8 @@ def bayes_R2(model, fit_result) -> xr.DataArray:
     if fam.hurdle_category is not None:                        # E01: no frozen case records brms's R2 of a hurdle ordinal model
         raise ValueError(f"bayes_R2() of the {model.family} family is not offered: how brms scores the hurdle category against the "
                          "ordered ones is not verified by a frozen case (docs/bounded-families.md, divergence D109)")
+    if "mean" not in fam.prediction_kinds:                     # F05: a family without expected values (cox, divergence D154)
+        raise ValueError(f"bayes_R2() is not offered for the {model.family} family: it needs the expected response; {fam.kind_error}")
     ds = predict(model, fit_result, kind="mean")
     if fam.thresholds:                                         # B05: the expected 1-based category against the category
         p = ds[fam.mean_name].transpose("chain", "draw", "__obs__", "category").to_numpy()

@@ -231,6 +231,10 @@ def freeze_target(model):
            if getattr(d, 'category_specific', {}) else {}),
         # So does a cbind() response on the simplex (F01b): its columns in order and its reference category (y is the matrix and
         # 'categories' lists them the reference first), and the logistic_normal family's prior on lncor (sigma's is below).
+        # So does a cox model's baseline hazard (F05): its knots, the bases of the fitted rows, the events and sbhaz's prior.
+        **({'baseline_hazard': {'term': d.bhaz.term.term, 'knots': d.bhaz.knots, 'boundary': list(d.bhaz.boundary), 'Zbhaz': d.bhaz.Zbhaz,
+                                'Zcbhaz': d.bhaz.Zcbhaz, 'event': d.bhaz.event, 'prior': prior(pr.sbhaz)}}
+           if getattr(d, 'bhaz', None) is not None else {}),
         **({'simplex': {'columns': list(s.response_columns), 'reference': model.categories[0],
                         **({'lncor': prior(pr.lncor)} if getattr(pr, 'lncor', None) is not None else {})}}
            if getattr(s, 'response_columns', ()) else {}),

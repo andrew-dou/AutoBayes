@@ -11,7 +11,7 @@ the three sequential and adjacent-category ordinal families, ``sratio``, ``crati
 ``hurdle_gamma.py``, ``hurdle_lognormal.py``; E01's ``zero_one_inflated_beta.py``, ``zero_inflated_beta_binomial.py``,
 ``hurdle_cumulative.py``, ``xbeta.py``; E02's ``inverse_gaussian.py``, ``von_mises.py``, ``asym_laplace.py``,
 ``frechet.py``, ``gen_extreme_value.py``; F04's ``wiener.py``; F01a's ``multinomial.py``, the multinomial and
-Dirichlet-multinomial families);
+Dirichlet-multinomial families; F05's ``cox.py``);
 ``autobayes.families.FAMILIES`` is the registry and ``get_family(name)`` the lookup. Callable fields
 take the built ``Model`` (or the frame being validated) because that is what the call sites have in
 hand; none of them is called before ``Model.__init__`` has resolved the spec.
@@ -480,6 +480,15 @@ class FamilySpec:
     # brms's summaries fixef(), ranef(), coef(), VarCorr(), posterior_summary(), summary() and residuals() (F07,
     # docs/summaries.md): whether they take the family, set where a frozen brms case verifies its names and parameters.
     summaries: bool = False
+    # brms's cox() proportional hazards model (F05, docs/cox.md, ``autobayes/baseline_hazard.py``): the family's baseline hazard is a cubic
+    # M-spline basis of the time with the simplex ``sbhaz`` of its weights, which the model's design (``Design.bhaz``), priors
+    # (``Priors(sbhaz=...)``), value points and post-processing hold; False for every other family.
+    baseline_hazard: bool = False
+    # F05: the addition terms the family's own likelihood reads (cox: cens() and bhaz()), which B02's ``addition_family`` and
+    # E04's censored ``log_lik()`` do not wrap; and addition terms refused with a reason of the family's own, by kind (cox:
+    # trunc(), which brms computes wrongly, and weights())
+    own_additions: frozenset[str] = frozenset()
+    refused_additions: Mapping[str, str] = field(default_factory=lambda: NO_PARKED_LINKS)
 
     @property
     def distributional_parameters(self) -> tuple[str, ...]:

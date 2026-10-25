@@ -532,6 +532,13 @@ def compare_univariate(model, reading: Reading, issues: list, notes: list, what:
                 issues.append(f"{what}brms's {key} differs from AutoBayes's groups of {spec.timecor.term}")
         if not np.array_equal(tc.order, np.arange(tc.n)):
             issues.append(f"{what}the data are not in brms's group and time order")
+    bhaz = getattr(d, "bhaz", None)                                  # F05: a cox model's Zbhaz, Zcbhaz, Kbhaz and con_sbhaz
+    if bhaz is not None:
+        from autobayes.priors import dirichlet_concentration
+        con = dirichlet_concentration(model.priors.sbhaz, bhaz.K)
+        for key, mine in (("Zbhaz", bhaz.Zbhaz), ("Zcbhaz", bhaz.Zcbhaz), ("Kbhaz", bhaz.K), ("con_sbhaz", con)):
+            if not reading.has(key) or not _close(reading.get(key), mine):
+                issues.append(f"{what}brms's {key} differs from AutoBayes's baseline hazard")
     q = getattr(model, "quantile", None)
     if q is not None:
         if not reading.has("quantile") or not _close(reading.get("quantile"), q):

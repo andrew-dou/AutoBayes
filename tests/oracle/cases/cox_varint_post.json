@@ -80,9 +80,5 @@
    "log_lik",
    "loo"
   ]
- },
- "gate": {
-  "expect": "fail",
-  "reason": "F05_cox not implemented; remove this field when it lands"
  }
 }

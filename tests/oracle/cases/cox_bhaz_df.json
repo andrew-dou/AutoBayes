@@ -76,9 +76,5 @@
     2
    ]
   }
- },
- "gate": {
-  "expect": "fail",
-  "reason": "F05_cox not implemented; remove this field when it lands"
  }
 }

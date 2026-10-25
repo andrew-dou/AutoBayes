@@ -13385,26 +13385,56 @@
     "got 'cox'"
    ],
    "brms_reading": {
-    "status": "error",
-    "error": "Please install the 'splines2' package."
+    "status": "ok",
+    "stan_data": [
+     "K",
+     "Kbhaz",
+     "Kc",
+     "N",
+     "X",
+     "Y",
+     "Zbhaz",
+     "Zcbhaz",
+     "con_sbhaz"
+    ],
+    "design_columns": {
+     "X": [
+      "Intercept",
+      "x"
+     ],
+     "Zbhaz": [
+      "1",
+      "2",
+      "3",
+      "4",
+      "5"
+     ],
+     "Zcbhaz": [
+      "1",
+      "2",
+      "3",
+      "4",
+      "5"
+     ]
+    },
+    "group_terms": []
    },
    "result": {
-    "status": "error",
-    "type": "ValueError",
-    "message": "family must be one of ['acat', 'asym_laplace', 'bernoulli', 'beta', 'beta_binomial', 'binomial', 'categorical', 'cratio', 'cumulative', 'exgaussian', 'exponential', 'frechet', 'gamma', 'gaussian', 'gen_extreme_value', 'geometric', 'hurdle_cumulative', 'hurdle_gamma', 'hurdle_lognormal', 'hurdle_negbinomial', 'hurdle_poisson', 'inverse_gaussian', 'lognormal', 'mixture', 'negbinomial', 'negbinomial2', 'poisson', 'shifted_lognormal', 'skew_normal', 'sratio', 'student', 'von_mises', 'weibull', 'xbeta', 'zero_inflated_beta', 'zero_inflated_beta_binomial', 'zero_inflated_binomial', 'zero_inflated_negbinomial', 'zero_inflated_poisson', 'zero_one_inflated_beta'], got 'cox'",
-    "raised_at": "__init__.py:69",
-    "stage": "default_priors",
-    "mechanism": "refusal",
-    "outcome": "refused_named",
+    "status": "built",
+    "model": "Model",
+    "model_warnings": [],
+    "issues": [],
+    "notes": [],
+    "outcome": "match",
     "gap": null
    }
   }
  ],
  "summary": {
   "outcomes": {
-   "match": 123,
+   "match": 124,
    "refused_unclear": 18,
-   "refused_named": 105,
+   "refused_named": 104,
    "misread": 1,
    "differs": 1
   },
@@ -13414,6 +13444,6 @@
    "capability": 102,
    "divergence": 1
   },
-  "brms_refuses": 3
+  "brms_refuses": 2
  }
 }

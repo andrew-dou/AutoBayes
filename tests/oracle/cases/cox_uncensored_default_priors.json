@@ -39,9 +39,5 @@
   "formula": "ypos2 ~ x + (1 | g)",
   "kwargs": {},
   "priors": "default"
- },
- "gate": {
-  "expect": "fail",
-  "reason": "F05_cox not implemented; remove this field when it lands"
  }
 }

@@ -112,7 +112,8 @@ CENS_TRUNC_REFUSALS = [
     ("y | trunc(lb = -Inf) ~ x", "gaussian", r"has no finite bound"),
     ("y | cens(c) + trunc(lb = 0) ~ x", "gaussian", r"cens\(\) together with trunc\(\) is not supported"),
     ("cnt | cens(c) ~ x", "poisson", r"'cens\(c\)' is not available for the poisson family; brms's cens\(\) is verified here for the "
-                                     r"gaussian, gamma, lognormal, weibull families"),   # E04: the Weibull and lognormal too; the Gamma since P6's reference (D120)
+                                     r"gaussian, gamma, lognormal, weibull, cox families"),   # E04: the Weibull and lognormal too; the Gamma since P6's
+                                                                                               # reference (D120); F05: cox's right censoring
     # E04: trunc() is offered for the Poisson family; its lower bound is withheld (D121), and a family without it refuses it
     ("cnt | trunc(lb = 0) ~ x", "poisson", r"'trunc\(lb = 0\)': a lower bound of a count response is implemented .* and withheld"),
     ("ypos | trunc(lb = 0) ~ x", "gamma", r"'trunc\(lb = 0\)' is not available for the gamma family; brms's trunc\(\) is verified here for "
@@ -145,7 +146,8 @@ def test_no_park_and_the_family_registry():
         # E04: cens() for the Weibull, lognormal and (with P6's reference, D120) Gamma families, trunc() for the Poisson and
         # negative binomial families; every family with either has tails
         offered = spec.addition_terms - set(spec.parked_additions)
-        assert ("cens" in offered) == (name in {"gaussian", "weibull", "lognormal", "gamma"}), name
+        assert ("cens" in offered) == (name in {"gaussian", "weibull", "lognormal", "gamma", "cox"}), name   # F05: cox's own likelihood
+        assert ("cens" in spec.own_additions) == (name == "cox"), name                                      # reads it, without tails
         assert not spec.parked_additions, name
         assert ("trunc" in offered) == (name in {"gaussian", "poisson", "negbinomial"}), name
         assert (spec.tails is not None) == (name in {"gaussian", "weibull", "lognormal", "gamma", "poisson", "negbinomial"}), name

@@ -41,6 +41,9 @@ def _refuse_unsupported_effects(model) -> None:
     """The models ``conditional_effects()`` takes (module docstring): anything else is refused naming the construct."""
     refuse_unsupported(model, "conditional_effects()")
     fam, s = model.family_spec, model.spec
+    if "mean" not in fam.prediction_kinds:                     # F05: a family without expected values (cox, divergence D154)
+        raise ValueError(f"conditional_effects() of a {model.family} model is not offered: it needs the expected response; "
+                         f"{fam.kind_error}")
     if fam.has_trials:
         raise ValueError(f"conditional_effects() of a {model.family} model is not offered: its expected response needs the "
                          "trials of each grid row, which no frozen case checks (docs/post-processing.md, divergence D99)")

@@ -114,11 +114,12 @@ EXPECTED = {                               # family -> (Bambi parent, link, pred
     "dirichlet_multinomial": ("mu", "logit", "p"),
     "dirichlet": ("mu", "logit", "p"),                    # F01b: the K - 1 linear predictors are the parent
     "logistic_normal": ("mu", "identity", "mean"),        # (its mean is refused, as brms refuses posterior_epred)
+    "cox": ("log_mu", "log", "mu"),                       # F05: eta, the log relative hazard; mu = exp(eta) (kind="relative_hazard")
 }
 
 
 def test_registry_lists_exactly_the_registered_families():
-    assert set(FAMILIES) == set(EXPECTED) and len(FAMILIES) == 45
+    assert set(FAMILIES) == set(EXPECTED) and len(FAMILIES) == 46
     for name, (parent, link, mean) in EXPECTED.items():
         spec = get_family(name)
         assert isinstance(spec, FamilySpec) and spec is FAMILIES[name]
@@ -140,7 +141,8 @@ def test_registry_lists_exactly_the_registered_families():
                                                                             "zero_one_inflated_beta", "xbeta",          # E01
                                                                             "inverse_gaussian", "von_mises", "asym_laplace", "frechet", "gen_extreme_value",   # E02
                                                                             "wiener",                                    # F04
-                                                                            "dirichlet", "logistic_normal"}             # F01b
+                                                                            "dirichlet", "logistic_normal",             # F01b
+                                                                            "cox"}                                       # F05
     assert {spec.bambi_scale_parameter for spec in FAMILIES.values() if spec.scale_parameter == "shape"} == {"alpha"}
     assert {spec.bambi_scale_parameter for spec in FAMILIES.values() if spec.scale_parameter == "phi"} == {"phi"}
     assert all((spec.scale_parameter is None) == (spec.bambi_scale_parameter is None) for spec in FAMILIES.values())
@@ -152,7 +154,12 @@ def test_registry_lists_exactly_the_registered_families():
                                                                             "zero_inflated_beta_binomial",             # E01
                                                                             "multinomial", "dirichlet_multinomial"}    # F01a
     assert {name for name, spec in FAMILIES.items() if "probability" in spec.prediction_kinds} == {"binomial", "beta_binomial"}
-    assert {name for name, spec in FAMILIES.items() if "response" not in spec.prediction_kinds} == {"wiener"}   # F04: no draws (D149)
+    assert {name for name, spec in FAMILIES.items() if "response" not in spec.prediction_kinds} == {"wiener", "cox"}   # F04: no draws
+    assert {name for name, spec in FAMILIES.items() if "mean" not in spec.prediction_kinds} == {"logistic_normal", "cox"}   # (D149); F01b,
+                                                                                                    # F05: no mean (D139, D154)
+    assert {name for name, spec in FAMILIES.items() if spec.baseline_hazard} == {"cox"}                      # F05: brms's sbhaz
+    assert {name: spec.own_additions for name, spec in FAMILIES.items() if spec.own_additions} == {"cox": frozenset({"cens", "bhaz"})}
+    assert {name: set(spec.refused_additions) for name, spec in FAMILIES.items() if spec.refused_additions} == {"cox": {"trunc", "weights"}}
     assert {name for name, spec in FAMILIES.items() if "dec" in spec.addition_terms} == {"wiener"}             # F04: brms's dec()
     assert {name for name, spec in FAMILIES.items() if spec.expected_response is not None} == {"lognormal", "zero_inflated_poisson", "hurdle_poisson",
                                                                                                "cumulative", "mixture", "shifted_lognormal",
@@ -186,7 +193,7 @@ def test_registry_lists_exactly_the_registered_families():
         "wiener": ("bs", "ndt", "bias")}                                                            # F04
     assert {name: e.variable for name, spec in FAMILIES.items() for e in spec.extra_parameters if e.derived} == {
         "gen_extreme_value": "tmp_xi"}                                                               # E02: brms's tmp_xi
-    with pytest.raises(ValueError, match=r"family must be one of \['acat', 'asym_laplace', 'bernoulli', 'beta', 'beta_binomial', 'binomial', 'categorical', 'cratio', 'cumulative', 'dirichlet', 'dirichlet_multinomial', 'exgaussian', 'exponential', 'frechet', 'gamma', 'gaussian', 'gen_extreme_value', 'geometric', 'hurdle_cumulative', 'hurdle_gamma', 'hurdle_lognormal', 'hurdle_negbinomial', 'hurdle_poisson', 'inverse_gaussian', 'logistic_normal', 'lognormal', 'mixture', 'multinomial', 'negbinomial', 'negbinomial2', 'poisson', 'shifted_lognormal', 'skew_normal', 'sratio', 'student', 'von_mises', 'weibull', 'wiener', 'xbeta', 'zero_inflated_beta', 'zero_inflated_beta_binomial', 'zero_inflated_binomial', 'zero_inflated_negbinomial', 'zero_inflated_poisson', 'zero_one_inflated_beta'\], got 'tweedie'"):
+    with pytest.raises(ValueError, match=r"family must be one of \['acat', 'asym_laplace', 'bernoulli', 'beta', 'beta_binomial', 'binomial', 'categorical', 'cox', 'cratio', 'cumulative', 'dirichlet', 'dirichlet_multinomial', 'exgaussian', 'exponential', 'frechet', 'gamma', 'gaussian', 'gen_extreme_value', 'geometric', 'hurdle_cumulative', 'hurdle_gamma', 'hurdle_lognormal', 'hurdle_negbinomial', 'hurdle_poisson', 'inverse_gaussian', 'logistic_normal', 'lognormal', 'mixture', 'multinomial', 'negbinomial', 'negbinomial2', 'poisson', 'shifted_lognormal', 'skew_normal', 'sratio', 'student', 'von_mises', 'weibull', 'wiener', 'xbeta', 'zero_inflated_beta', 'zero_inflated_beta_binomial', 'zero_inflated_binomial', 'zero_inflated_negbinomial', 'zero_inflated_poisson', 'zero_one_inflated_beta'\], got 'tweedie'"):
         get_family("tweedie")
     with pytest.raises(TypeError):
         FAMILIES["tweedie"] = None
@@ -206,7 +213,7 @@ def frame() -> pd.DataFrame:
                                  rt=np.linspace(0.4, 1.5, n), dec=[1, 0, 0] * (n // 3),   # F04: response times and decisions
                                  c1=[1, 0, 2] * (n // 3), c2=[2, 3, 0] * (n // 3), c3=[2, 2, 3] * (n // 3), n5=np.full(n, 5),   # F01a
                                  s1=np.linspace(0.1, 0.3, n), s2=np.linspace(0.5, 0.2, n),   # F01b: a simplex response
-                                 s3=lambda d: 1.0 - d["s1"] - d["s2"])
+                                 s3=lambda d: 1.0 - d["s1"] - d["s2"], ce=[0, 0, 1] * (n // 3))   # F05: right censoring
 
 
 EXAMPLES = {                               # family -> (formula, extra prior classes, constructor keywords)
@@ -257,6 +264,7 @@ EXAMPLES = {                               # family -> (formula, extra prior cla
     "dirichlet_multinomial": ("cbind(c1, c2, c3) | trials(n5) ~ x", {"phi": ab.Gamma(0.01, 0.01)}, {}),
     "dirichlet": ("cbind(s1, s2, s3) ~ x", {"phi": ab.Gamma(2, 0.5)}, {}),                          # F01b
     "logistic_normal": ("cbind(s1, s2, s3) ~ x", {"sigma": ab.HalfNormal(1), "lncor": ab.LKJ(2)}, {}),
+    "cox": ("ypos | cens(ce) ~ x", {"sbhaz": ab.Dirichlet(1)}, {}),                                   # F05
 }
 
 

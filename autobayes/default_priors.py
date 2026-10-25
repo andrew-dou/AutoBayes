@@ -316,7 +316,10 @@ def default_priors(formula: str | list[str], data: pd.DataFrame, *, family: str 
     reference category ``refcat`` is as its constructor takes it, gets brms's defaults for every non-reference category's
     ``Intercept`` (``student_t(3, 0, 2.5)``: brms does not read such a response for them), flat ``b`` and group SDs, and the
     Dirichlet's ``gamma(0.01, 0.01)`` on ``phi``, or the logistic-normal family's ``student_t(3, 0, 2.5)`` on every ``sigma<k>``
-    (``Priors(sigma=...)``) and ``lkj(1)`` on ``lncor``."""
+    (``Priors(sigma=...)``) and ``lkj(1)`` on ``lncor``.
+
+    F05 (docs/cox.md): the cox family's baseline hazard simplex gets brms's ``dirichlet(1)`` (``Priors(sbhaz=...)``); its
+    Intercept's default reads the times under the log link, as brms's does."""
     from autobayes.families import FAMILIES, get_family
     from autobayes.formula import DATA2_UNIVARIATE, FormulaError, check_data2, check_imputation, parse_formula
     from autobayes.multivariate import is_multivariate_formula, multivariate_default_priors
@@ -463,10 +466,11 @@ def default_priors(formula: str | list[str], data: pd.DataFrame, *, family: str 
     timecor = {}                                                       # F03b: brms's lkj(1) on cortime, flat cosy on (0, 1)
     if spec.timecor is not None:
         timecor = {spec.timecor.prior_class: LKJ(1) if spec.timecor.call == "unstr" else Flat()}
+    sbhaz = Dirichlet(1) if fam.baseline_hazard else None              # F05: brms's dirichlet(1) on the cox baseline hazard
     priors = Priors(intercept=mark(intercept), b=mark(Flat()) if spec.pop_terms else None, sd=mark(sd) or None,
                     cor=mark(cor) or None, nu=mark(learned.get("nu")), simo=mark(simo) or None,
                     sdgp=mark(sdgp) or None, lscale=mark(lscale) or None, meanme=mark(me) or None, sdme=mark(me) or None,
-                    lncor=mark(lncor),
+                    lncor=mark(lncor), sbhaz=mark(sbhaz),
                     **{k: mark(v) for k, v in auxiliary.items()}, **{k: mark(v) for k, v in autocor.items()},
                     **{k: mark(v) for k, v in sar.items()}, **{k: mark(v) for k, v in car.items()},
                     **{k: mark(v) for k, v in timecor.items()})
@@ -651,6 +655,8 @@ def prior_table(priors: Priors, spec, family="gaussian", *, center_predictors: b
                     add(None if top else p, "sd", coef=brms_rename(c), group=t.factor, dpar=ds.response, source=p.source if top else None)
     for column, prior in priors.simo_priors(spec).items():           # a monotonic term's simplex (B03): brms's class simo,
         add(prior, "simo", coef=f"{brms_rename(spec.monotonic(column).term)}1")   # coefficient mox1, no class row
+    if fam.baseline_hazard:                                           # F05: the cox baseline hazard's simplex, a class row
+        add(priors.sbhaz, "sbhaz")
     for cls, by_column in (("sdgp", priors.sdgp_priors(spec)), ("lscale", priors.lscale_priors(spec))):   # C03, coefficient gpx
         ps = list(by_column.values())
         if ps and cls == "sdgp" and same(ps):                         # one prior for every process: the class row carries it
