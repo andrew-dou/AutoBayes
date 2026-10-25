@@ -194,7 +194,7 @@ def test_priors_of_the_formulas():
                                             r"'StudentT'\]\), got Beta"):
         ab.zero_inflated_negbinomial(formula, DATA, ab.Priors(**base, zi={"intercept": ab.Beta(1, 1), "b": ab.Normal(0, 1)}))
     with pytest.raises(ab.PriorError, match=r"prior for 'zi' must be a Prior, got dict \(a mapping is the form of the priors of zi's "
-                                            r"own formula.*E03; this model gives it none\)"):
+                                            r"own formula.*; this model gives it none\)"):
         ab.zero_inflated_negbinomial("zcnt ~ x", DATA, ab.Priors(**base, zi=DPAR))
     with pytest.raises(ab.PriorError, match=r"prior for 'zi' must be a Prior, got dict$"):          # a family whose zi takes none
         ab.zero_inflated_poisson("zcnt ~ x", DATA, ab.Priors(intercept=ab.Normal(0, 2), b=ab.Normal(0, 1), zi=DPAR))
@@ -438,9 +438,9 @@ DESCRIBED = {
                     "  alpha_i = eta_alpha,i, one per row: the formula 'alpha ~ w + z' (Distributional parameter alpha, above)",
                     "  y_i ~ SkewNormal(mean mu_i, SD sigma, skewness alpha_i): Azzalini's SN(xi_i, omega_i, alpha_i) with"],
 }
-DETERMINISTIC = {"weibull": "alpha = exp(eta_shape), one shape per row (B01)", "beta_binomial": "phi = exp(eta_phi), one phi per row (B01)",
-                 "zero_inflated_negbinomial": "zi = inv_logit(eta_zi), one zi per row (B01)",
-                 "hurdle_lognormal": "hu = inv_logit(eta_hu), one hu per row (B01)", "skew_normal": "alpha = eta_alpha, one alpha per row (B01)"}
+DETERMINISTIC = {"weibull": "alpha = exp(eta_shape), one shape per row", "beta_binomial": "phi = exp(eta_phi), one phi per row",
+                 "zero_inflated_negbinomial": "zi = inv_logit(eta_zi), one zi per row",
+                 "hurdle_lognormal": "hu = inv_logit(eta_hu), one hu per row", "skew_normal": "alpha = eta_alpha, one alpha per row"}
 
 
 @pytest.mark.parametrize("family", FAMILY_NAMES)

@@ -96,7 +96,7 @@ def _refuse_measurement(model, what: str) -> None:
     a model leaves out the noisy values' and the imputed values' densities, which no frozen case checks here; divergence D74)."""
     specs = [sub.spec for sub in model.submodels.values()] if getattr(model, "responses", None) else [model.spec]
     if any(getattr(s, "me_terms", ()) or getattr(s, "mi_terms", ()) or getattr(s, "missing_columns", ()) for s in specs):
-        raise ValueError(f"{what} of a model with me() or mi() is not offered in this slice (docs/missing-and-measurement-error.md, "
+        raise ValueError(f"{what} of a model with me() or mi() is not offered (docs/missing-and-measurement-error.md, "
                          "divergence D74)")
 
 
@@ -398,7 +398,7 @@ def _refuse_unsupported(model, what: str) -> None:
     ``fcor()`` (F03a, D145)."""
     _refuse_measurement(model, what)
     if getattr(model, "responses", None):
-        raise ValueError(f"{what} of a multivariate model is not offered in this slice (docs/post-processing.md, divergence D95)")
+        raise ValueError(f"{what} of a multivariate model is not offered (docs/post-processing.md, divergence D95)")
     term = getattr(getattr(model, "spec", None), "fcor", None)
     if term is not None:                                     # F03a: brms's log_lik conditions each row on all the others
         raise ValueError(f"{what} of a model with {term.term} is not offered: brms's log_lik() of the joint normal is each row's "

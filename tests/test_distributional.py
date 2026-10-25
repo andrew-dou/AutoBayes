@@ -301,7 +301,7 @@ def test_the_lognormal_mean_and_every_familys_draws_take_each_rows_parameter():
 # -- describe, identity, records, prior predictive --------------------------------------------------------------------
 def test_describe_writes_the_formula_out():
     text = gaussian(("yn ~ x + (1 | g)", "sigma ~ x + z"), sd=ab.HalfNormal(1)).describe()
-    assert text.splitlines()[0] == "AutoBayes M0 model with distributional formula(s) for sigma"     # z is sigma's only
+    assert text.splitlines()[0] == "AutoBayes Gaussian model with distributional formula(s) for sigma"     # z is sigma's only
     for line in ["  sigma     : sigma ~ x + z   (distributional formula: sigma has its own linear predictor, log link)",
                  "  z         : categorical, treatment coding, reference 'p'; levels (sorted) p, q, r; coefficients b_sigma_z[q, r]",
                  "Distributional parameter sigma (its own formula 'sigma ~ x + z', log link; brms's bf(..., sigma ~ x + z))",
@@ -314,7 +314,7 @@ def test_describe_writes_the_formula_out():
                  "  sigma_x                  b_sigma_x"]:
         assert line in text.splitlines(), line
     assert "\n  sigma_log__" not in text and "  sigma ~ HalfNormal" not in text
-    assert text.splitlines()[-1].endswith("; sigma = exp(eta_sigma), one sigma per row (B01)")
+    assert text.splitlines()[-1].endswith("; sigma = exp(eta_sigma), one sigma per row")
     beta = ab.beta(["prop ~ x", "phi ~ x"], FRAME, ab.Priors(intercept=ab.Normal(0, 1), b=ab.Normal(0, 1), phi=SIGMA)).describe()
     assert "  y_i ~ Beta(mu_i phi_i, (1 - mu_i) phi_i); mu_i = expit(eta_i); E[y_i] = mu_i, Var[y_i] = mu_i (1 - mu_i) / (1 + phi_i)" in beta
 

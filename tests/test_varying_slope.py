@@ -62,8 +62,8 @@ REFUSALS = [                                   # '(1 + x | g)', once refused her
     ("y ~ w + (1 + x || g)", {}, "the varying slope 'x' must also be a population-level term of the formula, as in 'y ~ x + (1 + x || g)'"),
     ("y ~ (1 + x || g)", {}, "the varying slope 'x' must also be a population-level term of the formula"),
     ("y ~ x + z + (1 + z || g)", {"categorical": {"z": "p"}}, "'z' is declared categorical; a categorical varying slope (one varying coefficient per level of 'z') is not supported"),
-    ("y ~ x + z + x:z + (1 + x:z || g)", {"categorical": {"z": "p"}}, "an interaction cannot be a varying slope in this subset"),
-    ("y ~ x + (1 + x*z || g)", {}, "an interaction cannot be a varying slope in this subset"),
+    ("y ~ x + z + x:z + (1 + x:z || g)", {"categorical": {"z": "p"}}, "an interaction cannot be a varying slope"),
+    ("y ~ x + (1 + x*z || g)", {}, "an interaction cannot be a varying slope"),
     ("y ~ x + (1 + g || g)", {}, "the grouping factor 'g' cannot also be a varying slope"),
     ("y ~ x + (1 + y || g)", {}, "the response 'y' cannot be a varying slope"),
     ("k | trials(n) ~ x + (1 + n || g)", {"family": "binomial"}, "the trials column 'n' cannot be a varying slope"),
@@ -423,7 +423,7 @@ def test_intercept_only_factor_consumes_the_same_random_numbers(two_factor):
 # -- 6. describe() -------------------------------------------------------------------------------------------------
 def test_describe_states_the_slope(single, two_factor):
     text = single.describe()
-    for s in ["AutoBayes M0 model with independent varying slope(s)",
+    for s in ["AutoBayes Gaussian model with independent varying slope(s)",
               "mu_i = a_c + (x_x - mean(x_x)) * b_x + u[g_i] + x_x,i * v_x|g[g_i]",
               "u_g[j] = sd_g * z_g[j], z_g[j] ~ Normal(0, 1), j = 0..3",
               "v_x|g[j] = sd_x|g * z_x|g[j], z_x|g[j] ~ Normal(0, 1), j = 0..3: the slope of x varies by g ('||': no correlation with u_g)",

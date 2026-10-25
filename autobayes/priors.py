@@ -1267,7 +1267,7 @@ class Priors:
             dpar_sds = [(f"{scale}:sd:{g}", p) for (g, c), p in sub.sd_priors(dspec).items()]   # D08: a shared ID's terms
         elif scale is not None and isinstance(auxiliary[scale], Mapping):
             raise PriorError(
-                f"prior for {scale!r} is a mapping, the form of the priors of {scale}'s own formula ('{scale} ~ ...', B01); "
+                f"prior for {scale!r} is a mapping, the form of the priors of {scale}'s own formula ('{scale} ~ ...'); "
                 f"this model gives {scale} none: pass one positive-support prior, or add the formula "
                 f"(['<response formula>', '{scale} ~ ...'], docs/distributional.md)")
         logistic = set()                                              # E03: brms's logistic(0, 1) on a zi / hu formula's intercept
@@ -1304,8 +1304,8 @@ class Priors:
         if zero is not None and zero not in formulas:                 # the zero-inflation / hurdle probability (B06)
             prior = auxiliary[zero]
             if not isinstance(prior, Prior):
-                hint = (f" (a mapping is the form of the priors of {zero}'s own formula, ['<response formula>', '{zero} ~ ...'], "
-                        "E03; this model gives it none)" if zero in fam.distributional_parameters and isinstance(prior, Mapping) else "")
+                hint = (f" (a mapping is the form of the priors of {zero}'s own formula, ['<response formula>', '{zero} ~ ...']; "
+                        "this model gives it none)" if zero in fam.distributional_parameters and isinstance(prior, Mapping) else "")
                 raise PriorError(f"prior for {zero!r} must be a Prior, got {type(prior).__name__}{hint}")
             if prior.name not in _UNIT:
                 raise PriorError(f"prior for {zero!r} must be a prior on (0, 1) ({sorted(_UNIT)}; the {AUXILIARY[zero]} "
@@ -1330,7 +1330,7 @@ class Priors:
         if not isinstance(prior, Prior):
             if extra.name in fam.distributional_parameters:           # E03: the skew normal's alpha takes a formula
                 raise PriorError(f"prior for {extra.name!r} must be a Prior, got {type(prior).__name__} (a mapping is the form of "
-                                 f"the priors of {extra.name}'s own formula, ['<response formula>', '{extra.name} ~ ...'], E03; "
+                                 f"the priors of {extra.name}'s own formula, ['<response formula>', '{extra.name} ~ ...']; "
                                  f"this model gives {extra.name} no formula of its own, divergence {extra.divergence})")
             raise PriorError(f"prior for {extra.name!r} must be a Prior, got {type(prior).__name__} (the {extra.name} of the "
                              f"{fam.name} family takes no formula of its own, divergence {extra.divergence})")
@@ -1436,7 +1436,7 @@ class Priors:
                              "mixture takes neither, as in brms")
         if self.sdgp is not None or self.lscale is not None:          # C03: gp() in a mixture is refused (D55)
             raise PriorError("sdgp and lscale are the priors of a Gaussian process gp() (docs/gaussian-processes.md); a mixture takes "
-                             "no Gaussian process in this slice (divergence D55)")
+                             "no Gaussian process (divergence D55)")
         comps = self.components
         if comps is None:
             raise PriorError(f"a mixture needs the priors of each component: {form}")

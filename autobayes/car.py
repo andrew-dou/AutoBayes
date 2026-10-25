@@ -138,7 +138,7 @@ def check_car(term: Car, piece: str, *, response: str, trials: str | None, fam, 
         raise FormulaError(f"{formula!r}: the CAR term {term.term!r} is not available for the {fam.name} family; brms's car() is "
                            f"verified here for the {' and '.join(offering)} families (docs/spatial-car.md, divergence D141)")
     if others:
-        raise FormulaError(f"{formula!r}: the CAR term {term.term!r} next to {others[0]} is not supported in this slice: no frozen "
+        raise FormulaError(f"{formula!r}: the CAR term {term.term!r} next to {others[0]} is not supported: no frozen "
                            "brms case verifies the pair (docs/spatial-car.md, divergence D141)")
 
 

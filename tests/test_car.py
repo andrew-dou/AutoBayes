@@ -130,7 +130,7 @@ def test_the_term_refused(piece, message):
     ("k | trials(n) ~ x + car(W, gr = n)", "binomial", r"the trials column 'n' cannot be the column of locations"),
     ("y ~ x + car(W, gr = site)", "student", r"not available for the student family; brms's car\(\) is verified here for the "
                                              r"gaussian and poisson families .* D141"),
-    ("y | weights(w) ~ x + car(W, gr = site)", "gaussian", r"next to the addition term 'weights\(w\)' is not supported .* D141"),
+    ("y | weights(w) ~ x + car(W, gr = site)", "gaussian", r"next to the addition term 'weights\(w\)' is not supported.* D141"),
     ("y ~ x + ar(gr = g) + car(W, gr = site)", "gaussian", r"next to the autocorrelation term 'ar\(gr = g, p = 1\)'"),
     ("y ~ mo(k) + car(W, gr = site)", "gaussian", r"next to the monotonic term 'mo\(k\)'"),
     ("y ~ gp(x) + car(W, gr = site)", "gaussian", r"next to the Gaussian process 'gp\(x\)'"),
@@ -158,14 +158,14 @@ def test_other_models_refuse_the_term():
     with pytest.raises(FormulaError, match=r"a CAR term in a distributional formula \(car\(W, gr = site, type = \"escar\"\)\) is not "
                                            r"supported: it belongs to the response formula here"):
         ab.gaussian(["y ~ x", "sigma ~ x + car(W, gr = site)"], FRAME, ab.Priors(**lin), data2={"W": W})
-    with pytest.raises(FormulaError, match=r"a CAR term in a multivariate formula is not verified in this slice; .* D141"):
+    with pytest.raises(FormulaError, match=r"a CAR term in a multivariate formula is not supported; .* D141"):
         ab.gaussian("mvbind(y, y2) ~ x + car(W, gr = site)", frame, ab.Priors(resp={"y": lin, "y2": lin}), rescor=False)
-    with pytest.raises(FormulaError, match=r"the CAR term 'car\(W, gr = site, type = \"escar\"\)' in a multivariate model is not verified"):
+    with pytest.raises(FormulaError, match=r"the CAR term 'car\(W, gr = site, type = \"escar\"\)' in a multivariate model is not supported"):
         mi = frame.assign(xm=[np.nan, 0.2] + list(np.linspace(0, 1, 16)))           # C06's list of formulas, one per response
         ab.gaussian(["y ~ mi(xm) + w", "xm | mi() ~ w", "y2 ~ x + car(W, gr = site)"], mi, ab.Priors(resp={"y": lin, "xm": lin, "y2": lin}),
                     rescor=False)
     nl = dict(nlpars={"a": {"b": ab.Normal(1, 1)}, "b": {"b": ab.Normal(0, 1)}}, sigma=ab.HalfNormal(1))
-    with pytest.raises(FormulaError, match=r"car\(\) at position \d+ is brms's spatial CAR term \(F02a\), not a function of the "
+    with pytest.raises(FormulaError, match=r"car\(\) at position \d+ is brms's spatial CAR term, not a function of the "
                                            r"non-linear expression"):
         ab.gaussian(["y ~ a * exp(b * x) + car(W, site)", "a ~ 1", "b ~ 1"], FRAME, ab.Priors(**nl), nl=True)
     with pytest.raises(FormulaError, match=r"the CAR term 'car\(W, gr = site, type = \"escar\"\)' in a non-linear parameter's formula"):
@@ -609,7 +609,7 @@ def test_log_lik_bayes_R2_and_loo_read_the_term():
 # -- describe(), names, identity, records -----------------------------------------------------------------------------
 def test_describe_and_names(models):
     text = models["escar"].describe()
-    for line in ('AutoBayes M0 model with spatial CAR term car(W, gr = site, type = "escar") (population-level only)',
+    for line in ('AutoBayes Gaussian model with spatial CAR term car(W, gr = site, type = "escar") (population-level only)',
                  '  car       : car(W, gr = site, type = "escar"): 9 locations (the labels of site, sorted) and 12 edges of data2[\'W\'] on '
                  "them, 2 to 4 neighbours each (brms's Nloc, Jloc, edges1, edges2, Nneigh)",
                  "  mu_i = a_c + (x_x - mean(x_x)) * b_x + rcar[site_i]",

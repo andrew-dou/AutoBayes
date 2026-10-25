@@ -497,3 +497,12 @@ cor = FALSE)` is `||` and `gr(g, id = "p")` is `|p|`; `trials(15)`, brms's censo
 `"interval"`, TRUE/FALSE) and `cat(K)` of the data's number of categories (D169) are taken; R's `.`, backticks, `Intercept`, `::`,
 `%in%`, `^`, smooths, a transformed response, `disc ~` and `nlf()` are refused by name. The syntax corpus now has no silent
 misreading or unclear refusal.
+
+The namespace and messages (F09, docs/namespace-and-messages.md): the session records (`environment`, `fit_record`,
+`compare_records`, `format_comparison`, `format_environment`), the diagnostic `panel` and the term model's classes (`ModelSpec`,
+`PopTerm`, `GroupTerm`, `Categorical`, `parse_formula`, `NonlinearSpec`) are no longer exported: each is imported from its module
+(`autobayes.session`, `autobayes.diagnostics`, `autobayes.formula`, `autobayes.nonlinear`), and `ab.<name>` still works with a
+DeprecationWarning. `describe()` names the family ("AutoBayes Gaussian model"), refusals say "not supported" and cite the
+current documentation and divergence rows, and a model's free variables come in one order whatever `PYTHONHASHSEED`. Four call-surface
+differences are recorded: declared factors (D172), how priors cover a class (D173), rows with missing values (D174) and `fit()`'s
+defaults and the posterior's names (D175).

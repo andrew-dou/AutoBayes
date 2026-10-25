@@ -59,9 +59,9 @@ def slash():
 
 # -- 1. the grammar: expansion, the term model and every refusal by message -------------------------------------
 REFUSALS = [
-    ("y ~ x + (1 | g:h:k)", {}, "only two factors can be combined in a grouping factor in this slice ('g:h:k' names 3 columns)"),
-    ("y ~ x + (1 | g/h/k)", {}, "only two factors can be combined in a grouping factor in this slice ('g/h/k' names 3 columns)"),
-    ("y ~ x + (1 | g/h:k)", {}, "mixing '/' and ':' in a grouping factor ('g/h:k') is not supported in this slice"),
+    ("y ~ x + (1 | g:h:k)", {}, "only two factors can be combined in a grouping factor ('g:h:k' names 3 columns)"),
+    ("y ~ x + (1 | g/h/k)", {}, "only two factors can be combined in a grouping factor ('g/h/k' names 3 columns)"),
+    ("y ~ x + (1 | g/h:k)", {}, "mixing '/' and ':' in a grouping factor ('g/h:k') is not supported"),
     ("y ~ x + (1 | g:g)", {}, "a grouping factor cannot be combined with itself ('g:g')"),
     ("y ~ x + (1 | g/g)", {}, "a grouping factor cannot be combined with itself ('g/g')"),
     ("y ~ x + (1 | g:h) + (1 | g:h)", {}, "duplicate grouping factor 'g:h'; a factor appears in one group term, '(1 | g:h)' or '(1 + x || g:h)'"),
@@ -296,7 +296,7 @@ def test_fit_record_and_describe(colon, slash):
     assert rec["model"]["priors"]["sd:g:h"] == "HalfNormal(sigma=0.5)" and rec["model"]["priors"]["sd:g"] == "HalfNormal(sigma=1)"
     assert {"1|g_sigma", "1|g_h_sigma"} <= set(rec["posterior"])
     text = m.describe()
-    for s in ["AutoBayes M0 model with derived grouping factor(s)",
+    for s in ["AutoBayes Gaussian model with derived grouping factor(s)",
               "n = 20 observations, J = 4 levels of g; J = 10 levels of g:h",
               "levels g:h: 0=g0_h0, 1=g0_h2, 2=g1_h0",
               "g:h       : derived grouping factor, one level per observed (g, h) combination, labelled g_h as brms does (paste(g, h, sep = \"_\")); "

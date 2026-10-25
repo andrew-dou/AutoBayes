@@ -99,15 +99,15 @@ def test_subset_rows(data):
 @pytest.mark.parametrize("formulas, rescor, error, message", [
     (F, True, FormulaError, "subset() with a residual correlation (rescor=True, brms's set_rescor(TRUE)) is refused, as brms refuses "
                             "it (\"Only 'se', 'weights', 'mi' are supported addition arguments when 'rescor' is estimated.\")"),
-    (["y2f ~ x", "wf ~ w"], True, FormulaError, "a formula of its own per response (brms's bf(y ~ ...) + bf(y2 ~ ...)) is not supported in "
-                                                "this slice with a residual correlation (rescor=True)"),
+    (["y2f ~ x", "wf ~ w"], True, FormulaError, "a formula of its own per response (brms's bf(y ~ ...) + bf(y2 ~ ...)) is not supported"
+                                                " with a residual correlation (rescor=True)"),
     (F, None, ValueError, "a formula per response takes rescor=False (brms's set_rescor(FALSE); docs/subset.md)"),
     (F, "no", ValueError, "rescor must be True or False, got 'no'"),
     (F[:1], False, FormulaError, "one formula is a univariate model; a multivariate model is a list of formulas, one per response"),
-    ([F[0], "mvbind(y2, wf) ~ x"], False, FormulaError, "mvbind() inside a list of formulas is not supported in this slice"),
+    ([F[0], "mvbind(y2, wf) ~ x"], False, FormulaError, "mvbind() inside a list of formulas is not supported"),
     (["subset(s1) ~ x", F[1]], False, FormulaError, "subset() belongs to a response's left-hand side, '<response> | subset(<indicator>) ~ <terms>'"),
     (["y | subset(s1) + subset(s2) ~ x", F[1]], False, FormulaError, "subset() appears more than once on the left-hand side"),
-    (["y | subset(s1) + weights(w) ~ x", F[1]], False, FormulaError, "subset() together with weights(w) on the left-hand side is not verified"),
+    (["y | subset(s1) + weights(w) ~ x", F[1]], False, FormulaError, "subset() together with weights(w) on the left-hand side is not supported"),
     (["y | subset(s1 == 1) ~ x", F[1]], False, FormulaError, "subset() takes the name of a 0/1 or logical column of the data, got 's1 == 1'"),
     ([F[0], "y2 | subset(s2) ~ x + foo(x)"], False, FormulaError, "the formula 'y2 | subset(s2) ~ x + foo(x)': 'foo(x)': only log(col)"),
     ([F[0], "y | subset(s2) ~ w"], False, FormulaError, "the response(s) ['y'] have more than one formula"),
@@ -115,11 +115,11 @@ def test_subset_rows(data):
     ([F[0], "y2 | weights(w) ~ x"], False, FormulaError, "addition terms (weights(w)) on a response of a multivariate model are not supported"),
     (["y | subset(s1) ~ x + (1 | mm(g, h))", F[1]], False, FormulaError, "'(1 | mm(g, h))' in a multivariate model is not supported"),
     (["y | subset(s1) ~ me(x, w)", F[1]], False, FormulaError, "a measurement-error term in a multivariate model is not supported"),
-    (["y | subset(s1) ~ mo(k)", F[1]], False, FormulaError, "a monotonic term in a multivariate model is not verified in this slice"),
-    (["y | subset(s1) ~ gp(x)", F[1]], False, FormulaError, "the Gaussian process 'gp(x)' in a multivariate model is not verified"),
+    (["y | subset(s1) ~ mo(k)", F[1]], False, FormulaError, "a monotonic term in a multivariate model is not supported"),
+    (["y | subset(s1) ~ gp(x)", F[1]], False, FormulaError, "the Gaussian process 'gp(x)' in a multivariate model is not supported"),
     (["y | subset(s1) ~ x + ar(t, g)", F[1]], False, FormulaError, "the autocorrelation term 'ar(time = t, gr = g, p = 1)' in a multivariate model"),
     (["y | subset(s1) ~ x + sar(M)", F[1]], False, FormulaError, "the SAR term 'sar(M, type = \"lag\")' in a multivariate model"),
-    (["y | subset(s1) ~ x + fcor(M)", F[1]], False, FormulaError, "fcor(M) in a multivariate model is not verified in this slice"),
+    (["y | subset(s1) ~ x + fcor(M)", F[1]], False, FormulaError, "fcor(M) in a multivariate model is not supported"),
     (["y | subset(s1) ~ x + car(W, gr = g)", F[1]], False, FormulaError, "the CAR term 'car(W, gr = g, type = \"escar\")' in a multivariate"),
     (["y | subset(s1) ~ x + cosy(t, g)", F[1]], False, FormulaError, "the residual correlation term 'cosy(time = t, gr = g)' in a multivariate"),
     (["y | subset(s1) ~ x + y2", F[1]], False, FormulaError, "the response(s) ['y2'] of another formula cannot also be predictors"),
@@ -398,7 +398,7 @@ def test_fit_cleans_each_response_on_its_rows(model, data, monkeypatch):
 
 
 def test_what_is_not_offered(model):
-    for call, message in [(lambda: ab.log_lik(model, posterior()), "log_lik() of a multivariate model is not offered in this slice"),
-                          (lambda: ab.prior_predictive(model, draws=5), "prior_predictive() of a multivariate model is not part of this slice")]:
+    for call, message in [(lambda: ab.log_lik(model, posterior()), "log_lik() of a multivariate model is not offered"),
+                          (lambda: ab.prior_predictive(model, draws=5), "prior_predictive() of a multivariate model is not supported")]:
         with pytest.raises(ValueError, match=re.escape(message)):
             call()

@@ -306,7 +306,7 @@ def test_identity_record_describe_and_prior_predictive(fixture_draws, weighted):
     assert len({m.target_identity["sha256"], other.target_identity["sha256"], plain.target_identity["sha256"]}) == 3
     text = m.describe()
     w = m.design.weights
-    for s in ["AutoBayes M0 model with response addition term(s) weights(w)",
+    for s in ["AutoBayes Gaussian model with response addition term(s) weights(w)",
               f"  weights   : w, each fitted row's log likelihood multiplied by its weight (brms weights()); weights {w.min():.4f} to "
               f"{w.max():.4f}, sum {w.sum():.4f} over 36 rows; the priors are not weighted, and predict() ignores the weights",
               "  weights(): the log likelihood is sum_i w_i log p(y_i | ...), w_i the w of row i (brms's weights[n] *)"]:

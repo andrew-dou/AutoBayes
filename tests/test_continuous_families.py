@@ -504,8 +504,9 @@ print(json.dumps({"describe": m.describe(), "identity": m.target_identity, "valu
 
 
 def test_describe_does_not_depend_on_the_hash_seed():
-    """Bambi creates sigma and alpha in the iteration order of the set of their names, so PyMC's order of ``sigma_log__`` and
-    ``alpha`` follows ``PYTHONHASHSEED``; ``describe()`` (sigma, then alpha, brms's order) and the target identity do not."""
+    """The set of the auxiliary parameters' names that Bambi iterates follows ``PYTHONHASHSEED``; the family the model hands
+    Bambi lists sigma and alpha in its likelihood's order (F09, ``likelihoods.ordered_family``), so PyMC's order of
+    ``sigma_log__`` and ``alpha``, ``describe()`` (sigma, then alpha, brms's order) and the target identity do not."""
     seeds = {}
     for seed in range(32):
         seeds.setdefault(tuple(_fresh(seed, SET_ORDER)["order"]), seed)
@@ -513,7 +514,8 @@ def test_describe_does_not_depend_on_the_hash_seed():
             break
     assert len(seeds) == 2
     first, second = (_fresh(seed, BUILD) for seed in seeds.values())
-    assert first["value_vars"] != second["value_vars"] and sorted(first["value_vars"]) == sorted(second["value_vars"])
+    assert first["value_vars"] == second["value_vars"]
+    assert first["value_vars"].index("sigma_log__") < first["value_vars"].index("alpha")
     assert first["describe"] == second["describe"] and first["identity"] == second["identity"]
 
 

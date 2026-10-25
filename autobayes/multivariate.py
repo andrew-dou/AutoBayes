@@ -175,15 +175,15 @@ def parse_multivariate(formula, data: pd.DataFrame | None = None, family: str = 
             return _parse_separate(formula, data, family, categorical, rescor=rescor)   # F06c: with or without subset()
         if any(_has_subset(f) for f in formula):
             raise FormulaError(f"{formula!r}: subset() in a model with mi() is refused, as brms refuses it (\"mi() terms in subsetted "
-                               "formulas require the 'idx' argument to be specified\"); brms's mi(x, idx = ) is not part of this "
-                               "slice (docs/subset.md, divergence D160)")
+                               "formulas require the 'idx' argument to be specified\"); brms's mi(x, idx = ) is not supported"
+                               " (docs/subset.md, divergence D160)")
         return _parse_imputation(formula, data, family, categorical, rescor=rescor)      # C06: a formula per response, with mi()
     if not isinstance(formula, str):
         first = formula[0] if isinstance(formula, (list, tuple)) and formula else formula
         what = ("a distributional formula in a multivariate model (brms's bf(mvbind(y, y2) ~ ..., sigma ~ z))"
                 if isinstance(first, str) and MVBIND_RE.match(first) else
                 "a formula of its own per response (brms's bf(y ~ ...) + bf(y2 ~ ...))")
-        raise FormulaError(f"{formula!r}: {what} is not supported in this slice; a multivariate model is one formula, "
+        raise FormulaError(f"{formula!r}: {what} is not supported; a multivariate model is one formula, "
                            "'mvbind(y, y2) ~ <terms>', whose right-hand side every response shares (docs/multivariate.md, divergence D56)")
     if rescor is None:
         raise ValueError("a multivariate model needs rescor=True (the responses' residuals correlated, brms's set_rescor(TRUE)) or "
@@ -200,7 +200,7 @@ def parse_multivariate(formula, data: pd.DataFrame | None = None, family: str = 
     inside, rest, rhs = m.group(1), m.group(2).strip(), m.group(3).strip()
     if rest:
         raise FormulaError(f"{formula!r}: {rest!r} after mvbind(): addition terms (weights(), cens(), trunc(), ...) on the responses of a "
-                           "multivariate model are not supported in this slice (docs/multivariate.md, divergence D56)")
+                           "multivariate model are not supported (docs/multivariate.md, divergence D56)")
     responses = tuple(p.strip() for p in inside.split(","))
     bad = [p for p in responses if not re.fullmatch(_IDENT, p)]
     if bad:
@@ -214,37 +214,37 @@ def parse_multivariate(formula, data: pd.DataFrame | None = None, family: str = 
         raise FormulaError(f"{formula!r}: empty right-hand side")
     for piece in _split_top_level(rhs):
         if _MI_RE.search(piece):
-            raise FormulaError(f"{formula!r}: {piece!r}: brms's mi() (missing values modelled by a response's own formula) is not "
-                               "part of this slice (feature C06; docs/multivariate.md, divergence D56): not in an mvbind() formula, "
-                               "whose responses share one right-hand side; C06 takes it in a list of formulas, one per response, "
+            raise FormulaError(f"{formula!r}: {piece!r}: brms's mi() (missing values modelled by a response's own formula) is not supported"
+                               " (docs/multivariate.md, divergence D56): not in an mvbind() formula, "
+                               "whose responses share one right-hand side; it is taken in a list of formulas, one per response, "
                                "['y ~ mi(x) + w', 'x | mi() ~ w'] with rescor=False (docs/missing-and-measurement-error.md)")
         if _GP_RE.search(piece):
-            raise FormulaError(f"{formula!r}: {piece!r}: a Gaussian process in a multivariate formula is not verified in this slice "
+            raise FormulaError(f"{formula!r}: {piece!r}: a Gaussian process in a multivariate formula is not supported "
                                "(each response would have its own process, brms's sdgp_y and lscale_y); write it in a univariate "
                                "model (docs/multivariate.md, divergence D56)")
         if _CAR_RE.search(piece):                             # F02a
-            raise FormulaError(f"{formula!r}: {piece!r}: a CAR term in a multivariate formula is not verified in this slice; write it "
+            raise FormulaError(f"{formula!r}: {piece!r}: a CAR term in a multivariate formula is not supported; write it "
                                "in a univariate model (docs/spatial-car.md, divergence D141)")
         if _AUTOCOR_RE.search(piece):
-            raise FormulaError(f"{formula!r}: {piece!r}: an autocorrelation term in a multivariate formula is not verified in this "
-                               "slice (brms gives each response its own ARMA term, ar_y and ar_y2, with J_lag_y and J_lag_y2); write it "
+            raise FormulaError(f"{formula!r}: {piece!r}: an autocorrelation term in a multivariate formula is not supported"
+                               " (brms gives each response its own ARMA term, ar_y and ar_y2, with J_lag_y and J_lag_y2); write it "
                                "in a univariate model (docs/autocorrelation.md, divergence D70)")
         if _SAR_RE.search(piece):                             # F02b
-            raise FormulaError(f"{formula!r}: {piece!r}: a SAR term in a multivariate formula is not verified in this slice; write it "
+            raise FormulaError(f"{formula!r}: {piece!r}: a SAR term in a multivariate formula is not supported; write it "
                                "in a univariate model (docs/spatial-sar.md, divergence D143)")
         if _FCOR_RE.search(piece):                            # F03a: brms gives each response its own Mfcor_y
-            raise FormulaError(f"{formula!r}: {piece!r}: a fixed residual covariance in a multivariate formula is not verified in "
-                               "this slice (brms gives each response its own matrix, Mfcor_y and Mfcor_y2); write it in a univariate "
+            raise FormulaError(f"{formula!r}: {piece!r}: a fixed residual covariance in a multivariate formula is not supported"
+                               " (brms gives each response its own matrix, Mfcor_y and Mfcor_y2); write it in a univariate "
                                "model (docs/fcor.md, divergence D144)")
         if _TIMECOR_RE.search(piece):                     # F03b
-            raise FormulaError(f"{formula!r}: {piece!r}: a residual correlation term in a multivariate formula is not verified in this "
-                               "slice; write it in a univariate model (docs/unstr-cosy.md, divergence D146)")
+            raise FormulaError(f"{formula!r}: {piece!r}: a residual correlation term in a multivariate formula is not supported"
+                               "; write it in a univariate model (docs/unstr-cosy.md, divergence D146)")
         if _ME_RE.search(piece):
-            raise FormulaError(f"{formula!r}: {piece!r}: a measurement-error term in a multivariate model is not supported in this "
-                               "slice; me() belongs to a univariate Gaussian model here (docs/missing-and-measurement-error.md, "
+            raise FormulaError(f"{formula!r}: {piece!r}: a measurement-error term in a multivariate model is not supported"
+                               "; me() belongs to a univariate Gaussian model here (docs/missing-and-measurement-error.md, "
                                "divergence D73)")
         if _MO_RE.search(piece):
-            raise FormulaError(f"{formula!r}: {piece!r}: a monotonic term in a multivariate formula is not verified in this slice (each "
+            raise FormulaError(f"{formula!r}: {piece!r}: a monotonic term in a multivariate formula is not supported (each "
                                "response would have its own coefficient and simplex, brms's bsp_y and simo_y); write it in a "
                                "univariate model (docs/multivariate.md, divergence D56)")
         gm = _GROUP_RE.match(piece)
@@ -259,8 +259,8 @@ def parse_multivariate(formula, data: pd.DataFrame | None = None, family: str = 
         except FormulaError as e:
             raise FormulaError(f"{formula!r}, the formula of the response {r!r} ('{r} ~ {rhs}'): {e}") from None
         if s.custom_group_terms:                                         # D08: verified in univariate models only
-            raise FormulaError(f"{formula!r}: '{s.custom_group_terms[0].canonical}' in a multivariate formula is not supported in this "
-                               "slice (docs/multi-membership-and-by.md, divergences D104, D105)")
+            raise FormulaError(f"{formula!r}: '{s.custom_group_terms[0].canonical}' in a multivariate formula is not supported"
+                               " (docs/multi-membership-and-by.md, divergences D104, D105)")
         reads = {*s.pop_columns, *(c for t in s.group_terms for c in t.operands), *([s.offset.column] if s.offset is not None else [])}
         others = sorted(reads & set(responses))
         if others:
@@ -302,15 +302,15 @@ def _parse_imputation(formulas, data, family, categorical, *, rescor) -> Multiva
     if len(texts) < 2 or not all(isinstance(f, str) for f in texts):
         raise FormulaError(f"{formulas!r}: {IMPUTATION_FORM}")
     if any(MVBIND_RE.match(f) for f in texts):
-        raise FormulaError(f"{formulas!r}: mvbind() inside a list of formulas is not supported in this slice; {IMPUTATION_FORM}")
+        raise FormulaError(f"{formulas!r}: mvbind() inside a list of formulas is not supported; {IMPUTATION_FORM}")
     if rescor is None:
         raise ValueError("a multivariate model needs rescor=True or rescor=False (divergence D58); a model with mi() takes rescor=False "
                          "(brms's set_rescor(FALSE); docs/missing-and-measurement-error.md)")
     if not isinstance(rescor, (bool, np.bool_)):
         raise ValueError(f"rescor must be True or False, got {rescor!r}")
     if rescor:
-        raise FormulaError(f"{formulas!r}: mi() with a residual correlation (rescor=True, brms's set_rescor(TRUE)) is not supported in "
-                           "this slice: brms would correlate the imputed values' residuals with the other responses'; pass "
+        raise FormulaError(f"{formulas!r}: mi() with a residual correlation (rescor=True, brms's set_rescor(TRUE)) is not supported"
+                           ": brms would correlate the imputed values' residuals with the other responses'; pass "
                            "rescor=False (docs/missing-and-measurement-error.md, divergence D72)")
     specs0 = []
     for text in texts:
@@ -320,7 +320,7 @@ def _parse_imputation(formulas, data, family, categorical, *, rescor) -> Multiva
             raise FormulaError(f"{formulas!r}, the formula {text!r}: {e}") from None
         if specs0[-1].custom_group_terms:                               # D08: verified in univariate models only
             raise FormulaError(f"{formulas!r}, the formula {text!r}: '{specs0[-1].custom_group_terms[0].canonical}' in a multivariate "
-                               "model is not supported in this slice (docs/multi-membership-and-by.md, divergences D104, D105)")
+                               "model is not supported (docs/multi-membership-and-by.md, divergences D104, D105)")
     responses = tuple(s.response for s in specs0)
     dup = sorted({r for r in responses if responses.count(r) > 1})
     if dup:
@@ -330,33 +330,33 @@ def _parse_imputation(formulas, data, family, categorical, *, rescor) -> Multiva
         others = [a.term for a in s.additions if a.kind != "mi"]
         if others or s.trials is not None:
             raise FormulaError(f"{s.formula!r}: addition terms ({', '.join(others or ['trials()'])}) on a response of a multivariate model "
-                               "are not supported in this slice (docs/multivariate.md, divergence D56)")
+                               "are not supported (docs/multivariate.md, divergence D56)")
         if s.me_terms:
-            raise FormulaError(f"{s.formula!r}: a measurement-error term in a multivariate model is not supported in this slice; me() "
+            raise FormulaError(f"{s.formula!r}: a measurement-error term in a multivariate model is not supported; me() "
                                "belongs to a univariate Gaussian model here (docs/missing-and-measurement-error.md, divergence D73)")
         if s.mo_terms:
-            raise FormulaError(f"{s.formula!r}: a monotonic term in a multivariate model is not verified in this slice (docs/multivariate.md, "
+            raise FormulaError(f"{s.formula!r}: a monotonic term in a multivariate model is not supported (docs/multivariate.md, "
                                "divergence D56)")
         if s.gp_terms:                                        # C03: refused as in an mvbind() formula (a formula with mi() already was)
-            raise FormulaError(f"{s.formula!r}: the Gaussian process {s.gp_terms[0].term!r} in a multivariate model is not verified in this "
-                               "slice (each response would have its own process, brms's sdgp_y and lscale_y); write it in a univariate "
+            raise FormulaError(f"{s.formula!r}: the Gaussian process {s.gp_terms[0].term!r} in a multivariate model is not supported"
+                               " (each response would have its own process, brms's sdgp_y and lscale_y); write it in a univariate "
                                "model (docs/multivariate.md, divergence D56)")
         if s.fcor is not None:                                # F03a: likewise
-            raise FormulaError(f"{s.formula!r}: {s.fcor.term} in a multivariate model is not verified in this slice; write it in a "
+            raise FormulaError(f"{s.formula!r}: {s.fcor.term} in a multivariate model is not supported; write it in a "
                                "univariate model (docs/fcor.md, divergence D144)")
         if s.car is not None:                                 # F02a: likewise
-            raise FormulaError(f"{s.formula!r}: the CAR term {s.car.term!r} in a multivariate model is not verified in this slice; write "
+            raise FormulaError(f"{s.formula!r}: the CAR term {s.car.term!r} in a multivariate model is not supported; write "
                                "it in a univariate model (docs/spatial-car.md, divergence D141)")
         if s.autocor is not None:                             # C04: likewise
-            raise FormulaError(f"{s.formula!r}: the autocorrelation term {s.autocor.term!r} in a multivariate model is not verified in "
-                               "this slice (brms gives each response its own ARMA term, ar_y and ar_y2); write it in a univariate model "
+            raise FormulaError(f"{s.formula!r}: the autocorrelation term {s.autocor.term!r} in a multivariate model is not supported"
+                               " (brms gives each response its own ARMA term, ar_y and ar_y2); write it in a univariate model "
                                "(docs/autocorrelation.md, divergence D70)")
         if getattr(s, "sar", None) is not None:               # F02b: likewise
-            raise FormulaError(f"{s.formula!r}: the SAR term {s.sar.term!r} in a multivariate model is not verified in this slice; "
+            raise FormulaError(f"{s.formula!r}: the SAR term {s.sar.term!r} in a multivariate model is not supported; "
                                "write it in a univariate model (docs/spatial-sar.md, divergence D143)")
         if s.timecor is not None:                             # F03b: likewise
-            raise FormulaError(f"{s.formula!r}: the residual correlation term {s.timecor.term!r} in a multivariate model is not verified "
-                               "in this slice; write it in a univariate model (docs/unstr-cosy.md, divergence D146)")
+            raise FormulaError(f"{s.formula!r}: the residual correlation term {s.timecor.term!r} in a multivariate model is not supported"
+                               "; write it in a univariate model (docs/unstr-cosy.md, divergence D146)")
         for t in s.mi_terms:
             col = t.operands[0]
             if col not in responses:
@@ -374,7 +374,7 @@ def _parse_imputation(formulas, data, family, categorical, *, rescor) -> Multiva
                                f"write mi({plain[0]}) to read {plain[0]!r} with its imputed values (docs/missing-and-measurement-error.md)")
     if not any(s.mi_terms for s in specs0):                   # F06c: a formula per response without '| mi()' is _parse_separate's
         raise FormulaError(f"{formulas!r}: the missing values of {list(imputed)} are parameters ('| mi()') that no formula reads through "
-                           "mi(), which is not verified in this slice (divergence D72); a formula per response without '| mi()' is taken "
+                           "mi(), which is not supported (divergence D72); a formula per response without '| mi()' is taken "
                            f"with rescor=False (docs/subset.md), and {IMPUTATION_FORM}")
     reads = {s.response: [t.operands[0] for t in s.mi_terms] for s in specs0}
     state: dict[str, int] = {}
@@ -424,12 +424,12 @@ def _split_subset(text: str) -> tuple[str, str | None]:
     if len(found) > 1:
         raise FormulaError(f"{text!r}: subset() appears more than once on the left-hand side")
     if others:
-        raise FormulaError(f"{text!r}: subset() together with {', '.join(others)} on the left-hand side is not verified in this slice; "
+        raise FormulaError(f"{text!r}: subset() together with {', '.join(others)} on the left-hand side is not supported; "
                            "a response with subset() takes no other addition term here (docs/subset.md, divergence D160)")
     inside = _SUBSET_TERM_RE.match(found[0]).group(1).strip()
     if not re.fullmatch(_IDENT, inside):
         raise FormulaError(f"{text!r}: subset() takes the name of a 0/1 or logical column of the data, got {inside!r}; brms's "
-                           "subset(<expression>) is not part of this slice: compute the indicator as a column (divergence D160)")
+                           "subset(<expression>) is not supported: compute the indicator as a column (divergence D160)")
     return f"{response} ~ {rhs}", inside
 
 
@@ -483,7 +483,7 @@ def _parse_separate(formulas, data, family, categorical, *, rescor) -> Multivari
     if len(texts) < 2:
         raise FormulaError(f"{formulas!r}: one formula is a univariate model; a multivariate model is {SEPARATE_FORM}")
     if any(MVBIND_RE.match(f) for f in texts):
-        raise FormulaError(f"{formulas!r}: mvbind() inside a list of formulas is not supported in this slice; {SEPARATE_FORM}")
+        raise FormulaError(f"{formulas!r}: mvbind() inside a list of formulas is not supported; {SEPARATE_FORM}")
     if rescor is None:
         raise ValueError("a multivariate model needs rescor=True or rescor=False (divergence D58); a formula per response takes "
                          "rescor=False (brms's set_rescor(FALSE); docs/subset.md)")
@@ -495,8 +495,8 @@ def _parse_separate(formulas, data, family, categorical, *, rescor) -> Multivari
             raise FormulaError(f"{formulas!r}: subset() with a residual correlation (rescor=True, brms's set_rescor(TRUE)) is refused, "
                                "as brms refuses it (\"Only 'se', 'weights', 'mi' are supported addition arguments when 'rescor' is "
                                "estimated.\"): pass rescor=False (docs/subset.md, divergence D160)")
-        raise FormulaError(f"{formulas!r}: a formula of its own per response (brms's bf(y ~ ...) + bf(y2 ~ ...)) is not supported in "
-                           "this slice with a residual correlation (rescor=True): no frozen case verifies the joint likelihood of "
+        raise FormulaError(f"{formulas!r}: a formula of its own per response (brms's bf(y ~ ...) + bf(y2 ~ ...)) is not supported"
+                           " with a residual correlation (rescor=True): no frozen case verifies the joint likelihood of "
                            "responses with designs of their own; pass rescor=False (docs/subset.md), or write one formula, "
                            "'mvbind(y, y2) ~ <terms>', whose right-hand side every response shares (docs/multivariate.md, divergence D56)")
     fam = get_family(family)
@@ -513,46 +513,46 @@ def _parse_separate(formulas, data, family, categorical, *, rescor) -> Multivari
     parameters = {p for p in (fam.scale_parameter, *fam.distributional_parameters) if p is not None}
     for s in specs0:
         if s.response in parameters:
-            raise FormulaError(f"{s.formula!r}: a distributional formula in a multivariate model is not supported in this slice "
+            raise FormulaError(f"{s.formula!r}: a distributional formula in a multivariate model is not supported "
                                f"({s.response!r} is a parameter of the {fam.name} family, not a response; docs/multivariate.md, "
                                "divergence D56)")
         others = [a.term for a in s.additions]
         if others or s.trials is not None:
             raise FormulaError(f"{s.formula!r}: addition terms ({', '.join(others or ['trials()'])}) on a response of a multivariate model "
-                               "are not supported in this slice (docs/multivariate.md, divergence D56)")
+                               "are not supported (docs/multivariate.md, divergence D56)")
         if s.custom_group_terms:                                      # D08: verified in univariate models only
-            raise FormulaError(f"{s.formula!r}: '{s.custom_group_terms[0].canonical}' in a multivariate model is not supported in this "
-                               "slice (docs/multi-membership-and-by.md, divergences D104, D105)")
+            raise FormulaError(f"{s.formula!r}: '{s.custom_group_terms[0].canonical}' in a multivariate model is not supported"
+                               " (docs/multi-membership-and-by.md, divergences D104, D105)")
         if s.me_terms:
-            raise FormulaError(f"{s.formula!r}: a measurement-error term in a multivariate model is not supported in this slice; me() "
+            raise FormulaError(f"{s.formula!r}: a measurement-error term in a multivariate model is not supported; me() "
                                "belongs to a univariate Gaussian model here (docs/missing-and-measurement-error.md, divergence D73)")
         if s.mo_terms:
-            raise FormulaError(f"{s.formula!r}: a monotonic term in a multivariate model is not verified in this slice (docs/multivariate.md, "
+            raise FormulaError(f"{s.formula!r}: a monotonic term in a multivariate model is not supported (docs/multivariate.md, "
                                "divergence D56)")
         if s.gp_terms:
-            raise FormulaError(f"{s.formula!r}: the Gaussian process {s.gp_terms[0].term!r} in a multivariate model is not verified in this "
-                               "slice; write it in a univariate model (docs/multivariate.md, divergence D56)")
+            raise FormulaError(f"{s.formula!r}: the Gaussian process {s.gp_terms[0].term!r} in a multivariate model is not supported"
+                               "; write it in a univariate model (docs/multivariate.md, divergence D56)")
         if s.autocor is not None:
-            raise FormulaError(f"{s.formula!r}: the autocorrelation term {s.autocor.term!r} in a multivariate model is not verified in "
-                               "this slice (brms gives each response its own ARMA term, ar_y and ar_y2); write it in a univariate model "
+            raise FormulaError(f"{s.formula!r}: the autocorrelation term {s.autocor.term!r} in a multivariate model is not supported"
+                               " (brms gives each response its own ARMA term, ar_y and ar_y2); write it in a univariate model "
                                "(docs/autocorrelation.md, divergence D70)")
         if getattr(s, "sar", None) is not None:
-            raise FormulaError(f"{s.formula!r}: the SAR term {s.sar.term!r} in a multivariate model is not verified in this slice; "
+            raise FormulaError(f"{s.formula!r}: the SAR term {s.sar.term!r} in a multivariate model is not supported; "
                                "write it in a univariate model (docs/spatial-sar.md, divergence D143)")
         if s.fcor is not None:                                        # F03a, as C06's list of formulas refuses it
-            raise FormulaError(f"{s.formula!r}: {s.fcor.term} in a multivariate model is not verified in this slice; write it in a "
+            raise FormulaError(f"{s.formula!r}: {s.fcor.term} in a multivariate model is not supported; write it in a "
                                "univariate model (docs/fcor.md, divergence D144)")
         if s.car is not None:                                         # F02a, likewise
-            raise FormulaError(f"{s.formula!r}: the CAR term {s.car.term!r} in a multivariate model is not verified in this slice; write "
+            raise FormulaError(f"{s.formula!r}: the CAR term {s.car.term!r} in a multivariate model is not supported; write "
                                "it in a univariate model (docs/spatial-car.md, divergence D141)")
         if s.timecor is not None:                                     # F03b, likewise
-            raise FormulaError(f"{s.formula!r}: the residual correlation term {s.timecor.term!r} in a multivariate model is not verified "
-                               "in this slice; write it in a univariate model (docs/unstr-cosy.md, divergence D146)")
+            raise FormulaError(f"{s.formula!r}: the residual correlation term {s.timecor.term!r} in a multivariate model is not supported"
+                               "; write it in a univariate model (docs/unstr-cosy.md, divergence D146)")
         reads = {*s.pop_columns, *(c for t in s.group_terms for c in t.operands), *([s.offset.column] if s.offset is not None else [])}
         plain = sorted(reads & (set(responses) - {s.response}))
         if plain:
             raise FormulaError(f"{s.formula!r}: the response(s) {plain} of another formula cannot also be predictors, grouping factors or "
-                               "offsets here (brms's mi() is C06's, docs/missing-and-measurement-error.md)")
+                               "offsets here (a response's missing values are modelled with mi(), docs/missing-and-measurement-error.md)")
     subsets = {r: column for r, (_, column) in zip(responses, split) if column is not None}
     indicator_responses = sorted(set(subsets.values()) & set(responses))
     if indicator_responses:
@@ -959,7 +959,7 @@ class MultivariateModel:
         return predict_multivariate(self, fit_result, **kwargs)
 
     def prior_predictive(self, **kwargs):
-        raise ValueError("prior_predictive() of a multivariate model is not part of this slice (docs/multivariate.md); draw from "
+        raise ValueError("prior_predictive() of a multivariate model is not supported (docs/multivariate.md); draw from "
                          "each response's univariate model, model.submodels[response].prior_predictive(), which ignores the "
                          "residual correlation")
 

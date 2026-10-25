@@ -234,9 +234,9 @@ def test_formula_refusals():
         with pytest.raises(ab.FormulaError, match="the cumulative family's thresholds are its intercepts, so the intercept cannot "
                                                   "be removed .*'Cannot remove the intercept in an ordinal model'"):
             ab.cumulative(formula, ordinal_data(), ab.Priors(b=ab.Normal(0, 1)))
-    with pytest.raises(ab.FormulaError, match=r"takes population-level terms only in this slice; a group-level term \('\(1 \| g\)'\)"):
+    with pytest.raises(ab.FormulaError, match=r"takes population-level terms only; a group-level term \('\(1 \| g\)'\)"):
         ab.categorical("c ~ x + (1 | g)", categorical_data().assign(g=list("aabbccaabbcc")), categorical_priors(sd=ab.HalfNormal(1)))
-    with pytest.raises(ab.FormulaError, match="the categorical family takes no offset term in this slice"):
+    with pytest.raises(ab.FormulaError, match="the categorical family takes no offset term"):
         ab.categorical("c ~ x + offset(e)", categorical_data().assign(e=1.0), categorical_priors())
     with pytest.raises(ab.FormulaError, match="Cannot remove the intercept"):
         ab.default_priors("y ~ 0 + x", ordinal_data(), family="cumulative")

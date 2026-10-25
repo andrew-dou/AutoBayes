@@ -128,15 +128,15 @@ FORMULA_REFUSALS = [
     ("y ~ x + sar(M + 1)", r"M = M \+ 1: M must be the name of a matrix handed in data2"),
     ("y ~ x + sar(M):x", r"a SAR term is written sar\(M, type = \"lag\"\) or sar\(M, type = \"error\"\)"),
     ('y ~ x + sar(M) + sar(M, type = "error")', r"one SAR term per formula \(brms: 'Can only model one term per autocorrelation class'\)"),
-    ("y ~ x + (1 | g) + sar(M)", r"next to the group-level term '\(1 \| g\)' is not supported in this slice: no frozen brms case verifies "
+    ("y ~ x + (1 | g) + sar(M)", r"next to the group-level term '\(1 \| g\)' is not supported: no frozen brms case verifies "
                                  r"the pair \(brms takes it\); a SAR model takes population-level terms here .*divergence D143"),
-    ("y ~ x + offset(w) + sar(M)", r"next to the offset 'offset\(w\)' is not supported .*D143"),
-    ("y | weights(w) ~ x + sar(M)", r"next to the response addition term 'weights\(w\)' is not supported .*D143"),
-    ("y ~ mo(k) + sar(M)", r"next to the term 'mo\(k\)' is not supported .*D143"),
-    ("y ~ x + mi(y2) + sar(M)", r"next to the term 'mi\(y2\)' is not supported .*D143"),
-    ("y ~ w + me(x, sdx) + sar(M)", r"next to the term 'me\(x, sdx\)' is not supported .*D143"),
-    ("y ~ x + gp(w) + sar(M)", r"next to the Gaussian process 'gp\(w\)' is not supported .*D143"),
-    ("y ~ x + ar(t, g) + sar(M)", r"next to the autocorrelation term 'ar\(time = t, gr = g, p = 1\)' is not supported .*D143"),
+    ("y ~ x + offset(w) + sar(M)", r"next to the offset 'offset\(w\)' is not supported.*D143"),
+    ("y | weights(w) ~ x + sar(M)", r"next to the response addition term 'weights\(w\)' is not supported.*D143"),
+    ("y ~ mo(k) + sar(M)", r"next to the term 'mo\(k\)' is not supported.*D143"),
+    ("y ~ x + mi(y2) + sar(M)", r"next to the term 'mi\(y2\)' is not supported.*D143"),
+    ("y ~ w + me(x, sdx) + sar(M)", r"next to the term 'me\(x, sdx\)' is not supported.*D143"),
+    ("y ~ x + gp(w) + sar(M)", r"next to the Gaussian process 'gp\(w\)' is not supported.*D143"),
+    ("y ~ x + ar(t, g) + sar(M)", r"next to the autocorrelation term 'ar\(time = t, gr = g, p = 1\)' is not supported.*D143"),
 ]
 
 
@@ -180,11 +180,11 @@ def test_distributional_formulas_refuse_the_term():
 
 def test_multivariate_and_nonlinear_models_refuse_the_term():
     P = dict(LINEAR)
-    with pytest.raises(ab.FormulaError, match=r"'sar\(M\)': a SAR term in a multivariate formula is not verified in this slice.*D143"):
+    with pytest.raises(ab.FormulaError, match=r"'sar\(M\)': a SAR term in a multivariate formula is not supported.*D143"):
         ab.gaussian("mvbind(y, y2) ~ x + sar(M)", FRAME, ab.Priors(resp={"y": P, "y2": P}), rescor=False)
     frame = FRAME.assign(xm=np.r_[np.nan, FRAME.x.to_numpy()[1:]])
-    with pytest.raises(ab.FormulaError, match=r"'y2 ~ x \+ sar\(M\)': the SAR term 'sar\(M, type = \"lag\"\)' in a multivariate model is "
-                                              r"not verified in this slice.*D143"):
+    with pytest.raises(ab.FormulaError, match=r"'y2 ~ x \+ sar\(M\)': the SAR term 'sar\(M, type = \"lag\"\)' in a multivariate model is not supported"
+                                              r".*D143"):
         ab.gaussian(["y ~ mi(xm) + w", "xm | mi() ~ w", "y2 ~ x + sar(M)"], frame, ab.Priors(resp={"y": P, "xm": P, "y2": P}), rescor=False)
     for kwargs in (dict(rescor=False), dict(nl=True)):
         with pytest.raises(ab.FormulaError, match=r"data2 is read by a SAR term .* a non-linear or multivariate model does not take.*D143"):
@@ -193,11 +193,11 @@ def test_multivariate_and_nonlinear_models_refuse_the_term():
             ab.default_priors("y ~ x", FRAME, data2={"M": M_SYM}, **kwargs)
     nl_priors = ab.Priors(nlpars={"a": {"b": ab.Normal(1, 1)}, "b": {"b": ab.Normal(0, 1)}}, sigma=ab.HalfNormal(1))
     frame = FRAME.assign(ypos=np.exp(FRAME.y))
-    with pytest.raises(ab.FormulaError, match=r"sar\(\) at position 17 is brms's SAR term \(F02b\), not a function of the non-linear "
-                                              r"expression; a non-linear model takes no SAR term in this slice.*D143"):
+    with pytest.raises(ab.FormulaError, match=r"sar\(\) at position 17 is brms's SAR term, not a function of the non-linear "
+                                              r"expression; a non-linear model takes no SAR term.*D143"):
         ab.gaussian(["ypos ~ a * exp(b * x) + sar(M)", "a ~ 1", "b ~ 1"], frame, nl_priors, nl=True)
     with pytest.raises(ab.FormulaError, match=r"'a ~ 1 \+ sar\(M\)': the SAR term 'sar\(M, type = \"lag\"\)' in a non-linear parameter's "
-                                              r"formula is not supported in this slice.*D143"):
+                                              r"formula is not supported.*D143"):
         ab.gaussian(["ypos ~ a * exp(b * x)", "a ~ 1 + sar(M)", "b ~ 1"], frame, nl_priors, nl=True)
 
 
@@ -441,7 +441,7 @@ def test_names(lag, error_row):
 
 def test_describe(lag, error_row):
     text = lag.describe()
-    assert text.splitlines()[0] == 'AutoBayes M0 model with simultaneous autoregressive term sar(M, type = "lag") (population-level only)'
+    assert text.splitlines()[0] == 'AutoBayes Gaussian model with simultaneous autoregressive term sar(M, type = "lag") (population-level only)'
     assert ("  sar       : sar(M, type = \"lag\"): data2['M'], 12 x 12 (symmetric) over the fitted rows in data order (brms's Msar); "
             "its eigenvalues lie in [") in text
     assert "  lagsar ~ Flat() on (" in text and "(brms class lagsar, bounded by min_eigenMsar and max_eigenMsar" in text

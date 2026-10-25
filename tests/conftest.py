@@ -21,10 +21,11 @@ def evidence_dir() -> Path:
     run is refused before any write; ``run.json`` (environment, git head, argv, pid) is written
     first, with exclusive create. The committed ``docs/history/*-evidence/`` files are history.
     """
+    from autobayes.session import environment
     from tests.evidence import allocate_run_dir, git_head
 
     return allocate_run_dir(REPO, os.environ.get("AUTOBAYES_EVIDENCE_DIR"), head=git_head(REPO),
-                            environment=ab.environment())
+                            environment=environment())
 
 
 def simulate(n=60, J=6, seed=0, a=1.0, b=0.5, sd=0.5, sigma=0.3, extra=False):

@@ -155,12 +155,12 @@ FORMULA_REFUSALS = [
     ("y ~ x + unstr(tt, subj:h)", r"gr = subj:h: gr must be one column name here \(brms's gr = g:h groups the rows by two columns.*D146"),
     ("y ~ x + unstr(log(tt), subj)", r"time = log\(tt\): time must be one column name here \(docs/unstr-cosy.md"),
     ("y ~ x + unstr(tt, tt)", r"the time column cannot also be the grouping column gr"),
-    ("y ~ x + unstr(tt, subj) + cosy(tt, subj)", r"one residual correlation term per formula in this slice .*D146"),
+    ("y ~ x + unstr(tt, subj) + cosy(tt, subj)", r"one residual correlation term per formula .*D146"),
     ("y ~ x + unstr(y, subj)", r"the response 'y' cannot be the time or grouping column of a residual correlation term"),
     ("y ~ x + cosy(tt, y)", r"the response 'y' cannot be the time or grouping column"),
-    ("y | weights(w) ~ x + unstr(tt, subj)", r"with the response addition term\(s\) weights\(w\) is not supported in this slice: no "
+    ("y | weights(w) ~ x + unstr(tt, subj)", r"with the response addition term\(s\) weights\(w\) is not supported: no "
                                              r"frozen brms case verifies the pair .*D146"),
-    ("y ~ gp(w) + unstr(tt, subj)", r"next to the Gaussian process 'gp\(w\)' is not supported in this slice: .*D146"),
+    ("y ~ gp(w) + unstr(tt, subj)", r"next to the Gaussian process 'gp\(w\)' is not supported: .*D146"),
     ("y ~ x + me(w, h) + cosy(tt, subj)", r"next to the term 'me\(w, h\)' is not supported"),
     ("y ~ x + ar(tt, subj) + unstr(tt, subj)", r"next to the autocorrelation term 'ar\(time = tt, gr = subj, p = 1\)'"),
     ("y ~ x + sar(M) + cosy(tt, subj)", r"the residual correlation term 'cosy\(time = tt, gr = subj\)' next to the SAR term 'sar\(M"),
@@ -205,7 +205,7 @@ def test_distributional_formulas_refuse_the_term():
     pr = ab.Priors(intercept=ab.Normal(0, 2), b=ab.Normal(0, 1), sigma={"intercept": ab.Normal(0, 1), "b": ab.Normal(0, 1)},
                    cortime=ab.LKJ(2))
     with pytest.raises(ab.FormulaError, match=r"the residual correlation term 'unstr\(time = tt, gr = subj\)' with a distributional "
-                                              r"formula is not supported in this slice \(brms accepts .*D146"):
+                                              r"formula is not supported \(brms accepts .*D146"):
         ab.gaussian([UNSTR, "sigma ~ x"], FRAME, pr)
     with pytest.raises(ab.FormulaError, match=r"a residual correlation term in a distributional formula \(cosy\(time = tt, gr = subj\)\) "
                                               r"is not supported: it belongs to the response formula, as in brms"):
@@ -674,11 +674,11 @@ def test_other_features_refuse_the_term():
     with pytest.raises(ab.PriorError, match=r"a residual correlation term unstr\(time = tt, gr = subj\), which no frozen case verifies"):
         ab.gaussian(UNSTR, FRAME, ab.Priors(intercept=ab.Normal(0, 2), b=ab.Horseshoe(), sigma=ab.HalfNormal(1), cortime=ab.LKJ(2)))
     resp = {"y": dict(LINEAR), "w": dict(LINEAR)}
-    with pytest.raises(ab.FormulaError, match=r"'unstr\(tt, subj\)': a residual correlation term in a multivariate formula is not "
-                                              r"verified in this slice; .*D146"):
+    with pytest.raises(ab.FormulaError, match=r"'unstr\(tt, subj\)': a residual correlation term in a multivariate formula is not supported"
+                                              r"; .*D146"):
         ab.gaussian("mvbind(y, w) ~ x + unstr(tt, subj)", FRAME, ab.Priors(resp=resp, rescor=ab.LKJ(2)), rescor=True)
-    with pytest.raises(ab.FormulaError, match=r"the residual correlation term 'cosy\(time = tt, gr = subj\)' in a multivariate model is "
-                                              r"not verified in this slice; .*D146"):        # C06's list of formulas, one per response
+    with pytest.raises(ab.FormulaError, match=r"the residual correlation term 'cosy\(time = tt, gr = subj\)' in a multivariate model is not supported"
+                                              r"; .*D146"):        # C06's list of formulas, one per response
         ab.gaussian(["y ~ x + cosy(tt, subj)", "w | mi() ~ x"], FRAME, ab.Priors(resp=resp), rescor=False)
     with pytest.raises(ab.PriorError, match=r"cortime and cosy are the priors of a residual correlation term .*; a multivariate model "
                                             r"takes neither"):

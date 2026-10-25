@@ -706,14 +706,14 @@ def predict(model, fit_result, *, newdata: pd.DataFrame | None = None, kind: str
         if unseen and policies[g] != "error" and fam.per_category:   # F01b: each category's group term would draw its own
             raise FormulaError(
                 f"newdata has levels of {g!r} not seen in training: {unseen}; new levels in a {model.family} model, whose every "
-                "non-reference category has its own group term, are not offered in this slice (no frozen case verifies how brms "
+                "non-reference category has its own group term, are not offered (no frozen case verifies how brms "
                 f"draws them; docs/dirichlet-logistic-normal.md, divergence {fam.simplex.divergence if fam.simplex else 'D37'})")
         if unseen and policies[g] != "error" and (t.by is not None or t.id is not None):   # D08
             raise FormulaError(
                 f"newdata has levels of {g!r} not seen in training: {unseen}; new levels of "
                 + (f"'{t.canonical}' (one SD per level of {t.by!r})" if t.by is not None else
                    f"a factor whose correlation ID {t.id!r} is shared with a distributional formula")
-                + " are not offered in this slice (docs/multi-membership-and-by.md, divergences D105, D106)")
+                + " are not offered (docs/multi-membership-and-by.md, divergences D105, D106)")
         if unseen and policies[g] == "error":
             raise FormulaError(
                 f"newdata has levels of {g!r} not seen in training: {unseen}. "

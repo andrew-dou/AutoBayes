@@ -424,7 +424,7 @@ REFUSALS = [   # (construct, formula, extra priors, frame changes, error, messag
     ("group terms in bs's formula", [f"{L} ~ x + (1 | g)", "bs ~ w + (1 | g)"], {"sd": ab.HalfNormal(1)}, {}, FormulaError,
      r"group-level terms in a distributional formula"),
     ("a shared ID in bs's formula", [f"{L} ~ x + (1 |p| g)", "bs ~ w + (1 |p| g)"], {"sd": ab.HalfNormal(1)}, {}, FormulaError,
-     r"group-level terms in the formula of bs of the wiener family .* not supported in this slice"),
+     r"group-level terms in the formula of bs of the wiener family .* not supported"),
     ("mo()", f"{L} ~ mo(ord)", {}, {"ord": np.arange(24) % 4}, FormulaError, r"the monotonic term 'mo\(ord\)' is not available for the wiener"),
     ("me()", f"{L} ~ me(x, sdx)", {}, {"sdx": 0.3}, FormulaError, r"the measurement-error term 'me\(x, sdx\)' is not available for the wiener"),
     ("mi()", f"{L} ~ mi(xm)", {}, {"xm": np.where(np.arange(24) % 5 == 0, np.nan, 0.5)}, FormulaError,
@@ -713,8 +713,9 @@ def _fresh(seed: int, script: str) -> dict:
 
 
 def test_describe_does_not_depend_on_the_hash_seed():
-    """Bambi creates bs, ndt and bias in the iteration order of the set of their names, so PyMC's order of their coordinates
-    follows ``PYTHONHASHSEED``; ``describe()`` (bs, ndt, bias: brms's order) and the target identity do not."""
+    """The set of the auxiliary parameters' names that Bambi iterates follows ``PYTHONHASHSEED``; the family the model hands
+    Bambi lists bs, ndt and bias in its likelihood's order (F09, ``likelihoods.ordered_family``), so PyMC's order of their
+    coordinates, ``describe()`` (bs, ndt, bias: brms's order) and the target identity do not."""
     seeds = {}
     for seed in range(32):
         seeds.setdefault(tuple(_fresh(seed, SET_ORDER)["order"]), seed)
@@ -722,7 +723,7 @@ def test_describe_does_not_depend_on_the_hash_seed():
             break
     assert len(seeds) == 2
     first, second = (_fresh(seed, BUILD) for seed in seeds.values())
-    assert first["value_vars"] != second["value_vars"] and sorted(first["value_vars"]) == sorted(second["value_vars"])
+    assert first["value_vars"] == second["value_vars"] and first["value_vars"][:3] == ["bs_log__", "ndt_interval__", "bias_logodds__"]
     assert first["describe"] == second["describe"] and first["identity"] == second["identity"]
 
 

@@ -261,7 +261,7 @@ def test_fit_record_and_describe(poisson, gauss):
         assert s in text, s
     assert "b_offset" not in text and "No exposure/offset" not in text
     text2 = gauss.describe()
-    assert "AutoBayes M0 model with offset" in text2 and "mu_i = a_c + (x_x - mean(x_x)) * b_x + offset_i + u[g_i]" in text2
+    assert "AutoBayes Gaussian model with offset" in text2 and "mu_i = a_c + (x_x - mean(x_x)) * b_x + offset_i + u[g_i]" in text2
     assert "offset_i = exposure_i: the offset term" in text2
     plain = ab.poisson("cnt ~ x + (1 | g)", frame(), POISSON_PRIORS).describe()
     assert "offset_i" not in plain and "with offset" not in plain and "offset    :" not in plain

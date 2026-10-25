@@ -177,7 +177,7 @@ def check_autocor(term: Autocor, piece: str, *, response: str, trials: str | Non
     if additions:
         raise FormulaError(
             f"{formula!r}: the autocorrelation term {term.term!r} with the response addition term(s) "
-            f"{', '.join(a.term for a in additions)} is not supported in this slice (docs/autocorrelation.md, divergence D70)"
+            f"{', '.join(a.term for a in additions)} is not supported (docs/autocorrelation.md, divergence D70)"
         )
 
 

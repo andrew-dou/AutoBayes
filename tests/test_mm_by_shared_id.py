@@ -84,7 +84,7 @@ REFUSALS = [
     (["y ~ x + (1 + x | g)", "sigma ~ 1 + (1 |p| g)"], {}, "names no group-level term of the response formula"),
     (["y ~ x + z + (1 + x |p| g)", "sigma ~ z + (1 + z |p| g)"], {}, "varying slopes in a distributional formula are not supported"),
     (["y ~ x + (1 + x | g)", "sigma ~ 1 + (1 | g)"], {}, "group-level terms in a distributional formula ((1 | g)) are not supported"),
-    ("y ~ x + (1 |p| mm(g, g2))", {}, "a correlation ID with mm() or gr() is not supported in this slice"),
+    ("y ~ x + (1 |p| mm(g, g2))", {}, "a correlation ID with mm() or gr() is not supported"),
     ("y ~ x + (1 + x | mm(g, g2))", {}, "only the varying intercept '(1 | mm(...))' is supported"),
     ("y ~ x + (1 | mm(g, g2, scale = FALSE))", {}, "mm()'s argument 'scale' is not supported"),
     ("y ~ x + (1 | mm(g))", {}, "mm() takes two or more member columns"),
@@ -92,13 +92,13 @@ REFUSALS = [
     ("y ~ x + (1 | mm(g, g2, weights = cbind(w1)))", {}, "2 member columns and 1 weight columns"),
     ("y ~ x + (1 | mm(g, g2, weights = w1))", {}, "weights = takes cbind(<column>, <column>, ...)"),
     ("y ~ x + (1 | gr(g, dist = 'student'))", {}, "brms's gr() options ['dist'] are not supported"),   # F08 takes cor = FALSE as '||'
-    ("y ~ x + (1 + x | gr(g, by = gby))", {}, "varying slopes with gr(by = ) are not supported in this slice"),
+    ("y ~ x + (1 + x | gr(g, by = gby))", {}, "varying slopes with gr(by = ) are not supported"),
     ("y ~ x + (1 | gr(g, by = g))", {}, "cannot be its own by column"),
     ("y ~ x + gby + (1 | gr(g, by = gby))", {}, "'gby' is a by column of the group term and cannot also be a predictor"),
-    ("y ~ x + mo(cnt) + (1 | mm(g, g2))", {}, "next to the monotonic term 'mo(cnt)' is not supported in this slice"),
+    ("y ~ x + mo(cnt) + (1 | mm(g, g2))", {}, "next to the monotonic term 'mo(cnt)' is not supported"),
     ("y | weights(w1) ~ x + (1 | gr(g, by = gby))", {}, "next to the addition term 'weights(w1)' is not supported"),
     ("cnt ~ x + (1 | mm(g, g2))", {"family": "bernoulli"}, "is not available for the bernoulli family (logit link)"),
-    (["y ~ x + (1 | mm(g, g2))", "sigma ~ z"], {}, "next to a distributional formula is not supported in this slice"),
+    (["y ~ x + (1 | mm(g, g2))", "sigma ~ z"], {}, "next to a distributional formula is not supported"),
     ("y ~ x + cs(z)", {}, "brms's category-specific effect cs() is not supported"),
 ]
 
@@ -122,9 +122,9 @@ def test_refused_in_multivariate_and_nonlinear_models():
     from autobayes.multivariate import parse_multivariate
     from autobayes.nonlinear import parse_nonlinear
 
-    with pytest.raises(ab.FormulaError, match=re.escape("in a multivariate formula is not supported in this slice")):
+    with pytest.raises(ab.FormulaError, match=re.escape("in a multivariate formula is not supported")):
         parse_multivariate("mvbind(y, z) ~ x + (1 | mm(g, g2))", frame(), rescor=False)
-    with pytest.raises(ab.FormulaError, match=re.escape("in a non-linear parameter's formula is not supported in this slice")):
+    with pytest.raises(ab.FormulaError, match=re.escape("in a non-linear parameter's formula is not supported")):
         parse_nonlinear(["y ~ a * exp(c * x)", "a ~ 1 + (1 | gr(g, by = gby))", "c ~ 1"], frame())
     with pytest.raises(ab.FormulaError, match=re.escape("in a formula on its own it is not supported here")):
         parse_nonlinear(["y ~ a * exp(c * x)", "a ~ 1 + (1 |p| g)", "c ~ 1 + (1 |p| g)"], frame())
@@ -309,7 +309,7 @@ def test_by_predictions_refuse_new_levels_and_contradicting_by():
         m.predict(idata, newdata=bad, kind="linear")
     new = nd.copy()
     new.loc[new.index[0], "g"] = "zz"
-    with pytest.raises(ab.FormulaError, match=re.escape("(one SD per level of 'gby') are not offered in this slice")):
+    with pytest.raises(ab.FormulaError, match=re.escape("(one SD per level of 'gby') are not offered")):
         m.predict(idata, newdata=new, kind="linear", new_groups="population")
 
 

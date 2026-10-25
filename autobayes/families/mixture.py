@@ -60,8 +60,8 @@ def check_mixture(formula, families, order, priors, center_predictors: bool) -> 
     for name in families:
         get_family(name)                                          # an unknown family is refused with the registry's list
         if name not in COMPONENT_FAMILIES:
-            raise ValueError(f"a {name} mixture component is not offered: the components are {list(COMPONENT_FAMILIES)} in "
-                             f"this slice (brms mixes any families; {DOC}, divergence D52)")
+            raise ValueError(f"a {name} mixture component is not offered: the components are {list(COMPONENT_FAMILIES)}"
+                             f" (brms mixes any families; {DOC}, divergence D52)")
     if not (order is None or order is True or (isinstance(order, str) and order == ORDER)):
         if order is False or (isinstance(order, str) and order == "none"):
             raise ValueError(f"order={order!r} (brms's order = 'none': components not identified by their intercepts) is not "
@@ -97,14 +97,14 @@ def _check_formula(spec) -> None:
         raise FormulaError(f"{spec.formula!r}: a mixture's components are identified by ordering their intercepts (brms's "
                            "order = 'mu'), so the intercept cannot be removed ('0 +' or '- 1'); brms refuses it too")
     if spec.group_terms:
-        raise FormulaError(f"{spec.formula!r}: a mixture takes population-level terms only in this slice; a group-level term "
+        raise FormulaError(f"{spec.formula!r}: a mixture takes population-level terms only; a group-level term "
                            f"('{spec.group_terms[0].canonical}') would give every component its own group effects and SD (brms's "
                            f"group term in each mu<k>), which is not verified here ({DOC}, divergence D55)")
     if spec.offset is not None:
-        raise FormulaError(f"{spec.formula!r}: a mixture takes no offset term in this slice (brms adds it to every component's "
+        raise FormulaError(f"{spec.formula!r}: a mixture takes no offset term (brms adds it to every component's "
                            f"linear predictor; {DOC}, divergence D55)")
     if getattr(spec, "gp_terms", ()):
-        raise FormulaError(f"{spec.formula!r}: a mixture takes no Gaussian process in this slice ('{spec.gp_terms[0].term}' would "
+        raise FormulaError(f"{spec.formula!r}: a mixture takes no Gaussian process ('{spec.gp_terms[0].term}' would "
                            f"give every component its own process, brms's gp() in each mu<k>, which is not verified here; {DOC}, "
                            "divergence D55)")
 

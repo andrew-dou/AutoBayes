@@ -113,7 +113,7 @@ def check_fcor(spec, fam, pieces, formula: str) -> None:
     others += [f"the group term '{t.canonical}'" for t in spec.custom_group_terms]
     others += [f"the category-specific term {t.name!r}" for t in spec.cs_terms]
     if others:
-        raise FormulaError(f"{formula!r}: {term.term} next to {others[0]} is not supported in this slice: no frozen brms case "
+        raise FormulaError(f"{formula!r}: {term.term} next to {others[0]} is not supported: no frozen brms case "
                            f"verifies the pair ({DOC}, divergence D144)")
 
 

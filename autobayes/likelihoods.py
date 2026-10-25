@@ -1592,6 +1592,39 @@ def monotonic_family(base, add_effects: Callable):
     return family
 
 
+_ORDERED_FAMILY_CLASSES: dict[type, type] = {}
+
+
+def _ordered_auxiliary_parameters(family):
+    """The family's parameters other than the parent, in the order its likelihood lists them: a set-like ``dict`` keys
+    view (``in``, ``-``, ``&`` work as on Bambi's set), whose iteration order is fixed."""
+    lk = family.likelihood
+    return {p: None for p in lk.params if p != lk.parent}.keys()
+
+
+def ordered_family(base):
+    """The Bambi family ``base`` (a built-in family's name or a family object) whose auxiliary parameters come in the order
+    its likelihood lists them (F09). Bambi's ``Family.auxiliary_parameters`` is a ``set`` of the parameters' names, and
+    ``bmb.Model`` creates their PyMC variables in its iteration order, which for strings depends on ``PYTHONHASHSEED``: a
+    model with two or more auxiliary parameters (a Student-t model's sigma and nu, a hurdle model's shape and hu, the hurdle
+    cumulative family's thresholds and hu) had its free variables, the posterior's variables and the layout of the
+    sampler's unconstrained vector in another order in each process, and ``describe()`` listed them so. Everything else
+    about the family is the base family's (its class is a subclass of the base family's class)."""
+    import copy
+
+    from bambi.defaults import get_builtin_family
+
+    family = get_builtin_family(base) if isinstance(base, str) else copy.copy(base)
+    cls = type(family)
+    ordered = _ORDERED_FAMILY_CLASSES.get(cls)
+    if ordered is None:
+        ordered = type(cls.__name__, (cls,), {"auxiliary_parameters": property(_ordered_auxiliary_parameters),
+                                              "__module__": cls.__module__, "__qualname__": cls.__qualname__})
+        _ORDERED_FAMILY_CLASSES[cls] = ordered
+    family.__class__ = ordered
+    return family
+
+
 def missing_response_family(base, index, values_name: str, coordinate: str):
     """The Bambi family ``base`` whose response has missing values that are parameters of the model (C06, brms's
     ``y | mi() ~ ...``, docs/missing-and-measurement-error.md): Bambi is handed the response with a placeholder at the missing

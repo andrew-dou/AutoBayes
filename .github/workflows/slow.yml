@@ -32,7 +32,7 @@ jobs:
           uv python install 3.11
           uv sync --locked --extra jax --extra dev
       - name: Environment report
-        run: uv run --no-sync python -c "import autobayes as ab; print(ab.format_environment(ab.environment()))"
+        run: uv run --no-sync python -c "from autobayes.session import environment, format_environment; print(format_environment(environment()))"
       - name: Slow suite (statistical acceptance)
         run: uv run --no-sync pytest tests -q -m slow -p no:cacheprovider --junitxml=evidence-runs/junit-slow.xml
       - name: Upload evidence and junit

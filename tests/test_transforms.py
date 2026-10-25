@@ -37,8 +37,9 @@ def frame(n=24, seed=6) -> pd.DataFrame:
 PRIORS = ab.Priors(intercept=ab.Normal(0.2, 5), b=ab.Normal(0.1, 2), sd=ab.HalfNormal(1), sigma=ab.HalfNormal(1.5))
 POP_PRIORS = ab.Priors(intercept=ab.Normal(0.2, 5), b=ab.Normal(0.1, 2), sigma=ab.HalfNormal(1.5))
 UNSUPPORTED = ("only log(col), exp(col), sqrt(col), I(col^k) with integer k, and I(col * k), I(col + k), I(col - k) with a numeric "
-               "constant k are supported as in-formula transforms of one numeric column (A05, docs/transforms.md); other function "
-               "calls and transformations inside the formula are not supported: compute the column in the data frame and name it instead.")
+               "constant k are supported as in-formula transforms of one numeric column (docs/transforms.md, "
+               "divergence D16); other function calls and transformations inside the formula are not supported: compute "
+               "the column in the data frame and name it instead.")
 
 
 @pytest.fixture(scope="module")
@@ -71,7 +72,7 @@ REFUSALS = [
     ("y ~ log(g) + (1 | g)", {}, "'g': the grouping factor cannot also be a predictor or the response"),
     ("y ~ x + I(h^2) + (1 | g:h)", {}, "'h': the grouping factor cannot also be a predictor or the response"),
     ("y ~ log(z)", {"categorical": {"z": "p"}}, "'log(z)': 'z' is declared categorical; an in-formula transform applies to a numeric column"),
-    ("y ~ x + z + log(x):z", {"categorical": {"z": "p"}}, "'log(x):z': an interaction with a transformed term ('log(x)') is not supported in this slice; compute the column in the data frame and interact the column instead."),
+    ("y ~ x + z + log(x):z", {"categorical": {"z": "p"}}, "'log(x):z': an interaction with a transformed term ('log(x)') is not supported; compute the column in the data frame and interact the column instead."),
     ("y ~ x + z + sin(x):z", {"categorical": {"z": "p"}}, f"'sin(x)': {UNSUPPORTED}"),
     ("y ~ log(xpos) * z", {"categorical": {"z": "p"}}, "an interaction with a transformed term ('log(xpos)') is not supported"),
     ("y ~ log(xpos) + log( xpos )", {}, "'log(xpos)': duplicated predictor"),
@@ -285,7 +286,7 @@ def test_fit_record_and_describe(model):
     assert {"log(xpos)", "I(x^2)"} <= set(rec["posterior"]) and np.isclose(rec["posterior"]["I(x^2)"]["mean"], idata.posterior["I(x^2)"].to_numpy().mean())
     text = m.describe()
     lx = np.log(frame().xpos.to_numpy())
-    for s in ["AutoBayes M0 model with in-formula transform(s)",
+    for s in ["AutoBayes Gaussian model with in-formula transform(s)",
               f"  log(xpos) : in-formula transform of 'xpos', log(xpos_i), range {lx.min():.4f} to {lx.max():.4f} over the fitted rows; recomputed from 'xpos' "
               "on new rows; centred like any column; brms names its coefficient logxpos",
               "  I(x^2)    : in-formula transform of 'x', x_i^2,",

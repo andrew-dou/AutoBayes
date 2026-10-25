@@ -103,7 +103,7 @@ def check_additions(additions, formula: str) -> None:
     ours = [a for a in additions if a.kind in KINDS]
     if ours and len(additions) > 1:
         other = next(a for a in additions if a is not ours[0])
-        raise FormulaError(f"{formula!r}: {ours[0].term!r} together with {other.term!r} is not supported in this slice: no frozen brms "
+        raise FormulaError(f"{formula!r}: {ours[0].term!r} together with {other.term!r} is not supported: no frozen brms "
                            "case verifies the pair; se() and rate() are offered alone on the left-hand side (docs/se-rate.md, "
                            "divergence D157)")
 
@@ -114,8 +114,8 @@ def check_distributional(additions, dpar_formula: str, formula: str) -> None:
     D157)."""
     ours = [a for a in additions if a.kind in KINDS]
     if ours:
-        raise FormulaError(f"{formula!r}: {ours[0].term!r} with the distributional formula {dpar_formula!r} is not supported in this "
-                           "slice: no frozen brms case verifies a formula on a parameter next to it (docs/se-rate.md, divergence D157)")
+        raise FormulaError(f"{formula!r}: {ours[0].term!r} with the distributional formula {dpar_formula!r} is not supported"
+                           ": no frozen brms case verifies a formula on a parameter next to it (docs/se-rate.md, divergence D157)")
 
 
 # -- the family -----------------------------------------------------------------------------------------------------------
