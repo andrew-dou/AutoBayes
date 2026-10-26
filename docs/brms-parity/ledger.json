@@ -2413,6 +2413,181 @@
      }
     }
    }
+  },
+  {
+   "id": "G01_releases",
+   "tier": "G",
+   "lane": "post",
+   "depends_on": [
+    "E04_cens_trunc_families",
+    "E05_post_prior_effects_stacking"
+   ],
+   "status": "queued",
+   "summary": "release the two withheld results (Andrew, 2026-10-26): the lower-truncated count mean E[Y | Y >= lb] (D121, PARKED_TRUNCATION) and the exact stacking weights (D126, PARKED_WEIGHTS), each accepted against brms where brms is exact and a 50-digit reference where it is not (P6; the stacking weights need a new fallback kind)",
+   "pr": null,
+   "attempts": 0,
+   "divergences": [],
+   "next_action": "feature agent (no new fixtures)",
+   "reserved_divergences": "D176"
+  },
+  {
+   "id": "G02_call_surface",
+   "tier": "G",
+   "lane": "formula",
+   "depends_on": [
+    "F09_namespace_and_messages"
+   ],
+   "status": "queued",
+   "summary": "F09's call-surface changes Andrew accepted (2026-10-26): undeclared pandas Categorical and boolean columns coded as brms codes factors and logicals (D172); a class-wide prior with per-coefficient and per-group overrides, brms's coef and group rows (D173); an opt-in to drop rows with missing values and report them (D174). target_accept stays 0.9 (D175)",
+   "pr": null,
+   "attempts": 0,
+   "divergences": [],
+   "next_action": "fixtures (wave G1, part 1)",
+   "reserved_divergences": "D177-D178"
+  },
+  {
+   "id": "G03_interactions",
+   "tier": "G",
+   "lane": "formula",
+   "depends_on": [
+    "A04_general_interactions",
+    "F08_syntax_fixes"
+   ],
+   "status": "queued",
+   "summary": "three-way and higher interactions, (a + b + c)^2, colon-only terms (x:z, f:f2, x + x:f), factor-specific slopes (f + x:f), with R's rule for coding a factor in an interaction whose margin is absent (corpus pop_three_way, pop_power_expansion, pop_colon_only, pop_factor_colon_only, pop_numeric_colon_factor_one_main, pop_factor_slopes)",
+   "pr": null,
+   "attempts": 0,
+   "divergences": [],
+   "next_action": "fixtures (wave G1, part 1)",
+   "reserved_divergences": "D179-D180"
+  },
+  {
+   "id": "G04_transforms",
+   "tier": "G",
+   "lane": "formula",
+   "depends_on": [
+    "A05_formula_transforms",
+    "A06_offset"
+   ],
+   "status": "queued",
+   "summary": "transforms still refused: I() arithmetic, comparisons and fractional powers, log(x + 1), abs(), scale(), poly() (orthogonal and raw), factor() in a formula, offset expressions and several offsets, duplicated and removed terms (x + x, - z); new-data predictions with the transforms' fitted parameters (corpus pop_I_*, pop_log_plus_one, pop_abs, pop_scale, pop_poly*, pop_factor_call, pop_two_offsets, pop_offset_expression, pop_duplicate_term, pop_minus_term)",
+   "pr": null,
+   "attempts": 0,
+   "divergences": [],
+   "next_action": "fixtures (wave G1, part 1)",
+   "reserved_divergences": "D181-D182"
+  },
+  {
+   "id": "G05a_group_term_syntax",
+   "tier": "G",
+   "lane": "formula",
+   "depends_on": [
+    "A02_correlated_slopes",
+    "A03_grouping_syntax",
+    "D08_cs_mm_gr"
+   ],
+   "status": "queued",
+   "summary": "group-level syntax still refused: slope-only (0 + x | g) and (x - 1 | g), one factor in two terms ((1 | g) + (0 + x | g)), factor slopes (1 + f | g), transform and interaction slopes, mo() slopes, three-level g:h:f2 and g/h/f2, a varying slope without its population term (corpus grp_*)",
+   "pr": null,
+   "attempts": 0,
+   "divergences": [],
+   "next_action": "fixtures (wave G1, part 2)",
+   "reserved_divergences": "D183-D184"
+  },
+  {
+   "id": "G05b_gr_cov_dist",
+   "tier": "G",
+   "lane": "formula",
+   "depends_on": [
+    "D08_cs_mm_gr"
+   ],
+   "status": "queued",
+   "summary": "gr(g, cov = A) with a known covariance matrix from data2 (phylogenetic and kinship models), gr(g, dist = 'student'), varying slopes in mm(), mmc() (corpus grp_gr_cov, grp_gr_dist_student, grp_mm_slope, grp_mmc, grp_mm_scale_false)",
+   "pr": null,
+   "attempts": 0,
+   "divergences": [],
+   "next_action": "fixtures (wave G1, part 2)",
+   "reserved_divergences": "D185-D186"
+  },
+  {
+   "id": "G06_distributional_groups",
+   "tier": "G",
+   "lane": "families",
+   "depends_on": [
+    "B01_distributional",
+    "E03_contexts_newer_families"
+   ],
+   "status": "queued",
+   "summary": "group-level terms in distributional formulas (sigma ~ z + (1 | g)), IDs shared between mu and a distributional parameter ((1 |p| g)), offsets in distributional formulas, and the distributional formulas still refused (nu ~ z, zi ~ z for zero-inflated Poisson, disc ~ z) (corpus dist_*)",
+   "pr": null,
+   "attempts": 0,
+   "divergences": [],
+   "next_action": "fixtures (wave G1, part 2)",
+   "reserved_divergences": "D187-D188"
+  },
+  {
+   "id": "G07_family_contexts",
+   "tier": "G",
+   "lane": "families",
+   "depends_on": [
+    "E03_contexts_newer_families",
+    "E04_cens_trunc_families"
+   ],
+   "status": "queued",
+   "summary": "the family-context matrix: cens(), trunc(), weights(), distributional formulas and group-level terms for every family brms supports them on and AutoBayes refuses; split into features once the matrix is probed",
+   "pr": null,
+   "attempts": 0,
+   "divergences": [],
+   "next_action": "probe the matrix (wave G2)",
+   "reserved_divergences": "D189-D192"
+  },
+  {
+   "id": "G08_multivariate_ext",
+   "tier": "G",
+   "lane": "formula",
+   "depends_on": [
+    "C01_multivariate",
+    "F06c_subset"
+   ],
+   "status": "queued",
+   "summary": "multivariate extensions: mvbind() with brms's default rescor, weights() in multivariate models, bf() + bf() with a formula per response, IDs across responses (corpus mv_*)",
+   "pr": null,
+   "attempts": 0,
+   "divergences": [],
+   "next_action": "fixtures (wave G2)",
+   "reserved_divergences": "D193-D194"
+  },
+  {
+   "id": "G09_gp_ext",
+   "tier": "G",
+   "lane": "formula",
+   "depends_on": [
+    "C03_gaussian_process"
+   ],
+   "status": "queued",
+   "summary": "gp() extensions: several inputs gp(x, z), gp(x, by = f), Matern kernels (cov = 'matern32', 'matern52'), scale = FALSE (corpus sp_gp_*)",
+   "pr": null,
+   "attempts": 0,
+   "divergences": [],
+   "next_action": "fixtures (wave G2)",
+   "reserved_divergences": "D195-D196"
+  },
+  {
+   "id": "G10_special_term_ext",
+   "tier": "G",
+   "lane": "formula",
+   "depends_on": [
+    "B03_monotonic",
+    "C06_missing_and_measurement_error",
+    "D08_cs_mm_gr"
+   ],
+   "status": "queued",
+   "summary": "mo() interactions and ids, me(gr = ) and me() interactions, cs() in group-level terms and on expressions (corpus sp_mo_*, sp_me_*, sp_cs_*)",
+   "pr": null,
+   "attempts": 0,
+   "divergences": [],
+   "next_action": "fixtures (wave G2)",
+   "reserved_divergences": "D197-D198"
   }
  ]
 }
