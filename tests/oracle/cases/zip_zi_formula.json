@@ -1,0 +1,122 @@
+{
+ "id": "zip_zi_formula",
+ "tier": "G",
+ "feature": "G06_distributional_groups",
+ "note": "G06 zero_inflated_poisson with zi ~ z + (1 | g): zi = inv_logit(Intercept_zi + Xc_zi b_zi + r_2_zi_1[J_2]) row by row (logit link), zi's group term an ID of its own (2); default priors logistic(0, 1) on Intercept_zi and student_t(3, 0, 2.5) on sd | dpar zi; epred = (1 - zi) exp(eta), and re_formula = NA drops zi's group effects too. The corpus entry dist_zip_zi is refused today because zero_inflated_poisson's FamilySpec (B06) lists no zi DistributionalFormula: E03 gave zi and hu formulas to zero_inflated_negbinomial and hurdle_lognormal only (D30, D33, D116) (checked on the frozen points by tests/oracle/test_group_distributional_harness.py)",
+ "seed": 1326,
+ "n_points": 8,
+ "data": {
+  "generator": "tier_g2",
+  "seed": 1226,
+  "n": 36,
+  "newdata": {
+   "seed": 1326,
+   "n": 5
+  }
+ },
+ "brms": {
+  "formula": [
+   "zcnt ~ x + (1 | g)",
+   "zi ~ z + (1 | g)"
+  ],
+  "family": {
+   "family": "zero_inflated_poisson"
+  },
+  "factors": {
+   "g": [
+    "a",
+    "b",
+    "c",
+    "d",
+    "e",
+    "f"
+   ],
+   "z": [
+    "p",
+    "q",
+    "r"
+   ]
+  },
+  "priors": [
+   {
+    "prior": "normal(0, 2)",
+    "class": "Intercept"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "b"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "sd",
+    "group": "g"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "Intercept",
+    "dpar": "zi"
+   },
+   {
+    "prior": "normal(0, 0.5)",
+    "class": "b",
+    "dpar": "zi"
+   },
+   {
+    "prior": "normal(0, 0.5)",
+    "class": "sd",
+    "dpar": "zi"
+   }
+  ],
+  "extras": [
+   "group_scope"
+  ]
+ },
+ "autobayes": {
+  "constructor": "zero_inflated_poisson",
+  "formula": [
+   "zcnt ~ x + (1 | g)",
+   "zi ~ z + (1 | g)"
+  ],
+  "kwargs": {
+   "categorical": {
+    "z": "p"
+   }
+  },
+  "priors": {
+   "intercept": [
+    "Normal",
+    0,
+    2
+   ],
+   "b": [
+    "Normal",
+    0,
+    1
+   ],
+   "sd": [
+    "HalfNormal",
+    1
+   ],
+   "zi": {
+    "intercept": [
+     "Normal",
+     0,
+     1
+    ],
+    "b": [
+     "Normal",
+     0,
+     0.5
+    ],
+    "sd": [
+     "HalfNormal",
+     0.5
+    ]
+   }
+  }
+ },
+ "gate": {
+  "expect": "fail",
+  "reason": "G06_distributional_groups not implemented; remove this field when it lands"
+ }
+}

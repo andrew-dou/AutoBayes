@@ -54,6 +54,14 @@ in `read_frame`) and `newdata_prediction_refused` (a list of kinds, "linpred" or
 recorded as `predictions.newdata.<kind>_refused` and `<kind>_nogroup_refused` while the fitted rows keep their arrays:
 `Fixture.prediction_refusal("newdata", kind)`). A table's numeric matrix column keeps its dims, (rows, columns): brms's
 conditional_effects() tables of a model with poly(w, 2) carry the model-frame columns 'scale(x)' and 'poly(w, 2)'.
+
+Tier G part 2 cases (G05a, G05b, G06; the data generator `tier_g2` adds a third grouping factor `f2`, a distributional offset
+`soff`, mmc() covariates `x1`, `x2` and unnormalised membership weights `wu1`, `wu2`) need no new key in the brms section:
+gr(g, cov = A) names a data2 matrix as car() does (kinds `g_covariance` and `g_relationship`, labelled by the levels of g), and
+a newdata section's opt-in ``"triples_from_data": true`` copies (g, h, f2) from fitted rows for ``(1 | g/h/f2)``. Their
+fixtures record two kinds of Stan data no gate compared before, brms's Lcov_k of gr(cov = ) and a distributional formula's
+offsets_<dpar>: `gates.Bundle` fails such a case until G1's comparison of it lands (``check_group_covariance``,
+``check_dpar_offsets``).
 """
 from __future__ import annotations
 

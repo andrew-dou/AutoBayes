@@ -376,6 +376,8 @@ NA_COLUMNS["tier_g1"] = ("xm",)
 
 def make(spec: dict) -> tuple[pd.DataFrame, pd.DataFrame | None]:
     """The data and newdata frames of a case's `data` section."""
+    if spec["generator"] == "tier_g2":                          # Tier G part 2: tier_f2's frames plus columns of its own
+        return _make_tier_g2(spec)
     gen = GENERATORS[spec["generator"]]
     data = gen(int(spec["seed"]), int(spec.get("n", 36)))
     nd = spec.get("newdata")
@@ -390,6 +392,85 @@ def make(spec: dict) -> tuple[pd.DataFrame, pd.DataFrame | None]:
                          tier_b=tier in ("tier_b", "tier_c", "tier_d", *later), tier_c=tier in ("tier_c", "tier_d", *later),
                          tier_d=tier in ("tier_d", *later), tier_e=tier in later, tier_f=tier in ("tier_f", "tier_f2"),
                          tier_f2=tier == "tier_f2")
+
+
+# -- Tier G part 2: group-level and distributional syntax ------------------------------------------------------------------
+LEVELS_G2 = {"f2": ("u", "v")}                                  # tier_g2's third grouping factor (brms's g/h/f2)
+
+
+def tier_g2(seed: int, n: int = 36) -> pd.DataFrame:
+    """`tier_f2` plus the columns Tier G part 2 needs: a third grouping factor `f2` (u, v; both present) for three-level nesting
+    (``(1 | g/h/f2)``), a small offset `soff` in (-0.3, 0.3) for a distributional formula (``sigma ~ z + offset(soff)``, on the log
+    scale), the per-member covariates `x1`, `x2` of a multi-membership term with `g` and `g2` (``mmc(x1, x2)``) and membership
+    weights `wu1`, `wu2` in (0.2, 1.2) that do not sum to 1 (``mm(g, g2, weights = cbind(wu1, wu2), scale = FALSE)``; `tier_d`'s
+    `wmm1 + wmm2 = 1` would make scale = FALSE no different from scale = TRUE). Drawn after `tier_f2`'s so the shared columns
+    equal `tier_f2(seed, n)` exactly (its `xm` keeps its missing values)."""
+    df = tier_f2(seed, n)
+    rng = np.random.default_rng(seed + 86028121)
+    df["f2"] = _every_level(rng.choice(np.array(LEVELS_G2["f2"], dtype=object), size=n), LEVELS_G2["f2"])
+    df["soff"] = np.round(rng.uniform(-0.3, 0.3, n), 4)
+    df["x1"] = np.round(rng.normal(0.0, 1.0, n), 4)
+    df["x2"] = np.round(rng.normal(0.0, 1.0, n), 4)
+    df["wu1"] = np.round(rng.uniform(0.2, 1.2, n), 4)
+    df["wu2"] = np.round(rng.uniform(0.2, 1.2, n), 4)
+    return df
+
+
+def _make_tier_g2(spec: dict) -> tuple[pd.DataFrame, pd.DataFrame | None]:
+    """`make` for `tier_g2`: its data, and `tier_f2`'s new rows (the same keys: seed, n, pairs_from_data) with `f2`, `soff`, `x1`,
+    `x2`, `wu1` and `wu2` drawn after them from a generator of their own. A newdata section's opt-in ``"triples_from_data":
+    true`` then copies (g, h, f2) from random rows of the fitted frame, so that ``g:h:f2`` sees only fitted combinations (brms
+    refuses new levels)."""
+    data = tier_g2(int(spec["seed"]), int(spec.get("n", 36)))
+    _, nd = make({**spec, "generator": "tier_f2"})
+    if nd is None:
+        return data, None
+    n = len(nd)
+    rng = np.random.default_rng(int(spec["newdata"]["seed"]) + 86028121)
+    nd["f2"] = rng.choice(np.array(LEVELS_G2["f2"], dtype=object), size=n)
+    nd["soff"] = np.round(rng.uniform(-0.3, 0.3, n), 4)
+    nd["x1"] = np.round(rng.normal(0.0, 1.0, n), 4)
+    nd["x2"] = np.round(rng.normal(0.0, 1.0, n), 4)
+    nd["wu1"] = np.round(rng.uniform(0.2, 1.2, n), 4)
+    nd["wu2"] = np.round(rng.uniform(0.2, 1.2, n), 4)
+    if spec["newdata"].get("triples_from_data"):
+        rows = rng.integers(0, len(data), n)
+        for col in ("g", "h", "f2"):
+            nd[col] = data[col].to_numpy(dtype=object)[rows]
+    return data, nd
+
+
+def _g_covariance(frame: pd.DataFrame) -> pd.DataFrame:
+    """gr(g, cov = A)'s known covariance of the six levels of `g` (a kinship or phylogenetic matrix), labelled by level on both
+    axes: the shared branch lengths of the trees ((a:0.3, b:0.3):0.3, c:0.5):0.4 and ((d:0.2, e:0.4):0.3, f:0.7):0.4, so the
+    diagonal is each level's distance from the root (0.9 to 1.1), a pair within a tree shares 0.4 or 0.7, and the two trees are
+    independent (positive definite)."""
+    shared = {("a", "b"): 0.7, ("a", "c"): 0.4, ("b", "c"): 0.4, ("d", "e"): 0.7, ("d", "f"): 0.4, ("e", "f"): 0.4}
+    depth = {"a": 1.0, "b": 1.0, "c": 0.9, "d": 0.9, "e": 1.1, "f": 1.1}
+    levels = list(LEVELS["g"])
+    A = np.array([[depth[a] if a == b else shared.get((a, b), shared.get((b, a), 0.0)) for b in levels] for a in levels])
+    return pd.DataFrame(A, index=levels, columns=levels)
+
+
+def _g_relationship(frame: pd.DataFrame) -> pd.DataFrame:
+    """gr(g, cov = A)'s known covariance of the six levels of `g` as an estimated (genomic) relationship matrix has it, with small
+    negative entries, labelled by level on both axes: positive definite (eigenvalues 0.31 to 1.76), and its lower Cholesky factor
+    has five negative entries (a pair of relatives of `a` that are less related to each other, 0.1, gives L[c, b] = -0.17), which
+    `_g_covariance`'s, all non-negative, does not."""
+    levels = list(LEVELS["g"])
+    A = np.array([[1.00, 0.50, 0.50, 0.05, -0.10, 0.00],
+                  [0.50, 1.00, 0.10, 0.00, 0.05, -0.05],
+                  [0.50, 0.10, 1.00, -0.05, 0.00, 0.10],
+                  [0.05, 0.00, -0.05, 0.95, 0.25, 0.25],
+                  [-0.10, 0.05, 0.00, 0.25, 1.05, 0.25],
+                  [0.00, -0.05, 0.10, 0.25, 0.25, 1.00]])
+    return pd.DataFrame(A, index=levels, columns=levels)
+
+
+GENERATORS["tier_g2"] = tier_g2
+NA_COLUMNS["tier_g2"] = ("xm",)
+DATA2["g_covariance"] = _g_covariance
+DATA2["g_relationship"] = _g_relationship
 
 
 def write_csv(frame: pd.DataFrame, path) -> None:

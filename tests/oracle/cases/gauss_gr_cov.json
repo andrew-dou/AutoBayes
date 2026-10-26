@@ -1,0 +1,87 @@
+{
+ "id": "gauss_gr_cov",
+ "tier": "G",
+ "feature": "G05b_gr_cov_dist",
+ "note": "G05b (1 | gr(g, cov = A)) with A in data2_A.csv (datasets._g_relationship: a relationship matrix of the six levels with small negative entries, whose lower Cholesky factor has five negative entries): standata Lcov_1 is the lower Cholesky factor of A on g's levels (to 6e-17 of numpy's), r_1_1 = sd_1 (Lcov_1 z_1), a dense product, so the levels' effects have covariance sd^2 A; no new parameter or prior class (checked on the frozen points by tests/oracle/test_group_distributional_harness.py)",
+ "seed": 1311,
+ "n_points": 8,
+ "data": {
+  "generator": "tier_g2",
+  "seed": 1211,
+  "n": 36,
+  "newdata": {
+   "seed": 1311,
+   "n": 5
+  },
+  "data2": {
+   "A": "g_relationship"
+  }
+ },
+ "brms": {
+  "formula": "y ~ x + (1 | gr(g, cov = A))",
+  "family": {
+   "family": "gaussian"
+  },
+  "factors": {
+   "g": [
+    "a",
+    "b",
+    "c",
+    "d",
+    "e",
+    "f"
+   ]
+  },
+  "priors": [
+   {
+    "prior": "normal(0, 5)",
+    "class": "Intercept"
+   },
+   {
+    "prior": "normal(0, 2)",
+    "class": "b"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "sd",
+    "group": "g"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "sigma"
+   }
+  ],
+  "data2": [
+   "A"
+  ]
+ },
+ "autobayes": {
+  "constructor": "gaussian",
+  "formula": "y ~ x + (1 | gr(g, cov = A))",
+  "kwargs": {},
+  "priors": {
+   "intercept": [
+    "Normal",
+    0,
+    5
+   ],
+   "b": [
+    "Normal",
+    0,
+    2
+   ],
+   "sd": [
+    "HalfNormal",
+    1
+   ],
+   "sigma": [
+    "HalfNormal",
+    1
+   ]
+  }
+ },
+ "gate": {
+  "expect": "fail",
+  "reason": "G05b_gr_cov_dist not implemented; remove this field when it lands"
+ }
+}

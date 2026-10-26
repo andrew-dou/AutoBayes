@@ -148,7 +148,8 @@ def test_data2_matrices_are_the_frozen_files(case_id, tmp_path):
     byte for byte as tests/oracle/datasets.py writes them, with their sha256 in the fixture's meta; a case without data2 has
     neither. brms saw what Python reads: sar()'s Msar and fcor()'s Mfcor equal the file exactly, and car(W, gr = site)'s edges
     (edges1, edges2), numbers of neighbours (Nneigh) and row locations (Jloc) are W's, its labels the levels of the grouping
-    factor in order."""
+    factor in order. Tier G: gr(g, cov = A)'s A is labelled by the levels of g in order, and brms's Lcov_k is its lower Cholesky
+    factor (tests/oracle/test_group_distributional_harness.py checks it on the levels and the effects built from it)."""
     case = fx.load_case(case_id)
     d = fx.fixture_dir(case_id)
     names = case["brms"].get("data2", [])
@@ -164,10 +165,16 @@ def test_data2_matrices_are_the_frozen_files(case_id, tmp_path):
         datasets.write_matrix(matrix, tmp_path / f"data2_{name}.csv")
         assert (tmp_path / f"data2_{name}.csv").read_bytes() == fx.data2_path(d, name).read_bytes()
     terms = {m.group(2): m.group(1) for m in re.finditer(r"\b(car|sar|fcor)\((\w+)", _formula_text(case))}
+    covs = {m.group(2): m.group(1) for m in re.finditer(r"\bgr\((\w+),[^()]*\bcov\s*=\s*(\w+)", _formula_text(case))}   # Tier G
+    terms.update({name: "gr" for name in covs})
     assert sorted(terms) == sorted(names)
     sd, frame = fixture.standata, fx.read_frame(case, d / "data.csv")
     for name, matrix in fx.read_data2(case, d).items():
         M = matrix.to_numpy()
+        if terms[name] == "gr":                                    # gr(g, cov = A): A on the levels of g, Lcov its Cholesky factor
+            assert list(matrix.index) == list(matrix.columns) == case["brms"]["factors"][covs[name]]
+            assert any(np.allclose(sd[k], np.linalg.cholesky(M), rtol=0, atol=1e-14) for k in sd if k.startswith("Lcov_"))
+            continue
         if terms[name] != "car":
             assert np.array_equal(sd[{"sar": "Msar", "fcor": "Mfcor"}[terms[name]]], M)
             continue
@@ -400,13 +407,22 @@ def test_summaries_are_moments_and_quantiles_of_the_draws(case_id):
     sd_a sd_b cor_ab (sd^2 on the diagonal); summary()'s first four columns are the same numbers for its rows (fixed b_<name>,
     spec_pars <name>, random sd(<coef>) and cor(<a>,<b>)), its Rhat and ESS columns finite and positive; and residuals()
     (ordinary, method posterior_epred) is ``_summary`` of Y - posterior_epred per draw, the inverse link of
-    b_Intercept + sum of b_<col> col + r_<g>[level, Intercept] (+ r_<g>[level, x] x), row by row."""
+    b_Intercept + sum of b_<col> col + r_<g>[level, Intercept] (+ r_<g>[level, x] x), row by row. Tier G part 2: a distributional
+    parameter's group-level effect (sigma ~ ... + (1 | g)) is r_<g>__<dpar>[level, coef], labelled <dpar>_<coef> in ranef(), coef()
+    and VarCorr() (and left out of the mean); coef() also has every coefficient with group effects and no population-level term
+    (``(0 + x | g)`` without ``x``: its group effect alone); and VarCorr() has cor and cov only for a group with correlations (two
+    terms of one factor, or of mu and sigma, without a shared ID have neither)."""
     from scipy.special import expit
     case = fx.load_case(case_id)
     f = fx.Fixture.load(case_id)
     post, block = f.raw["post"], f.summary_draws
     D = block["draws"].reshape(-1, len(block["variables"]), order="F")       # (draws, variables), chain after chain
     var = {v: D[:, k] for k, v in enumerate(block["variables"])}
+
+    def r_name(g, lv, c):                                       # Tier G: a distributional parameter's effects, r_<g>__<dpar>[...]
+        dpar, _, rest = c.partition("_")
+        return f"r_{g}[{lv},{c}]" if f"r_{g}[{lv},{c}]" in var or not rest else f"r_{g}__{dpar}[{lv},{rest}]"
+
     table, (rows, cols) = fx.decode_labelled(post["posterior_summary"])
     assert rows == block["variables"] and cols == ["Estimate", "Est.Error", "Q2.5", "Q97.5"]
     _close(table, _summary(D))
@@ -415,19 +431,21 @@ def test_summaries_are_moments_and_quantiles_of_the_draws(case_id):
     for g, entry in post["ranef"].items():
         arr, (levels, _, coefs) = fx.decode_labelled(entry)
         for j, c in enumerate(coefs):
-            _close(arr[:, :, j], _summary(np.stack([var[f"r_{g}[{lv},{c}]"] for lv in levels], 1)))
+            _close(arr[:, :, j], _summary(np.stack([var[r_name(g, lv, c)] for lv in levels], 1)))
     for g, entry in post["coef"].items():
         arr, (levels, _, coefs) = fx.decode_labelled(entry)
-        assert coefs == names
+        grouped = fx.decode_labelled(post["ranef"][g])[1][2]
+        assert set(coefs) == set(names) | set(grouped) and [c for c in coefs if c in names] == names   # fixef's order kept
         for j, c in enumerate(coefs):
-            r = [var.get(f"r_{g}[{lv},{c}]", 0.0) for lv in levels]
-            _close(arr[:, :, j], _summary(np.stack([var[f"b_{c}"] + rv for rv in r], 1)))
+            r = [var.get(r_name(g, lv, c), 0.0) for lv in levels]
+            _close(arr[:, :, j], _summary(np.stack([var.get(f"b_{c}", 0.0) + rv for rv in r], 1)))
     for g, entry in post["VarCorr"].items():
         sd_arr, (coefs, _) = fx.decode_labelled(entry["sd"])
         sds = [var["sigma"]] if g == "residual__" else [var[f"sd_{g}__{c}"] for c in coefs]
         _close(sd_arr, _summary(np.stack(sds, 1)))
-        assert set(entry) == ({"sd", "cor", "cov"} if len(coefs) > 1 else {"sd"})
-        if len(coefs) > 1:
+        correlated = any(v.startswith(f"cor_{g}__") for v in var)
+        assert set(entry) == ({"sd", "cor", "cov"} if correlated else {"sd"})
+        if correlated:
             cor = lambda a, b: np.ones(len(D)) if a == b else var.get(f"cor_{g}__{coefs[a]}__{coefs[b]}", var.get(f"cor_{g}__{coefs[b]}__{coefs[a]}"))
             for key, value in (("cor", cor), ("cov", lambda a, b: sds[a] * sds[b] * cor(a, b))):
                 arr, _ = fx.decode_labelled(entry[key])
@@ -452,7 +470,9 @@ def test_summaries_are_moments_and_quantiles_of_the_draws(case_id):
     for g in post["ranef"]:
         _, (levels, _, coefs) = fx.decode_labelled(post["ranef"][g])
         for c in coefs:
-            r = np.stack([var[f"r_{g}[{lv},{c}]"] for lv in frame[g]], 1)
+            if "__" in r_name(g, levels[0], c):                   # a distributional parameter's, not the mean's
+                continue
+            r = np.stack([var[r_name(g, lv, c)] for lv in frame[g]], 1)
             eta = eta + r * (1.0 if c == "Intercept" else frame[c].to_numpy()[None, :])
     inverse_link = {"gaussian": lambda e: e, "bernoulli": expit}[case["brms"]["family"]["family"]]
     resid, (rows, cols) = fx.decode_labelled(post["residuals"])

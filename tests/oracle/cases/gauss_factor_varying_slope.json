@@ -1,0 +1,112 @@
+{
+ "id": "gauss_factor_varying_slope",
+ "tier": "G",
+ "feature": "G05a_group_term_syntax",
+ "note": "G05a z + (1 + z | g), correlated: the factor slope is coded as the population design (treatment contrasts, reference p), Z_1_2 = zq and Z_1_3 = zr equal X's columns, so g has three correlated coefficients Intercept, zq, zr (cholesky_factor_corr[3] L_1 under lkj(2), z_1 a 3 by 6 matrix) (checked on the frozen points by tests/oracle/test_group_distributional_harness.py)",
+ "seed": 1303,
+ "n_points": 8,
+ "data": {
+  "generator": "tier_g2",
+  "seed": 1203,
+  "n": 36,
+  "newdata": {
+   "seed": 1303,
+   "n": 5
+  }
+ },
+ "brms": {
+  "formula": "y ~ z + (1 + z | g)",
+  "family": {
+   "family": "gaussian"
+  },
+  "factors": {
+   "g": [
+    "a",
+    "b",
+    "c",
+    "d",
+    "e",
+    "f"
+   ],
+   "z": [
+    "p",
+    "q",
+    "r"
+   ]
+  },
+  "priors": [
+   {
+    "prior": "normal(0, 5)",
+    "class": "Intercept"
+   },
+   {
+    "prior": "normal(0, 2)",
+    "class": "b"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "sd",
+    "group": "g"
+   },
+   {
+    "prior": "lkj(2)",
+    "class": "cor"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "sigma"
+   }
+  ]
+ },
+ "autobayes": {
+  "constructor": "gaussian",
+  "formula": "y ~ z + (1 + z | g)",
+  "kwargs": {
+   "categorical": {
+    "z": "p"
+   }
+  },
+  "priors": {
+   "intercept": [
+    "Normal",
+    0,
+    5
+   ],
+   "b": [
+    "Normal",
+    0,
+    2
+   ],
+   "sd": {
+    "g": {
+     "Intercept": [
+      "HalfNormal",
+      1
+     ],
+     "zq": [
+      "HalfNormal",
+      1
+     ],
+     "zr": [
+      "HalfNormal",
+      1
+     ]
+    }
+   },
+   "cor": {
+    "g": [
+     "LKJ",
+     2
+    ]
+   },
+   "sigma": [
+    "HalfNormal",
+    1
+   ]
+  }
+ },
+ "gate": {
+  "expect": "fail",
+  "reason": "G05a_group_term_syntax not implemented; remove this field when it lands"
+ }
+}

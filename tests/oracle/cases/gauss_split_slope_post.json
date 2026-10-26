@@ -1,0 +1,127 @@
+{
+ "id": "gauss_split_slope_post",
+ "tier": "G",
+ "feature": "G05a_group_term_syntax",
+ "note": "G05a summaries of w + (1 | g) + (0 + x | g) (two IDs of g, x without a population term): ranef(g) and VarCorr(g) merge the two terms (Intercept, x; VarCorr has sd only, no cor or cov), coef(g) has Intercept, x and w, x's being its group effect alone (there is no b_x), and summary()'s random table g has sd(Intercept) and sd(x); summary_draws: 4 chains of 50 seeded AR(1) draws as in the F07 cases (checked by tests/oracle/test_harness.py's summaries test and on the frozen points by tests/oracle/test_group_distributional_harness.py)",
+ "seed": 1308,
+ "n_points": 8,
+ "data": {
+  "generator": "tier_g2",
+  "seed": 1208,
+  "n": 36,
+  "newdata": {
+   "seed": 1308,
+   "n": 5
+  }
+ },
+ "brms": {
+  "formula": "y ~ w + (1 | g) + (0 + x | g)",
+  "family": {
+   "family": "gaussian"
+  },
+  "factors": {
+   "g": [
+    "a",
+    "b",
+    "c",
+    "d",
+    "e",
+    "f"
+   ]
+  },
+  "priors": [
+   {
+    "prior": "normal(0, 5)",
+    "class": "Intercept"
+   },
+   {
+    "prior": "normal(0, 2)",
+    "class": "b"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "sd",
+    "group": "g"
+   },
+   {
+    "prior": "normal(0, 0.5)",
+    "class": "sd",
+    "group": "g",
+    "coef": "x"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "sigma"
+   }
+  ],
+  "summary_draws": {
+   "chains": 4,
+   "iter": 50,
+   "seed": 1408,
+   "rho": 0.6,
+   "sd": 0.5,
+   "chain_sd": 0.2
+  },
+  "summaries": [
+   "fixef",
+   "ranef",
+   "coef",
+   "VarCorr",
+   "posterior_summary",
+   "summary",
+   "residuals"
+  ]
+ },
+ "autobayes": {
+  "constructor": "gaussian",
+  "formula": "y ~ w + (1 | g) + (0 + x | g)",
+  "kwargs": {},
+  "priors": {
+   "intercept": [
+    "Normal",
+    0,
+    5
+   ],
+   "b": [
+    "Normal",
+    0,
+    2
+   ],
+   "sd": {
+    "g": {
+     "Intercept": [
+      "HalfNormal",
+      1
+     ],
+     "x": [
+      "HalfNormal",
+      0.5
+     ]
+    }
+   },
+   "sigma": [
+    "HalfNormal",
+    1
+   ]
+  },
+  "post": [
+   "fixef",
+   "ranef",
+   "coef",
+   "VarCorr",
+   "posterior_summary",
+   "summary",
+   "residuals"
+  ],
+  "post_args": {
+   "residuals": {
+    "type": "ordinary",
+    "method": "posterior_epred"
+   }
+  }
+ },
+ "gate": {
+  "expect": "fail",
+  "reason": "G05a_group_term_syntax not implemented; remove this field when it lands"
+ }
+}

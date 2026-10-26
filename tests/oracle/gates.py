@@ -228,6 +228,17 @@ class Bundle:
         if self.case["brms"].get("newdata_prediction_refused") and "check_newdata_refusal" not in globals():
             raise OracleMismatch("brms refuses the new rows' predictions (newdata_prediction_refused); gates.py has no "
                                  "check_newdata_refusal to compare the model's predictions on them")
+        # Tier G part 2: brms's Stan data that G1 does not compare yet fails here until its comparison lands with its feature: the
+        # known covariance of a grouping factor (gr(g, cov = A), brms's Lcov_k, the Cholesky factor of A on the factor's levels; G05b,
+        # ``check_group_covariance``) and an offset in a distributional formula (sigma ~ z + offset(soff), brms's offsets_<dpar>; G06,
+        # ``check_dpar_offsets``)
+        if any(k.startswith("Lcov_") for k in self.fixture.raw["standata"]) and "check_group_covariance" not in globals():
+            raise OracleMismatch("the fixture records the known covariance of a grouping factor (Lcov_k, gr(cov = )); gates.py has "
+                                 "no check_group_covariance to compare it")
+        formulas = self.case["brms"].get("formula")
+        if isinstance(formulas, list) and any("offset(" in f for f in formulas[1:]) and "check_dpar_offsets" not in globals():
+            raise OracleMismatch("the fixture records an offset of a distributional formula (offsets_<dpar>); gates.py has no "
+                                 "check_dpar_offsets to compare it")
         self.cmap = adapter.match_columns(self.fixture, self.model)
         self.gmap = adapter.match_groups(self.fixture, self.model)
 

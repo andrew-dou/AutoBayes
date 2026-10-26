@@ -1,0 +1,122 @@
+{
+ "id": "gauss_sigma_varint",
+ "tier": "G",
+ "feature": "G06_distributional_groups",
+ "note": "G06 sigma ~ z + (1 | g) beside y ~ x + (1 | g): sigma's group term is an ID of its own, 2 (sd_2, z_2, Z_2_sigma_1, r_2_sigma_1; groups[*].dpar sigma, extras group_scope), log sigma = Intercept_sigma + Xc_sigma b_sigma + r_2_sigma_1[J_2] row by row; class sd with dpar sigma (default student_t(3, 0, 2.5), here normal(0, 0.5)) is its SD's prior; epred = linpred, the mean's (checked on the frozen points by tests/oracle/test_group_distributional_harness.py)",
+ "seed": 1321,
+ "n_points": 8,
+ "data": {
+  "generator": "tier_g2",
+  "seed": 1221,
+  "n": 36,
+  "newdata": {
+   "seed": 1321,
+   "n": 5
+  }
+ },
+ "brms": {
+  "formula": [
+   "y ~ x + (1 | g)",
+   "sigma ~ z + (1 | g)"
+  ],
+  "family": {
+   "family": "gaussian"
+  },
+  "factors": {
+   "g": [
+    "a",
+    "b",
+    "c",
+    "d",
+    "e",
+    "f"
+   ],
+   "z": [
+    "p",
+    "q",
+    "r"
+   ]
+  },
+  "priors": [
+   {
+    "prior": "normal(0, 5)",
+    "class": "Intercept"
+   },
+   {
+    "prior": "normal(0, 2)",
+    "class": "b"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "sd",
+    "group": "g"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "Intercept",
+    "dpar": "sigma"
+   },
+   {
+    "prior": "normal(0, 0.5)",
+    "class": "b",
+    "dpar": "sigma"
+   },
+   {
+    "prior": "normal(0, 0.5)",
+    "class": "sd",
+    "dpar": "sigma"
+   }
+  ],
+  "extras": [
+   "group_scope"
+  ]
+ },
+ "autobayes": {
+  "constructor": "gaussian",
+  "formula": [
+   "y ~ x + (1 | g)",
+   "sigma ~ z + (1 | g)"
+  ],
+  "kwargs": {
+   "categorical": {
+    "z": "p"
+   }
+  },
+  "priors": {
+   "intercept": [
+    "Normal",
+    0,
+    5
+   ],
+   "b": [
+    "Normal",
+    0,
+    2
+   ],
+   "sd": [
+    "HalfNormal",
+    1
+   ],
+   "sigma": {
+    "intercept": [
+     "Normal",
+     0,
+     1
+    ],
+    "b": [
+     "Normal",
+     0,
+     0.5
+    ],
+    "sd": [
+     "HalfNormal",
+     0.5
+    ]
+   }
+  }
+ },
+ "gate": {
+  "expect": "fail",
+  "reason": "G06_distributional_groups not implemented; remove this field when it lands"
+ }
+}

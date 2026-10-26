@@ -1,0 +1,149 @@
+{
+ "id": "gauss_sigma_shared_id_slopes",
+ "tier": "G",
+ "feature": "G06_distributional_groups",
+ "note": "G06 (1 + x |p| g) in y ~ x + ... and in sigma ~ z + x + ...: one ID with four correlated coefficients Intercept, x, sigma_Intercept, sigma_x (cholesky_factor_corr[4] L_1; Z_1_sigma_3 = 1, Z_1_sigma_4 = x), sd_1 of length 4; sigma's SD prior written with its group (class sd, group g, dpar sigma), which brms applies to sd_1[3] and sd_1[4] (checked on the frozen points by tests/oracle/test_group_distributional_harness.py)",
+ "seed": 1323,
+ "n_points": 8,
+ "data": {
+  "generator": "tier_g2",
+  "seed": 1223,
+  "n": 36,
+  "newdata": {
+   "seed": 1323,
+   "n": 5
+  }
+ },
+ "brms": {
+  "formula": [
+   "y ~ x + (1 + x |p| g)",
+   "sigma ~ z + x + (1 + x |p| g)"
+  ],
+  "family": {
+   "family": "gaussian"
+  },
+  "factors": {
+   "g": [
+    "a",
+    "b",
+    "c",
+    "d",
+    "e",
+    "f"
+   ],
+   "z": [
+    "p",
+    "q",
+    "r"
+   ]
+  },
+  "priors": [
+   {
+    "prior": "normal(0, 5)",
+    "class": "Intercept"
+   },
+   {
+    "prior": "normal(0, 2)",
+    "class": "b"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "sd",
+    "group": "g"
+   },
+   {
+    "prior": "lkj(2)",
+    "class": "cor"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "Intercept",
+    "dpar": "sigma"
+   },
+   {
+    "prior": "normal(0, 0.5)",
+    "class": "b",
+    "dpar": "sigma"
+   },
+   {
+    "prior": "normal(0, 0.5)",
+    "class": "sd",
+    "group": "g",
+    "dpar": "sigma"
+   }
+  ],
+  "extras": [
+   "group_scope"
+  ]
+ },
+ "autobayes": {
+  "constructor": "gaussian",
+  "formula": [
+   "y ~ x + (1 + x |p| g)",
+   "sigma ~ z + x + (1 + x |p| g)"
+  ],
+  "kwargs": {
+   "categorical": {
+    "z": "p"
+   }
+  },
+  "priors": {
+   "intercept": [
+    "Normal",
+    0,
+    5
+   ],
+   "b": [
+    "Normal",
+    0,
+    2
+   ],
+   "sd": {
+    "g": {
+     "Intercept": [
+      "HalfNormal",
+      1
+     ],
+     "x": [
+      "HalfNormal",
+      1
+     ]
+    }
+   },
+   "cor": {
+    "g": [
+     "LKJ",
+     2
+    ]
+   },
+   "sigma": {
+    "intercept": [
+     "Normal",
+     0,
+     1
+    ],
+    "b": [
+     "Normal",
+     0,
+     0.5
+    ],
+    "sd": {
+     "g": {
+      "Intercept": [
+       "HalfNormal",
+       0.5
+      ],
+      "x": [
+       "HalfNormal",
+       0.5
+      ]
+     }
+    }
+   }
+  }
+ },
+ "gate": {
+  "expect": "fail",
+  "reason": "G06_distributional_groups not implemented; remove this field when it lands"
+ }
+}

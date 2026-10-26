@@ -1,0 +1,95 @@
+{
+ "id": "gauss_split_same_factor",
+ "tier": "G",
+ "feature": "G05a_group_term_syntax",
+ "note": "G05a (1 | g) + (0 + x | g): two terms of one factor are two brms IDs of g, 1 (Intercept) and 2 (x), each with its own sd and z and no correlation between them (the model of (1 + x || g)); the factor's prior sd | g normal(0, 1) is ID 1's SD and the coefficient's sd | g | x normal(0, 0.5) ID 2's (checked on the frozen points by tests/oracle/test_group_distributional_harness.py)",
+ "seed": 1302,
+ "n_points": 8,
+ "data": {
+  "generator": "tier_g2",
+  "seed": 1202,
+  "n": 36,
+  "newdata": {
+   "seed": 1302,
+   "n": 5
+  }
+ },
+ "brms": {
+  "formula": "y ~ x + (1 | g) + (0 + x | g)",
+  "family": {
+   "family": "gaussian"
+  },
+  "factors": {
+   "g": [
+    "a",
+    "b",
+    "c",
+    "d",
+    "e",
+    "f"
+   ]
+  },
+  "priors": [
+   {
+    "prior": "normal(0, 5)",
+    "class": "Intercept"
+   },
+   {
+    "prior": "normal(0, 2)",
+    "class": "b"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "sd",
+    "group": "g"
+   },
+   {
+    "prior": "normal(0, 0.5)",
+    "class": "sd",
+    "group": "g",
+    "coef": "x"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "sigma"
+   }
+  ]
+ },
+ "autobayes": {
+  "constructor": "gaussian",
+  "formula": "y ~ x + (1 | g) + (0 + x | g)",
+  "kwargs": {},
+  "priors": {
+   "intercept": [
+    "Normal",
+    0,
+    5
+   ],
+   "b": [
+    "Normal",
+    0,
+    2
+   ],
+   "sd": {
+    "g": {
+     "Intercept": [
+      "HalfNormal",
+      1
+     ],
+     "x": [
+      "HalfNormal",
+      0.5
+     ]
+    }
+   },
+   "sigma": [
+    "HalfNormal",
+    1
+   ]
+  }
+ },
+ "gate": {
+  "expect": "fail",
+  "reason": "G05a_group_term_syntax not implemented; remove this field when it lands"
+ }
+}

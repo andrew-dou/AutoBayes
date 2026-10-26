@@ -1,0 +1,93 @@
+{
+ "id": "gauss_gr_student",
+ "tier": "G",
+ "feature": "G05b_gr_cov_dist",
+ "note": "G05b (1 | gr(g, dist = \"student\")): parameters df_1 (real<lower=1>) and udf_1 (vector<lower=0>[N_1]); r_1_1 = dfm_1 .* (sd_1 z_1) with brms's transformed dfm_1 = sqrt(df_1 udf_1), and the model block adds inv_chi_square_lpdf(udf_1 | df_1), so each level's effect is Student-t(df_1, 0, sd_1); the prior class df with group g (default gamma(2, 0.1), lb 1) is in lprior with its truncation constant -log(1 - Gamma(1 | 2, 0.1)) (checked on the frozen points by tests/oracle/test_group_distributional_harness.py)",
+ "seed": 1314,
+ "n_points": 8,
+ "data": {
+  "generator": "tier_g2",
+  "seed": 1214,
+  "n": 36,
+  "newdata": {
+   "seed": 1314,
+   "n": 5
+  }
+ },
+ "brms": {
+  "formula": "y ~ x + (1 | gr(g, dist = \"student\"))",
+  "family": {
+   "family": "gaussian"
+  },
+  "factors": {
+   "g": [
+    "a",
+    "b",
+    "c",
+    "d",
+    "e",
+    "f"
+   ]
+  },
+  "priors": [
+   {
+    "prior": "normal(0, 5)",
+    "class": "Intercept"
+   },
+   {
+    "prior": "normal(0, 2)",
+    "class": "b"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "sd",
+    "group": "g"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "sigma"
+   },
+   {
+    "prior": "gamma(2, 0.1)",
+    "class": "df",
+    "group": "g"
+   }
+  ]
+ },
+ "autobayes": {
+  "constructor": "gaussian",
+  "formula": "y ~ x + (1 | gr(g, dist = \"student\"))",
+  "kwargs": {},
+  "priors": {
+   "intercept": [
+    "Normal",
+    0,
+    5
+   ],
+   "b": [
+    "Normal",
+    0,
+    2
+   ],
+   "sd": [
+    "HalfNormal",
+    1
+   ],
+   "df": {
+    "g": [
+     "Gamma",
+     2,
+     0.1
+    ]
+   },
+   "sigma": [
+    "HalfNormal",
+    1
+   ]
+  }
+ },
+ "gate": {
+  "expect": "fail",
+  "reason": "G05b_gr_cov_dist not implemented; remove this field when it lands"
+ }
+}

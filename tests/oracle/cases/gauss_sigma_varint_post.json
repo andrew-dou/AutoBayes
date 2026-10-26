@@ -1,0 +1,156 @@
+{
+ "id": "gauss_sigma_varint_post",
+ "tier": "G",
+ "feature": "G06_distributional_groups",
+ "note": "G06 post-processing of gauss_sigma_varint's model: log_lik (draws, rows) has sigma's group effects in each row's scale; summaries: fixef interleaves Intercept, sigma_Intercept, x, sigma_zq, sigma_zr; ranef(g) and VarCorr(g) merge mu's and sigma's terms of g (Intercept, sigma_Intercept; sigma's effects are r_g__sigma[level,Intercept] in the draws, VarCorr has sd only), coef(g) all five; loo is left out (brms's loo() of these 8 draws has a missing pointwise value, which gen_fixture.R refuses: 'missing value in a fixture array'); summary_draws as the F07 cases (checked by tests/oracle/test_harness.py's summaries test and on the frozen points by tests/oracle/test_group_distributional_harness.py)",
+ "seed": 1328,
+ "n_points": 8,
+ "data": {
+  "generator": "tier_g2",
+  "seed": 1228,
+  "n": 36,
+  "newdata": {
+   "seed": 1328,
+   "n": 5
+  }
+ },
+ "brms": {
+  "formula": [
+   "y ~ x + (1 | g)",
+   "sigma ~ z + (1 | g)"
+  ],
+  "family": {
+   "family": "gaussian"
+  },
+  "factors": {
+   "g": [
+    "a",
+    "b",
+    "c",
+    "d",
+    "e",
+    "f"
+   ],
+   "z": [
+    "p",
+    "q",
+    "r"
+   ]
+  },
+  "priors": [
+   {
+    "prior": "normal(0, 5)",
+    "class": "Intercept"
+   },
+   {
+    "prior": "normal(0, 2)",
+    "class": "b"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "sd",
+    "group": "g"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "Intercept",
+    "dpar": "sigma"
+   },
+   {
+    "prior": "normal(0, 0.5)",
+    "class": "b",
+    "dpar": "sigma"
+   },
+   {
+    "prior": "normal(0, 0.5)",
+    "class": "sd",
+    "dpar": "sigma"
+   }
+  ],
+  "extras": [
+   "group_scope",
+   "log_lik"
+  ],
+  "summary_draws": {
+   "chains": 4,
+   "iter": 50,
+   "seed": 1428,
+   "rho": 0.6,
+   "sd": 0.5,
+   "chain_sd": 0.2
+  },
+  "summaries": [
+   "fixef",
+   "ranef",
+   "coef",
+   "VarCorr",
+   "posterior_summary",
+   "summary",
+   "residuals"
+  ]
+ },
+ "autobayes": {
+  "constructor": "gaussian",
+  "formula": [
+   "y ~ x + (1 | g)",
+   "sigma ~ z + (1 | g)"
+  ],
+  "kwargs": {
+   "categorical": {
+    "z": "p"
+   }
+  },
+  "priors": {
+   "intercept": [
+    "Normal",
+    0,
+    5
+   ],
+   "b": [
+    "Normal",
+    0,
+    2
+   ],
+   "sd": [
+    "HalfNormal",
+    1
+   ],
+   "sigma": {
+    "intercept": [
+     "Normal",
+     0,
+     1
+    ],
+    "b": [
+     "Normal",
+     0,
+     0.5
+    ],
+    "sd": [
+     "HalfNormal",
+     0.5
+    ]
+   }
+  },
+  "post": [
+   "log_lik",
+   "fixef",
+   "ranef",
+   "coef",
+   "VarCorr",
+   "posterior_summary",
+   "summary",
+   "residuals"
+  ],
+  "post_args": {
+   "residuals": {
+    "type": "ordinary",
+    "method": "posterior_epred"
+   }
+  }
+ },
+ "gate": {
+  "expect": "fail",
+  "reason": "G06_distributional_groups not implemented; remove this field when it lands"
+ }
+}

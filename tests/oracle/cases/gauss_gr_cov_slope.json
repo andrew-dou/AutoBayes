@@ -1,0 +1,105 @@
+{
+ "id": "gauss_gr_cov_slope",
+ "tier": "G",
+ "feature": "G05b_gr_cov_dist",
+ "note": "G05b (1 + x | gr(g, cov = A)), A = datasets._g_covariance (a tree covariance whose Cholesky factor is non-negative): brms's scale_r_cor_cov gives vec(r) = (Lcov_1 kron diag(sd_1) L_1) vec(z_1), level by level, so vec(r) has covariance A kron Sigma (Sigma the 2 by 2 covariance of Intercept and x; L_1 under lkj(2)) (checked on the frozen points by tests/oracle/test_group_distributional_harness.py)",
+ "seed": 1312,
+ "n_points": 8,
+ "data": {
+  "generator": "tier_g2",
+  "seed": 1212,
+  "n": 36,
+  "newdata": {
+   "seed": 1312,
+   "n": 5
+  },
+  "data2": {
+   "A": "g_covariance"
+  }
+ },
+ "brms": {
+  "formula": "y ~ x + (1 + x | gr(g, cov = A))",
+  "family": {
+   "family": "gaussian"
+  },
+  "factors": {
+   "g": [
+    "a",
+    "b",
+    "c",
+    "d",
+    "e",
+    "f"
+   ]
+  },
+  "priors": [
+   {
+    "prior": "normal(0, 5)",
+    "class": "Intercept"
+   },
+   {
+    "prior": "normal(0, 2)",
+    "class": "b"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "sd",
+    "group": "g"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "sigma"
+   },
+   {
+    "prior": "lkj(2)",
+    "class": "cor"
+   }
+  ],
+  "data2": [
+   "A"
+  ]
+ },
+ "autobayes": {
+  "constructor": "gaussian",
+  "formula": "y ~ x + (1 + x | gr(g, cov = A))",
+  "kwargs": {},
+  "priors": {
+   "intercept": [
+    "Normal",
+    0,
+    5
+   ],
+   "b": [
+    "Normal",
+    0,
+    2
+   ],
+   "sd": {
+    "g": {
+     "Intercept": [
+      "HalfNormal",
+      1
+     ],
+     "x": [
+      "HalfNormal",
+      1
+     ]
+    }
+   },
+   "cor": {
+    "g": [
+     "LKJ",
+     2
+    ]
+   },
+   "sigma": [
+    "HalfNormal",
+    1
+   ]
+  }
+ },
+ "gate": {
+  "expect": "fail",
+  "reason": "G05b_gr_cov_dist not implemented; remove this field when it lands"
+ }
+}

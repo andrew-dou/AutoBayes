@@ -1,0 +1,103 @@
+{
+ "id": "gauss_transform_interaction_slopes",
+ "tier": "G",
+ "feature": "G05a_group_term_syntax",
+ "note": "G05a x * w + I(x^2) + (1 + I(x^2) + x:w | g): brms names the coefficients IxE2 and x:w in X, the group term and the prior tables (sd | g | IxE2, sd | g | x:w); Z_1_2 and Z_1_3 equal X's IxE2 and x:w columns; three correlated coefficients (L_1 3 by 3) (checked on the frozen points by tests/oracle/test_group_distributional_harness.py)",
+ "seed": 1304,
+ "n_points": 8,
+ "data": {
+  "generator": "tier_g2",
+  "seed": 1204,
+  "n": 36,
+  "newdata": {
+   "seed": 1304,
+   "n": 5
+  }
+ },
+ "brms": {
+  "formula": "y ~ x * w + I(x^2) + (1 + I(x^2) + x:w | g)",
+  "family": {
+   "family": "gaussian"
+  },
+  "factors": {
+   "g": [
+    "a",
+    "b",
+    "c",
+    "d",
+    "e",
+    "f"
+   ]
+  },
+  "priors": [
+   {
+    "prior": "normal(0, 5)",
+    "class": "Intercept"
+   },
+   {
+    "prior": "normal(0, 2)",
+    "class": "b"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "sd",
+    "group": "g"
+   },
+   {
+    "prior": "lkj(2)",
+    "class": "cor"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "sigma"
+   }
+  ]
+ },
+ "autobayes": {
+  "constructor": "gaussian",
+  "formula": "y ~ x * w + I(x^2) + (1 + I(x^2) + x:w | g)",
+  "kwargs": {},
+  "priors": {
+   "intercept": [
+    "Normal",
+    0,
+    5
+   ],
+   "b": [
+    "Normal",
+    0,
+    2
+   ],
+   "sd": {
+    "g": {
+     "Intercept": [
+      "HalfNormal",
+      1
+     ],
+     "I(x^2)": [
+      "HalfNormal",
+      1
+     ],
+     "x:w": [
+      "HalfNormal",
+      1
+     ]
+    }
+   },
+   "cor": {
+    "g": [
+     "LKJ",
+     2
+    ]
+   },
+   "sigma": [
+    "HalfNormal",
+    1
+   ]
+  }
+ },
+ "gate": {
+  "expect": "fail",
+  "reason": "G05a_group_term_syntax not implemented; remove this field when it lands"
+ }
+}

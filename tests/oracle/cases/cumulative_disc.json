@@ -1,0 +1,111 @@
+{
+ "id": "cumulative_disc",
+ "tier": "G",
+ "feature": "G06_distributional_groups",
+ "note": "G06 cumulative logit with disc ~ z: disc = exp(Intercept_disc + Xc_disc b_disc) row by row and P(Y <= k) = inv_logit(disc (theta_k - mu)), mu = X b + r_1_1[J_1] uncentred with b_Intercept's thresholds; brms estimates disc's intercept (default prior normal(0, 1)) although the likelihood is unchanged by (disc, theta, b, r) -> (c disc, theta / c, b / c, r / c): only the priors identify it. brms's own constraints: disc > 0 through the log link, ordered thresholds, nothing more; its documented identified form, lf(disc ~ 0 + z, cmc = FALSE), is not frozen (bf()'s cmc = FALSE does not reach a distributional formula, where 0 + z then codes all three levels, and gen_fixture.R does not build lf()) (checked on the frozen points by tests/oracle/test_group_distributional_harness.py)",
+ "seed": 1327,
+ "n_points": 8,
+ "data": {
+  "generator": "tier_g2",
+  "seed": 1227,
+  "n": 36,
+  "newdata": {
+   "seed": 1327,
+   "n": 5
+  }
+ },
+ "brms": {
+  "formula": [
+   "ord ~ x + (1 | g)",
+   "disc ~ z"
+  ],
+  "family": {
+   "family": "cumulative",
+   "link": "logit"
+  },
+  "factors": {
+   "g": [
+    "a",
+    "b",
+    "c",
+    "d",
+    "e",
+    "f"
+   ],
+   "z": [
+    "p",
+    "q",
+    "r"
+   ]
+  },
+  "priors": [
+   {
+    "prior": "normal(0, 3)",
+    "class": "Intercept"
+   },
+   {
+    "prior": "normal(0, 1.5)",
+    "class": "b"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "sd",
+    "group": "g"
+   },
+   {
+    "prior": "normal(0, 0.5)",
+    "class": "Intercept",
+    "dpar": "disc"
+   },
+   {
+    "prior": "normal(0, 0.5)",
+    "class": "b",
+    "dpar": "disc"
+   }
+  ]
+ },
+ "autobayes": {
+  "constructor": "cumulative",
+  "formula": [
+   "ord ~ x + (1 | g)",
+   "disc ~ z"
+  ],
+  "kwargs": {
+   "categorical": {
+    "z": "p"
+   }
+  },
+  "priors": {
+   "intercept": [
+    "Normal",
+    0,
+    3
+   ],
+   "b": [
+    "Normal",
+    0,
+    1.5
+   ],
+   "sd": [
+    "HalfNormal",
+    1
+   ],
+   "disc": {
+    "intercept": [
+     "Normal",
+     0,
+     0.5
+    ],
+    "b": [
+     "Normal",
+     0,
+     0.5
+    ]
+   }
+  }
+ },
+ "gate": {
+  "expect": "fail",
+  "reason": "G06_distributional_groups not implemented; remove this field when it lands"
+ }
+}

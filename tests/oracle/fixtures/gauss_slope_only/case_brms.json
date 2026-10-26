@@ -1,0 +1,49 @@
+{
+ "factors": {
+  "g": [
+   "a",
+   "b",
+   "c",
+   "d",
+   "e",
+   "f"
+  ],
+  "h": [
+   "h1",
+   "h2",
+   "h3",
+   "h4"
+  ]
+ },
+ "family": {
+  "family": "gaussian"
+ },
+ "formula": "y ~ x + (0 + x | g) + (1 | h)",
+ "id": "gauss_slope_only",
+ "n_points": 8,
+ "priors": [
+  {
+   "class": "Intercept",
+   "prior": "normal(0, 5)"
+  },
+  {
+   "class": "b",
+   "prior": "normal(0, 2)"
+  },
+  {
+   "class": "sd",
+   "group": "g",
+   "prior": "normal(0, 0.5)"
+  },
+  {
+   "class": "sd",
+   "group": "h",
+   "prior": "normal(0, 1)"
+  },
+  {
+   "class": "sigma",
+   "prior": "normal(0, 1)"
+  }
+ ],
+ "seed": 1301
+}

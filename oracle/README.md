@@ -11,7 +11,7 @@ and without sampling, and the tests in `tests/oracle/` check that the AutoBayes 
   `autobayes` (the call expected to build the same model). The `brms` and `data` sections are frozen with
   the fixture; the `autobayes` section may change as the library's API evolves.
 - `tests/oracle/fixtures/<id>/` — the frozen brms side: `case_brms.json`, `data.csv`, `newdata.csv`,
-  `data2_<name>.csv` (Tier F: the matrices brms receives as `data2`, for `car()`, `sar()` and `fcor()`),
+  `data2_<name>.csv` (Tier F: the matrices brms receives as `data2`, for `car()`, `sar()` and `fcor()`; Tier G: `gr(cov = )`),
   `fixture.json` (standata, Stan-code hash, parameter declarations, the probed unconstrained-parameter map,
   eight seeded points with `log_prob` and gradient with and without the Jacobian, `posterior_linpred` /
   `posterior_epred` on those points, prior tables). Immutable once committed; a changed case gets a new id.

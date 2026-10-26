@@ -1,0 +1,106 @@
+{
+ "id": "gauss_mm_slope",
+ "tier": "G",
+ "feature": "G05b_gr_cov_dist",
+ "note": "G05b (1 + x | mm(g, g2)): without weights brms's W_1_1 = W_1_2 = 1/2 (scale = TRUE), Z_1_c_k is coefficient c's covariate for member k (1, and x for both members), and group mmgg2 (levels a to f) has correlated Intercept and x (L_1 2 by 2): mu += sum_k W_1_k (r_1_1[J_1_k] + r_1_2[J_1_k] x) (checked on the frozen points by tests/oracle/test_group_distributional_harness.py)",
+ "seed": 1315,
+ "n_points": 8,
+ "data": {
+  "generator": "tier_g2",
+  "seed": 1215,
+  "n": 36,
+  "newdata": {
+   "seed": 1315,
+   "n": 5
+  }
+ },
+ "brms": {
+  "formula": "y ~ x + (1 + x | mm(g, g2))",
+  "family": {
+   "family": "gaussian"
+  },
+  "factors": {
+   "g": [
+    "a",
+    "b",
+    "c",
+    "d",
+    "e",
+    "f"
+   ],
+   "g2": [
+    "a",
+    "b",
+    "c",
+    "d",
+    "e",
+    "f"
+   ]
+  },
+  "priors": [
+   {
+    "prior": "normal(0, 5)",
+    "class": "Intercept"
+   },
+   {
+    "prior": "normal(0, 2)",
+    "class": "b"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "sd"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "sigma"
+   },
+   {
+    "prior": "lkj(2)",
+    "class": "cor"
+   }
+  ]
+ },
+ "autobayes": {
+  "constructor": "gaussian",
+  "formula": "y ~ x + (1 + x | mm(g, g2))",
+  "kwargs": {},
+  "priors": {
+   "intercept": [
+    "Normal",
+    0,
+    5
+   ],
+   "b": [
+    "Normal",
+    0,
+    2
+   ],
+   "sd": {
+    "mmgg2": {
+     "Intercept": [
+      "HalfNormal",
+      1
+     ],
+     "x": [
+      "HalfNormal",
+      1
+     ]
+    }
+   },
+   "cor": {
+    "mmgg2": [
+     "LKJ",
+     2
+    ]
+   },
+   "sigma": [
+    "HalfNormal",
+    1
+   ]
+  }
+ },
+ "gate": {
+  "expect": "fail",
+  "reason": "G05b_gr_cov_dist not implemented; remove this field when it lands"
+ }
+}

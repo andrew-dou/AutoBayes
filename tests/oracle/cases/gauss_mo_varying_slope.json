@@ -1,0 +1,112 @@
+{
+ "id": "gauss_mo_varying_slope",
+ "tier": "G",
+ "feature": "G05a_group_term_syntax",
+ "note": "G05a mo(ord) + (1 + mo(ord) | g): the varying slope multiplies the population term's monotonic transform, mu += (bsp + r_1_2[J_1]) mo(simo_1, Xmo_1) + r_1_1[J_1], with mo(simo, i) = D sum(simo[1:i]): one simplex simo_1 (dirichlet(2, 2, 2), coef moord1) for the population and the group-level coefficient, and no Z_1_2 in standata; the group coefficient is labelled moord (sd | g | moord), correlated with the intercept (checked on the frozen points by tests/oracle/test_group_distributional_harness.py)",
+ "seed": 1305,
+ "n_points": 8,
+ "data": {
+  "generator": "tier_g2",
+  "seed": 1205,
+  "n": 36,
+  "newdata": {
+   "seed": 1305,
+   "n": 5
+  }
+ },
+ "brms": {
+  "formula": "y ~ mo(ord) + (1 + mo(ord) | g)",
+  "family": {
+   "family": "gaussian"
+  },
+  "factors": {
+   "g": [
+    "a",
+    "b",
+    "c",
+    "d",
+    "e",
+    "f"
+   ]
+  },
+  "priors": [
+   {
+    "prior": "normal(0, 5)",
+    "class": "Intercept"
+   },
+   {
+    "prior": "normal(0, 2)",
+    "class": "b"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "sd",
+    "group": "g"
+   },
+   {
+    "prior": "lkj(2)",
+    "class": "cor"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "sigma"
+   },
+   {
+    "prior": "dirichlet(2, 2, 2)",
+    "class": "simo",
+    "coef": "moord1"
+   }
+  ]
+ },
+ "autobayes": {
+  "constructor": "gaussian",
+  "formula": "y ~ mo(ord) + (1 + mo(ord) | g)",
+  "kwargs": {},
+  "priors": {
+   "intercept": [
+    "Normal",
+    0,
+    5
+   ],
+   "b": [
+    "Normal",
+    0,
+    2
+   ],
+   "sd": {
+    "g": {
+     "Intercept": [
+      "HalfNormal",
+      1
+     ],
+     "mo(ord)": [
+      "HalfNormal",
+      1
+     ]
+    }
+   },
+   "cor": {
+    "g": [
+     "LKJ",
+     2
+    ]
+   },
+   "sigma": [
+    "HalfNormal",
+    1
+   ],
+   "simo": {
+    "ord": [
+     "Dirichlet",
+     2,
+     2,
+     2
+    ]
+   }
+  }
+ },
+ "gate": {
+  "expect": "fail",
+  "reason": "G05a_group_term_syntax not implemented; remove this field when it lands"
+ }
+}
