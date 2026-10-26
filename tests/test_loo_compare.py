@@ -12,7 +12,8 @@ with brms on the frozen cases ``gauss_loo_compare_x`` and ``gauss_loo_compare_xw
   optimum solved in 50-digit arithmetic), its objective never below loo 2.9.0's ``stacking_weights()`` on the inputs of
   ``probe_stacking.R`` (``loo-2.9.0-stacking.json``), which stop off it by up to 3.7e-4 (constrOptim's tolerance), and loo's
   ``loo_model_weights()`` is ``stacking_weights()`` of the pointwise elpd; brms's weights on the frozen case are 1.04e-8 off
-  the optimum, more than the oracle's 1e-9, so ``"stacking"`` is withheld (D126) and checked here with the park lifted.
+  the optimum, more than the oracle's 1e-9, so the case is accepted against two references (P6, D126); ``"stacking"`` is
+  ``model_weights``'s default, as it is brms's, and ``ab.loo_model_weights`` is its alias.
 No sampler runs here: every posterior is a set of frozen or synthetic draws.
 """
 from __future__ import annotations
@@ -225,12 +226,9 @@ def test_loo_compare_and_model_weights_refusals():
     for kind in ("bma", "kfold"):
         with pytest.raises(ValueError, match="divergence D92"):
             ab.model_weights([a, b], kind)
-    with pytest.raises(ValueError, match="'stacking'\\) is withheld: .*divergence D126"):     # E05: implemented and parked
-        ab.model_weights([a, b], "stacking")
     with pytest.raises(ValueError, match="must be one of"):
         ab.model_weights([a, b], "aic")
-    with pytest.raises(TypeError):
-        ab.model_weights([a, b])                                   # no default: brms's default, stacking, is not offered
+    assert ab.model_weights([a, b]).equals(ab.model_weights([a, b], "stacking"))   # brms's default, offered since D126's P6
     for BB in (None, True):
         with pytest.raises(ValueError, match="needs BB=False"):
             ab.model_weights([a, b], "pseudobma", BB=BB)
@@ -322,8 +320,8 @@ def test_loo_model_weights_are_stacking_of_the_pointwise_elpd():
 
 def test_frozen_stacking_case_is_off_the_exact_optimum():
     """The 50-digit optimum of the frozen case's stacking objective (bisection on its derivative, Python's decimal) is within
-    2e-17 of ``stacking_weights``; brms's weight is 1.04e-8 off it, ten times the oracle's PRED_REL: the reason "stacking" is
-    withheld (D126)."""
+    2e-17 of ``stacking_weights``; brms's weight is 1.04e-8 off it, ten times the oracle's PRED_REL: the reason the case is
+    accepted against two references (P6, D126; oracle/reference.py solves the same optimum)."""
     from decimal import Decimal, localcontext
 
     raw = fx.Fixture.load("gauss_loo_compare_x_stacking").raw["post"]
@@ -347,18 +345,18 @@ def test_frozen_stacking_case_is_off_the_exact_optimum():
     assert float(gap) > PRED_REL
 
 
-def test_stacking_with_the_park_lifted(monkeypatch):
+def test_stacking_weights_of_loo_results():
+    """``model_weights(..., "stacking")`` (the default) and ``ab.loo_model_weights`` are ``stacking_weights`` of the results'
+    pointwise elpd_loo, named and ordered as given; the park is empty (D126)."""
     rng = np.random.default_rng(9)
     lls = [rng.normal(mu, 0.4, (60, 25)) for mu in (-1.0, -1.1, -1.2)]
     results = {"a": _loo(lls[0]), "b": _loo(lls[1]), "c": _loo(lls[2])}
-    with pytest.raises(ValueError, match="is withheld"):
-        post_processing.loo_model_weights(results)
-    assert not hasattr(ab, "loo_model_weights")                           # what the gated case proposes, while parked
-    monkeypatch.setattr(post_processing, "PARKED_WEIGHTS", {})
+    assert not post_processing.PARKED_WEIGHTS and "loo_model_weights" in ab.__all__
     w = ab.model_weights(results, "stacking")
     lpd = np.column_stack([r.pointwise["elpd_loo"].to_numpy() for r in results.values()])
     assert list(w.index) == ["a", "b", "c"] and w.name == "stacking" and np.array_equal(w.to_numpy(), stacking_weights(lpd))
-    assert post_processing.loo_model_weights(results).equals(w)
+    assert post_processing.loo_model_weights(results).equals(w) and ab.loo_model_weights(results).equals(w)
+    assert ab.model_weights(results).equals(w)
     with pytest.raises(ValueError, match="BB applies to weights='pseudobma' only"):
         ab.model_weights(results, "stacking", BB=False)
     waics = [waic_from_log_lik(_as_log_lik(ll)) for ll in lls]

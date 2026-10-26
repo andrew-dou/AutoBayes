@@ -9,20 +9,21 @@
   count families' log masses of a truncation range (sums of masses); untaken censoring branches stay finite at extreme
   parameters on both paths;
 - each model's row densities by hand (SciPy) at a value point: right, left and interval censoring, upper truncation of counts,
-  with ``weights()``, a distributional formula, ``mo()``, slopes and offsets; the parks (the Gamma family's ``cens()``, D120; a
-  count response's lower bound, D121), their reasons, and with each lifted its frozen case against brms: every gate but the
-  one brms's arithmetic or definition fails, and AutoBayes's numbers there against exact ones;
+  with ``weights()``, a distributional formula, ``mo()``, slopes and offsets; the two cases accepted against two references
+  (the Gamma family's ``cens()``, D120; a count response's lower bound, D121) against brms on every gate but the one brms's
+  arithmetic or definition fails, and AutoBayes's numbers there against exact ones;
 - predictions (the truncated means and draws of counts by hand, censoring changing none), ``log_lik()`` as each model's own
   pointwise density (and the Gaussian's censored and truncated rows, which E04 brings into ``log_lik()``), ``loo()``,
   ``hypothesis()``, ``conditional_effects()``'s refusal, prior-predictive draws, ``describe()``, the target identity, the fit
-  record and default priors; every refusal by message;
+  record and default priors; every refusal by message (a count response's lower bound, withheld before D121 was accepted
+  against two references, is offered: tests/test_releases.py);
 - the branches no frozen case reaches: the shape derivative's Python ``impl`` and its JAX lowering in a gradient graph, an
   unconverged series, the Gaussian's one-sided truncation in ``log_lik()``, a count lower bound at or below 0.
 
 Nothing samples; the comparisons with brms are the oracle's (tests/oracle: ``weibull_censored``, ``lognormal_censored``,
 ``poisson_truncated``, ``lognormal_censored_interval_weighted``, ``poisson_truncated_weighted_post``,
-``weibull_censored_interval_post``, ``negbinomial_truncated_ub``; ``gamma_censored_interval`` and ``negbinomial_truncated`` are
-gated with their parks)."""
+``weibull_censored_interval_post``, ``negbinomial_truncated_ub``; ``gamma_censored_interval`` and ``negbinomial_truncated`` by
+two-reference acceptance, P6)."""
 import math
 import warnings
 from dataclasses import replace
@@ -47,6 +48,7 @@ from autobayes import tails as T
 from autobayes.families import get_family
 from tests.oracle import adapter, gates
 from tests.oracle.adapter import OracleMismatch
+from tests.oracle.two_reference import ReferenceFallback
 from tests.test_bounded_families import _derivatives, _lgamma, _paths
 
 FRAME = pd.DataFrame({
@@ -452,9 +454,6 @@ REFUSALS = [
                                             r"the gaussian, poisson, negbinomial families"),
     ("ypos | trunc(lb = 0.1) ~ x", "lognormal", r"'trunc\(lb = 0.1\)' is not available for the lognormal family"),
     ("ypos | trunc(lb = 0.1) ~ x", "gamma", r"'trunc\(lb = 0.1\)' is not available for the gamma family"),
-    ("ytr | trunc(lb = 1) ~ x", "negbinomial", r"'trunc\(lb = 1\)': a lower bound of a count response is implemented .* withheld: brms 2.23's "
-                                               r"posterior_epred .* E\[Y \| Y >= 2\].*D121"),
-    ("ytr | trunc(lb = 1, ub = 8) ~ x", "poisson", r"a lower bound of a count response is implemented"),
     ("cnt | trunc(ub = 6.5) ~ x", "poisson", r"the truncation bounds of a count response are integers .*; ub = 6.5"),
     ("cnt | trunc(ub = -1) ~ x", "negbinomial", r"an upper bound below 0 leaves a count response no value"),
     ("cnt | trunc(ub = 1001) ~ x", "poisson", r"a count response's truncation bound is at most 1000 here"),
@@ -503,7 +502,7 @@ def test_censoring_codes_and_upper_bounds_are_validated(codes, y2, needle):
 
 
 def test_the_parks_carry_their_reasons():
-    assert "count_lower_bound" in F.PARKED_TRUNCATION and "D121" in F.PARKED_TRUNCATION["count_lower_bound"]
+    assert not F.PARKED_TRUNCATION                      # D121: a count response's lower bound offered since its P6 acceptance
     gamma = get_family("gamma")                         # D120: cens() offered since P6's reference of gamma_censored_interval
     assert "cens" in gamma.addition_terms and not gamma.parked_additions
     for link in ("inverse", "identity"):
@@ -514,7 +513,8 @@ def test_the_parks_carry_their_reasons():
 
 @pytest.fixture(scope="module")
 def parked_bundles():
-    """The two parked cases, built with their parks lifted (the models keep their specs after the lift)."""
+    """The two cases once parked, now accepted against two references (P6, D120 and D121), built as before with the parks,
+    both empty now, lifted."""
     gamma = replace(fams.FAMILIES["gamma"], parked_additions=MappingProxyType({}))
     saved = fams.FAMILIES, F.PARKED_TRUNCATION
     fams.FAMILIES, F.PARKED_TRUNCATION = MappingProxyType({**fams.FAMILIES, "gamma": gamma}), MappingProxyType({})
@@ -585,14 +585,20 @@ def test_gamma_censoring_passes_on_the_reference_where_brms_gradient_is_inexact(
         assert abs(ours - ex) / abs(ex) < 2e-10 and abs(theirs - ex) / abs(ex) > brms_off, (k, ours, theirs, ex)
 
 
-def test_count_lower_bound_with_its_park_lifted_fails_only_brms_expected_values(parked_bundles, lifted):
-    """With the park lifted, negbinomial_truncated passes G1, G2 (density and gradient), G3, G5 and G6 against brms; G4's
-    expected values fail: brms's are E[Y | Y >= 2] (over a finite support), AutoBayes's E[Y | Y >= 1] = mu / (1 - P(0))."""
+def test_count_lower_bound_passes_brms_and_its_expected_values_the_reference(parked_bundles, lifted):
+    """negbinomial_truncated passes G1, G2 (density and gradient), G3, G5 and G6 against brms; G4's expected values pass on the
+    two-reference acceptance (P6, D121) at every entry: brms's are E[Y | Y >= 2] (over a finite support), AutoBayes's and the
+    50-digit reference's E[Y | Y >= 1] = mu / (1 - P(0)); without the opt-in they fail against brms."""
     b = parked_bundles["negbinomial_truncated"]
+    assert b.case["gate"] == {"expect": "pass", "reference": "negbinomial_truncated.json", "divergence": "D121", "fallback": ["epred"]}
     for check in (gates.check_design, gates.check_logp, gates.check_gradient, gates.check_derived, gates.check_jax, gates.check_default_prior):
         check(b)
-    with pytest.raises(OracleMismatch, match=r"fitted: 'mu' differs from brms posterior_epred by 0\.49"):
+    with pytest.warns(ReferenceFallback, match="negbinomial_truncated G4 epred: 656 of 656 entries passed on the reference"):
         gates.check_predictions(b)
+    unopted = gates.Bundle("negbinomial_truncated", model=b.model)
+    unopted.case = {k: v for k, v in unopted.case.items() if k != "gate"}
+    with pytest.raises(OracleMismatch, match=r"fitted: 'mu' differs from brms posterior_epred by 0\.49"):
+        gates.check_predictions(unopted)
     idata = adapter.draws(b.fixture, b.model, b.cmap, b.gmap)
     ours = b.model.predict(idata, kind="mean")["mu"].transpose("chain", "draw", "__obs__").to_numpy()[0]
     eta, brms = b.fixture.prediction("fitted", "linpred"), b.fixture.prediction("fitted", "epred")

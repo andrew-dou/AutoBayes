@@ -21,9 +21,16 @@ thresholds ``c_1 < ... < c_K`` are brms's ``Intercept``, and ``c_0 = -inf``, ``c
 
     bernoulli, cloglog   yb ~ x + (1 | g)                     yb log(1 - exp(-exp(eta))) - (1 - yb) exp(eta)
     binomial, cloglog    k | trials(size) ~ x + (1 | g)       log C(size, k) + k log(1 - exp(-exp(eta))) - (size - k) exp(eta)
+    gaussian             y ~ x + (1 | g)                      the log density of y given eta and sigma
     gaussian, censored   y | cens(cens_ind) ~ x + (1 | g)     by code 0 / 1 / -1: log of the density, of 1 - Phi or of Phi
                                                               of (y - eta) / sigma (the density's -log sigma included)
     gaussian, truncated  ypos | trunc(lb = 0) ~ x + (1 | g)   the density minus log(1 - Phi((lb - eta) / sigma))
+    negbinomial, log, truncated
+                         ytr | trunc(lb = 1) ~ x + (1 | g)    with mu = exp(eta) and e = shape log(1 + mu / shape): log Gamma(y +
+                                                              shape) - log Gamma(y + 1) - log Gamma(shape) + y (eta - log(mu +
+                                                              shape)) - e, the log mass of Stan's neg_binomial_2 (its log Gamma
+                                                              terms as the log of prod_{j < y} (shape + j) / (j + 1)), minus
+                                                              log P(Y >= 1) = log(1 - exp(-e)), P(Y = 0) = exp(-e) (``negbinomial_lpmf``)
     cumulative, probit   ord ~ x + (1 | g)                    log(Phi(c_ord - eta) - Phi(c_{ord-1} - eta)), ord in 1..K+1,
                                                               the difference taken in the tail it lies in (``log_normal_interval``)
     Gamma, log, censored ypos | cens(cens_i, ypos2) ~ x + (1 | g)
@@ -41,8 +48,9 @@ thresholds ``c_1 < ... < c_K`` are brms's ``Intercept``, and ``c_0 = -inf``, ``c
                                                               (``log_first_passage``)
 
 with brms's priors: ``normal(m, s)`` on ``Intercept`` and ``b`` (``normal_lpdf``), ``normal(m, s)`` on ``sd_1`` and ``sigma``,
-which are declared ``<lower=0>`` (``normal_lpdf(. | m, s) - normal_lccdf(0 | m, s)``), ``gamma(a, b)`` on the Gamma family's
-``shape`` (``gamma_lpdf``; its support is the declared one, so no truncation term), and ``std_normal`` on ``z_1``; for the
+which are declared ``<lower=0>`` (``normal_lpdf(. | m, s) - normal_lccdf(0 | m, s)``), ``gamma(a, b)`` on the Gamma and the
+negative binomial families' ``shape`` (``gamma_lpdf``; its support is the declared one, so no truncation term), and
+``std_normal`` on ``z_1``; for the
 wiener family ``gamma(a, b)`` on ``bs`` or ``normal(m, s)`` on its formula's ``Intercept_bs`` and ``b_bs``, ``normal(m, s)`` on
 ``ndt`` truncated to (0, min_Y) (``normal_lpdf - log(Phi((min_Y - m) / s) - Phi(-m / s))``, brms's ``log_diff_exp`` of two
 ``normal_lcdf``, checked against brms's ``lprior`` at every point) and ``beta(a, b)`` on ``bias``. Every
@@ -59,7 +67,22 @@ coordinate), and, for the truncated model, every expected value gate G4 compares
 truncated mean ``eta + sigma phi(a) / (1 - Phi(a))``, ``a = (lb - eta) / sigma``, on the fitted rows and on ``newdata``
 (``x`` centred at the fitted mean), with and without the group effects; for the wiener family the same blocks of the mean
 response time ``ndt + (bs P_up - bs bias) / mu``, ``P_up = (1 - exp(-2 mu bs bias)) / (1 - exp(-2 mu bs))``, and ``ndt + bs^2
-bias (1 - bias)`` at ``mu = 0`` (``wiener_mean``; brms's own posterior_epred is not this mean, divergence D148). Values are written as strings with 30
+bias (1 - bias)`` at ``mu = 0`` (``wiener_mean``; brms's own posterior_epred is not this mean, divergence D148); for the
+truncated negative binomial the same blocks of the mean of the distribution its likelihood truncates, ``E[Y | Y >= 1] = mu /
+(1 - exp(-e))`` (``count_truncated_mean``; brms's own posterior_epred is the mean above 2, divergence D121).
+
+A case whose fixture records loo's ``loo_model_weights()`` (its ``post`` block) also gets the exact stacking weights of the
+two models it compares (``stacking_weight``; Yao, Vehtari, Simpson and Gelman 2018, eq. 4): the maximiser over the simplex
+of ``F(w) = sum_i log(w a_i + (1 - w) b_i)``, with ``a_i`` and ``b_i`` the exponentials of the two models' pointwise
+``elpd_loo`` (the fixture's ``loo_compare.elpd_loo``, the matrix brms hands loo) less their larger one. ``F`` is concave and
+its derivative ``F'(w) = sum_i (a_i - b_i) / (w a_i + (1 - w) b_i)`` decreases in ``w``; the Karush-Kuhn-Tucker conditions on
+the simplex are ``w = 0`` where ``F'(0) <= 0``, ``w = 1`` where ``F'(1) >= 0``, and otherwise ``F'(w) = 0``, whose root is
+bisected in 65-digit arithmetic to an interval of width 1e-60: the weight is then known to within the larger of that width
+and the 65-digit sum's rounding error over ``|F''|``, far below the 30 digits written. The file holds the models' names and
+both weights (the first ``w``, the second ``1 - w``). It is independent of AutoBayes's ``stacking_weights`` (an active-set
+Newton method in double precision).
+
+Values are written as strings with 30
 significant digits, with the sha256 of every file read. Erf and erfc: the series of positive terms for ``|x| < 3`` (with
 15 guard digits) and the Laplace continued fraction above; the gradient's step and the guard digits are constants here.
 Re-running the script reproduces a committed file byte for byte (``--check``); a committed reference is never
@@ -99,7 +122,12 @@ MODELS = {   # the brms formulas this script implements -> (family, link); Case.
     "ypos | cens(cens_i, ypos2) ~ x + (1 | g)": ("Gamma", "log"),
     "rt | dec(dec) ~ x + (1 | g)": ("wiener", "identity"),
     "rt | dec(dec) ~ x + (1 | g), bs ~ z": ("wiener", "identity"),       # a list of formulas, joined with ", "
+    "y ~ x + (1 | g)": ("gaussian", "identity"),
+    "ytr | trunc(lb = 1) ~ x + (1 | g)": ("negbinomial", "log"),
 }
+DEFAULT_LINK = {"negbinomial": "log"}   # brms's default link of a family whose case names none (otherwise identity)
+SHAPED = ("Gamma", "negbinomial")       # the families with a shape parameter, gamma(a, b) on it, log-transformed
+BISECT_WIDTH = Decimal("1e-60")         # the stacking weight's bisection stops at an interval this wide
 _GAMMA = re.compile(r"gamma\(\s*([-+0-9.eE]+)\s*,\s*([-+0-9.eE]+)\s*\)")
 _NORMAL = re.compile(r"normal\(\s*([-+0-9.eE]+)\s*,\s*([-+0-9.eE]+)\s*\)")
 _BETA = re.compile(r"beta\(\s*([-+0-9.eE]+)\s*,\s*([-+0-9.eE]+)\s*\)")
@@ -373,6 +401,82 @@ def log1m_exp_neg(e: Decimal) -> Decimal:
         return +r
 
 
+def _negbinomial_e(eta: Decimal, shape: Decimal) -> Decimal:
+    """e = shape log(1 + mu / shape), mu = exp(eta), in the caller's (guarded) context: P(Y = 0) = (shape / (mu + shape))^shape =
+    exp(-e); log(1 + x) with as many further digits as 1 + x loses of a small x."""
+    x = eta.exp() / shape
+    ctx = getcontext().copy()
+    ctx.prec += max(0, -x.adjusted())
+    with localcontext(ctx):
+        r = shape * (1 + x).ln()
+    return +r
+
+
+def negbinomial_lpmf(y: int, eta: Decimal, shape: Decimal) -> Decimal:
+    """log NB(y | mu = exp(eta), shape), Stan's neg_binomial_2_log_lpmf: log Gamma(y + shape) - log Gamma(y + 1) - log Gamma(shape)
+    + y (eta - log(mu + shape)) - shape log(1 + mu / shape), the three log Gamma as the log of the product of (shape + j) / (j +
+    1) over j = 0..y - 1 (Gamma(y + shape) = Gamma(shape) shape (shape + 1) ... (shape + y - 1))."""
+    with _guarded():
+        coefficient = Decimal(1)
+        for j in range(y):
+            coefficient *= (shape + j) / (j + 1)
+        r = coefficient.ln() + y * (eta - (eta.exp() + shape).ln()) - _negbinomial_e(eta, shape)
+    with localcontext(CONTEXT):
+        return +r
+
+
+def negbinomial_log_p_positive(eta: Decimal, shape: Decimal) -> Decimal:
+    """log P(Y >= 1) = log(1 - exp(-e)) of the negative binomial, the term trunc(lb = 1) subtracts from each row."""
+    with _guarded():
+        e = _negbinomial_e(eta, shape)
+    return log1m_exp_neg(e)
+
+
+def negbinomial_positive_mean(eta: Decimal, shape: Decimal) -> Decimal:
+    """E[Y | Y >= 1] = mu / (1 - exp(-e)) of the negative binomial (the zeros add nothing to the mean mu), with as many further
+    digits as 1 - exp(-e) cancels."""
+    with _guarded():
+        e = _negbinomial_e(eta, shape)
+        mu = eta.exp()
+    ctx = CONTEXT.copy()
+    ctx.prec = PREC + GUARD + max(0, -e.adjusted())
+    with localcontext(ctx):
+        r = mu / (1 - (-e).exp())
+    with localcontext(CONTEXT):
+        return +r
+
+
+def stacking_weight(first: list[Decimal], second: list[Decimal]) -> Decimal:
+    """The stacking weight of the first of two models from their pointwise elpd: the maximiser over [0, 1] of F(w) = sum_i log(w
+    a_i + (1 - w) b_i), a_i and b_i the exponentials of the two elpd less their larger one. F'(w) = sum_i (a_i - b_i) / (w a_i
+    + (1 - w) b_i) decreases in w, so the Karush-Kuhn-Tucker conditions are w = 0 where F'(0) <= 0, w = 1 where F'(1) >= 0, and
+    otherwise F'(w) = 0, whose root is bisected at PREC + GUARD digits to an interval of width ``BISECT_WIDTH``."""
+    with _guarded():
+        a, b = [], []
+        for u, v in zip(first, second):
+            top = max(u, v)
+            a.append((u - top).exp())
+            b.append((v - top).exp())
+
+        def slope(w: Decimal) -> Decimal:
+            return sum((x - y) / (w * x + (1 - w) * y) for x, y in zip(a, b))
+        if slope(Decimal(0)) <= 0:
+            w = Decimal(0)
+        elif slope(Decimal(1)) >= 0:
+            w = Decimal(1)
+        else:
+            lo, hi = Decimal(0), Decimal(1)
+            while hi - lo > BISECT_WIDTH:
+                mid = (lo + hi) / 2
+                if slope(mid) > 0:
+                    lo = mid
+                else:
+                    hi = mid
+            w = (lo + hi) / 2
+    with localcontext(CONTEXT):
+        return +w
+
+
 def _sin(x: Decimal) -> Decimal:
     """sin(x) in the caller's context: x reduced to [-pi, pi] by a multiple of 2 pi (pi at PREC + 2 GUARD digits), then
     its Taylor series, summed until a term is below the context's last digit."""
@@ -517,10 +621,12 @@ class Case:
         if self.formula not in MODELS:
             raise SystemExit(f"{case_id}: no reference model for brms formula {self.formula!r}; this script implements {sorted(MODELS)}")
         family, link = MODELS[self.formula]
-        if (brms["family"].get("family"), brms["family"].get("link", "identity")) != (family, link):
+        if (brms["family"].get("family"), brms["family"].get("link", DEFAULT_LINK.get(family, "identity"))) != (family, link):
             raise SystemExit(f"{case_id}: the formula {self.formula!r} is implemented for {family}({link}), not {brms['family']}")
         self.family, self.link = family, link
-        self.lb = Decimal(0) if "trunc(lb = 0)" in self.formula else None
+        lower = re.search(r"\| trunc\(lb = (\d+)\)", self.formula)          # trunc(lb = 0) (Gaussian), trunc(lb = 1) (counts)
+        self.lb = Decimal(lower.group(1)) if lower else None
+        self.censored = "| cens(" in self.formula
         self.levels = list(brms["factors"]["g"])
         self.bs_formula = self.formula.endswith(", bs ~ z")      # wiener's bs ~ z: bs = exp(Intercept_bs + Xc_bs b_bs)
         if [grp["levels"] for grp in self.fixture["groups"]] != [self.levels]:
@@ -545,17 +651,20 @@ class Case:
                 raise SystemExit(f"{case_id}: brms declares {declared['ndt']!r} and {declared['bias']!r}")
         else:
             expected = [("b", 1, "identity"), ("Intercept", 1, "identity")] + ([("sigma", 1, "log")] if family == "gaussian" else []) \
-                + ([("shape", 1, "log")] if family == "Gamma" else []) \
+                + ([("shape", 1, "log")] if family in SHAPED else []) \
                 + [("sd_1", 1, "log")] + [("z_1", j, "identity") for j in range(1, len(self.levels) + 1)]
             if self.upars != expected:
                 raise SystemExit(f"{case_id}: brms's unconstrained coordinates are {self.upars}; this script implements {expected}")
         fitted = read_csv(self.dir / "data.csv")
-        response = {"bernoulli": "yb", "binomial": "k", "cumulative": "ord", "Gamma": "ypos", "wiener": "rt"}.get(
+        response = {"bernoulli": "yb", "binomial": "k", "cumulative": "ord", "Gamma": "ypos", "wiener": "rt", "negbinomial": "ytr"}.get(
             family, "ypos" if self.lb is not None else "y")
         X, Y = self.fixture["standata"]["X"], self.fixture["standata"]["Y"]
         j, n = X["colnames"].index("x"), len(fitted)
         if [float(r["x"]) for r in fitted] != X["values"][j * n:(j + 1) * n] or [float(r[response]) for r in fitted] != Y["values"]:
             raise SystemExit(f"{case_id}: data.csv's x or {response} is not, double for double, brms's standata X or Y")
+        if family == "negbinomial" and (self.fixture["standata"]["lb"]["values"] != [int(self.lb)] * n
+                                        or self.fixture["standata"]["ub"]["values"] != ["Inf"] * n):
+            raise SystemExit(f"{case_id}: brms's standata lb and ub are not {self.lb} and Inf on every row")
         self.x_mean = sum(number(r["x"]) for r in fitted) / len(fitted)
         if family == "wiener":                               # min_Y, the upper bound of ndt; brms's dec; bs's centred dummies of z
             self.min_y = min(number(r["rt"]) for r in fitted)
@@ -588,8 +697,8 @@ class Case:
             return self._wiener_priors(rows)
         for p in rows:
             g = _GAMMA.fullmatch(p["prior"].strip())
-            if self.family == "Gamma" and p["class"] == "shape" and g is not None and self.shape_prior is None:
-                self.shape_prior = (Decimal(g.group(1)), Decimal(g.group(2)))      # gamma(a, b) on the Gamma family's shape
+            if self.family in SHAPED and p["class"] == "shape" and g is not None and self.shape_prior is None:
+                self.shape_prior = (Decimal(g.group(1)), Decimal(g.group(2)))      # gamma(a, b) on the family's shape
                 continue
             m = _NORMAL.fullmatch(p["prior"].strip())
             key = p["class"]
@@ -597,9 +706,9 @@ class Case:
                 raise SystemExit(f"{self.id}: prior {p} is not a normal(m, s) prior of one class this script implements")
             out[key] = (Decimal(m.group(1)), Decimal(m.group(2)))
         wanted = {"Intercept", "b", "sd"} | ({"sigma"} if self.family == "gaussian" else set())
-        if set(out) != wanted or (self.family == "Gamma") != (self.shape_prior is not None):
+        if set(out) != wanted or (self.family in SHAPED) != (self.shape_prior is not None):
             raise SystemExit(f"{self.id}: priors on {sorted(out)}; the model needs exactly {sorted(wanted)}"
-                             + (" and gamma(a, b) on shape" if self.family == "Gamma" else ""))
+                             + (" and gamma(a, b) on shape" if self.family in SHAPED else ""))
         return out
 
     def _wiener_priors(self, rows: list[dict]) -> dict[str, tuple[Decimal, Decimal]]:
@@ -652,8 +761,12 @@ class Case:
             row["y"], row["dec"] = number(r["rt"]), int(r["dec"])
             if row["dec"] not in (0, 1) or not row["y"] > 0:
                 raise SystemExit(f"{self.id}: decision {row['dec']} at the response time {row['y']}")
-        elif self.lb is None:
-            row["y"], row["cens"] = number(r["y"]), int(r["cens_ind"])
+        elif self.family == "negbinomial":                   # a count at or above the truncation bound
+            row["y"] = int(r["ytr"])
+            if not row["y"] >= self.lb:
+                raise SystemExit(f"{self.id}: count {row['y']} below the truncation bound {self.lb}")
+        elif self.lb is None:                                # cens(cens_ind): its code; y ~ x + (1 | g): every row observed (0)
+            row["y"], row["cens"] = number(r["y"]), int(r["cens_ind"]) if self.censored else 0
             if row["cens"] not in (-1, 0, 1):
                 raise SystemExit(f"{self.id}: censoring code {row['cens']}")
         else:
@@ -729,6 +842,9 @@ class Case:
             if "k" in row:
                 return row["log_choose"] + row["k"] * log1m_exp_neg(e) - (row["n"] - row["k"]) * e
             return log1m_exp_neg(e) if row["y"] == 1 else -e
+        if self.family == "negbinomial":                     # trunc(lb = 1): the log mass minus log P(Y >= 1)
+            shape = pars["shape"][0]
+            return negbinomial_lpmf(row["y"], eta, shape) - negbinomial_log_p_positive(eta, shape)
         sigma = pars["sigma"][0]
         if self.lb is not None:
             return normal_lpdf(row["y"], eta, sigma) - log_ccdf((self.lb - eta) / sigma)
@@ -773,7 +889,7 @@ class Case:
             if name in pars:                       # <lower=0>: the normal truncated to (0, inf), brms's - normal_lccdf(0 | m, s)
                 m, s = self.priors[cls]
                 lp += sum(normal_lpdf(v, m, s) - log_ccdf((0 - m) / s) for v in pars[name])
-        if self.family == "Gamma":                           # gamma(a, b) on shape, its declared support (0, inf)
+        if self.family in SHAPED:                            # gamma(a, b) on shape, its declared support (0, inf)
             lp += gamma_lpdf(pars["shape"][0], *self.shape_prior)
         lp += sum(normal_lpdf(v, Decimal(0), Decimal(1)) for v in pars["z_1"])
         lp += sum(self.row_term(pars, row) for row in self.rows)
@@ -798,6 +914,26 @@ class Case:
         """brms's posterior_epred of the truncated Gaussian: eta + sigma phi(a) / (1 - Phi(a)), a = (lb - eta) / sigma."""
         eta, sigma = self.eta(pars, row, groups), pars["sigma"][0]
         return eta + sigma * inverse_mills((self.lb - eta) / sigma)
+
+    def count_truncated_mean(self, pars: dict, row: dict, groups: bool) -> Decimal:
+        """The mean of the negative binomial its likelihood truncates to Y >= 1, E[Y | Y >= 1] (brms's posterior_epred is the mean
+        above 2, divergence D121)."""
+        return negbinomial_positive_mean(self.eta(pars, row, groups), pars["shape"][0])
+
+    def stacking(self) -> dict:
+        """loo_model_weights()'s stacking weights of the two models the fixture compares, exactly (``stacking_weight``), from the
+        pointwise elpd_loo brms handed loo (``post.loo_compare.elpd_loo``, a column per model in the order of the weights)."""
+        post = self.fixture["post"]
+        weights, table = post["loo_model_weights"], post["loo_compare"]["elpd_loo"]
+        models, n = list(weights["models"]), len(self.rows)
+        if weights.get("method") != "stacking" or len(models) != 2 or table.get("colnames") != models or table["dims"] != [n, 2]:
+            raise SystemExit(f"{self.id}: loo_model_weights weighs {models} by {weights.get('method')!r} and loo_compare's elpd_loo is "
+                             f"{table['dims']} on {table.get('colnames')}; this script implements stacking of two models on the {n} rows")
+        first, second = ([Decimal(float(v)) for v in table["values"][j * n:(j + 1) * n]] for j in range(2))
+        if not all(v.is_finite() for v in first + second):
+            raise SystemExit(f"{self.id}: loo_compare's elpd_loo is not finite")
+        w = stacking_weight(first, second)
+        return {"models": models, "values": [text(w), text(1 - w)]}
 
 
 # -- the file ----------------------------------------------------------------------------------------------------------
@@ -834,10 +970,17 @@ def build(case_id: str) -> str:
             "upars": [f"{par}[{elem}]" for par, elem, _ in case.upars],
             "points": points,
         }
-        if case.lb is not None:                         # G4's expected values: posterior_epred, the truncated mean
+        if case.family == "negbinomial":                # its expected values and the digits its log masses need
+            out["model"] += "; expected values E[Y | Y >= 1] = mu / (1 - (shape / (mu + shape))^shape)"
+            out["arithmetic"] = (f"decimal, {PREC} significant digits ({GUARD} guard digits in log Gamma, the logarithms and the "
+                                 f"constants, more where 1 - P(Y = 0) cancels); values written with {DIGITS}; the gradient without the "
+                                 f"Jacobian is a fourth-order central difference of the {PREC}-digit density with step {STEP}, with it "
+                                 f"plus 1 in each log-transformed coordinate")
+        if case.lb is not None:                         # G4's expected values: the truncated mean (Gaussian: posterior_epred; D121)
             pars = [case.constrain(u)[0] for u in case.points]
+            mean = case.truncated_mean if case.family == "gaussian" else case.count_truncated_mean
             out["predictions"] = {
-                block: {kind: [[text(case.truncated_mean(p, row, groups)) for row in rows] for p in pars]
+                block: {kind: [[text(mean(p, row, groups)) for row in rows] for p in pars]
                         for kind, groups in (("epred", True), ("epred_nogroup", False))}
                 for block, rows in (("fitted", case.rows), ("newdata", case.new_rows)) if rows}
         if case.family == "wiener":                     # G4's expected values: the mean response time (D148)
@@ -846,6 +989,10 @@ def build(case_id: str) -> str:
                 block: {kind: [[text(case.wiener_epred(p, row, groups)) for row in rows] for p in pars]
                         for kind, groups in (("epred", True), ("epred_nogroup", False))}
                 for block, rows in (("fitted", case.rows), ("newdata", case.new_rows)) if rows}
+        if "loo_model_weights" in (case.fixture.get("post") or {}):   # the post gate's stacking weights (D126)
+            out["weights"] = case.stacking()
+            out["arithmetic"] += (f"; the stacking weights the root of the Karush-Kuhn-Tucker condition F'(w) = 0 of the two models' "
+                                  f"objective, bisected at {PREC + GUARD} digits to an interval of width {BISECT_WIDTH}")
     return json.dumps(out, indent=1, ensure_ascii=False) + "\n"
 
 

@@ -22,8 +22,8 @@ brms's own numbers are exact and a committed 50-digit reference where they are n
 (docs/cens-trunc-families.md) offers ``cens(col)`` and brms's interval censoring ``cens(col, y2)`` (code 2: the response
 lies in ``(y, y2]``) for the Weibull and lognormal families too (the Gamma family's is implemented and withheld,
 ``FamilySpec.parked_additions``, divergence D120), and ``trunc(ub = b)`` for the Poisson and negative binomial families, whose
-bounds are integers and inclusive; a lower bound of a count response is implemented and withheld (``PARKED_TRUNCATION``,
-divergence D121).
+bounds are integers and inclusive, a lower bound included: its expected value is the mean of the distribution the likelihood
+truncates, accepted against two references where brms's is the mean above the bound plus one (P6; divergence D121).
 
 An interaction ``a:b`` (or ``a*b`` = ``a + b + a:b``) is two-way between any two main effects of the formula (A04,
 docs/interactions.md): numeric by declared categorical (``x:z``, the numeric column times each non-reference
@@ -1116,17 +1116,9 @@ _TRIALS_NUMBER_RE = re.compile(r"\d+")                    # F08: brms's trials(1
 PARKED_ADDITIONS = MappingProxyType({})
 
 # E04 (docs/cens-trunc-families.md): forms of trunc() that are implemented but withheld, each with the reason its refusal
-# carries. Removing the entry offers it (tests/test_cens_trunc_families.py does that under monkeypatch to check the withheld
-# form against its frozen fixture).
-PARKED_TRUNCATION = MappingProxyType({
-    "count_lower_bound": (
-        "a lower bound of a count response is implemented (each row's log mass minus log P(Y >= lb), as brms's likelihood "
-        "writes it, and the truncated mean E[Y | Y >= lb]) and withheld: brms 2.23's posterior_epred of such a model is not "
-        "the mean of the distribution its likelihood truncates. On the frozen case negbinomial_truncated (trunc(lb = 1)) brms "
-        "normalises the likelihood by P(Y >= 1) while its expected values are E[Y | Y >= 2] (at point 0, fitted row 0, "
-        "mu = 0.737: brms 2.9418 = E[Y | Y >= 2], E[Y | Y >= 1] = 1.8847), so its G4 cannot pass against brms "
-        "(docs/cens-trunc-families.md, divergence D121)"),
-})
+# carries: none since the lower bound of a count response was accepted against two references (P6, divergence D121; its
+# expected value E[Y | Y >= lb], where brms's posterior_epred is the mean above lb + 1).
+PARKED_TRUNCATION = MappingProxyType({})
 COUNT_BOUND_LIMIT = 1000   # E04: a count response's truncation bound is at most this (its log mass is a sum of that many masses)
 
 
@@ -1359,7 +1351,8 @@ def _check_additions(additions: tuple[AdditionTerm, ...], fam, formula: str) -> 
 
 def _check_count_bounds(a: AdditionTerm, formula: str) -> None:
     """E04: the truncation bounds of a count response are integers, inclusive (brms normalises by P(lb <= Y <= ub)), at most
-    ``COUNT_BOUND_LIMIT``; a lower bound is withheld while ``PARKED_TRUNCATION`` holds its reason (divergence D121)."""
+    ``COUNT_BOUND_LIMIT``; a lower bound would be withheld while ``PARKED_TRUNCATION`` held a reason (none since D121's
+    acceptance)."""
     for side, v in (("lb", a.lb), ("ub", a.ub)):
         if v is not None and v != math.floor(v):
             raise FormulaError(f"{formula!r}: {a.term!r}: the truncation bounds of a count response are integers (brms's bounds "

@@ -68,8 +68,9 @@ combined predictive distribution, ``sum_i log sum_k w_k exp(elpd_loo_k,i)`` over
 ``model_weights(weights = "stacking")`` and loo's ``loo_model_weights()``: ``stacking_weights`` computes the exact optimum
 (an active-set Newton method on the simplex, to the Karush-Kuhn-Tucker conditions in double precision), where loo's
 ``stats::constrOptim`` stops at its tolerance. On the frozen case ``gauss_loo_compare_x_stacking`` brms's weights are off the
-exact optimum by 1.04e-8, more than the oracle's 1e-9, so ``"stacking"`` is implemented and withheld
-(``PARKED_WEIGHTS``, divergence D126) until Andrew decides how it is certified.
+exact optimum by 1.04e-8, more than the oracle's 1e-9, so the weights are accepted against two references (P6, divergence
+D126): brms where brms is exact, and the optimum solved in 50-digit arithmetic (``oracle/reference.py``) where it is not.
+``"stacking"`` is ``model_weights``'s default, as it is brms's.
 """
 from __future__ import annotations
 
@@ -359,15 +360,9 @@ def loo(model, fit_result, *, r_eff=None) -> Loo:
 WAIC_COLUMNS = ("elpd_waic", "p_waic", "waic")      # brms's waic()$pointwise columns, and its $estimates rows
 P_WAIC_LIMIT = 0.4                                  # loo flags p_waic_i above this and recommends PSIS-LOO there
 MODEL_WEIGHTS = ("loo", "waic", "pseudobma")        # brms's model_weights(weights = ...) offered here
-# E05: weights implemented and withheld, each with the reason its refusal carries (docs/post-processing.md, divergence D126).
-# Removing the entry offers it (model_weights(..., "stacking") and loo_model_weights); tests/test_loo_compare.py does that
-# under monkeypatch to check the withheld weights against the frozen fixture and loo's outputs.
-PARKED_WEIGHTS = MappingProxyType({
-    "stacking": ("the stacking weights are implemented (the exact optimum of the stacking objective, stacking_weights) and "
-                 "withheld: brms's are loo's constrOptim optimum, which on the frozen case gauss_loo_compare_x_stacking is "
-                 "0.5619733196999603 where the exact optimum is 0.56197330926078805, 1.04e-8 apart against the oracle's 1e-9; "
-                 "how such a weight is certified is Andrew's decision (docs/post-processing.md, divergence D126)"),
-})
+# E05: weights implemented and withheld, each with the reason its refusal carries: none since the stacking weights were
+# accepted against two references (P6; docs/post-processing.md, divergence D126).
+PARKED_WEIGHTS = MappingProxyType({})
 
 
 def response_fingerprint(model) -> str | None:
@@ -615,18 +610,18 @@ def stacking_weights(lpd) -> np.ndarray:
 def loo_model_weights(results) -> pd.Series:
     """loo's ``loo_model_weights()`` with its default ``method = "stacking"`` of several models' ``ab.loo()`` results (as
     ``model_weights`` takes them), which brms's ``model_weights(weights = "stacking")`` is: ``model_weights(results,
-    "stacking")``. Withheld with it (``PARKED_WEIGHTS``, divergence D126)."""
+    "stacking")``, the exact optimum where loo's optimiser stops near it (divergence D126)."""
     return model_weights(results, "stacking")
 
 
-def model_weights(results, weights: str, *, BB: bool | None = None) -> pd.Series:
+def model_weights(results, weights: str = "stacking", *, BB: bool | None = None) -> pd.Series:
     """brms's ``model_weights()`` of several models' results (a mapping ``{name: result}`` or a sequence, as ``loo_compare``
     takes them), in the order given: ``weights="loo"`` (``ab.loo()`` results) and ``weights="waic"`` (``ab.waic()``
     results) are brms's Akaike weights of looic and WAIC, ``exp(elpd_k) / sum_j exp(elpd_j)``; ``weights="pseudobma"`` with
     ``BB=False`` the pseudo-BMA weights of ``ab.loo()`` results, the same numbers (module docstring); ``weights="stacking"``
-    (``ab.loo()`` results; E05) the exact stacking weights of their pointwise ``elpd_loo`` (``stacking_weights``), implemented
-    and withheld while it is in ``PARKED_WEIGHTS`` (divergence D126). ``"bma"``, ``"kfold"`` and pseudo-BMA with the Bayesian
-    bootstrap (brms's default ``BB = TRUE``, which draws random numbers) are refused (divergence D92); there is no default."""
+    (``ab.loo()`` results; E05), the default as in brms, the exact stacking weights of their pointwise ``elpd_loo``
+    (``stacking_weights``; divergence D126). ``"bma"``, ``"kfold"`` and pseudo-BMA with the Bayesian bootstrap (brms's default
+    ``BB = TRUE``, which draws random numbers) are refused (divergence D92)."""
     if weights in PARKED_WEIGHTS:
         raise ValueError(f"model_weights(weights={weights!r}) is withheld: {PARKED_WEIGHTS[weights]}")
     if weights in ("bma", "kfold"):
@@ -634,7 +629,7 @@ def model_weights(results, weights: str, *, BB: bool | None = None) -> pd.Series
                          + {"bma": "Bayesian model averaging needs the marginal likelihood (bridge sampling)",
                             "kfold": "K-fold cross-validation refits the model"}[weights]
                          + f"; offered: {', '.join(MODEL_WEIGHTS)}")
-    if weights == "stacking":                                             # E05, offered once it leaves PARKED_WEIGHTS
+    if weights == "stacking":                                             # E05 (D126)
         if BB is not None:
             raise ValueError("BB applies to weights='pseudobma' only")
         names, items, crit = _criterion_results(results, "model_weights()")

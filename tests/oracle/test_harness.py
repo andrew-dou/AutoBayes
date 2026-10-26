@@ -12,6 +12,7 @@ import warnings
 import numpy as np
 import pytest
 
+import autobayes as ab
 from tests.oracle import datasets
 from tests.oracle import fixture as fx
 from tests.oracle import gates
@@ -950,8 +951,9 @@ OPTED_IN = sorted(cid for cid in fx.case_ids() if "reference" in (fx.load_case(c
 
 
 def test_every_opted_in_case_has_its_reference_and_every_reference_a_case():
-    assert OPTED_IN == ["bernoulli_cloglog", "cumulative_probit_varint", "gamma_censored_interval", "gauss_censored", "gauss_truncated",
-                        "wiener_distributional_bs", "wiener_varint"]
+    assert OPTED_IN == ["bernoulli_cloglog", "cumulative_probit_varint", "gamma_censored_interval", "gauss_censored",
+                        "gauss_loo_compare_x_stacking", "gauss_truncated", "negbinomial_truncated", "wiener_distributional_bs",
+                        "wiener_varint"]
     assert [p.stem for p in REFERENCE_FILES] == OPTED_IN
     for cid in OPTED_IN:
         assert fx.load_case(cid)["gate"]["reference"] == f"{cid}.json"
@@ -1019,8 +1021,9 @@ def _no_gate(bundle):
 def test_fallback_is_reported_with_its_count_and_place(opted_in_bundles):
     """Each opted-in case passes G2's gradient (and gauss_truncated G4) with exactly these entries on the reference: the
     points where brms's own arithmetic is off the exact value (divergences D18, D24, D25); the wiener cases pass G4 on the
-    reference at every expected value (D148: brms's posterior_epred is not the mean). The report is a
-    ReferenceFallback warning, which pytest's summary shows, and the gate's return value."""
+    reference at every expected value (D148: brms's posterior_epred is not the mean), and so does negbinomial_truncated (D121:
+    brms's is the mean above 2, the reference's E[Y | Y >= 1]). The report is a ReferenceFallback warning, which pytest's
+    summary shows, and the gate's return value."""
     censored = ["point 0 z_1[1]"] + [f"point 4 {c}" for c in ("b[1]", "Intercept[1]", "sigma[1]", "sd_1[1]", "z_1[1]", "z_1[2]", "z_1[4]")] \
         + [f"point 5 {c}" for c in ("b[1]", "Intercept[1]", "sigma[1]", "sd_1[1]", "z_1[1]", "z_1[2]")] + ["point 6 z_1[4]", "point 7 Intercept[1]"]
     expected = {("bernoulli_cloglog", "G2 gradient"): (144, ["point 5 b[1]"]),
@@ -1037,9 +1040,9 @@ def test_fallback_is_reported_with_its_count_and_place(opted_in_bundles):
         report = gates.check_predictions(opted_in_bundles["gauss_truncated"])
     assert report.entries == 656 and list(report.where) == epred
     assert "point 4 b[1] (with and without the Jacobian)" in str(gates.check_gradient(opted_in_bundles["gauss_truncated"]))
-    for cid in ("wiener_distributional_bs", "wiener_varint"):        # D148: brms's posterior_epred is off the mean everywhere
+    for cid in ("wiener_distributional_bs", "wiener_varint", "negbinomial_truncated"):   # D148, D121: brms's posterior_epred is
         with pytest.warns(two_reference.ReferenceFallback, match=rf"{cid} G4 epred: 656 of 656 entries passed on the reference"):
-            report = gates.check_predictions(opted_in_bundles[cid])
+            report = gates.check_predictions(opted_in_bundles[cid])      # off the mean everywhere
         assert report.entries == report.count == 656
 
 
@@ -1122,6 +1125,8 @@ def test_fallback_on_a_log_density_is_refused(opted_in_bundles, kind):
     ({"divergence": None}, "the gate names no divergence"),
     ({"reference": "gauss_truncated.json"}, "gauss_truncated.json is the reference of 'gauss_truncated'"),
     ({"reference": "../fixtures/gauss_censored/fixture.json"}, "no reference file"),
+    ({"fallback": ["gradient", "weights"]}, r"only the stacking weights of a post case may fall back \('weights'\), and the case's "
+                                            "post-processing functions do not include loo_model_weights"),
 ])
 def test_malformed_opt_in_is_refused(opted_in_bundles, gate, needle):
     with pytest.raises(OracleMismatch, match=needle):
@@ -1159,6 +1164,145 @@ def test_a_case_without_the_opt_in_behaves_as_before(gauss_bundle, opted_in_bund
         gates.check_predictions(_gate(truncated, fallback=["gradient"]))
     with pytest.raises(OracleMismatch, match=r"^point 4: gradient of x\[0\] AutoBayes"):
         gates.check_gradient(_gate(truncated, fallback=["epred"]))
+    counts = _no_gate(opted_in_bundles["negbinomial_truncated"])         # D121: brms's mean above 2, off by up to 0.499
+    with pytest.raises(OracleMismatch, match=r"^fitted: 'mu' differs from brms posterior_epred by 0\.49"):
+        gates.check_predictions(counts)
+    stacking = opted_in_bundles["gauss_loo_compare_x_stacking"]        # D126: brms's weights 1.044e-8 off the optimum
+    for b in (_no_gate(stacking), _gate(stacking, fallback=["gradient"])):
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", two_reference.ReferenceFallback)
+            with pytest.raises(OracleMismatch, match=r"^loo_model_weights differs from brms by 1\.04"):
+                _check_weights(b)
+
+
+# -- P6's "weights" kind: the post gate's stacking weights (D126) ------------------------------------------------------------
+def _check_weights(b):
+    """``gates.check_loo_model_weights`` of the stacking case on its fixed-parameter draws (as ``check_post`` calls it)."""
+    return gates.check_loo_model_weights(b, gates.fixed_parameter_draws(b), b.fixture.raw["post"]["loo_model_weights"])
+
+
+def _brms_weights(b, values):
+    """``b`` with brms's recorded stacking weights replaced by ``values``."""
+    def mutate(raw):
+        raw["post"]["loo_model_weights"]["weights"]["values"] = [repr(float(v)) for v in values]
+    return _corrupted(b, mutate)
+
+
+def test_stacking_weights_pass_on_the_reference(opted_in_bundles):
+    """gauss_loo_compare_x_stacking passes the post gate with all 8 of its stacking-weight entries (two functions, two models,
+    numbers and logarithms) on the reference, the 50-digit optimum: brms's 0.5619733196999603 is 1.044e-8 off its
+    0.561973309260788050090391540421, where AutoBayes's is within 1.2e-16; every other check of the post gate compares with brms."""
+    b = opted_in_bundles["gauss_loo_compare_x_stacking"]
+    models, weights = b.reference.weights
+    assert models == ["gauss_loo_compare_x_stacking", "gauss_loo_compare_xw"]
+    assert b.reference.raw["weights"]["values"] == ["5.61973309260788050090391540421E-1", "4.38026690739211949909608459579E-1"]
+    brms = fx.decode(b.fixture.raw["post"]["loo_model_weights"]["weights"])
+    assert 1.04e-8 < abs(brms[0] - weights[0]) < 1.05e-8 and 1.04e-8 < abs(brms[1] - weights[1]) < 1.05e-8
+    ours = ab.loo_model_weights({m: ab.loo(bb.model, gates.fixed_parameter_draws(bb)) for m, bb in
+                                 ((models[0], b), (models[1], gates.Bundle(models[1])))}).to_numpy()
+    assert np.max(np.abs(ours - weights)) < 1.2e-16
+    with pytest.warns(two_reference.ReferenceFallback, match=r"gauss_loo_compare_x_stacking post weights: 8 of 8 entries passed on the "
+                                                              r"reference, where brms is off it by more than the tolerance: "
+                                                              r"loo_model_weights gauss_loo_compare_x_stacking; "):
+        report = _check_weights(b)
+    assert (report.gate, report.entries) == ("post weights", 8)
+    assert list(report.where) == [f"{what}{scale} {m}" for what in ("loo_model_weights", "model_weights stacking")
+                                  for scale in ("", " (log)") for m in models]
+    with pytest.warns(two_reference.ReferenceFallback, match="post weights: 8 of 8"):
+        gates.check_post(b)
+    exact = _brms_weights(b, weights)                                   # brms at the optimum: nothing falls back
+    with pytest.warns(two_reference.ReferenceFallback, match=r"post weights: 0 of 8 entries passed on the reference, where brms is off it by more than "
+                                                              r"the tolerance$"):
+        assert _check_weights(exact).count == 0
+
+
+def test_corrupted_stacking_weights_and_references_fail(opted_in_bundles, monkeypatch):
+    """The three rules on the weights: AutoBayes moved 1e-6 off is off both brms and the reference (rule 2); a reference
+    moved 1e-6 where AutoBayes and brms agree (brms's weights moved to the optimum) is wrong (rule 3); a reference that
+    disagrees with brms where AutoBayes agrees with brms (AutoBayes made to return brms's weights) is wrong (rule 3), though
+    AutoBayes is the inexact one; a reference moved onto brms's numbers lets nothing fall back; a reference without weights,
+    or of other models, is refused."""
+    from autobayes import post_processing
+
+    b = opted_in_bundles["gauss_loo_compare_x_stacking"]
+    brms = fx.decode(b.fixture.raw["post"]["loo_model_weights"]["weights"])
+    exact = _brms_weights(b, b.reference.weights[1])
+
+    def moved(raw):
+        raw["weights"]["values"][0] = repr(float(raw["weights"]["values"][0]) * (1 + 1e-6))
+    with pytest.raises(OracleMismatch, match=r"loo_model_weights: gauss_loo_compare_x_stacking: the reference is wrong: AutoBayes "
+                                             r".* and brms .* agree"):
+        _check_weights(_corrupt_reference(exact, moved))
+
+    def onto_brms(raw):
+        raw["weights"]["values"] = [repr(float(v)) for v in brms]
+    with pytest.raises(OracleMismatch, match=r"loo_model_weights: gauss_loo_compare_x_stacking: AutoBayes .* is 1\.04e-08 off brms "
+                                             r".*, which agrees with the reference .* so nothing falls back"):
+        _check_weights(_corrupt_reference(b, onto_brms))
+    for mutate, needle in ((lambda raw: raw.pop("weights"), "the reference weighs None"),
+                           (lambda raw: raw["weights"]["models"].reverse(), r"the reference weighs \['gauss_loo_compare_xw', ")):
+        with pytest.raises(OracleMismatch, match=needle):
+            _check_weights(_corrupt_reference(b, mutate))
+    exact_weights = post_processing.stacking_weights
+    monkeypatch.setattr(post_processing, "stacking_weights", lambda lpd: exact_weights(lpd) * (1 + 1e-6))
+    with pytest.raises(OracleMismatch, match=r"loo_model_weights: gauss_loo_compare_x_stacking: AutoBayes .* is off both brms "
+                                             r".* and the reference"):
+        _check_weights(b)
+    monkeypatch.setattr(post_processing, "stacking_weights", lambda lpd: brms.copy())
+    with pytest.raises(OracleMismatch, match=r"loo_model_weights: gauss_loo_compare_x_stacking: the reference is wrong: AutoBayes "
+                                             r"0\.5619733196999603 and brms 0\.5619733196999603 agree \(0\.00e\+00\) but the "
+                                             r"reference 0\.561973309260788 is 1\.04e-08 off brms"):
+        _check_weights(b)
+
+
+def _reference_script():
+    """oracle/reference.py as a module (it is a script, not a package member), loaded without writing bytecode beside it."""
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location("oracle_reference", two_reference.REPO / "oracle" / "reference.py")
+    module = importlib.util.module_from_spec(spec)
+    dont_write, sys.dont_write_bytecode = sys.dont_write_bytecode, True
+    try:
+        spec.loader.exec_module(module)
+    finally:
+        sys.dont_write_bytecode = dont_write
+    return module
+
+
+def test_reference_stacking_weight_solves_the_kkt_conditions():
+    """The reference's two-model stacking weight: an interior optimum solved by hand (a = (3, 1), b = (1, 2): F'(w) = 2 / (1 +
+    2w) - 1 / (2 - w) = 0 at w = 3/4), each boundary (one model better on every row), and the frozen case's weight as written
+    (30 digits), where the derivative F' is below 1e-25 (|F''| is about 130 there)."""
+    from decimal import Decimal, localcontext
+
+    R = _reference_script()
+    with localcontext(R.CONTEXT):
+        log = lambda values: [Decimal(v).ln() for v in values]
+        assert abs(R.stacking_weight(log([3, 1]), log([1, 2])) - Decimal("0.75")) < Decimal("1e-48")
+        assert R.stacking_weight(log([2, 2]), log([1, 1])) == 1 and R.stacking_weight(log([1, 1]), log([2, 2])) == 0
+        case = R.Case("gauss_loo_compare_x_stacking")
+        w = Decimal(case.stacking()["values"][0])
+        table = case.fixture["post"]["loo_compare"]["elpd_loo"]
+        first, second = ([Decimal(float(v)).exp() for v in table["values"][j * 36:(j + 1) * 36]] for j in range(2))
+        assert abs(sum((a - b) / (w * a + (1 - w) * b) for a, b in zip(first, second))) < Decimal("1e-25")
+
+
+def test_reference_negative_binomial_terms_equal_scipy():
+    """The reference's negative binomial log mass, log P(Y >= 1) and E[Y | Y >= 1] (50 digits, the log Gamma terms as a
+    product) against SciPy's nbinom (double precision) at small, moderate and large means and shapes."""
+    from decimal import Decimal, localcontext
+    from scipy import stats
+
+    R = _reference_script()
+    with localcontext(R.CONTEXT):
+        for eta, shape in ((-6.0, 0.6), (-0.3, 1.4), (2.5, 0.2), (4.9, 30.0)):
+            mu = np.exp(eta)
+            d = stats.nbinom(shape, shape / (shape + mu))
+            e, s = Decimal(eta), Decimal(shape)
+            for y in (0, 1, 7, 40):
+                assert float(R.negbinomial_lpmf(y, e, s)) == pytest.approx(d.logpmf(y), rel=1e-12, abs=1e-13)
+            assert float(R.negbinomial_log_p_positive(e, s)) == pytest.approx(d.logsf(0), rel=1e-12)
+            assert float(R.negbinomial_positive_mean(e, s)) == pytest.approx(mu / d.sf(0), rel=1e-12)
 
 
 # -- C07: post-processing: log_lik, bayes_R2 and loo against the fixture's post block ----------------------------------

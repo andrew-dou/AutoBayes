@@ -3328,9 +3328,14 @@ class Model:
                         f"right-censored (1: a lower bound, log P(Y_i > y_i)), {d.n - left - right} observed (0); brms cens(); predict() "
                         "ignores the censoring, as brms does"]
             elif self.family_spec.discrete:                  # E04: a count response's bounds are integers and inclusive
-                lb, ub = ("0" if a.lb is None else f"{a.lb:g}"), ("inf" if a.ub is None else f"{a.ub:g}")
+                lb, ub = ("0" if a.lb is None else f"{max(a.lb, 0):g}"), ("inf" if a.ub is None else f"{a.ub:g}")
+                mean = "the truncated mean"
+                if a.lb is not None and a.lb >= 0:           # D121: brms's posterior_epred moves a lower bound up by one
+                    ours, theirs = ((f"{lb} <= Y <= {ub}", f"{a.lb + 1:g} <= Y <= {ub}") if a.ub is not None
+                                    else (f"Y >= {lb}", f"Y >= {a.lb + 1:g}"))
+                    mean += f" E[Y | {ours}] (brms's posterior_epred is E[Y | {theirs}] instead: divergence D121)"
                 out += [f"  truncation: {a.term}: the counts lie in {{{lb}, ..., {ub}}}, both bounds included; each row's mass is "
-                        "divided by the probability of that range (brms trunc()); predict(kind='mean') is the truncated mean and "
+                        f"divided by the probability of that range (brms trunc()); predict(kind='mean') is {mean} and "
                         "kind='response' draws from the truncated distribution, as brms's posterior_predict does"]
             else:
                 lb, ub = ("-inf" if a.lb is None else f"{a.lb:g}"), ("inf" if a.ub is None else f"{a.ub:g}")

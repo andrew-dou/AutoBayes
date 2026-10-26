@@ -3,7 +3,7 @@
 brms-parity feature C07 (brms's `log_lik()`, `bayes_R2()` and `loo()`, loo 2.9.0), D05 (brms's `waic()`,
 `loo_compare()` and `model_weights()`), D06 (brms's `hypothesis()` and `conditional_effects()`) and E05 (brms's
 `sample_prior = "yes"` and `prior_draws()`, the Savage-Dickey evidence ratios of point hypotheses, interaction effects in
-`conditional_effects()`, and the stacking weights, implemented and withheld).
+`conditional_effects()`, and the stacking weights, accepted against two references).
 
 ```python
 import autobayes as ab
@@ -143,11 +143,13 @@ brms's `model_weights()` of the same results, a `pandas.Series` in the order giv
   "Using stacking to average Bayesian predictive distributions", Bayesian Analysis 13(3)) without the Bayesian bootstrap,
   the same formula on `elpd_loo` (brms hands it to loo's `loo_model_weights`).
 
-`weights` has no default: `"bma"` and `"kfold"` are not offered, and neither is pseudo-BMA with the Bayesian bootstrap (brms's
-default `BB = TRUE`), which draws random numbers; `BB` must be `False` for `"pseudobma"` and is refused for the others (D92).
-brms's default `"stacking"` is implemented and withheld (E05, D126; below). The other checks are those of `loo_compare`.
+- `weights="stacking"` (`ab.loo()` results), the default as in brms: the exact stacking weights (below; D126, D176).
 
-### Stacking (E05, withheld)
+`"bma"` and `"kfold"` are not offered, and neither is pseudo-BMA with the Bayesian bootstrap (brms's default `BB = TRUE`),
+which draws random numbers; `BB` must be `False` for `"pseudobma"` and is refused for the others (D92). The other checks are
+those of `loo_compare`.
+
+### Stacking (E05; accepted against two references, D126)
 
 brms's `model_weights(weights = "stacking")` is loo's `loo_model_weights()` with its default method: the stacking weights of
 Yao, Vehtari, Simpson and Gelman (2018, eq. 4), the weights on the simplex maximising the leave-one-out log score of the
@@ -160,14 +162,20 @@ of 1e-14. loo finds the optimum with `stats::constrOptim` (a log-barrier method 
 never gives an exact zero: on loo's own probes (`tests/loo_probes/probe_stacking.R`) its weights are off the exact optimum by
 up to 3.7e-4, its objective never above the optimum's.
 
+`ab.loo_model_weights(results)` is loo's `loo_model_weights()`, the same as `ab.model_weights(results)` (or with
+`"stacking"`): a `pandas.Series` named `stacking`, one weight per model in the order given.
+
 On the frozen case `gauss_loo_compare_x_stacking` brms's weights are 0.5619733196999603 and 0.43802668030003966; the optimum,
-solved in 50-digit arithmetic, is 0.56197330926078805, and `stacking_weights` returns the nearest doubles. brms's are 1.044e-8
-off it against the oracle's `PRED_REL` of 1e-9. The fixture is not edited and the tolerance not loosened: `"stacking"` (and
-`ab.post_processing.loo_model_weights`) are withheld (`PARKED_WEIGHTS`, refused with the reason), the case stays gated with
-these numbers, and with the park lifted every other gate passes (`tests/oracle/test_prior_effects_stacking_harness.py`). How
-the weights are certified (a two-reference acceptance with the exact optimum as the reference, or otherwise) is Andrew's
-decision (D126). Un-parking is removing the `PARKED_WEIGHTS` entry, exporting `loo_model_weights` as `ab.loo_model_weights`
-(the name the case proposes) and removing the case's gate field.
+solved in 50-digit arithmetic, is 0.561973309260788050090391540421 and 0.438026690739211949909608459579, and
+`stacking_weights` returns the nearest doubles (within 1.2e-16 from AutoBayes's own pointwise elpd_loo). brms's are 1.044e-8
+off it against the oracle's `PRED_REL` of 1e-9. The fixture is not edited and the tolerance not loosened: the case is accepted
+against two references (P6, with the fallback kind `"weights"`, docs/brms-parity/LOOP.md): every gate compares with brms, and
+the post gate's stacking weights (`ab.loo_model_weights` and `ab.model_weights(..., "stacking")`, as numbers and as
+logarithms, 8 entries) with the committed reference `tests/oracle/references/gauss_loo_compare_x_stacking.json` where brms is
+off it, which is at all 8. The reference is `oracle/reference.py`'s, independent of `stacking_weights`: for two models the
+Karush-Kuhn-Tucker conditions are one condition on the derivative of `F` along the simplex, `F'(w) = sum_i (a_i - b_i) / (w a_i
++ (1 - w) b_i) = 0` (or a weight of 0 or 1 where `F'` keeps one sign), whose root it bisects at 65 digits from the fixture's
+pointwise elpd_loo.
 
 ## `hypothesis(model, fit, hypotheses, alpha=0.05, robust=False)` (D06)
 
@@ -344,10 +352,13 @@ holds them on the grid. Grouping factors as effects, brms's default of every eff
   with brms's, on `gauss_hypothesis_prior_effects` (`y ~ x * z + x * w + (1 | g)`, Gaussian; `"x = 0"`, `"w = 0.5"`, `"x:zq =
   0"`, `"x > 0"`) and `bernoulli_hypothesis_prior_effects` (the logit model; `"x = 0"`, `"zq = 0.5"`, `"x:w = 0"`, `"x <
   0"`): the ratios to 2e-15. `check_loo_model_weights` compares `ab.loo_model_weights` and `ab.model_weights(...,
-  "stacking")` with brms's `loo_model_weights()` on `gauss_loo_compare_x_stacking`, gated (D126). Harness tests
-  (`tests/oracle/test_prior_effects_stacking_harness.py`) show a corrupted prior draw, prior-draw column name or count, ratio
-  or posterior probability, moderator value, `effect2__` label or column, the moderator's order, and a corrupted stacking
-  weight, model order, method or other model fail; with the park lifted the stacking case fails only on brms's weights.
+  "stacking")` with brms's `loo_model_weights()` on `gauss_loo_compare_x_stacking`, its weights on the case's 50-digit
+  reference (P6, D126; all 8 entries). Harness tests (`tests/oracle/test_prior_effects_stacking_harness.py`) show a corrupted
+  prior draw, prior-draw column name or count, ratio or posterior probability, moderator value, `effect2__` label or column,
+  the moderator's order, and a corrupted stacking model order, method or other model fail; `tests/oracle/test_harness.py`
+  that the three rules of P6 hold on the weights (AutoBayes moved off both brms and the reference fails, a reference that
+  disagrees with brms where AutoBayes agrees with brms fails, a reference moved onto brms's numbers lets nothing fall back) and
+  that without the opt-in the case fails on brms's weights.
 - `tests/test_prior_draws.py`: `density_at` and `density_ratio` equal brms's `density_ratio()` on the 276 probe points;
   `ab.prior_draws`'s names equal brms's `prior_draws()` on the five probed fits, and brms's 1000 recorded draws of each column
   and 20000 of `ab.prior_draws` follow the prior's distribution (one-sample Kolmogorov-Smirnov, p > 1e-3); brms's
@@ -372,7 +383,7 @@ holds them on the grid. Grouping factors as effects, brms's default of every eff
 - D51: `r_eff` for chains of fewer than about sixteen draws, and for some strongly autocorrelated chains of about fifty:
   loo's ESS (the posterior package's) and ArviZ's differ there.
 - D92: `model_weights`: `"bma"`, `"kfold"` and pseudo-BMA with the Bayesian bootstrap (brms's default `BB = TRUE`) are not
-  offered, and `weights` has no default; brms's default `"stacking"` is implemented and withheld (D126).
+  offered; brms's default `"stacking"` is the default here too (D126, D176).
 - D93: `loo_compare` of PSIS-LOO and WAIC results together: loo 2.9.0 compares them without a warning (the table takes the
   first result's column names); refused here. `model_weights` also refuses models on different numbers of observations and
   warns when the responses differ, where brms's `model_weights` gave the weights without a warning on a probe with a
@@ -396,7 +407,9 @@ holds them on the grid. Grouping factors as effects, brms's default of every eff
   brms's in distribution only; far-tail densities are round-off in both and differ (warned); `density_ratio`'s `n` and
   density options are not offered.
 - D126: stacking weights: the exact optimum, where brms's are loo's `constrOptim` optimum (1.044e-8 off on the frozen case,
-  up to 3.7e-4 on loo's probes); implemented and withheld until Andrew decides how they are certified.
+  up to 3.7e-4 on loo's probes); accepted against two references (P6), the 50-digit optimum where brms is off it.
+- D176: `model_weights`'s default is `"stacking"`, brms's, since the stacking weights were released (it had none before), and
+  `ab.loo_model_weights` is exported.
 - D127: interaction effects naming the same pair twice are refused, where brms drops the second with a warning.
 - D99: both refuse multivariate and non-linear models, mixtures and the cumulative and categorical families;
   `conditional_effects()` also the binomial family, offsets, `mo()`, `gp()`, `me()`, `mi()`, autocorrelation, addition terms

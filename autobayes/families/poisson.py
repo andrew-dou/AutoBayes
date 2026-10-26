@@ -1,7 +1,8 @@
 """Poisson count response: log link on ``mu``, no auxiliary parameter; or brms's ``poisson("sqrt")`` (E06, docs/links.md),
 ``mu = eta^2``, whose spec ``_sqrt()`` is reached through ``POISSON.links`` (``ab.poisson(..., link="sqrt")``). E04
-(docs/cens-trunc-families.md): under the log link, ``trunc(ub = b)`` with an integer, inclusive bound (``autobayes.tails``;
-``poisson_truncated``); a lower bound is implemented and withheld (D121)."""
+(docs/cens-trunc-families.md): under the log link, ``trunc()`` with integer, inclusive bounds (``autobayes.tails``;
+``poisson_truncated``), a lower bound's expected value ``E[Y | Y >= lb]`` (accepted on the negative binomial's frozen case
+against two references, P6, D121; no frozen Poisson case has a lower bound)."""
 from __future__ import annotations
 
 from dataclasses import replace

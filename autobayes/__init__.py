@@ -106,6 +106,7 @@ from autobayes.multinomial import MultinomialModel, dirichlet_multinomial, multi
 from autobayes.model import dirichlet, logistic_normal   # F01b: cbind() responses on the simplex, docs/dirichlet-logistic-normal.md
 from autobayes.summaries import Summary, VarCorr, coef, fixef, posterior_summary, ranef, residuals, summary   # F07, docs/summaries.md
 from autobayes.model import cox   # F05, docs/cox.md
+from autobayes.post_processing import loo_model_weights   # loo's stacking weights, exact (divergence D126), docs/post-processing.md
 
 __all__ = [
     "Beta", "DeviceError", "Dirichlet", "Exponential", "FitResult", "Flat", "FormulaError", "Gamma", "HalfCauchy",
@@ -134,6 +135,7 @@ __all__ += ["MultinomialModel", "dirichlet_multinomial", "multinomial"]   # F01a
 __all__ += ["dirichlet", "logistic_normal"]            # F01b
 __all__ += ["Summary", "VarCorr", "coef", "fixef", "posterior_summary", "ranef", "residuals", "summary"]   # F07
 __all__ += ["cox"]                                     # F05
+__all__ += ["loo_model_weights"]                       # D126
 __version__ = "0.8.0"
 
 # F09 (docs/namespace-and-messages.md): names of the scaffold era's session records and of the term model's internals, no
