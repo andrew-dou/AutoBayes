@@ -1,0 +1,89 @@
+{
+ "id": "gauss_pandas_categorical",
+ "tier": "G",
+ "feature": "G02_call_surface",
+ "note": "G02 call surface: z is a factor whose levels are declared in the order r, p, q (brms.factors), and the AutoBayes side receives it undeclared as a pandas Categorical with those categories (brms.pandas_categorical; no categorical= keyword): brms codes it with treatment contrasts against its first level r, not the first sorted p (X: Intercept, x, zp, zq; prior rows b coef zp, zq), with a varying intercept on g; the new rows (seed 2235) hold every level of z as the same Categorical. brms's posterior_linpred on the fitted and new rows equals b_Intercept + X b + r_g (+ offsets) built from the columns described, to 2e-15 at every frozen point. Data: tier_g1, seed 2211, 36 rows.",
+ "seed": 2301,
+ "n_points": 8,
+ "gate": {
+  "expect": "fail",
+  "reason": "G02_call_surface not implemented; remove this field when it lands"
+ },
+ "data": {
+  "generator": "tier_g1",
+  "seed": 2211,
+  "n": 36,
+  "newdata": {
+   "seed": 2235,
+   "n": 5
+  }
+ },
+ "brms": {
+  "formula": "y ~ x + z + (1 | g)",
+  "family": {
+   "family": "gaussian"
+  },
+  "factors": {
+   "z": [
+    "r",
+    "p",
+    "q"
+   ],
+   "g": [
+    "a",
+    "b",
+    "c",
+    "d",
+    "e",
+    "f"
+   ]
+  },
+  "pandas_categorical": [
+   "z"
+  ],
+  "priors": [
+   {
+    "prior": "normal(0, 5)",
+    "class": "Intercept"
+   },
+   {
+    "prior": "normal(0, 2)",
+    "class": "b"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "sd",
+    "group": "g"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "sigma"
+   }
+  ]
+ },
+ "autobayes": {
+  "constructor": "gaussian",
+  "formula": "y ~ x + z + (1 | g)",
+  "kwargs": {},
+  "priors": {
+   "intercept": [
+    "Normal",
+    0,
+    5
+   ],
+   "b": [
+    "Normal",
+    0,
+    2
+   ],
+   "sd": [
+    "HalfNormal",
+    1
+   ],
+   "sigma": [
+    "HalfNormal",
+    1
+   ]
+  }
+ }
+}

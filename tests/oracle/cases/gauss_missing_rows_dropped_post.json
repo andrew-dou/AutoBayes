@@ -1,0 +1,96 @@
+{
+ "id": "gauss_missing_rows_dropped_post",
+ "tier": "G",
+ "feature": "G02_call_surface",
+ "note": "G02 post-processing of the model on the rows that remain (as gauss_missing_rows_dropped, its own points): brms's log_lik is (8 draws, 29 rows), each entry the normal log density of a kept row's y at its linear predictor and sigma (checked to 4e-15), bayes_R2 (var of the epred over the 29 rows against var of their residuals, checked to 1.1e-16) and loo of the 8-draw fit are over the same 29 rows. Data: tier_g1, seed 2211, 36 rows.",
+ "seed": 2305,
+ "n_points": 8,
+ "gate": {
+  "expect": "fail",
+  "reason": "G02_call_surface not implemented; remove this field when it lands"
+ },
+ "data": {
+  "generator": "tier_g1",
+  "seed": 2211,
+  "n": 36,
+  "newdata": {
+   "seed": 2235,
+   "n": 5
+  }
+ },
+ "brms": {
+  "formula": "y ~ x + xm + (1 | g)",
+  "family": {
+   "family": "gaussian"
+  },
+  "factors": {
+   "g": [
+    "a",
+    "b",
+    "c",
+    "d",
+    "e",
+    "f"
+   ]
+  },
+  "na_columns": [
+   "xm"
+  ],
+  "extras": [
+   "log_lik",
+   "bayes_R2",
+   "loo"
+  ],
+  "priors": [
+   {
+    "prior": "normal(0, 5)",
+    "class": "Intercept"
+   },
+   {
+    "prior": "normal(0, 2)",
+    "class": "b"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "sd",
+    "group": "g"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "sigma"
+   }
+  ]
+ },
+ "autobayes": {
+  "constructor": "gaussian",
+  "formula": "y ~ x + xm + (1 | g)",
+  "kwargs": {
+   "dropna": true
+  },
+  "priors": {
+   "intercept": [
+    "Normal",
+    0,
+    5
+   ],
+   "b": [
+    "Normal",
+    0,
+    2
+   ],
+   "sd": [
+    "HalfNormal",
+    1
+   ],
+   "sigma": [
+    "HalfNormal",
+    1
+   ]
+  },
+  "post": [
+   "log_lik",
+   "bayes_R2",
+   "loo"
+  ]
+ }
+}

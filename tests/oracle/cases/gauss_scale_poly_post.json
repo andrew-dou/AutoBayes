@@ -1,0 +1,94 @@
+{
+ "id": "gauss_scale_poly_post",
+ "tier": "G",
+ "feature": "G04_transforms",
+ "note": "G04 post-processing: conditional_effects() of x and of w for y ~ scale(x) + poly(w, 2) + (1 | g) (its own points). Each grid goes through the fitted transforms: estimate__ is the median over the draws of b_Intercept + the fitted scale(x) and poly(w, 2) at the grid (the other variable at its mean) times b, to 4.4e-16. brms's tables also carry the model-frame columns 'scale(x)' (100 x 1) and 'poly(w, 2)' (100 x 2; gen_fixture.R keeps a matrix column's dims), the transforms at the held means of x and w (scale: -1.2e-16; poly: 0 and -0.2011659), the same on every row and unused by the estimates; a check of every column needs them or a recorded divergence. Data: tier_g1, seed 2211, 36 rows.",
+ "seed": 2324,
+ "n_points": 8,
+ "gate": {
+  "expect": "fail",
+  "reason": "G04_transforms not implemented; remove this field when it lands"
+ },
+ "data": {
+  "generator": "tier_g1",
+  "seed": 2211,
+  "n": 36,
+  "newdata": {
+   "seed": 2235,
+   "n": 5
+  }
+ },
+ "brms": {
+  "formula": "y ~ scale(x) + poly(w, 2) + (1 | g)",
+  "family": {
+   "family": "gaussian"
+  },
+  "factors": {
+   "g": [
+    "a",
+    "b",
+    "c",
+    "d",
+    "e",
+    "f"
+   ]
+  },
+  "conditional_effects": [
+   "x",
+   "w"
+  ],
+  "priors": [
+   {
+    "prior": "normal(0, 5)",
+    "class": "Intercept"
+   },
+   {
+    "prior": "normal(0, 2)",
+    "class": "b"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "sd",
+    "group": "g"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "sigma"
+   }
+  ]
+ },
+ "autobayes": {
+  "constructor": "gaussian",
+  "formula": "y ~ scale(x) + poly(w, 2) + (1 | g)",
+  "kwargs": {},
+  "priors": {
+   "intercept": [
+    "Normal",
+    0,
+    5
+   ],
+   "b": [
+    "Normal",
+    0,
+    2
+   ],
+   "sd": [
+    "HalfNormal",
+    1
+   ],
+   "sigma": [
+    "HalfNormal",
+    1
+   ]
+  },
+  "post": [
+   "conditional_effects"
+  ],
+  "post_args": {
+   "conditional_effects": [
+    "x",
+    "w"
+   ]
+  }
+ }
+}

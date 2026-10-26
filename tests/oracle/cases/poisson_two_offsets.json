@@ -1,0 +1,73 @@
+{
+ "id": "poisson_two_offsets",
+ "tier": "G",
+ "feature": "G04_transforms",
+ "note": "G04 transforms: two offsets, offset(log(exposure)) and offset(2 * off), one of them an expression: brms adds them into one offsets vector, exactly log(exposure) + 2 off of the data, in the Poisson's log-linear predictor, on the fitted and the new rows. brms's posterior_linpred on the fitted and new rows equals b_Intercept + X b + r_g (+ offsets) built from the columns described, to 2e-15 at every frozen point. Data: tier_g1, seed 2211, 36 rows.",
+ "seed": 2328,
+ "n_points": 8,
+ "gate": {
+  "expect": "fail",
+  "reason": "G04_transforms not implemented; remove this field when it lands"
+ },
+ "data": {
+  "generator": "tier_g1",
+  "seed": 2211,
+  "n": 36,
+  "newdata": {
+   "seed": 2235,
+   "n": 5
+  }
+ },
+ "brms": {
+  "formula": "cnt ~ x + offset(log(exposure)) + offset(2 * off) + (1 | g)",
+  "family": {
+   "family": "poisson"
+  },
+  "factors": {
+   "g": [
+    "a",
+    "b",
+    "c",
+    "d",
+    "e",
+    "f"
+   ]
+  },
+  "priors": [
+   {
+    "prior": "normal(0, 2)",
+    "class": "Intercept"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "b"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "sd",
+    "group": "g"
+   }
+  ]
+ },
+ "autobayes": {
+  "constructor": "poisson",
+  "formula": "cnt ~ x + offset(log(exposure)) + offset(2 * off) + (1 | g)",
+  "kwargs": {},
+  "priors": {
+   "intercept": [
+    "Normal",
+    0,
+    2
+   ],
+   "b": [
+    "Normal",
+    0,
+    1
+   ],
+   "sd": [
+    "HalfNormal",
+    1
+   ]
+  }
+ }
+}

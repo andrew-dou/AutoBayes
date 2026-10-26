@@ -1,0 +1,46 @@
+{
+ "factors": {
+  "g": [
+   "a",
+   "b",
+   "c",
+   "d",
+   "e",
+   "f"
+  ],
+  "z": [
+   "r",
+   "p",
+   "q"
+  ]
+ },
+ "family": {
+  "family": "gaussian"
+ },
+ "formula": "y ~ x + z + (1 | g)",
+ "id": "gauss_pandas_categorical",
+ "n_points": 8,
+ "pandas_categorical": [
+  "z"
+ ],
+ "priors": [
+  {
+   "class": "Intercept",
+   "prior": "normal(0, 5)"
+  },
+  {
+   "class": "b",
+   "prior": "normal(0, 2)"
+  },
+  {
+   "class": "sd",
+   "group": "g",
+   "prior": "normal(0, 1)"
+  },
+  {
+   "class": "sigma",
+   "prior": "normal(0, 1)"
+  }
+ ],
+ "seed": 2301
+}
