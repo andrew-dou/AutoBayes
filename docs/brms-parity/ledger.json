@@ -2437,7 +2437,7 @@
    "depends_on": [
     "F09_namespace_and_messages"
    ],
-   "status": "fixtures_frozen",
+   "status": "implementing",
    "summary": "F09's call-surface changes Andrew accepted (2026-10-26): undeclared pandas Categorical and boolean columns coded as brms codes factors and logicals (D172); a class-wide prior with per-coefficient and per-group overrides, brms's coef and group rows (D173); an opt-in to drop rows with missing values and report them (D174). target_accept stays 0.9 (D175)",
    "pr": null,
    "attempts": 0,
@@ -2453,7 +2453,7 @@
     "A04_general_interactions",
     "F08_syntax_fixes"
    ],
-   "status": "fixtures_frozen",
+   "status": "implementing",
    "summary": "three-way and higher interactions, (a + b + c)^2, colon-only terms (x:z, f:f2, x + x:f), factor-specific slopes (f + x:f), with R's rule for coding a factor in an interaction whose margin is absent (corpus pop_three_way, pop_power_expansion, pop_colon_only, pop_factor_colon_only, pop_numeric_colon_factor_one_main, pop_factor_slopes)",
    "pr": null,
    "attempts": 0,
@@ -2469,7 +2469,7 @@
     "A05_formula_transforms",
     "A06_offset"
    ],
-   "status": "fixtures_frozen",
+   "status": "implementing",
    "summary": "transforms still refused: I() arithmetic, comparisons and fractional powers, log(x + 1), abs(), scale(), poly() (orthogonal and raw), factor() in a formula, offset expressions and several offsets, duplicated and removed terms (x + x, - z); new-data predictions with the transforms' fitted parameters (corpus pop_I_*, pop_log_plus_one, pop_abs, pop_scale, pop_poly*, pop_factor_call, pop_two_offsets, pop_offset_expression, pop_duplicate_term, pop_minus_term)",
    "pr": null,
    "attempts": 0,
@@ -2486,12 +2486,12 @@
     "A03_grouping_syntax",
     "D08_cs_mm_gr"
    ],
-   "status": "queued",
+   "status": "implementing",
    "summary": "group-level syntax still refused: slope-only (0 + x | g) and (x - 1 | g), one factor in two terms ((1 | g) + (0 + x | g)), factor slopes (1 + f | g), transform and interaction slopes, mo() slopes, three-level g:h:f2 and g/h/f2, a varying slope without its population term (corpus grp_*)",
    "pr": null,
    "attempts": 0,
    "divergences": [],
-   "next_action": "fixtures (wave G1, part 2)",
+   "next_action": "feature agent (fixtures #109)",
    "reserved_divergences": "D183-D184"
   },
   {
@@ -2501,12 +2501,12 @@
    "depends_on": [
     "D08_cs_mm_gr"
    ],
-   "status": "queued",
+   "status": "implementing",
    "summary": "gr(g, cov = A) with a known covariance matrix from data2 (phylogenetic and kinship models), gr(g, dist = 'student'), varying slopes in mm(), mmc() (corpus grp_gr_cov, grp_gr_dist_student, grp_mm_slope, grp_mmc, grp_mm_scale_false)",
    "pr": null,
    "attempts": 0,
    "divergences": [],
-   "next_action": "fixtures (wave G1, part 2)",
+   "next_action": "feature agent (fixtures #109)",
    "reserved_divergences": "D185-D186"
   },
   {
@@ -2517,12 +2517,12 @@
     "B01_distributional",
     "E03_contexts_newer_families"
    ],
-   "status": "queued",
+   "status": "implementing",
    "summary": "group-level terms in distributional formulas (sigma ~ z + (1 | g)), IDs shared between mu and a distributional parameter ((1 |p| g)), offsets in distributional formulas, and the distributional formulas still refused (nu ~ z, zi ~ z for zero-inflated Poisson, disc ~ z) (corpus dist_*)",
    "pr": null,
    "attempts": 0,
    "divergences": [],
-   "next_action": "fixtures (wave G1, part 2)",
+   "next_action": "feature agent (fixtures #109)",
    "reserved_divergences": "D187-D188"
   },
   {
