@@ -61,7 +61,7 @@ from autobayes.formula import (Categorical, FormulaError, ModelSpec, addition_da
                                measurement_values, missing_values, mm_weights, parse_formula, poly_contrasts, pop_term_design, sd_tag,
                                with_trials)
 from autobayes.formula import DATA2_UNIVARIATE, check_data2   # Tier F: brms's data2 (F02b, F03a)
-from autobayes.priors import AUXILIARY, PriorError, Priors, describe_prior
+from autobayes.priors import AUXILIARY, PriorError, Priors, class_default, describe_prior
 
 _bambi_group_name = bambi_group_name          # ``1|g`` for the varying intercept of ``g``, ``x|g`` for the slope of ``x``
 _SYMMETRIC_HALF = frozenset({"HalfNormal", "HalfStudentT", "HalfCauchy"})   # D08: half priors of a distribution symmetric about 0
@@ -358,7 +358,8 @@ class Model:
                  family: str = "gaussian", center_predictors: bool = True,
                  categorical: Mapping[str, object] | None = None, nu: float | None = None, link: str | None = None,
                  families: list[str] | None = None, order: str | bool | None = None, imputed: tuple[str, ...] = (),
-                 quantile: float | None = None, data2: Mapping[str, object] | None = None, refcat: str | None = None):
+                 quantile: float | None = None, data2: Mapping[str, object] | None = None, refcat: str | None = None,
+                 dropna: bool = False):
         """``data2`` (Tier F) holds the matrices the formula's terms read by name, brms's ``data2``: ``sar(M, ...)``'s weight
         matrix (F02b) and ``fcor(M)``'s covariance (F03a, docs/fcor.md) over the fitted rows, ``data2={"M": matrix}`` (a NumPy array
         or a DataFrame, in data order), and ``car(W, gr = site)``'s adjacency matrix (F02a, docs/spatial-car.md), a DataFrame labelled
@@ -368,9 +369,16 @@ class Model:
         ``quantile`` (E02) fixes the asymmetric Laplace family's quantile (brms's ``bf(y ~ ..., quantile = p)``): the model's
         spec is then the family's with that parameter fixed (``FamilySpec.with_fixed``) and ``self.quantile`` its value.
         ``refcat`` (F01b) is the reference category of a ``cbind(y1, ..., yK)`` response on the simplex (brms's ``refcat``): one
-        of its columns, the first by default (``families.simplex.categories_of``); refused for every other family."""
+        of its columns, the first by default (``families.simplex.categories_of``); refused for every other family.
+        ``dropna=True`` (D174, docs/missing-rows.md) drops the rows with a missing value in a column the model reads, warns, and
+        records their positions in the data as ``dropped_na_rows``; by default such data are refused. A pandas Categorical or
+        boolean predictor needs no ``categorical=`` entry (D172, docs/column-types.md)."""
         import bambi as bmb
+        from autobayes.column_types import typed_categorical
+        from autobayes.missing_rows import check_dropna
 
+        self.dropna = check_dropna(dropna)                    # D174: the opt-in to drop rows with missing values
+        self.dropped_na_rows: tuple[int, ...] = ()           # their positions in the data as given
         fam = get_family(family)
         if link is not None:                                   # the family's spec under another of its links (A12)
             try:
@@ -413,6 +421,8 @@ class Model:
         elif families is not None or order is not None:
             raise ValueError(f"families= and order= are a mixture's (ab.mixture, docs/mixtures.md); the {family} family takes neither")
 
+        # D172: an undeclared pandas Categorical or boolean predictor is declared by its dtype
+        categorical = typed_categorical(data, categorical, lambda cat: parse_formula(formula, None, family, cat))
         spec0 = parse_formula(formula, None, family, categorical)
         if fam is not get_family(family) and fam.check_formula is not None:   # a link's own refusals (E06, divergence D133)
             fam.check_formula(spec0)
@@ -454,15 +464,26 @@ class Model:
         if missing:
             raise FormulaError(f"columns not in data: {missing}")
         df = data[cols].copy().reset_index(drop=True)
+        positions = np.arange(len(df))                       # each row's position in the data as given
+        if self.dropna:                                      # D174: the rows with a missing value in a column read, but mi()'s
+            import warnings
+
+            from autobayes.missing_rows import drop_missing, dropped_warning, row_terms
+
+            df, self.dropped_na_rows, where = drop_missing(df, [c for c in cols if c not in spec0.missing_columns], row_terms(spec0))
+            if self.dropped_na_rows:
+                positions = np.delete(positions, self.dropped_na_rows)
+                self.warnings.append(dropped_warning(self.dropped_na_rows, len(data), where))
+                warnings.warn(self.warnings[-1], UserWarning, stacklevel=3)
         if fam.has_trials:
             k, n = binomial_counts(spec0, df)               # validated before any cast, all rows
             zero = np.flatnonzero(n == 0)
-            self.dropped_rows = tuple(int(i) for i in zero)
+            self.dropped_rows = tuple(int(i) for i in positions[zero])
             df[spec0.response] = k
             df[spec0.trials] = n
             if zero.size:
                 for cat in spec0.categoricals:              # levels are those of the fitted rows
-                    labels, _ = categorical_labels(f"categorical predictor {cat.name!r}", df[cat.name])
+                    labels, _ = categorical_labels(f"categorical predictor {cat.name!r}", df[cat.name], logical=True)
                     kept = set(labels[n > 0].tolist())
                     only_dropped = sorted(set(labels[zero].tolist()) - kept)
                     if cat.reference in only_dropped:
@@ -533,7 +554,7 @@ class Model:
             # An ORDERED Categorical with the reference first: formulae keeps this order (it sorts
             # anything else) and takes the first category as the treatment reference; built from
             # the observed labels only, so an unused declared category never becomes a zero column.
-            labels, _ = categorical_labels(f"categorical predictor {cat.name!r}", df[cat.name])
+            labels, _ = categorical_labels(f"categorical predictor {cat.name!r}", df[cat.name], logical=True)
             self.original_labels[cat.name] = labels
             df[cat.name] = pd.Categorical(labels, categories=list(cat.categories), ordered=True)
             if cat.unused:
@@ -2552,6 +2573,7 @@ class Model:
             return describe(self)
         s, d, pr = self.spec, self.design, self.priors
         from autobayes.car import describe as car_describe     # F02a: a CAR term's lines, [] without one
+        from autobayes.column_types import LEVEL_ORDER          # D172: the order of a factor's levels
         from autobayes.shrinkage import brms_spelling          # D07: brms's name of a shrinkage prior on b
         def effect(g):
             return "u" if len(s.groups) == 1 else f"u_{g}"
@@ -2579,6 +2601,9 @@ class Model:
                          f"{grouping}; {len(self.dropped_rows)} zero-trial row(s) dropped"
                          + (f" (positions {list(self.dropped_rows)[:10]}{'...' if len(self.dropped_rows) > 10 else ''})"
                             if self.dropped_rows else ""))
+        if self.dropped_na_rows:                             # D174: the rows dropna=True dropped
+            data_line += (f"; {len(self.dropped_na_rows)} row(s) with missing values dropped (dropna=True, positions "
+                          f"{list(self.dropped_na_rows)[:10]}{'...' if len(self.dropped_na_rows) > 10 else ''})")
         # F08: the treatment-coded main effects; an ordered factor's are contrasts; G03: a factor in interactions only has none
         treat = tuple(c for c in s.categoricals if not c.is_poly and c.name in s.categorical_names)
         products = [t for t in s.pop_terms if t.kind == "product"]   # G03: interactions coded by R's rule (term_algebra)
@@ -2710,7 +2735,8 @@ class Model:
                           f"              proportions among fitted rows: {props}"]
                 continue
             lines += [
-                f"  {cat.name:<10}: categorical, {'full-level coding' if cat.full_rank else 'treatment coding'}, reference {cat.reference!r}; levels (sorted) "
+                f"  {cat.name:<10}: categorical, {'full-level coding' if cat.full_rank else 'treatment coding'}, reference {cat.reference!r}; "
+                f"levels ({LEVEL_ORDER[cat.from_dtype]}) "                    # D172: a pandas Categorical's or a logical's order
                 f"{', '.join(cat.levels)}; coefficients " + "; ".join(f"{b}_{cat.name}[{', '.join(c.coefficients)}]" for b, c in owners)
                 + (f"; unused declared categories {list(cat.unused)}" if cat.unused else ""),
                 f"              proportions among fitted rows: {props}",
@@ -2979,6 +3005,11 @@ class Model:
         for g, prior in pr.cor_priors(s).items():
             lines += [f"  Cor_{g} ~ {prior} (brms lkj({prior.params['eta']:g}) on the correlation matrix, placed on L_{g} as lkj_corr_cholesky)"
                       + ("   (brms default)" if prior.source == "default" else "")]
+        for cls, what in (("b", "coefficient"), ("sd", "group-level SD"), ("cor", "correlated factor")):   # D173
+            default = class_default(getattr(pr, cls), cls)
+            if default is not None:
+                lines += [f"  ({cls}['*'] = {default}: the class-wide prior of every {what} the mapping does not name, brms's class "
+                          f"{cls} row, which the named entries override; docs/class-priors.md)"]
         for ds in s.dpars:                                   # a distributional formula's intercept and coefficients (B01)
             name, sub, dd = ds.response, pr.dpar_priors(s, ds.response), d.dpars[ds.response]
             if ds.intercept:
@@ -3477,7 +3508,7 @@ class Model:
 
 def gaussian(formula: str | list[str], data: pd.DataFrame, priors: Priors, *, center_predictors: bool = True,
              categorical: Mapping[str, object] | None = None, rescor: bool | None = None, nl: bool = False,
-             loop: bool = True, data2: Mapping[str, object] | None = None) -> "Model | MultivariateModel":
+             loop: bool = True, data2: Mapping[str, object] | None = None, dropna: bool = False) -> "Model | MultivariateModel":
     """Build the Gaussian model (identity link, residual SD ``sigma``), with a varying intercept when the
     formula has ``(1 | group)`` and population-only otherwise (M3c-1).
     ``categorical={column: reference_level}`` declares treatment-coded categorical predictors. ``sigma`` may have its own
@@ -3505,36 +3536,42 @@ def gaussian(formula: str | list[str], data: pd.DataFrame, priors: Priors, *, ce
         if rescor is not None:
             raise FormulaError("rescor= belongs to a multivariate model, 'mvbind(y, y2) ~ ...'; a non-linear model in a multivariate "
                                "formula is not supported (docs/nonlinear.md, divergence D62)")
+        if dropna:                                                     # D174: no frozen case verifies it (D177)
+            raise ValueError("dropna=True is not offered for a non-linear model (docs/missing-rows.md, divergence D177): drop the rows "
+                             "with missing values from the data first")
         return NonlinearModel(formula, data, priors, family="gaussian", center_predictors=center_predictors,
                               categorical=categorical, loop=loop)
     if loop is not True:
         raise ValueError("loop is brms's option of a non-linear formula; it applies with nl=True only (docs/nonlinear.md)")
     if rescor is not None or is_multivariate_formula(formula):
         return MultivariateModel(formula, data, priors, family="gaussian", rescor=rescor, center_predictors=center_predictors,
-                                 categorical=categorical)
-    return Model(formula, data, priors, family="gaussian", center_predictors=center_predictors, categorical=categorical, data2=data2)
+                                 categorical=categorical, dropna=dropna)
+    return Model(formula, data, priors, family="gaussian", center_predictors=center_predictors, categorical=categorical, data2=data2,
+                 dropna=dropna)
 
 
 def bernoulli(formula: str, data: pd.DataFrame, priors: Priors, *, link: str = "logit", center_predictors: bool = True,
-              categorical: Mapping[str, object] | None = None) -> Model:
+              categorical: Mapping[str, object] | None = None, dropna: bool = False) -> Model:
     """Build the Bernoulli model (response strictly 0/1), with or without a varying intercept.
 
     ``link`` is ``"logit"`` (``p = expit(eta)``, the default), ``"probit"`` (``p = Phi(eta)``) or ``"cloglog"``
     (``p = 1 - exp(-exp(eta))``), brms's ``bernoulli(link = ...)``; the intercept and slope priors are on that link's
     scale. brms's ``cauchit`` link is not offered (docs/links.md).
     """
-    return Model(formula, data, priors, family="bernoulli", link=link, center_predictors=center_predictors, categorical=categorical)
+    return Model(formula, data, priors, family="bernoulli", link=link, center_predictors=center_predictors, categorical=categorical,
+                 dropna=dropna)
 
 
 def binomial(formula: str, data: pd.DataFrame, priors: Priors, *, link: str = "logit", center_predictors: bool = True,
-             categorical: Mapping[str, object] | None = None) -> Model:
+             categorical: Mapping[str, object] | None = None, dropna: bool = False) -> Model:
     """Build the binomial model ``successes | trials(n) ~ x [+ (1 | group)]``, with or without a varying intercept;
     ``link`` as for ``bernoulli`` (``"logit"``, ``"probit"`` or ``"cloglog"``)."""
-    return Model(formula, data, priors, family="binomial", link=link, center_predictors=center_predictors, categorical=categorical)
+    return Model(formula, data, priors, family="binomial", link=link, center_predictors=center_predictors, categorical=categorical,
+                 dropna=dropna)
 
 
 def student(formula: str | list[str], data: pd.DataFrame, priors: Priors, *, nu: float | None = None,
-            center_predictors: bool = True, categorical: Mapping[str, object] | None = None) -> Model:
+            center_predictors: bool = True, categorical: Mapping[str, object] | None = None, dropna: bool = False) -> Model:
     """Student-t response with an explicit sigma scale prior and degrees of freedom ``nu``, fixed or learned.
 
     ``nu=4`` (any finite ``nu > 1``) fixes them. ``nu=None``, the default, learns them under ``Priors(nu=...)``: a
@@ -3545,12 +3582,12 @@ def student(formula: str | list[str], data: pd.DataFrame, priors: Priors, *, nu:
     have its own formula under a log link (B01, ``["y ~ x", "sigma ~ z"]``, docs/distributional.md); ``nu`` takes none.
     """
     return Model(formula, data, priors, family="student", nu=nu,
-                 center_predictors=center_predictors, categorical=categorical)
+                 center_predictors=center_predictors, categorical=categorical, dropna=dropna)
 
 
 def poisson(formula: str, data: pd.DataFrame, priors: Priors, *, link: str = "log",
             center_predictors: bool = True, categorical: Mapping[str, object] | None = None,
-            data2: Mapping | None = None) -> Model:
+            data2: Mapping | None = None, dropna: bool = False) -> Model:
     """Poisson count response with log link and explicit coefficient/group priors.
 
     Retains zero rows. Input counts must be integers in [0, 1e6]. An exposure enters as
@@ -3559,11 +3596,11 @@ def poisson(formula: str, data: pd.DataFrame, priors: Priors, *, link: str = "lo
     ``data2`` (F02a) holds ``car(W, gr = site)``'s adjacency matrix, ``data2={"W": W}`` (docs/spatial-car.md).
     """
     return Model(formula, data, priors, family="poisson", link=link,
-                 center_predictors=center_predictors, categorical=categorical, data2=data2)
+                 center_predictors=center_predictors, categorical=categorical, data2=data2, dropna=dropna)
 
 
 def negbinomial(formula: str | list[str], data: pd.DataFrame, priors: Priors, *, link: str = "log",
-                center_predictors: bool = True, categorical: Mapping[str, object] | None = None) -> Model:
+                center_predictors: bool = True, categorical: Mapping[str, object] | None = None, dropna: bool = False) -> Model:
     """Negative binomial count response (brms ``negbinomial``): log link, ``Var[y] = mu + mu^2 / shape``.
 
     Counts as for Poisson (integers in [0, 1e6], zero rows retained). The overdispersion parameter ``shape``
@@ -3573,11 +3610,11 @@ def negbinomial(formula: str | list[str], data: pd.DataFrame, priors: Priors, *,
     docs/links.md).
     """
     return Model(formula, data, priors, family="negbinomial", link=link,
-                 center_predictors=center_predictors, categorical=categorical)
+                 center_predictors=center_predictors, categorical=categorical, dropna=dropna)
 
 
 def gamma(formula: str | list[str], data: pd.DataFrame, priors: Priors, *, link: str = "log",
-          center_predictors: bool = True, categorical: Mapping[str, object] | None = None) -> Model:
+          center_predictors: bool = True, categorical: Mapping[str, object] | None = None, dropna: bool = False) -> Model:
     """Gamma response with a log link (brms ``Gamma(link = "log")``): ``E[y] = mu = exp(eta)``, ``Var[y] = mu^2 / shape``.
 
     Responses are strictly positive finite reals. The shape parameter takes its own positive-support prior,
@@ -3588,11 +3625,11 @@ def gamma(formula: str | list[str], data: pd.DataFrame, priors: Priors, *, link:
     are brms's ``Gamma("inverse")`` and ``Gamma("identity")``, which need a positive linear predictor (E06, docs/links.md).
     """
     return Model(formula, data, priors, family="gamma", link=link,
-                 center_predictors=center_predictors, categorical=categorical)
+                 center_predictors=center_predictors, categorical=categorical, dropna=dropna)
 
 
 def lognormal(formula: str | list[str], data: pd.DataFrame, priors: Priors, *,
-              center_predictors: bool = True, categorical: Mapping[str, object] | None = None) -> Model:
+              center_predictors: bool = True, categorical: Mapping[str, object] | None = None, dropna: bool = False) -> Model:
     """Lognormal response (brms ``lognormal()``): ``log(y) ~ Normal(mu, sigma)`` with the identity link on the log-scale
     location ``mu``; ``E[y] = exp(mu + sigma^2 / 2)``.
 
@@ -3603,11 +3640,11 @@ def lognormal(formula: str | list[str], data: pd.DataFrame, priors: Priors, *,
     row's ``sigma``. No shape, nu or offset.
     """
     return Model(formula, data, priors, family="lognormal",
-                 center_predictors=center_predictors, categorical=categorical)
+                 center_predictors=center_predictors, categorical=categorical, dropna=dropna)
 
 
 def beta(formula: str | list[str], data: pd.DataFrame, priors: Priors, *, link: str = "logit",
-         center_predictors: bool = True, categorical: Mapping[str, object] | None = None) -> Model:
+         center_predictors: bool = True, categorical: Mapping[str, object] | None = None, dropna: bool = False) -> Model:
     """Beta response with a logit link (brms ``Beta()``): proportions strictly inside (0, 1), ``E[y] = mu = expit(eta)``,
     ``Var[y] = mu (1 - mu) / (1 + phi)``.
 
@@ -3618,11 +3655,11 @@ def beta(formula: str | list[str], data: pd.DataFrame, priors: Priors, *, link: 
     ``Beta("cloglog")``, the priors then on that link's scale (E06, docs/links.md).
     """
     return Model(formula, data, priors, family="beta", link=link,
-                 center_predictors=center_predictors, categorical=categorical)
+                 center_predictors=center_predictors, categorical=categorical, dropna=dropna)
 
 
 def weibull(formula: str | list[str], data: pd.DataFrame, priors: Priors, *,
-            center_predictors: bool = True, categorical: Mapping[str, object] | None = None) -> Model:
+            center_predictors: bool = True, categorical: Mapping[str, object] | None = None, dropna: bool = False) -> Model:
     """Weibull response (brms ``weibull()``, D01, docs/continuous-families.md): log link on the mean, ``E[y] = mu = exp(eta)``,
     ``y ~ Weibull(shape, scale = mu / Gamma(1 + 1 / shape))``.
 
@@ -3632,22 +3669,23 @@ def weibull(formula: str | list[str], data: pd.DataFrame, priors: Priors, *,
     log link, ``["ypos ~ x", "shape ~ z"]`` with ``Priors(shape={"intercept": ..., "b": ...})``, and ``weights()`` is taken.
     E04 (docs/cens-trunc-families.md): ``cens(c)`` and ``cens(c, y2)`` (survival data); no ``trunc()`` (D122).
     """
-    return Model(formula, data, priors, family="weibull", center_predictors=center_predictors, categorical=categorical)
+    return Model(formula, data, priors, family="weibull", center_predictors=center_predictors, categorical=categorical, dropna=dropna)
 
 
 def exponential(formula: str, data: pd.DataFrame, priors: Priors, *,
-                center_predictors: bool = True, categorical: Mapping[str, object] | None = None) -> Model:
+                center_predictors: bool = True, categorical: Mapping[str, object] | None = None, dropna: bool = False) -> Model:
     """Exponential response (brms ``exponential()``, D01, docs/continuous-families.md): log link on the mean,
     ``E[y] = mu = exp(eta)``, ``y ~ Exponential(rate = 1 / mu)``; no auxiliary parameter.
 
     Responses are strictly positive finite reals. ``predict(kind="mean")`` returns ``mu``. No ``weights()``, ``cens()`` or
     ``trunc()`` (D79).
     """
-    return Model(formula, data, priors, family="exponential", center_predictors=center_predictors, categorical=categorical)
+    return Model(formula, data, priors, family="exponential", center_predictors=center_predictors, categorical=categorical,
+                 dropna=dropna)
 
 
 def skew_normal(formula: str | list[str], data: pd.DataFrame, priors: Priors, *,
-                center_predictors: bool = True, categorical: Mapping[str, object] | None = None) -> Model:
+                center_predictors: bool = True, categorical: Mapping[str, object] | None = None, dropna: bool = False) -> Model:
     """Skew-normal response (brms ``skew_normal()``, D01, docs/continuous-families.md): identity link on the mean ``mu``,
     standard deviation ``sigma`` and skewness ``alpha`` (Azzalini's skew normal in brms's mean parameterisation).
 
@@ -3657,11 +3695,12 @@ def skew_normal(formula: str | list[str], data: pd.DataFrame, priors: Priors, *,
     identity link, ``["y ~ x", "alpha ~ z"]`` with ``Priors(alpha={"intercept": ..., "b": ...})``; no formula on ``sigma``, no
     ``weights()``, ``cens()`` or ``trunc()`` (D79).
     """
-    return Model(formula, data, priors, family="skew_normal", center_predictors=center_predictors, categorical=categorical)
+    return Model(formula, data, priors, family="skew_normal", center_predictors=center_predictors, categorical=categorical,
+                 dropna=dropna)
 
 
 def shifted_lognormal(formula: str, data: pd.DataFrame, priors: Priors, *,
-                      center_predictors: bool = True, categorical: Mapping[str, object] | None = None) -> Model:
+                      center_predictors: bool = True, categorical: Mapping[str, object] | None = None, dropna: bool = False) -> Model:
     """Shifted lognormal response (brms ``shifted_lognormal()``, D01, docs/continuous-families.md): ``log(y - ndt) ~
     Normal(mu, sigma)`` with the identity link on ``mu`` and the non-decision time ``0 < ndt < min(y)``;
     ``E[y] = exp(mu + sigma^2 / 2) + ndt``.
@@ -3671,11 +3710,12 @@ def shifted_lognormal(formula: str, data: pd.DataFrame, priors: Priors, *,
     ``uniform(0, min_Y)``, ``Priors(ndt=ab.Uniform(0, "min_Y"))``. ``predict(kind="mean")`` returns brms's ``posterior_epred``
     as ``mean``; ``kind="linear"`` returns ``mu``. No distributional formula, ``weights()``, ``cens()`` or ``trunc()`` (D79).
     """
-    return Model(formula, data, priors, family="shifted_lognormal", center_predictors=center_predictors, categorical=categorical)
+    return Model(formula, data, priors, family="shifted_lognormal", center_predictors=center_predictors, categorical=categorical,
+                 dropna=dropna)
 
 
 def exgaussian(formula: str, data: pd.DataFrame, priors: Priors, *,
-               center_predictors: bool = True, categorical: Mapping[str, object] | None = None) -> Model:
+               center_predictors: bool = True, categorical: Mapping[str, object] | None = None, dropna: bool = False) -> Model:
     """Ex-Gaussian response (brms ``exgaussian()``, D01, docs/continuous-families.md): ``Normal(mu - beta, sigma)`` plus an
     exponential of mean ``beta``, with the identity link on the mean ``mu``.
 
@@ -3683,11 +3723,12 @@ def exgaussian(formula: str, data: pd.DataFrame, priors: Priors, *,
     classes ``sigma`` and ``beta``; ``gamma(1, 0.1)`` is brms's default for ``beta``). ``predict(kind="mean")`` returns
     ``mu``. No distributional formula, ``weights()``, ``cens()`` or ``trunc()`` (D79).
     """
-    return Model(formula, data, priors, family="exgaussian", center_predictors=center_predictors, categorical=categorical)
+    return Model(formula, data, priors, family="exgaussian", center_predictors=center_predictors, categorical=categorical,
+                 dropna=dropna)
 
 
 def beta_binomial(formula: str | list[str], data: pd.DataFrame, priors: Priors, *,
-                  center_predictors: bool = True, categorical: Mapping[str, object] | None = None) -> Model:
+                  center_predictors: bool = True, categorical: Mapping[str, object] | None = None, dropna: bool = False) -> Model:
     """Beta-binomial response (brms ``beta_binomial()``, D02, docs/discrete-families.md): ``successes | trials(n) ~ ...`` with the
     logit link on the mean success probability ``mu`` and the precision ``phi``, ``k ~ BetaBinomial(n, mu phi, (1 - mu) phi)``.
 
@@ -3698,22 +3739,24 @@ def beta_binomial(formula: str | list[str], data: pd.DataFrame, priors: Priors, 
     ``["k | trials(size) ~ x", "phi ~ z"]`` with ``Priors(phi={"intercept": ..., "b": ...})``, and ``weights()`` is taken after
     ``trials()``; no other link (D80).
     """
-    return Model(formula, data, priors, family="beta_binomial", center_predictors=center_predictors, categorical=categorical)
+    return Model(formula, data, priors, family="beta_binomial", center_predictors=center_predictors, categorical=categorical,
+                 dropna=dropna)
 
 
 def geometric(formula: str, data: pd.DataFrame, priors: Priors, *,
-              center_predictors: bool = True, categorical: Mapping[str, object] | None = None) -> Model:
+              center_predictors: bool = True, categorical: Mapping[str, object] | None = None, dropna: bool = False) -> Model:
     """Geometric count response (brms ``geometric()``, D02, docs/discrete-families.md): log link on the mean,
     ``y ~ NegativeBinomial(mu, 1)``, ``Var[y] = mu + mu^2``; no auxiliary parameter.
 
     Counts as for Poisson (integers in [0, 1e6], zero rows retained). ``predict(kind="mean")`` returns ``mu``. No
     ``weights()`` or other link (D80, D81).
     """
-    return Model(formula, data, priors, family="geometric", center_predictors=center_predictors, categorical=categorical)
+    return Model(formula, data, priors, family="geometric", center_predictors=center_predictors, categorical=categorical,
+                 dropna=dropna)
 
 
 def negbinomial2(formula: str, data: pd.DataFrame, priors: Priors, *,
-                 center_predictors: bool = True, categorical: Mapping[str, object] | None = None) -> Model:
+                 center_predictors: bool = True, categorical: Mapping[str, object] | None = None, dropna: bool = False) -> Model:
     """Negative binomial count response parameterised by its dispersion (brms ``negbinomial2()``, D02,
     docs/discrete-families.md): log link on the mean, ``y ~ NegativeBinomial(mu, shape = 1 / sigma)``,
     ``Var[y] = mu + sigma mu^2``.
@@ -3722,11 +3765,12 @@ def negbinomial2(formula: str, data: pd.DataFrame, priors: Priors, *,
     ``Priors(sigma=ab.Gamma(0.4, 0.3))`` (brms class ``sigma``; brms's default, on request through ``ab.default_priors``).
     ``predict(kind="mean")`` returns ``mu``. No distributional formula, ``weights()`` or other link (D80, D81).
     """
-    return Model(formula, data, priors, family="negbinomial2", center_predictors=center_predictors, categorical=categorical)
+    return Model(formula, data, priors, family="negbinomial2", center_predictors=center_predictors, categorical=categorical,
+                 dropna=dropna)
 
 
 def inverse_gaussian(formula: str, data: pd.DataFrame, priors: Priors, *, link: str = "1/mu^2",
-                     center_predictors: bool = True, categorical: Mapping[str, object] | None = None) -> Model:
+                     center_predictors: bool = True, categorical: Mapping[str, object] | None = None, dropna: bool = False) -> Model:
     """Inverse Gaussian response (brms ``inverse.gaussian()``, E02, docs/continuous-families.md): mean ``mu`` and shape
     ``shape``, ``Var[y] = mu^3 / shape``, under brms's default link ``"1/mu^2"`` (``mu = 1 / sqrt(eta)``, which needs a positive
     linear predictor: the density is -inf where it is not) or ``link="log"`` (``mu = exp(eta)``).
@@ -3736,22 +3780,23 @@ def inverse_gaussian(formula: str, data: pd.DataFrame, priors: Priors, *, link: 
     distributional formula or addition term (D112).
     """
     return Model(formula, data, priors, family="inverse_gaussian", link=link, center_predictors=center_predictors,
-                 categorical=categorical)
+                 categorical=categorical, dropna=dropna)
 
 
 def von_mises(formula: str, data: pd.DataFrame, priors: Priors, *,
-              center_predictors: bool = True, categorical: Mapping[str, object] | None = None) -> Model:
+              center_predictors: bool = True, categorical: Mapping[str, object] | None = None, dropna: bool = False) -> Model:
     """von Mises response (brms ``von_mises()``, E02, docs/continuous-families.md): angles in [-pi, pi], mean direction ``mu =
     2 atan(eta)`` (brms's ``tan_half`` link) and precision ``kappa``.
 
     ``kappa`` takes a positive-support prior, ``Priors(kappa=ab.Gamma(2, 0.01))`` (brms class ``kappa``; brms's default).
     ``predict(kind="mean")`` returns ``mu``. No ``identity`` link, distributional formula or addition term (D112).
     """
-    return Model(formula, data, priors, family="von_mises", center_predictors=center_predictors, categorical=categorical)
+    return Model(formula, data, priors, family="von_mises", center_predictors=center_predictors, categorical=categorical,
+                 dropna=dropna)
 
 
 def asym_laplace(formula: str, data: pd.DataFrame, priors: Priors, *, quantile: float | None = None,
-                 center_predictors: bool = True, categorical: Mapping[str, object] | None = None) -> Model:
+                 center_predictors: bool = True, categorical: Mapping[str, object] | None = None, dropna: bool = False) -> Model:
     """Asymmetric Laplace response (brms ``asym_laplace()``, E02, docs/continuous-families.md): quantile regression, the
     location ``mu`` (identity link) being the ``p``-quantile of ``y``, with scale ``sigma``.
 
@@ -3761,11 +3806,11 @@ def asym_laplace(formula: str, data: pd.DataFrame, priors: Priors, *, quantile: 
     as ``mean``; ``kind="linear"`` returns ``mu``. No distributional formula or addition term (D112).
     """
     return Model(formula, data, priors, family="asym_laplace", quantile=quantile, center_predictors=center_predictors,
-                 categorical=categorical)
+                 categorical=categorical, dropna=dropna)
 
 
 def frechet(formula: str, data: pd.DataFrame, priors: Priors, *, nu: float | None = None,
-            center_predictors: bool = True, categorical: Mapping[str, object] | None = None) -> Model:
+            center_predictors: bool = True, categorical: Mapping[str, object] | None = None, dropna: bool = False) -> Model:
     """Frechet response (brms ``frechet()``, E02, docs/continuous-families.md): log link on the mean, ``E[y] = mu = exp(eta)``,
     scale ``mu / Gamma(1 - 1 / nu)`` and shape ``nu > 1``.
 
@@ -3773,11 +3818,12 @@ def frechet(formula: str, data: pd.DataFrame, priors: Priors, *, nu: float | Non
     (brms's ``real<lower=1> nu``, default ``gamma(2, 0.1)``), as the Student-t family's ``nu``; ``nu=3`` fixes it.
     ``predict(kind="mean")`` returns ``mu``. No other link, distributional formula or addition term (D112).
     """
-    return Model(formula, data, priors, family="frechet", nu=nu, center_predictors=center_predictors, categorical=categorical)
+    return Model(formula, data, priors, family="frechet", nu=nu, center_predictors=center_predictors, categorical=categorical,
+                 dropna=dropna)
 
 
 def gen_extreme_value(formula: str, data: pd.DataFrame, priors: Priors, *,
-                      center_predictors: bool = True, categorical: Mapping[str, object] | None = None) -> Model:
+                      center_predictors: bool = True, categorical: Mapping[str, object] | None = None, dropna: bool = False) -> Model:
     """Generalized extreme value response (brms ``gen_extreme_value()``, E02, docs/continuous-families.md): location ``mu``
     (identity link), scale ``sigma`` and shape ``xi``, derived as brms derives it from its unscaled ``tmp_xi`` so that every
     fitted row lies inside the support.
@@ -3786,11 +3832,12 @@ def gen_extreme_value(formula: str, data: pd.DataFrame, priors: Priors, *,
     ``xi``; brms's default). ``predict(kind="mean")`` returns ``mu + sigma (Gamma(1 - xi) - 1) / xi`` as ``mean`` (infinite for
     ``xi >= 1``, D114); ``kind="linear"`` returns ``mu``. No other link, distributional formula or addition term (D112).
     """
-    return Model(formula, data, priors, family="gen_extreme_value", center_predictors=center_predictors, categorical=categorical)
+    return Model(formula, data, priors, family="gen_extreme_value", center_predictors=center_predictors, categorical=categorical,
+                 dropna=dropna)
 
 
 def wiener(formula: str | list[str], data: pd.DataFrame, priors: Priors, *,
-           center_predictors: bool = True, categorical: Mapping[str, object] | None = None) -> Model:
+           center_predictors: bool = True, categorical: Mapping[str, object] | None = None, dropna: bool = False) -> Model:
     """Wiener diffusion model of response times and decisions (brms ``wiener()``, F04, docs/wiener.md): ``rt | dec(dec) ~ ...``
     with ``dec`` 1 for the upper boundary and 0 for the lower one, the identity link on the drift rate ``mu``, the boundary
     separation ``bs``, the non-decision time ``0 < ndt < min(rt)`` and the relative starting point ``0 < bias < 1``.
@@ -3803,11 +3850,11 @@ def wiener(formula: str | list[str], data: pd.DataFrame, priors: Priors, *,
     ``kind="linear"`` returns ``mu``; response draws are refused (D149). No formula on ``ndt`` or ``bias``, other link or other
     addition term (D151).
     """
-    return Model(formula, data, priors, family="wiener", center_predictors=center_predictors, categorical=categorical)
+    return Model(formula, data, priors, family="wiener", center_predictors=center_predictors, categorical=categorical, dropna=dropna)
 
 
 def cox(formula: str, data: pd.DataFrame, priors: Priors, *,
-        center_predictors: bool = True, categorical: Mapping[str, object] | None = None) -> Model:
+        center_predictors: bool = True, categorical: Mapping[str, object] | None = None, dropna: bool = False) -> Model:
     """brms's ``cox()`` proportional hazards model of survival times (F05, docs/cox.md): ``time | cens(c) ~ ...`` with ``c`` 0 for
     an event and 1 for a right-censored row (without ``cens()`` every row is an event), the hazard ``h0(t) exp(eta)`` (brms's
     log link) and the baseline hazard ``h0`` a cubic M-spline basis of the time with the simplex ``sbhaz`` of its weights, set by
@@ -3819,11 +3866,11 @@ def cox(formula: str, data: pd.DataFrame, priors: Priors, *,
     censoring and ``trunc()`` (which brms computes wrongly, D153), left censoring, ``weights()``, ``bhaz(gr = )`` and other links
     are refused (D155).
     """
-    return Model(formula, data, priors, family="cox", center_predictors=center_predictors, categorical=categorical)
+    return Model(formula, data, priors, family="cox", center_predictors=center_predictors, categorical=categorical, dropna=dropna)
 
 
 def zero_inflated_poisson(formula: str, data: pd.DataFrame, priors: Priors, *,
-                          center_predictors: bool = True, categorical: Mapping[str, object] | None = None) -> Model:
+                          center_predictors: bool = True, categorical: Mapping[str, object] | None = None, dropna: bool = False) -> Model:
     """Zero-inflated Poisson counts (brms ``zero_inflated_poisson``): a structural zero with probability ``zi``, a
     ``Poisson(mu)`` count otherwise, ``mu = exp(eta)``; ``E[y] = (1 - zi) mu``.
 
@@ -3835,11 +3882,11 @@ def zero_inflated_poisson(formula: str, data: pd.DataFrame, priors: Priors, *,
     (docs/zero-inflated-hurdle.md).
     """
     return Model(formula, data, priors, family="zero_inflated_poisson",
-                 center_predictors=center_predictors, categorical=categorical)
+                 center_predictors=center_predictors, categorical=categorical, dropna=dropna)
 
 
 def hurdle_poisson(formula: str, data: pd.DataFrame, priors: Priors, *,
-                   center_predictors: bool = True, categorical: Mapping[str, object] | None = None) -> Model:
+                   center_predictors: bool = True, categorical: Mapping[str, object] | None = None, dropna: bool = False) -> Model:
     """Hurdle Poisson counts (brms ``hurdle_poisson``): zero with probability ``hu``, a zero-truncated ``Poisson(mu)``
     count otherwise, ``mu = exp(eta)``; ``E[y] = (1 - hu) mu / (1 - exp(-mu))``.
 
@@ -3850,7 +3897,7 @@ def hurdle_poisson(formula: str, data: pd.DataFrame, priors: Priors, *,
     formula (docs/zero-inflated-hurdle.md).
     """
     return Model(formula, data, priors, family="hurdle_poisson",
-                 center_predictors=center_predictors, categorical=categorical)
+                 center_predictors=center_predictors, categorical=categorical, dropna=dropna)
 
 
 # -- D03: more zero-inflated and hurdle families (docs/zero-inflated-hurdle.md) ---------------------------------------------
@@ -3860,7 +3907,7 @@ _E03_CONTEXTS = _D03_CONTEXTS.replace("No distributional formula,", "No other di
 
 
 def zero_inflated_negbinomial(formula: str | list[str], data: pd.DataFrame, priors: Priors, *,
-                              center_predictors: bool = True, categorical: Mapping[str, object] | None = None) -> Model:
+                              center_predictors: bool = True, categorical: Mapping[str, object] | None = None, dropna: bool = False) -> Model:
     """Zero-inflated negative binomial counts (brms ``zero_inflated_negbinomial``, D03): a structural zero with probability
     ``zi``, a ``NB(mu, shape)`` count otherwise (mean ``mu = exp(eta)``, variance ``mu + mu^2 / shape``); ``E[y] = (1 - zi) mu``.
 
@@ -3870,11 +3917,11 @@ def zero_inflated_negbinomial(formula: str | list[str], data: pd.DataFrame, prio
     ``kind="linear"`` returns ``eta``. ``weights()`` is taken. E03 (docs/contexts-newer-families.md): ``zi`` may have its own
     formula under the logit link, ``["zcnt ~ x", "zi ~ z"]`` with ``Priors(zi={"intercept": ..., "b": ...})``. """ + _E03_CONTEXTS
     return Model(formula, data, priors, family="zero_inflated_negbinomial",
-                 center_predictors=center_predictors, categorical=categorical)
+                 center_predictors=center_predictors, categorical=categorical, dropna=dropna)
 
 
 def hurdle_negbinomial(formula: str, data: pd.DataFrame, priors: Priors, *,
-                       center_predictors: bool = True, categorical: Mapping[str, object] | None = None) -> Model:
+                       center_predictors: bool = True, categorical: Mapping[str, object] | None = None, dropna: bool = False) -> Model:
     """Hurdle negative binomial counts (brms ``hurdle_negbinomial``, D03): zero with probability ``hu``, a zero-truncated
     ``NB(mu, shape)`` count otherwise, ``mu = exp(eta)``; ``E[y] = (1 - hu) mu / (1 - (shape / (mu + shape))^shape)``.
 
@@ -3882,11 +3929,11 @@ def hurdle_negbinomial(formula: str, data: pd.DataFrame, priors: Priors, *,
     untruncated negative binomial part's mean. ``predict(kind="mean")`` returns brms's expected count as ``mean``;
     ``kind="response"`` draws exact zero-truncated negative binomial counts (D86). ``weights()`` is taken. """ + _D03_CONTEXTS
     return Model(formula, data, priors, family="hurdle_negbinomial",
-                 center_predictors=center_predictors, categorical=categorical)
+                 center_predictors=center_predictors, categorical=categorical, dropna=dropna)
 
 
 def zero_inflated_binomial(formula: str, data: pd.DataFrame, priors: Priors, *,
-                           center_predictors: bool = True, categorical: Mapping[str, object] | None = None) -> Model:
+                           center_predictors: bool = True, categorical: Mapping[str, object] | None = None, dropna: bool = False) -> Model:
     """Zero-inflated binomial successes (brms ``zero_inflated_binomial``, D03): ``successes | trials(n) ~ ...``, a structural
     zero with probability ``zi``, a ``Binomial(n, p)`` count otherwise, ``p = expit(eta)``; ``E[y] = (1 - zi) n p``.
 
@@ -3895,11 +3942,11 @@ def zero_inflated_binomial(formula: str, data: pd.DataFrame, priors: Priors, *,
     (new rows need the trials column); ``kind="linear"`` returns ``eta``. The logit link only. ``weights()`` is taken (after
     ``trials()``: ``k | trials(n) + weights(w) ~ ...``). """ + _D03_CONTEXTS
     return Model(formula, data, priors, family="zero_inflated_binomial",
-                 center_predictors=center_predictors, categorical=categorical)
+                 center_predictors=center_predictors, categorical=categorical, dropna=dropna)
 
 
 def zero_inflated_beta(formula: str, data: pd.DataFrame, priors: Priors, *,
-                       center_predictors: bool = True, categorical: Mapping[str, object] | None = None) -> Model:
+                       center_predictors: bool = True, categorical: Mapping[str, object] | None = None, dropna: bool = False) -> Model:
     """Zero-inflated Beta proportions (brms ``zero_inflated_beta``, D03): responses in [0, 1), an exact zero with probability
     ``zi``, a ``Beta(mu phi, (1 - mu) phi)`` proportion otherwise, ``mu = expit(eta)``; ``E[y] = (1 - zi) mu``.
 
@@ -3907,11 +3954,11 @@ def zero_inflated_beta(formula: str, data: pd.DataFrame, priors: Priors, *,
     and slope priors are on the logit scale. ``predict(kind="mean")`` returns ``(1 - zi) mu`` as ``mean``; ``kind="linear"``
     returns ``eta``. An exact 1 is refused; the logit link only. ``weights()`` is taken. """ + _D03_CONTEXTS
     return Model(formula, data, priors, family="zero_inflated_beta",
-                 center_predictors=center_predictors, categorical=categorical)
+                 center_predictors=center_predictors, categorical=categorical, dropna=dropna)
 
 
 def hurdle_gamma(formula: str, data: pd.DataFrame, priors: Priors, *,
-                 center_predictors: bool = True, categorical: Mapping[str, object] | None = None) -> Model:
+                 center_predictors: bool = True, categorical: Mapping[str, object] | None = None, dropna: bool = False) -> Model:
     """Hurdle Gamma responses (brms ``hurdle_gamma``, D03): non-negative reals, an exact zero with probability ``hu``, a
     ``Gamma(shape, shape / mu)`` value otherwise, ``mu = exp(eta)``; ``E[y] = (1 - hu) mu``.
 
@@ -3919,11 +3966,11 @@ def hurdle_gamma(formula: str, data: pd.DataFrame, priors: Priors, *,
     and slope priors act on the log of the Gamma part's mean. ``predict(kind="mean")`` returns ``(1 - hu) mu`` as ``mean``;
     ``kind="linear"`` returns ``eta``. ``weights()`` is taken. """ + _D03_CONTEXTS
     return Model(formula, data, priors, family="hurdle_gamma",
-                 center_predictors=center_predictors, categorical=categorical)
+                 center_predictors=center_predictors, categorical=categorical, dropna=dropna)
 
 
 def hurdle_lognormal(formula: str | list[str], data: pd.DataFrame, priors: Priors, *,
-                     center_predictors: bool = True, categorical: Mapping[str, object] | None = None) -> Model:
+                     center_predictors: bool = True, categorical: Mapping[str, object] | None = None, dropna: bool = False) -> Model:
     """Hurdle lognormal responses (brms ``hurdle_lognormal``, D03): non-negative reals, an exact zero with probability ``hu``,
     ``LogNormal(mu, sigma)`` otherwise with the identity link on the log-scale location ``mu``; ``E[y] = (1 - hu) exp(mu +
     sigma^2 / 2)``.
@@ -3933,7 +3980,7 @@ def hurdle_lognormal(formula: str | list[str], data: pd.DataFrame, priors: Prior
     taken. E03 (docs/contexts-newer-families.md): ``hu`` may have its own formula under the logit link, ``["zpos ~ x", "hu ~ z"]``
     with ``Priors(hu={"intercept": ..., "b": ...})``. """ + _E03_CONTEXTS
     return Model(formula, data, priors, family="hurdle_lognormal",
-                 center_predictors=center_predictors, categorical=categorical)
+                 center_predictors=center_predictors, categorical=categorical, dropna=dropna)
 
 
 # -- E01: bounded families (docs/bounded-families.md) ------------------------------------------------------------------------
@@ -3942,7 +3989,7 @@ _E01_CONTEXTS = ("No distributional formula, cens(), trunc(), mo(), me(), mi(), 
 
 
 def zero_one_inflated_beta(formula: str, data: pd.DataFrame, priors: Priors, *,
-                           center_predictors: bool = True, categorical: Mapping[str, object] | None = None) -> Model:
+                           center_predictors: bool = True, categorical: Mapping[str, object] | None = None, dropna: bool = False) -> Model:
     """Zero-one-inflated Beta proportions (brms ``zero_one_inflated_beta``, E01): responses in [0, 1], an exact 0 or 1 with
     probability ``zoi`` (a 1 with probability ``coi`` given that), a ``Beta(mu phi, (1 - mu) phi)`` proportion otherwise, ``mu =
     expit(eta)``; ``E[y] = zoi coi + (1 - zoi) mu``.
@@ -3952,11 +3999,11 @@ def zero_one_inflated_beta(formula: str, data: pd.DataFrame, priors: Priors, *,
     priors are on the logit scale. ``predict(kind="mean")`` returns brms's ``posterior_epred`` as ``mean``; ``kind="linear"``
     returns ``eta``. ``weights()`` is taken. """ + _E01_CONTEXTS
     return Model(formula, data, priors, family="zero_one_inflated_beta",
-                 center_predictors=center_predictors, categorical=categorical)
+                 center_predictors=center_predictors, categorical=categorical, dropna=dropna)
 
 
 def zero_inflated_beta_binomial(formula: str, data: pd.DataFrame, priors: Priors, *,
-                                center_predictors: bool = True, categorical: Mapping[str, object] | None = None) -> Model:
+                                center_predictors: bool = True, categorical: Mapping[str, object] | None = None, dropna: bool = False) -> Model:
     """Zero-inflated beta-binomial successes (brms ``zero_inflated_beta_binomial``, E01): ``successes | trials(n) ~ ...``, a
     structural zero with probability ``zi``, a ``BetaBinomial(n, mu phi, (1 - mu) phi)`` count otherwise, ``mu = expit(eta)``;
     ``E[y] = (1 - zi) n mu``.
@@ -3966,11 +4013,11 @@ def zero_inflated_beta_binomial(formula: str, data: pd.DataFrame, priors: Priors
     ``predict(kind="mean")`` returns brms's expected count ``(1 - zi) n mu`` as ``expected`` (new rows need the trials column);
     ``kind="linear"`` returns ``eta``. ``weights()`` is taken (after ``trials()``). """ + _E01_CONTEXTS
     return Model(formula, data, priors, family="zero_inflated_beta_binomial",
-                 center_predictors=center_predictors, categorical=categorical)
+                 center_predictors=center_predictors, categorical=categorical, dropna=dropna)
 
 
 def xbeta(formula: str, data: pd.DataFrame, priors: Priors, *,
-          center_predictors: bool = True, categorical: Mapping[str, object] | None = None) -> Model:
+          center_predictors: bool = True, categorical: Mapping[str, object] | None = None, dropna: bool = False) -> Model:
     """Extended-support Beta proportions (brms ``xbeta``, Kosmidis and Zeileis 2024; E01): responses in [0, 1] from one process,
     ``B ~ Beta(mu phi, (1 - mu) phi)`` with ``mu = expit(eta)`` stretched to ``(1 + 2 kappa) B - kappa`` and censored to [0, 1],
     so that exact 0s and 1s carry the mass of the stretched Beta beyond the ends.
@@ -3979,11 +4026,11 @@ def xbeta(formula: str, data: pd.DataFrame, priors: Priors, *,
     ``gamma(0.01, 0.01)`` for both on request through ``ab.default_priors``); the intercept and slope priors are on the logit
     scale of ``mu``. ``predict(kind="mean")`` returns brms's ``posterior_epred``, the censored variable's mean (not ``mu``), as
     ``mean``; ``kind="linear"`` returns ``eta``. ``weights()`` is taken. """ + _E01_CONTEXTS
-    return Model(formula, data, priors, family="xbeta", center_predictors=center_predictors, categorical=categorical)
+    return Model(formula, data, priors, family="xbeta", center_predictors=center_predictors, categorical=categorical, dropna=dropna)
 
 
 def hurdle_cumulative(formula: str, data: pd.DataFrame, priors: Priors, *,
-                      center_predictors: bool = True, categorical: Mapping[str, object] | None = None) -> Model:
+                      center_predictors: bool = True, categorical: Mapping[str, object] | None = None, dropna: bool = False) -> Model:
     """Hurdle ordinal response (brms ``hurdle_cumulative("logit")``, E01): the hurdle category with probability ``hu``, otherwise
     one of K ordered categories of a cumulative logit model, ``P(y <= k | y > 0) = expit(tau_k - mu)``, with K - 1 increasing
     thresholds ``tau`` and the linear predictor ``mu`` without an intercept.
@@ -3996,11 +4043,12 @@ def hurdle_cumulative(formula: str, data: pd.DataFrame, priors: Priors, *,
     probabilities ``p`` with a ``category`` dimension, the hurdle first; ``kind="linear"`` returns ``mu``, ``kind="response"``
     codes 0..K. The logit link only, ``disc = 1`` and brms's flexible thresholds (D109); no ``weights()``, ``cs()``, and """ + \
         _E01_CONTEXTS[3:]
-    return Model(formula, data, priors, family="hurdle_cumulative", center_predictors=center_predictors, categorical=categorical)
+    return Model(formula, data, priors, family="hurdle_cumulative", center_predictors=center_predictors, categorical=categorical,
+                 dropna=dropna)
 
 
 def cumulative(formula: str, data: pd.DataFrame, priors: Priors, *, link: str = "logit",
-               center_predictors: bool = True, categorical: Mapping[str, object] | None = None) -> Model:
+               center_predictors: bool = True, categorical: Mapping[str, object] | None = None, dropna: bool = False) -> Model:
     """Ordinal response (brms ``cumulative("logit")``): K ordered categories, ``P(y <= k) = expit(tau_k - mu)`` with K - 1
     increasing thresholds ``tau`` and the linear predictor ``mu`` without an intercept (docs/ordinal-categorical.md).
 
@@ -4017,13 +4065,14 @@ def cumulative(formula: str, data: pd.DataFrame, priors: Priors, *, link: str = 
     ``ord | thres(K, gr = z) ~ ...`` give each level of ``z`` its own ordered thresholds (``intercept`` of ``value_point`` a
     mapping by level), and the design is then never centred, as brms leaves it (docs/grouped-thresholds.md, D158, D159).
     """
-    return Model(formula, data, priors, family="cumulative", link=link, center_predictors=center_predictors, categorical=categorical)
+    return Model(formula, data, priors, family="cumulative", link=link, center_predictors=center_predictors, categorical=categorical,
+                 dropna=dropna)
 
 
 def _sequential(family: str, meaning: str):
     def build(formula: str, data: pd.DataFrame, priors: Priors, *, center_predictors: bool = True,
-              categorical: Mapping[str, object] | None = None) -> Model:
-        return Model(formula, data, priors, family=family, center_predictors=center_predictors, categorical=categorical)
+              categorical: Mapping[str, object] | None = None, dropna: bool = False) -> Model:
+        return Model(formula, data, priors, family=family, center_predictors=center_predictors, categorical=categorical, dropna=dropna)
 
     build.__name__ = build.__qualname__ = family
     build.__doc__ = f"""Ordinal response under brms's ``{family}("logit")`` (D04, docs/ordinal-categorical.md): {meaning}, with K - 1
@@ -4047,7 +4096,7 @@ acat = _sequential("acat", "adjacent categories, ``log(P(y = k + 1) / P(y = k)) 
 
 
 def categorical(formula: str, data: pd.DataFrame, priors: Priors, *,
-                center_predictors: bool = True, categorical: Mapping[str, object] | None = None) -> Model:
+                center_predictors: bool = True, categorical: Mapping[str, object] | None = None, dropna: bool = False) -> Model:
     """Unordered categorical response (brms ``categorical()``): one linear predictor ``mu_k`` per non-reference category,
     ``P(y = k) = softmax(0, mu_2, ..., mu_K)_k`` (docs/ordinal-categorical.md).
 
@@ -4059,11 +4108,12 @@ def categorical(formula: str, data: pd.DataFrame, priors: Priors, *,
     ``kind="response"`` 1-based categories. Population-level terms only: group-level terms and the offset are refused
     (divergence D37). ``categorical={column: reference}`` declares categorical predictors as for every family.
     """
-    return Model(formula, data, priors, family="categorical", center_predictors=center_predictors, categorical=categorical)
+    return Model(formula, data, priors, family="categorical", center_predictors=center_predictors, categorical=categorical,
+                 dropna=dropna)
 
 
 def dirichlet(formula: str, data: pd.DataFrame, priors: Priors, *, refcat: str | None = None, center_predictors: bool = True,
-              categorical: Mapping[str, object] | None = None) -> Model:
+              categorical: Mapping[str, object] | None = None, dropna: bool = False) -> Model:
     """A response on the simplex under brms's ``dirichlet()`` (F01b, docs/dirichlet-logistic-normal.md): ``cbind(y1, ..., yK) ~
     <terms>``, K proportion columns whose rows sum to 1, ``y_i ~ Dirichlet(phi * softmax(0, mu_i))`` with one linear predictor
     per non-reference category (brms's ``mu<k>``: its own centred intercept, coefficients and varying intercepts with their own
@@ -4076,11 +4126,11 @@ def dirichlet(formula: str, data: pd.DataFrame, priors: Priors, *, refcat: str |
     Population-level terms of every kind and varying intercepts ``(1 | g)``; group-level slopes, offsets and addition terms are
     refused (D138)."""
     return Model(formula, data, priors, family="dirichlet", center_predictors=center_predictors, categorical=categorical,
-                 refcat=refcat)
+                 refcat=refcat, dropna=dropna)
 
 
 def logistic_normal(formula: str, data: pd.DataFrame, priors: Priors, *, refcat: str | None = None, center_predictors: bool = True,
-                    categorical: Mapping[str, object] | None = None) -> Model:
+                    categorical: Mapping[str, object] | None = None, dropna: bool = False) -> Model:
     """A response on the simplex under brms's ``logistic_normal()`` (F01b, docs/dirichlet-logistic-normal.md): ``cbind(y1, ...,
     yK) ~ <terms>``, K >= 3 proportion columns whose rows sum to 1; the log-ratios ``log(y_i[k] / y_i[ref])`` of the
     non-reference categories are ``MultiNormal(mu_i, diag(sigma) Lncor diag(sigma))``, the density on the simplex with its
@@ -4094,11 +4144,11 @@ def logistic_normal(formula: str, data: pd.DataFrame, priors: Priors, *, refcat:
     refused, as brms refuses ``posterior_epred`` for the family. Population-level terms and varying intercepts ``(1 | g)``;
     group-level slopes, offsets, addition terms and two-column responses are refused (D139)."""
     return Model(formula, data, priors, family="logistic_normal", center_predictors=center_predictors, categorical=categorical,
-                 refcat=refcat)
+                 refcat=refcat, dropna=dropna)
 
 
 def mixture(formula: str, data: pd.DataFrame, priors: Priors, *, families: list[str], order: str | bool | None = None,
-            center_predictors: bool = True, categorical: Mapping[str, object] | None = None, nl: bool = False) -> Model:
+            center_predictors: bool = True, categorical: Mapping[str, object] | None = None, nl: bool = False, dropna: bool = False) -> Model:
     """A finite mixture (brms ``mixture(gaussian, gaussian)``, C05, docs/mixtures.md): ``y_i ~ sum_k theta_k
     Normal(mu_k,i, sigma_k)`` with one linear predictor per component on the formula's design (brms's ``mu<k>``, each with
     its own centred intercept and coefficients), one residual SD per component (``sigma<k>``) and the mixing proportions
@@ -4121,4 +4171,4 @@ def mixture(formula: str, data: pd.DataFrame, priors: Priors, *, families: list[
                            "expression in every component's mean (mu1, mu2) with shared non-linear parameters, which is not "
                            "verified here; a non-linear model is ab.gaussian([...], data, priors, nl=True)")
     return Model(formula, data, priors, family="mixture", families=families, order=order, center_predictors=center_predictors,
-                 categorical=categorical)
+                 categorical=categorical, dropna=dropna)

@@ -188,7 +188,7 @@ def decode(obj) -> np.ndarray:
 
 # -- the AutoBayes side -------------------------------------------------------------------------------------
 DEFAULT_PRIOR_KWARGS = ("categorical", "nu", "link", "center_predictors", "families", "order", "rescor", "nl", "imputed",
-                        "quantile", "data2")
+                        "quantile", "data2", "dropna")       # G02: dropna=True reads the defaults from the rows the model keeps
 
 
 def make_data2(n: int = N_ROWS) -> dict:

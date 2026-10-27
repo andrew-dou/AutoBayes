@@ -5,10 +5,6 @@
  "note": "G02 call surface: brms's class-wide priors with overrides, two grouping factors and a correlated varying slope on g: b normal(0, 2) with coef x's own normal(0.5, 1), and sd normal(0, 1) with group h's own normal(0, 0.5). brms resolves b_w, b_zq and b_zr to normal(0, 2), b_x to normal(0.5, 1), sd_g (Intercept and x) to normal(0, 1) and sd_h (Intercept) to normal(0, 0.5), each half-normal on (0, inf), and cor lkj(2) on L_1: brms's lprior equals that sum at every frozen point to 4e-15 (prior_summary lists the rows given as source user and the rows they cover with an empty prior, source default). The AutoBayes call is a proposal (D173, accepted to change on 2026-10-26): '*' is the class-wide prior that the entries for a term or a grouping factor override; the feature may choose another spelling. Data: tier_g1, seed 2211, 36 rows.",
  "seed": 2303,
  "n_points": 8,
- "gate": {
-  "expect": "fail",
-  "reason": "G02_call_surface not implemented; remove this field when it lands"
- },
  "data": {
   "generator": "tier_g1",
   "seed": 2211,

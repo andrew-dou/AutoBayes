@@ -211,6 +211,11 @@ class Categorical:
     the formula (``term``, the term as written; the column's own name otherwise). Its ``levels`` are then the fitted levels
     in their order, its ``reference`` the lowest of them, and its term is one population-level term per contrast
     (``PopTerm`` kind ``"contrast"``, named ``contrast_columns``) rather than a categorical term.
+
+    D172 (docs/column-types.md): ``from_dtype`` is ``"category"`` for an undeclared unordered pandas Categorical and ``"bool"`` for
+    an undeclared boolean column, whose dtype declares the levels: they are then the fitted levels in the dtype's order (the
+    Categorical's categories; ``FALSE``, ``TRUE``) and the reference the first of them, as brms codes a factor and a logical
+    (``reference`` is empty until the data are seen); ``""`` for a declared column.
     """
 
     name: str
@@ -220,6 +225,7 @@ class Categorical:
     full_rank: bool = False
     coding: str = "treatment"
     term: str | None = None
+    from_dtype: str = ""
 
     @property
     def term_name(self) -> str:
@@ -2572,6 +2578,10 @@ def _normalise_categorical(categorical, terms: list[str], response: str, groups:
             raise FormulaError(
                 f"{name!r} is declared categorical but is not a term of {formula!r}; add it to the formula"
             )
+        from autobayes.column_types import DtypeLevels
+        if isinstance(ref, DtypeLevels):                     # D172: an undeclared column whose dtype declares its levels
+            out.append(Categorical(name=name, reference="", from_dtype=ref.kind))
+            continue
         if ref is None:
             raise FormulaError(
                 f"categorical predictor {name!r} needs an explicit reference level: categorical={{{name!r}: <level>}}"
@@ -2617,12 +2627,16 @@ def _kind(v) -> str:
     return "text" if isinstance(v, str) else "number"
 
 
-def categorical_labels(label: str, s: pd.Series) -> tuple[np.ndarray, tuple[str, ...]]:
+def categorical_labels(label: str, s: pd.Series, *, logical: bool = False) -> tuple[np.ndarray, tuple[str, ...]]:
     """String labels of a categorical predictor column, checked scalar by scalar before any
     coding (``_label``), and the column's declared-but-absent categories (pandas Categorical
     only). Containers are read as Python objects, which is exact for every integer width and
-    for nullable types; a column mixing text labels with numeric codes is refused as ambiguous."""
+    for nullable types; a column mixing text labels with numeric codes is refused as ambiguous. ``logical=True`` (D172, a
+    population-level predictor) reads a boolean column as brms reads a logical, the labels ``FALSE`` and ``TRUE``."""
     reject_complex(label, s)
+    if logical and pd.api.types.is_bool_dtype(s):
+        from autobayes.column_types import logical_labels
+        return logical_labels(label, s), ()
     if pd.api.types.is_bool_dtype(s):
         raise FormulaError(
             f"{label} is boolean; a categorical predictor needs explicit labels or integer codes "
@@ -4201,11 +4215,15 @@ def validate_data(spec: ModelSpec, data: pd.DataFrame, family: str = "gaussian",
         t.transform.values(data)                                 # numeric, finite, in the function's domain and finite after it, or refused
     categoricals = []
     for cat in spec.categoricals:
-        labels, unused = categorical_labels(f"categorical predictor {cat.name!r}", data[cat.name])
+        labels, unused = categorical_labels(f"categorical predictor {cat.name!r}", data[cat.name], logical=True)
         levels = tuple(sorted(set(labels.tolist())))
         if len(levels) < 2:
             raise FormulaError(f"predictor {cat.name!r} is constant (single level {levels[0]!r} in the fitted rows)")
         s = data[cat.name]
+        if cat.from_dtype:                                       # D172: the levels and reference the column's dtype declares
+            from autobayes.column_types import dtype_coding
+            categoricals.append(dtype_coding(cat, s, labels, unused))
+            continue
         if cat.is_poly or (isinstance(s.dtype, pd.CategoricalDtype) and s.dtype.ordered and not cat.full_rank):
             categoricals.append(_poly_categorical(cat, s, labels, unused))   # F08: an ordered factor, R's polynomial contrasts
             continue
@@ -4226,9 +4244,9 @@ def validate_data(spec: ModelSpec, data: pd.DataFrame, family: str = "gaussian",
     na = data[[c for c in needed if c not in spec.missing_columns]].isna().any()
     if na.any():
         raise FormulaError(
-            f"missing values in columns {list(na[na].index)}; rows with missing values are not dropped here (brms drops "
-            "them with a warning): drop or impute them explicitly before fitting, or model a missing predictor with mi() "
-            "(docs/missing-and-measurement-error.md, divergence D174)."
+            f"missing values in columns {list(na[na].index)}; rows with missing values are not dropped unless asked (brms drops "
+            "them with a warning): pass dropna=True to drop them as brms does (docs/missing-rows.md), drop or impute them "
+            "explicitly before fitting, or model a missing predictor with mi() (docs/missing-and-measurement-error.md, divergence D174)."
         )
     if len(data) < 2:
         raise FormulaError("need at least two observations")

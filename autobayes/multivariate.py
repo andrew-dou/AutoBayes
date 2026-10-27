@@ -656,10 +656,16 @@ class MultivariateModel:
     """
 
     def __init__(self, formula, data: pd.DataFrame, priors: Priors, *, family: str = "gaussian", rescor: bool | None = None,
-                 center_predictors: bool = True, categorical: Mapping[str, object] | None = None):
+                 center_predictors: bool = True, categorical: Mapping[str, object] | None = None, dropna: bool = False):
+        from autobayes.column_types import typed_categorical
+        from autobayes.missing_rows import check_dropna
         from autobayes.model import Model
 
         fam = get_family(family)
+        self.dropna = check_dropna(dropna)                 # D174: one set of rows for every response (docs/missing-rows.md)
+        self.dropped_na_rows: tuple[int, ...] = ()
+        # D172: an undeclared pandas Categorical or boolean predictor is declared by its dtype, as in a univariate model
+        categorical = typed_categorical(data, categorical, lambda cat: parse_multivariate(formula, None, family, cat, rescor=rescor))
         spec0 = parse_multivariate(formula, None, family, categorical, rescor=rescor)   # the structure, before the data
         if not isinstance(priors, Priors):
             raise PriorError(f"priors must be an ab.Priors, got {type(priors).__name__}")
@@ -669,6 +675,17 @@ class MultivariateModel:
         self.rescor = bool(rescor)
         self.center_predictors = bool(center_predictors)
         cats = response_categorical(spec0, categorical)          # each response's declarations (C06: its own main effects')
+        note = None
+        if self.dropna:                                          # D174: but the missing values mi() models (C06)
+            import warnings
+
+            from autobayes.missing_rows import drop_missing_multivariate, dropped_warning
+
+            n = len(data)
+            data, self.dropped_na_rows, where = drop_missing_multivariate(spec0, data)
+            if self.dropped_na_rows:
+                note = dropped_warning(self.dropped_na_rows, n, where)
+                warnings.warn(note, UserWarning, stacklevel=3)
         subsets = spec0.subsets                                  # F06c: a response with subset() is built on its subset's rows
         rows = {r: subset_rows(data, subsets[r], r) for r in subsets}
         self.submodels = MappingProxyType({r: Model(spec0.formulas[r], data.iloc[rows[r]] if r in subsets else data,
@@ -686,6 +703,8 @@ class MultivariateModel:
         # applies when its formula has an intercept
         self.effective_center_predictors = self.center_predictors if self.spec.separate else subs[0].effective_center_predictors
         self.warnings: list[str] = list(dict.fromkeys(w for sub in subs for w in sub.warnings))
+        if note is not None:                                     # D174: first, as the drop came first
+            self.warnings.insert(0, note)
         designs = MappingProxyType({r: sub.design for r, sub in self.submodels.items()})
         if subsets:                                              # F06c: each response on its rows, NaN elsewhere
             every = {r: rows.get(r, np.arange(len(data))) for r in self.responses}
@@ -991,6 +1010,9 @@ class MultivariateModel:
                   "rows of its subset: brms's bf(y | subset(s) ~ ...) + bf(...))",
                   f"  data      : n = {self.design.n} rows, each with its {K} responses" if not s.subsets else
                   f"  data      : n = {self.design.n} rows (brms's N); each response's likelihood covers the rows of its subset only"]
+        if self.dropped_na_rows:                             # D174: the rows dropna=True dropped, for every response
+            lines.append(f"  dropped   : {len(self.dropped_na_rows)} row(s) with missing values (dropna=True, positions "
+                         f"{list(self.dropped_na_rows)[:10]}{'...' if len(self.dropped_na_rows) > 10 else ''})")
         for r, column in s.subsets.items():                  # F06c: brms's N_<response> rows of each subset
             rows = self.design.rows[r]
             lines.append(f"  subset    : {r} on the {rows.size} rows with {column} = 1 (brms's N_{r}; 0-based {rows[:12].tolist()}"
@@ -1191,15 +1213,21 @@ def predict_response(model: MultivariateModel, fit_result, resp: str, *, newdata
 
 # -- priors --------------------------------------------------------------------------------------------------
 def multivariate_default_priors(formula, data: pd.DataFrame, *, family: str = "gaussian", categorical=None, nu=None, link=None,
-                                center_predictors: bool = True, rescor=None) -> Priors:
+                                center_predictors: bool = True, rescor=None, dropna: bool = False) -> Priors:
     """brms's default priors of a multivariate model (``ab.default_priors`` with an ``mvbind()`` formula or ``rescor``): each
     response's own defaults (``default_priors`` of its formula, the location and scale read from that response), a correlated
     term's ``lkj(1)`` once for every response (brms's ``cor`` has no ``resp``) and, with ``rescor=True``, ``lkj(1)`` on the
     residual correlation (brms's class ``rescor``). A response with ``subset()`` (F06c) has its defaults read from the rows of its
-    subset, as brms reads them (its Intercept's location is the subset's median response)."""
+    subset, as brms reads them (its Intercept's location is the subset's median response). ``categorical`` and ``dropna`` as the
+    model takes them (D172, D174): the defaults are read from the rows the model keeps."""
+    from autobayes.column_types import typed_categorical
     from autobayes.default_priors import default_priors
+    from autobayes.missing_rows import check_dropna, drop_missing_multivariate
     from autobayes.priors import LKJ
 
+    categorical = typed_categorical(data, categorical, lambda cat: parse_multivariate(formula, None, family, cat, rescor=rescor))
+    if check_dropna(dropna):
+        data, _, _ = drop_missing_multivariate(parse_multivariate(formula, None, family, categorical, rescor=rescor), data)
     spec = parse_multivariate(formula, data, family, categorical, rescor=rescor)
     cats = response_categorical(spec, categorical)              # each response's declarations (C06: its own main effects')
     frames = {r: data.iloc[subset_rows(data, c, r)] for r, c in spec.subsets.items()}   # F06c: each subset's rows

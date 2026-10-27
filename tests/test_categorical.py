@@ -79,8 +79,8 @@ def test_declaration_and_validation():
     with pytest.raises(ab.FormulaError, match="must be a mapping"):
         build("gaussian", df, G_PRIORS, categorical=["z"])
     d = df.copy(); d["z"] = d["z"].map({"a": True, "b": False, "c": True})
-    with pytest.raises(ab.FormulaError, match="boolean"):
-        build("gaussian", d, G_PRIORS, categorical={"z": True})
+    # D172 (G02): a boolean column is read as brms reads a logical, FALSE / TRUE, declared or not (it was refused before)
+    assert build("gaussian", d, G_PRIORS, categorical={"z": True}).spec.categorical("z").coefficients == ("FALSE",)
     d = df.copy(); d["z"] = d["z"].map({"a": 1.0, "b": 1.5, "c": 3.0})
     with pytest.raises(ab.FormulaError, match="must be integral"):
         build("gaussian", d, G_PRIORS, categorical={"z": 1})

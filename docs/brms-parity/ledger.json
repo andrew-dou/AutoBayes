@@ -2461,13 +2461,33 @@
    "depends_on": [
     "F09_namespace_and_messages"
    ],
-   "status": "implementing",
+   "status": "gates_green",
    "summary": "F09's call-surface changes Andrew accepted (2026-10-26): undeclared pandas Categorical and boolean columns coded as brms codes factors and logicals (D172); a class-wide prior with per-coefficient and per-group overrides, brms's coef and group rows (D173); an opt-in to drop rows with missing values and report them (D174). target_accept stays 0.9 (D175)",
    "pr": null,
    "attempts": 0,
    "divergences": [],
    "next_action": "paused at the weekly usage cap (2026-10-27): implementation committed in worktree parity-g02 at 126bd14 (off d5ccb69, not pushed; diff coverage 373/373); resume after the reset: bring onto main (G03 #112, G04 #111 touch the same code), full suite and gate tool, report",
-   "reserved_divergences": "D177-D178"
+   "reserved_divergences": "D177-D178",
+   "gates": {
+    "sha": "f9733e39cbd9",
+    "dirty_tree": false,
+    "base": "origin/main",
+    "when": "2026-11-02T17:43Z",
+    "results": {
+     "immutability": {
+      "status": "pass",
+      "seconds": 0.0
+     },
+     "oracle": {
+      "status": "pass",
+      "seconds": 852.9
+     },
+     "diff_coverage": {
+      "status": "pass",
+      "seconds": 83.3
+     }
+    }
+   }
   },
   {
    "id": "G03_interactions",
