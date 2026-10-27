@@ -91,7 +91,7 @@ def check_thres(spec, formula: str) -> None:
         raise FormulaError(f"{formula!r}: {a.term!r} next to {others[0]} is not offered: no frozen brms case verifies the pair "
                            f"({_DOC}, divergence {DIVERGENCE})")
     read = ([spec.response] + list(spec.pop_columns) + [c for t in spec.group_terms for c in t.data_columns]
-            + ([spec.trials] if spec.trials else []) + ([spec.offset.column] if spec.offset is not None else []))
+            + ([spec.trials] if spec.trials else []) + (list(spec.offset.columns) if spec.offset is not None else []))
     if a.column in read:
         raise FormulaError(f"{formula!r}: {a.column!r} is the grouping column of {a.term!r} and cannot also be the response, a "
                            f"predictor, a grouping factor or the offset ({_DOC}, divergence {DIVERGENCE})")

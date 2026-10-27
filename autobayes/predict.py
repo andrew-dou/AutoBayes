@@ -287,7 +287,7 @@ def _check_newdata(model, newdata: pd.DataFrame, *, need_trials: bool = False, i
     s = model.spec
     operands = [c for t in s.group_terms for c in t.data_columns] if include_group_effects else []   # g and h, never g_h; D08:
     operands += [c for d in s.dpars for t in d.group_terms for c in t.data_columns] if include_group_effects else []   # mm(), by
-    cols = [*s.model_columns] + ([s.offset.column] if s.offset is not None else []) + operands   # every formula's columns (B01)
+    cols = [*s.model_columns] + (list(s.offset.columns) if s.offset is not None else []) + operands   # every formula's columns (B01)
     cols += list(s.car.columns) if getattr(s, "car", None) is not None else []   # F02a: the locations, needed with or without groups
     cols += [a.column for a in s.additions if a.kind == "thres"]   # F06b: each row's level of thres(gr = z)
     cols += list(extra)                                          # F06a: se()'s and rate()'s columns where the kind needs them
@@ -302,8 +302,9 @@ def _check_newdata(model, newdata: pd.DataFrame, *, need_trials: bool = False, i
         cols.append(s.trials)
     missing = [c for c in cols if c not in newdata.columns]
     if missing:
-        hint = (f" (the offset term {s.offset.term!r} needs {s.offset.column!r} on every row to predict)"
-                if s.offset is not None and s.offset.column in missing else "")
+        needs = [c for c in (s.offset.columns if s.offset is not None else ()) if c in missing]
+        hint = (f" (the offset term {s.offset.term!r} needs {', '.join(repr(c) for c in needs)} on every row to predict)"
+                if needs else "")
         raise FormulaError(f"newdata lacks columns {missing}{hint}")
     df = newdata[cols].copy()
     if getattr(s, "me_terms", ()):                               # C06: brms draws the latent values of new rows
@@ -328,7 +329,9 @@ def _check_newdata(model, newdata: pd.DataFrame, *, need_trials: bool = False, i
         if not pd.api.types.is_numeric_dtype(df[c]):
             raise FormulaError(f"newdata column {c!r} must be numeric")
     if s.offset is not None:
-        s.offset.values(df, where="newdata column")               # numeric, finite and (for log) positive, or refused
+        offset = s.offset.values(df, where="newdata column")      # numeric, finite and (for log) positive, or refused
+        if s.offset.parts:                                        # G04: the summed offsets, read by Bambi from this column
+            df[s.offset.expression] = offset
     for t in (*s.transform_terms, *(t for d in s.dpars for t in d.transform_terms)):   # the evaluated columns, recomputed from the raw ones
         df[t.name] = t.transform.values(df, where="newdata column")
     for m in s.monotonics:                                       # whole numbers in the fitted range, or a fitted category (B03)

@@ -243,6 +243,8 @@ def _offset_values(spec, data: pd.DataFrame) -> list[float] | None:
     """The offset term's values per row as brms computes them (R's ``log`` of the column for ``offset(log(col))``)."""
     if spec.offset is None:
         return None
+    if spec.offset.parts:                                             # G04: the summed offsets, evaluated as the model evaluates them
+        return [float(v) for v in spec.offset.values(data)]
     col = [float(v) for v in data[spec.offset.column].to_numpy(dtype=float)]
     return [math.log(v) for v in col] if spec.offset.log else col
 
@@ -520,7 +522,7 @@ def brms_coefficient_names(spec) -> dict[str, str]:
         elif t.is_special:                                            # mo(ord) -> moord, me(x, sdx) -> mexsdx, mi(x) -> mix (C06)
             out[t.name] = brms_rename(t.name)
         elif t.kind == "transform":
-            out[t.columns[0]] = brms_rename(t.transform.term)
+            out[t.columns[0]] = t.transform.brms_name                 # A05: rename() of the term; G04: of R's column name
         elif t.kind == "contrast":                                    # F08: fo.L, ordered(z).Q -> orderedz.Q, fo^4 -> foE4
             out[t.columns[0]] = brms_rename(t.name)
         elif t.kind == "categorical":

@@ -5,10 +5,6 @@
  "note": "G04 transforms: poly(x, 3, raw = TRUE), the raw powers x, x^2, x^3, brms's columns polyx3rawEQTRUE1, 2 and 3; no fitted parameters, so new rows are their own powers. brms's posterior_linpred on the fitted and new rows equals b_Intercept + X b + r_g (+ offsets) built from the columns described, to 2e-15 at every frozen point. Data: tier_g1, seed 2211, 36 rows.",
  "seed": 2325,
  "n_points": 8,
- "gate": {
-  "expect": "fail",
-  "reason": "G04_transforms not implemented; remove this field when it lands"
- },
  "data": {
   "generator": "tier_g1",
   "seed": 2211,

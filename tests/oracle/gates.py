@@ -800,8 +800,9 @@ def check_predictions(b: Bundle) -> None:
     # brms's posterior_epred of a family with trials is trials * mu, predict()'s "expected" (D5): the binomial's and, since D02,
     # the beta-binomial's
     mean_var = "expected" if b.model.family_spec.has_trials else b.model.names["mean"]
+    refused_new = b.case["brms"].get("newdata_prediction_refused")    # G04: brms refuses the new rows; compared below instead
     for block, nd in (("fitted", None), ("newdata", b.newdata)):
-        if block == "newdata" and nd is None:
+        if block == "newdata" and (nd is None or refused_new):
             continue
         for include, suffix in ((True, ""), (False, "_nogroup")):
             ref_lin = b.fixture.prediction(block, "linpred" + suffix)
@@ -823,6 +824,91 @@ def check_predictions(b: Bundle) -> None:
             err = rel_err(mean, ref_ep)
             if err > PRED_REL:
                 raise OracleMismatch(f"{block}{suffix}: {mean_var!r} differs from brms posterior_epred by {err}")
+    if refused_new:
+        check_newdata_refusal(b)
+
+
+_INVERSE_LINKS = {"identity": lambda eta: eta, "log": np.exp, "logit": expit}
+
+
+def code_new_rows(b: Bundle) -> np.ndarray:
+    """G04: the new rows' population-level design in brms's columns (``standata()``'s ``X`` names), coded through the fitted rows:
+    ``Intercept`` ones, a numeric column of the data as it is, and brms's ``factor<col><level>`` column of ``factor(col)`` the
+    indicator of that fitted value of ``col`` (R's label of a whole number). The same coding of the fitted rows must reproduce
+    brms's ``X``, so that the new rows are coded as brms codes the fitted ones; any other brms column is a mismatch."""
+    X, names = b.fixture.standata["X"], b.fixture.colnames("X")
+    columns = [c for c in b.data.columns if pd.api.types.is_numeric_dtype(b.data[c]) and not pd.api.types.is_bool_dtype(b.data[c])]
+
+    def coder(name):
+        if name == "Intercept":
+            return lambda df: np.ones(len(df))
+        if name in columns:
+            return lambda df: df[name].to_numpy(dtype=float)
+        hits = [(c, name[len("factor") + len(c):]) for c in columns if name.startswith(f"factor{c}")
+                and name[len("factor") + len(c):] in {str(int(v)) for v in b.data[c] if float(v) == int(v)}]
+        if len(hits) != 1:
+            raise OracleMismatch(f"check_newdata_refusal: brms's design column {name!r} is not one the gate codes (Intercept, a numeric "
+                                 "column, factor(col)'s factor<col><level>)")
+        col, level = hits[0]
+        return lambda df: np.array([float(v) == float(level) for v in df[col]], dtype=float)
+
+    coders = [coder(name) for name in names]
+    fitted = np.column_stack([f(b.data) for f in coders])
+    if fitted.shape != X.shape or abs_err(fitted, X) > DESIGN_ABS:
+        raise OracleMismatch("check_newdata_refusal: the gate's coding of the fitted rows does not reproduce brms's X")
+    return np.column_stack([f(b.newdata) for f in coders])
+
+
+def check_newdata_refusal(b: Bundle) -> None:
+    """G4 of new rows whose predictions brms refuses (Tier G part 1, a case's ``newdata_prediction_refused``: ``factor(o)`` on new
+    rows lacking one of its fitted levels, where brms's design has fewer columns than its coefficients, U51; AutoBayes codes them
+    through the fitted levels, D181). The fixture must record brms's refusal on the new rows for exactly the listed kinds, with
+    and without group effects; then ``predict()``'s linear predictor on the new rows must equal one computed here from the
+    fixture's points by brms's parameter names (``b_Intercept``, ``b``, and ``r_<id>_1`` of each varying intercept, its level
+    read from the new rows) and the new rows coded through the fitted rows (``code_new_rows``), and its expected values that
+    linear predictor through the inverse of the model's link. The fitted rows are compared with brms by ``check_predictions``."""
+    kinds = b.case["brms"]["newdata_prediction_refused"]
+    suffixes = ("", "_nogroup") if b.fixture.groups else ("",)
+    for kind in ("linpred", "epred"):
+        for suffix in suffixes:
+            refused, array = b.fixture.prediction_refusal("newdata", kind + suffix), b.fixture.prediction("newdata", kind + suffix)
+            if (refused is not None) != (kind in kinds) or (refused is None) == (array is None):
+                raise OracleMismatch(f"check_newdata_refusal: the fixture's newdata {kind}{suffix} is "
+                                     f"{'refused' if refused is not None else 'recorded'}; the case lists {kinds} as refused")
+    if b.model.spec.intercept is False or b.cmap.centred_intercept is False:
+        raise OracleMismatch("check_newdata_refusal: the gate computes a model with a centred intercept (brms's b_Intercept)")
+    inverse = _INVERSE_LINKS.get(b.model.link)
+    if inverse is None:
+        raise OracleMismatch(f"check_newdata_refusal: no inverse link in the gate for the {b.model.link} link")
+    Xn = code_new_rows(b)
+    keep = [k for k, name in enumerate(b.fixture.colnames("X")) if name != "Intercept"]
+    for g in b.fixture.groups:
+        if g["coef"] != "Intercept" or g.get("resp") or g.get("dpar") or g.get("nlpar"):
+            raise OracleMismatch(f"check_newdata_refusal: the gate adds varying intercepts only, not {g}")
+        unseen = sorted(set(b.newdata[g["group"]].astype(str)) - set(g["levels"]))
+        if unseen:
+            raise OracleMismatch(f"check_newdata_refusal: the new rows hold levels {unseen} of {g['group']!r} that the fit has not")
+    idata = adapter.draws(b.fixture, b.model, b.cmap, b.gmap)
+    for include, suffix in ((True, ""), (False, "_nogroup"))[:len(suffixes)]:
+        theirs = []
+        for p in b.fixture.points:
+            eta = float(p.pars["b_Intercept"]) + Xn[:, keep] @ np.atleast_1d(p.pars["b"])
+            for g in (b.fixture.groups if include else ()):
+                index = [g["levels"].index(v) for v in b.newdata[g["group"]].astype(str)]
+                eta = eta + np.atleast_1d(p.pars[f"r_{g['id']}_{g['cn']}"])[index]
+            theirs.append(eta)
+        theirs = np.array(theirs)
+        lin = b.model.predict(idata, newdata=b.newdata, kind="linear", include_group_effects=include)["eta"].to_numpy()[0]
+        err = rel_err(lin, theirs)
+        if err > PRED_REL:
+            raise OracleMismatch(f"newdata{suffix}: the linear predictor on the new rows brms refuses differs from the fixture's draws "
+                                 f"on the rows coded through the fitted levels by {err}")
+        if "epred" in kinds:
+            mean = b.model.predict(idata, newdata=b.newdata, kind="mean", include_group_effects=include)[b.model.names["mean"]]
+            err = rel_err(mean.to_numpy()[0], inverse(theirs))
+            if err > PRED_REL:
+                raise OracleMismatch(f"newdata{suffix}: the expected values on the new rows brms refuses differ from the inverse link "
+                                     f"of the gate's linear predictor by {err}")
 
 
 def check_response_predictions(b: Bundle) -> None:

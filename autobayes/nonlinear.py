@@ -623,6 +623,9 @@ def parse_nonlinear(formulas, data: pd.DataFrame | None = None, family: str = "g
         if d.mo_terms:
             raise FormulaError(f"{text!r}: the monotonic term {d.mo_terms[0].name!r} in a non-linear parameter's formula is not "
                                "supported (divergence D61)")
+        if d.expression_terms:                                         # G04: not verified in a parameter's formula
+            raise FormulaError(f"{text!r}: the in-formula transform {d.expression_terms[0].basis!r} in a non-linear parameter's formula "
+                               "is not supported: no frozen case verifies it (docs/expressions.md, divergence D182)")
         if d.gp_terms:                                                 # C03: brms adds gp_pred_<nlpar>_1 to the parameter
             raise FormulaError(f"{text!r}: the Gaussian process {d.gp_terms[0].term!r} in a non-linear parameter's formula is not "
                                "supported (divergence D61)")

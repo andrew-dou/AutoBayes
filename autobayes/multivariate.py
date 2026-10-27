@@ -261,7 +261,7 @@ def parse_multivariate(formula, data: pd.DataFrame | None = None, family: str = 
         if s.custom_group_terms:                                         # D08: verified in univariate models only
             raise FormulaError(f"{formula!r}: '{s.custom_group_terms[0].canonical}' in a multivariate formula is not supported"
                                " (docs/multi-membership-and-by.md, divergences D104, D105)")
-        reads = {*s.pop_columns, *(c for t in s.group_terms for c in t.operands), *([s.offset.column] if s.offset is not None else [])}
+        reads = {*s.pop_columns, *(c for t in s.group_terms for c in t.operands), *(s.offset.columns if s.offset is not None else ())}
         others = sorted(reads & set(responses))
         if others:
             raise FormulaError(f"{formula!r}: the response(s) {others} cannot also be predictors, grouping factors or offsets of the "
@@ -367,7 +367,7 @@ def _parse_imputation(formulas, data, family, categorical, *, rescor) -> Multiva
                                    f"parameters: write it '{col} | mi() ~ ...' (divergence D72)")
         check_imputation(s, imputed)
         columns = {*(c for t in s.pop_terms if t.kind != "missing" for c in t.operands), *(c for t in s.group_terms for c in t.operands),
-                   *([s.offset.column] if s.offset is not None else [])}       # what the formula reads other than through mi()
+                   *(s.offset.columns if s.offset is not None else ())}       # what the formula reads other than through mi()
         plain = sorted(columns & (set(responses) - {s.response}))
         if plain:
             raise FormulaError(f"{s.formula!r}: the response(s) {plain} of another formula are read here other than through mi(); "
@@ -548,7 +548,7 @@ def _parse_separate(formulas, data, family, categorical, *, rescor) -> Multivari
         if s.timecor is not None:                                     # F03b, likewise
             raise FormulaError(f"{s.formula!r}: the residual correlation term {s.timecor.term!r} in a multivariate model is not supported"
                                "; write it in a univariate model (docs/unstr-cosy.md, divergence D146)")
-        reads = {*s.pop_columns, *(c for t in s.group_terms for c in t.operands), *([s.offset.column] if s.offset is not None else [])}
+        reads = {*s.pop_columns, *(c for t in s.group_terms for c in t.operands), *(s.offset.columns if s.offset is not None else ())}
         plain = sorted(reads & (set(responses) - {s.response}))
         if plain:
             raise FormulaError(f"{s.formula!r}: the response(s) {plain} of another formula cannot also be predictors, grouping factors or "
@@ -569,6 +569,11 @@ def _parse_separate(formulas, data, family, categorical, *, rescor) -> Multivari
         except FormulaError as e:
             on = "" if column is None else f", on the rows of subset({column})"
             raise FormulaError(f"{formulas!r}, the formula of the response {r!r} ({text!r}{on}): {e}") from None
+        fitted = next((t.basis for t in specs[r].expression_terms if t.transform.needs_fit), None) if column is not None else None
+        if fitted is not None:                                       # G04: fitted on which rows brms fits them is not verified
+            raise FormulaError(f"{formulas!r}, the formula of the response {r!r} ({text!r}): {fitted!r} with subset({column}) is not "
+                               "supported: its fitted parameters (centre and scale, polynomial coefficients, levels) would be the "
+                               "subset's, which no frozen case verifies (docs/expressions.md, divergence D182)")
     return replace(spec0, specs=MappingProxyType(specs))
 
 

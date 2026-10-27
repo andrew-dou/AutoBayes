@@ -52,14 +52,11 @@ def gauss():
 
 # -- 1. the grammar: what is accepted and every refusal by message -------------------------------------------
 REFUSALS = [
-    ("cnt ~ x + offset(exp(exposure)) + (1 | g)", {}, "only 'offset(col)' and 'offset(log(col))' are supported inside offset()"),
-    ("cnt ~ x + offset(exposure + 1)", {}, "only 'offset(col)' and 'offset(log(col))' are supported inside offset()"),
-    ("cnt ~ x + offset(log(exposure) + 1)", {}, "only 'offset(col)' and 'offset(log(col))'"),
-    ("cnt ~ x + offset(log(exposure, 2))", {}, "only 'offset(col)' and 'offset(log(col))'"),
-    ("cnt ~ x + offset(2 * exposure)", {}, "only 'offset(col)' and 'offset(log(col))'"),
-    ("cnt ~ x + offset()", {}, "only 'offset(col)' and 'offset(log(col))'"),
-    ("cnt ~ x + offset(exposure) + offset(w)", {}, "more than one offset term ('offset(exposure)' and 'offset(w)'); add the offsets into one column"),
-    ("cnt ~ x + offset(log(exposure)) + offset(log(w))", {}, "more than one offset term"),
+    # G04 sums several offsets and evaluates expressions inside offset() (offset(exp(exposure)), offset(exposure + 1),
+    # offset(2 * exposure), offset(exposure) + offset(w)), refused here before (tests/test_g04_transforms.py)
+    ("cnt ~ x + offset(log(exposure, 2))", {}, "'offset(log(exposure, 2))': log() takes one argument here; log(x, base) is not supported; "
+                                               "offset() takes an expression of numeric columns"),
+    ("cnt ~ x + offset()", {}, "'offset()': '' is not an expression of this grammar; offset() takes an expression of numeric columns"),
     ("cnt ~ x + offset(cnt)", {}, "the response 'cnt' cannot be the offset"),
     ("cnt ~ x + offset(log(cnt))", {}, "the response 'cnt' cannot be the offset"),
     ("k | trials(n) ~ x + offset(n)", {"family": "binomial"}, "the trials column 'n' cannot be the offset"),

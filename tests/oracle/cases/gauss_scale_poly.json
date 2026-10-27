@@ -5,10 +5,6 @@
  "note": "G04 transforms: scale(x) and poly(w, 2) (orthogonal) with new rows. brms's columns: scalex ((x - mean) / sd, sd with n - 1), polyw21 and polyw22 (orthonormal over the 36 fitted rows). On new rows brms keeps the fitted rows' centre, scale and polynomial coefficients (R's predvars, as lm()'s predict() does): its new-row linear predictor equals the fitted transforms evaluated at the new x and w to 1.9e-15 at every point, while recomputing them on the 5 new rows would differ by up to 1.28. Probed with standata(newdata = ) the same. So brms is right here, and no separate new-data case is needed. brms's posterior_linpred on the fitted and new rows equals b_Intercept + X b + r_g (+ offsets) built from the columns described, to 2e-15 at every frozen point. Data: tier_g1, seed 2211, 36 rows.",
  "seed": 2323,
  "n_points": 8,
- "gate": {
-  "expect": "fail",
-  "reason": "G04_transforms not implemented; remove this field when it lands"
- },
  "data": {
   "generator": "tier_g1",
   "seed": 2211,

@@ -110,6 +110,8 @@ from types import MappingProxyType
 import numpy as np
 import pandas as pd
 
+from autobayes import expressions
+
 _IDENT = r"[A-Za-z_][A-Za-z0-9_.]*"
 _FORMULA_RE = re.compile(rf"^\s*({_IDENT})\s*~\s*(.+?)\s*$", re.S)
 _ADDITIONS_FORMULA_RE = re.compile(rf"^\s*({_IDENT})\s*\|\s*([^~]+?)\s*~\s*(.+?)\s*$", re.S)   # response | addition terms ~ rhs
@@ -147,10 +149,7 @@ _SAR_RE = re.compile(r"^sar\s*\(", re.S)                                        
 _FCOR_RE = re.compile(r"^fcor\s*\(", re.S)                  # brms's fixed residual covariance fcor(M) (F03a; autobayes.fcor)
 _CAR_RE = re.compile(r"^car\s*\(", re.S)                       # brms's spatial CAR term (F02a; autobayes.car), read before the others
 _TIMECOR_RE = re.compile(r"^(unstr|cosy)\s*\(", re.S)                                               # brms's unstr() and cosy() (F03b; autobayes.timecor)
-SUPPORTED_TRANSFORMS = ("only log(col), exp(col), sqrt(col), I(col^k) with integer k, and I(col * k), I(col + k), I(col - k) with a "
-                        "numeric constant k are supported as in-formula transforms of one numeric column (docs/transforms.md, "
-                        "divergence D16); other function calls and transformations inside the formula are not supported: compute "
-                        "the column in the data frame and name it instead.")
+SUPPORTED_TRANSFORMS = expressions.SUPPORTED   # G04: what in-formula transforms are read (docs/expressions.md)
 
 COUNT_CAP = 10**6   # the validated domain for binomial counts per row (docs/history/m2-decision.md, repair record)
 
@@ -707,6 +706,11 @@ class Transform:
         return f"{self.constant} {self.fn} {value}" if self.constant_first else f"{value} {self.fn} {self.constant}"
 
     @property
+    def columns(self) -> tuple[str, ...]:
+        """The data columns the transform reads: its one column (G04's ``expressions.Expression`` may read several)."""
+        return (self.column,)
+
+    @property
     def brms_name(self) -> str:
         """brms's label for the coefficient: its ``rename()`` of the term, which drops spaces and parentheses and
         writes ``^`` as ``E``, ``*`` as ``MU``, ``+`` as ``P`` and ``-`` as ``M`` (``logxpos``, ``IxE2``, ``IxMU2``, ``IxP1``)."""
@@ -759,6 +763,46 @@ def parse_transform(text: str) -> Transform | None:
     return None
 
 
+def expression_term(piece: str) -> "Transform | expressions.Expression":
+    """G04 (docs/expressions.md): the in-formula transform a piece spells beyond A05's forms, unfitted, under its canonical
+    spelling (``I(x*w)`` is ``I(x * w)``); one whose canonical spelling is an A05 form (``I(x**2)``) is that ``Transform``.
+    Anything outside the grammar is refused, naming it."""
+    try:
+        canonical = expressions.read_term(piece)[1]
+    except expressions.ExpressionError as e:
+        raise FormulaError(f"{piece!r}: {e}; {SUPPORTED_TRANSFORMS}") from None
+    return parse_transform(canonical) or expressions.Expression(canonical)
+
+
+def is_expression_term(text: str) -> bool:
+    """Whether ``text`` is a G04 in-formula transform (``expression_term`` would accept it)."""
+    try:
+        expressions.read_term(text)
+    except expressions.ExpressionError:
+        return False
+    return True
+
+
+OFFSET_EXPRESSIONS = ("offset() takes an expression of numeric columns and numbers with + - * / ^, unary minus and log(), exp(), "
+                      "sqrt(), abs() and I() here, and several offset() terms are summed (docs/expressions.md, divergence D10)")
+
+
+def offset_expression(inner: str, piece: str) -> str:
+    """G04: the canonical spelling of the expression inside ``offset()`` (``2*off`` is ``2 * off``), which must read a column and
+    hold no comparison and no ``scale()``, ``poly()`` or ``factor()``; refused otherwise, naming what is outside the grammar."""
+    try:
+        e = expressions.parse(inner)
+    except expressions.ExpressionError as err:
+        raise FormulaError(f"{piece!r}: {err}; {OFFSET_EXPRESSIONS}") from None
+    bad = next((n for n in expressions.walk(e) if n[0] == "cmp" or (n[0] == "call" and n[1] in expressions.FITTED)), None)
+    if bad is not None:
+        what = "a comparison" if bad[0] == "cmp" else f"{bad[1]}()"
+        raise FormulaError(f"{piece!r}: {what} inside offset() is not supported; {OFFSET_EXPRESSIONS}")
+    if not expressions.columns_of(e):
+        raise FormulaError(f"{piece!r}: the offset reads no column (a constant added to every row is the intercept's)")
+    return expressions.deparse(e)
+
+
 @dataclass(frozen=True)
 class PopTerm:
     """One population-level term as written in the formula: ``x`` (``"numeric"``), ``z`` (``"categorical"``,
@@ -793,13 +837,23 @@ class PopTerm:
     levels: tuple[str, ...] = ()
     categorical: tuple[str, ...] | None = None
     factor: str | None = None          # F08: the ordered factor column a "contrast" term codes
+    basis: str | None = None           # G04: the transform term as written whose design column this is (expressions.Expression)
+    fitted: tuple = ()                 # G04: that term's fitted parameters, once the data are seen
 
     def __post_init__(self):
         if self.kind not in POP_TERM_KINDS:
             raise ValueError(f"PopTerm kind must be one of {list(POP_TERM_KINDS)}, got {self.kind!r}")
         object.__setattr__(self, "columns", tuple(self.columns))
         object.__setattr__(self, "levels", tuple(self.levels))
-        if self.kind == "transform" and parse_transform(self.name) is None:
+        object.__setattr__(self, "fitted", tuple(self.fitted))
+        if self.basis is not None:                                # G04: a column of an in-formula expression (docs/expressions.md)
+            try:
+                canonical = expressions.read_term(self.basis)[1]
+            except expressions.ExpressionError:
+                canonical = None
+            if self.kind != "transform" or canonical != self.basis or not self.name.startswith(self.basis) or self.columns != (self.name,):
+                raise ValueError(f"PopTerm: {self.name!r} is not a design column of the in-formula transform {self.basis!r}")
+        elif self.kind == "transform" and parse_transform(self.name) is None:
             raise ValueError(f"PopTerm: {self.name!r} is not a supported in-formula transform")
         if self.kind == "monotonic" and (monotonic_column(self.name) is None or self.columns or self.levels):
             raise ValueError(f"PopTerm: a monotonic term is spelled 'mo(col)' and has no design column or level, got {self.name!r}")
@@ -827,7 +881,7 @@ class PopTerm:
         ``(z, h)`` (main-effect order), ``(xpos,)`` for the transform ``log(xpos)``, ``(ord,)`` for ``mo(ord)``, ``(x, sdx)``
         for ``me(x, sdx)`` and ``(col,)`` for ``mi(col)`` (C06)."""
         if self.kind == "transform":
-            return (self.transform.column,)
+            return self.transform.columns
         if self.kind == "monotonic":
             return (monotonic_column(self.name),)
         if self.kind == "measurement_error":
@@ -854,8 +908,11 @@ class PopTerm:
         return self.kind in SPECIAL_KINDS
 
     @property
-    def transform(self) -> Transform:
-        """How a ``"transform"`` term is evaluated (``parse_transform`` of its name); ``ValueError`` for other kinds."""
+    def transform(self) -> "Transform | expressions.Expression":
+        """How a ``"transform"`` term is evaluated: ``parse_transform`` of its name (A05), or for a column of G04's in-formula
+        expressions the ``expressions.Expression`` of its term, fitted parameters and column; ``ValueError`` for other kinds."""
+        if self.basis is not None:
+            return expressions.Expression(self.basis, self.fitted, self.name[len(self.basis):] or None)
         tr = parse_transform(self.name) if self.kind == "transform" else None
         if tr is None:
             raise ValueError(f"{self.name!r} is not a transform term")
@@ -1068,24 +1125,68 @@ class Offset:
     """The offset term of a formula, brms's ``offset(col)`` or ``offset(log(col))``: the column (``log``-transformed
     when ``log`` is set) is added to the linear predictor as written, with no coefficient and no prior. It is not a
     population-level term: it has no design column and no entry in ``ModelSpec.columns`` or ``Model.coefficients``.
+
+    G04 (docs/expressions.md): several ``offset()`` terms, and expressions inside one (``offset(2 * off)``), are summed as brms
+    sums them; ``parts`` then holds the expression inside each ``offset()`` in formula order, as the canonical formula writes it
+    (``("log(exposure)", "2 * off")``), and ``column`` is empty. A formula with one offset of A06's two forms keeps ``column``.
     """
 
-    column: str
+    column: str = ""
     log: bool = False
+    parts: tuple[str, ...] = ()
+
+    def __post_init__(self):
+        object.__setattr__(self, "parts", tuple(self.parts))
+        if bool(self.column) == bool(self.parts) or (self.parts and self.log):
+            raise ValueError("an Offset is one column (optionally logged) or the expressions of its offset() terms, not both")
+
+    @property
+    def columns(self) -> tuple[str, ...]:
+        """The data columns the offset reads (G04: every column of its expressions, in order)."""
+        if not self.parts:
+            return (self.column,)
+        return tuple(dict.fromkeys(c for p in self.parts for c in expressions.columns_of(expressions.parse(p))))
 
     @property
     def expression(self) -> str:
-        """``log(col)`` or ``col``: what is inside ``offset()``."""
+        """``log(col)`` or ``col``: what is inside ``offset()``; G04: the sum of the expressions, ``log(exposure) + 2 * off``."""
+        if self.parts:
+            return " + ".join(self.parts)
         return f"log({self.column})" if self.log else self.column
 
     @property
     def term(self) -> str:
-        """The term as the canonical formula writes it: ``offset(log(col))``."""
+        """The term as the canonical formula writes it: ``offset(log(col))``; G04: each, ``offset(log(exposure)) + offset(2 * off)``."""
+        if self.parts:
+            return " + ".join(f"offset({p})" for p in self.parts)
         return f"offset({self.expression})"
+
+    @property
+    def bambi_term(self) -> str:
+        """How Bambi is handed the offset: the term itself (Bambi evaluates A06's two forms), or for G04's sum the column of the
+        fitted frame named by the expression, in backticks (the library evaluates it)."""
+        return f"offset(`{self.expression}`)" if self.parts else self.term
+
+    @property
+    def bambi_name(self) -> str:
+        """The name of Bambi's offset term (formulae drops the backticks)."""
+        return f"offset({self.expression})" if self.parts else self.term
+
+    def row_expression(self) -> str:
+        """The offset at row ``i``, for ``describe()``: ``log(exposure_i)``, ``off_i``, ``log(exposure_i) + 2 * off_i``."""
+        if self.parts:
+            return " + ".join(expressions.deparse(expressions.parse(p), row=True) for p in self.parts)
+        return f"log({self.column}_i)" if self.log else f"{self.column}_i"
 
     def values(self, df: pd.DataFrame, *, where: str = "column") -> np.ndarray:
         """The offset vector on ``df``: the column as a float array, logged when ``log`` is set. Refuses a
-        non-numeric, missing-valued or (for ``log``) non-positive column; ``where`` names the frame in messages."""
+        non-numeric, missing-valued or (for ``log``) non-positive column; ``where`` names the frame in messages.
+        G04: the sum of the expressions in formula order, each evaluated by ``expressions.evaluate`` (numeric, finite)."""
+        if self.parts:
+            total = np.zeros(len(df))
+            for p in self.parts:
+                total = total + expressions.evaluate(expressions.parse(p), df, term=f"offset({p})", where=where)
+            return total
         if self.column not in df.columns:
             raise FormulaError(f"{where} {self.column!r} of the offset term {self.term!r} is not in the data")
         s = df[self.column]
@@ -1525,6 +1626,8 @@ def pop_term(name: str, kind: str, categoricals=()) -> PopTerm:
     non-reference levels of its one categorical operand (``x:z[l]``), the cells of its two categorical operands
     (``z[l]:h[m]``, levels ``"l, m"``), or no levels at all when both operands are numeric (``x:w``); none for a
     numeric term; a special term (``mo(col)``, B03; ``me(x, sdx)`` and ``mi(col)``, C06) has neither."""
+    if kind == "transform" and parse_transform(name) is None:   # G04: an in-formula expression, one placeholder until fitted
+        return PopTerm(name, kind, (name,), (), (), basis=name)
     if kind in ("numeric", "transform"):
         return PopTerm(name, kind, (name,), (), ())
     if kind in SPECIAL_KINDS:
@@ -1874,6 +1977,11 @@ class ModelSpec:
         """The in-formula transform terms (A05), in formula order."""
         return tuple(t for t in self.pop_terms if t.kind == "transform")
 
+    @property
+    def expression_terms(self) -> tuple[PopTerm, ...]:
+        """G04: the design columns of the in-formula expressions beyond A05's forms (``PopTerm.basis``), in formula order."""
+        return tuple(t for t in self.pop_terms if t.basis is not None)
+
     # -- monotonic terms (B03) -------------------------------------------------------------
     @property
     def mo_terms(self) -> tuple[PopTerm, ...]:
@@ -2090,7 +2198,7 @@ class ModelSpec:
         as ``<parameter> ~ <bambi_rhs>`` under Bambi's name for the parameter (``alpha`` for brms's ``shape``). A monotonic
         term (B03) is not handed to Bambi: the model adds it to the linear predictor Bambi builds."""
         parts = ([] if self.intercept else ["0"]) + [t.bambi_name for t in self.bambi_terms]
-        parts += ([self.offset.term] if self.offset is not None else []) + [t.bambi_canonical for t in self.bambi_group_terms]
+        parts += ([self.offset.bambi_term] if self.offset is not None else []) + [t.bambi_canonical for t in self.bambi_group_terms]
         return " + ".join(parts) if parts else "1"
 
 
@@ -2661,10 +2769,11 @@ def _parse_formulas(formulas, data: pd.DataFrame | None, family: str, categorica
     mains = [{t.name for t in s.pop_terms if t.kind == "numeric"} for s in (main0, *dpar0)]
     if isinstance(categorical, Mapping):                    # a declared column is categorical in every formula
         for t in (t for s in (main0, *dpar0) for t in s.transform_terms):
-            if t.transform.column in categorical:
-                raise FormulaError(f"{t.name!r}: {t.transform.column!r} is declared categorical; an in-formula transform applies to a numeric column")
-        reads = (([(main0.offset.term, main0.offset.column)] if main0.offset is not None else [])
-                 + [(a.term, c) for a in main0.additions for c in a.columns])        # columns the response formula reads as numbers
+            for col in t.transform.columns:
+                if col in categorical:
+                    raise FormulaError(f"{t.name!r}: {col!r} is declared categorical; an in-formula transform applies to a numeric column")
+        reads = ([(main0.offset.term, c) for c in main0.offset.columns] if main0.offset is not None else []) + (
+                 [(a.term, c) for a in main0.additions for c in a.columns])        # columns the response formula reads as numbers
         for term, col in reads:
             if col in categorical:
                 raise FormulaError(f"{term!r}: {col!r} is declared categorical; the response formula reads it as a number")
@@ -2900,7 +3009,7 @@ def _parse_matrix_response(formula: str, data: pd.DataFrame | None, family: str,
     except FormulaError as e:                                    # the refusals of the right-hand side, quoting the formula as written
         raise FormulaError(str(e).replace(rewritten, formula.strip())) from None
     reads = [*inner.pop_columns, *(c for t in inner.group_terms for c in t.data_columns),
-             *([inner.offset.column] if inner.offset is not None else []), *(inner.autocor.columns if inner.autocor is not None else ())]
+             *(inner.offset.columns if inner.offset is not None else ()), *(inner.autocor.columns if inner.autocor is not None else ())]
     shared = [c for c in columns if c in reads]
     if shared:
         raise FormulaError(f"{formula!r}: the response column {shared[0]!r} cannot also be a predictor, a grouping factor or the offset")
@@ -3077,28 +3186,23 @@ def parse_formula(formula: str | list[str], data: pd.DataFrame | None = None, fa
         if "|" in piece:
             raise FormulaError(f"{piece!r}: a '|' term must be written '(1 | group)' or '(1 + x || group)'")
         om = _OFFSET_RE.match(piece)
-        if om:                                                  # offset(col) or offset(log(col)), brms's offset()
-            inner = om.group(1).strip()
+        if om:                                                  # offset(col) or offset(log(col)), brms's offset(); G04: any
+            inner = om.group(1).strip()                         # expression, and several offset() terms summed
             lm = _OFFSET_LOG_RE.match(inner)
             if lm:
                 offset = Offset(lm.group(1), log=True)
             elif re.fullmatch(_IDENT, inner):
                 offset = Offset(inner)
             else:
-                raise FormulaError(
-                    f"{piece!r}: only 'offset(col)' and 'offset(log(col))' are supported inside offset(); other "
-                    "expressions (general in-formula transforms) are not supported. Compute the column in "
-                    "the data frame and write 'offset(<column>)'."
-                )
-            if offsets:
-                raise FormulaError(
-                    f"{piece!r}: more than one offset term ({offsets[0][1]!r} and {piece!r}); add the offsets into one "
-                    "column and write a single 'offset(<column>)'"
-                )
-            if offset.column == response:
-                raise FormulaError(f"{piece!r}: the response {response!r} cannot be the offset")
-            if trials is not None and offset.column == trials:
-                raise FormulaError(f"{piece!r}: the trials column {trials!r} cannot be the offset")
+                offset = Offset(parts=(offset_expression(inner, piece),))
+            for col in offset.columns:
+                if col == response:
+                    raise FormulaError(f"{piece!r}: the response {response!r} cannot be the offset")
+                if trials is not None and col == trials:
+                    raise FormulaError(f"{piece!r}: the trials column {trials!r} cannot be the offset")
+            twin = next((p for o, p in offsets if o.expression == offset.expression), None)
+            if twin is not None:                                # R's terms keep one of two identical offsets; written twice is a slip
+                raise FormulaError(f"{piece!r}: the offset is written twice ({twin!r} and {piece!r}); R reads it once, so write it once")
             offsets.append((offset, piece))
             continue
         if _SAR_RE.match(piece):                                # brms's sar(M, type) (F02b)
@@ -3183,7 +3287,7 @@ def parse_formula(formula: str | list[str], data: pd.DataFrame | None = None, fa
                         "(docs/ordered-factors.md, divergence D168)"
                     )
                 if "(" in side or ")" in side:
-                    if parse_transform(side) is None:
+                    if parse_transform(side) is None and not is_expression_term(side):
                         raise FormulaError(f"{side!r}: {SUPPORTED_TRANSFORMS}")
                     raise FormulaError(
                         f"{piece!r}: an interaction with a transformed term ({side!r}) is not supported; "
@@ -3320,13 +3424,12 @@ def parse_formula(formula: str | list[str], data: pd.DataFrame | None = None, fa
                 "standard deviation, brms's sds_ and zs_) is not supported; a smooth function of one column can be approached with "
                 "gp(col) or with polynomial terms I(col^2) (docs/gaussian-processes.md, docs/transforms.md)")
         if "(" in piece or ")" in piece:                       # an in-formula transform, log(col), I(col^2), ... (A05)
-            tr = parse_transform(piece)
-            if tr is None:
-                raise FormulaError(f"{piece!r}: {SUPPORTED_TRANSFORMS}")
-            if tr.column == response:
-                raise FormulaError(f"{piece!r}: the response {response!r} cannot be transformed into a predictor")
-            if trials is not None and tr.column == trials:
-                raise FormulaError(f"{piece!r}: the trials column {trials!r} cannot be transformed into a predictor")
+            tr = parse_transform(piece) or expression_term(piece)   # G04: any other expression of the grammar, scale(), poly(), factor()
+            for col in tr.columns:
+                if col == response:
+                    raise FormulaError(f"{piece!r}: the response {response!r} cannot be transformed into a predictor")
+                if trials is not None and col == trials:
+                    raise FormulaError(f"{piece!r}: the trials column {trials!r} cannot be transformed into a predictor")
             _main(tr.term, piece, transform=tr)                   # under its canonical spelling, so 'log( x )' duplicates 'log(x)'
             transforms[tr.term] = tr
             continue
@@ -3334,6 +3437,17 @@ def parse_formula(formula: str | list[str], data: pd.DataFrame | None = None, fa
 
     if saw_intercept_token and remove_intercept:
         raise FormulaError(f"{formula!r}: conflicting intercept inclusion/removal; use '0 + terms' or 'terms - 1'")
+    coded = [n for n, tr in transforms.items() if isinstance(tr, expressions.Expression) and tr.form in ("factor", "logical")]
+    if remove_intercept and coded:                           # G04: R's full-rank coding of the first factor, not verified (D182)
+        raise FormulaError(
+            f"{formula!r}: {coded[0]!r} in a formula without an intercept is not supported: R codes the first factor (a logical "
+            "included) of a '0 +' formula with one indicator per level, which no frozen case verifies here; keep the intercept, or "
+            "declare the column categorical (docs/expressions.md, divergence D182)")
+    made = [n for n, tr in transforms.items() if isinstance(tr, expressions.Expression)]
+    if _dpar and made:                                       # G04: in a distributional formula, not verified (D182)
+        raise FormulaError(
+            f"{formula!r}: the in-formula transform {made[0]!r} in a distributional parameter's formula is not supported: no frozen "
+            "case verifies it; compute the column in the data frame and name it (docs/expressions.md, divergence D182)")
 
     operands_all = list(dict.fromkeys(c for t in group_terms for c in t.operands))   # every column a grouping factor reads
     for term, piece in zip(group_terms, group_pieces):       # a varying slope is a population-level term of the formula
@@ -3382,7 +3496,7 @@ def parse_formula(formula: str | list[str], data: pd.DataFrame | None = None, fa
             f"{formula!r}: no population-level predictor; write 'y ~ 1 + (1 | group)' "
             "for an intercept-only model."
         )
-    transform_columns = [tr.column for tr in transforms.values()]   # the raw columns the transform terms read
+    transform_columns = [c for tr in transforms.values() for c in tr.columns]   # the raw columns the transform terms read
     mo_columns = list(monotonics.values())                           # and the monotonic terms (B03)
     gp_columns = [g.column for g, _ in gps]                          # and the Gaussian processes (C03)
     special_cols = [c for cols in special_columns.values() for c in cols]   # and the me() and mi() terms (C06)
@@ -3425,7 +3539,7 @@ def parse_formula(formula: str | list[str], data: pd.DataFrame | None = None, fa
                 "linear predictor takes such terms (docs/multi-membership-and-by.md, divergences D104, D105)")
     if trials is not None and (trials in predictors or trials in operands_all):
         raise FormulaError(f"{trials!r}: the trials column cannot also be a predictor or the grouping factor")
-    offset = offsets[0][0] if offsets else None
+    offset = offsets[0][0] if len(offsets) == 1 else (Offset(parts=tuple(o.expression for o, _ in offsets)) if offsets else None)
     autocor = None
     if autocors:                                             # C04: one autocorrelation term, for a family that takes it (D70)
         from autobayes.autocor import check_autocor
@@ -3473,7 +3587,7 @@ def parse_formula(formula: str | list[str], data: pd.DataFrame | None = None, fa
     for name, cols in special_columns.items():                # C06: a column me() or mi() reads is read by nothing else
         elsewhere = [*(p for p in predictors if p != name and p not in special_columns), *transform_columns, *mo_columns, *gp_columns,
                      *(c for other, oc in special_columns.items() if other != name for c in oc),
-                     *([offset.column] if offset is not None else []), *(c for a in additions for c in a.columns),
+                     *(offset.columns if offset is not None else ()), *(c for a in additions for c in a.columns),
                      *(c for left, right, _ in raw_interactions for c in (left, right))]
         shared = [c for c in cols if c in elsewhere]
         if shared:
@@ -3483,7 +3597,7 @@ def parse_formula(formula: str | list[str], data: pd.DataFrame | None = None, fa
             )
     for name, col in category_specific.items():                # D04: a column inside cs() is read by that term alone
         elsewhere = [*(p for p in predictors if p != name and p not in category_specific), *transform_columns, *mo_columns, *gp_columns,
-                     *(c for cols in special_columns.values() for c in cols), *([offset.column] if offset is not None else []),
+                     *(c for cols in special_columns.values() for c in cols), *(offset.columns if offset is not None else ()),
                      *(c for a in additions for c in a.columns), *(c for left, right, _ in raw_interactions for c in (left, right)),
                      *(s for t in group_terms for s in t.slopes)]
         if col in elsewhere:
@@ -3496,7 +3610,7 @@ def parse_formula(formula: str | list[str], data: pd.DataFrame | None = None, fa
         elsewhere = [*(p for p in predictors if p != name and p not in ordered_terms), *transform_columns, *mo_columns, *gp_columns,
                      *(c for cols in special_columns.values() for c in cols), *category_specific.values(),
                      *(c for other, oc in ordered_terms.items() if other != name for c in [oc]),
-                     *([offset.column] if offset is not None else []), *(c for a in additions for c in a.columns),
+                     *(offset.columns if offset is not None else ()), *(c for a in additions for c in a.columns),
                      *(c for left, right, _ in raw_interactions for c in (left, right)), *(s for t in group_terms for s in t.slopes)]
         if col in elsewhere:
             raise FormulaError(f"{formula!r}: {col!r} is read by {name!r} and by another term of the formula; a column inside ordered() "
@@ -3504,7 +3618,7 @@ def parse_formula(formula: str | list[str], data: pd.DataFrame | None = None, fa
     # A derived factor's column (g_h) is added to the fitted frame: it must not shadow a column the formula uses.
     in_use = {response, *predictors, *transform_columns, *mo_columns, *gp_columns, *special_cols, *operands_all,
               *([trials] if trials is not None else []),
-              *([offset.column] if offset is not None else []), *(c for a in additions for c in a.columns)}
+              *(offset.columns if offset is not None else ()), *(c for a in additions for c in a.columns)}
     in_use |= set(autocor.columns) if autocor is not None else set()   # the time and series columns (C04)
     in_use |= set(car.columns) if car is not None else set()   # the column of locations (F02a)
     in_use |= set(timecor.columns) if timecor is not None else set()   # the time and grouping columns (F03b)
@@ -3523,16 +3637,18 @@ def parse_formula(formula: str | list[str], data: pd.DataFrame | None = None, fa
                 "which is also a column of the formula; rename that column"
             )
         derived_columns[term.column] = term
-    if offset is not None and offset.column in operands_all:
+    if offset is not None and any(c in operands_all for c in offset.columns):
+        col = next(c for c in offset.columns if c in operands_all)
         raise FormulaError(
-            f"{offsets[0][1]!r}: the grouping factor {offset.column!r} cannot be the offset; an offset is a known "
+            f"{offsets[0][1]!r}: the grouping factor {col!r} cannot be the offset; an offset is a known "
             "numeric column added to the linear predictor"
         )
 
     if isinstance(categorical, Mapping):                     # a transform applies to a numeric column, never to a declared categorical one
         for name, tr in transforms.items():
-            if tr.column in categorical:
-                raise FormulaError(f"{name!r}: {tr.column!r} is declared categorical; an in-formula transform applies to a numeric column")
+            for col in tr.columns:
+                if col in categorical:
+                    raise FormulaError(f"{name!r}: {col!r} is declared categorical; an in-formula transform applies to a numeric column")
         for name, col in monotonics.items():                 # nor does mo(), which reads the column's own values (B03)
             if col in categorical:
                 raise FormulaError(f"{name!r}: {col!r} is declared categorical; mo() reads it as an ordinal predictor (whole numbers "
@@ -3558,9 +3674,10 @@ def parse_formula(formula: str | list[str], data: pd.DataFrame | None = None, fa
         own = {name: Categorical(name=col, reference="", coding="poly", term=name) for name, col in ordered_terms.items()}
         declared = {c.name: c for c in categoricals}
         categoricals = tuple(own[p] if p in own else declared[p] for p in predictors if p in own or p in declared)
-    if offset is not None and any(c.name == offset.column for c in categoricals):
+    if offset is not None and any(c.name in offset.columns for c in categoricals):
+        col = next(c.name for c in categoricals if c.name in offset.columns)
         raise FormulaError(
-            f"{offsets[0][1]!r}: {offset.column!r} is declared categorical; an offset is a known numeric column added "
+            f"{offsets[0][1]!r}: {col!r} is declared categorical; an offset is a known numeric column added "
             "to the linear predictor"
         )
     if remove_intercept and categoricals:
@@ -4061,13 +4178,14 @@ def validate_data(spec: ModelSpec, data: pd.DataFrame, family: str = "gaussian",
     operands = [c for t in spec.group_terms for c in t.data_columns]   # the columns the grouping factors are read from (D08: and
     response = list(getattr(spec, "response_columns", ())) or [spec.response]   # F01b: the K columns of cbind(y1, ..., yK)
     needed = (([] if dpar else response) + [*spec.pop_columns] + operands      # mm()'s weights, gr()'s by column)
-              + ([spec.trials] if spec.trials else []) + ([spec.offset.column] if spec.offset is not None else [])
+              + ([spec.trials] if spec.trials else []) + (list(spec.offset.columns) if spec.offset is not None else [])
               + [c for a in spec.additions for c in a.columns])
     needed = list(dict.fromkeys(needed))                         # the offset column may also be a predictor
     needed += [c for c in (spec.car.columns if spec.car is not None else ()) if c not in needed]   # F02a: the locations
     missing = [c for c in needed if c not in data.columns]
     if missing:
         raise FormulaError(f"columns not in data: {missing}")
+    spec = fit_expressions(spec, data)                           # G04: scale(), poly(), factor() fitted on these rows, each column a term
     for c in spec.predictors:
         reject_complex(f"column {c!r}", data[c])
         if not _is_numeric(data[c]):
@@ -4196,6 +4314,27 @@ def _poly_categorical(cat: Categorical, s: pd.Series, labels: np.ndarray, unused
     return Categorical(name=cat.name, reference=levels[0], levels=levels, unused=unused, coding="poly", term=cat.term)
 
 
+def fit_expressions(spec: ModelSpec, data: pd.DataFrame) -> ModelSpec:
+    """G04 (docs/expressions.md): ``spec`` with each in-formula expression's placeholder term replaced by its design columns, one
+    term each in R's model-matrix order (``I(x > 0)TRUE``, ``poly(w, 2)1``, ``poly(w, 2)2``, ``factor(ord)2``, ...), carrying the
+    parameters fitted on ``data`` (the fitted rows): scale()'s centre and scale, poly()'s recurrence coefficients, factor()'s
+    levels."""
+    def placeholder(t) -> bool:                                  # a term not yet replaced by its fitted columns
+        return t.basis is not None and t.name == t.basis and not t.fitted and t.transform.form != "expression"
+
+    if not any(placeholder(t) for t in spec.pop_terms):
+        return spec
+    out = []
+    for t in spec.pop_terms:
+        if not placeholder(t):
+            out.append(t)
+            continue
+        ex = t.transform
+        fitted = ex.estimate(data)
+        out.extend(PopTerm(e.column, "transform", (e.column,), basis=t.basis, fitted=fitted) for e in expressions.expand(t.basis, fitted))
+    return replace(spec, pop_terms=tuple(out))   # each column's name holds its term's parentheses: no column or other term has it
+
+
 def _seen_pop_terms(spec: ModelSpec, categoricals) -> tuple[PopTerm, ...]:
     """The population-level terms once the categorical levels are known: an ordered factor's term (a declared ordered pandas
     Categorical, or ``ordered(col)``'s placeholder) becomes its polynomial contrasts (F08); an interaction with one is refused."""
@@ -4208,13 +4347,13 @@ def _seen_pop_terms(spec: ModelSpec, categoricals) -> tuple[PopTerm, ...]:
                 f"factor with polynomial contrasts and gives each its own interaction column ({t.name}.L, ...), which no frozen case "
                 "verifies here (docs/ordered-factors.md, divergence D168)")
         if cat is None:
-            out.append(pop_term(t.name, t.kind, categoricals))
+            out.append(t if t.kind == "transform" else pop_term(t.name, t.kind, categoricals))   # G04: fitted columns kept
         elif cat.name not in seen:
             seen.add(cat.name)
             out.extend(contrast_terms(cat))
     names = [t.name for t in out]
     reads = {spec.response, *spec.pop_columns, *(c for g in spec.group_terms for c in g.data_columns),
-             *([spec.trials] if spec.trials else []), *([spec.offset.column] if spec.offset is not None else []),
+             *([spec.trials] if spec.trials else []), *(spec.offset.columns if spec.offset is not None else ()),
              *(c for a in spec.additions for c in a.columns)}
     clash = next((n for t in out if t.kind == "contrast" for n in [t.name] if names.count(n) > 1 or n in reads), None)
     if clash is not None:

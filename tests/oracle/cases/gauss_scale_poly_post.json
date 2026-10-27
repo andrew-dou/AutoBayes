@@ -5,10 +5,6 @@
  "note": "G04 post-processing: conditional_effects() of x and of w for y ~ scale(x) + poly(w, 2) + (1 | g) (its own points). Each grid goes through the fitted transforms: estimate__ is the median over the draws of b_Intercept + the fitted scale(x) and poly(w, 2) at the grid (the other variable at its mean) times b, to 4.4e-16. brms's tables also carry the model-frame columns 'scale(x)' (100 x 1) and 'poly(w, 2)' (100 x 2; gen_fixture.R keeps a matrix column's dims), the transforms at the held means of x and w (scale: -1.2e-16; poly: 0 and -0.2011659), the same on every row and unused by the estimates; a check of every column needs them or a recorded divergence. Data: tier_g1, seed 2211, 36 rows.",
  "seed": 2324,
  "n_points": 8,
- "gate": {
-  "expect": "fail",
-  "reason": "G04_transforms not implemented; remove this field when it lands"
- },
  "data": {
   "generator": "tier_g1",
   "seed": 2211,

@@ -24,6 +24,7 @@ import pandas as pd
 import pytest
 
 import autobayes as ab
+from autobayes import expressions as ex
 from autobayes.conditional_effects import _refuse_unsupported_effects
 from autobayes.hypothesis import HYPOTHESIS_COLUMNS, hypothesis_from_draws, parse_hypothesis, refuse_unsupported
 from autobayes.post_processing import waic_from_log_lik
@@ -154,6 +155,13 @@ def test_names_are_brms_coefficient_names_on_every_case():
             continue
         names = b.fixture.colnames("X") or []
         columns = [(names[b.cmap.x_column[c]], b.cmap.b_index(b.cmap.x_column[c])) for c in range(len(m.spec.columns))]
+        # G04: a logical's name holds its comparison (brms's Ix>0TRUE), which no hypothesis can write, in brms (probed: "Every
+        # hypothesis must be of the form 'left (= OR < OR >) right'.") as here
+        unwritable = [n for n, _ in columns if re.search(r"[<>=]", n)]
+        for n in unwritable:
+            with pytest.raises(ValueError, match=re.escape("every hypothesis must be of the form 'left (= OR < OR >) right'")):
+                ab.hypothesis(m, adapter.draws(b.fixture, m, b.cmap, b.gmap), [f"{n} = 0"])
+        columns = [(n, i) for n, i in columns if n not in unwritable]
         hyps = [f"{n} = 0" for n, _ in columns] + (["Intercept = 0"] if m.spec.intercept else [])
         if not hyps:
             continue
@@ -256,8 +264,13 @@ def test_conditional_effects_on_every_case_it_takes():
         assert list(res) == list(s.pop_columns)
         cats = {c.name: c for c in s.categoricals}
         groups = [c for t in s.group_terms for c in t.operands if c not in s.pop_columns]
+        # G04: an in-formula expression's model-frame column, named as R deparses the term, after the response and before the raw
+        # columns (brms's tables, gauss_scale_poly_post), held at the expression of the held raw values
+        frame = {}
+        for t in s.expression_terms:
+            frame.setdefault(ex.deparse(ex.parse(t.basis), r_numbers=True), t)
         for effect, table in res.items():
-            others = [c for c in dict.fromkeys([s.response, *s.pop_columns, *groups]) if c != effect]
+            others = [c for c in dict.fromkeys([s.response, *frame, *s.pop_columns, *groups]) if c != effect]
             assert list(table.columns) == [effect, *others, "cond__", "effect1__", "estimate__", "se__", "lower__", "upper__"]
             if effect in cats:
                 assert list(table[effect]) == list(cats[effect].categories)
@@ -265,8 +278,13 @@ def test_conditional_effects_on_every_case_it_takes():
                 x = m.data[effect].to_numpy(dtype=float)
                 assert np.array_equal(table[effect].to_numpy(), np.linspace(x.min(), x.max(), 100))
             assert list(table["effect1__"]) == list(table[effect]) and set(table["cond__"]) == {"1"}
+            means = pd.DataFrame({c: [np.mean(m.data[c].to_numpy(dtype=float))] for c in s.pop_columns if c not in cats})
             for c in others:
-                if c in groups:
+                if c in frame:
+                    held = frame[c].transform.frame_value(means)[0]
+                    assert np.allclose(np.asarray(table[c].tolist(), dtype=float), np.broadcast_to(held, (len(table), *np.shape(held))),
+                                       rtol=1e-12, atol=1e-14)
+                elif c in groups:
                     assert table[c].isna().all()
                 elif c in cats:
                     assert set(table[c]) == {cats[c].reference}

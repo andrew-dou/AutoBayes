@@ -36,10 +36,9 @@ def frame(n=24, seed=6) -> pd.DataFrame:
 
 PRIORS = ab.Priors(intercept=ab.Normal(0.2, 5), b=ab.Normal(0.1, 2), sd=ab.HalfNormal(1), sigma=ab.HalfNormal(1.5))
 POP_PRIORS = ab.Priors(intercept=ab.Normal(0.2, 5), b=ab.Normal(0.1, 2), sigma=ab.HalfNormal(1.5))
-UNSUPPORTED = ("only log(col), exp(col), sqrt(col), I(col^k) with integer k, and I(col * k), I(col + k), I(col - k) with a numeric "
-               "constant k are supported as in-formula transforms of one numeric column (docs/transforms.md, "
-               "divergence D16); other function calls and transformations inside the formula are not supported: compute "
-               "the column in the data frame and name it instead.")
+# G04 widened the grammar (docs/expressions.md): the message now lists what is read, after the reason a piece is refused
+UNSUPPORTED = ("the in-formula transforms supported are I(), log(), exp(), sqrt() and abs() of an expression in numeric columns and "
+               "numbers with + - * / ^ and unary minus")
 
 
 @pytest.fixture(scope="module")
@@ -49,24 +48,14 @@ def model():
 
 
 # -- 1. the grammar: what is accepted and every refusal by message ----------------------------------------------
+# G04 accepts scale(x), poly(x, 2), log(x + 1), I(x * w), I(x^2.5), I(x^w), I(2^x), I(x), I(1 - x), I(x / 2), exp(-x) and
+# log(log(x)), refused here before (tests/test_g04_transforms.py)
 REFUSALS = [
-    ("y ~ sin(x)", {}, f"'sin(x)': {UNSUPPORTED}"),
-    ("y ~ scale(x) + (1 | g)", {}, UNSUPPORTED),
-    ("y ~ poly(x, 2)", {}, UNSUPPORTED),
-    ("y ~ log(x + 1)", {}, UNSUPPORTED),
-    ("y ~ log(x, 2)", {}, UNSUPPORTED),
-    ("y ~ log1p(x)", {}, UNSUPPORTED),
-    ("y ~ I(x * w)", {}, UNSUPPORTED),
-    ("y ~ I(x^2.5)", {}, UNSUPPORTED),
-    ("y ~ I(x^w)", {}, UNSUPPORTED),
-    ("y ~ I(2^x)", {}, UNSUPPORTED),
-    ("y ~ I(x)", {}, UNSUPPORTED),
-    ("y ~ I(1 - x)", {}, UNSUPPORTED),
-    ("y ~ I(x / 2)", {}, UNSUPPORTED),
-    ("y ~ exp(-x)", {}, UNSUPPORTED),
-    ("y ~ np.log(x)", {}, UNSUPPORTED),
-    ("y ~ log()", {}, UNSUPPORTED),
-    ("y ~ log(log(x))", {}, UNSUPPORTED),
+    ("y ~ sin(x)", {}, f"'sin(x)': the function sin() is not supported; {UNSUPPORTED}"),
+    ("y ~ log(x, 2)", {}, f"'log(x, 2)': log() takes one argument here; log(x, base) is not supported; {UNSUPPORTED}"),
+    ("y ~ log1p(x)", {}, f"'log1p(x)': the function log1p() is not supported; {UNSUPPORTED}"),
+    ("y ~ np.log(x)", {}, f"'np.log(x)': the function np.log() is not supported; {UNSUPPORTED}"),
+    ("y ~ log()", {}, f"'log()': log() takes one argument here; log(x, base) is not supported; {UNSUPPORTED}"),
     ("y ~ log(y)", {}, "'log(y)': the response 'y' cannot be transformed into a predictor"),
     ("k | trials(n) ~ x + log(n)", {"family": "binomial"}, "'log(n)': the trials column 'n' cannot be transformed into a predictor"),
     ("y ~ log(g) + (1 | g)", {}, "'g': the grouping factor cannot also be a predictor or the response"),

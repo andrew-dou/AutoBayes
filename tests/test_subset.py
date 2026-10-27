@@ -109,7 +109,7 @@ def test_subset_rows(data):
     (["y | subset(s1) + subset(s2) ~ x", F[1]], False, FormulaError, "subset() appears more than once on the left-hand side"),
     (["y | subset(s1) + weights(w) ~ x", F[1]], False, FormulaError, "subset() together with weights(w) on the left-hand side is not supported"),
     (["y | subset(s1 == 1) ~ x", F[1]], False, FormulaError, "subset() takes the name of a 0/1 or logical column of the data, got 's1 == 1'"),
-    ([F[0], "y2 | subset(s2) ~ x + foo(x)"], False, FormulaError, "the formula 'y2 | subset(s2) ~ x + foo(x)': 'foo(x)': only log(col)"),
+    ([F[0], "y2 | subset(s2) ~ x + foo(x)"], False, FormulaError, "the formula 'y2 | subset(s2) ~ x + foo(x)': 'foo(x)': the function foo() is not supported"),
     ([F[0], "y | subset(s2) ~ w"], False, FormulaError, "the response(s) ['y'] have more than one formula"),
     ([F[0], "sigma ~ w"], False, FormulaError, "'sigma ~ w': a distributional formula in a multivariate model is not supported"),
     ([F[0], "y2 | weights(w) ~ x"], False, FormulaError, "addition terms (weights(w)) on a response of a multivariate model are not supported"),
