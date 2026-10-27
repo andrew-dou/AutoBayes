@@ -2466,7 +2466,7 @@
    "pr": null,
    "attempts": 0,
    "divergences": [],
-   "next_action": "feature agent (fixtures #108)",
+   "next_action": "paused at the weekly usage cap (2026-10-27): implementation committed in worktree parity-g02 at 126bd14 (off d5ccb69, not pushed; diff coverage 373/373); resume after the reset: bring onto main (G03 #112, G04 #111 touch the same code), full suite and gate tool, report",
    "reserved_divergences": "D177-D178"
   },
   {
@@ -2477,12 +2477,16 @@
     "A04_general_interactions",
     "F08_syntax_fixes"
    ],
-   "status": "gates_green",
+   "status": "merged",
    "summary": "three-way and higher interactions, (a + b + c)^2, colon-only terms (x:z, f:f2, x + x:f), factor-specific slopes (f + x:f), with R's rule for coding a factor in an interaction whose margin is absent (corpus pop_three_way, pop_power_expansion, pop_colon_only, pop_factor_colon_only, pop_numeric_colon_factor_one_main, pop_factor_slopes)",
-   "pr": null,
+   "pr": 112,
    "attempts": 0,
-   "divergences": [],
-   "next_action": "feature agent (fixtures #108)",
+   "divergences": [
+    "D14",
+    "D179",
+    "D180"
+   ],
+   "next_action": "none",
    "reserved_divergences": "D179-D180",
    "gates": {
     "sha": "f25dea2e3f5a",
