@@ -502,6 +502,8 @@ def _check_formula(name: str, divergence: str):
                 what = f"a correlation ID ('{t.canonical}')"
             elif t.custom:
                 what = f"the group term '{t.canonical}' (mm() or gr(by = ))"
+            elif len(getattr(t, "operands", ())) > 2:                                # G05a: g:h:f2, verified in univariate models only (D183)
+                what = f"a grouping factor of three columns ('{t.canonical}')"
             if what is not None:
                 raise FormulaError(f"{spec.formula!r}: {what} is not offered for the {name} family: each non-reference category would "
                                    f"get it in its own linear predictor, which no frozen case verifies; the family takes varying "

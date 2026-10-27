@@ -525,3 +525,10 @@ column a coefficient named as brms names it. Verified against `gauss_three_way_n
 `bernoulli_three_way_varint`; a rank-deficient design is warned of (D179); `x^2`, `x:x` and R's rank-deficient coding of
 `0 + x + x:z` (D180), a column no fitted row reaches and these interactions in non-linear, count-matrix, multivariate models and
 the summaries (D179) are refused by name.
+Group-level term syntax (G05a, docs/group-term-syntax.md): the slopes alone, `(0 + x | g)` and `(x - 1 | g)`; one factor in
+several terms, `(1 | g) + (0 + x | g)` (one term of uncorrelated coefficients, as brms's two IDs); a factor slope `(1 + z | g)`
+coded as the population design (`z[q]`, `z[r]`); transform and product slopes `(1 + I(x^2) + x:w | g)`; a monotonic slope `(1 +
+mo(ord) | g)` on the population term's simplex; three grouping columns, `g:h:f2` and `g/h/f2`; and a numeric slope without its
+population-level term, `w + (1 + x | g)` (D8 resolved). Verified against eight frozen cases (`gauss_split_slope_post` with brms's
+summaries); a correlated term next to another term of its factor, duplicated terms, four or more grouping columns and the factor or
+`mo()` slope in other forms are refused naming the construct (D183, D184).

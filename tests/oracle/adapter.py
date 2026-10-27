@@ -653,6 +653,29 @@ class GroupMap:
     # F01b: a per-category family's group-level coefficient (factor, coefficient) -> brms's (group id m, coefficient number c) of
     # each non-reference category's own group term, in category order (sd_m[c], z_m[c], r_m_<dpar>_c, Z_m_<dpar>_c, dpar mu<k>)
     category: dict = None
+    # G05a: (factor, coefficient) -> brms group id m of each coefficient, for a factor whose terms brms numbers as several groups,
+    # (1 | g) + (0 + x | g) (GroupTerm.blocks); None or absent: the factor's one id, brms_id[factor]
+    coef_id: dict = None
+
+
+def group_id(gmap: GroupMap, g: str, coef: str) -> int:
+    """G05a: brms's group id of the coefficient ``coef`` of factor ``g``: its own (``coef_id``, a factor written in several
+    terms) or the factor's."""
+    return (gmap.coef_id or {}).get((g, coef), gmap.brms_id[g])
+
+
+def brms_coef_label(coef: str) -> str:
+    """G05a: brms's label of a group-level coefficient, ``rename()`` of the AutoBayes one: ``x``, ``IxE2`` for ``I(x^2)``, ``zq`` for
+    the factor level ``z[q]``, ``moord`` for ``mo(ord)``, ``x:w`` (the population-level coefficient's name in both)."""
+    from autobayes.default_priors import brms_rename
+    return "Intercept" if coef == "Intercept" else brms_rename(coef)
+
+
+def term_blocks(model, g: str) -> tuple[tuple[str, ...], ...]:
+    """G05a: the coefficients of each brms group id of factor ``g``: the terms as written of a factor written in several terms
+    (``GroupTerm.blocks``), else the factor's one term."""
+    t = model.spec.group_term_of(g)
+    return getattr(t, "blocks", ()) or (t.coefs,)
 
 
 def match_category_groups(fixture: Fixture, model: ab.Model) -> GroupMap:
@@ -726,7 +749,7 @@ def match_groups(fixture: Fixture, model: ab.Model) -> GroupMap:
         return match_multinomial_groups(fixture, model)
     if model.family_spec.per_category and model.spec.group_terms:   # F01b: one brms group term per non-reference category
         return match_category_groups(fixture, model)
-    ids, cns, levels_of, coef_cn, used = {}, {}, {}, {}, set()
+    ids, cns, levels_of, coef_cn, coef_id, used = {}, {}, {}, {}, {}, set()
     n = model.design.n
     for (g, coef), block in model.design.group_blocks.items():
         if block.memberships:                            # D08: a multi-membership term, brms's J_m_k, W_m_k, Z_m_c_k
@@ -743,6 +766,7 @@ def match_groups(fixture: Fixture, model: ab.Model) -> GroupMap:
             continue
         gidx = block.group_index
         covariate = block.Z[np.arange(n), gidx]          # the coefficient's covariate per row (brms Z_m_c)
+        monotonic = getattr(block, "monotonic", None)   # G05a: a monotonic slope, brms's r * mo(simo, Xmo), has no Z_m_c
         found = []
         for grp in fixture.groups:
             key = (int(grp["id"]), int(grp["cn"]))
@@ -760,33 +784,42 @@ def match_groups(fixture: Fixture, model: ab.Model) -> GroupMap:
             else:
                 if len(np.unique(m)) != block.J:
                     continue
-                Z = fixture.standata[f"Z_{grp['id']}_{grp['cn']}"]
-                if Z.shape == (n,) and np.max(np.abs(Z - covariate)) <= DESIGN_ABS:
+                if monotonic is not None:                   # G05a: matched by its partition, its label and the absence of Z
+                    if f"Z_{grp['id']}_{grp['cn']}" not in fixture.standata and grp["coef"] == brms_coef_label(coef):
+                        found.append((grp, m))
+                    continue
+                Z = fixture.standata.get(f"Z_{grp['id']}_{grp['cn']}")
+                if Z is not None and Z.shape == (n,) and np.max(np.abs(Z - covariate)) <= DESIGN_ABS:
                     found.append((grp, m))
         if len(found) != 1:
             raise OracleMismatch(
                 f"group-level coefficient {coef!r} of {g!r}: {len(found)} brms group terms induce its partition of "
                 f"the rows and carry its covariate column within {DESIGN_ABS}")
         grp, m = found[0]
-        if grp["coef"] != coef:
+        if grp["coef"] != brms_coef_label(coef):          # G05a: brms's rename() of the label (IxE2, zq, moord); x is x
             raise OracleMismatch(f"{g!r}: the brms coefficient matched by content is labelled {grp['coef']!r}, AutoBayes has {coef!r}")
         if [block.levels[i] for i in m] != list(grp["levels"]):
             raise OracleMismatch(f"{g!r}: brms levels {grp['levels']} vs AutoBayes {[block.levels[i] for i in m]}")
-        if g in ids and ids[g] != int(grp["id"]):
-            raise OracleMismatch(f"{g!r}: its coefficients match different brms groups ({ids[g]} and {grp['id']})")
+        # every coefficient of one term as written is in one brms group, and two terms of a factor (G05a) in two groups
+        written = next(b for b in term_blocks(model, g) if coef in b)
+        mates = [coef_id[(g, c)] for c in written if (g, c) in coef_id]
+        others = [coef_id[(g, c)] for b in term_blocks(model, g) if b is not written for c in b if (g, c) in coef_id]
+        if any(i != int(grp["id"]) for i in mates) or int(grp["id"]) in others:
+            raise OracleMismatch(f"{g!r}: its coefficients match different brms groups ({sorted(set(mates + others))} and {grp['id']})")
         used.add((int(grp["id"]), int(grp["cn"])))
-        ids[g], levels_of[g], coef_cn[(g, coef)] = int(grp["id"]), m, int(grp["cn"])
+        ids.setdefault(g, int(grp["id"]))
+        levels_of[g], coef_cn[(g, coef)], coef_id[(g, coef)] = m, int(grp["cn"]), int(grp["id"])
         if coef == "Intercept":
             cns[g] = int(grp["cn"])
     dpar_cn = _match_dpar_groups(fixture, model, ids, levels_of, used)   # D08: a shared ID's distributional coefficients
     unmatched = [(grp["group"], grp["coef"]) for grp in fixture.groups if (int(grp["id"]), int(grp["cn"])) not in used]
     if unmatched:
         raise OracleMismatch(f"brms group-level terms without an AutoBayes counterpart: {unmatched}")
-    for t in model.spec.group_terms:
-        m = ids[t.factor]
+    for t, written in ((t, b) for t in model.spec.group_terms for b in term_blocks(model, t.factor)):   # G05a: each term as written
+        m = coef_id.get((t.factor, written[0]), ids[t.factor])
         M = int(fixture.standata[f"M_{m}"])
         shared = model.spec.shared_id_of(t.factor) if hasattr(model.spec, "shared_id_of") else None
-        coefs = shared.labels if shared is not None else t.coefs   # D08: a shared ID's group spans the formulas
+        coefs = shared.labels if shared is not None else written   # D08: a shared ID's group spans the formulas
         if M != len(coefs):
             raise OracleMismatch(f"{t.factor!r}: brms group {m} has M_{m} = {M} coefficients, AutoBayes {len(coefs)}")
         _check_by(fixture, model, t, m, levels_of[t.factor])            # D08: gr(by = )'s Nby_m and Jby_m
@@ -802,7 +835,7 @@ def match_groups(fixture: Fixture, model: ab.Model) -> GroupMap:
                 f"{t.factor!r}: brms group {m} has {M} coefficients with cor = {correlated}"
                 f"{' and a correlation matrix L_' + str(m) if declared else ''}; AutoBayes's term '{t.canonical}' is "
                 f"{'correlated' if t.has_correlation else 'independent'}")
-    return GroupMap(ids, cns, levels_of, coef_cn, dpar_cn or None)
+    return GroupMap(ids, cns, levels_of, coef_cn, dpar_cn or None, coef_id=coef_id)
 
 
 def _level_map(pairs, J: int) -> np.ndarray | None:
@@ -947,10 +980,10 @@ def natural_point(model: ab.Model, point: Point, cmap: ColumnMap, gmap: GroupMap
             z[g][gmap.level_of[g], k] = np.atleast_2d(pars[f"z_{m}"])[cn - 1]
     for t in (model.spec.group_terms if not gmap.category else ()):
         g = t.factor
-        m = gmap.brms_id[g]
-        sd_m, zb = np.atleast_1d(pars[f"sd_{m}"]), np.atleast_2d(pars[f"z_{m}"])    # z_m is (M_m, N_m), brms level order
         per_sd, per_z = {}, {}
         for coef in t.coefs:
+            m = group_id(gmap, g, coef)                        # G05a: a factor in several terms has a brms group per term
+            sd_m, zb = np.atleast_1d(pars[f"sd_{m}"]), np.atleast_2d(pars[f"z_{m}"])    # z_m is (M_m, N_m), brms level order
             cn = gmap.coef_cn[(g, coef)]
             za = np.empty(zb.shape[1])
             za[gmap.level_of[g]] = zb[cn - 1]
@@ -1104,7 +1137,9 @@ def coordinate_map(fixture: Fixture, model: ab.Model, cmap: ColumnMap, gmap: Gro
         return multinomial_coordinate_map(fixture, model, cmap, gmap)
     names = model.names
     by_id = {m: g for g, m in gmap.brms_id.items()}
+    by_id.update({m: g for (g, _), m in (gmap.coef_id or {}).items()})    # G05a: every brms group of a factor in several terms
     by_cn = {(g, cn): coef for (g, coef), cn in gmap.coef_cn.items()}     # (factor, brms coefficient number) -> coefficient
+    by_id_cn = {(group_id(gmap, g, coef), cn): coef for (g, coef), cn in gmap.coef_cn.items()}   # G05a: (group, number) -> coefficient
     by_dpar_cn = {(g, cn): (name, g, coef) for (name, g, coef), cn in (gmap.dpar_cn or {}).items()}   # D08: a shared ID's
     roles = model.group_coefficient_names
     pars = fixture.points[0].pars
@@ -1348,10 +1383,10 @@ def coordinate_map(fixture: Fixture, model: ab.Model, cmap: ColumnMap, gmap: Gro
             dpar = by_dpar_cn.get((g, c + 1))                   # D08: a shared ID's distributional coefficient
             if dpar is not None:
                 target, expect = (f"{model.dpar_group_names[dpar]['sd']}_log__", 0), "log"
-            elif (g, c + 1) not in by_cn:
+            elif (int(par[3:]), c + 1) not in by_id_cn:
                 raise OracleMismatch(f"{par}[{elem + 1}] is not the SD of a group-level coefficient of {g!r}")
             else:
-                target, expect = (f"{roles[(g, by_cn[(g, c + 1)])]['sd']}_log__", b), "log"
+                target, expect = (f"{roles[(g, by_id_cn[(int(par[3:]), c + 1)])]['sd']}_log__", b), "log"
         elif par.startswith("z_") and int(par[2:]) in by_id:
             g = by_id[int(par[2:])]
             M = pars[par].shape[0]
@@ -1359,10 +1394,10 @@ def coordinate_map(fixture: Fixture, model: ab.Model, cmap: ColumnMap, gmap: Gro
             dpar = by_dpar_cn.get((g, c + 1))                   # D08: a shared ID's distributional coefficient
             if dpar is not None:
                 target, expect = (model.dpar_group_names[dpar]["offset"], int(gmap.level_of[g][j])), "identity"
-            elif (g, c + 1) not in by_cn:
+            elif (int(par[2:]), c + 1) not in by_id_cn:
                 raise OracleMismatch(f"{par} coefficient {c + 1} is not a group-level coefficient of {g!r}")
             else:
-                target, expect = (roles[(g, by_cn[(g, c + 1)])]["offset"], int(gmap.level_of[g][j])), "identity"
+                target, expect = (roles[(g, by_id_cn[(int(par[2:]), c + 1)])]["offset"], int(gmap.level_of[g][j])), "identity"
         elif par.startswith("L_") and int(par[2:]) in by_id:     # the Cholesky factor of a correlated factor (A02)
             g = by_id[int(par[2:])]
             if g not in model.correlation_names:
@@ -1578,7 +1613,7 @@ def draws(fixture: Fixture, model: ab.Model, cmap: ColumnMap, gmap: GroupMap) ->
             (c, _), = positions
             data[term] = (("chain", "draw"), np.array([coefficients(p.pars)[cmap.b_index(cmap.x_column[c])] for p in pts])[None, :])
     for (g, coef), roles in model.group_coefficient_names.items():
-        m, cn = gmap.brms_id[g], gmap.coef_cn[(g, coef)]
+        m, cn = group_id(gmap, g, coef), gmap.coef_cn[(g, coef)]   # G05a: per coefficient
         r = np.empty((len(pts), len(gmap.level_of[g])))
         for d, p in enumerate(pts):
             r[d, gmap.level_of[g]] = np.atleast_1d(p.pars[f"r_{m}_{cn}"])

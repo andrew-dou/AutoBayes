@@ -105,6 +105,7 @@ from autobayes.families import family_of
 from autobayes.families.spec import DISTRIBUTIONAL_INVERSE_LINKS
 from autobayes.formula import (FormulaError, by_levels_of, categorical_labels, check_counts, group_labels, mm_weights, pop_term_design,
                                reject_complex, with_trials)
+from autobayes.formula import derived_group_columns, group_covariate   # G05a: the covariates of group-level slopes
 
 _NEW_GROUPS = {"error", "resample_observed", "population"}
 
@@ -152,6 +153,17 @@ def monotonic_contribution(model, post, df: pd.DataFrame) -> np.ndarray | float:
         simplex = post[roles["simplex"]].transpose("chain", "draw", roles["coordinate"]).to_numpy()
         out = out + post[roles["b"]].to_numpy()[..., None] * monotonic_values(simplex, codes)
     return out
+
+
+def _monotonic_covariate(model, post, df: pd.DataFrame, coef: str) -> np.ndarray:
+    """G05a: (chain, draw, row) draws of the covariate of the monotonic varying slope ``coef`` (``mo(ord)``) on the rows of ``df``:
+    ``mo(simo, Xmo)`` of the population-level term's simplex draws at the rows' codes (brms's ``r[J] * mo(simo, Xmo)``)."""
+    from autobayes.monotonic import monotonic_values
+
+    column = model.spec.pop_term(coef).operands[0]
+    roles = model.mo_names[column]
+    simplex = post[roles["simplex"]].transpose("chain", "draw", roles["coordinate"]).to_numpy()
+    return monotonic_values(simplex, model.spec.monotonic(column).codes(df[column], where="newdata column"))
 
 
 def gp_contribution(model, post, df: pd.DataFrame) -> np.ndarray | float:
@@ -349,6 +361,12 @@ def _check_newdata(model, newdata: pd.DataFrame, *, need_trials: bool = False, i
         df[cat.name] = pd.Categorical(labels, categories=list(cat.categories), ordered=True)
     for t in (t for f in (s, *s.dpars) for t in f.pop_terms if t.kind in ("contrast", "product")):   # F08: an ordered factor's
         df[t.name] = pop_term_design(t, df, s.all_categoricals)[:, 0]       # contrast columns, G03: R's interaction columns, by name
+    for c in (c for t in s.group_terms for c in t.slope_columns) if include_group_effects else ():   # G05a: a slope that is no
+        reject_complex(f"newdata column {c!r}", df[c])                                            # population-level term
+        if not pd.api.types.is_numeric_dtype(df[c]):
+            raise FormulaError(f"newdata column {c!r} must be numeric (a varying slope)")
+    for c in derived_group_columns(s) if include_group_effects else ():   # G05a: a product's or factor level's covariate, which
+        df[c] = group_covariate(s, c, df)                                 # Bambi reads by name
     if need_trials:
         df[s.trials] = check_counts(f"newdata trials {s.trials!r}", df[s.trials])
     for t in (s.group_terms if include_group_effects else ()):   # labels as text; a derived factor's column is built here
@@ -441,16 +459,18 @@ def _predict_by_hand(model, idata, df: pd.DataFrame | None, kind: str, seed, pol
     new_levels = {}
     for term in (model.spec.group_terms if include_group_effects else ()):
         g = term.factor
-        levels = list(model.design.group_designs[g].levels)
+        levels = list(model.design.factor_blocks[g].levels)    # G05a: a factor whose intercept does not vary has slopes' blocks
         members = term_labels(term, df)                         # D08: one label array per member of a multi-membership term
         weights = mm_weights(term, df) if term.is_mm else np.ones((len(df), 1))
         labels = members[0]
         new_levels[g] = sorted(set().union(*(set(m) for m in members)) - set(levels))
-        # (sd draws, effect draws, covariate column) per coefficient: ones for the intercept, the raw column for a slope
+        # (sd draws, effect draws, covariate column) per coefficient: ones for the intercept, the raw column for a slope; G05a: a
+        # transform's, product's or factor level's design column, and a monotonic slope's mo(simo, Xmo) per draw and row
         coefs = []
         for coef in term.coefs:
             names = model.group_coefficient_names[(g, coef)]
-            covariate = np.ones(len(df)) if coef == "Intercept" else df[coef].to_numpy(dtype=float)
+            covariate = (_monotonic_covariate(model, post, df, coef) if coef in term.monotonic_slopes else
+                         np.ones(len(df)) if coef == "Intercept" else df[coef].to_numpy(dtype=float))
             coefs.append((post[names["sd"]].to_numpy(), post[names["group_effect"]].to_numpy(), covariate))
         # a correlated term (A02) drawing unseen levels from the population: the draws' Cholesky factors,
         # (chain, draw, M, M), rows and columns selected by coefficient label in the term's order
@@ -476,7 +496,7 @@ def _predict_by_hand(model, idata, df: pd.DataFrame | None, kind: str, seed, pol
                     if fam.per_category:                         # F01b: (chain, draw, level, category) effects of fitted levels
                         mu[..., i, :] += u[..., levels.index(lvl), :] * covariate[i]
                         continue
-                    effect = (new_effects[lvl][k] if lvl in new_effects else u[..., levels.index(lvl)]) * covariate[i]
+                    effect = (new_effects[lvl][k] if lvl in new_effects else u[..., levels.index(lvl)]) * covariate[..., i]
                     mu[..., i] += effect if not term.is_mm else w[i] * effect
     if model.spec.autocor is not None:                          # C04: the ARMA term on the fitted rows' residuals, added last
         mu = autocor_predictor(model, post, mu)
@@ -702,7 +722,7 @@ def predict(model, fit_result, *, newdata: pd.DataFrame | None = None, kind: str
         model, newdata, need_trials=(fam.has_trials and kind in ("mean", "response")), include_group_effects=include_group_effects,
         extra=extra))
     new_levels = {t.factor: ([] if df is None else sorted(set().union(*(set(m) for m in term_labels(t, df)))
-                                                          - set(model.design.group_designs[t.factor].levels)))
+                                                          - set(model.design.factor_blocks[t.factor].levels)))
                   for t in (model.spec.group_terms if include_group_effects else ())}
     for g, unseen in new_levels.items():
         t = model.spec.group_term_of(g)

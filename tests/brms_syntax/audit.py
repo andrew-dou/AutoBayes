@@ -336,6 +336,12 @@ def _jkey(grp: dict, resp: str = "") -> str:
     return f"J_{grp['id']}_{r}" if r else f"J_{grp['id']}"
 
 
+def _brms_coef(coef: str) -> str:
+    """G05a: brms's label of an AutoBayes group-level coefficient: its rename(), IxE2 for I(x^2), fb for f[b], moo for mo(o)."""
+    from autobayes.default_priors import brms_rename
+    return brms_rename(coef)
+
+
 def match_groups(blocks: dict, terms, reading: Reading, scope: dict, issues: list, notes: list, what: str = "") -> None:
     """AutoBayes's group blocks ``{(factor, coef): GroupBlock}`` against brms's group-level terms in ``scope`` (``dpar`` /
     ``nlpar``): each block must meet exactly one brms coefficient whose ``J`` induces its partition of the rows and whose
@@ -380,6 +386,12 @@ def match_groups(blocks: dict, terms, reading: Reading, scope: dict, issues: lis
             else:
                 if len(set(m.values())) != len(m):
                     continue
+                if getattr(block, "monotonic", None):                # G05a: a monotonic slope, r * mo(simo, Xmo), has no Z_m_c
+                    if _zkey(grp, reading.resp) not in reading.names and grp["coef"] == _brms_coef(coef):
+                        found.append((grp, [m.get(j, -1) for j in range(len(grp["levels"]))]))
+                    continue
+                if _zkey(grp, reading.resp) not in reading.names:    # G05a: brms's monotonic slope, which no other block is
+                    continue
                 Zc = np.asarray(reading.get(_zkey(grp, reading.resp), raw=True), dtype=float)
                 covariate = block.Z[np.arange(n), gidx]
                 if _close(Zc, covariate):
@@ -396,7 +408,7 @@ def match_groups(blocks: dict, terms, reading: Reading, scope: dict, issues: lis
             issues.append(f"{what}{factor!r}: brms's levels {grp['levels']} are AutoBayes's {mine}")
         elif list(block.levels) != list(grp["levels"]):
             notes.append(f"{what}{factor!r}: the same levels in another order (brms {grp['levels']}, AutoBayes {list(block.levels)})")
-        if grp["coef"] != coef:
+        if grp["coef"] != _brms_coef(coef):                         # G05a: brms's rename() of I(x^2), z[q], mo(o); x is x
             notes.append(f"{what}{factor!r}: brms names the coefficient {grp['coef']!r}, AutoBayes {coef!r}")
         for k in (f"N_{grp['id']}", f"M_{grp['id']}", f"NC_{grp['id']}"):
             reading.used.add(k)
@@ -408,13 +420,14 @@ def match_groups(blocks: dict, terms, reading: Reading, scope: dict, issues: lis
     for grp in groups:
         if (grp["id"], grp["cn"]) not in used:
             issues.append(f"{what}brms group-level coefficient {grp['coef']!r} of {grp['group']!r} (id {grp['id']}) has no AutoBayes counterpart")
-    for t in terms:
-        brms_cor = {bool(g["cor"]) for g in groups if g["id"] in ids.get(t.factor, set())}
-        M = sum(1 for g in groups if g["id"] in ids.get(t.factor, set()))
-        if M > 1 and brms_cor == {True} and not (t.has_correlation or t.id is not None):
-            issues.append(f"{what}{t.factor!r}: brms correlates the term's {M} coefficients; AutoBayes's {t.canonical!r} does not")
-        if M > 1 and brms_cor == {False} and t.has_correlation:
-            issues.append(f"{what}{t.factor!r}: AutoBayes correlates {t.canonical!r}; brms does not")
+    for t in terms:                                                  # G05a: per brms group of the factor (a factor in several terms
+        for gid in sorted(ids.get(t.factor, set())):                 # has one per term, each of one coefficient or uncorrelated)
+            brms_cor = {bool(g["cor"]) for g in groups if g["id"] == gid}
+            M = sum(1 for g in groups if g["id"] == gid)
+            if M > 1 and brms_cor == {True} and not (t.has_correlation or t.id is not None):
+                issues.append(f"{what}{t.factor!r}: brms correlates the term's {M} coefficients; AutoBayes's {t.canonical!r} does not")
+            if M > 1 and brms_cor == {False} and t.has_correlation:
+                issues.append(f"{what}{t.factor!r}: AutoBayes correlates {t.canonical!r}; brms does not")
 
 
 def _y_matches(Y, y) -> bool:

@@ -802,8 +802,9 @@ class Priors:
         for t in group_terms:
             entry = by_factor[t.factor]
             if isinstance(entry, Mapping):
-                missing = [c for c in t.coefs if c not in entry]
-                extra = [k for k in entry if k not in t.coefs]
+                written = t.written or t.coefs                 # G05a: a factor slope z's SD prior is keyed by z (all its levels)
+                missing = [c for c in written if c not in entry]
+                extra = [k for k in entry if k not in written]
                 if missing or extra:
                     hint = ""
                     for k in extra:
@@ -811,12 +812,23 @@ class Priors:
                             hint = (f" ({k!r} is a population-level term, but '{t.canonical}' has no varying slope on it; "
                                     f"write '(1 + {k} || {t.factor})' to add one)")
                             break
+                        level = next((w for w in written if w in getattr(spec, "categorical_names", ()) and isinstance(k, str)
+                                      and k.startswith(w)), None)
+                        if level is not None:
+                            hint = (f" ({k!r} names a level's coefficient of the factor slope {level!r}: its SD prior is keyed by the "
+                                    f"factor, {level!r}: <prior>, one prior for the SDs of all its coefficients)")
+                            break
                     raise PriorError(
-                        f"SD priors for {t.factor!r} must cover exactly its coefficients {list(t.coefs)}; "
+                        f"SD priors for {t.factor!r} must cover exactly its coefficients {list(written)}; "
                         f"missing {missing}, unexpected {extra}{hint}"
                     )
                 for c in t.coefs:
-                    out[(t.factor, c)] = entry[c]
+                    prior, written_as = entry[t.term_of(c)], t.term_of(c)
+                    if (written_as != c or c in getattr(spec, "categorical_names", ())) and not isinstance(prior, Prior):
+                        raise PriorError(f"the SD prior of the factor slope {written_as!r} of {t.factor!r} is one Prior for the SDs of "
+                                         f"all its coefficients (one per non-reference level), got {type(prior).__name__} "
+                                         "(docs/group-term-syntax.md)")
+                    out[(t.factor, c)] = prior
             elif t.slopes:
                 raise PriorError(
                     f"sd for {t.factor!r} must be a mapping over its coefficients {list(t.coefs)} ('{t.canonical}' has "

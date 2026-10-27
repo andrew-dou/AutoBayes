@@ -24,8 +24,9 @@ deviation into `u_g + c v_x|g`, which is correlated with `v_x|g`. `describe()` s
 
 ## Using it
 
-- Formula: `y ~ x + (1 + x || g)`. Every slope must also be a population-level term of the formula (brms does
-  not require this; divergence D8). `(1 || g)` is accepted as `(1 | g)`: one coefficient has nothing to
+- Formula: `y ~ x + (1 + x || g)`. Since G05a (docs/group-term-syntax.md) a numeric column also varies without its
+  population-level term, as brms's does (divergence D8, resolved), and so do the slopes alone, a factor written in several terms,
+  transforms, products and factors. `(1 || g)` is accepted as `(1 | g)`: one coefficient has nothing to
   correlate with. Bambi has no `||`, so it is handed `(1 + x | g)`, which it builds as the independent terms
   `1|g` and `x|g`; `Model._extract_design` checks each block against the data and raises on a mismatch.
 - Priors: `sd` stays keyed by factor; a factor with slopes takes a mapping over exactly its coefficients,
@@ -47,10 +48,9 @@ and `gr(g, cor = FALSE)` is `||`.
 
 ## Refused, with the construct named
 
-`(0 + x || g)` and `(x - 1 || g)` (a slope without the varying intercept; next to `(1 | g)` the refusal gives brms's reading,
-`(1 + x || g)`, F08); a slope that is not a numeric population-level term; a
-categorical or interaction slope; a slope equal to the factor, the response or the trials column; a factor in two
-group terms; function calls inside the group term.
+A slope equal to the factor, the response or the trials column; function calls inside the group term other than G05a's
+(docs/group-term-syntax.md, which takes `(0 + x || g)`, `(1 | g) + (0 + x | g)`, transform, product and factor slopes and a
+slope without its population-level term, and lists what it refuses, D183 and D184).
 
 ## Evidence
 
