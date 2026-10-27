@@ -4,6 +4,9 @@ brms's level order, and brms coded exactly those values; rows with a missing val
 ``mi()``) are the rows missing from brms's data, in data order; a case whose new-row predictions brms refuses
 (``newdata_prediction_refused``) records brms's message for those rows only, and fails in ``gates.Bundle`` until gates.py has the
 comparison of the model's predictions on them (``check_newdata_refusal``)."""
+import copy
+from types import SimpleNamespace
+
 import numpy as np
 import pandas as pd
 import pytest
@@ -119,3 +122,70 @@ def test_a_refused_newdata_prediction_fails_until_gates_compare_it(case_id):
                                                               sigma=ab.HalfNormal(1)))
     with pytest.raises(OracleMismatch, match="check_newdata_refusal"):
         gates.Bundle(case_id, model=stand_in)
+
+
+# -- G04: gates.check_newdata_refusal, the new rows brms refuses to predict ------------------------------------------------------
+@pytest.fixture(scope="module")
+def newlevels():
+    if not fx.has_fixture("gauss_factor_call_newlevels"):
+        pytest.skip("fixture not frozen")
+    return gates.Bundle("gauss_factor_call_newlevels")
+
+
+def _with_raw(bundle, mutate):
+    raw = copy.deepcopy(bundle.fixture.raw)
+    mutate(raw)
+    return bundle.with_fixture(fx.Fixture(raw))
+
+
+def test_newdata_refusal_compares_the_new_rows_through_the_fitted_levels(newlevels):
+    b = newlevels
+    assert sorted(set(b.newdata["ord"])) == [1, 2, 3] and sorted(set(b.data["ord"])) == [1, 2, 3, 4]    # the new rows lack level 4
+    Xn = gates.code_new_rows(b)
+    names = b.fixture.colnames("X")
+    assert names == ["Intercept", "x", "factorord2", "factorord3", "factorord4"] and Xn.shape == (5, 5) and not Xn[:, 4].any()
+    assert np.array_equal(Xn[:, 2:], np.column_stack([(b.newdata["ord"] == k).to_numpy(dtype=float) for k in (2, 3, 4)]))
+    gates.check_newdata_refusal(b)
+    gates.check_predictions(b)                                   # the fitted rows against brms, the new rows through the gate
+
+
+def test_newdata_refusal_fails_on_a_wrong_prediction_or_record(newlevels, monkeypatch):
+    b = newlevels
+
+    def unrefuse(raw):                                           # the fixture says brms predicted the new rows after all
+        raw["predictions"]["newdata"]["linpred"] = raw["predictions"]["fitted"]["linpred"]
+        del raw["predictions"]["newdata"]["linpred_refused"]
+    with pytest.raises(OracleMismatch, match="the fixture's newdata linpred is recorded; the case lists"):
+        gates.check_newdata_refusal(_with_raw(b, unrefuse))
+    predict = b.model.predict
+    for kind, message in (("linear", "the linear predictor on the new rows brms refuses differs"),
+                          ("mean", "the expected values on the new rows brms refuses differ")):
+        def wrong(idata, newdata=None, kind_=kind, **kw):        # a model whose predictions on the new rows are off by 1e-6
+            out = predict(idata, newdata=newdata, **kw)
+            return out + 1e-6 if kw.get("kind") == kind_ and newdata is not None else out
+        monkeypatch.setattr(b.model, "predict", wrong)
+        with pytest.raises(OracleMismatch, match=message):
+            gates.check_newdata_refusal(b)
+    monkeypatch.setattr(b.model, "predict", predict)
+    gates.check_newdata_refusal(b)
+
+
+def test_code_new_rows_codes_only_what_it_knows(newlevels):
+    b = newlevels
+
+    def gate_view(mutate):                                       # the coding reads the fixture, the data and the new rows only
+        raw = copy.deepcopy(b.fixture.raw)
+        mutate(raw)
+        return SimpleNamespace(fixture=fx.Fixture(raw), data=b.data, newdata=b.newdata)
+
+    def rename(raw):
+        raw["standata"]["X"]["colnames"][2] = "polyord1"
+    with pytest.raises(OracleMismatch, match="brms's design column 'polyord1' is not one the gate codes"):
+        gates.code_new_rows(gate_view(rename))
+
+    def recode(raw):
+        X = np.asarray(raw["standata"]["X"]["values"], dtype=float)
+        X[-1] = 1.0 - X[-1]
+        raw["standata"]["X"]["values"] = X.tolist()
+    with pytest.raises(OracleMismatch, match="the gate's coding of the fitted rows does not reproduce brms's X"):
+        gates.code_new_rows(gate_view(recode))

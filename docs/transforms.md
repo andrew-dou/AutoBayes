@@ -52,9 +52,10 @@ evaluated columns to `newdata` for Bambi's path and recomputes them for its own.
 
 ## Refused, with the construct named
 
-Any other call or expression (`scale(x)`, `poly(x, 2)`, `log1p(x)`, `log(x, 2)`, `log(x + 1)`, `I(x * w)`,
-`I(x^2.5)`, `np.log(x)`, `sin(x)`: the message lists the supported forms; compute the column in the data frame and
-name it instead), a transform of the response, the trials column, a grouping factor or a declared categorical
+The grammar of docs/expressions.md reads every other expression of a whitelisted grammar (`I(x * w)`, `I(x^2.5)`, `log(x + 1)`, `exp(-x)`,
+`abs(x)`) and the fitted transforms `scale()`, `poly()` and `factor()`; A05's forms above keep their own checks. Still refused:
+any other call (`log1p(x)`, `log(x, 2)`, `np.log(x)`, `sin(x)`: the message lists what is read; compute the column in the data
+frame and name it instead), a transform of the response, the trials column, a grouping factor or a declared categorical
 column, a transform inside a group term or as an operand of an interaction (`log(x):z`), a column that is not
 numeric, missing or non-finite values, non-positive values under `log()` or `sqrt()`, a non-finite result
 (`exp` overflow, `I(x^-1)` at zero), a transformed column that is constant in the fitted rows, and `newdata`

@@ -687,6 +687,10 @@ class Priors:
             if t.kind == "contrast":                          # F08: keyed by the ordered factor's term, one prior or one per contrast
                 out[t.name] = _contrast_prior(spec, t, given)
                 continue
+            if t.basis is not None and (t.name != t.basis or t.transform.form in ("poly", "factor", "logical")):   # G04: a column of
+                # poly(), factor() or a logical (or, before the data are seen, the term itself), keyed by its term
+                out[t.name] = _basis_prior(spec, t, given)
+                continue
             term, entry = t.name, given[t.name]
             if not t.is_vector:
                 if not isinstance(entry, Prior):
@@ -1486,8 +1490,36 @@ class Priors:
 
 def _prior_key(spec, t) -> str:
     """The key of a population-level term's priors in ``Priors(b={...})``: the term's name, or for a polynomial contrast of an
-    ordered factor (F08) the factor's term as written, ``fo`` or ``ordered(z)``, which keys all of its contrasts."""
-    return spec.categorical(t.factor).term_name if t.kind == "contrast" else t.name
+    ordered factor (F08) the factor's term as written, ``fo`` or ``ordered(z)``, which keys all of its contrasts; G04: an
+    in-formula transform's term as written, ``poly(w, 2)``, ``factor(ord)``, ``I(x > 0)``, which keys all of its columns."""
+    if t.kind == "contrast":
+        return spec.categorical(t.factor).term_name
+    return t.basis if t.basis is not None else t.name
+
+
+def _basis_prior(spec, t, given) -> "Prior":
+    """G04: the prior of one design column of an in-formula transform with several (``poly(w, 2)1``, ``factor(ord)2``, the
+    logical's ``I(x > 0)TRUE``) from its term's entry: one ``Prior`` for every column, or a mapping by the columns' suffixes
+    (``{"1": ..., "2": ...}``, factor()'s levels, ``{"TRUE": ...}``) covering exactly the term's columns."""
+    entry = given[t.basis]
+    if isinstance(entry, Prior):
+        return entry
+    if not isinstance(entry, Mapping):
+        raise PriorError(f"the term {t.basis!r} takes one prior or a mapping {{column: prior}} by its columns' suffixes, got "
+                         f"{type(entry).__name__}")
+    bad = next((v for v in entry.values() if not isinstance(v, Prior)), None)
+    if bad is not None or not entry:
+        raise PriorError(f"per-column priors for {t.basis!r} must be a non-empty mapping of Priors by its columns' suffixes"
+                         + (f", got {type(bad).__name__}" if bad is not None else ""))
+    if t.name == t.basis:                                      # structure only; the columns need the data
+        return next(iter(entry.values()))
+    wanted = [t2.name[len(t.basis):] for t2 in spec.pop_terms if t2.basis == t.basis]
+    keys = [str(k) for k in entry]
+    missing, extra = [k for k in wanted if k not in keys], [k for k in keys if k not in wanted]
+    if missing or extra:
+        raise PriorError(f"per-column priors for {t.basis!r} must cover exactly its columns' suffixes {wanted} ("
+                         f"{', '.join(t.basis + k for k in wanted)}); missing {missing}, unexpected {extra}")
+    return dict(zip(keys, entry.values()))[t.name[len(t.basis):]]
 
 
 def _contrast_prior(spec, t, given) -> "Prior":

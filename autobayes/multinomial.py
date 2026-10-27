@@ -253,6 +253,8 @@ def _check_category_formula(text: str, d: ModelSpec) -> None:
         _refuse(text, "a category's linear predictor without an intercept ('0 +' or '- 1')")
     if d.offset is not None:
         _refuse(text, f"the offset term {d.offset.term!r}")
+    if d.expression_terms:                                             # G04 (divergence D182)
+        _refuse(text, f"the in-formula transform {d.expression_terms[0].basis!r}")
     for kind, terms in (("monotonic term", d.mo_terms), ("measurement-error term", d.me_terms), ("missing-value term", d.mi_terms)):
         if terms:
             _refuse(text, f"the {kind} {terms[0].name!r}")

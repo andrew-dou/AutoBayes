@@ -2551,14 +2551,13 @@
     "group_terms": []
    },
    "result": {
-    "status": "error",
-    "type": "FormulaError",
-    "message": "'I(x * z)': only log(col), exp(col), sqrt(col), I(col^k) with integer k, and I(col * k), I(col + k), I(col - k) with a numeric constant k are supported as in-formula transforms of one numeric column (docs/transforms.md, divergence D16); other function calls and transformations inside the formula are not supported: compute the column in the data frame and name it instead.",
-    "raised_at": "formula.py:3332",
-    "stage": "default_priors",
-    "mechanism": "refusal",
-    "outcome": "refused_named",
-    "gap": "capability"
+    "status": "built",
+    "model": "Model",
+    "model_warnings": [],
+    "issues": [],
+    "notes": [],
+    "outcome": "match",
+    "gap": null
    }
   },
   {
@@ -2599,14 +2598,13 @@
     "group_terms": []
    },
    "result": {
-    "status": "error",
-    "type": "FormulaError",
-    "message": "'I(xp^0.5)': only log(col), exp(col), sqrt(col), I(col^k) with integer k, and I(col * k), I(col + k), I(col - k) with a numeric constant k are supported as in-formula transforms of one numeric column (docs/transforms.md, divergence D16); other function calls and transformations inside the formula are not supported: compute the column in the data frame and name it instead.",
-    "raised_at": "formula.py:3332",
-    "stage": "default_priors",
-    "mechanism": "refusal",
-    "outcome": "refused_named",
-    "gap": "capability"
+    "status": "built",
+    "model": "Model",
+    "model_warnings": [],
+    "issues": [],
+    "notes": [],
+    "outcome": "match",
+    "gap": null
    }
   },
   {
@@ -2647,14 +2645,13 @@
     "group_terms": []
    },
    "result": {
-    "status": "error",
-    "type": "FormulaError",
-    "message": "'I(x > 0)': only log(col), exp(col), sqrt(col), I(col^k) with integer k, and I(col * k), I(col + k), I(col - k) with a numeric constant k are supported as in-formula transforms of one numeric column (docs/transforms.md, divergence D16); other function calls and transformations inside the formula are not supported: compute the column in the data frame and name it instead.",
-    "raised_at": "formula.py:3332",
-    "stage": "default_priors",
-    "mechanism": "refusal",
-    "outcome": "refused_named",
-    "gap": "capability"
+    "status": "built",
+    "model": "Model",
+    "model_warnings": [],
+    "issues": [],
+    "notes": [],
+    "outcome": "match",
+    "gap": null
    }
   },
   {
@@ -2739,14 +2736,13 @@
     "group_terms": []
    },
    "result": {
-    "status": "error",
-    "type": "FormulaError",
-    "message": "'log(xp + 1)': only log(col), exp(col), sqrt(col), I(col^k) with integer k, and I(col * k), I(col + k), I(col - k) with a numeric constant k are supported as in-formula transforms of one numeric column (docs/transforms.md, divergence D16); other function calls and transformations inside the formula are not supported: compute the column in the data frame and name it instead.",
-    "raised_at": "formula.py:3332",
-    "stage": "default_priors",
-    "mechanism": "refusal",
-    "outcome": "refused_named",
-    "gap": "capability"
+    "status": "built",
+    "model": "Model",
+    "model_warnings": [],
+    "issues": [],
+    "notes": [],
+    "outcome": "match",
+    "gap": null
    }
   },
   {
@@ -2875,14 +2871,13 @@
     "group_terms": []
    },
    "result": {
-    "status": "error",
-    "type": "FormulaError",
-    "message": "'abs(x)': only log(col), exp(col), sqrt(col), I(col^k) with integer k, and I(col * k), I(col + k), I(col - k) with a numeric constant k are supported as in-formula transforms of one numeric column (docs/transforms.md, divergence D16); other function calls and transformations inside the formula are not supported: compute the column in the data frame and name it instead.",
-    "raised_at": "formula.py:3332",
-    "stage": "default_priors",
-    "mechanism": "refusal",
-    "outcome": "refused_named",
-    "gap": "capability"
+    "status": "built",
+    "model": "Model",
+    "model_warnings": [],
+    "issues": [],
+    "notes": [],
+    "outcome": "match",
+    "gap": null
    }
   },
   {
@@ -2924,14 +2919,13 @@
     "group_terms": []
    },
    "result": {
-    "status": "error",
-    "type": "FormulaError",
-    "message": "'poly(x, 2)': only log(col), exp(col), sqrt(col), I(col^k) with integer k, and I(col * k), I(col + k), I(col - k) with a numeric constant k are supported as in-formula transforms of one numeric column (docs/transforms.md, divergence D16); other function calls and transformations inside the formula are not supported: compute the column in the data frame and name it instead.",
-    "raised_at": "formula.py:3332",
-    "stage": "default_priors",
-    "mechanism": "refusal",
-    "outcome": "refused_named",
-    "gap": "capability"
+    "status": "built",
+    "model": "Model",
+    "model_warnings": [],
+    "issues": [],
+    "notes": [],
+    "outcome": "match",
+    "gap": null
    }
   },
   {
@@ -2973,14 +2967,13 @@
     "group_terms": []
    },
    "result": {
-    "status": "error",
-    "type": "FormulaError",
-    "message": "'poly(x, 2, raw = TRUE)': only log(col), exp(col), sqrt(col), I(col^k) with integer k, and I(col * k), I(col + k), I(col - k) with a numeric constant k are supported as in-formula transforms of one numeric column (docs/transforms.md, divergence D16); other function calls and transformations inside the formula are not supported: compute the column in the data frame and name it instead.",
-    "raised_at": "formula.py:3332",
-    "stage": "default_priors",
-    "mechanism": "refusal",
-    "outcome": "refused_named",
-    "gap": "capability"
+    "status": "built",
+    "model": "Model",
+    "model_warnings": [],
+    "issues": [],
+    "notes": [],
+    "outcome": "match",
+    "gap": null
    }
   },
   {
@@ -3021,14 +3014,13 @@
     "group_terms": []
    },
    "result": {
-    "status": "error",
-    "type": "FormulaError",
-    "message": "'scale(x)': only log(col), exp(col), sqrt(col), I(col^k) with integer k, and I(col * k), I(col + k), I(col - k) with a numeric constant k are supported as in-formula transforms of one numeric column (docs/transforms.md, divergence D16); other function calls and transformations inside the formula are not supported: compute the column in the data frame and name it instead.",
-    "raised_at": "formula.py:3332",
-    "stage": "default_priors",
-    "mechanism": "refusal",
-    "outcome": "refused_named",
-    "gap": "capability"
+    "status": "built",
+    "model": "Model",
+    "model_warnings": [],
+    "issues": [],
+    "notes": [],
+    "outcome": "match",
+    "gap": null
    }
   },
   {
@@ -3071,14 +3063,13 @@
     "group_terms": []
    },
    "result": {
-    "status": "error",
-    "type": "FormulaError",
-    "message": "'factor(o)': only log(col), exp(col), sqrt(col), I(col^k) with integer k, and I(col * k), I(col + k), I(col - k) with a numeric constant k are supported as in-formula transforms of one numeric column (docs/transforms.md, divergence D16); other function calls and transformations inside the formula are not supported: compute the column in the data frame and name it instead.",
-    "raised_at": "formula.py:3332",
-    "stage": "default_priors",
-    "mechanism": "refusal",
-    "outcome": "refused_named",
-    "gap": "capability"
+    "status": "built",
+    "model": "Model",
+    "model_warnings": [],
+    "issues": [],
+    "notes": [],
+    "outcome": "match",
+    "gap": null
    }
   },
   {
@@ -3260,14 +3251,13 @@
     "group_terms": []
    },
    "result": {
-    "status": "error",
-    "type": "FormulaError",
-    "message": "'offset(log(expo))': more than one offset term ('offset(off)' and 'offset(log(expo))'); add the offsets into one column and write a single 'offset(<column>)'",
-    "raised_at": "formula.py:2564",
-    "stage": "default_priors",
-    "mechanism": "refusal",
-    "outcome": "refused_named",
-    "gap": "capability"
+    "status": "built",
+    "model": "Model",
+    "model_warnings": [],
+    "issues": [],
+    "notes": [],
+    "outcome": "match",
+    "gap": null
    }
   },
   {
@@ -3309,14 +3299,13 @@
     "group_terms": []
    },
    "result": {
-    "status": "error",
-    "type": "FormulaError",
-    "message": "'offset(2 * off)': only 'offset(col)' and 'offset(log(col))' are supported inside offset(); other expressions (general in-formula transforms) are not supported. Compute the column in the data frame and write 'offset(<column>)'.",
-    "raised_at": "formula.py:3095",
-    "stage": "default_priors",
-    "mechanism": "refusal",
-    "outcome": "refused_named",
-    "gap": "capability"
+    "status": "built",
+    "model": "Model",
+    "model_warnings": [],
+    "issues": [],
+    "notes": [],
+    "outcome": "match",
+    "gap": null
    }
   },
   {
@@ -13420,13 +13409,13 @@
  ],
  "summary": {
   "outcomes": {
-   "match": 135,
-   "refused_named": 112,
+   "match": 146,
+   "refused_named": 101,
    "differs": 1
   },
   "gaps": {
-   "none": 137,
-   "capability": 110,
+   "none": 148,
+   "capability": 99,
    "divergence": 1
   },
   "brms_refuses": 2

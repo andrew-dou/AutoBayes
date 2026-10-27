@@ -54,6 +54,7 @@ import pandas as pd
 from collections.abc import Mapping
 
 from autobayes.correlation import check_correlation_cholesky, cholesky_corr_free, cholesky_corr_rv, n_free
+from autobayes import expressions
 from autobayes.families import FAMILIES, FamilySpec, get_family
 from autobayes.formula import (Categorical, FormulaError, ModelSpec, addition_data, bambi_group_name, binomial_counts, by_levels_of,
                                categorical_labels, check_imputation, factor_column, group_labels, interaction_cells,
@@ -291,7 +292,8 @@ def _linear_terms(spec: ModelSpec, centered: bool, b: str = "b") -> list[str]:
                 prod = f"1[{zn}_i = {lz}] * 1[{hn}_i = {lh}]"
                 parts.append(f"({prod} - p_{term}[{lvl}]) * {b}_{term}[{lvl}]" if centered else f"{prod} * {b}_{term}[{lvl}]")
         elif t.kind == "transform":
-            value = t.transform.expression(f"{t.transform.column}_i")
+            value = (t.transform.row_expression() if t.basis is not None          # G04: x_i * w_i, P_1(w_i), 1[ord_i = 2]
+                     else t.transform.expression(f"{t.transform.column}_i"))
             parts.append(f"({value} - mean({term})) * {b}_{term}" if centered else f"{value} * {b}_{term}")
         elif t.is_monotonic:                                 # B03: never centred, brms's bsp * mo(simo, Xmo)
             parts.append(f"{b}_{term} * {term}_i")
@@ -435,7 +437,7 @@ class Model:
                              "(docs/shrinkage-priors.md, divergence D102)")
         operands = [c for t in spec0.group_terms for c in t.data_columns]   # the columns the grouping factors are read from
         cols = ([*(spec0.response_columns or (spec0.response,)), *spec0.pop_columns] + operands   # F01b: cbind()'s columns
-                + ([spec0.trials] if spec0.trials else []) + ([spec0.offset.column] if spec0.offset is not None else [])
+                + ([spec0.trials] if spec0.trials else []) + (list(spec0.offset.columns) if spec0.offset is not None else [])
                 + [c for a in spec0.additions for c in a.columns]          # weights() and cens() columns (B02)
                 + [c for d in spec0.dpars for c in d.pop_columns]          # the columns distributional formulas read (B01)
                 + [c for d in spec0.dpars for t in d.group_terms for c in t.data_columns])   # and their shared-ID terms (D08)
@@ -493,6 +495,8 @@ class Model:
                 df[t.by] = group_labels(t.by, df)
         for t in (*self.spec.transform_terms, *(t for d in self.spec.dpars for t in d.transform_terms)):
             df[t.name] = t.transform.values(df)              # the evaluated column Bambi is handed, under the term's own name (A05)
+        if self.spec.offset is not None and self.spec.offset.parts:   # G04: the summed offsets, Bambi's offset(`<expression>`)
+            df[self.spec.offset.expression] = self.spec.offset.values(df)
         self.categories: tuple[str, ...] = ()               # the response's categories, in order (B05: cumulative, categorical)
         # F01b: a cbind(y1, ..., yK) response on the simplex, (n, K) in the columns' order (brms's Y), its categories the reference
         # first (self.categories) and each category's column (category_order); Bambi is handed the reference's column under the
@@ -865,7 +869,7 @@ class Model:
         common = comp.design.common
         group = comp.design.group
         names = list(common.terms) if common is not None else []    # none at all: '0 +' and only monotonic terms (B03)
-        offset_terms = [self.spec.offset.term] if self.spec.offset is not None else []
+        offset_terms = [self.spec.offset.bambi_name] if self.spec.offset is not None else []
         if names != (["Intercept"] if self.spec.intercept else []) + [t.name for t in self.spec.bambi_terms] + offset_terms:
             raise RuntimeError(f"unexpected common terms from Bambi: {names}")
         Xfull = np.asarray(common.design_matrix, dtype=float) if common is not None else np.zeros((len(self.data), 0))
@@ -874,7 +878,7 @@ class Model:
         # must equal what Bambi evaluated; the column is then removed from the design that the coefficients multiply.
         offset = None
         if self.spec.offset is not None:
-            term = self.spec.offset.term
+            term = self.spec.offset.bambi_name
             if list(comp.offset_terms) != [term] or getattr(common.terms[term], "kind", None) != "offset":
                 raise RuntimeError(f"Bambi did not build {term!r} as the single offset term (offset terms: {list(comp.offset_terms)})")
             offset = self.spec.offset.values(self.data)
@@ -2631,6 +2635,9 @@ class Model:
         lines += self._timecor_data_lines()                  # F03b: the groups of a residual correlation term
         for t in s.transform_terms:
             tr, col = t.transform, d.X_raw[:, s.columns.index(t.name)]
+            if t.basis is not None:                          # G04: an in-formula expression's column (docs/expressions.md)
+                lines.append(expressions.describe_data(tr, col))
+                continue
             lines += [f"  {t.name:<10}: in-formula transform of {tr.column!r}, {tr.expression(f'{tr.column}_i')}, range {col.min():.4f} to "
                       f"{col.max():.4f} over the fitted rows; recomputed from {tr.column!r} on new rows; centred like any column; "
                       f"brms names its coefficient {tr.brms_name}"]
@@ -2707,7 +2714,7 @@ class Model:
             f"  {lp}_i = {body}",
         ]
         if s.offset is not None:
-            per_row = f"log({s.offset.column}_i)" if s.offset.log else f"{s.offset.column}_i"
+            per_row = s.offset.row_expression()
             lines += [f"  offset_i = {per_row}: the offset term, a known quantity added to every row's {lp}_i; "
                       "it has no coefficient and no prior and is not centred."]
         lines += self._monotonic_lines(lp)
@@ -2761,6 +2768,9 @@ class Model:
                 for zn in partners:
                     lines += [f"  b_{xn}:{zn}[l] is the change in that slope from reference {s.categorical(zn).reference!r} to level l of {zn}, holding the other categorical levels fixed."]
         for t in s.transform_terms:
+            if t.basis is not None:                          # G04
+                lines.append(expressions.describe_meaning(t.transform, lp))
+                continue
             lines += [f"  {t.name}: b_{t.name} is the slope in {t.name}, not in {t.transform.column}; a unit change of {t.name} changes {lp} by "
                       f"b_{t.name}, other predictors and group effects fixed."]
         for t in num_num:

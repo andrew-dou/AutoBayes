@@ -33,9 +33,10 @@ not enter the raw-scale intercept correction `a = a_c - mean(x) b`; it has no de
 
 ## Refused, with the construct named
 
-Any other expression inside `offset()` (`offset(exp(x))`, `offset(x + 1)`, `offset(2 * x)`: in-formula
-transforms are feature A05; compute the column and write `offset(<column>)`); more than one offset term (add
-the columns first); an offset on the response, the trials column, a grouping factor or a column declared
+The grammar of docs/expressions.md sums several `offset()` terms and reads an expression inside one (`offset(exp(x))`, `offset(x + 1)`,
+`offset(2 * x)`, `offset(log(exposure)) + offset(2 * off)`), evaluated by the library and handed to Bambi as one column of the
+fitted frame; this page's single `offset(col)` and `offset(log(col))` are unchanged. Still refused: an expression outside that
+grammar (`offset(log(x, 2))`, a comparison, `scale()` inside `offset()`); an offset on the response, the trials column, a grouping factor or a column declared
 categorical; `offset()` inside a group term; a non-positive column under `log()`; `newdata` without the column.
 A formula whose only right-hand-side term is the offset still needs `1` or a predictor (`cnt ~ 1 +
 offset(exposure)`), as every formula does. The offset column may also be a predictor, as in brms.

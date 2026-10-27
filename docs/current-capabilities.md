@@ -508,3 +508,11 @@ DeprecationWarning. `describe()` names the family ("AutoBayes Gaussian model"), 
 current documentation and divergence rows, and a model's free variables come in one order whatever `PYTHONHASHSEED`. Four call-surface
 differences are recorded: declared factors (D172), how priors cover a class (D173), rows with missing values (D174) and `fit()`'s
 defaults and the posterior's names (D175).
+
+In-formula expressions and fitted transforms (docs/expressions.md): `I()` of arithmetic, fractional powers and comparisons
+(a logical coded `<term>TRUE`), `log()`, `exp()`, `sqrt()` and `abs()` of expressions (`log(x + 1)`), `scale(x)`, `poly(x, k)`
+(orthogonal, or `raw = TRUE`) and `factor(x)` of whole numbers, each read by a whitelisted grammar and evaluated by the library,
+never as code, with the fitted centre and scale, polynomial coefficients and levels kept for new rows (D181: new rows lacking a
+level of `factor()` are predicted, where brms fails); several `offset()` terms and expressions inside one are summed (D10);
+`conditional_effects()` tables carry the terms' model-frame columns as brms's do. Verified against eight frozen cases; what is not
+offered is refused by name (D16, D182).

@@ -268,7 +268,10 @@ held fixed. `effects` names predictors of the population-level formula (one name
   fitted rows, categorical ones at their reference level (brms's first level), the response at its mean (brms writes it
   into the grid, where it changes nothing), the grouping factors missing (`None`): brms's default `re_formula = NA` leaves
   the group-level effects out; the columns are the effect, the response, the population-level variables in formula order
-  and the grouping factors;
+  and the grouping factors; an in-formula expression term's model-frame column (`scale(x)`,
+  `poly(w, 2)`, named as R deparses the term) comes in the term's place, before the raw columns, held at the transform of
+  the held values (an array per row for `scale()` and `poly()`, R's matrices), as brms's tables carry it
+  (`gauss_scale_poly_post`);
 - `cond__` (`"1"`), `effect1__` (the grid), and the summaries over the draws of brms's `posterior_epred` at each grid row
   (`predict(kind="mean", include_group_effects=False)`, which gate G4 checks against `posterior_epred(re_formula = NA)`) as
   brms's default `robust = TRUE` summarises them: `estimate__` the median, `se__` the MAD (`1.4826 median |e - median e|`),

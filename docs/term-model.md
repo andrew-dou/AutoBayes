@@ -18,6 +18,7 @@ One entry per term as written, in design order (main effects, then interactions)
 | `x:w` (A04, docs/interactions.md) | `interaction` | `("x:w",)` | `()` | `()` |
 | `z:h` (A04) | `interaction` | `("z[q]:h[h2]", "z[q]:h[h3]", ...)`, first operand slowest | the cells `("q, h2", "q, h3", ...)`, Bambi's labels | `("z", "h")` |
 | `log(xpos)`, `I(x^2)` (A05, docs/transforms.md) | `transform` | `("log(xpos)",)`, the evaluated column named as written | `()` | `()` |
+| `I(x * w)`, `scale(x)`, `poly(w, 2)`, `factor(ord)`, `I(x > 0)` (docs/expressions.md) | `transform`, one term per design column once the data are seen, `basis` the term as written and `fitted` its fitted parameters | `("poly(w, 2)1",)`, R's model-matrix name of the column | `()` | `()` |
 | `mo(ord)` (B03, docs/monotonic.md) | `monotonic` | `()`: no column in `X`; its coefficient (brms's `bsp`) and simplex act through its own block | `()` | `()` |
 | `me(x, sdx)` (C06, docs/missing-and-measurement-error.md) | `measurement_error` | `()`: its coefficient (brms's `bsp`) multiplies the latent values of `x` | `()` | `()` |
 | `mi(col)` (C06) | `missing` | `()`: its coefficient (brms's `bsp`) multiplies `col` completed by its missing values | `()` | `()` |
@@ -106,7 +107,8 @@ brms's `offset(col)` / `offset(log(col))` (A06) is not a population-level term: 
 prior and no design column, so it is a separate field, `Offset(column, log)`, with `term`
 (`offset(log(exposure))`), `expression` and `values(frame)`; `Design.offset` holds its vector on the fitted rows
 (brms `offsets`) and `predict()` adds it on every row (docs/offset.md). `columns`, `coefficients` and the prior
-dictionary never see it.
+dictionary never see it. Several `offset()` terms, or an expression inside one, are
+`Offset(parts=(...))`, the expressions summed in formula order; `Offset.columns` lists every column an offset reads.
 
 ## Response addition terms: `ModelSpec.additions`
 

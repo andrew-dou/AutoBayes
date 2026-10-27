@@ -60,6 +60,9 @@ def _refuse_unsupported_effects(model) -> None:
         (getattr(s, "timecor", None) is not None, lambda: f"the residual correlation term {s.timecor.term!r}"),   # F03b
         (bool(s.dpars), lambda: f"a distributional formula for {', '.join(s.dpar_names)}"),
         (bool(s.additions), lambda: f"the addition term(s) {', '.join(a.term for a in s.additions)}"),
+        # G04: a factor or logical made in the formula, whose model-frame column brms holds as a factor (divergence D182)
+        (any(t.transform.form in ("factor", "logical") for t in getattr(s, "expression_terms", ())),
+         lambda: f"the term {next(t.basis for t in s.expression_terms if t.transform.form in ('factor', 'logical'))!r}"),
     ]
     for present, construct in constructs:
         if present:
@@ -147,6 +150,40 @@ def _moderator(model, column: str):
     return grid, [r_number_label(v) for v in grid]
 
 
+def _frame_columns(spec) -> dict[str, object]:
+    """G04: the model-frame column of each in-formula expression term (``scale(x)``, ``poly(w, 2)``, ``log(xpos + 1)``), keyed by R's
+    name of it (the term as R deparses it), with its first design column's term, which evaluates it on rows of the raw columns:
+    brms's ``conditional_effects()`` tables carry these columns, held at the transform of the held values
+    (``gauss_scale_poly_post``). A05's transforms (``log(xpos)``, ``I(x^2)``) keep D06's tables, without the column."""
+    from autobayes import expressions
+
+    out = {}
+    for t in getattr(spec, "expression_terms", ()):
+        out.setdefault(expressions.deparse(expressions.parse(t.basis), r_numbers=True), t)
+    return out
+
+
+def _variables(spec, groups) -> list[str]:
+    """The columns of a ``conditional_effects()`` table between the effect and ``cond__``, in brms's order: the response, each
+    population-level term's model-frame column in formula order (a column, or a transform's own, ``scale(x)``), the raw columns
+    the terms read, then the grouping factors."""
+    frame = {t.name: name for name, t in _frame_columns(spec).items()}     # the first column of each transform term
+    terms = []
+    for t in spec.pop_terms:
+        if t.kind == "transform":
+            terms += [frame[t.name]] if t.name in frame else []
+        else:
+            terms += [t.name] if t.kind in ("numeric", "categorical") else list(t.operands)
+    return list(dict.fromkeys([spec.response, *terms, *spec.pop_columns, *groups]))
+
+
+def _frame_value(t, held: dict):
+    """A transform term's model-frame value at the held raw values: a number, or an array (``scale()``, ``poly()``: R's matrix)."""
+    row = pd.DataFrame({c: [held[c]] for c in t.operands})
+    value = t.transform.frame_value(row)[0]
+    return np.array(value, dtype=float) if np.ndim(value) else float(value)
+
+
 def _grid_value(model, column: str):
     """The value a predictor other than the effect is held at: a numeric predictor's mean over the fitted rows, a
     categorical one's reference level."""
@@ -175,9 +212,10 @@ def conditional_effects(model, fit_result, effects, *, resolution: int = 100, pr
     s = model.spec
     categoricals = {c.name: c for c in s.categoricals}
     groups = [c for t in s.group_terms for c in t.operands if c not in s.pop_columns]
-    variables = list(dict.fromkeys([s.response, *s.pop_columns, *groups]))
+    variables = _variables(s, groups)
     held = {s.response: _mean(model.design.y)}
     held.update({c: _grid_value(model, c) for c in s.pop_columns})
+    held.update({name: _frame_value(t, held) for name, t in _frame_columns(s).items()})   # G04: held at the held raw values
     held.update({g: None for g in groups})
     probs = ((1.0 - prob) / 2.0, 1.0 - (1.0 - prob) / 2.0)
     out = {}
