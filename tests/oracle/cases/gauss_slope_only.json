@@ -1,0 +1,100 @@
+{
+ "id": "gauss_slope_only",
+ "tier": "G",
+ "feature": "G05a_group_term_syntax",
+ "note": "G05a (0 + x | g) + (1 | h): brms gives g one coefficient, the slope x without a varying intercept (ID 1: sd_1, z_1, Z_1_1 = x, r_1_1; mu += r_1_1[J_1] x), and h its varying intercept (ID 2); the prior tables have sd | g | x and no sd | g | Intercept, and the case's sd | g normal(0, 0.5) is the slope's SD; linpred = epred = b_Intercept + b x + r_1_1[J_1] x + r_2_1[J_2] (checked on the frozen points by tests/oracle/test_group_distributional_harness.py)",
+ "seed": 1301,
+ "n_points": 8,
+ "data": {
+  "generator": "tier_g2",
+  "seed": 1201,
+  "n": 36,
+  "newdata": {
+   "seed": 1301,
+   "n": 5
+  }
+ },
+ "brms": {
+  "formula": "y ~ x + (0 + x | g) + (1 | h)",
+  "family": {
+   "family": "gaussian"
+  },
+  "factors": {
+   "g": [
+    "a",
+    "b",
+    "c",
+    "d",
+    "e",
+    "f"
+   ],
+   "h": [
+    "h1",
+    "h2",
+    "h3",
+    "h4"
+   ]
+  },
+  "priors": [
+   {
+    "prior": "normal(0, 5)",
+    "class": "Intercept"
+   },
+   {
+    "prior": "normal(0, 2)",
+    "class": "b"
+   },
+   {
+    "prior": "normal(0, 0.5)",
+    "class": "sd",
+    "group": "g"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "sd",
+    "group": "h"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "sigma"
+   }
+  ]
+ },
+ "autobayes": {
+  "constructor": "gaussian",
+  "formula": "y ~ x + (0 + x | g) + (1 | h)",
+  "kwargs": {},
+  "priors": {
+   "intercept": [
+    "Normal",
+    0,
+    5
+   ],
+   "b": [
+    "Normal",
+    0,
+    2
+   ],
+   "sd": {
+    "g": {
+     "x": [
+      "HalfNormal",
+      0.5
+     ]
+    },
+    "h": [
+     "HalfNormal",
+     1
+    ]
+   },
+   "sigma": [
+    "HalfNormal",
+    1
+   ]
+  }
+ },
+ "gate": {
+  "expect": "fail",
+  "reason": "G05a_group_term_syntax not implemented; remove this field when it lands"
+ }
+}

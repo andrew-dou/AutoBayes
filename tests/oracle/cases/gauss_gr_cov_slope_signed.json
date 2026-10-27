@@ -1,0 +1,105 @@
+{
+ "id": "gauss_gr_cov_slope_signed",
+ "tier": "G",
+ "feature": "G05b_gr_cov_dist",
+ "note": "G05b as gauss_gr_cov_slope with A = datasets._g_relationship, whose Cholesky factor has five negative entries: brms 2.23.0's scale_r_cor_cov adds Lcov[i, j] LC[k, l] z only where Lcov[i, j] > 1e-10, so it drops them, and its effects are (Lcov+ kron diag(sd_1) L_1) vec(z_1) with Lcov+ = Lcov's non-negative part, up to 0.65 off the Kronecker product at the frozen points (the log likelihood at point 0 -64.1033 against -64.1201); their implied covariance Lcov+ Lcov+' kron Sigma is not A kron Sigma (entry [b, c] 0.25 for 0.1, up to 0.15 off). A brms defect (the Upstream log): the feature is accepted on gauss_gr_cov_slope, and this case needs per-gate expected failures (g2_logp, g2_gradient, g3, g4) or brms's construction (checked on the frozen points by tests/oracle/test_group_distributional_harness.py)",
+ "seed": 1313,
+ "n_points": 8,
+ "data": {
+  "generator": "tier_g2",
+  "seed": 1213,
+  "n": 36,
+  "newdata": {
+   "seed": 1313,
+   "n": 5
+  },
+  "data2": {
+   "A": "g_relationship"
+  }
+ },
+ "brms": {
+  "formula": "y ~ x + (1 + x | gr(g, cov = A))",
+  "family": {
+   "family": "gaussian"
+  },
+  "factors": {
+   "g": [
+    "a",
+    "b",
+    "c",
+    "d",
+    "e",
+    "f"
+   ]
+  },
+  "priors": [
+   {
+    "prior": "normal(0, 5)",
+    "class": "Intercept"
+   },
+   {
+    "prior": "normal(0, 2)",
+    "class": "b"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "sd",
+    "group": "g"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "sigma"
+   },
+   {
+    "prior": "lkj(2)",
+    "class": "cor"
+   }
+  ],
+  "data2": [
+   "A"
+  ]
+ },
+ "autobayes": {
+  "constructor": "gaussian",
+  "formula": "y ~ x + (1 + x | gr(g, cov = A))",
+  "kwargs": {},
+  "priors": {
+   "intercept": [
+    "Normal",
+    0,
+    5
+   ],
+   "b": [
+    "Normal",
+    0,
+    2
+   ],
+   "sd": {
+    "g": {
+     "Intercept": [
+      "HalfNormal",
+      1
+     ],
+     "x": [
+      "HalfNormal",
+      1
+     ]
+    }
+   },
+   "cor": {
+    "g": [
+     "LKJ",
+     2
+    ]
+   },
+   "sigma": [
+    "HalfNormal",
+    1
+   ]
+  }
+ },
+ "gate": {
+  "expect": "fail",
+  "reason": "G05b_gr_cov_dist not implemented; remove this field when it lands"
+ }
+}

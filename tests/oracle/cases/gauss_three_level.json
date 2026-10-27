@@ -1,0 +1,112 @@
+{
+ "id": "gauss_three_level",
+ "tier": "G",
+ "feature": "G05a_group_term_syntax",
+ "note": "G05a (1 | g/h/f2) expands to (1 | g) + (1 | g:h) + (1 | g:h:f2): IDs 1, 2, 3 with 6, 18 and 26 levels on these 36 rows, each level labelled by joining the labels with underscores (a_h1, a_h1_u, ...) in sorted order; one SD prior per expanded group (sd | g, sd | g:h, sd | g:h:f2). The new rows copy (g, h, f2) from fitted rows (data.newdata.triples_from_data), as brms refuses new levels (checked on the frozen points by tests/oracle/test_group_distributional_harness.py)",
+ "seed": 1306,
+ "n_points": 8,
+ "data": {
+  "generator": "tier_g2",
+  "seed": 1206,
+  "n": 36,
+  "newdata": {
+   "seed": 1306,
+   "n": 5,
+   "triples_from_data": true
+  }
+ },
+ "brms": {
+  "formula": "y ~ x + (1 | g/h/f2)",
+  "family": {
+   "family": "gaussian"
+  },
+  "factors": {
+   "g": [
+    "a",
+    "b",
+    "c",
+    "d",
+    "e",
+    "f"
+   ],
+   "h": [
+    "h1",
+    "h2",
+    "h3",
+    "h4"
+   ],
+   "f2": [
+    "u",
+    "v"
+   ]
+  },
+  "priors": [
+   {
+    "prior": "normal(0, 5)",
+    "class": "Intercept"
+   },
+   {
+    "prior": "normal(0, 2)",
+    "class": "b"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "sd",
+    "group": "g"
+   },
+   {
+    "prior": "normal(0, 0.5)",
+    "class": "sd",
+    "group": "g:h"
+   },
+   {
+    "prior": "normal(0, 0.3)",
+    "class": "sd",
+    "group": "g:h:f2"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "sigma"
+   }
+  ]
+ },
+ "autobayes": {
+  "constructor": "gaussian",
+  "formula": "y ~ x + (1 | g/h/f2)",
+  "kwargs": {},
+  "priors": {
+   "intercept": [
+    "Normal",
+    0,
+    5
+   ],
+   "b": [
+    "Normal",
+    0,
+    2
+   ],
+   "sd": {
+    "g": [
+     "HalfNormal",
+     1
+    ],
+    "g:h": [
+     "HalfNormal",
+     0.5
+    ],
+    "g:h:f2": [
+     "HalfNormal",
+     0.3
+    ]
+   },
+   "sigma": [
+    "HalfNormal",
+    1
+   ]
+  }
+ },
+ "gate": {
+  "expect": "fail",
+  "reason": "G05a_group_term_syntax not implemented; remove this field when it lands"
+ }
+}
