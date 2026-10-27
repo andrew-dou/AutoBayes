@@ -60,6 +60,7 @@ from autobayes.formula import (_CS_RE, _FORMULA_RE, _GROUP_RE, _IDENT, FormulaEr
                                check_counts, factor_column, group_labels, parse_formula, pop_term_design, reject_complex, validate_data)
 from autobayes.model import Design, GroupBlock, Model
 from autobayes.priors import _SCALE, AUXILIARY, Prior, PriorError, Priors, describe_prior
+from autobayes.term_algebra import refuse_products           # G03
 
 DIVERGENCE = "D136"
 _CBIND_RE = re.compile(r"^\s*cbind\s*\((?P<columns>[^()]*)\)\s*(?:\|(?P<additions>[^~]*))?~\s*(?P<rhs>.+?)\s*$", re.S)
@@ -311,6 +312,7 @@ def parse_multinomial(formula, data: pd.DataFrame | None = None, family: str = "
     for name in names:
         _check_category_terms(texts.get(name, main.strip()), rhs_of[name])
     spec0 = {name: parse_formula(f"{name} ~ {rhs_of[name]}", None, "gaussian", None) for name in names}
+    refuse_products(spec0.values(), "a category's formula of a count-matrix or simplex family")   # G03: verified in univariate models
     mains = {name: {t.name for t in s.pop_terms if t.kind == "numeric"} for name, s in spec0.items()}
     if isinstance(categorical, Mapping):
         stray = [col for col in categorical if not any(col in m for m in mains.values())]

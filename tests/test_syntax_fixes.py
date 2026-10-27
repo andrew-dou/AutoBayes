@@ -295,10 +295,9 @@ def test_gr_cor_and_id_spellings():
     ("y ~ `my x`", "gaussian", "backtick-quoted names are not supported; rename the column"),
     ("y ~ 0 + Intercept + x", "gaussian", "brms's reserved term 'Intercept'"),
     ("y ~ splines::ns(x, df = 3)", "gaussian", "R's namespace operator '::'"),
-    ("y ~ x %in% f", "gaussian", "R's operator %in% is not supported in a formula; nesting x %in% f is the interaction x:f"),
+    ("y ~ x %in% f", "gaussian", "R's operator %in% is not supported in a formula; nesting x %in% f is R's interaction x:f"),   # G03
     ("y ~ x %o% z", "gaussian", "R's operator %o% is not supported in a formula$"),
-    ("y ~ (x + z)^2", "gaussian", "R's formula operator '\\^'"),
-    ("y ~ x^2", "gaussian", "R's formula operator '\\^'"),
+    ("y ~ x^2", "gaussian", "R reads x\\^2 as x itself"),          # G03 reads '(x + z)^2' (tests/test_term_algebra.py), not this
     ("y ~ s(x)", "gaussian", "brms's smooth term s\\(\\) \\(mgcv's penalised splines"),
     ("y ~ t2(x, z)", "gaussian", "brms's smooth term t2\\(\\)"),
     ("log(y) ~ x", "gaussian", "the response 'log\\(y\\)' is an expression; a transformed response"),

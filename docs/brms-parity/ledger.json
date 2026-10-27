@@ -2477,13 +2477,33 @@
     "A04_general_interactions",
     "F08_syntax_fixes"
    ],
-   "status": "implementing",
+   "status": "gates_green",
    "summary": "three-way and higher interactions, (a + b + c)^2, colon-only terms (x:z, f:f2, x + x:f), factor-specific slopes (f + x:f), with R's rule for coding a factor in an interaction whose margin is absent (corpus pop_three_way, pop_power_expansion, pop_colon_only, pop_factor_colon_only, pop_numeric_colon_factor_one_main, pop_factor_slopes)",
    "pr": null,
    "attempts": 0,
    "divergences": [],
    "next_action": "feature agent (fixtures #108)",
-   "reserved_divergences": "D179-D180"
+   "reserved_divergences": "D179-D180",
+   "gates": {
+    "sha": "f25dea2e3f5a",
+    "dirty_tree": false,
+    "base": "origin/main",
+    "when": "2026-10-27T09:46Z",
+    "results": {
+     "immutability": {
+      "status": "pass",
+      "seconds": 0.0
+     },
+     "oracle": {
+      "status": "pass",
+      "seconds": 791.9
+     },
+     "diff_coverage": {
+      "status": "pass",
+      "seconds": 191.1
+     }
+    }
+   }
   },
   {
    "id": "G04_transforms",

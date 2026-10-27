@@ -347,8 +347,8 @@ def _check_newdata(model, newdata: pd.DataFrame, *, need_trials: bool = False, i
                 "new_groups does not apply to it."
             )
         df[cat.name] = pd.Categorical(labels, categories=list(cat.categories), ordered=True)
-    for t in (t for f in (s, *s.dpars) for t in f.pop_terms if t.kind == "contrast"):   # F08: an ordered factor's contrast columns,
-        df[t.name] = pop_term_design(t, df, s.all_categoricals)[:, 0]                       # which Bambi reads by name
+    for t in (t for f in (s, *s.dpars) for t in f.pop_terms if t.kind in ("contrast", "product")):   # F08: an ordered factor's
+        df[t.name] = pop_term_design(t, df, s.all_categoricals)[:, 0]       # contrast columns, G03: R's interaction columns, by name
     if need_trials:
         df[s.trials] = check_counts(f"newdata trials {s.trials!r}", df[s.trials])
     for t in (s.group_terms if include_group_effects else ()):   # labels as text; a derived factor's column is built here

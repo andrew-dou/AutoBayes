@@ -523,8 +523,8 @@ def brms_coefficient_names(spec) -> dict[str, str]:
             out[t.name] = brms_rename(t.name)
         elif t.kind == "transform":
             out[t.columns[0]] = t.transform.brms_name                 # A05: rename() of the term; G04: of R's column name
-        elif t.kind == "contrast":                                    # F08: fo.L, ordered(z).Q -> orderedz.Q, fo^4 -> foE4
-            out[t.columns[0]] = brms_rename(t.name)
+        elif t.kind in ("contrast", "product"):                      # F08: fo.L, ordered(z).Q -> orderedz.Q, fo^4 -> foE4; G03:
+            out[t.columns[0]] = brms_rename(t.name)                  # R's interaction columns, x:zq:hh2, zp:x
         elif t.kind == "categorical":
             for level, col in zip(t.levels, t.columns):
                 out[col] = brms_rename(f"{t.name}{level}")

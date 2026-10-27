@@ -1,5 +1,9 @@
 # General two-way interactions: `x:w` and `z:h`
 
+G03 (docs/term-algebra.md) reads R's term algebra: interactions of any order, interactions without their main effects (coded as R
+codes them) and repeated terms. A two-way interaction of two main effects is still the term this page describes; the refusals
+below of a missing main effect, of three-way interactions and of a repeated interaction are lifted there.
+
 brms-parity feature A04. An interaction `a:b` (or the shorthand `a*b` = `a + b + a:b`) may now join any two main
 effects of the formula, not only a numeric and a categorical one: `x:w` between two numeric columns and `z:h`
 between two declared categorical columns, next to the `x:z` form that existed before (docs/history/m3a2-decision.md).

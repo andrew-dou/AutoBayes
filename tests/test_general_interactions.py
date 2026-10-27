@@ -67,21 +67,13 @@ def both():
 
 # -- 1. the grammar: what is accepted and every refusal by message ----------------------------------------------
 REFUSALS = [
-    ("y ~ x:w:z", {}, "only a two-way interaction is supported ('x:w:z' names 3 terms); three-way and higher-order interactions are not"),
-    ("y ~ x * w * z", {}, "only a two-way interaction is supported ('x * w * z' names 3 terms)"),
-    ("y ~ x + x:w", {}, "the main effect 'w' is missing"),
-    ("y ~ w + x:w", {}, "the main effect 'x' is missing"),
-    ("y ~ z + z:h", {"categorical": {"z": "p", "h": "h1"}}, "the main effect 'h' is missing"),
-    ("y ~ x + w + x:w + w:x", {}, "the interaction 'x:w' appears more than once after expansion"),
-    ("y ~ z + h + z:h + h:z", {"categorical": {"z": "p", "h": "h1"}}, "the interaction 'z:h' appears more than once after expansion"),
-    ("y ~ x * w + w:x", {}, "the interaction 'x:w' appears more than once after expansion"),
+    # G03 (tests/test_term_algebra.py): three-way terms, a missing main effect and a repeated interaction are R's term algebra now
     ("y ~ x + w + x:x", {}, "a term cannot interact with itself"),
     ("y ~ x + x:g + (1 | g)", {}, "the grouping factor 'g' cannot enter a fixed interaction"),
     ("y ~ x + y:x", {}, "the response or trials column cannot enter an interaction"),
     ("k | trials(n) ~ x + x:n", {"family": "binomial"}, "the response or trials column cannot enter an interaction"),
     ("y ~ x + w + offset(w):x", {}, "offset() cannot enter an interaction; an offset is a known column added to the linear predictor with no coefficient"),
     ("y ~ x + z + log(x):z", {"categorical": {"z": "p"}}, "an interaction with a transformed term ('log(x)') is not supported"),
-    ("y ~ x + w + x*w:z", {}, "mixing '*' and ':' in one term is not supported"),
     ("y ~ x + w + x:w + (1 + x:w || g)", {}, "an interaction cannot be a varying slope"),
     ("y ~ x + w + x:w + (1 | x:w)", {}, "'x': the grouping factor cannot also be a predictor or the response"),
 ]

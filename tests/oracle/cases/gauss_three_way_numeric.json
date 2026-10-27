@@ -5,10 +5,6 @@
  "note": "G03 interactions: x * w * v of three numerics with a varying intercept: X: Intercept, x, w, v, x:w, x:v, w:v, x:w:v (each the product of its columns), full rank; a coef prior on x:w:v (brms's coef name 'x:w:v'). brms's posterior_linpred on the fitted and new rows equals b_Intercept + X b + r_g (+ offsets) built from the columns described, to 2e-15 at every frozen point. Data: tier_g1, seed 2211, 36 rows.",
  "seed": 2311,
  "n_points": 8,
- "gate": {
-  "expect": "fail",
-  "reason": "G03_interactions not implemented; remove this field when it lands"
- },
  "data": {
   "generator": "tier_g1",
   "seed": 2211,

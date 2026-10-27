@@ -29,7 +29,10 @@ An interaction ``a:b`` (or ``a*b`` = ``a + b + a:b``) is two-way between any two
 docs/interactions.md): numeric by declared categorical (``x:z``, the numeric column times each non-reference
 indicator), numeric by numeric (``x:w``, the elementwise product, one coefficient) or categorical by categorical
 (``z:h``, one indicator product per cell of non-reference levels, R's treatment coding of the interaction). Both
-main effects are required; three-way interactions are refused.
+main effects are required; three-way interactions are refused. G03 (docs/term-algebra.md, ``autobayes.term_algebra``) reads R's
+term algebra (``a * b * c``, ``(a + b)^2``, ``(a + b):c``, ``- t``, a term written twice once, R's term order): a two-way
+interaction of two main effects is the term above; any other interaction is a ``"product"`` term, one design column each,
+coded by R's rule for a factor whose margin is absent.
 
 A predictor may be an in-formula transform of one numeric column (A05, docs/transforms.md): ``log(col)``,
 ``exp(col)``, ``sqrt(col)``, ``I(col^k)`` with integer ``k``, ``I(col * k)``, ``I(col + k)``, ``I(col - k)`` with a
@@ -259,7 +262,7 @@ class Categorical:
 
 
 POP_TERM_KINDS = ("numeric", "categorical", "interaction", "transform", "monotonic", "measurement_error", "missing",
-                  "category_specific", "contrast")
+                  "category_specific", "contrast", "product")
 # brms's special terms (its bsp coefficients, and D04's category-specific bcs): a coefficient and no design column, built by
 # this library, never by Bambi
 SPECIAL_KINDS = ("monotonic", "measurement_error", "missing", "category_specific")
@@ -839,6 +842,7 @@ class PopTerm:
     factor: str | None = None          # F08: the ordered factor column a "contrast" term codes
     basis: str | None = None           # G04: the transform term as written whose design column this is (expressions.Expression)
     fitted: tuple = ()                 # G04: that term's fitted parameters, once the data are seen
+    product: "Product | None" = None   # G03: a "product" term's interaction and cell (term_algebra.Product, docs/term-algebra.md)
 
     def __post_init__(self):
         if self.kind not in POP_TERM_KINDS:
@@ -866,9 +870,16 @@ class PopTerm:
         if (self.kind == "contrast") != (self.factor is not None) or (self.kind == "contrast" and (self.columns != (self.name,) or self.levels)):
             raise ValueError(f"PopTerm: a contrast term (an ordered factor's polynomial contrast) has its factor column and one design "
                              f"column of its own name, got {self.name!r}")
+        if isinstance(self.product, Mapping):                    # G03: rebuilt from a mapping (dataclasses.asdict output)
+            from autobayes.term_algebra import Product
+            object.__setattr__(self, "product", Product(**self.product))
+        if (self.kind == "product") != (self.product is not None) or (self.kind == "product" and (
+                self.columns != (self.name,) or self.levels or self.name != self.product.column)):
+            raise ValueError(f"PopTerm: a product term (one design column of an interaction coded by R's rule) has its Product and one "
+                             f"design column of the product's name, got {self.name!r}")
         if self.categorical is None:
             default = {"numeric": (), "categorical": (self.name,), "interaction": (self.operands[-1],), "transform": (), "monotonic": (),
-                       "measurement_error": (), "missing": (), "category_specific": (), "contrast": ()}
+                       "measurement_error": (), "missing": (), "category_specific": (), "contrast": (), "product": ()}
             object.__setattr__(self, "categorical", default[self.kind])
         else:
             object.__setattr__(self, "categorical", tuple(self.categorical))
@@ -892,6 +903,8 @@ class PopTerm:
             return (category_specific_column(self.name),)
         if self.kind == "contrast":                               # F08: a polynomial contrast of an ordered factor
             return (self.factor,)
+        if self.kind == "product":                                # G03: the interaction's variables, in R's order
+            return self.product.operands
         return tuple(self.name.split(":"))
 
     @property
@@ -923,7 +936,7 @@ class PopTerm:
         """The term as handed to Bambi: a transform's evaluated column is named as written and quoted in backticks
         (the fitted frame carries it under that name), so Bambi's term and PyMC's variable carry the term's own
         name, and so is a polynomial contrast's (F08: ``fo.L``, ``ordered(z).Q``); every other term is itself."""
-        return f"`{self.name}`" if self.kind in ("transform", "contrast") else self.name
+        return f"`{self.name}`" if self.kind in ("transform", "contrast", "product") else self.name
 
     @property
     def is_vector(self) -> bool:
@@ -1695,6 +1708,8 @@ def pop_term_design(term: PopTerm, df: pd.DataFrame, categoricals=()) -> np.ndar
         return term.transform.values(df)[:, None]
     if term.kind == "contrast":                                  # F08: from the ordered factor's labels, never from a column of its name
         return contrast_values(term, df, categoricals)[:, None]
+    if term.kind == "product":                                   # G03: from the raw columns, never from a column of its name
+        return term.product.values(df)[:, None]
     if term.kind == "interaction" and not term.categorical:
         a, b = (df[c].to_numpy(dtype=float) for c in term.operands)
         return (a * b)[:, None]
@@ -2248,7 +2263,8 @@ def _split_top_level(rhs: str, sep: str = "+") -> list[str]:
 
 def _refuse_r_construct(piece: str) -> None:
     """F08 (docs/syntax-fixes.md): R's formula operators and brms's reserved names that this grammar does not read, each refused
-    naming it rather than as a column name or an interaction: ``.``, backticks, brms's ``Intercept``, ``::``, ``%in%`` and ``^``."""
+    naming it rather than as a column name or an interaction: ``.``, backticks, brms's ``Intercept``, ``::`` and ``%in%`` (G03 reads
+    ``^``, term_algebra)."""
     if piece == ".":
         raise FormulaError("'.': R's '.' (every column of the data not otherwise in the formula) is not supported; name the predictors")
     if "`" in piece:
@@ -2267,12 +2283,8 @@ def _refuse_r_construct(piece: str) -> None:
     om = re.search(r"%[^%\s]*%", piece)
     if om:
         raise FormulaError(f"{piece!r}: R's operator {om.group(0)} is not supported in a formula" +
-                           ("; nesting x %in% f is the interaction x:f, with the main effects x and f (docs/interactions.md)"
+                           ("; nesting x %in% f is R's interaction x:f: write that (docs/term-algebra.md)"
                             if om.group(0) == "%in%" else ""))
-    if len(_split_top_level(piece, "^")) > 1:
-        raise FormulaError(f"{piece!r}: R's formula operator '^' (the terms and all their interactions up to that order) is not "
-                           "supported; write the terms and their two-way interactions out, 'x + z + x:z' (docs/interactions.md), or "
-                           "I(x^2) for a power (docs/transforms.md)")
 
 
 def _group_piece_parts(piece: str) -> tuple[str, str, str | None, str] | None:
@@ -2766,7 +2778,8 @@ def _parse_formulas(formulas, data: pd.DataFrame | None, family: str, categorica
             " (brms accepts bf(y ~ x + unstr(...), sigma ~ z); docs/unstr-cosy.md, divergence D146)"
         )
     dpar0 = [parse_formula(f"{name} ~ {rhs}", None, family, None, _ids=True, _dpar=True) for name, rhs, _ in parsed]
-    mains = [{t.name for t in s.pop_terms if t.kind == "numeric"} for s in (main0, *dpar0)]
+    mains = [{t.name for t in s.pop_terms if t.kind == "numeric"} | {c for t in s.pop_terms if t.kind == "product" for c in t.operands}
+             for s in (main0, *dpar0)]                       # G03: and the columns of R's interactions
     if isinstance(categorical, Mapping):                    # a declared column is categorical in every formula
         for t in (t for s in (main0, *dpar0) for t in s.transform_terms):
             for col in t.transform.columns:
@@ -3118,16 +3131,9 @@ def parse_formula(formula: str | list[str], data: pd.DataFrame | None = None, fa
                 f"counts without a trials column are not a {fam.name} model."
             )
         response, rhs = m.group(1), m.group(2)
-    # Only top-level subtraction of the literal 1 is supported. Do not rewrite
-    # group terms, transformations, negative numbers, or predictor subtraction.
-    minus_parts = _split_top_level(rhs, "-")
-    if len(minus_parts) > 1:
-        pieces = [minus_parts[0]] if minus_parts[0] else []
-        for part in minus_parts[1:]:
-            if not re.match(r"^1(?=\s*(?:\+|$))", part):
-                raise FormulaError(f"{formula!r}: '-' supports only subtracting the population intercept '- 1'")
-            pieces.append(re.sub(r"^1", "0", part, count=1))
-        rhs = " + ".join(pieces)
+    from autobayes.term_algebra import expand_rhs
+
+    expanded = expand_rhs(rhs, formula)                    # G03: R's term algebra (*, :, ^, -, repeats), in R's term order
 
     predictors: list[str] = []                             # main effects as written: numeric, categorical, transform and monotonic terms
     transforms: dict[str, Transform] = {}                  # the transform terms among them, by canonical name
@@ -3138,7 +3144,7 @@ def parse_formula(formula: str | list[str], data: pd.DataFrame | None = None, fa
     group_terms: list[GroupTerm] = []
     group_pieces: list[str] = []                           # each group term as written, for the messages below
     groups: list[str] = []                                 # the factors of group_terms, for the checks below
-    raw_interactions: list[tuple[str, str, str]] = []      # (left, right, piece as written)
+    raw_interactions: list[tuple[tuple[str, ...], str]] = []   # (operands in order of appearance, piece as written); G03: any order
     offsets: list[tuple[Offset, str]] = []                 # (offset term, piece as written); at most one
     gps: list[tuple[GaussianProcess, str]] = []            # the Gaussian processes (C03): (term, piece as written)
     autocors: list = []                                    # (autocorrelation term, piece as written); at most one (C04)
@@ -3162,9 +3168,7 @@ def parse_formula(formula: str | list[str], data: pd.DataFrame | None = None, fa
             raise FormulaError(f"{name!r}: duplicated predictor{hint}")
         predictors.append(name)
 
-    for piece in _split_top_level(rhs):
-        if piece == "":
-            raise FormulaError(f"{formula!r}: empty term")
+    for piece, written in expanded:
         if piece == "1":
             saw_intercept_token = True
             continue
@@ -3176,7 +3180,7 @@ def parse_formula(formula: str | list[str], data: pd.DataFrame | None = None, fa
         if gm:
             inner, bars, factor = gm.group(1).strip(), gm.group(2), gm.group(3).strip()
             for term in _parse_group_term(inner, bars, factor, piece, response, trials,   # '(1 | g)', '(1 + x || g)', '(1 | g:h)';
-                                          tuple(_split_top_level(rhs))):                   # '(1 | g/h)' gives two
+                                          tuple(p for p, _ in expanded)):                  # '(1 | g/h)' gives two
                 group_terms.append(term)
                 group_pieces.append(piece)
                 groups.append(term.factor)
@@ -3236,18 +3240,11 @@ def parse_formula(formula: str | list[str], data: pd.DataFrame | None = None, fa
                 raise FormulaError(f"{piece!r}: an autocorrelation term is written ar(...), ma(...) or arma(...) (docs/autocorrelation.md)")
             autocors.append((term, piece))
             continue
-        stars, colons = _split_top_level(piece, "*"), _split_top_level(piece, ":")
-        if len(stars) > 1 or len(colons) > 1:                   # an interaction a:b, or the shorthand a*b
-            if len(stars) > 1 and len(colons) > 1:
-                raise FormulaError(f"{piece!r}: mixing '*' and ':' in one term is not supported; write 'x*z' or 'x + z + x:z'")
-            factors = [f.strip() for f in (stars if len(stars) > 1 else colons)]
-            if len(factors) != 2 or any(f == "" for f in factors):
-                raise FormulaError(
-                    f"{piece!r}: only a two-way interaction is supported ({piece!r} names {len(factors)} terms); "
-                    "three-way and higher-order interactions are not."
-                )
-            left, right = factors
-            for side in (left, right):
+        colons = _split_top_level(piece, ":")
+        if len(colons) > 1:                                     # an interaction a:b[:c ...] of R's term algebra (G03: expand_rhs)
+            factors = [f.strip() for f in colons]
+            piece = written                                     # the messages below quote the term as the formula writes it
+            for side in factors:
                 if side == response or (trials is not None and side == trials):
                     raise FormulaError(f"{piece!r}: the response or trials column cannot enter an interaction")
                 if _OFFSET_RE.match(side):
@@ -3293,12 +3290,7 @@ def parse_formula(formula: str | list[str], data: pd.DataFrame | None = None, fa
                         f"{piece!r}: an interaction with a transformed term ({side!r}) is not supported; "
                         "compute the column in the data frame and interact the column instead."
                     )
-            if left == right:
-                raise FormulaError(f"{piece!r}: a term cannot interact with itself")
-            if len(stars) > 1:                                      # a*b is shorthand for a + b + a:b
-                _main(left, piece)
-                _main(right, piece)
-            raw_interactions.append((left, right, piece))
+            raw_interactions.append((tuple(factors), written))
             continue
         csm = _CS_RE.match(piece)
         if csm:                                                 # brms's category-specific effect cs(col) (D04; D08 parked it, D107)
@@ -3459,16 +3451,7 @@ def parse_formula(formula: str | list[str], data: pd.DataFrame | None = None, fa
                     "without the population-level one; AutoBayes does not, divergence D8)"
                 )
 
-    for left, right, piece in raw_interactions:              # both main effects are required in this slice
-        for side in (left, right):
-            if side not in predictors and re.fullmatch(_IDENT, side) and side not in operands_all:
-                raise FormulaError(
-                    f"{piece!r}: the main effect {side!r} is missing. AutoBayes requires both main effects of an "
-                    f"interaction ('{left} + {right} + {left}:{right}' or '{left}*{right}'): omitting one is a different "
-                    "model (the level intercepts or the reference slope are forced to zero and formulae changes the "
-                    "interaction's coding) and is not supported (docs/interactions.md, divergence D14)."
-                )
-    if remove_intercept and not predictors and not gps:     # 'y ~ 0 + gp(x)' leaves the Gaussian process (C03)
+    if remove_intercept and not predictors and not raw_interactions and not gps:   # 'y ~ 0 + gp(x)' leaves the GP (C03); G03: 0 + x:z
         raise FormulaError(f"{formula!r}: no intercept requires at least one population-level predictor")
     seen_partition: dict[frozenset, int] = {}                # a factor, or the same pair of columns in either order, once
     for i, (term, piece) in enumerate(zip(group_terms, group_pieces)):
@@ -3491,7 +3474,7 @@ def parse_formula(formula: str | list[str], data: pd.DataFrame | None = None, fa
             f"{formula!r}: '{piece}' groups by the same columns as '{other_piece}' ({term.factor!r} and {other.factor!r} "
             "induce the same partition of the rows); keep one of them"
         )
-    if len(predictors) == 0 and not saw_intercept_token and not gps:
+    if len(predictors) == 0 and not raw_interactions and not saw_intercept_token and not gps:   # G03: 'y ~ x:w' has terms
         raise FormulaError(
             f"{formula!r}: no population-level predictor; write 'y ~ 1 + (1 | group)' "
             "for an intercept-only model."
@@ -3588,7 +3571,7 @@ def parse_formula(formula: str | list[str], data: pd.DataFrame | None = None, fa
         elsewhere = [*(p for p in predictors if p != name and p not in special_columns), *transform_columns, *mo_columns, *gp_columns,
                      *(c for other, oc in special_columns.items() if other != name for c in oc),
                      *(offset.columns if offset is not None else ()), *(c for a in additions for c in a.columns),
-                     *(c for left, right, _ in raw_interactions for c in (left, right))]
+                     *(c for ops, _ in raw_interactions for c in ops)]
         shared = [c for c in cols if c in elsewhere]
         if shared:
             raise FormulaError(
@@ -3598,7 +3581,7 @@ def parse_formula(formula: str | list[str], data: pd.DataFrame | None = None, fa
     for name, col in category_specific.items():                # D04: a column inside cs() is read by that term alone
         elsewhere = [*(p for p in predictors if p != name and p not in category_specific), *transform_columns, *mo_columns, *gp_columns,
                      *(c for cols in special_columns.values() for c in cols), *(offset.columns if offset is not None else ()),
-                     *(c for a in additions for c in a.columns), *(c for left, right, _ in raw_interactions for c in (left, right)),
+                     *(c for a in additions for c in a.columns), *(c for ops, _ in raw_interactions for c in ops),
                      *(s for t in group_terms for s in t.slopes)]
         if col in elsewhere:
             raise FormulaError(
@@ -3611,12 +3594,13 @@ def parse_formula(formula: str | list[str], data: pd.DataFrame | None = None, fa
                      *(c for cols in special_columns.values() for c in cols), *category_specific.values(),
                      *(c for other, oc in ordered_terms.items() if other != name for c in [oc]),
                      *(offset.columns if offset is not None else ()), *(c for a in additions for c in a.columns),
-                     *(c for left, right, _ in raw_interactions for c in (left, right)), *(s for t in group_terms for s in t.slopes)]
+                     *(c for ops, _ in raw_interactions for c in ops), *(s for t in group_terms for s in t.slopes)]
         if col in elsewhere:
             raise FormulaError(f"{formula!r}: {col!r} is read by {name!r} and by another term of the formula; a column inside ordered() "
                                "is read by that term alone here (docs/ordered-factors.md, divergence D168)")
     # A derived factor's column (g_h) is added to the fitted frame: it must not shadow a column the formula uses.
     in_use = {response, *predictors, *transform_columns, *mo_columns, *gp_columns, *special_cols, *operands_all,
+              *(c for ops, _ in raw_interactions for c in ops),
               *([trials] if trials is not None else []),
               *(offset.columns if offset is not None else ()), *(c for a in additions for c in a.columns)}
     in_use |= set(autocor.columns) if autocor is not None else set()   # the time and series columns (C04)
@@ -3669,18 +3653,20 @@ def parse_formula(formula: str | list[str], data: pd.DataFrame | None = None, fa
             if col in categorical:
                 raise FormulaError(f"{name!r}: {col!r} is declared categorical; cs() takes a numeric column (brms's cs() "
                                    "of a factor, one coefficient per level and threshold, is not verified here; divergence D89)")
-    categoricals = _normalise_categorical(categorical, predictors, response, operands_all, trials, formula)
+    # G03: a factor may enter interactions only, after the main effects in the order the formula names it
+    inner_only = list(dict.fromkeys(c for ops, _ in raw_interactions for c in ops if c not in predictors))
+    categoricals = _normalise_categorical(categorical, [*predictors, *inner_only], response, operands_all, trials, formula)
     if ordered_terms:                                        # F08: ordered(col)'s factor, in formula order with the declared ones
         own = {name: Categorical(name=col, reference="", coding="poly", term=name) for name, col in ordered_terms.items()}
         declared = {c.name: c for c in categoricals}
-        categoricals = tuple(own[p] if p in own else declared[p] for p in predictors if p in own or p in declared)
+        categoricals = tuple(own[p] if p in own else declared[p] for p in [*predictors, *inner_only] if p in own or p in declared)
     if offset is not None and any(c.name in offset.columns for c in categoricals):
         col = next(c.name for c in categoricals if c.name in offset.columns)
         raise FormulaError(
             f"{offsets[0][1]!r}: {col!r} is declared categorical; an offset is a known numeric column added "
             "to the linear predictor"
         )
-    if remove_intercept and categoricals:
+    if remove_intercept and categoricals and categoricals[0].name in [*predictors, *ordered_terms.values()]:   # G03: a main effect
         if categoricals[0].is_poly:                          # F08: R codes the first factor of a '0 +' formula by indicators
             raise FormulaError(
                 f"{formula!r}: '{categoricals[0].term_name}' is the first factor of a formula without an intercept, which R codes with "
@@ -3696,23 +3682,37 @@ def parse_formula(formula: str | list[str], data: pd.DataFrame | None = None, fa
                     f"per level of {s!r}) is not supported; only a numeric population-level term can "
                     f"vary by {term.factor!r}"
                 )
-    interactions: list[str] = []                             # canonical interaction names, in formula order
-    for left, right, piece in raw_interactions:
-        for side in (left, right):
+    for ops, piece in raw_interactions:
+        for side in ops:
             if not re.fullmatch(_IDENT, side):
                 raise FormulaError(f"{piece!r}: {side!r} is not a column name")
             if side in operands_all:
                 raise FormulaError(f"{piece!r}: the grouping factor {side!r} cannot enter a fixed interaction")
             if side == response or (trials is not None and side == trials):
                 raise FormulaError(f"{piece!r}: the response or trials column cannot enter an interaction")
-        cats = [s for s in (left, right) if s in cat_names]
-        if len(cats) == 1:                                       # x:z: numeric first, as the term model has always spelled it
-            name = f"{[s for s in (left, right) if s not in cat_names][0]}:{cats[0]}"
-        else:                                                    # x:w, z:h: main-effect order, as R orders a term's variables
-            name = ":".join(sorted((left, right), key=predictors.index))
-        if name in interactions:
-            raise FormulaError(f"{piece!r}: the interaction {name!r} appears more than once after expansion")
-        interactions.append(name)
+    from autobayes.term_algebra import Product, factor_coding, r_variable_order
+
+    # G03: the variables of a term in brms's order, and R's coding of each factor of an interaction (term_algebra)
+    order = r_variable_order([(p,) for p in predictors] + [ops for ops, _ in raw_interactions])
+    ordered_ops = [tuple(sorted(ops, key=order.__getitem__)) for ops, _ in raw_interactions]
+    full = factor_coding([(p,) for p in predictors] + ordered_ops, cat_names, not remove_intercept, formula)[len(predictors):]
+    interactions: list[str] = []                             # canonical interaction names, in R's term order
+    inter_terms: list[PopTerm] = []
+    for (ops, _), names, indicators in zip(raw_interactions, ordered_ops, full):
+        if len(ops) == 2 and all(s in predictors for s in ops):   # A04: two main effects, both coded by contrasts
+            left, right = ops
+            cats = [s for s in (left, right) if s in cat_names]
+            if len(cats) == 1:                                       # x:z: numeric first, as the term model has always spelled it
+                name = f"{[s for s in (left, right) if s not in cat_names][0]}:{cats[0]}"
+            else:                                                    # x:w, z:h: main-effect order, as R orders a term's variables
+                name = ":".join(sorted((left, right), key=predictors.index))
+            interactions.append(name)
+            inter_terms.append(pop_term(name, "interaction", categoricals))
+            continue
+        prod = Product(":".join(names), names, full=tuple(v for v in names if v in indicators),           # G03: any other
+                       contrasts=tuple(v for v in names if v in cat_names and v not in indicators))       # interaction
+        interactions.append(prod.term)
+        inter_terms.append(PopTerm(prod.term, "product", (prod.term,), product=prod))
     parts = ([*predictors, *interactions] + [g.term for g, _ in gps] + ([offset.term] if offset is not None else [])
              + [t.canonical for t in group_terms])
     parts += [autocor.term] if autocor is not None else []        # the autocorrelation term, last (C04)
@@ -3732,7 +3732,7 @@ def parse_formula(formula: str | list[str], data: pd.DataFrame | None = None, fa
              **{p: "category_specific" for p in category_specific}}                                     # D04
     pop_terms = (*(t for p in predictors for t in ((pop_term(p, kinds.get(p, "numeric"), categoricals),) if p not in ordered_terms
                                                   else contrast_terms(_find_categorical(categoricals, ordered_terms[p])))),
-                 *(pop_term(name, "interaction", categoricals) for name in interactions))
+                 *inter_terms)
     spec = ModelSpec(
         formula=formula.strip(), response=response, intercept=not remove_intercept, trials=trials,
         rhs=canonical_rhs, categoricals=categoricals, pop_terms=pop_terms, group_terms=tuple(group_terms),
@@ -4273,6 +4273,9 @@ def validate_data(spec: ModelSpec, data: pd.DataFrame, family: str = "gaussian",
     for t in spec.transform_terms:                                # and so is a transformed column
         if np.isclose(np.std(pop_term_design(t, data)), 0.0):
             raise FormulaError(f"term {t.name!r} is constant in the fitted rows")
+    from autobayes.term_algebra import check_products
+
+    check_products(spec, data, categoricals)                      # G03: the operands and columns of R's interactions
     monotonics = tuple(monotonic_coding(m.column, data[m.column]) for m in spec.monotonics)   # brms's Xmo coding (B03)
     gp_terms = tuple(gaussian_process_coding(g, data[g.column]) for g in spec.gp_terms)      # the GPs' inputs and scaling (C03)
     return ModelSpec(
@@ -4338,8 +4341,15 @@ def fit_expressions(spec: ModelSpec, data: pd.DataFrame) -> ModelSpec:
 def _seen_pop_terms(spec: ModelSpec, categoricals) -> tuple[PopTerm, ...]:
     """The population-level terms once the categorical levels are known: an ordered factor's term (a declared ordered pandas
     Categorical, or ``ordered(col)``'s placeholder) becomes its polynomial contrasts (F08); an interaction with one is refused."""
+    from autobayes.term_algebra import check_product_names, product_columns
+
     out, seen = [], set()
     for t in spec.pop_terms:
+        if t.kind == "product":                                  # G03: one term per design column, once the levels are known
+            if t.product.term not in seen:
+                seen.add(t.product.term)
+                out.extend(product_columns(t, categoricals))
+            continue
         cat = next((c for c in categoricals if c.is_poly and c.name in ((t.factor,) if t.kind == "contrast" else t.categorical)), None)
         if cat is not None and t.kind == "interaction":
             raise FormulaError(
@@ -4359,6 +4369,7 @@ def _seen_pop_terms(spec: ModelSpec, categoricals) -> tuple[PopTerm, ...]:
     if clash is not None:
         raise FormulaError(f"the polynomial contrast {clash!r} of an ordered factor (docs/ordered-factors.md) has the name of another "
                            "term or column of the formula; rename that column")
+    check_product_names(out, reads)
     return tuple(out)
 
 

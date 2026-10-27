@@ -5,10 +5,6 @@
  "note": "G03 interactions, a non-Gaussian family: Bernoulli (logit) with x * w * z and a varying intercept on g: X: Intercept, x, w, zq, zr, x:w, x:zq, x:zr, w:zq, w:zr, x:w:zq, x:w:zr, full rank. brms's posterior_linpred on the fitted and new rows equals b_Intercept + X b + r_g (+ offsets) built from the columns described, to 2e-15 at every frozen point. Data: tier_g1, seed 2211, 36 rows.",
  "seed": 2317,
  "n_points": 8,
- "gate": {
-  "expect": "fail",
-  "reason": "G03_interactions not implemented; remove this field when it lands"
- },
  "data": {
   "generator": "tier_g1",
   "seed": 2211,
