@@ -2493,12 +2493,15 @@
     "A05_formula_transforms",
     "A06_offset"
    ],
-   "status": "gates_green",
+   "status": "merged",
    "summary": "transforms still refused: I() arithmetic, comparisons and fractional powers, log(x + 1), abs(), scale(), poly() (orthogonal and raw), factor() in a formula, offset expressions and several offsets, duplicated and removed terms (x + x, - z); new-data predictions with the transforms' fitted parameters (corpus pop_I_*, pop_log_plus_one, pop_abs, pop_scale, pop_poly*, pop_factor_call, pop_two_offsets, pop_offset_expression, pop_duplicate_term, pop_minus_term)",
-   "pr": null,
+   "pr": 111,
    "attempts": 0,
-   "divergences": [],
-   "next_action": "feature agent (fixtures #108)",
+   "divergences": [
+    "D181",
+    "D182"
+   ],
+   "next_action": "none",
    "reserved_divergences": "D181-D182",
    "gates": {
     "sha": "d67cab491e25",
