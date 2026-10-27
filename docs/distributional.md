@@ -76,11 +76,13 @@ in every formula that names it as a main effect.
 
 ## Refused, naming the construct
 
-- Group-level terms (`sigma ~ z + (1 | g)`) and `offset()` in a distributional formula (divergence D32). Bambi builds such
-  group terms (`sigma_1|g`), but their priors, names, prediction policies and oracle mapping are not wired here.
-- A formula on any other parameter or with any other link: Student-t `nu` (brms's `logm1` link), `zi` / `hu` (logit; E03 offers
-  them for the zero-inflated negative binomial and the hurdle lognormal), a parameter the family does not have (`shape` for the
-  Gaussian, `sigma` for the Poisson), `mu` (D33).
+- Group-level terms (`sigma ~ z + (1 | g)`) and `offset()` in a distributional formula (divergence D32); G06 offers them for
+  the Gaussian's sigma (a group of its own, varying slopes in a shared ID, `offset()`) and a group of its own for the
+  zero-inflated Poisson's zi ([group-level terms and offsets in distributional formulas](distributional-groups.md)).
+- A formula on any other parameter or with any other link: `zi` / `hu` (logit; E03 offers them for the zero-inflated negative
+  binomial and the hurdle lognormal, G06 the zero-inflated Poisson's zi), a parameter the family does not have (`shape` for the
+  Gaussian, `sigma` for the Poisson), `mu` (D33); G06 offers the Student-t's `nu` (brms's `logm1` link) and the cumulative
+  logit family's `disc` ([distributional-groups](distributional-groups.md)).
 - `center_predictors=False` with a distributional formula that has an intercept and terms: brms centres it anyway and
   Bambi centres all formulas or none (D34).
 - A distributional formula that reads the response, the trials column or a grouping factor of the response formula (D35);

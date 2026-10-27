@@ -6,15 +6,19 @@ exp(-mu)``, ``P(y = k) = (1 - zi) Poisson(k | mu)`` for ``k > 0``, ``E[y] = (1 -
 likelihood is ``likelihoods.zero_inflated_poisson_family``: the linear predictor ``eta = log(mu)`` kept as Bambi's parent
 ``log_mu`` under the identity link, and ``zi`` named and parameterised as brms's (``Priors(zi=...)``, a ``Beta`` prior;
 sampled as ``zi_logodds__``), not PyMC's ``psi = 1 - zi``. ``predict(kind="mean")`` returns ``(1 - zi) mu`` as ``mean``;
-``kind="linear"`` returns ``eta``. Checked against brms in the oracle case ``zero_inflated_poisson_varint``, not assumed.
+``kind="linear"`` returns ``eta``. Checked against brms in the oracle case ``zero_inflated_poisson_varint``, not assumed. G06
+(docs/distributional-groups.md): ``zi`` takes a formula of its own under brms's logit link, with group-level terms of its own
+(``["zcnt ~ x + (1 | g)", "zi ~ z + (1 | g)"]``: one probability per row, ``zi_i = inv_logit(eta_zi,i)``, its intercept's default
+prior ``logistic(0, 1)``), checked against brms in the oracle case ``zip_zi_formula``.
 """
 from __future__ import annotations
 
 import numpy as np
 
-from autobayes.families.spec import NO_FIXED_PARAMETERS, STANDARD_PREDICTION_KINDS, FamilySpec, exp_mean
+from autobayes.families.spec import (NO_FIXED_PARAMETERS, STANDARD_PREDICTION_KINDS, DistributionalFormula, FamilySpec, auxiliary,
+                                     exp_mean, is_distributional, parameter_symbol, zero_line)
 from autobayes.formula import check_counts
-from autobayes.priors import Beta, describe_prior
+from autobayes.priors import Beta, Logistic
 
 
 def _bambi_family():
@@ -41,7 +45,7 @@ def _inverse_link(eta):
 def _expected_response(model, post, eta):
     """brms's ``posterior_epred`` ``(1 - zi) mu`` with ``mu = exp(eta)``, per draw; refused rather than clipped when ``mu``
     overflows."""
-    zi = post[model.names["zi"]].to_numpy()[..., None]
+    zi = auxiliary(model, post, "zi")                               # one per row with its own formula (G06)
     return (1.0 - zi) * exp_mean(eta, "zero-inflated Poisson expected count")
 
 
@@ -52,7 +56,7 @@ def _draw_response(model, post, eta, mean, df, rng):
     limit = np.iinfo(np.int64).max - 10 * np.sqrt(float(np.iinfo(np.int64).max))
     if np.any(mu >= limit):
         raise ValueError("zero-inflated Poisson response prediction exceeds the integer random-generator limit")
-    zi = post[model.names["zi"]].to_numpy()[..., None]
+    zi = auxiliary(model, post, "zi")
     zero = rng.uniform(size=mu.shape) < zi
     return np.where(zero, 0, rng.poisson(mu)).astype(np.int64)
 
@@ -61,14 +65,16 @@ def _log_likelihood(model, post, eta):
     """brms's log_lik (C07): ``zero_inflated_poisson_log_lpmf(y_i | eta_i, zi)``, zi per draw."""
     from autobayes.families.pointwise import zero_inflated_poisson_log
 
-    return zero_inflated_poisson_log(model.design.y, eta, post[model.names["zi"]].to_numpy()[..., None])
+    return zero_inflated_poisson_log(model.design.y, eta, auxiliary(model, post, "zi"))
 
 
 def _likelihood_lines(model) -> list[str]:
-    return [f"  zi ~ {describe_prior(model.priors.zi, lb=0, ub=1)}", "", "Likelihood",
-            "  y_i ~ ZeroInflatedPoisson(mu_i, zi); mu_i = exp(eta_i): a structural zero with probability zi, Poisson(mu_i) otherwise",
-            "  P(y_i = 0) = zi + (1 - zi) exp(-mu_i); P(y_i = k) = (1 - zi) Poisson(k | mu_i) for k > 0 (brms's zero_inflated_poisson);",
-            "  E[y_i] = (1 - zi) mu_i. zi is brms's zero-inflation probability (not PyMC's psi = 1 - zi), sampled as logit(zi).",
+    zi = parameter_symbol(model, "zi")                              # zi_i with its own formula (G06)
+    sampled = ("one per row from its formula (above)." if is_distributional(model, "zi") else "sampled as logit(zi).")
+    return [zero_line(model), "", "Likelihood",
+            f"  y_i ~ ZeroInflatedPoisson(mu_i, {zi}); mu_i = exp(eta_i): a structural zero with probability {zi}, Poisson(mu_i) otherwise",
+            f"  P(y_i = 0) = {zi} + (1 - {zi}) exp(-mu_i); P(y_i = k) = (1 - {zi}) Poisson(k | mu_i) for k > 0 (brms's zero_inflated_poisson);",
+            f"  E[y_i] = (1 - {zi}) mu_i. zi is brms's zero-inflation probability (not PyMC's psi = 1 - zi), {sampled}",
             "  Input counts are integers from 0 through 1e6; zero-count rows are retained.",
             ("  The exposure enters through the offset term (mu_i = exp(offset_i) * exp(eta_i - offset_i)); no overdispersion "
              "is modeled.") if model.spec.offset is not None else "  No exposure/offset or overdispersion is modeled."]
@@ -90,7 +96,8 @@ ZERO_INFLATED_POISSON = FamilySpec(
     scale_rule="sigma, shape and phi do not apply to the zero-inflated Poisson family; its auxiliary parameter is zi",
     scale_missing_error=None,
     linpred_symbol="eta", scale_phrase="log Poisson-mean", intercept_meaning="log mean of the Poisson part",
-    mean_lines=lambda model: ["  mu_i = exp(eta_i) is the mean of the Poisson part (eta is its log); E[y_i] = (1 - zi) mu_i."],
+    mean_lines=lambda model: ["  mu_i = exp(eta_i) is the mean of the Poisson part (eta is its log); E[y_i] = "
+                              f"(1 - {parameter_symbol(model, 'zi')}) mu_i."],
     likelihood_lines=_likelihood_lines,
     centred_intercept_note=(),
     deterministic_note="log_mu = linear predictor (the log of the Poisson part's mean); E[y] = (1 - zi) exp(log_mu) is computed by predict()",
@@ -101,4 +108,7 @@ ZERO_INFLATED_POISSON = FamilySpec(
     addition_terms=frozenset({"weights"}),                          # D03: weights(), verified against the frozen case zero_inflated_poisson_weighted
     monotonic=True,                                                 # B03: mo(x), verified against zero_inflated_poisson_monotonic
     log_likelihood=_log_likelihood,                                 # C07: log_lik(), checked against the model's own density (test_post_processing.py)
+    # G06: zi ~ z + (1 | g) under brms's logit link, with group-level terms of its own (zip_zi_formula); its intercept's default
+    # logistic(0, 1)
+    distributional_formulas=(DistributionalFormula("zi", "logit", lambda: Logistic(0, 1), group_terms=True),),
 )
