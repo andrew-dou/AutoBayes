@@ -100,16 +100,9 @@ def test_canonical_expansion_equivalence_and_refusals():
             X_raw, Xc, xbar, gidx = hand(data, list(terms[:2]), {"z": "b"}, [("x", "z")], True)
             assert np.array_equal(m.design.X_raw, X_raw) and np.allclose(m.design.X_model, Xc)
             assert m.bambi_model.formula.main.endswith("x:z + (1 | g)") if hasattr(m.bambi_model, "formula") else True
-    with pytest.raises(ab.FormulaError, match="main effect 'z' is missing"):
-        build("gaussian", df, G_PRIORS, formula="y ~ x + x:z + (1 | g)")
-    with pytest.raises(ab.FormulaError, match="main effect 'x' is missing"):
-        build("gaussian", df, G_PRIORS, formula="y ~ z + x:z + (1 | g)")
-    with pytest.raises(ab.FormulaError, match="main effect 'x' is missing"):
-        build("gaussian", df, G_PRIORS, formula="y ~ x:z + (1 | g)")
-    with pytest.raises(ab.FormulaError, match="duplicated predictor after expanding 'x\\*z'"):
-        build("gaussian", df, G_PRIORS, formula="y ~ x + z + x*z + (1 | g)")
-    with pytest.raises(ab.FormulaError, match="appears more than once after expansion"):
-        build("gaussian", df, G_PRIORS, formula="y ~ x + z + x:z + z:x + (1 | g)")
+    # G03 (tests/test_term_algebra.py): a missing main effect is R's coding of the interaction, a repeated term is one term
+    for formula in ("y ~ x + z + x*z + (1 | g)", "y ~ x + z + x:z + z:x + (1 | g)"):
+        assert build("gaussian", df, G_PRIORS, formula=formula).spec.columns == base.spec.columns
     df_w = df.assign(w=np.linspace(-1, 2, len(df)), v=np.where(df.index % 2 == 0, "p", "q"))
     for formula, cat in [("y ~ x + w + z + x:z + w:z + (1 | g)", {"z": "a"}),                  # shared categorical side
                          ("y ~ x + z + v + x:z + x:v + (1 | g)", {"z": "a", "v": "p"}),          # shared numeric side
@@ -127,10 +120,9 @@ def test_canonical_expansion_equivalence_and_refusals():
         build("gaussian", df, G_PRIORS, formula="y ~ x + z + x:g + (1 | g)")
     with pytest.raises(ab.FormulaError, match="cannot interact with itself"):
         build("gaussian", df, G_PRIORS, formula="y ~ x + z + x:x + (1 | g)")
-    with pytest.raises(ab.FormulaError, match="only a two-way interaction"):
-        build("gaussian", df, G_PRIORS, formula="y ~ x + z + x:z:g + (1 | g)")
-    with pytest.raises(ab.FormulaError, match="mixing '\\*' and ':'"):
-        build("gaussian", df, G_PRIORS, formula="y ~ x + z + x*z:g + (1 | g)")
+    for formula in ("y ~ x + z + x:z:g + (1 | g)", "y ~ x + z + x*z:g + (1 | g)"):   # G03: any order; g still cannot enter
+        with pytest.raises(ab.FormulaError, match="grouping factor 'g' cannot enter"):
+            build("gaussian", df, G_PRIORS, formula=formula)
     with pytest.raises(ab.PriorError, match="no population intercept"):              # removal now supported; old intercept prior refused
         build("gaussian", df, G_PRIORS, formula="y ~ x + z + x:z + (1 | g) - 1")
 

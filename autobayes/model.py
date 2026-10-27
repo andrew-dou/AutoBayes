@@ -304,6 +304,10 @@ def _linear_terms(spec: ModelSpec, centered: bool, b: str = "b") -> list[str]:
         elif t.kind == "contrast":                           # F08: a polynomial contrast of an ordered factor, at row i's level
             value = f"{term}[{t.factor}_i]"
             parts.append(f"({value} - mean({term})) * {b}_{term}" if centered else f"{value} * {b}_{term}")
+        elif t.kind == "product":                            # G03: an interaction's column coded by R's rule
+            value = " * ".join(f"x_{v}" if lvl is None else f"1[{v}_i = {lvl}]"
+                               for v, lvl in zip(t.product.operands, t.product.cell or (None,) * len(t.product.operands)))
+            parts.append(f"({value} - q_{term}) * {b}_{term}" if centered else f"{value} * {b}_{term}")
         else:
             parts.append(f"(x_{term} - mean(x_{term})) * {b}_{term}" if centered else f"x_{term} * {b}_{term}")
     return parts
@@ -533,8 +537,8 @@ class Model:
                     f"declared categories {list(cat.unused)} of {cat.name!r} do not occur in the fitted rows: "
                     "they get no coefficient, and predictions for them are refused."
                 )
-        for t in (t for s in (self.spec, *self.spec.dpars) for t in s.pop_terms if t.kind == "contrast"):
-            df[t.name] = pop_term_design(t, df, self.spec.all_categoricals)[:, 0]   # F08: the contrast column Bambi is handed
+        for t in (t for s in (self.spec, *self.spec.dpars) for t in s.pop_terms if t.kind in ("contrast", "product")):
+            df[t.name] = pop_term_design(t, df, self.spec.all_categoricals)[:, 0]   # F08, G03: the column Bambi is handed
         self.data = df
         self._threshold_groups = None                        # F06b: thres(gr = z)'s levels on the fitted rows
         if self.spec.addition("thres") is not None:
@@ -650,6 +654,10 @@ class Model:
             self.pymc_model = self._correlate_group_effects(self.pymc_model)   # edit of Bambi's graph
             self.bambi_model.backend.model = self.pymc_model  # what Bambi's fit() samples and cleans
         self.design = self._extract_design()
+        from autobayes.term_algebra import product_notes    # G03: a rank-deficient design of a formula with R's interactions
+        self.warnings.extend(product_notes(self.spec, self.design.X_raw, self.spec.intercept))
+        for ds in self.spec.dpars:
+            self.warnings.extend(product_notes(ds, self.design.dpars[ds.response].X_raw, ds.intercept, f" of {ds.response}"))
         if self.shrinkage_names:                             # D07: b = zb * sdb under horseshoe() / R2D2(), checked
             from autobayes.shrinkage import check_graph
             check_graph(self)
@@ -2567,9 +2575,11 @@ class Model:
                          f"{grouping}; {len(self.dropped_rows)} zero-trial row(s) dropped"
                          + (f" (positions {list(self.dropped_rows)[:10]}{'...' if len(self.dropped_rows) > 10 else ''})"
                             if self.dropped_rows else ""))
-        treat = tuple(c for c in s.categoricals if not c.is_poly)   # F08: the treatment-coded ones; an ordered factor's are contrasts
-        features = ((["categorical predictor(s)"] if treat else []) + (["interaction(s)"] if s.interactions else [])
-                    + (["ordered factor(s) with polynomial contrasts"] if len(treat) < len(s.categoricals) else [])
+        # F08: the treatment-coded main effects; an ordered factor's are contrasts; G03: a factor in interactions only has none
+        treat = tuple(c for c in s.categoricals if not c.is_poly and c.name in s.categorical_names)
+        products = [t for t in s.pop_terms if t.kind == "product"]   # G03: interactions coded by R's rule (term_algebra)
+        features = ((["categorical predictor(s)"] if treat else []) + (["interaction(s)"] if s.interactions or products else [])
+                    + (["ordered factor(s) with polynomial contrasts"] if any(c.is_poly for c in s.categoricals) else [])
                     + (["in-formula transform(s)"] if s.transform_terms else []) + (["monotonic effect(s)"] if s.mo_terms else [])
                     + (["Gaussian process(es)"] if s.gp_terms else [])
                     + (["independent varying slope(s)"] if any(t.slopes and not t.has_correlation and t.id is None for t in s.group_terms) else [])
@@ -2648,6 +2658,8 @@ class Model:
                       f"distinct inputs from {min(g.inputs):g} to {max(g.inputs):g}, scaled by dmax = {g.dmax:g}, their largest "
                       f"distance, so that it is 1 (brms's scale = TRUE){basis}"]
         lines += self._measurement_data_lines()              # C06: me() and mi() terms, and the response's missing values
+        from autobayes.term_algebra import product_lines
+        lines += product_lines(s)                            # G03: each interaction coded by R's rule
         for g, block in d.group_designs.items():
             lines += [f"  {'levels    ' if len(s.groups) == 1 else 'levels ' + g}: {', '.join(f'{j}={l}' for j, l in enumerate(block.levels))}"]
         for t in s.group_terms:
@@ -2685,6 +2697,11 @@ class Model:
                     f"              proportions among fitted rows: {props}",
                 ]
                 continue
+            if not owners:                                   # G03: a factor in interactions only, coded there by R's rule
+                lines += [f"  {cat.name:<10}: categorical, in interactions only (no main effect; each interaction's line gives its "
+                          f"coding), reference {cat.reference!r}; levels (sorted) {', '.join(cat.levels)}",
+                          f"              proportions among fitted rows: {props}"]
+                continue
             lines += [
                 f"  {cat.name:<10}: categorical, {'full-level coding' if cat.full_rank else 'treatment coding'}, reference {cat.reference!r}; levels (sorted) "
                 f"{', '.join(cat.levels)}; coefficients " + "; ".join(f"{b}_{cat.name}[{', '.join(c.coefficients)}]" for b, c in owners)
@@ -2717,7 +2734,7 @@ class Model:
         lines += self._measurement_lines(lp)                 # C06
         scale = fam.scale_phrase
         same_group = " (same group)" if len(s.groups) == 1 else (" (same group effects)" if s.groups else "")
-        for cat in s.categoricals:
+        for cat in (c for c in s.categoricals if c.is_poly or c.name in s.categorical_names):   # G03: main effects only
             if cat.is_poly:                                   # F08
                 from autobayes.default_priors import brms_rename
                 lines += [f"  {', '.join(f'b_{c}' for c in cat.contrast_columns)}: the coefficients of {cat.term_name}'s polynomial contrasts "
@@ -2783,9 +2800,10 @@ class Model:
             what = fam.intercept_meaning
             where = "at the predictor means" if not treat else \
                 "at the numeric predictor means and at the sample proportions of the categorical levels"
-            if s.interactions:
+            if s.interactions or products:
                 expanded = ((["x"] if s.predictors else []) + (["1[z = l]"] if treat else []) + (["x * 1[z = l]"] if num_cat else [])
-                            + (["x * w"] if num_num else []) + (["1[z = l] * 1[h = m]"] if cat_cat else []))
+                            + (["x * w"] if num_num else []) + (["1[z = l] * 1[h = m]"] if cat_cat else [])
+                            + (["the interaction columns of R's coding"] if products else []))
                 where = f"at the fitted-row means of every expanded design column ({', '.join(expanded)})"
             lines += [
                 "  Predictors are centred at their sample means (center_predictors=True, as in",
@@ -2816,6 +2834,11 @@ class Model:
             correction += (" - sum_(x,z),l q_x:z[l] * b_x:z[l]" if len(num_cat) > 1 else (" - sum_l q_x:z[l] * b_x:z[l]" if num_cat else ""))
             correction += "".join(f" - q_{t.name} * b_{t.name}" for t in num_num)
             correction += "".join(f" - sum_(l,m) p_{t.name}[l, m] * b_{t.name}[l, m]" for t in cat_cat)
+            if products:                                     # G03: each column of R's coding at its own mean
+                cols = [d.X_raw[:, s.columns.index(t.name)] for t in products]
+                lines += [f"  Each interaction column of R's coding is centred at its own mean over the fitted rows: "
+                          + ", ".join(f"q_{t.name} = {c.mean():.4f}" for t, c in zip(products, cols)) + "."]
+                correction += " - sum_c q_c * b_c (the interaction columns c)"
             lines += [
                 f"  a_c is the {what} {where}{' (group effect zero)' if s.has_group else ''}; the",
                 "  prior on the intercept applies to a_c. The posterior reports the raw-scale",

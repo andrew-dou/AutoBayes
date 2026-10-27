@@ -508,3 +508,12 @@ DeprecationWarning. `describe()` names the family ("AutoBayes Gaussian model"), 
 current documentation and divergence rows, and a model's free variables come in one order whatever `PYTHONHASHSEED`. Four call-surface
 differences are recorded: declared factors (D172), how priors cover a class (D173), rows with missing values (D174) and `fit()`'s
 defaults and the posterior's names (D175).
+
+R's term algebra (G03, docs/term-algebra.md): `a * b * c`, `(a + b + c)^k`, `(a + b):c`, interactions written alone (`x:z`,
+`x:w + z:h`), `- t` removing a term and a term written twice read once, the terms in R's order; a factor in an interaction whose
+margin is absent coded by an indicator of every level, as R and brms code it (`z + x:z`: `zp:x`, `zq:x`, `zr:x`), each such
+column a coefficient named as brms names it. Verified against `gauss_three_way_numeric`, `gauss_three_way_factor`,
+`gauss_power_expansion`, `gauss_colon_only`, `gauss_factor_slopes`, `gauss_numeric_colon_factor_one_main` and
+`bernoulli_three_way_varint`; a rank-deficient design is warned of (D179); `x^2`, `x:x` and R's rank-deficient coding of
+`0 + x + x:z` (D180), a column no fitted row reaches and these interactions in non-linear, count-matrix, multivariate models and
+the summaries (D179) are refused by name.
