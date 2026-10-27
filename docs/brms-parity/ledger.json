@@ -2422,12 +2422,16 @@
     "E04_cens_trunc_families",
     "E05_post_prior_effects_stacking"
    ],
-   "status": "gates_green",
+   "status": "merged",
    "summary": "release the two withheld results (Andrew, 2026-10-26): the lower-truncated count mean E[Y | Y >= lb] (D121, PARKED_TRUNCATION) and the exact stacking weights (D126, PARKED_WEIGHTS), each accepted against brms where brms is exact and a 50-digit reference where it is not (P6; the stacking weights need a new fallback kind)",
-   "pr": null,
+   "pr": 110,
    "attempts": 0,
-   "divergences": [],
-   "next_action": "feature agent on parity/g01",
+   "divergences": [
+    "D121",
+    "D126",
+    "D176"
+   ],
+   "next_action": "none",
    "reserved_divergences": "D176",
    "gates": {
     "sha": "c224d4d27b79",
