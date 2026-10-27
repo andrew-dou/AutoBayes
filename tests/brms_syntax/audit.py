@@ -488,6 +488,11 @@ def compare_univariate(model, reading: Reading, issues: list, notes: list, what:
         reading.used.update({reading.key(f"K_{name}"), reading.key(f"Kc_{name}")})
         if dd.group_blocks:
             match_group_scope(model, dd.group_blocks, (), reading, {"dpar": name}, issues, notes, what)
+        offset = getattr(dd, "offset", None)                        # G06: the formula's offset, brms's offsets_<dpar>
+        if offset is not None and not reading.has(f"offsets_{name}"):
+            issues.append(f"{what}AutoBayes gives {name}'s formula an offset; brms's Stan data has no offsets_{name}")
+        elif offset is not None and not _close(reading.get(f"offsets_{name}"), offset):
+            issues.append(f"{what}offsets_{name} differ from brms's")
     match_group_scope(model, d.group_blocks, spec.group_terms, reading, {}, issues, notes, what)
     # addition terms and offsets
     for mine, key in ((d.trials, "trials"), (d.offset, "offsets"), (d.weights, "weights"), (d.cens, "cens"), (d.rcens, "rcens"),

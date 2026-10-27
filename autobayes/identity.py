@@ -48,7 +48,10 @@ def _dpar_payload(model, ds):
             # D08: a shared correlation ID's terms of the formula, only when it has one (every other identity is unchanged)
             **({'groups': [{'factor': g, 'coef': c, 'id': ds.group_term_of(g).id, 'levels': block.levels, 'index': block.group_index,
                             'Z': block.Z, 'prior': _prior(sub.sd_priors(ds)[(g, c)])} for (g, c), block in dd.group_blocks.items()]}
-               if ds.group_terms else {})}
+               if ds.group_terms else {}),
+            # G06: the formula's offset (brms's offsets_<dpar>) and a likelihood's own centring, only when it has them
+            **({'offset': {'term': ds.offset.term, 'values': dd.offset}} if ds.offset is not None else {}),
+            **({'centred_draws': True} if getattr(dd, 'centred_draws', False) else {})}
 
 
 def _monotonic_payload(model):

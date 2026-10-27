@@ -155,7 +155,8 @@ linear predictor, and Bambi's formula never sees it.
 A model given a list of formulas (B01, docs/distributional.md), `["y ~ x + (1 | g)", "sigma ~ z"]`, holds each formula
 after the first as a `ModelSpec` of its own in `ModelSpec.dpars`, whose `response` is the parameter's brms name
 (`spec.dpar("sigma")`, `spec.dpar_names`, `spec.formulas`): its population-level terms are `PopTerm`s of every kind, with
-its own intercept, columns, coefficients and centring; it has no group-level term, offset or addition term (refused).
+its own intercept, columns, coefficients and centring; it has no addition term (refused), and group-level terms and an offset
+only where G06 verifies them (`DparDesign.group_blocks`, `DparDesign.offset`; docs/distributional-groups.md).
 `spec.all_categoricals` and `spec.model_columns` gather every formula's categorical columns and data columns;
 `Design.dpars[name]` (`DparDesign`) is its design and `Model.dpar_names[name]` its PyMC variables (`sigma_Intercept`,
 `sigma_z`), Bambi's distributional component named after the parameter (`alpha` for brms's `shape`).

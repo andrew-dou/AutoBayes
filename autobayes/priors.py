@@ -482,6 +482,10 @@ class Priors:
     ``sbhaz`` is the prior of a cox model's baseline hazard simplex (F05, docs/cox.md): a ``Dirichlet`` (brms's class ``sbhaz``,
     default ``dirichlet(1)``), one concentration for every basis or one per basis, required for the cox family and refused for
     every other.
+
+    ``disc`` (G06, docs/distributional-groups.md) is the priors of a cumulative model's discrimination formula ``disc ~ ...``,
+    ``{"intercept": ..., "b": ...}`` (brms's class ``Intercept`` and ``b`` with ``dpar = disc``), required exactly with that
+    formula. A Student-t ``nu`` with its own formula takes that formula's priors in ``nu`` alike.
     """
 
     intercept: Prior | None = None
@@ -559,6 +563,9 @@ class Priors:
     # F05 (docs/cox.md): the Dirichlet prior of the cox family's baseline hazard simplex (brms class ``sbhaz``, default
     # ``dirichlet(1)``; one concentration for every basis or one per basis); required for the cox family, refused for every other
     sbhaz: Prior | None = None
+    # G06 (docs/distributional-groups.md): the priors of the cumulative family's discrimination formula ``disc ~ ...``,
+    # {"intercept": ..., "b": ...} (brms's dpar = disc); required with that formula, refused for every other model
+    disc: Mapping[str, object] | None = None
 
     def __post_init__(self):
         if isinstance(self.components, list):                         # one value for equal component lists (C05)
@@ -1243,6 +1250,9 @@ class Priors:
         if self.dpars is not None:                                    # F01a, refused for every other model
             raise PriorError("dpars gives the priors of a multinomial model's category formulas (ab.multinomial, "
                              "ab.dirichlet_multinomial; docs/multinomial.md); this model has none")
+        if self.disc is not None and "disc" not in getattr(spec, "dpar_names", ()):   # G06: with a disc formula only
+            raise PriorError("disc gives the priors of a cumulative model's discrimination formula ('disc ~ ...', brms's dpar = "
+                             "disc; docs/distributional-groups.md); this model has none")
         if getattr(spec, "is_nonlinear", False):                       # a non-linear model (C02): priors per non-linear parameter
             from autobayes.nonlinear import check_nonlinear_priors
 
@@ -1306,8 +1316,8 @@ class Priors:
                     + "".join(f" Its {e.meaning} is {e.name}: pass {e.name}=..." for e in extras.values())
                     + (f" Its intercept and slope priors are on the {fam.link_scale} scale." if fam.link_scale is not None else "")
                 )
-        if self.nu is not None:                                       # the learned Student-t degrees of freedom (A13)
-            if "nu" not in fam.learnable_parameters:
+        if self.nu is not None and "nu" not in getattr(spec, "dpar_names", ()):   # the learned Student-t degrees of freedom (A13); G06:
+            if "nu" not in fam.learnable_parameters:                             # with a formula of its own, its priors below
                 raise PriorError(
                     f"the {fam.name} family has no degrees of freedom; do not pass nu."
                     + (f" Its auxiliary parameter is {scale}: pass {scale}=..." if scale is not None else "")
@@ -1330,12 +1340,14 @@ class Priors:
         location = ([("intercept", self.intercept)] if has_intercept else [])
         location += [] if shrinkage else list(self.coefficient_priors(spec).items())
         location += list(self.autocor_priors(spec).items())          # an ARMA term's ar and ma, unbounded (C04)
+        from autobayes.formula import sd_tag
+
         dpar_sds = []
         if predicted:                                                 # its formula's intercept and coefficients (B01): location priors
             dspec, sub = spec.dpar(scale), self.dpar_priors(spec, scale)
             location += (([(f"{scale}:intercept", sub.intercept)] if dspec.intercept else [])
                          + [(f"{scale}:b:{col}", p) for col, p in sub.coefficient_priors(dspec).items()])
-            dpar_sds = [(f"{scale}:sd:{g}", p) for (g, c), p in sub.sd_priors(dspec).items()]   # D08: a shared ID's terms
+            dpar_sds = [(f"{scale}:sd:{sd_tag(g, c)}", p) for (g, c), p in sub.sd_priors(dspec).items()]   # D08, G06: its terms' SDs
         elif scale is not None and isinstance(auxiliary[scale], Mapping):
             raise PriorError(
                 f"prior for {scale!r} is a mapping, the form of the priors of {scale}'s own formula ('{scale} ~ ...'); "
@@ -1349,6 +1361,7 @@ class Priors:
                 if fam.distributional_parameter_link(name) == "logit":
                     logistic.add(f"{name}:intercept")
             location += [(f"{name}:b:{col}", p) for col, p in sub.coefficient_priors(dspec).items()]
+            dpar_sds += [(f"{name}:sd:{sd_tag(g, c)}", p) for (g, c), p in sub.sd_priors(dspec).items()]   # G06: zi's own terms
         for label, prior in location:
             if not isinstance(prior, Prior):
                 raise PriorError(f"prior for {label!r} must be a Prior, got {type(prior).__name__}")
@@ -1361,8 +1374,6 @@ class Priors:
                     f"prior for {label!r} must be a location prior ({sorted(_LOCATION | ({'Logistic'} if label in logistic else set()))}), "
                     f"got {prior}"
                 )
-        from autobayes.formula import sd_tag
-
         scales = [(f"sd:{sd_tag(g, c)}", prior) for (g, c), prior in sd_priors.items()] + ([(scale, auxiliary[scale])] if scale is not None and not predicted else [])
         scales += dpar_sds
         for label, prior in scales:
@@ -1449,10 +1460,13 @@ class Priors:
         for name in spec.dpar_names:                        # E03: zi, hu, alpha with a formula of their own, under brms's name
             if name != fam.scale_parameter:
                 sub, dspec = self.dpar_priors(spec, name), spec.dpar(name)
-                out[name] = {**({"Intercept": sub.intercept.to_bambi()} if dspec.intercept else {}), **sub._bambi_terms(dspec)}
+                out[name] = {**({"Intercept": sub.intercept.to_bambi()} if dspec.intercept else {}), **sub._bambi_terms(dspec),
+                             # G06: its group-level terms (zi's own), Normal(0, sd) with their own sd prior
+                             **{bambi_group_name(g, c): bmb.Prior("Normal", mu=0.0, sigma=p.to_bambi())
+                                for (g, c), p in sub.sd_priors(dspec).items()}}
         if fam.zero_parameter is not None and fam.zero_parameter not in spec.dpar_names:   # under brms's name (B06)
             out[fam.zero_parameter] = getattr(self, fam.zero_parameter).to_bambi()
-        if self.nu is not None:                             # a learned Student-t nu (A13): its prior truncated at the bound
+        if self.nu is not None and "nu" not in spec.dpar_names:   # a learned Student-t nu (A13): its prior truncated at the bound
             out["nu"] = self.nu.to_bambi_truncated(fam.learnable_parameters["nu"])
         if is_shrinkage(self.b):                            # D07: each term's coefficients are its slice of b = zb * sdb
             from autobayes.shrinkage import bambi_priors

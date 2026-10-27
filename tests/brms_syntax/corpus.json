@@ -9953,14 +9953,13 @@
     ]
    },
    "result": {
-    "status": "error",
-    "type": "FormulaError",
-    "message": "'sigma ~ z + (1 | g)': group-level terms in a distributional formula ((1 | g)) are not supported: brms would give sigma its own varying effects; a distributional formula takes population-level terms only here, and group-level terms only with a correlation ID shared with the response formula's term of the same factor, 'sigma ~ ... + (1 |p| g)' next to '... + (1 + x |p| g)' (docs/distributional.md, divergence D32; docs/multi-membership-and-by.md, D106)",
-    "raised_at": "formula.py:2692",
-    "stage": "default_priors",
-    "mechanism": "refusal",
-    "outcome": "refused_named",
-    "gap": "capability"
+    "status": "built",
+    "model": "Model",
+    "model_warnings": [],
+    "issues": [],
+    "notes": [],
+    "outcome": "match",
+    "gap": null
    }
   },
   {
@@ -10197,14 +10196,13 @@
     "group_terms": []
    },
    "result": {
-    "status": "error",
-    "type": "FormulaError",
-    "message": "'sigma ~ z + offset(off)': 'offset(off)' in a distributional formula is not supported; an offset belongs to the response formula here (docs/distributional.md, divergence D32)",
-    "raised_at": "formula.py:2718",
-    "stage": "default_priors",
-    "mechanism": "refusal",
-    "outcome": "refused_named",
-    "gap": "capability"
+    "status": "built",
+    "model": "Model",
+    "model_warnings": [],
+    "issues": [],
+    "notes": [],
+    "outcome": "match",
+    "gap": null
    }
   },
   {
@@ -10327,14 +10325,13 @@
     "group_terms": []
    },
    "result": {
-    "status": "error",
-    "type": "FormulaError",
-    "message": "'nu ~ z': brms's nu ~ ... is not offered here; a distributional formula is offered for the auxiliary parameter of the gaussian (sigma), student (sigma), negbinomial (shape), gamma (shape), lognormal (sigma), beta (phi), weibull (shape), beta_binomial (phi) families, with a log link (docs/distributional.md, divergence D33), and for the skew_normal (alpha, identity link), zero_inflated_negbinomial (zi, logit link), hurdle_lognormal (hu, logit link), wiener (bs, log link) families (docs/contexts-newer-families.md, divergence D116)",
-    "raised_at": "formula.py:2637",
-    "stage": "default_priors",
-    "mechanism": "refusal",
-    "outcome": "refused_named",
-    "gap": "capability"
+    "status": "built",
+    "model": "Model",
+    "model_warnings": [],
+    "issues": [],
+    "notes": [],
+    "outcome": "match",
+    "gap": null
    }
   },
   {
@@ -10560,14 +10557,13 @@
     "group_terms": []
    },
    "result": {
-    "status": "error",
-    "type": "FormulaError",
-    "message": "'zi ~ z': brms's zi ~ ... is not offered here; a distributional formula is offered for the auxiliary parameter of the gaussian (sigma), student (sigma), negbinomial (shape), gamma (shape), lognormal (sigma), beta (phi), weibull (shape), beta_binomial (phi) families, with a log link (docs/distributional.md, divergence D33), and for the skew_normal (alpha, identity link), zero_inflated_negbinomial (zi, logit link), hurdle_lognormal (hu, logit link), wiener (bs, log link) families (docs/contexts-newer-families.md, divergence D116)",
-    "raised_at": "formula.py:2637",
-    "stage": "default_priors",
-    "mechanism": "refusal",
-    "outcome": "refused_named",
-    "gap": "capability"
+    "status": "built",
+    "model": "Model",
+    "model_warnings": [],
+    "issues": [],
+    "notes": [],
+    "outcome": "match",
+    "gap": null
    }
   },
   {
@@ -10621,14 +10617,15 @@
     "group_terms": []
    },
    "result": {
-    "status": "error",
-    "type": "FormulaError",
-    "message": "'disc ~ z': brms's disc ~ ... (the discrimination of an ordinal family, 1 unless it has a formula) is not offered for the cumulative family here (docs/ordinal-categorical.md, divergence D38)",
-    "raised_at": "formula.py:2620",
-    "stage": "default_priors",
-    "mechanism": "refusal",
-    "outcome": "refused_named",
-    "gap": "capability"
+    "status": "built",
+    "model": "Model",
+    "model_warnings": [
+     "the formula 'disc ~ z' can shift every row's log disc by one constant, and the cumulative likelihood is unchanged by (disc, thresholds, b, r) -> (c disc, thresholds / c, b / c, r / c): the model's scale is identified by the priors alone (brms estimates it the same way and does not warn; a formula without an intercept, 'disc ~ 0 + x' with numeric terms only, fixes disc = 1 where they are 0; docs/distributional-groups.md, divergence D188)"
+    ],
+    "issues": [],
+    "notes": [],
+    "outcome": "match",
+    "gap": null
    }
   },
   {
@@ -13395,13 +13392,13 @@
  ],
  "summary": {
   "outcomes": {
-   "match": 170,
-   "refused_named": 77,
+   "match": 175,
+   "refused_named": 72,
    "differs": 1
   },
   "gaps": {
-   "none": 172,
-   "capability": 75,
+   "none": 177,
+   "capability": 70,
    "divergence": 1
   },
   "brms_refuses": 2

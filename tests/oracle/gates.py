@@ -13,7 +13,8 @@ G1 `check_design`        standata equals the model's design, response, trials, o
                          a SAR term's Msar, eigenMsar, N_tg and its parameter's bounds (F02b, adapter.check_sar_design);
                          an fcor() term's Mfcor and N_tg (F03a, adapter.check_fcor_design);
                          a residual correlation term's groups (N_tg, begin_tg, end_tg, nobs_tg; unstr's n_unique_t,
-                         n_unique_cortime, Jtime_tg) through the same permutation (F03b, adapter.check_timecor_design)
+                         n_unique_cortime, Jtime_tg) through the same permutation (F03b, adapter.check_timecor_design);
+                         a distributional formula's offset, offsets_<dpar> (G06, check_dpar_offsets)
 G2 `check_logp`          log density with and without the Jacobian, and its prior part, at every point
 G2 `check_gradient`      every gradient coordinate, mapped through the probed parameter table
 G3 `check_derived`       the graph's linear predictor, group effects and correlation matrices, and the raw-scale intercept
@@ -163,8 +164,8 @@ def prior_names(model) -> list[str]:
     if "phi" in names and "phi" not in distributional:       # Beta precision
         out.append(names["phi"])
     out += [v for name in distributional for k, v in model.dpar_names[name].items() if k != "value"]   # their formulas (B01)
-    if "nu" in names:                                      # a learned Student-t nu, its prior truncated to nu > 1 (A13)
-        out.append(names["nu"])
+    if "nu" in names and "nu" not in distributional:       # a learned Student-t nu, its prior truncated to nu > 1 (A13); G06: with
+        out.append(names["nu"])                            # a formula of its own, its formula's (above)
     out += [names[par] for par in ("zi", "hu") if par in names and par not in distributional]   # the zero-inflation / hurdle
     out += [names[e.variable] for e in model.family_spec.extra_parameters                      # probability (B06); D01: alpha,
             if e.name not in distributional]                    # beta, ndt (ndt's truncation constant included); E02: kappa, quantile,
@@ -385,10 +386,30 @@ def check_design(b: Bundle) -> None:
     check_baseline_hazard(b)                                     # F05: a cox model's Zbhaz, Zcbhaz, Kbhaz and con_sbhaz
     check_shrinkage_data(b)                                      # D07: Kscales and a shrinkage prior's data
     check_fixed_parameters(b)                                    # E02: a parameter the formula fixes (bf(quantile = p))
+    check_dpar_offsets(b)                                        # G06: a distributional formula's offsets_<dpar>
     # the design columns (every formula's), the group partitions and the monotonic codes were matched by content when the
     # maps were built
     adapter.match_columns(b.fixture, b.model)
     adapter.match_groups(b.fixture, b.model)
+
+
+def check_dpar_offsets(b: Bundle) -> None:
+    """G1 of a distributional formula's offset (G06, ``sigma ~ z + offset(soff)``): brms's ``offsets_<dpar>`` exactly for the
+    formulas with an offset, each equal to the model's ``DparDesign.offset`` on the fitted rows to DESIGN_ABS; brms's
+    ``offsets_<p>`` of any distributional parameter of the family whose formula in the model has none is a mismatch."""
+    sd, dpars = b.fixture.standata, getattr(b.model.design, "dpars", {})
+    for p in (*b.model.family_spec.distributional_parameters, *dpars):
+        mine = getattr(dpars.get(p), "offset", None)
+        if mine is None:
+            if f"offsets_{p}" in sd:
+                raise OracleMismatch(f"brms has offsets_{p}; the AutoBayes model's formula of {p} has no offset")
+            continue
+        if f"offsets_{p}" not in sd:
+            raise OracleMismatch(f"the AutoBayes model's formula of {p} has an offset; brms's standata has no offsets_{p}")
+        theirs = np.asarray(sd[f"offsets_{p}"], dtype=float)
+        if theirs.shape != mine.shape or abs_err(theirs, mine) > DESIGN_ABS:
+            raise OracleMismatch(f"offsets_{p} differ from the offset of {p}'s formula"
+                                 + (f" by {abs_err(theirs, mine)}" if theirs.shape == mine.shape else f" ({theirs.shape} vs {mine.shape})"))
 
 
 def check_baseline_hazard(b: Bundle) -> None:
@@ -516,7 +537,9 @@ def check_gradient(b: Bundle) -> None:
 _BRMS_DPAR_LINK = {"sigma": ("log", np.exp), "shape": ("log", np.exp), "phi": ("log", np.exp),
                    "zi": ("logit", expit), "hu": ("logit", expit),
                    "alpha": ("identity", lambda eta: eta),
-                   "bs": ("log", np.exp)}                      # F04: wiener()'s link_bs
+                   "bs": ("log", np.exp),                      # F04: wiener()'s link_bs
+                   "nu": ("logm1", lambda eta: 1.0 + np.exp(eta)),   # G06: student()'s link_nu, brms's logm1
+                   "disc": ("log", np.exp)}                    # G06: cumulative()'s link_disc
 
 
 def check_derived(b: Bundle) -> None:
@@ -581,9 +604,11 @@ def check_derived(b: Bundle) -> None:
                 eta = float(p.pars[f"Intercept_{name}"]) + (Xc - Xc.mean(0)) @ bd
             else:
                 eta = X @ bd
+            if f"offsets_{name}" in b.fixture.standata:              # G06: plus brms's offsets_<name>
+                eta = eta + b.fixture.standata[f"offsets_{name}"]
             for (dname, g, coef), _ in dpar_groups:                # D08: plus brms's r_m_<name>_c[J_m] Z_m_<name>_c of a shared ID
-                if dname == name:
-                    m, cn = b.gmap.brms_id[g], b.gmap.dpar_cn[(name, g, coef)]
+                if dname == name:                                  # G06: or of the formula's own group
+                    m, cn = adapter.dpar_group_of(b.gmap, name, g)[0], b.gmap.dpar_cn[(name, g, coef)]
                     J = b.fixture.standata[f"J_{m}"].astype(int) - 1
                     eta = eta + np.atleast_1d(p.pars[f"r_{m}_{name}_{cn}"])[J] * b.fixture.standata[f"Z_{m}_{name}_{cn}"]
             err = rel_err(np.asarray(value, dtype=float).ravel(), inverse(eta))
@@ -599,8 +624,8 @@ def check_derived(b: Bundle) -> None:
                                          f"{float(p.pars[f'b_{name}_Intercept'])!r}")
         start = 1 + len(groups) + len(cors) + len(distributional)
         for ((name, g, coef), _), eff in zip(dpar_groups, out[start:start + len(dpar_groups)]):   # D08: brms's r_m_<name>_c
-            m, cn = b.gmap.brms_id[g], b.gmap.dpar_cn[(name, g, coef)]
-            err = rel_err(np.asarray(eff, dtype=float).ravel()[b.gmap.level_of[g]], np.atleast_1d(p.pars[f"r_{m}_{name}_{cn}"]))
+            (m, level_of), cn = adapter.dpar_group_of(b.gmap, name, g), b.gmap.dpar_cn[(name, g, coef)]   # G06: own groups too
+            err = rel_err(np.asarray(eff, dtype=float).ravel()[level_of], np.atleast_1d(p.pars[f"r_{m}_{name}_{cn}"]))
             if err > PRED_REL:
                 raise OracleMismatch(f"point {k}: group effects of {coef!r} of {g!r} in {name}'s formula differ from brms r_{m}_{name}_{cn} "
                                      f"by {err}")
@@ -1019,7 +1044,7 @@ def check_default_prior(b: Bundle) -> None:
         wanted = ({("Intercept", name)} if ds.intercept else set()) | ({("b", name)} if ds.columns else set())
         if not wanted <= dpar_rows:
             raise OracleMismatch(f"brms default_prior lacks the rows {sorted(wanted - dpar_rows)} of {name}'s formula")
-    if "nu" in b.model.names:
+    if "nu" in b.model.names and "nu" not in distributional:   # G06: a nu with its own formula has its dpar rows instead
         expected.add("nu")
     expected |= {par for par in ("zi", "hu") if par in b.model.names and par not in distributional}     # B06; E03: its dpar rows
     expected |= {e.name for e in b.model.family_spec.extra_parameters if e.name not in distributional}     # D01: alpha, beta, ndt

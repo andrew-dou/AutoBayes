@@ -90,6 +90,8 @@ GAUSSIAN = FamilySpec(
     tails=_tails,
     se_parameter="sigma",                                           # F06a: se(col) is the row's sigma, or adds to it in quadrature
     distributional_link="log",                                      # B01: sigma ~ z, brms's log link
+    # G06: sigma ~ z + (1 | g), (1 + x |p| g) in both formulas and offset() in sigma's (gauss_sigma_varint, _shared_id_slopes, _offset)
+    distributional_constructs=frozenset({"own_groups", "shared_slopes", "offset"}),
     default_distributional_intercept=lambda scale: StudentT(3, 0, scale),   # brms Intercept_sigma: student_t(3, 0, scale of log y)
     monotonic=True,                                                 # B03: mo(x), verified against gauss_monotonic
     log_likelihood=_log_likelihood,                                 # C07: log_lik(), verified against gauss_varint_post
