@@ -85,13 +85,14 @@ REFUSALS = [
     (["y ~ x + z + (1 + x |p| g)", "sigma ~ z + (1 + z |p| g)"], {}, "varying slopes in a distributional formula are not supported"),
     (["y ~ x + (1 + x | g)", "sigma ~ 1 + (1 | g)"], {}, "group-level terms in a distributional formula ((1 | g)) are not supported"),
     ("y ~ x + (1 |p| mm(g, g2))", {}, "a correlation ID with mm() or gr() is not supported"),
-    ("y ~ x + (1 + x | mm(g, g2))", {}, "only the varying intercept '(1 | mm(...))' is supported"),
-    ("y ~ x + (1 | mm(g, g2, scale = FALSE))", {}, "mm()'s argument 'scale' is not supported"),
+    # G05b (docs/gr-cov-dist.md) lifted the refusals of (1 + x | mm(g, g2)) and mm(..., scale = FALSE); what stays refused:
+    ("y ~ x + (0 + x | mm(g, g2))", {}, "a multi-membership term without its varying intercept is not supported"),
+    ("y ~ x + (1 | mm(g, g2, cov = A))", {}, "mm()'s argument 'cov' is not supported"),
     ("y ~ x + (1 | mm(g))", {}, "mm() takes two or more member columns"),
     ("y ~ x + (1 | mm(g, g))", {}, "a member column appears twice in mm()"),
     ("y ~ x + (1 | mm(g, g2, weights = cbind(w1)))", {}, "2 member columns and 1 weight columns"),
     ("y ~ x + (1 | mm(g, g2, weights = w1))", {}, "weights = takes cbind(<column>, <column>, ...)"),
-    ("y ~ x + (1 | gr(g, dist = 'student'))", {}, "brms's gr() options ['dist'] are not supported"),   # F08 takes cor = FALSE as '||'
+    ("y ~ x + (1 | gr(g, dist = 'student', by = gby))", {}, "gr()'s by and dist together are not supported"),   # G05b takes dist
     ("y ~ x + (1 + x | gr(g, by = gby))", {}, "varying slopes with gr(by = ) are not supported"),
     ("y ~ x + (1 | gr(g, by = g))", {}, "cannot be its own by column"),
     ("y ~ x + gby + (1 | gr(g, by = gby))", {}, "'gby' is a by column of the group term and cannot also be a predictor"),

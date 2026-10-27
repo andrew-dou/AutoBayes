@@ -305,8 +305,8 @@ def test_prior_value_refusals_and_collisions():
 
 
 @pytest.mark.parametrize('rhs', ['x+(1|g)+(1|g)','x+(1|g/h/j/k)','x+(1|g:h:j:k)','x+(0+x|p|g)',   # A03: two-factor '/' and ':' are
-    'x+(1|id|g)','x+(1|log(g))','x+(1+x|mm(g,h))','x+(1+x:x|g)','x+(0|g)',   # accepted; A02 'x+(1+x|g)'; D08 '(1|mm(g,h))'; F08 '(x|g)'
-    '(1|g)+(1|h:h)','0+(1|g)+(1|h)','x+(1|g)+(1|x)','x+(1|g)+(1|y)'])   # G05a: three columns, '(0+x||g)', '(x-1|g)', '(1|g)+(1|h)'
+    'x+(1|id|g)','x+(1|log(g))','x+(0+x|mm(g,h))','x+(1+x:x|g)','x+(0|g)',   # accepted; A02 'x+(1+x|g)'; D08 '(1|mm(g,h))'; F08 '(x|g)'
+    '(1|g)+(1|h:h)','0+(1|g)+(1|h)','x+(1|g)+(1|x)','x+(1|g)+(1|y)'])   # G05a: three columns, '(0+x||g)', '(x-1|g)', '(1|g)+(1|h)'; G05b: mm() slopes
 def test_scoped_formula_refusals(rhs):
     with pytest.raises(ab.FormulaError):
         ab.parse_formula('y~'+rhs, inputs())

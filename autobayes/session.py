@@ -180,6 +180,7 @@ def fit_record(model, fit, *, panel: dict | None = None, max_treedepth: int = 10
                        **{("sd" if len(s.groups) == 1 else f"sd:{g}"): str(prior) for g, prior in group_priors.items()},
                        **{f"sd:{sd_tag(g, c)}": str(prior) for (g, c), prior in sd_priors.items() if c != "Intercept"},
                        **{f"cor:{g}": str(prior) for g, prior in cor_priors.items()},
+                       **{f"df:{g}": str(prior) for g, prior in pr.df_priors(s).items()},              # gr(g, dist = "student")
                        **{f"simo:{c}": str(prior) for c, prior in pr.simo_priors(s).items()},
                        **{f"sdgp:{c}": str(prior) for c, prior in pr.sdgp_priors(s).items()},       # C03
                        **{f"lscale:{c}": str(prior) for c, prior in pr.lscale_priors(s).items()},

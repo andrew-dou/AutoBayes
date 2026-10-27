@@ -25,6 +25,7 @@ model only when `ab.default_priors()` is called and its result passed in.
 | `shape` (negative binomial) | `inv_gamma(0.4, 0.3)`, lower bound 0 | `InverseGamma(0.4, 0.3)` (shape and scale, as Stan's `inv_gamma`) |
 | `shape` (Gamma), `phi` (Beta) | `gamma(0.01, 0.01)`, lower bound 0 | `Gamma(0.01, 0.01)` |
 | `nu` (Student-t, learned) | `gamma(2, 0.1)`, lower bound 1 | `Gamma(2, 0.1)`, truncated at 1 as in A13 |
+| `df` of `gr(g, dist = "student")` (class `df`, group `g`) | `gamma(2, 0.1)`, lower bound 1 (its group row only) | `Gamma(2, 0.1)`, truncated to `df > 1` (docs/gr-cov-dist.md) |
 | `zi`, `hu` (zero-inflated, hurdle; B06) | `beta(1, 1)`, lower bound 0, upper bound 1 | `Beta(1, 1)` |
 | `shape` (Weibull; D01) | `gamma(0.01, 0.01)`, lower bound 0 | `Gamma(0.01, 0.01)` |
 | `alpha` (skew normal; D01) | `normal(0, 4)`, unbounded | `Normal(0, 4)` |
