@@ -46,6 +46,14 @@ posterior_summary, summary, residuals). These record brms's summaries of a secon
 (iterations, chains, variables): `Fixture.summary_draws`), each under its function's name in the post block, every table or array
 with its labels on every axis (``{"dims", "values", "dimnames"}``: `decode_labelled`); the meta records the posterior package's
 version (`posterior`), whose rhat, ess_bulk and ess_tail brms's summary() reports.
+
+Tier G part 1 cases (G02-G04; the data generator `tier_g1` adds `v`, `lg` and `off`) may add: `logical` (columns written True / False,
+read as R's logical by `gen_fixture.R` and as bool here: brms's lgTRUE), `pandas_categorical` (declared factors that the AutoBayes side
+receives as a pandas Categorical with the declared levels as its categories, in their order; brms reads them as factors as before; both
+in `read_frame`) and `newdata_prediction_refused` (a list of kinds, "linpred" or "epred", that brms fails to compute on newdata only,
+recorded as `predictions.newdata.<kind>_refused` and `<kind>_nogroup_refused` while the fitted rows keep their arrays:
+`Fixture.prediction_refusal("newdata", kind)`). A table's numeric matrix column keeps its dims, (rows, columns): brms's
+conditional_effects() tables of a model with poly(w, 2) carry the model-frame columns 'scale(x)' and 'poly(w, 2)'.
 """
 from __future__ import annotations
 
@@ -112,12 +120,39 @@ def sha256(path) -> str:
 def read_frame(case: dict, path) -> pd.DataFrame:
     """The committed CSV, factor columns as strings (a label like "1" must stay a label). A case that declares
     columns with missing values (``brms.na_columns``, for mi()) reads an empty field of those columns as NaN and
-    nothing else as missing, as ``gen_fixture.R`` reads them as NA."""
+    nothing else as missing, as ``gen_fixture.R`` reads them as NA. Tier G (part 1): a case's ``brms.logical`` columns
+    (written True / False) are read as bool, as ``gen_fixture.R`` reads them as R's logical, and its ``brms.pandas_categorical``
+    columns, declared factors, as a pandas Categorical (unordered) whose categories are the declared levels in their order, the
+    order brms's factor has (its first level the reference)."""
     factors = list(case["brms"].get("factors", {}))
     na_columns = list(case["brms"].get("na_columns", []))
     if not na_columns:
-        return pd.read_csv(path, dtype={c: str for c in factors})
-    return pd.read_csv(path, dtype={c: str for c in factors}, keep_default_na=False, na_values={c: [""] for c in na_columns})
+        frame = pd.read_csv(path, dtype={c: str for c in factors})
+    else:
+        frame = pd.read_csv(path, dtype={c: str for c in factors}, keep_default_na=False, na_values={c: [""] for c in na_columns})
+    return _typed_columns(case, frame)
+
+
+def _typed_columns(case: dict, frame: pd.DataFrame) -> pd.DataFrame:
+    """Tier G (part 1): ``read_frame``'s logical and pandas Categorical columns (``brms.logical``, ``brms.pandas_categorical``);
+    ``frame`` itself for a case without them."""
+    logical = list(case["brms"].get("logical", []))
+    categorical = list(case["brms"].get("pandas_categorical", []))
+    if not logical and not categorical:
+        return frame
+    frame = frame.copy()
+    for col in logical:
+        text = frame[col].astype(str)
+        if not text.isin(["True", "False"]).all():
+            raise ValueError(f"logical column {col!r} has values other than True and False")
+        frame[col] = (text == "True").to_numpy(dtype=bool)
+    for col in categorical:
+        levels = list(case["brms"]["factors"][col])
+        values = pd.Categorical(frame[col], categories=levels)
+        if values.isna().any():
+            raise ValueError(f"pandas_categorical column {col!r} has values outside its declared levels {levels}")
+        frame[col] = values
+    return frame
 
 
 def read_matrix(path) -> pd.DataFrame:

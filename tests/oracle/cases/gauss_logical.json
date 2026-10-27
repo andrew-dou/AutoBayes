@@ -1,0 +1,84 @@
+{
+ "id": "gauss_logical",
+ "tier": "G",
+ "feature": "G02_call_surface",
+ "note": "G02 call surface: lg is a logical column (written True / False, read as R's logical through brms.logical and as pandas's bool), passed undeclared: brms codes it as one column lgTRUE, 1 for TRUE (X: Intercept, x, lgTRUE; prior row b coef lgTRUE), 18 rows of each value; the new rows (seed 2235) hold both values. Probed with standata(newdata = ): new rows holding only TRUE, or only FALSE, are coded against the fitted coding (lgTRUE all 1 or all 0), not refused. brms's posterior_linpred on the fitted and new rows equals b_Intercept + X b + r_g (+ offsets) built from the columns described, to 2e-15 at every frozen point. Data: tier_g1, seed 2211, 36 rows.",
+ "seed": 2302,
+ "n_points": 8,
+ "gate": {
+  "expect": "fail",
+  "reason": "G02_call_surface not implemented; remove this field when it lands"
+ },
+ "data": {
+  "generator": "tier_g1",
+  "seed": 2211,
+  "n": 36,
+  "newdata": {
+   "seed": 2235,
+   "n": 5
+  }
+ },
+ "brms": {
+  "formula": "y ~ x + lg + (1 | g)",
+  "family": {
+   "family": "gaussian"
+  },
+  "factors": {
+   "g": [
+    "a",
+    "b",
+    "c",
+    "d",
+    "e",
+    "f"
+   ]
+  },
+  "logical": [
+   "lg"
+  ],
+  "priors": [
+   {
+    "prior": "normal(0, 5)",
+    "class": "Intercept"
+   },
+   {
+    "prior": "normal(0, 2)",
+    "class": "b"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "sd",
+    "group": "g"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "sigma"
+   }
+  ]
+ },
+ "autobayes": {
+  "constructor": "gaussian",
+  "formula": "y ~ x + lg + (1 | g)",
+  "kwargs": {},
+  "priors": {
+   "intercept": [
+    "Normal",
+    0,
+    5
+   ],
+   "b": [
+    "Normal",
+    0,
+    2
+   ],
+   "sd": [
+    "HalfNormal",
+    1
+   ],
+   "sigma": [
+    "HalfNormal",
+    1
+   ]
+  }
+ }
+}

@@ -1,0 +1,90 @@
+{
+ "id": "gauss_factor_slopes",
+ "tier": "G",
+ "feature": "G03_interactions",
+ "note": "G03 interactions: z + x:z, a slope for every level: z keeps treatment contrasts (its margin is the intercept: zq, zr), while in x:z the margin x is absent, so R codes z there by indicators of all three levels, written factor first: zp:x, zq:x, zr:x (X: Intercept, zq, zr, zp:x, zq:x, zr:x; full rank). brms's posterior_linpred on the fitted and new rows equals b_Intercept + X b + r_g (+ offsets) built from the columns described, to 2e-15 at every frozen point. Data: tier_g1, seed 2211, 36 rows.",
+ "seed": 2315,
+ "n_points": 8,
+ "gate": {
+  "expect": "fail",
+  "reason": "G03_interactions not implemented; remove this field when it lands"
+ },
+ "data": {
+  "generator": "tier_g1",
+  "seed": 2211,
+  "n": 36,
+  "newdata": {
+   "seed": 2235,
+   "n": 5
+  }
+ },
+ "brms": {
+  "formula": "y ~ z + x:z + (1 | g)",
+  "family": {
+   "family": "gaussian"
+  },
+  "factors": {
+   "z": [
+    "p",
+    "q",
+    "r"
+   ],
+   "g": [
+    "a",
+    "b",
+    "c",
+    "d",
+    "e",
+    "f"
+   ]
+  },
+  "priors": [
+   {
+    "prior": "normal(0, 5)",
+    "class": "Intercept"
+   },
+   {
+    "prior": "normal(0, 2)",
+    "class": "b"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "sd",
+    "group": "g"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "sigma"
+   }
+  ]
+ },
+ "autobayes": {
+  "constructor": "gaussian",
+  "formula": "y ~ z + x:z + (1 | g)",
+  "kwargs": {
+   "categorical": {
+    "z": "p"
+   }
+  },
+  "priors": {
+   "intercept": [
+    "Normal",
+    0,
+    5
+   ],
+   "b": [
+    "Normal",
+    0,
+    2
+   ],
+   "sd": [
+    "HalfNormal",
+    1
+   ],
+   "sigma": [
+    "HalfNormal",
+    1
+   ]
+  }
+ }
+}

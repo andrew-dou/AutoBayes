@@ -1,0 +1,97 @@
+{
+ "id": "gauss_colon_only",
+ "tier": "G",
+ "feature": "G03_interactions",
+ "note": "G03 interactions: x:w + z:h with no margins. x:w is the product column. Neither z nor h has its margin in the formula, so R codes both by indicators of every level (not contrasts): 12 columns zp:hh1, zq:hh1, zr:hh1, zp:hh2, ..., zr:hh4, one per cell, each row in exactly one. With the intercept X has 14 columns of rank 13 (the cells sum to the intercept), and brms's centred columns (Xc, 13) have rank 12: the design is rank deficient by construction and the model is identified by its priors only; every cell has a row (no zero column). brms's posterior_linpred on the fitted and new rows equals b_Intercept + X b + r_g (+ offsets) built from the columns described, to 2e-15 at every frozen point. Data: tier_g1, seed 2211, 36 rows.",
+ "seed": 2314,
+ "n_points": 8,
+ "gate": {
+  "expect": "fail",
+  "reason": "G03_interactions not implemented; remove this field when it lands"
+ },
+ "data": {
+  "generator": "tier_g1",
+  "seed": 2211,
+  "n": 36,
+  "newdata": {
+   "seed": 2235,
+   "n": 5
+  }
+ },
+ "brms": {
+  "formula": "y ~ x:w + z:h + (1 | g)",
+  "family": {
+   "family": "gaussian"
+  },
+  "factors": {
+   "z": [
+    "p",
+    "q",
+    "r"
+   ],
+   "g": [
+    "a",
+    "b",
+    "c",
+    "d",
+    "e",
+    "f"
+   ],
+   "h": [
+    "h1",
+    "h2",
+    "h3",
+    "h4"
+   ]
+  },
+  "priors": [
+   {
+    "prior": "normal(0, 5)",
+    "class": "Intercept"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "b"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "sd",
+    "group": "g"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "sigma"
+   }
+  ]
+ },
+ "autobayes": {
+  "constructor": "gaussian",
+  "formula": "y ~ x:w + z:h + (1 | g)",
+  "kwargs": {
+   "categorical": {
+    "z": "p",
+    "h": "h1"
+   }
+  },
+  "priors": {
+   "intercept": [
+    "Normal",
+    0,
+    5
+   ],
+   "b": [
+    "Normal",
+    0,
+    1
+   ],
+   "sd": [
+    "HalfNormal",
+    1
+   ],
+   "sigma": [
+    "HalfNormal",
+    1
+   ]
+  }
+ }
+}

@@ -103,6 +103,20 @@
 #                   every summary must be identical between the two, and under two seeds; the meta records the posterior
 #                   package's version (brms's rhat, ess_bulk and ess_tail are posterior's)
 #
+# Opt-in per case (Tier G, part 1); a case without these keys is generated exactly as before:
+#
+#   logical         a list of columns written True / False (pandas's bool): each is read as R's logical (TRUE / FALSE; any other
+#                   field stops the generation), a logical predictor that brms codes as lgTRUE
+#   pandas_categorical   a list of factor columns (each must be in `factors`) that the AutoBayes side receives as a pandas Categorical
+#                   whose categories are the declared levels in their order (tests/oracle/fixture.py); brms reads them as every factor
+#   newdata_prediction_refused   a list of prediction kinds ("linpred", "epred") that brms fails to compute on newdata only (a factor
+#                   made in the formula, factor(o), on new rows lacking one of its levels): on newdata each is called once with and
+#                   once without the group terms and must fail, and brms's error message is recorded as predictions$newdata$<kind>_refused
+#                   (and <kind>_nogroup_refused) in place of the array; the fitted rows are recorded as usual
+#
+# Tables (Tier G): a numeric matrix column of a recorded table keeps its dims (brms's conditional_effects() of a model with
+# poly(w, 2) carries the model-frame column 'poly(w, 2)', rows by 2); a vector column is encoded as before.
+#
 # Nothing here samples, and nothing here evaluates code from the case: the formula is parsed with
 # as.formula(), the family is built with brms::brmsfamily() from named arguments, priors with set_prior().
 # Everything is deterministic given the case, the data and the package versions; a prediction or
@@ -125,6 +139,10 @@ case <- fromJSON(file.path(dir, "case_brms.json"), simplifyVector = FALSE)
 # -- data ------------------------------------------------------------------------------------------------
 na_columns <- unlist(case$na_columns)                 # opt-in: numeric columns with missing values (mi())
 extras <- unlist(case$extras)                         # opt-in: further outputs (see the header)
+logical_columns <- unlist(case$logical)               # opt-in (Tier G): columns written True / False, read as R's logical
+if (length(intersect(logical_columns, c(names(case$factors), na_columns)))) stop("a logical column is also a factor or a missing-value column")
+pandas_categorical <- unlist(case$pandas_categorical) # opt-in (Tier G): factors the AutoBayes side receives as pandas Categoricals
+if (length(setdiff(pandas_categorical, names(case$factors)))) stop("pandas_categorical lists columns that are not declared factors")
 read_frame <- function(path) {
   raw <- read.csv(path, stringsAsFactors = FALSE, check.names = FALSE, colClasses = "character")
   out <- raw
@@ -135,6 +153,10 @@ read_frame <- function(path) {
       bad <- setdiff(unique(raw[[col]]), lv)
       if (length(bad)) stop(sprintf("column %s has values outside its declared levels: %s", col, paste(bad, collapse = ", ")))
       out[[col]] <- factor(raw[[col]], levels = lv)
+    } else if (col %in% logical_columns) {            # Tier G: pandas writes a bool as True / False
+      v <- raw[[col]]
+      if (!all(v %in% c("True", "False"))) stop(sprintf("column %s has values other than True and False", col))
+      out[[col]] <- v == "True"
     } else if (col %in% na_columns) {                 # an empty field is NA; every other field must be a number
       v <- raw[[col]]
       num <- suppressWarnings(as.numeric(ifelse(v == "", NA_character_, v)))
@@ -332,8 +354,29 @@ if (length(pred_resp)) {
     out
   }
 }
+nd_refused <- unlist(case$newdata_prediction_refused) # opt-in (Tier G): prediction kinds brms fails to compute on newdata only
+if (length(nd_refused)) {
+  if (length(setdiff(nd_refused, c("linpred", "epred")))) stop("newdata_prediction_refused lists kinds other than linpred and epred")
+  if (is.null(nd)) stop("newdata_prediction_refused needs newdata")
+  if (length(refused) || length(pred_resp)) stop("newdata_prediction_refused does not combine with prediction_refused or prediction_resp")
+}
+newdata_refusal_block <- function(newdata) {          # the kinds listed recorded as <kind>_refused, brms's message
+  fn <- list(linpred = posterior_linpred, epred = posterior_epred)
+  run <- function(kind, ...) {
+    f <- function() fn[[kind]](fit1, newdata = newdata, ...)
+    if (!(kind %in% nd_refused)) return(enc(deterministic(f)))
+    msg <- tryCatch({ f(); NULL }, error = function(e) conditionMessage(e))
+    if (is.null(msg)) stop("brms computed a newdata prediction the case lists in newdata_prediction_refused")
+    msg
+  }
+  out <- list()
+  for (kind in c("linpred", "epred")) out[[if (kind %in% nd_refused) paste0(kind, "_refused") else kind]] <- run(kind)
+  if (has_groups) for (kind in c("linpred", "epred"))
+    out[[paste0(kind, if (kind %in% nd_refused) "_nogroup_refused" else "_nogroup")]] <- run(kind, re_formula = NA)
+  out
+}
 predictions <- list(fitted = pred_block(NULL))
-if (!is.null(nd)) predictions$newdata <- pred_block(nd)
+if (!is.null(nd)) predictions$newdata <- if (length(nd_refused)) newdata_refusal_block(nd) else pred_block(nd)
 
 # -- opt-in post-processing of the fixed-parameter fit (C07): pointwise log-likelihood, Bayes R2, PSIS-LOO --------
 # brms's loo() on this fit: the relative efficiencies of one-draw chains are NA, which loo() ignores (r_eff = 1),
@@ -365,7 +408,8 @@ enc_frame <- function(df) {                           # a table column by column
   df <- as.data.frame(df)
   list(columns = I(names(df)), values = lapply(setNames(names(df), names(df)), function(nm) {
     v <- df[[nm]]
-    if (is.numeric(v)) enc(v, dims = length(v), allow_infinite = TRUE, allow_na = TRUE) else I(as.character(v))
+    # Tier G: a matrix column (conditional_effects() holds a transform's model-frame column, poly(w, 2), at its means) keeps its dims
+    if (is.numeric(v)) enc(v, dims = if (is.matrix(v)) dim(v) else length(v), allow_infinite = TRUE, allow_na = TRUE) else I(as.character(v))
   }))
 }
 if ("waic" %in% extras) {                             # D05: waic() of the fixed-parameter fit

@@ -272,6 +272,34 @@ def tier_f2(seed: int, n: int = 36) -> pd.DataFrame:
     return df
 
 
+_G1_SEED_OFFSET = 86028121
+
+
+def tier_g1(seed: int, n: int = 36) -> pd.DataFrame:
+    """`tier_c` plus the columns Tier G part 1 needs (population-level syntax): a third numeric predictor `v` (three-way
+    interactions), a logical `lg` with both values present (written True / False; a case that declares it in `brms.logical`
+    reads it as R's logical and pandas's bool) and a small offset `off` in (-0.5, 0.5) (several offsets, offset expressions). Drawn
+    after `tier_c`'s so the shared columns equal `tier_c(seed, n)` exactly (its `xm` keeps its missing values; `w` is `tier_b`'s
+    positive weight in (0.5, 2), `ord` its ordinal 1..4, `xpos` and `exposure` `tier_a`'s positive columns)."""
+    df = tier_c(seed, n)
+    rng = np.random.default_rng(seed + _G1_SEED_OFFSET)
+    df["v"] = np.round(rng.normal(0.0, 1.0, n), 4)
+    df["lg"] = _every_level(rng.uniform(size=n) < 0.5, (False, True)).astype(bool)
+    df["off"] = np.round(rng.uniform(-0.5, 0.5, n), 4)
+    return df
+
+
+def newdata_tier_g1(seed: int, n: int = 5, *, pairs_from: pd.DataFrame | None = None) -> pd.DataFrame:
+    """New rows of a `tier_g1` case: `tier_c`'s (`newdata` with its flags), then `v`, `lg` (both values present) and `off`, drawn
+    last from their own generator so that every column above is as a `tier_c` case's new rows have it."""
+    df = newdata(seed, n, tier_a=True, pairs_from=pairs_from, tier_b=True, tier_c=True)
+    rng = np.random.default_rng(seed + _G1_SEED_OFFSET)
+    df["v"] = np.round(rng.normal(0.0, 1.0, n), 4)
+    df["lg"] = _every_level(rng.uniform(size=n) < 0.5, (False, True)).astype(bool)
+    df["off"] = np.round(rng.uniform(-0.5, 0.5, n), 4)
+    return df
+
+
 def rook_adjacency() -> pd.DataFrame:
     """The 0/1 rook adjacency of `SITES` on their grid (1 for two sites that share an edge), labelled by site on both axes."""
     W = np.zeros((len(SITES), len(SITES)), dtype=np.int64)
@@ -342,6 +370,8 @@ GENERATORS = {"baseline": baseline, "tier_a": tier_a, "tier_b": tier_b, "tier_c"
               "tier_f": tier_f, "tier_f2": tier_f2}
 NA_COLUMNS = {"tier_c": ("xm",), "tier_d": ("xm",), "tier_e": ("xm",), "tier_f": ("xm",),   # the only columns with missing values,
               "tier_f2": ("xm",)}                                                            # by design
+GENERATORS["tier_g1"] = tier_g1                 # Tier G part 1
+NA_COLUMNS["tier_g1"] = ("xm",)
 
 
 def make(spec: dict) -> tuple[pd.DataFrame, pd.DataFrame | None]:
@@ -352,6 +382,8 @@ def make(spec: dict) -> tuple[pd.DataFrame, pd.DataFrame | None]:
     if not nd:
         return data, None
     tier = spec["generator"]
+    if tier == "tier_g1":                       # Tier G part 1: its own new rows (tier_c's, then its columns)
+        return data, newdata_tier_g1(int(nd["seed"]), int(nd.get("n", 5)), pairs_from=data if nd.get("pairs_from_data") else None)
     later = ("tier_e", "tier_f", "tier_f2")
     return data, newdata(int(nd["seed"]), int(nd.get("n", 5)), tier_a=tier in ("tier_a", "tier_b", "tier_c", "tier_d", *later),
                          pairs_from=data if nd.get("pairs_from_data") else None,

@@ -222,6 +222,12 @@ class Bundle:
         if self.case["brms"].get("prediction_resp") and "check_response_predictions" not in globals():
             raise OracleMismatch("the fixture records each response's predictions (prediction_resp); gates.py has no "
                                  "check_response_predictions to compare them")
+        # Tier G part 1: a fixture whose new-row predictions brms refuses (``newdata_prediction_refused``: factor(o) on new rows
+        # lacking one of its levels) needs G4's treatment of those rows, ``check_newdata_refusal``, which lands with the feature
+        # (G04): until then such a case fails here rather than check_predictions skipping the refused rows unchecked
+        if self.case["brms"].get("newdata_prediction_refused") and "check_newdata_refusal" not in globals():
+            raise OracleMismatch("brms refuses the new rows' predictions (newdata_prediction_refused); gates.py has no "
+                                 "check_newdata_refusal to compare the model's predictions on them")
         self.cmap = adapter.match_columns(self.fixture, self.model)
         self.gmap = adapter.match_groups(self.fixture, self.model)
 
