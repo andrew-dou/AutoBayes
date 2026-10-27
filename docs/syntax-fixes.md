@@ -16,7 +16,7 @@ it is the uncorrelated intercept and slope, `(1 + x || g)`; two terms of `g` tha
 
 **Refusals that name their construct.** R's `.`, backtick-quoted names (`` `x.dot` ``: write `x.dot`), brms's reserved
 `Intercept` (`0 + Intercept + x`), the namespace operator `::` (`splines::ns(x)`), `%in%` and other `%...%` operators, the `^`
-expansion (`(x + z + w)^2`), smooth terms `s()`, `t2()`, `te()`, `ti()` (their own message, no longer the transforms'), a
+expansion (`(x + z + w)^2`; G03 reads it now, docs/term-algebra.md), smooth terms `s()`, `t2()`, `te()`, `ti()` (their own message, no longer the transforms'), a
 transformed response (`log(y) ~ x`), a `cbind()` response of a family of one response column (with the `mvbind()` spelling of
 several Gaussian responses), `disc ~` of an ordinal family (D38), a non-linear formula of a distributional parameter (brms's
 `nlf(sigma ~ ...)`, D62) and a non-linear parameter nested in another (`nlf(a ~ c * z)`, D60).

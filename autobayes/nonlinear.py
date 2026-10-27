@@ -59,6 +59,7 @@ from autobayes.formula import (_FORMULA_RE, _IDENT, MI_CALL_RE, FormulaError, Mo
                                categorical_labels, factor_column, group_labels, parse_formula, pop_term_design, reject_complex,
                                sd_tag, validate_data)
 from autobayes.model import Design, GroupBlock, Model
+from autobayes.term_algebra import refuse_products           # G03
 from autobayes.priors import AUXILIARY, Prior, PriorError, Priors, describe_prior
 
 # -- the expression grammar ----------------------------------------------------------------------------------------------
@@ -596,6 +597,7 @@ def parse_nonlinear(formulas, data: pd.DataFrame | None = None, family: str = "g
 
     # Route the declared categorical columns: each parameter's formula receives the declarations of its own main effects.
     spec0 = [parse_formula(f"{name} ~ {prhs}", None, family, None) for name, prhs, _ in parsed]
+    refuse_products(spec0, "a non-linear parameter's formula")          # G03: verified in linear formulas only
     mains = [{t.name for t in s.pop_terms if t.kind == "numeric"} for s in spec0]
     if isinstance(categorical, Mapping):
         for col in categorical:

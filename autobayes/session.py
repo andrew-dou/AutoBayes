@@ -124,6 +124,7 @@ def fit_record(model, fit, *, panel: dict | None = None, max_treedepth: int = 10
     from autobayes.families.mixture import ORDER, prior_labels
     from autobayes.formula import sd_tag
     from autobayes.identity import check_fit_binding
+    from autobayes.term_algebra import product_groups
     if getattr(model, "responses", None):                       # C01: not part of the multivariate slice
         raise ValueError("fit_record() of a multivariate model is not supported (docs/multivariate.md); record each "
                          "response's parameters from fit.idata by their names, model.response_names")
@@ -250,6 +251,10 @@ def fit_record(model, fit, *, panel: dict | None = None, max_treedepth: int = 10
             **({"measurement_error": {t.name: {"column": t.operands[0], "noise_column": t.operands[1], "names": model.me_names[t.operands[0]]}
                                       for t in s.me_terms}} if s.me_terms else {}),
             "interactions": [list(pair) for pair in s.interactions],
+            # G03: each interaction coded by R's rule, its variables, the factors coded by indicators, and its columns
+            **({"products": {term: {"operands": list(cols[0].product.operands), "indicator_coded": list(cols[0].product.full),
+                                    "columns": [c.name for c in cols]} for term, cols in product_groups(s).items()}}
+               if product_groups(s) else {}),
             "canonical_formula": s.canonical_formula,
             "categorical": {c.name: {"reference": c.reference, "levels": list(c.levels),
                                      "coefficients": list(c.coefficients), "unused_levels": list(c.unused), "coding": "full_level" if c.full_rank else "treatment"}

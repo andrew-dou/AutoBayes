@@ -674,6 +674,11 @@ class Priors:
                     order = "numeric first" if len(canonical.categorical) == 1 else "the main effects' order"
                     hint = f"; write the interaction key in its canonical spelling {canonical.name!r} ({order})"
                     break
+                product = next((t.product.term for t in spec.pop_terms if t.kind == "product" and isinstance(k, str)
+                                and sorted(k.split(":")) == sorted(t.product.operands) and k != t.product.term), None)
+                if product is not None:                     # G03: an interaction keyed in another order of its variables
+                    hint = f"; write the interaction key as R orders its variables, {product!r}"
+                    break
                 mo = next((t for t in spec.mo_terms if k in (t.operands[0], f"mo{t.operands[0]}")), None)
                 if mo is not None:                          # the column, or brms's coefficient name 'moord' (B03)
                     hint = f"; the monotonic term's coefficient is keyed by the term, b={{{mo.name!r}: prior}}"
@@ -686,6 +691,9 @@ class Priors:
         for t in spec.pop_terms:
             if t.kind == "contrast":                          # F08: keyed by the ordered factor's term, one prior or one per contrast
                 out[t.name] = _contrast_prior(spec, t, given)
+                continue
+            if t.kind == "product":                           # G03: keyed by the interaction, one prior or one per column
+                out[t.name] = _product_prior(spec, t, given)
                 continue
             if t.basis is not None and (t.name != t.basis or t.transform.form in ("poly", "factor", "logical")):   # G04: a column of
                 # poly(), factor() or a logical (or, before the data are seen, the term itself), keyed by its term
@@ -1492,6 +1500,8 @@ def _prior_key(spec, t) -> str:
     """The key of a population-level term's priors in ``Priors(b={...})``: the term's name, or for a polynomial contrast of an
     ordered factor (F08) the factor's term as written, ``fo`` or ``ordered(z)``, which keys all of its contrasts; G04: an
     in-formula transform's term as written, ``poly(w, 2)``, ``factor(ord)``, ``I(x > 0)``, which keys all of its columns."""
+    if t.kind == "product":                                    # G03: every column of an interaction coded by R's rule
+        return t.product.term
     if t.kind == "contrast":
         return spec.categorical(t.factor).term_name
     return t.basis if t.basis is not None else t.name
@@ -1520,6 +1530,33 @@ def _basis_prior(spec, t, given) -> "Prior":
         raise PriorError(f"per-column priors for {t.basis!r} must cover exactly its columns' suffixes {wanted} ("
                          f"{', '.join(t.basis + k for k in wanted)}); missing {missing}, unexpected {extra}")
     return dict(zip(keys, entry.values()))[t.name[len(t.basis):]]
+
+
+def _product_prior(spec, t, given) -> "Prior":
+    """G03: the prior of the column ``t`` of an interaction coded by R's rule (docs/term-algebra.md) from the interaction's entry:
+    one ``Prior`` for every column, or, for an interaction with a factor, a mapping by each column's levels joined by ``, ``
+    (``{"q, h2": ..., "r, h2": ...}``, ``{"p": ...}`` for ``zp:x``) covering exactly its columns (structure only before the levels
+    are known)."""
+    term = t.product.term
+    entry = given[term]
+    if isinstance(entry, Prior):
+        return entry
+    if not isinstance(entry, Mapping) or not t.product.factors:
+        raise PriorError(f"the interaction {term!r} takes one prior" + (" or a mapping {levels: prior} by each column's levels joined "
+                         "by ', '" if t.product.factors else "") + f", got {type(entry).__name__}")
+    bad = next((v for v in entry.values() if not isinstance(v, Prior)), None)
+    if bad is not None or not entry:
+        raise PriorError(f"per-column priors of the interaction {term!r} map each column's levels to a Prior; got "
+                         f"{type(bad).__name__ if bad is not None else 'an empty mapping'}")
+    if not t.product.known:                                     # structure only; the columns need the data
+        return next(iter(entry.values()))
+    wanted = [c.product.label for c in spec.pop_terms if c.kind == "product" and c.product.term == term]
+    missing, extra = [k for k in wanted if k not in entry], [k for k in entry if k not in wanted]
+    if missing or extra:
+        raise PriorError(f"per-column priors for the interaction {term!r} must cover exactly its columns' levels {wanted} (columns "
+                         f"{', '.join(c.name for c in spec.pop_terms if c.kind == 'product' and c.product.term == term)}); missing "
+                         f"{missing}, unexpected {extra}")
+    return entry[t.product.label]
 
 
 def _contrast_prior(spec, t, given) -> "Prior":

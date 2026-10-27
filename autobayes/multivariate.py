@@ -64,6 +64,7 @@ from autobayes.families import FAMILIES, get_family
 from autobayes.formula import (_GROUP_RE, _IDENT, MI_CALL_RE, MVBIND_RE, FormulaError, ModelSpec, _split_top_level, check_imputation,
                                parse_formula)
 from autobayes.formula import SUBSET_CALL_RE, group_labels   # F06c
+from autobayes.term_algebra import refuse_products           # G03
 from autobayes.priors import PriorError, Priors, describe_prior
 
 _MVBIND_FORMULA_RE = re.compile(r"^\s*mvbind\s*\(([^()]*)\)\s*([^~]*?)\s*~\s*(.*?)\s*$", re.S)   # mvbind(<responses>) <rest> ~ <rhs>
@@ -258,6 +259,7 @@ def parse_multivariate(formula, data: pd.DataFrame | None = None, family: str = 
             s = parse_formula(f"{r} ~ {rhs}", data, family, categorical)
         except FormulaError as e:
             raise FormulaError(f"{formula!r}, the formula of the response {r!r} ('{r} ~ {rhs}'): {e}") from None
+        refuse_products([s], "a multivariate model")                    # G03: verified in univariate models only
         if s.custom_group_terms:                                         # D08: verified in univariate models only
             raise FormulaError(f"{formula!r}: '{s.custom_group_terms[0].canonical}' in a multivariate formula is not supported"
                                " (docs/multi-membership-and-by.md, divergences D104, D105)")
@@ -318,6 +320,7 @@ def _parse_imputation(formulas, data, family, categorical, *, rescor) -> Multiva
             specs0.append(parse_formula(text, None, family, None))     # the structure, before the data and the declarations
         except FormulaError as e:
             raise FormulaError(f"{formulas!r}, the formula {text!r}: {e}") from None
+        refuse_products(specs0[-1:], "a multivariate model")            # G03: verified in univariate models only
         if specs0[-1].custom_group_terms:                               # D08: verified in univariate models only
             raise FormulaError(f"{formulas!r}, the formula {text!r}: '{specs0[-1].custom_group_terms[0].canonical}' in a multivariate "
                                "model is not supported (docs/multi-membership-and-by.md, divergences D104, D105)")
@@ -506,6 +509,7 @@ def _parse_separate(formulas, data, family, categorical, *, rescor) -> Multivari
             specs0.append(parse_formula(stripped, None, family, None))   # the structure, before the data and the declarations
         except FormulaError as e:
             raise FormulaError(f"{formulas!r}, the formula {text!r}: {e}") from None
+        refuse_products(specs0[-1:], "a multivariate model")              # G03: verified in univariate models only
     responses = tuple(s.response for s in specs0)
     dup = sorted({r for r in responses if responses.count(r) > 1})
     if dup:

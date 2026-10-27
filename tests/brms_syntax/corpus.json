@@ -1257,14 +1257,13 @@
     "group_terms": []
    },
    "result": {
-    "status": "error",
-    "type": "FormulaError",
-    "message": "'x:z': the main effect 'x' is missing. AutoBayes requires both main effects of an interaction ('x + z + x:z' or 'x*z'): omitting one is a different model (the level intercepts or the reference slope are forced to zero and formulae changes the interaction's coding) and is not supported (docs/interactions.md, divergence D14).",
-    "raised_at": "formula.py:3358",
-    "stage": "default_priors",
-    "mechanism": "refusal",
-    "outcome": "refused_named",
-    "gap": "capability"
+    "status": "built",
+    "model": "Model",
+    "model_warnings": [],
+    "issues": [],
+    "notes": [],
+    "outcome": "match",
+    "gap": null
    }
   },
   {
@@ -1420,14 +1419,15 @@
     "group_terms": []
    },
    "result": {
-    "status": "error",
-    "type": "FormulaError",
-    "message": "'f:f2': the main effect 'f' is missing. AutoBayes requires both main effects of an interaction ('f + f2 + f:f2' or 'f*f2'): omitting one is a different model (the level intercepts or the reference slope are forced to zero and formulae changes the interaction's coding) and is not supported (docs/interactions.md, divergence D14).",
-    "raised_at": "formula.py:3358",
-    "stage": "default_priors",
-    "mechanism": "refusal",
-    "outcome": "refused_named",
-    "gap": "capability"
+    "status": "built",
+    "model": "Model",
+    "model_warnings": [
+     "the population-level design has rank 6 of its 7 columns (with the intercept): 1 combination(s) of the coefficients are identified by their priors only, not by the data (brms builds the same design and warns of nothing; docs/term-algebra.md, divergence D179)."
+    ],
+    "issues": [],
+    "notes": [],
+    "outcome": "match",
+    "gap": null
    }
   },
   {
@@ -1474,14 +1474,13 @@
     "group_terms": []
    },
    "result": {
-    "status": "error",
-    "type": "FormulaError",
-    "message": "'x:f': the main effect 'f' is missing. AutoBayes requires both main effects of an interaction ('x + f + x:f' or 'x*f'): omitting one is a different model (the level intercepts or the reference slope are forced to zero and formulae changes the interaction's coding) and is not supported (docs/interactions.md, divergence D14).",
-    "raised_at": "formula.py:3358",
-    "stage": "default_priors",
-    "mechanism": "refusal",
-    "outcome": "refused_named",
-    "gap": "capability"
+    "status": "built",
+    "model": "Model",
+    "model_warnings": [],
+    "issues": [],
+    "notes": [],
+    "outcome": "match",
+    "gap": null
    }
   },
   {
@@ -1528,14 +1527,13 @@
     "group_terms": []
    },
    "result": {
-    "status": "error",
-    "type": "FormulaError",
-    "message": "'x * z * w': only a two-way interaction is supported ('x * z * w' names 3 terms); three-way and higher-order interactions are not.",
-    "raised_at": "formula.py:3148",
-    "stage": "default_priors",
-    "mechanism": "refusal",
-    "outcome": "refused_named",
-    "gap": "capability"
+    "status": "built",
+    "model": "Model",
+    "model_warnings": [],
+    "issues": [],
+    "notes": [],
+    "outcome": "match",
+    "gap": null
    }
   },
   {
@@ -1581,14 +1579,13 @@
     "group_terms": []
    },
    "result": {
-    "status": "error",
-    "type": "FormulaError",
-    "message": "'(x + z + w)^2': R's formula operator '^' (the terms and all their interactions up to that order) is not supported; write the terms and their two-way interactions out, 'x + z + x:z' (docs/interactions.md), or I(x^2) for a power (docs/transforms.md)",
-    "raised_at": "formula.py:2171",
-    "stage": "default_priors",
-    "mechanism": "refusal",
-    "outcome": "refused_named",
-    "gap": "capability"
+    "status": "built",
+    "model": "Model",
+    "model_warnings": [],
+    "issues": [],
+    "notes": [],
+    "outcome": "match",
+    "gap": null
    }
   },
   {
@@ -1637,8 +1634,8 @@
    "result": {
     "status": "error",
     "type": "FormulaError",
-    "message": "'x %in% f': R's operator %in% is not supported in a formula; nesting x %in% f is the interaction x:f, with the main effects x and f (docs/interactions.md)",
-    "raised_at": "formula.py:2167",
+    "message": "'x %in% f': R's operator %in% is not supported in a formula; nesting x %in% f is R's interaction x:f: write that (docs/term-algebra.md)",
+    "raised_at": "formula.py:2285",
     "stage": "default_priors",
     "mechanism": "refusal",
     "outcome": "refused_named",
@@ -1683,14 +1680,13 @@
     "group_terms": []
    },
    "result": {
-    "status": "error",
-    "type": "FormulaError",
-    "message": "'y ~ x + z - z': '-' supports only subtracting the population intercept '- 1'",
-    "raised_at": "formula.py:2496",
-    "stage": "default_priors",
-    "mechanism": "refusal",
-    "outcome": "refused_named",
-    "gap": "capability"
+    "status": "built",
+    "model": "Model",
+    "model_warnings": [],
+    "issues": [],
+    "notes": [],
+    "outcome": "match",
+    "gap": null
    }
   },
   {
@@ -1775,14 +1771,13 @@
     "group_terms": []
    },
    "result": {
-    "status": "error",
-    "type": "FormulaError",
-    "message": "'z:x': the interaction 'x:z' appears more than once after expansion",
-    "raised_at": "formula.py:2967",
-    "stage": "default_priors",
-    "mechanism": "refusal",
-    "outcome": "refused_named",
-    "gap": "capability"
+    "status": "built",
+    "model": "Model",
+    "model_warnings": [],
+    "issues": [],
+    "notes": [],
+    "outcome": "match",
+    "gap": null
    }
   },
   {
@@ -2176,14 +2171,13 @@
     "group_terms": []
    },
    "result": {
-    "status": "error",
-    "type": "FormulaError",
-    "message": "'x': duplicated predictor",
-    "raised_at": "formula.py:2525",
-    "stage": "default_priors",
-    "mechanism": "refusal",
-    "outcome": "refused_named",
-    "gap": "capability"
+    "status": "built",
+    "model": "Model",
+    "model_warnings": [],
+    "issues": [],
+    "notes": [],
+    "outcome": "match",
+    "gap": null
    }
   },
   {
@@ -2278,14 +2272,13 @@
     "group_terms": []
    },
    "result": {
-    "status": "error",
-    "type": "FormulaError",
-    "message": "'x:f': the main effect 'x' is missing. AutoBayes requires both main effects of an interaction ('x + f + x:f' or 'x*f'): omitting one is a different model (the level intercepts or the reference slope are forced to zero and formulae changes the interaction's coding) and is not supported (docs/interactions.md, divergence D14).",
-    "raised_at": "formula.py:3358",
-    "stage": "default_priors",
-    "mechanism": "refusal",
-    "outcome": "refused_named",
-    "gap": "capability"
+    "status": "built",
+    "model": "Model",
+    "model_warnings": [],
+    "issues": [],
+    "notes": [],
+    "outcome": "match",
+    "gap": null
    }
   },
   {
@@ -13409,13 +13402,13 @@
  ],
  "summary": {
   "outcomes": {
-   "match": 146,
-   "refused_named": 101,
+   "match": 155,
+   "refused_named": 92,
    "differs": 1
   },
   "gaps": {
-   "none": 148,
-   "capability": 99,
+   "none": 157,
+   "capability": 90,
    "divergence": 1
   },
   "brms_refuses": 2
