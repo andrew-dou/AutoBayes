@@ -2515,7 +2515,7 @@
    "pr": null,
    "attempts": 0,
    "divergences": [],
-   "next_action": "feature agent (fixtures #109)",
+   "next_action": "paused at the weekly usage cap (2026-10-27): implementation committed in worktree parity-g05a at ffbda16 (not pushed); resume after the reset: rebase onto main, full suite and gate tool, report",
    "reserved_divergences": "D183-D184"
   },
   {
@@ -2530,7 +2530,7 @@
    "pr": null,
    "attempts": 0,
    "divergences": [],
-   "next_action": "feature agent (fixtures #109)",
+   "next_action": "paused at the weekly usage cap (2026-10-27): implementation committed in worktree parity-g05b at 8ad67b8 (not pushed); resume after the reset: rebase onto main, full suite and gate tool, report",
    "reserved_divergences": "D185-D186"
   },
   {
@@ -2546,7 +2546,7 @@
    "pr": null,
    "attempts": 0,
    "divergences": [],
-   "next_action": "feature agent (fixtures #109)",
+   "next_action": "paused at the weekly usage cap (2026-10-27): implementation committed in worktree parity-g06 at 95ce3fa (not pushed); resume after the reset: rebase onto main, full suite and gate tool, report",
    "reserved_divergences": "D187-D188"
   },
   {
