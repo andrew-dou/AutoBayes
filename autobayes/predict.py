@@ -237,24 +237,32 @@ def dpar_linear_predictor(model, post, df: pd.DataFrame, name: str, *, include_g
     the response formula's is computed here; with its group-level terms (D08: a correlation ID shared with the response
     formula's term) each row adds the effect of its level, unless ``include_group_effects`` is False. A level the fit has not
     seen is refused here (``predict()`` refuses new levels of a shared ID's factor first)."""
-    ds, roles = model.spec.dpar(name), model.dpar_names[name]
+    ds, roles, dd = model.spec.dpar(name), model.dpar_names[name], model.design.dpars[name]
     shape = (post.sizes["chain"], post.sizes["draw"])
     a = post[roles["intercept"]].to_numpy() if ds.intercept else np.zeros(shape)
     eta = np.repeat(a[..., None], len(df), axis=-1)
     if ds.pop_terms:
         X = np.concatenate([pop_term_design(t, df, ds.categoricals) for t in ds.pop_terms], axis=1)
+        if getattr(dd, "centred_draws", False):               # G06: the posterior holds the centred intercept (the cumulative disc)
+            X = X - dd.x_means
         b = np.concatenate([post[roles[f"b:{t.name}"]].to_numpy() if t.levels else post[roles[f"b:{t.name}"]].to_numpy()[..., None]
                             for t in ds.pop_terms], axis=-1)
         eta = eta + np.einsum("cdp,np->cdn", b, X)
-    for t in (ds.group_terms if include_group_effects else ()):   # D08: a shared ID's varying intercept of the parameter
-        levels = list(model.design.dpars[name].group_blocks[(t.factor, "Intercept")].levels)
+    if ds.offset is not None:                                  # G06: the formula's offset, brms's offsets_<dpar>
+        eta = eta + ds.offset.values(df, where="newdata column")
+    for t in (ds.group_terms if include_group_effects else ()):   # D08: a shared ID's varying intercept of the parameter; G06: its
+        levels = list(dd.group_blocks[(t.factor, "Intercept")].levels)   # own terms and a shared ID's varying slopes
         labels = group_labels(t.factor, df).to_numpy()
         unseen = sorted(set(labels) - set(levels))
         if unseen:
-            raise FormulaError(f"levels {unseen} of {t.factor!r} were not seen in training; {name}'s formula has no effect for them "
-                               "(new levels of a factor whose correlation ID is shared are not offered; divergence D106)")
-        u = post[model.dpar_group_names[(name, t.factor, "Intercept")]["group_effect"]].transpose("chain", "draw", ...).to_numpy()
-        eta = eta + u[..., [levels.index(l) for l in labels]]
+            why = ("new levels of a factor whose correlation ID is shared are not offered; divergence D106" if t.id is not None else
+                   "new levels of a distributional formula's own group-level term are not offered; docs/distributional-groups.md, "
+                   "divergence D32")
+            raise FormulaError(f"levels {unseen} of {t.factor!r} were not seen in training; {name}'s formula has no effect for them ({why})")
+        index = [levels.index(l) for l in labels]
+        for c in t.coefs:
+            u = post[model.dpar_group_names[(name, t.factor, c)]["group_effect"]].transpose("chain", "draw", ...).to_numpy()[..., index]
+            eta = eta + (u if c == "Intercept" else u * df[c].to_numpy(dtype=float))
     return eta
 
 
@@ -288,6 +296,7 @@ def _check_newdata(model, newdata: pd.DataFrame, *, need_trials: bool = False, i
     operands = [c for t in s.group_terms for c in t.data_columns] if include_group_effects else []   # g and h, never g_h; D08:
     operands += [c for d in s.dpars for t in d.group_terms for c in t.data_columns] if include_group_effects else []   # mm(), by
     cols = [*s.model_columns] + (list(s.offset.columns) if s.offset is not None else []) + operands   # every formula's columns (B01)
+    cols += [c for d in s.dpars if d.offset is not None for c in d.offset.columns]   # G06: a distributional formula's offset columns
     cols += list(s.car.columns) if getattr(s, "car", None) is not None else []   # F02a: the locations, needed with or without groups
     cols += [a.column for a in s.additions if a.kind == "thres"]   # F06b: each row's level of thres(gr = z)
     cols += list(extra)                                          # F06a: se()'s and rate()'s columns where the kind needs them

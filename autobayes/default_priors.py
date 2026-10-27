@@ -375,6 +375,8 @@ def default_priors(formula: str | list[str], data: pd.DataFrame, *, family: str 
     if families is not None or order is not None:
         raise ValueError(f"families= and order= are a mixture's (family='mixture'); the {fam.name} family takes neither")
     spec = parse_formula(formula, data, family, categorical)
+    if "nu" in spec.dpar_names:                                       # G06: nu's own formula has its formula's defaults, not gamma(2, 0.1)
+        learned.pop("nu", None)
     if fam is not get_family(family) and fam.check_formula is not None:   # a link's own refusals (E06, divergence D133)
         fam.check_formula(spec)
     check_imputation(spec, imputed)                                   # C06: mi() belongs to a multivariate model
@@ -417,8 +419,11 @@ def default_priors(formula: str | list[str], data: pd.DataFrame, *, family: str 
         _, log_scale = location_scale(y, "log")                      # brms's def_scale_prior with the formula's log link
         auxiliary[fam.scale_parameter] = {**({"intercept": fam.default_distributional_intercept(log_scale)} if ds.intercept else {}),
                                           **({"b": Flat()} if ds.pop_terms else {}),
-                                          # D08: a shared ID's terms: brms's def_scale_prior of the parameter, its log link
-                                          **({"sd": {t.factor: HalfStudentT(DF, log_scale) for t in ds.group_terms}} if ds.group_terms else {})}
+                                          # D08: a shared ID's terms: brms's def_scale_prior of the parameter, its log link; G06:
+                                          # the formula's own terms alike, and one per coefficient of a term with varying slopes
+                                          **({"sd": {t.factor: HalfStudentT(DF, log_scale) if not t.slopes else
+                                                     {c: HalfStudentT(DF, log_scale) for c in t.coefs} for t in ds.group_terms}}
+                                             if ds.group_terms else {})}
     elif fam.scale_parameter is not None:
         if fam.default_scale_prior is None:
             raise PriorError(f"no brms default prior is recorded for the {fam.name} family's {fam.scale_parameter}; "
@@ -428,7 +433,10 @@ def default_priors(formula: str | list[str], data: pd.DataFrame, *, family: str 
         if name != fam.scale_parameter:                               # def_dpar_prior on the intercept, flat coefficients
             ds, formula = spec.dpar(name), fam.distributional_formula(name)
             auxiliary[name] = {**({"intercept": formula.default_intercept()} if ds.intercept else {}),
-                               **({"b": Flat()} if ds.pop_terms else {})}
+                               **({"b": Flat()} if ds.pop_terms else {}),
+                               # G06: its own group-level terms (zi's): brms's def_scale_prior under the logit link, which does
+                               # not read the response, student_t(3, 0, 2.5)
+                               **({"sd": {t.factor: HalfStudentT(DF, 2.5) for t in ds.group_terms}} if ds.group_terms else {})}
     if fam.zero_parameter is not None and fam.zero_parameter not in spec.dpar_names:   # zi or hu (B06): beta(1, 1)
         if fam.default_zero_prior is None:
             raise PriorError(f"no brms default prior is recorded for the {fam.name} family's {fam.zero_parameter}; "
@@ -469,6 +477,8 @@ def default_priors(formula: str | list[str], data: pd.DataFrame, *, family: str 
     if spec.timecor is not None:
         timecor = {spec.timecor.prior_class: LKJ(1) if spec.timecor.call == "unstr" else Flat()}
     sbhaz = Dirichlet(1) if fam.baseline_hazard else None              # F05: brms's dirichlet(1) on the cox baseline hazard
+    if "nu" in auxiliary:                                             # G06: nu's own formula's priors, under Priors(nu=...)
+        learned["nu"] = auxiliary.pop("nu")
     priors = Priors(intercept=mark(intercept), b=mark(Flat()) if spec.pop_terms else None, sd=mark(sd) or None,
                     cor=mark(cor) or None, nu=mark(learned.get("nu")), simo=mark(simo) or None,
                     sdgp=mark(sdgp) or None, lscale=mark(lscale) or None, meanme=mark(me) or None, sdme=mark(me) or None,
@@ -704,7 +714,7 @@ def prior_table(priors: Priors, spec, family="gaussian", *, center_predictors: b
         if extra.name not in spec.dpar_names:                         # E03: alpha's own formula has its dpar rows instead
             lb, ub = extra.bounds
             add(getattr(priors, extra.name), extra.name, lb=lb, ub=ub)
-    if priors.nu is not None:
+    if priors.nu is not None and "nu" not in spec.dpar_names:        # G06: nu's own formula has its dpar rows instead
         add(priors.nu, "nu", lb=r_number(fam.learnable_parameters["nu"]))
     sd = priors.sd_priors(spec)
     # F01b: a per-category family's group terms are brms's once per non-reference category, each block under its dpar mu<k>

@@ -311,8 +311,8 @@ def test_refusals_name_the_construct(formula, family, message):
 
 def test_distributional_and_nonlinear_refusals_name_the_construct(corpus_frame):
     df = corpus_frame
-    with pytest.raises(FormulaError, match="brms's disc ~ ... \\(the discrimination of an ordinal family"):
-        parse_formula(["yord ~ x", "disc ~ z"], None, "cumulative")
+    with pytest.raises(FormulaError, match="brms's disc ~ ... \\(the discrimination of an ordinal family"):   # G06: the
+        parse_formula(["yord ~ x", "disc ~ z"], None, "sratio")              # cumulative logit family's is offered
     with pytest.raises(FormulaError, match="'a' is a parameter of a non-linear formula of sigma \\(brms's nlf\\(sigma ~ ...\\)"):
         parse_formula(["y ~ x", "sigma ~ a * exp(c * z)", "a ~ 1", "c ~ 1"])
     with pytest.raises(FormulaError, match="'c' is a parameter of the formula of the non-linear parameter 'a' \\(brms's nlf\\(a ~ ...\\)"):

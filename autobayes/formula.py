@@ -106,7 +106,7 @@ from __future__ import annotations
 import re
 import math
 from collections.abc import Mapping
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, fields, replace
 from functools import lru_cache
 from types import MappingProxyType
 
@@ -2672,6 +2672,80 @@ def _distributional_offer(fam) -> str:
             + (f", and for the {', '.join(others)} families (docs/contexts-newer-families.md, divergence D116)" if others else ""))
 
 
+# G06 (docs/distributional-groups.md): the fields a group-level term of a distributional formula may set; mm(), gr(by = ) and
+# whatever else a term can carry are refused there by name
+_DPAR_GROUP_FIELDS = frozenset({"factor", "coefs", "correlated", "id"})
+
+
+def check_dpar_terms(d: ModelSpec, name: str, text: str, fam, spec: ModelSpec, main: str) -> None:
+    """G06 (docs/distributional-groups.md): the group-level terms and the offset of distributional parameter ``name``'s formula
+    ``d``, where a frozen brms case verifies them. A term without an ID is brms's group of its own (``sigma ~ z + (1 | g)``:
+    ``sd``, ``z`` and ``r`` of the parameter, uncorrelated with every other group), a varying intercept of one grouping column,
+    for the scale parameter of a family whose ``FamilySpec.distributional_constructs`` has ``"own_groups"`` (the Gaussian's
+    sigma) and for a ``DistributionalFormula`` with ``group_terms`` (the zero-inflated Poisson's zi). A term with an ID shares one
+    correlation matrix with the response formula's term of that ID and factor (D08) for the scale parameter of a family with
+    ``distributional_group_terms``, with varying slopes where ``distributional_constructs`` has ``"shared_slopes"`` (the
+    Gaussian's: ``(1 + x |p| g)`` in both formulas, four correlated coefficients). ``offset()`` where it has ``"offset"`` (the
+    Gaussian's sigma, brms's ``offsets_sigma``). Refused, naming the construct: everything else, with D32 (a group of its own,
+    an offset, varying slopes in a term of the formula's own, a term without its varying intercept, a factor of two columns,
+    ``mm()`` and ``gr()`` arguments), D116 (a shared ID in the formula of a parameter that takes none) or D106 (varying slopes
+    in a shared ID, an ID that names no term of the response formula or one of another factor)."""
+    scale = name == fam.scale_parameter
+    formula = fam.distributional_formula(name)
+    constructs = fam.distributional_constructs if scale else frozenset()
+    where = f"{name} of the {fam.name} family"
+    if d.offset is not None and d.offset.parts:            # G04's summed offsets and expressions inside offset(): not verified here
+        raise FormulaError(f"{text!r}: {d.offset.term!r} in a distributional formula is not supported: several offset() terms or an "
+                           "expression inside one are summed in the response formula only; offset(col) and offset(log(col)) are "
+                           "offered in sigma's formula of the gaussian family (docs/distributional-groups.md, divergence D32)")
+    if d.offset is not None and "offset" not in constructs:
+        raise FormulaError(f"{text!r}: {d.offset.term!r} in a distributional formula is not supported for {where}: no frozen brms "
+                           "case verifies it; an offset of a distributional formula is offered for the gaussian family's sigma "
+                           "(docs/distributional-groups.md, divergence D32)")
+    for t in d.group_terms:
+        extra = [f.name for f in fields(t) if f.name not in _DPAR_GROUP_FIELDS and getattr(t, f.name) not in (None, (), "")]
+        if extra or t.derived:
+            what = f"its {', '.join(extra)}" if extra else "a grouping factor of two columns"
+            raise FormulaError(f"{text!r}: '{t.canonical}' ({what}) in a distributional formula is not supported: a distributional "
+                               "formula's group-level terms are varying intercepts of one grouping column, or a correlation ID "
+                               "shared with the response formula (docs/distributional-groups.md, divergence D32)")
+        if "Intercept" not in t.coefs:
+            raise FormulaError(f"{text!r}: '{t.canonical}' has no varying intercept; a distributional formula's group-level term "
+                               "keeps it here (docs/distributional-groups.md, divergence D32)")
+        if t.id is None:
+            if not (("own_groups" in constructs) or (formula is not None and formula.group_terms)):
+                raise FormulaError(
+                    f"{text!r}: group-level terms in a distributional formula ({t.canonical}) are not supported for {where}: no "
+                    f"frozen brms case verifies {name}'s own group there; a group of a distributional formula's own is offered for "
+                    "the gaussian family's sigma and the zero_inflated_poisson family's zi, and a correlation ID shared with the "
+                    f"response formula's term of the same factor, '{name} ~ ... + (1 |p| g)' next to '... + (1 + x |p| g)', where "
+                    "D08 offers it (docs/distributional-groups.md, divergence D32; docs/multi-membership-and-by.md, D106)")
+            if t.slopes:
+                raise FormulaError(
+                    f"{text!r}: '{t.canonical}': varying slopes in a group-level term of a distributional formula's own are not "
+                    f"supported (no frozen brms case verifies them); write '(1 | {t.factor})', or share a correlation ID with the "
+                    f"response formula's term of {t.factor!r}, '(1 + ... |p| {t.factor})' in both (docs/distributional-groups.md, "
+                    "divergence D32)")
+            continue
+        if not (scale and fam.distributional_group_terms):   # E03's parameters and families: no shared ID (D116)
+            raise FormulaError(
+                f"{text!r}: group-level terms in the formula of {where} ({t.canonical}) are not supported: no frozen brms case "
+                "verifies a correlation ID shared with that formula; it takes population-level terms only"
+                + (f", and a group of its own, '(1 | {t.factor})'" if formula is not None and formula.group_terms else "")
+                + " (docs/contexts-newer-families.md, divergence D116)")
+        partner = next((u for u in spec.group_terms if u.id == t.id), None)   # D08: the ID's term in the response formula
+        if partner is None:
+            raise FormulaError(f"{text!r}: the correlation ID {t.id!r} of '{t.canonical}' names no group-level term of the response "
+                               f"formula {main!r}; an ID shares a correlation matrix with that formula's term here (divergence D106)")
+        if partner.factor != t.factor:
+            raise FormulaError(f"{text!r}: the correlation ID {t.id!r} joins '{partner.canonical}' and '{t.canonical}', two grouping "
+                               "factors; brms refuses it too ('Can only combine group-level terms of the same grouping factors')")
+        if t.slopes and "shared_slopes" not in constructs:
+            raise FormulaError(f"{text!r}: '{t.canonical}': varying slopes in a distributional formula are not supported for {where} "
+                               f"(no frozen brms case verifies them); '(1 |{t.id}| {t.factor})' is offered (docs/multi-membership-and-by.md, "
+                               "divergence D106)")
+
+
 def _parse_formulas(formulas, data: pd.DataFrame | None, family: str, categorical) -> ModelSpec:
     """A list of formulas (B01, docs/distributional.md): the response formula and the formulas of distributional
     parameters, brms's ``bf(y ~ x + (1 | g), sigma ~ z)``. Each distributional formula is ``<parameter> ~ <terms>`` with
@@ -2798,42 +2872,15 @@ def _parse_formulas(formulas, data: pd.DataFrame | None, family: str, categorica
     from autobayes.se_rate import check_distributional
 
     check_distributional(spec.additions, parsed[0][2], main)   # F06a: se() and rate() take no distributional formula (D157)
+    thres = spec.addition("thres")
+    if thres is not None:                                    # G06: grouped thresholds next to the cumulative disc's formula (D38)
+        raise FormulaError(f"{main!r}: {thres.term!r} next to the distributional formula {parsed[0][2]!r} is not supported: no frozen "
+                           "brms case verifies grouped thresholds with a formula of disc (docs/distributional-groups.md, divergence D38)")
     operands = {c for t in spec.group_terms for c in t.operands}
     dpars = []
     for (name, rhs, text), cat in zip(parsed, dpar_cat):
         d = parse_formula(f"{name} ~ {rhs}", None, family, cat or None, _ids=True, _dpar=True)
-        unshared = [t for t in d.group_terms if t.id is None]
-        if unshared:
-            raise FormulaError(
-                f"{text!r}: group-level terms in a distributional formula ({', '.join(t.canonical for t in unshared)}) are "
-                f"not supported: brms would give {name} its own varying effects; a distributional formula "
-                "takes population-level terms only here, and group-level terms only with a correlation ID shared with the "
-                f"response formula's term of the same factor, '{name} ~ ... + (1 |p| g)' next to '... + (1 + x |p| g)' "
-                "(docs/distributional.md, divergence D32; docs/multi-membership-and-by.md, D106)"
-            )
-        if d.group_terms and (name != fam.scale_parameter or not fam.distributional_group_terms):   # E03: no case of these
-            raise FormulaError(
-                f"{text!r}: group-level terms in the formula of {name} of the {fam.name} family "
-                f"({', '.join(t.canonical for t in d.group_terms)}) are not supported: no frozen brms case verifies "
-                f"a correlation ID shared with that formula; it takes population-level terms only "
-                "(docs/contexts-newer-families.md, divergence D116)"
-            )
-        for t in d.group_terms:                              # D08: the ID's term in the response formula, same factor
-            partner = next((u for u in spec.group_terms if u.id == t.id), None)
-            if partner is None:
-                raise FormulaError(f"{text!r}: the correlation ID {t.id!r} of '{t.canonical}' names no group-level term of the response "
-                                   f"formula {main!r}; an ID shares a correlation matrix with that formula's term here (divergence D106)")
-            if partner.factor != t.factor:
-                raise FormulaError(f"{text!r}: the correlation ID {t.id!r} joins '{partner.canonical}' and '{t.canonical}', two grouping "
-                                   "factors; brms refuses it too ('Can only combine group-level terms of the same grouping factors')")
-            if t.slopes:
-                raise FormulaError(f"{text!r}: '{t.canonical}': varying slopes in a distributional formula are not supported"
-                                   f"; '(1 |{t.id}| {t.factor})' is offered (docs/multi-membership-and-by.md, divergence D106)")
-        if d.offset is not None:
-            raise FormulaError(
-                f"{text!r}: {d.offset.term!r} in a distributional formula is not supported; an offset belongs "
-                "to the response formula here (docs/distributional.md, divergence D32)"
-            )
+        check_dpar_terms(d, name, text, fam, spec, main)   # G06: an ID of their own, one shared with the response formula, offset()
         if d.mo_terms:
             raise FormulaError(
                 f"{text!r}: a monotonic term in a distributional formula ({', '.join(t.name for t in d.mo_terms)}) is not supported"
@@ -3763,8 +3810,8 @@ def parse_formula(formula: str | list[str], data: pd.DataFrame | None = None, fa
             f"verified here for the {', '.join(offering) or 'no'} famil{'y' if len(offering) == 1 else 'ies'} "
             "(docs/monotonic.md, divergence D42)"
         )
-    if fam.check_formula is not None:                        # a family that does not take every formula (B05)
-        fam.check_formula(spec)
+    if fam.check_formula is not None and not _dpar:         # a family that does not take every formula (B05); G06: of its response
+        fam.check_formula(spec)                              # formula (the cumulative disc's may drop its intercept, 'disc ~ 0 + x')
     if spec.addition("thres") is not None:                   # F06b: what combines with grouped thresholds
         from autobayes.grouped_thresholds import check_thres
         check_thres(spec, formula)

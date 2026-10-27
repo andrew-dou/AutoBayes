@@ -82,8 +82,11 @@ REFUSALS = [
     (["y ~ x + (1 + x |p| g)", "sigma ~ 1 + (1 |p| h)"], {}, "two grouping factors; brms refuses it too"),
     (["y ~ x + (1 + x |p| g)", "sigma ~ z"], {}, "is used by no distributional formula of the list"),
     (["y ~ x + (1 + x | g)", "sigma ~ 1 + (1 |p| g)"], {}, "names no group-level term of the response formula"),
-    (["y ~ x + z + (1 + x |p| g)", "sigma ~ z + (1 + z |p| g)"], {}, "varying slopes in a distributional formula are not supported"),
-    (["y ~ x + (1 + x | g)", "sigma ~ 1 + (1 | g)"], {}, "group-level terms in a distributional formula ((1 | g)) are not supported"),
+    # G06 offers both for the Gaussian's sigma (docs/distributional-groups.md); the Student-t's stay refused
+    (["y ~ x + z + (1 + x |p| g)", "sigma ~ z + (1 + z |p| g)"], {"family": "student"},
+     "varying slopes in a distributional formula are not supported for sigma of the student family"),
+    (["y ~ x + (1 + x | g)", "sigma ~ 1 + (1 | g)"], {"family": "student"},
+     "group-level terms in a distributional formula ((1 | g)) are not supported for sigma of the student family"),
     ("y ~ x + (1 |p| mm(g, g2))", {}, "a correlation ID with mm() or gr() is not supported"),
     ("y ~ x + (1 + x | mm(g, g2))", {}, "only the varying intercept '(1 | mm(...))' is supported"),
     ("y ~ x + (1 | mm(g, g2, scale = FALSE))", {}, "mm()'s argument 'scale' is not supported"),

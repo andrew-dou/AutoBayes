@@ -114,9 +114,5 @@
     ]
    }
   }
- },
- "gate": {
-  "expect": "fail",
-  "reason": "G06_distributional_groups not implemented; remove this field when it lands"
  }
 }

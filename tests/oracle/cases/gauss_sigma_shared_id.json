@@ -135,6 +135,6 @@
    "g2_logp",
    "g2_gradient"
   ],
-  "reason": "brms 2.23.0 puts the mean's sd | g prior normal(0, 1) on the whole shared ID's sd_1, sigma's SD included, while its prior table gives sigma's SD normal(0, 0.5) (sd | dpar sigma), which AutoBayes applies: the prior part of the log density differs (point 0: -19.5032 against -11.5087), the likelihood and every other gate agree; G06 decides between brms's lprior and its table (divergence row), see the note"
+  "reason": "brms 2.23.0 puts the mean's sd | g prior normal(0, 1) on the whole shared ID's sd_1, sigma's SD included, while its prior table gives sigma's SD normal(0, 0.5) (sd | dpar sigma), which AutoBayes applies (divergence D187): the prior part of the log density differs (point 0: -19.5032 against -11.5087), the likelihood and every other gate agree; see the note"
  }
 }

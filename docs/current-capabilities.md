@@ -525,3 +525,14 @@ column a coefficient named as brms names it. Verified against `gauss_three_way_n
 `bernoulli_three_way_varint`; a rank-deficient design is warned of (D179); `x^2`, `x:x` and R's rank-deficient coding of
 `0 + x + x:z` (D180), a column no fitted row reaches and these interactions in non-linear, count-matrix, multivariate models and
 the summaries (D179) are refused by name.
+
+Group-level terms, offsets and more parameters in distributional formulas (G06, docs/distributional-groups.md): the Gaussian's
+sigma takes a group of its own, `sigma ~ z + (1 | g)` (brms's own ID, `Priors(sigma={..., "sd": ...})`), varying slopes in a
+correlation ID shared with the response formula (`(1 + x |p| g)` in both formulas, four correlated coefficients) and `offset()`;
+the Student-t's `nu ~ z` (brms's `logm1` link), the zero-inflated Poisson's `zi ~ z + (1 | g)` (logit, a group of its own) and the
+cumulative logit family's `disc ~ z` (log, its design centred as brms's; the model warns that its scale is identified by the
+priors alone, D188) are offered; predictions, `log_lik` and the summaries of sigma's own varying intercept follow brms. With
+`(1 |p| g)` in both formulas the model applies brms's prior table where brms's own log density contradicts it (D187). Verified on
+`gauss_sigma_varint`, `gauss_sigma_shared_id_slopes`, `gauss_sigma_offset`, `student_nu_formula`, `zip_zi_formula`,
+`cumulative_disc` and `gauss_sigma_varint_post` (and `gauss_sigma_shared_id` but for D187's two gates); every other family's and
+parameter's group-level terms and offsets stay refused (D32, D116).
