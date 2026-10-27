@@ -58,6 +58,7 @@ import pandas as pd
 from autobayes.formula import (_FORMULA_RE, _IDENT, MI_CALL_RE, FormulaError, ModelSpec, _is_numeric, bambi_group_name,
                                categorical_labels, factor_column, group_labels, parse_formula, pop_term_design, reject_complex,
                                sd_tag, validate_data)
+from autobayes.formula import extended_group_syntax   # G05a
 from autobayes.model import Design, GroupBlock, Model
 from autobayes.term_algebra import refuse_products           # G03
 from autobayes.priors import AUXILIARY, Prior, PriorError, Priors, describe_prior
@@ -619,6 +620,9 @@ def parse_nonlinear(formulas, data: pd.DataFrame | None = None, family: str = "g
         if d.custom_group_terms:                                       # D08: brms's mm() and gr(by = ) are verified in linear models
             raise FormulaError(f"{text!r}: '{d.custom_group_terms[0].canonical}' in a non-linear parameter's formula is not supported"
                                " (docs/multi-membership-and-by.md, divergences D104, D105)")
+        if extended_group_syntax(d) is not None:                       # G05a: verified in linear models only
+            raise FormulaError(f"{text!r}: {extended_group_syntax(d)} in a non-linear parameter's formula is not supported "
+                               "(docs/group-term-syntax.md, divergence D183)")
         if d.offset is not None:
             raise FormulaError(f"{text!r}: {d.offset.term!r} in a non-linear parameter's formula is not supported "
                                "(divergence D61)")

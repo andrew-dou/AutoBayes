@@ -66,9 +66,9 @@ REFUSALS = [
     ("y ~ log(xpos) * z", {"categorical": {"z": "p"}}, "an interaction with a transformed term ('log(xpos)') is not supported"),
     ("y ~ log(xpos) + log( xpos )", {}, "'log(xpos)': duplicated predictor"),
     ("y ~ I(x^2) + I( x ^ 2 )", {}, "'I(x^2)': duplicated predictor"),
-    ("y ~ x + (1 + log(x) || g)", {}, "function calls and transformations inside a group term are not supported"),
+    ("y ~ x + (1 + log(x) || g)", {}, "the varying slope 'log(x)' must also be a population-level term of the formula"),   # G05a
     ("y ~ x + (1 | log(g))", {}, "transformed grouping factors are not supported"),
-    ("y ~ log(xpos) + (1 + xpos || g)", {}, "the varying slope 'xpos' must also be a population-level term of the formula"),
+    ("y ~ x + (1 + sqrt(x) || g)", {}, "the varying slope 'sqrt(x)' must also be a population-level term of the formula"),   # G05a takes
 ]
 
 

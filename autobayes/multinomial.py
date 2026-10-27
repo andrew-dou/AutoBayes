@@ -271,6 +271,8 @@ def _check_category_formula(text: str, d: ModelSpec) -> None:
         if t.slopes:
             _refuse(text, f"the varying slope(s) of '{t.canonical}' (brms gives each category its own SDs and, for '|', its own "
                           "correlation matrix)")
+        if len(t.operands) > 2 and not t.is_mm:                          # G05a: verified in univariate models only (D183)
+            _refuse(text, f"the grouping factor of three columns '{t.canonical}'")
 
 
 def parse_multinomial(formula, data: pd.DataFrame | None = None, family: str = "multinomial",

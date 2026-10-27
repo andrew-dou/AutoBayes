@@ -533,3 +533,10 @@ a class-wide prior with overrides, `b={"*": ab.Normal(0, 2), "x": ab.Normal(0.5,
 with brms's precedence and table (docs/class-priors.md, verified against `gauss_prior_overrides`; D178); and `dropna=True`, which
 drops the rows with a missing value in a column the model reads (but `mi()`'s), warns and records them as `model.dropped_na_rows`
 (docs/missing-rows.md, verified against `gauss_missing_rows_dropped` and its `log_lik`, `bayes_R2` and `loo`; D177).
+Group-level term syntax (G05a, docs/group-term-syntax.md): the slopes alone, `(0 + x | g)` and `(x - 1 | g)`; one factor in
+several terms, `(1 | g) + (0 + x | g)` (one term of uncorrelated coefficients, as brms's two IDs); a factor slope `(1 + z | g)`
+coded as the population design (`z[q]`, `z[r]`); transform and product slopes `(1 + I(x^2) + x:w | g)`; a monotonic slope `(1 +
+mo(ord) | g)` on the population term's simplex; three grouping columns, `g:h:f2` and `g/h/f2`; and a numeric slope without its
+population-level term, `w + (1 + x | g)` (D8 resolved). Verified against eight frozen cases (`gauss_split_slope_post` with brms's
+summaries); a correlated term next to another term of its factor, duplicated terms, four or more grouping columns and the factor or
+`mo()` slope in other forms are refused naming the construct (D183, D184).

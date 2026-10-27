@@ -278,7 +278,7 @@ def test_a_product_term_is_checked():
     ("y ~ ordered(o):x:w", {}, "an interaction with an ordered factor \\('ordered\\(o\\)'\\) is not supported"),
     ("y ~ (x + w):log(v)", {}, "an interaction with a transformed term \\('log\\(v\\)'\\) is not supported"),
     ("y ~ x %in% z", {}, "R's operator %in% is not supported in a formula; nesting x %in% f is R's interaction x:f: write that"),
-    ("y ~ x + (1 + x:z | g)", {}, "an interaction cannot be a varying slope"),
+    ("y ~ x + (1 + x:z | g)", {}, "the varying slope 'x:z' must also be a population-level term"),   # G05a takes x:w's of main effects
     ("y ~ me(x, sdx) + x:w", {}, "'x' is read by 'me\\(x, sdx\\)' and by another term of the formula"),
     ("y ~ ordered(o) + x:o", {}, "'o' is read by 'ordered\\(o\\)' and by another term of the formula"),
     ("y ~ x + x:g_h + (1 | g:h)", {}, "the derived grouping factor 'g:h' is handed to Bambi as the column 'g_h', which is also a column"),

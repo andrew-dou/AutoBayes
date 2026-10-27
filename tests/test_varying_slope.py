@@ -55,24 +55,22 @@ def two_factor():
 
 # -- 1. the grammar: what is accepted and every refusal by message -------------------------------------------
 REFUSALS = [                                   # '(1 + x | g)', once refused here, is brms's correlated form (A02, tests/test_correlated_slopes.py)
-    ("y ~ x + (0 + x || g)", {}, "varying slopes without the varying intercept are not supported; write '(1 + x || g)' so that the intercept varies by 'g' as well"),
-    ("y ~ x + (x - 1 || g)", {}, "varying slopes without the varying intercept are not supported; write '(1 + x || g)'"),   # F08:
-    ("y ~ x + (0 + x | g)", {}, "varying slopes without the varying intercept are not supported"),   # '(x || g)' is '(1 + x || g)'
+    # G05a (tests/test_group_term_syntax.py) takes '(0 + x || g)', '(x - 1 || g)', '(0 + x | g)', a slope without its population-level
+    # term ('y ~ w + (1 + x || g)', 'y ~ (1 + x || g)') and '(1 + z | g)' of a factor
     ("y ~ x + (0 | g)", {}, "'0' removes the varying intercept and leaves no group-level coefficient; a group term is '(1 | g)', or '(1 + x || g)' for varying slopes"),
-    ("y ~ w + (1 + x || g)", {}, "the varying slope 'x' must also be a population-level term of the formula, as in 'y ~ x + (1 + x || g)'"),
-    ("y ~ (1 + x || g)", {}, "the varying slope 'x' must also be a population-level term of the formula"),
-    ("y ~ x + z + (1 + z || g)", {"categorical": {"z": "p"}}, "'z' is declared categorical; a categorical varying slope (one varying coefficient per level of 'z') is not supported"),
-    ("y ~ x + z + x:z + (1 + x:z || g)", {"categorical": {"z": "p"}}, "an interaction cannot be a varying slope"),
+    ("y ~ x + z + (1 + z || g)", {"categorical": {"z": "p"}}, "the factor 'z' varies by 'g' here only correlated with the varying intercept, '(1 + z | g)'"),
+    ("y ~ x + z + x:z + (1 + x:z || g)", {"categorical": {"z": "p"}}, "the interaction 'x:z' with a factor as a varying slope (one coefficient per level) is not supported"),
     ("y ~ x + (1 + x*z || g)", {}, "an interaction cannot be a varying slope"),
     ("y ~ x + (1 + g || g)", {}, "the grouping factor 'g' cannot also be a varying slope"),
     ("y ~ x + (1 + y || g)", {}, "the response 'y' cannot be a varying slope"),
     ("k | trials(n) ~ x + (1 + n || g)", {"family": "binomial"}, "the trials column 'n' cannot be a varying slope"),
-    ("y ~ x + (1 + x || g) + (1 | g)", {}, "duplicate grouping factor 'g'; a factor appears in one group term, '(1 | g)' or '(1 + x || g)'"),
+    ("y ~ x + (1 + x || g) + (1 | g)", {}, "duplicate grouping factor 'g': its coefficient 'Intercept' varies in '(1 + x || g)' and in '(1 | g)'"),
     ("y ~ x + (1 + x || g) + (1 + x || g)", {}, "duplicate grouping factor 'g'"),
     ("y ~ x + (1 + x + x || g)", {}, "duplicated varying slope 'x'"),
-    ("y ~ x + (1 + log(x) || g)", {}, "function calls and transformations inside a group term are not supported"),
+    ("y ~ x + (1 + log(x) || g)", {}, "the varying slope 'log(x)' must also be a population-level term of the formula"),   # G05a
+    ("y ~ x + (1 + sin(x) || g)", {}, "function calls and transformations inside a group term are not supported"),
     ("y ~ x + (1 + 1 || g)", {}, "'1' appears more than once in the group term"),
-    ("y ~ x + (1 + x || g:h:k)", {}, "only two factors can be combined in a grouping factor"),   # A03 accepts '(1 + x || g:h)' and '(1 + x || g/h)'
+    ("y ~ x + (1 + x || g:h:k:m)", {}, "at most 3 columns can be combined in a grouping factor"),   # A03 accepts '(1 + x || g:h)', G05a g:h:k
     ("y ~ x + (1 + x || g/h:k)", {}, "mixing '/' and ':' in a grouping factor"),
     ("y ~ x + (1 + x || mm(g, h))", {}, "only the varying intercept '(1 | mm(...))' is supported for a multi-membership term"),   # D08
     ("y ~ x + (1 + x || log(g))", {}, "transformed grouping factors are not supported"),
@@ -84,7 +82,7 @@ REFUSALS = [                                   # '(1 + x | g)', once refused her
     ("y ~ x + ( || g)", {}, "parenthesised term is not a '(1 | group)' or '(1 + x || group)' term"),
     ("y ~ x + (1 + || g)", {}, "empty term inside the group term"),
     ("y ~ x + (1 + 2x || g)", {}, "'2x' is not a column name"),
-    ("y ~ x + (0 + log(x) || g)", {}, "function calls and transformations inside a group term are not supported"),
+    ("y ~ x + (0 + log(x) || g)", {}, "the varying slope 'log(x)' must also be a population-level term of the formula"),
 ]
 
 
@@ -94,12 +92,11 @@ def test_refusals_name_the_construct(formula, kwargs, message):
         ab.parse_formula(formula, **kwargs)
 
 
-def test_slope_only_refusals_still_mention_varying_slopes():
-    """The needles of the pre-existing tests (``"varying slopes"``) keep matching the kept refusals; ``(1 + x | g)`` is
-    no longer among them (A02), nor ``(x | g)``, brms's ``(1 + x | g)`` (F08)."""
-    for formula in ("y ~ x + (0 + x | g)", "y ~ x + (0 + x || g)"):
-        with pytest.raises(ab.FormulaError, match="varying slopes"):
-            ab.parse_formula(formula)
+def test_slope_only_terms_are_taken():
+    """G05a: the slope-only terms these tests once refused are brms's terms without the varying intercept
+    (tests/test_group_term_syntax.py); ``(1 + x | g)`` is brms's correlated form (A02), as is ``(x | g)`` (F08)."""
+    assert ab.parse_formula("y ~ x + (0 + x | g)").group_terms == (GroupTerm("g", ("x",), True),)
+    assert ab.parse_formula("y ~ x + (0 + x || g)").group_terms == (GroupTerm("g", ("x",), False),)
     assert ab.parse_formula("y ~ x + (1 + x | g)").group_terms == (GroupTerm("g", ("Intercept", "x"), True),)
 
 

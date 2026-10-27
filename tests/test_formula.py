@@ -7,14 +7,11 @@ from tests.conftest import PRIORS, simulate
 
 
 @pytest.mark.parametrize("formula,needle", [
-    ("y ~ x + (0 + x | g)", "varying slopes"),              # A02: '(1 + x | g)' is now accepted (brms's correlated form); F08: '(x | g)' too
-    ("y ~ x + (1 | g/h/k)", "only two factors"),          # A03: '(1 | g/h)' and '(1 | g:h)' are now accepted
-    ("y ~ x + (1 | g:h:k)", "only two factors"),
+    ("y ~ x + (1 | g/h/k/m)", "at most 3 columns"),       # A03: '(1 | g/h)' and '(1 | g:h)' are now accepted; G05a: g/h/k and g:h:k,
+    ("y ~ x + (1 | g:h:k:m)", "at most 3 columns"),       # (0 + x | g), (0 + x || g) and y ~ (1 | g) too
     ("y ~ x + (1 | g) + (1 | g)", "duplicate grouping"),
-    ("y ~ x + (0 + x || g)", "without the varying intercept"),   # A01: '(1 || g)' is now accepted as '(1 | g)'
-    # G03: 'x * w * z', 'x:w' without its main effects and 'x + x' are R's term algebra now (tests/test_term_algebra.py)
+    # G03: 'x * w * z', 'x:w' without its main effects and 'x + x' are R's term algebra now (tests/test_term_algebra.py); G05a: '(0 + x || g)'
     ("y ~ sin(x) + (1 | g)", "function calls"),            # A05: log(x), exp(x), sqrt(x), I(x^k), I(x * k), I(x + k) are now accepted
-    ("y ~ (1 | g)", "no population-level predictor"),
     ("y x + (1 | g)", "expected 'response ~ terms'"),
     ("y ~ y + (1 | g)", "response cannot also be"),
     ("y ~ x + (1 | x)", "grouping factor cannot also be"),
