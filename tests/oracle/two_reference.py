@@ -5,8 +5,10 @@ A case whose brms side is inexact at some frozen points opts in through its gate
 a committed high-precision reference in ``tests/oracle/references/`` (``oracle/reference.py``, 50 digits), ``divergence``
 the row of docs/brms-parity/divergences.md that says why brms is inexact there, and ``fallback`` the quantity kinds that
 may use the reference: ``"gradient"`` (every gradient coordinate, with and without the Jacobian, of gate G2) and/or
-``"epred"`` (gate G4's expected values). Log densities (``lp``, ``lp_nojac``, ``lprior``) never fall back. For each frozen
-point and each entry of a listed kind, with ``tol`` the usual tolerance (``tolerances.py``, unchanged):
+``"epred"`` (gate G4's expected values), or ``"weights"`` (the stacking weights of the post gate's ``loo_model_weights``,
+as numbers and as logarithms; only a case whose post-processing functions include ``loo_model_weights`` may list it). Log
+densities (``lp``, ``lp_nojac``, ``lprior``) never fall back. For each frozen point (each weight) and each entry of a listed
+kind, with ``tol`` the usual tolerance (``tolerances.py``, unchanged):
 
 1. the entry passes if AutoBayes agrees with brms within ``tol``;
 2. otherwise it passes only if brms differs from the reference by more than ``tol`` and AutoBayes agrees with the
@@ -14,11 +16,12 @@ point and each entry of a listed kind, with ``tol`` the usual tolerance (``toler
 3. wherever AutoBayes and brms agree within ``tol``, the reference must agree with brms within ``tol`` too; otherwise the
    reference is wrong and the gate fails, whatever AutoBayes does.
 
-Every other gate (G1, G3, G5, G6, the log densities of G2, and G4's linear predictor and, unless listed, its expected
-values) is unchanged and compares with brms only: ``gates.check_gradient`` and ``gates.check_predictions`` hand an
-opted-in case to ``check_gradient`` and ``check_predictions`` here and keep their own path for every other case. These
-return a ``FallbackReport`` (how many entries passed on the reference, and where) and emit it as a ``ReferenceFallback``
-warning, which pytest's summary shows.
+Every other gate (G1, G3, G5, G6, the log densities of G2, G4's linear predictor and, unless listed, its expected values,
+and every other quantity of the post gate) is unchanged and compares with brms only: ``gates.check_gradient``,
+``gates.check_predictions`` and ``gates.check_loo_model_weights`` hand an opted-in case to ``check_gradient``,
+``check_predictions`` and ``check_weights`` here and keep their own path for every other case. These return a
+``FallbackReport`` (how many entries passed on the reference, and where) and emit it as a ``ReferenceFallback`` warning,
+which pytest's summary shows.
 """
 from __future__ import annotations
 
@@ -37,7 +40,8 @@ from tests.oracle.tolerances import GRAD_REL, PRED_REL, rel_err
 
 REFERENCES = fx.ROOT / "references"
 REPO = fx.ROOT.parents[1]
-FALLBACK_KINDS = ("gradient", "epred")       # G2's gradient coordinates (with and without the Jacobian); G4's expected values
+FALLBACK_KINDS = ("gradient", "epred",      # G2's gradient coordinates (with and without the Jacobian); G4's expected values;
+                  "weights")                 # the post gate's stacking weights (loo_model_weights), numbers and logarithms
 LOG_DENSITIES = ("lp", "lp_nojac", "lprior")  # never fall back
 
 
@@ -49,7 +53,7 @@ class ReferenceFallback(Warning):
 @dataclass(frozen=True)
 class FallbackReport:
     case: str
-    gate: str                     # "G2 gradient" or "G4 epred"
+    gate: str                     # "G2 gradient", "G4 epred" or "post weights"
     entries: int                  # the entries of the listed kind compared
     where: tuple[str, ...]        # each entry that passed on the reference (rule 2), not on brms
 
@@ -101,6 +105,12 @@ class Reference:
         entry = self.raw.get("predictions", {}).get(block, {}).get(kind)
         return None if entry is None else np.asarray([[float(v) for v in row] for row in entry], dtype=float)
 
+    @property
+    def weights(self) -> tuple[list[str], np.ndarray] | None:
+        """The stacking weights (the models, in the fixture's order, and their weights), or None in a reference without them."""
+        entry = self.raw.get("weights")
+        return None if entry is None else (list(entry["models"]), np.array([float(v) for v in entry["values"]]))
+
 
 def load(case: dict) -> Reference | None:
     """The reference of a case that opts in to two-reference acceptance, with the opt-in validated; None for every other
@@ -121,6 +131,9 @@ def load(case: dict) -> Reference | None:
     if not set(fallback) <= set(FALLBACK_KINDS):
         raise OracleMismatch(f"{cid}: the gate's fallback {sorted(set(fallback) - set(FALLBACK_KINDS))} is not a quantity kind "
                              f"that may fall back; those are {list(FALLBACK_KINDS)}")
+    if "weights" in fallback and "loo_model_weights" not in case.get("autobayes", {}).get("post", ()):
+        raise OracleMismatch(f"{cid}: only the stacking weights of a post case may fall back ('weights'), and the case's "
+                             f"post-processing functions do not include loo_model_weights")
     divergence = gate.get("divergence")
     if not isinstance(divergence, str) or not re.fullmatch(r"D\d+", divergence):
         raise OracleMismatch(f"{cid}: the gate names no divergence (docs/brms-parity/divergences.md) for why brms is inexact")
@@ -224,3 +237,27 @@ def check_predictions(b) -> FallbackReport:
                          f"{block}{suffix}: point {k}, row {row}: {mean_var!r} vs brms posterior_epred"):
                     where.append(f"{block} epred{suffix} point {k} row {row}")
     return _report(b, "G4 epred", entries, where)
+
+
+def check_weights(b, results: list[tuple[str, np.ndarray]], theirs: np.ndarray, models: list[str]) -> FallbackReport:
+    """The post gate's stacking weights under the three rules (``gates.check_loo_model_weights`` hands them over): each function's
+    weights (``results``: its name and its weights, in the order of ``models``) and their logarithms, model by model, against
+    brms's ``theirs`` and the reference's."""
+    ref, theirs = b.reference, np.asarray(theirs, dtype=float)
+    weights = ref.weights
+    if weights is None or weights[0] != models or weights[1].shape != theirs.shape:
+        raise OracleMismatch(f"{ref.case_id}: the reference weighs {None if weights is None else weights[0]}, brms {models}")
+    high = weights[1]
+    where, entries = [], 0
+    with np.errstate(divide="ignore"):
+        for what, ours in results:
+            ours = np.asarray(ours, dtype=float)
+            if ours.shape != theirs.shape:
+                raise OracleMismatch(f"{what}: AutoBayes has shape {ours.shape}, brms {theirs.shape}")
+            for scale, f in (("", lambda v: v), (" (log)", np.log)):
+                a, br, ar = f(ours), f(theirs), f(high)
+                for k, model in enumerate(models):
+                    entries += 1
+                    if entry(float(a[k]), float(br[k]), float(ar[k]), PRED_REL, f"{what}{scale}: {model}"):
+                        where.append(f"{what}{scale} {model}")
+    return _report(b, "post weights", entries, where)

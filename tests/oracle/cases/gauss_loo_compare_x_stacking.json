@@ -132,7 +132,11 @@
   "compare_with": "gauss_loo_compare_xw"
  },
  "gate": {
-  "expect": "fail",
-  "reason": "E05_post_prior_effects_stacking: model_weights(weights = 'stacking') and loo_model_weights() are implemented and withheld (post_processing.PARKED_WEIGHTS, docs/post-processing.md, divergence D126), so ab.loo_model_weights, which this case proposes, does not exist yet. brms's weights are loo 2.9.0's constrOptim optimum of the stacking objective on the fixture's pointwise elpd_loo, 0.5619733196999603 and 0.43802668030003966; the exact optimum, solved in 50-digit arithmetic, is 0.56197330926078805 (AutoBayes returns 0.561973309260788 and 0.4380266907392119, the nearest doubles): brms's are off it by 1.044e-8 (1.86e-8 and 2.38e-8 relative) against the oracle's PRED_REL of 1e-9, with an objective 7.2e-15 below the optimum's and a derivative of -1.38e-6 there. With the park lifted every gate passes but check_post's stacking weights (tests/oracle/test_prior_effects_stacking_harness.py). Remove this field when Andrew decides how the stacking weights are certified (a two-reference acceptance with the exact optimum as the reference, or otherwise)."
+  "expect": "pass",
+  "reference": "gauss_loo_compare_x_stacking.json",
+  "divergence": "D126",
+  "fallback": [
+   "weights"
+  ]
  }
 }

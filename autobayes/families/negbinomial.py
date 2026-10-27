@@ -10,8 +10,8 @@ link (B01, docs/distributional.md; ``negbinomial_distributional_shape``), Bambi'
 E06 (docs/links.md): brms's ``negbinomial("identity")``, ``mu = eta`` (a positive linear predictor), is ``_identity()``, reached
 through ``NEGBINOMIAL.links`` (``ab.negbinomial(..., link="identity")``).
 
-E04 (docs/cens-trunc-families.md): under the log link, ``trunc(ub = b)`` with an integer, inclusive bound (``autobayes.tails``);
-a lower bound, ``negbinomial_truncated``'s ``trunc(lb = 1)``, is implemented and withheld (D121).
+E04 (docs/cens-trunc-families.md): under the log link, ``trunc()`` with integer, inclusive bounds (``autobayes.tails``); a lower
+bound's expected value, ``negbinomial_truncated``'s ``trunc(lb = 1)``, is accepted against two references (P6, D121).
 """
 from __future__ import annotations
 
@@ -118,7 +118,7 @@ NEGBINOMIAL = FamilySpec(
     deterministic_note="mu = exp(linear predictor); mu = exp(eta), expected count",
     default_prior_link="log",                                       # brms reads log(y), zeros as 0.1
     default_scale_prior=lambda scale: InverseGamma(0.4, 0.3),       # brms negbinomial()$prior: shape inv_gamma(0.4, 0.3), lb 0
-    addition_terms=frozenset({"weights", "trunc", "rate"}),     # B02: weights(), verified against the frozen case negbinomial_weighted; E04: trunc() (negbinomial_truncated, the lower bound withheld: D121); F06a: rate() (negbinomial_rate)
+    addition_terms=frozenset({"weights", "trunc", "rate"}),     # B02: weights(), verified against the frozen case negbinomial_weighted; E04: trunc() (negbinomial_truncated_ub; negbinomial_truncated, P6, D121); F06a: rate() (negbinomial_rate)
     rate_parameters=("alpha",),                                     # F06a: rate() multiplies the shape (Bambi's alpha) by the denominator too
     tails=_tails,
     distributional_link="log",                                      # B01: shape ~ z, brms's log link (negbinomial_distributional_shape)

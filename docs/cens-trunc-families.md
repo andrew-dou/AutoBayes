@@ -2,16 +2,17 @@
 
 brms-parity feature E04. B02 and P6 gave the Gaussian family brms's `cens(c)` and `trunc(lb = a, ub = b)`
 (docs/addition-terms.md). E04 adds brms's interval censoring `cens(c, y2)`, `cens()` for the Weibull and lognormal families,
-and `trunc(ub = b)` for the Poisson and negative binomial families. The Gamma family's `cens()` is accepted against a 50-digit
-reference of its frozen case, where brms's own gradient in the shape is not exact (P6, D120); a count response's lower bound is
-implemented and withheld, because brms's own expected value on its frozen case is not what an exact implementation can match
-(D121).
+and `trunc()` for the Poisson and negative binomial families. The Gamma family's `cens()` is accepted against a 50-digit
+reference of its frozen case, where brms's own gradient in the shape is not exact (P6, D120); so is a count response's lower
+bound, whose expected value here is the mean of the distribution the likelihood truncates, where brms's is the mean from the
+bound plus one (P6, D121).
 
 ```python
 import autobayes as ab
 survival = ab.weibull("ypos | cens(cens_r) ~ x + (1 | g)", data, priors)            # cens_r: 0 observed, 1 right-censored
 intervals = ab.lognormal("ypos | cens(cens_i, ypos2) + weights(w) ~ x", data, priors)  # cens_i: -1, 0, 1, 2 (in (ypos, ypos2])
 counts = ab.poisson("cnt | trunc(ub = 6) ~ x + (1 | g)", data, priors)                # 0 <= cnt <= 6, both bounds included
+positive = ab.negbinomial("ytr | trunc(lb = 1) ~ x + (1 | g)", data, priors)          # ytr >= 1: the mean E[Y | Y >= 1]
 ```
 
 ## What brms does (checked on the frozen points)
@@ -21,7 +22,8 @@ counts = ab.poisson("cnt | trunc(ub = 6) ~ x + (1 | g)", data, priors)          
   interval rows and 0 elsewhere (`Design.rcens`; gate G1 compares it). `posterior_epred` and `posterior_predict` ignore the
   censoring; new rows need neither column. `log_lik()` is each row's censored contribution, times its weight.
 - `trunc()` of a count: each row's log mass minus `log P(lb <= Y <= ub)`, both bounds inclusive (`trunc(ub = 6)` subtracts
-  `log P(Y <= 6)`; `trunc(lb = 1)` subtracts `log P(Y >= 1)`), and `posterior_epred` of `trunc(ub = b)` is `E[Y | Y <= b]`.
+  `log P(Y <= 6)`; `trunc(lb = 1)` subtracts `log P(Y >= 1)`), and `posterior_epred` of `trunc(ub = b)` is `E[Y | Y <= b]`,
+  but of `trunc(lb = 1)` `E[Y | Y >= 2]` over a finite support (D121; below).
 - With `weights()`, each row's whole censored or truncated contribution is weighted (`lognormal_censored_interval_weighted`,
   `poisson_truncated_weighted_post`).
 
@@ -47,32 +49,37 @@ On the rows a censoring branch does not take, its arguments are a neutral pair (
 
 Predictions: censoring changes none; under `trunc()` `predict(kind="mean")` is the truncated mean (the support's weighted
 sum for an upper bound; `mu P(Y >= lb - 1) / P(Y >= lb)` for a Poisson lower bound alone, the shape-plus-one negative binomial
-in place of the second `Y` for the negative binomial) and `kind="response"` draws from the truncated distribution by inverting
+in place of the second `Y` for the negative binomial; a lower bound at or below 0 keeps the whole support, so the mean is `mu`)
+and `kind="response"` draws from the truncated distribution by inverting
 its CDF (prior-predictive draws too: PyMC's `Truncated` rejection sampler gives up after 10000 steps where the range has
 almost no mass).
 `ab.log_lik()`, `ab.loo()` and `ab.waic()` read brms's censored and truncated pointwise log likelihood
 (`likelihoods.censored_truncated_log_lik`), the Gaussian's included (before E04 its `log_lik()` was the uncensored density,
 D123); `ab.bayes_R2()` reads the expected values and the response as brms does. `describe()` writes the interval rows and the
-count bounds; the target identity includes `rcens`.
+count bounds, and for a lower bound at or above 0 the mean `predict()` gives and brms's (`E[Y | Y >= 1] (brms's posterior_epred
+is E[Y | Y >= 2] instead: divergence D121)`); the target identity includes `rcens`.
 
-## Withheld (`FamilySpec.parked_additions`, `formula.PARKED_TRUNCATION`)
+## Accepted against two references (P6; once withheld, `FamilySpec.parked_additions` and `formula.PARKED_TRUNCATION`, now empty)
 
-- **The Gamma family's `cens()`** (D120). With the park lifted, `gamma_censored_interval` passes G1, the G2 log densities,
-  G3, G4, G5 and G6 against brms; its gradient in `log(shape)` fails at points 0, 2, 3, 4 and 6, where brms's is off the
-  exact (50-digit) gradient by 1.4e-7, 2.8e-5, 2.4e-5, 1.2e-5 and 1.3e-5 relative (point 2: brms -68.5938954721456, exact
-  -68.5958155986809, AutoBayes -68.59581559504063). AutoBayes is within 2e-10 of the exact gradient at every point (the rest is
-  PyTensor's digamma in the observed rows' density, 1e-10 absolute, as in every Gamma model). Accepting it needs a
-  two-reference acceptance of its gradient (P6).
-- **A lower bound of a count response** (D121). brms normalises `negbinomial_truncated`'s likelihood by `P(Y >= 1)` (to 4e-16
-  on the frozen points) but its `posterior_epred` is `E[Y | Y >= 2]` over a finite support (at point 7, fitted row 27, brms's
-  106.236 is the mean over 2..394; `E[Y | Y >= 2]` is 135.97 and `E[Y | Y >= 1]` 133.95). AutoBayes's expected value is the
-  mean of the distribution its likelihood truncates, `E[Y | Y >= 1] = mu / (1 - P(0))`. With the park lifted every gate
-  passes against brms but G4's expected values, up to 0.499 relative apart. Accepting it needs a two-reference acceptance of
-  the expected values (P6).
+- **The Gamma family's `cens()`** (D120). `gamma_censored_interval` passes G1, the G2 log densities, G3, G4, G5 and G6 against
+  brms; its gradient in `log(shape)` is off brms's at points 0, 2, 3, 4 and 6, where brms's is off the exact (50-digit)
+  gradient by 1.4e-7, 2.8e-5, 2.4e-5, 1.2e-5 and 1.3e-5 relative (point 2: brms -68.5938954721456, exact -68.5958155986809,
+  AutoBayes -68.59581559504063). AutoBayes is within 2e-10 of the exact gradient at every point (the rest is PyTensor's
+  digamma in the observed rows' density, 1e-10 absolute, as in every Gamma model), and those entries pass on the reference.
+- **A lower bound of a count response** (D121). brms normalises
+  `negbinomial_truncated`'s likelihood by `P(Y >= 1)` (to 4e-16 on the frozen points) but its `posterior_epred` is `E[Y | Y >= 2]`
+  over a finite support (at point 7, fitted row 27, brms's 106.236 is the mean over 2..394; `E[Y | Y >= 2]` is 135.97 and
+  `E[Y | Y >= 1]` 133.95): not the mean of the distribution its likelihood truncates. AutoBayes's expected value is that mean,
+  `E[Y | Y >= 1] = mu / (1 - P(0))`. The case passes G1, G2 (log density and gradient), G3, G5 and G6 against brms, and G4's
+  expected values on its 50-digit reference (`oracle/reference.py`: the negative binomial's log mass, `log(1 - P(0))` and
+  `mu / (1 - P(0))` in `decimal`) at all 656 of them: brms is 3.8e-3 to 0.499 relative off the reference, AutoBayes within
+  1.1e-14 (point 0, fitted row 0: brms 2.9418, reference 1.8846927343). The reference's log density equals brms's to 3.7e-16.
+  No frozen Poisson case has a lower bound; the Poisson's is the same code (`autobayes/tails.py`), checked against SciPy's
+  truncated masses and means (`tests/test_releases.py`, `tests/test_cens_trunc_families.py`).
 
 Refused, naming the construct (D122): `cens()` for the count families and every family other than the four above, `trunc()`
-for the Weibull, lognormal, Gamma and every family other than the Gaussian, Poisson and negative binomial, a non-integer or
-negative count bound, a count bound above 1000, `cens(c, y2)` with a third argument or with `y2` the codes' column, an interval
+for the Weibull, lognormal, Gamma and every family other than the Gaussian, Poisson and negative binomial, a non-integer
+count bound or a negative upper bound, a count bound above 1000 in size, `cens(c, y2)` with a third argument or with `y2` the codes' column, an interval
 row whose `y2` is not above `y`, code 2 without `y2`, and, as before, `cens()` with `trunc()`, per-row bounds, `mi()` with them,
 the E06 links (D133), multivariate (D56) and non-linear (D61) formulas, autocorrelation terms (D70) and mixtures.
 
@@ -84,12 +91,12 @@ expected values): `weibull_censored` (4e-16, 1.1e-9, 4e-16), `lognormal_censored
 (every code, with weights, and `log_lik()` and `loo()`), `poisson_truncated_weighted_post` (with weights, a response at the
 bound, and `log_lik()`, `bayes_R2()` and `loo()`), `weibull_censored_interval_post` (every code, `log_lik()`, `bayes_R2()`,
 `loo()`; its points on (-0.5, 0.5): on brms's default box brms's own log density is not finite at a seeded point, D120) and
-`negbinomial_truncated_ub`. `gamma_censored_interval` and `negbinomial_truncated` stay gated with their parks.
+`negbinomial_truncated_ub`; `gamma_censored_interval` and `negbinomial_truncated` against two references (P6).
 `tests/test_cens_trunc_families.py` checks the shape derivative and every family's tails on both paths against 50- to
 120-digit references, the untaken branches at extreme parameters, each model's rows by hand (with weights, formulas on
-`sigma` and `shape`, slopes, an offset and `mo()`), the parked cases with their parks lifted against brms and against exact
+`sigma` and `shape`, slopes, an offset and `mo()`), the two cases once parked against brms and against exact
 values, predictions, draws, `log_lik()`, `loo()`, `hypothesis()`, `describe()`, the identity, default priors and every
-refusal. Nothing samples.
+refusal; `tests/test_releases.py` the released lower bound (masses, means and `describe()` by hand). Nothing samples.
 
 ## With E03's weights() and shape formula
 

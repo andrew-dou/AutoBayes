@@ -2422,13 +2422,33 @@
     "E04_cens_trunc_families",
     "E05_post_prior_effects_stacking"
    ],
-   "status": "implementing",
+   "status": "gates_green",
    "summary": "release the two withheld results (Andrew, 2026-10-26): the lower-truncated count mean E[Y | Y >= lb] (D121, PARKED_TRUNCATION) and the exact stacking weights (D126, PARKED_WEIGHTS), each accepted against brms where brms is exact and a 50-digit reference where it is not (P6; the stacking weights need a new fallback kind)",
    "pr": null,
    "attempts": 0,
    "divergences": [],
    "next_action": "feature agent on parity/g01",
-   "reserved_divergences": "D176"
+   "reserved_divergences": "D176",
+   "gates": {
+    "sha": "c224d4d27b79",
+    "dirty_tree": false,
+    "base": "origin/main",
+    "when": "2026-10-27T04:57Z",
+    "results": {
+     "immutability": {
+      "status": "pass",
+      "seconds": 0.0
+     },
+     "oracle": {
+      "status": "pass",
+      "seconds": 835.5
+     },
+     "diff_coverage": {
+      "status": "pass",
+      "seconds": 571.0
+     }
+    }
+   }
   },
   {
    "id": "G02_call_surface",

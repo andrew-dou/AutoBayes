@@ -66,32 +66,38 @@ references: brms wherever brms is accurate, and a committed high-precision refer
 - **Opt-in.** The case's editable `gate` field names the reference, the divergence row that says why brms is inexact,
   and the quantity kinds that may fall back: `{"expect": "pass", "reference": "gauss_censored.json", "divergence":
   "D24", "fallback": ["gradient"]}`. The kinds are `"gradient"` (every G2 gradient coordinate, with and without the
-  Jacobian) and `"epred"` (G4's expected values). Log densities (`lp`, `lp_nojac`, `lprior`) never fall back: a gate
-  field that lists one is refused.
+  Jacobian), `"epred"` (G4's expected values) and `"weights"` (the post gate's stacking weights of `loo_model_weights`,
+  as numbers and as logarithms; only a case whose post-processing functions include `loo_model_weights` may list it,
+  G01_releases). Log densities (`lp`, `lp_nojac`, `lprior`) never fall back: a gate field that lists one is refused.
 - **The rule**, for each frozen point and each entry of a listed kind, with the usual tolerance (`tolerances.py`,
   unchanged): (1) the entry passes if AutoBayes agrees with brms within it; (2) otherwise it passes only if brms
   differs from the reference by more than the tolerance **and** AutoBayes agrees with the reference within it; (3)
   wherever AutoBayes and brms agree within the tolerance, the reference must agree with brms within it too, or the
   reference is wrong and the gate fails, whatever AutoBayes does.
 - **Everything else is unchanged** and compares with brms only: G1, G3, G5, G6, the log densities of G2, G4's linear
-  predictor, and G4's expected values unless `"epred"` is listed. A case without the opt-in runs exactly as before.
+  predictor, G4's expected values unless `"epred"` is listed, and every quantity of the post gate but the stacking weights
+  where `"weights"` is listed. A case without the opt-in runs exactly as before.
 - **Report.** The gate returns, and emits as a `ReferenceFallback` warning that pytest's summary shows, how many entries
-  passed on the reference and where (`tests/oracle/two_reference.py`; `gates.check_gradient` and
-  `gates.check_predictions` hand an opted-in case to it).
+  passed on the reference and where (`tests/oracle/two_reference.py`; `gates.check_gradient`, `gates.check_predictions` and
+  `gates.check_loo_model_weights` hand an opted-in case to it).
 - **The reference** is `tests/oracle/references/<case>.json`, written by `python oracle/reference.py <case>`, an
   independent third implementation (the standard library only, nothing from `autobayes`) that reads the fixture's
   `case_brms.json`, `data.csv`, `newdata.csv` and the points' unconstrained values, applies brms's transforms and their
   Jacobians itself, and evaluates the model in Python's `decimal` at 50 significant digits: the log density with and
   without the Jacobian, every gradient coordinate in brms's order (a fourth-order central difference of the 50-digit
-  density with step 1e-10, error below 1e-35), and the expected values G4 compares where `"epred"` may fall back, each
-  written with 30 significant digits, with the sha256 of every file read. Re-running the script reproduces the file
+  density with step 1e-10, error below 1e-35), the expected values G4 compares where `"epred"` may fall back, and the
+  stacking weights of a case that records `loo_model_weights` (the Karush-Kuhn-Tucker condition of the two models' stacking
+  objective on the fixture's pointwise elpd_loo, bisected at 65 digits), each written with 30 significant digits, with the
+  sha256 of every file read. Re-running the script reproduces the file
   byte for byte (`python oracle/reference.py --check --all`, also a harness test), the harness checks the hashes and
   that the reference's log densities equal brms's (exact to `LOGP_REL` on these cases), and a reference is frozen with
   the fixture it certifies: the gate tool refuses a changed one, as it refuses a changed fixture.
 - **In use** (P6): `bernoulli_cloglog` (gradient; 2 of 144 entries on the reference), `gauss_censored` (gradient; 32 of
   160), `gauss_truncated` (gradient, 2 of 160; expected values, 6 of 656) and `gamma_censored_interval` (gradient; 10 of 160, D120) and `cumulative_probit_varint` (gradient; 173 of
-  176, D88), and `wiener_varint` and `wiener_distributional_bs` (expected values; 656 of 656 each, D148). `binomial_cloglog`, frozen with P6, needs
-  no opt-in: brms is within the tolerance at every entry there.
+  176, D88), and `wiener_varint` and `wiener_distributional_bs` (expected values; 656 of 656 each, D148), and since G01_releases
+  `negbinomial_truncated` (expected values; 656 of 656, D121: brms's `posterior_epred` of `trunc(lb = 1)` is the mean from
+  2) and `gauss_loo_compare_x_stacking` (stacking weights; 8 of 8, D126: brms's are loo's optimiser's, 1.044e-8 off the
+  optimum). `binomial_cloglog`, frozen with P6, needs no opt-in: brms is within the tolerance at every entry there.
 
 ## Park and stop rules
 

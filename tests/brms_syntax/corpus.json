@@ -6480,14 +6480,13 @@
     "group_terms": []
    },
    "result": {
-    "status": "error",
-    "type": "FormulaError",
-    "message": "'ycount | trunc(lb = 0) ~ x': 'trunc(lb = 0)': a lower bound of a count response is implemented (each row's log mass minus log P(Y >= lb), as brms's likelihood writes it, and the truncated mean E[Y | Y >= lb]) and withheld: brms 2.23's posterior_epred of such a model is not the mean of the distribution its likelihood truncates. On the frozen case negbinomial_truncated (trunc(lb = 1)) brms normalises the likelihood by P(Y >= 1) while its expected values are E[Y | Y >= 2] (at point 0, fitted row 0, mu = 0.737: brms 2.9418 = E[Y | Y >= 2], E[Y | Y >= 1] = 1.8847), so its G4 cannot pass against brms (docs/cens-trunc-families.md, divergence D121)",
-    "raised_at": "formula.py:1209",
-    "stage": "default_priors",
-    "mechanism": "refusal",
-    "outcome": "refused_named",
-    "gap": "capability"
+    "status": "built",
+    "model": "Model",
+    "model_warnings": [],
+    "issues": [],
+    "notes": [],
+    "outcome": "match",
+    "gap": null
    }
   },
   {
@@ -13421,13 +13420,13 @@
  ],
  "summary": {
   "outcomes": {
-   "match": 134,
-   "refused_named": 113,
+   "match": 135,
+   "refused_named": 112,
    "differs": 1
   },
   "gaps": {
-   "none": 136,
-   "capability": 111,
+   "none": 137,
+   "capability": 110,
    "divergence": 1
   },
   "brms_refuses": 2

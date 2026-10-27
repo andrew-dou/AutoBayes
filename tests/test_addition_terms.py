@@ -114,8 +114,8 @@ CENS_TRUNC_REFUSALS = [
     ("cnt | cens(c) ~ x", "poisson", r"'cens\(c\)' is not available for the poisson family; brms's cens\(\) is verified here for the "
                                      r"gaussian, gamma, lognormal, weibull, cox families"),   # E04: the Weibull and lognormal too; the Gamma since P6's
                                                                                                # reference (D120); F05: cox's right censoring
-    # E04: trunc() is offered for the Poisson family; its lower bound is withheld (D121), and a family without it refuses it
-    ("cnt | trunc(lb = 0) ~ x", "poisson", r"'trunc\(lb = 0\)': a lower bound of a count response is implemented .* and withheld"),
+    # E04: trunc() is offered for the Poisson family, its lower bound too since D121's acceptance (test_no_park_...), and a
+    # family without it refuses it
     ("ypos | trunc(lb = 0) ~ x", "gamma", r"'trunc\(lb = 0\)' is not available for the gamma family; brms's trunc\(\) is verified here for "
                                          r"the gaussian, poisson, negbinomial families"),
 ]
@@ -129,6 +129,7 @@ def test_refusals_of_cens_and_trunc(formula, family, needle):
 
 def test_no_park_and_the_family_registry():
     assert not F.PARKED_ADDITIONS                           # P6 lifted the parks of cens() and trunc() (D24, D25)
+    assert ab.parse_formula("cnt | trunc(lb = 0) ~ x", family="poisson").addition("trunc").lb == 0.0   # and of counts' (D121)
     for formula in ("y | cens(c) ~ x", "y | trunc(lb = 0) ~ x", "y | cens(c) + weights(w) ~ x + (1 | g)"):
         assert ab.parse_formula(formula, family="gaussian").additions
     from autobayes.families import FAMILIES, get_family

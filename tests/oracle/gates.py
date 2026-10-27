@@ -47,8 +47,9 @@ F07 `check_summary`     in the same `post` gate: `ab.fixef`, `ab.ranef`, `ab.coe
                          label exactly and every number (Rhat and the ESS included) to PRED_REL
 
 A case that opts in to two-reference acceptance (P6, its gate field names a committed high-precision reference and the
-quantity kinds that may fall back on it: "gradient", "epred") has G2's gradient and G4's expected values checked by
-`two_reference`: brms where brms is accurate, the reference where it is not; every other check is unchanged.
+quantity kinds that may fall back on it: "gradient", "epred", "weights") has G2's gradient, G4's expected values and the post
+gate's stacking weights checked by `two_reference`: brms where brms is accurate, the reference where it is not; every other
+check is unchanged.
 
 C06: G1 checks brms's coding of a response's missing rows (`check_response`: Inf in `Y`, `Jmi`, `Nmi`, `lbmi`, `ubmi`) and, through
 the adapter, `Ksp`, `Xn_1`, `noise_1` and `Mme_1`; G2 maps `Ymi`, `bsp`, `meanme`, `sdme` and `zme` (`meanme` and `sdme` in the
@@ -1358,7 +1359,9 @@ def check_loo_model_weights(b: Bundle, idata, ref) -> None:
     which brms's ``model_weights(weights = "stacking")`` equals: the other model must be the target brms evaluated (its log
     density at its points equals the fixture's ``loo_compare.other_lp``), then ``ab.loo_model_weights`` and
     ``ab.model_weights(..., "stacking")`` of the two ``ab.loo()`` results, in that order, equal brms's weights, as numbers and
-    as logarithms (as ``check_loo_compare`` compares weights)."""
+    as logarithms (as ``check_loo_compare`` compares weights). A case that opts in to two-reference acceptance of its weights
+    (P6, fallback ``"weights"``, D126) has them checked by ``two_reference.check_weights``: brms where brms is accurate, the
+    reference's exact optimum where it is not."""
     other_id = b.case.get("autobayes", {}).get("compare_with")
     models = list(ref["models"])
     if ref.get("method") != "stacking" or not other_id or models != [b.case["id"], other_id]:
@@ -1371,13 +1374,20 @@ def check_loo_model_weights(b: Bundle, idata, ref) -> None:
         raise OracleMismatch(f"loo_model_weights: {other_id}'s log density at its points is not the fixture's other_lp")
     results = {models[0]: ab.loo(b.model, idata), models[1]: ab.loo(other.model, fixed_parameter_draws(other))}
     theirs = fx.decode(ref["weights"])
+    opted_in = b.reference is not None and "weights" in b.reference.fallback      # P6: brms where it is accurate, the reference where not
+    found = []
     for what, w in (("loo_model_weights", b.post["loo_model_weights"](results)),
                     ("model_weights stacking", ab.model_weights(results, "stacking"))):
         if list(w.index) != models:
             raise OracleMismatch(f"{what}: models {list(w.index)} vs brms {models}")
+        if opted_in:
+            found.append((what, w.to_numpy()))
+            continue
         compare_post(what, w.to_numpy(), theirs)
         with np.errstate(divide="ignore"):
             compare_post(f"{what} (log)", np.log(w.to_numpy()), np.log(theirs))
+    if opted_in:
+        return two_reference.check_weights(b, found, theirs, models)
 
 
 # -- F07: brms's summaries -----------------------------------------------------------------------------------------
