@@ -5155,14 +5155,13 @@
     ]
    },
    "result": {
-    "status": "error",
-    "type": "FormulaError",
-    "message": "'(1 | gr(g, dist = \"student\"))': brms's gr() options ['dist'] are not supported; gr() takes one grouping column, by = <column>, cor = FALSE (brms's '||') and id = \"p\" (brms's '|p|') here; cov, dist and a grouping expression are not offered (docs/multi-membership-and-by.md, divergence D105)",
-    "raised_at": "formula.py:2264",
-    "stage": "default_priors",
-    "mechanism": "refusal",
-    "outcome": "refused_named",
-    "gap": "capability"
+    "status": "built",
+    "model": "Model",
+    "model_warnings": [],
+    "issues": [],
+    "notes": [],
+    "outcome": "match",
+    "gap": null
    }
   },
   {
@@ -5221,14 +5220,13 @@
     ]
    },
    "result": {
-    "status": "error",
-    "type": "FormulaError",
-    "message": "'(1 | gr(g, cov = A_cov))': brms's gr() options ['cov'] are not supported; gr() takes one grouping column, by = <column>, cor = FALSE (brms's '||') and id = \"p\" (brms's '|p|') here; cov, dist and a grouping expression are not offered (docs/multi-membership-and-by.md, divergence D105)",
-    "raised_at": "formula.py:2264",
-    "stage": "default_priors",
-    "mechanism": "refusal",
-    "outcome": "refused_named",
-    "gap": "capability"
+    "status": "built",
+    "model": "Model",
+    "model_warnings": [],
+    "issues": [],
+    "notes": [],
+    "outcome": "match",
+    "gap": null
    }
   },
   {
@@ -5390,14 +5388,13 @@
     ]
    },
    "result": {
-    "status": "error",
-    "type": "FormulaError",
-    "message": "'(1 | mm(g, g2, weights = cbind(w1, w2), scale = FALSE))': mm()'s argument 'scale' is not supported; mm(g, g2, ..., weights = cbind(w1, w2, ...)) with brms's default scale = TRUE is offered (docs/multi-membership-and-by.md, divergence D104)",
-    "raised_at": "formula.py:2409",
-    "stage": "default_priors",
-    "mechanism": "refusal",
-    "outcome": "refused_named",
-    "gap": "capability"
+    "status": "built",
+    "model": "Model",
+    "model_warnings": [],
+    "issues": [],
+    "notes": [],
+    "outcome": "match",
+    "gap": null
    }
   },
   {
@@ -5452,14 +5449,13 @@
     ]
    },
    "result": {
-    "status": "error",
-    "type": "FormulaError",
-    "message": "'(1 + x | mm(g, g2))': only the varying intercept '(1 | mm(...))' is supported for a multi-membership term; varying slopes (and brms's mmc()) are not verified by a frozen case (docs/multi-membership-and-by.md, divergence D104)",
-    "raised_at": "formula.py:2431",
-    "stage": "default_priors",
-    "mechanism": "refusal",
-    "outcome": "refused_named",
-    "gap": "capability"
+    "status": "built",
+    "model": "Model",
+    "model_warnings": [],
+    "issues": [],
+    "notes": [],
+    "outcome": "match",
+    "gap": null
    }
   },
   {
@@ -5514,14 +5510,15 @@
     ]
    },
    "result": {
-    "status": "error",
-    "type": "FormulaError",
-    "message": "'(1 + mmc(x1, x2) | mm(g, g2))': only the varying intercept '(1 | mm(...))' is supported for a multi-membership term; varying slopes (and brms's mmc()) are not verified by a frozen case (docs/multi-membership-and-by.md, divergence D104)",
-    "raised_at": "formula.py:2431",
-    "stage": "default_priors",
-    "mechanism": "refusal",
-    "outcome": "refused_named",
-    "gap": "capability"
+    "status": "built",
+    "model": "Model",
+    "model_warnings": [],
+    "issues": [],
+    "notes": [
+     "'mmgg2': brms names the coefficient 'mmcx1x2', AutoBayes 'mmc(x1, x2)'"
+    ],
+    "outcome": "match",
+    "gap": null
    }
   },
   {
@@ -13402,13 +13399,13 @@
  ],
  "summary": {
   "outcomes": {
-   "match": 155,
-   "refused_named": 92,
+   "match": 160,
+   "refused_named": 87,
    "differs": 1
   },
   "gaps": {
-   "none": 157,
-   "capability": 90,
+   "none": 162,
+   "capability": 85,
    "divergence": 1
   },
   "brms_refuses": 2

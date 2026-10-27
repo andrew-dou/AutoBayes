@@ -278,7 +278,7 @@ def test_gr_cor_and_id_spellings():
                              ("y ~ x + (1 + x || gr(g, cor = TRUE))", "'\\|\\|' leaves the coefficients uncorrelated"),
                              ("y ~ x + (1 + x | gr(g, id = p))", "gr\\(\\)'s id = takes a quoted name"),
                              ("y ~ x + (1 + x || gr(g, id = 'p'))", "'\\|\\|' with an ID is not brms syntax"),
-                             ("y ~ x + (1 | gr(g, dist = 'student'))", r"brms's gr\(\) options \['dist'\] are not supported")]:
+                             ("y ~ x + (1 | gr(g, dist = 'cauchy'))", r"gr\(\)'s dist = takes \"gaussian\" or \"student\"")]:   # G05b takes student
         with pytest.raises(FormulaError, match=message):
             parse_formula(formula)
     pr = ab.Priors(intercept=ab.Normal(0, 5), b=ab.Normal(0, 2), sd={"g": {"Intercept": ab.HalfNormal(1), "x": ab.HalfNormal(1)}},

@@ -446,12 +446,13 @@ def _predict_by_hand(model, idata, df: pd.DataFrame | None, kind: str, seed, pol
         weights = mm_weights(term, df) if term.is_mm else np.ones((len(df), 1))
         labels = members[0]
         new_levels[g] = sorted(set().union(*(set(m) for m in members)) - set(levels))
-        # (sd draws, effect draws, covariate column) per coefficient: ones for the intercept, the raw column for a slope
+        # (sd draws, effect draws, covariate column per member) per coefficient: ones for the intercept, the raw column for a slope;
+        # G05b: a multi-membership term's mmc(x1, x2) reads member k's own column
         coefs = []
         for coef in term.coefs:
             names = model.group_coefficient_names[(g, coef)]
-            covariate = np.ones(len(df)) if coef == "Intercept" else df[coef].to_numpy(dtype=float)
-            coefs.append((post[names["sd"]].to_numpy(), post[names["group_effect"]].to_numpy(), covariate))
+            covariates = [np.ones(len(df)) if col is None else df[col].to_numpy(dtype=float) for col in term.covariate_columns(coef)]
+            coefs.append((post[names["sd"]].to_numpy(), post[names["group_effect"]].to_numpy(), covariates))
         # a correlated term (A02) drawing unseen levels from the population: the draws' Cholesky factors,
         # (chain, draw, M, M), rows and columns selected by coefficient label in the term's order
         L = None
@@ -470,9 +471,10 @@ def _predict_by_hand(model, idata, df: pd.DataFrame | None, kind: str, seed, pol
             else:                                        # one observed level per draw; its whole effect vector is reused
                 chosen = rng.integers(0, len(levels), size=coefs[0][0].shape)
                 new_effects[lvl] = [np.take_along_axis(u, chosen[..., None], axis=-1)[..., 0] for _, u, _ in coefs]
-        for member, w in zip(members, weights.T):                # one member, weight 1, except for a multi-membership term (D08)
+        for m, (member, w) in enumerate(zip(members, weights.T)):   # one member, weight 1, except for a multi-membership term (D08)
             for i, lvl in enumerate(member):
-                for k, (_, u, covariate) in enumerate(coefs):
+                for k, (_, u, covariates) in enumerate(coefs):
+                    covariate = covariates[m]                    # G05b: the member's own covariate
                     if fam.per_category:                         # F01b: (chain, draw, level, category) effects of fitted levels
                         mu[..., i, :] += u[..., levels.index(lvl), :] * covariate[i]
                         continue
@@ -711,6 +713,12 @@ def predict(model, fit_result, *, newdata: pd.DataFrame | None = None, kind: str
                 f"newdata has levels of {g!r} not seen in training: {unseen}; new levels in a {model.family} model, whose every "
                 "non-reference category has its own group term, are not offered (no frozen case verifies how brms "
                 f"draws them; docs/dirichlet-logistic-normal.md, divergence {fam.simplex.divergence if fam.simplex else 'D37'})")
+        if unseen and policies[g] != "error" and (t.cov is not None or t.is_student):   # G05b
+            raise FormulaError(
+                f"newdata has levels of {g!r} not seen in training: {unseen}; new levels of '{t.canonical}' are not offered: "
+                + ("a level outside the known covariance has no covariance with the fitted ones" if t.cov is not None else
+                   "no frozen brms case verifies how its Student-t scales are drawn for new levels")
+                + " (docs/gr-cov-dist.md, divergence D186)")
         if unseen and policies[g] != "error" and (t.by is not None or t.id is not None):   # D08
             raise FormulaError(
                 f"newdata has levels of {g!r} not seen in training: {unseen}; new levels of "

@@ -62,7 +62,7 @@ from dataclasses import replace
 import numpy as np
 import pandas as pd
 
-from autobayes.priors import (LKJ, Beta, Dirichlet, Flat, HalfNormal, HalfStudentT, InverseGamma, Prior, PriorError, Priors,
+from autobayes.priors import (LKJ, Beta, Dirichlet, Flat, Gamma, HalfNormal, HalfStudentT, InverseGamma, Prior, PriorError, Priors,
                               StudentT, brms_prior)
 
 BRMS_VERSION = "2.23.0"          # the brms whose default_prior() this reproduces (the oracle fixtures' meta.brms)
@@ -321,7 +321,11 @@ def default_priors(formula: str | list[str], data: pd.DataFrame, *, family: str 
     (``Priors(sigma=...)``) and ``lkj(1)`` on ``lncor``.
 
     F05 (docs/cox.md): the cox family's baseline hazard simplex gets brms's ``dirichlet(1)`` (``Priors(sbhaz=...)``); its
-    Intercept's default reads the times under the log link, as brms's does."""
+    Intercept's default reads the times under the log link, as brms's does.
+
+    A ``gr(g, dist = "student")`` term (docs/gr-cov-dist.md) gets brms's ``gamma(2, 0.1)`` on its degrees of freedom
+    (``Priors(df={"g": ...})``, truncated to ``df > 1``); ``gr(g, cov = A)`` adds no prior class and its ``A`` is read from ``data2``
+    and checked as the constructor checks it."""
     from autobayes.families import FAMILIES, get_family
     from autobayes.formula import DATA2_UNIVARIATE, FormulaError, check_data2, check_imputation, parse_formula
     from autobayes.multivariate import is_multivariate_formula, multivariate_default_priors
@@ -407,6 +411,12 @@ def default_priors(formula: str | list[str], data: pd.DataFrame, *, family: str 
     for t in spec.group_terms:
         sd[t.factor] = HalfStudentT(DF, scale) if not t.slopes else {c: HalfStudentT(DF, scale) for c in t.coefs}
     cor = {t.factor: LKJ(1) for t in spec.correlated_terms}
+    df = {t.factor: Gamma(2, 0.1) for t in spec.group_terms if t.is_student}   # G05b: brms's gamma(2, 0.1) on gr(dist = "student")'s df
+    for t in spec.group_terms:                                        # G05b: gr(g, cov = A)'s matrix, checked as the model checks it
+        if t.cov is not None:
+            from autobayes.group_cov import known_covariance
+
+            known_covariance(t, spec.levels_by_group[t.factor], data2)
     cor.update({s.factor: LKJ(1) for s in spec.shared_ids})          # D08: a correlation ID shared with a distributional formula
     auxiliary = {}
     if fam.scale_parameter in spec.dpar_names:                       # its own formula (B01): brms's def_dpar_prior, log link
@@ -472,7 +482,7 @@ def default_priors(formula: str | list[str], data: pd.DataFrame, *, family: str 
     priors = Priors(intercept=mark(intercept), b=mark(Flat()) if spec.pop_terms else None, sd=mark(sd) or None,
                     cor=mark(cor) or None, nu=mark(learned.get("nu")), simo=mark(simo) or None,
                     sdgp=mark(sdgp) or None, lscale=mark(lscale) or None, meanme=mark(me) or None, sdme=mark(me) or None,
-                    lncor=mark(lncor), sbhaz=mark(sbhaz),
+                    lncor=mark(lncor), sbhaz=mark(sbhaz), df=mark(df) or None,
                     **{k: mark(v) for k, v in auxiliary.items()}, **{k: mark(v) for k, v in autocor.items()},
                     **{k: mark(v) for k, v in sar.items()}, **{k: mark(v) for k, v in car.items()},
                     **{k: mark(v) for k, v in timecor.items()})
@@ -728,6 +738,8 @@ def prior_table(priors: Priors, spec, family="gaussian", *, center_predictors: b
                 add(None, "sd", group=t.factor, dpar=dp)
                 for c, p in zip(t.coefs, mine):
                     add(p, "sd", coef=brms_rename(c), group=t.factor, dpar=dp)
+    for g, prior in priors.df_priors(spec).items():                    # G05b: gr(g, dist = "student")'s df, a group row (lb 1)
+        add(prior, "df", group=g, lb="1")
     cor = priors.cor_priors(spec)
     if cor:
         ps = list(cor.values())

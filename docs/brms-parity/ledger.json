@@ -2572,13 +2572,33 @@
    "depends_on": [
     "D08_cs_mm_gr"
    ],
-   "status": "implementing",
+   "status": "gates_green",
    "summary": "gr(g, cov = A) with a known covariance matrix from data2 (phylogenetic and kinship models), gr(g, dist = 'student'), varying slopes in mm(), mmc() (corpus grp_gr_cov, grp_gr_dist_student, grp_mm_slope, grp_mmc, grp_mm_scale_false)",
    "pr": null,
    "attempts": 0,
    "divergences": [],
    "next_action": "paused at the weekly usage cap (2026-10-27): implementation committed in worktree parity-g05b at 8ad67b8 (not pushed); resume after the reset: rebase onto main, full suite and gate tool, report",
-   "reserved_divergences": "D185-D186"
+   "reserved_divergences": "D185-D186",
+   "gates": {
+    "sha": "c259f2547b46",
+    "dirty_tree": false,
+    "base": "origin/main",
+    "when": "2026-11-02T21:05Z",
+    "results": {
+     "immutability": {
+      "status": "pass",
+      "seconds": 0.0
+     },
+     "oracle": {
+      "status": "pass",
+      "seconds": 957.2
+     },
+     "diff_coverage": {
+      "status": "pass",
+      "seconds": 147.5
+     }
+    }
+   }
   },
   {
    "id": "G06_distributional_groups",

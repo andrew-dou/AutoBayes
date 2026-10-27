@@ -100,6 +100,11 @@
  },
  "gate": {
   "expect": "fail",
-  "reason": "G05b_gr_cov_dist not implemented; remove this field when it lands"
+  "gates": [
+   "g2_logp",
+   "g2_gradient",
+   "g3"
+  ],
+  "reason": "brms 2.23.0's scale_r_cor_cov drops the negative entries of Lcov (five here), so its effects are (Lcov+ kron diag(sd) L) vec(z), not the Kronecker product (Lcov kron diag(sd) L) vec(z) whose covariance is A kron Sigma, which AutoBayes builds (divergence D185, upstream): the log density, its gradient and the graph's effects and linear predictor differ from brms's; G1 (Lcov_1 itself), G4 (predictions read brms's own effects from the draws), G5 and G6 pass. The feature is accepted on gauss_gr_cov_slope, whose Cholesky factor is non-negative, and gauss_gr_cov; tests/test_gr_cov_dist.py checks this case's density against the Gaussian density of vec(r) under A kron Sigma"
  }
 }

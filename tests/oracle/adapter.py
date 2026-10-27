@@ -156,6 +156,11 @@ step and Stan's logit checked as for `zi`, and the simplex `R2D2_phi` takes unre
 does, its stick-breaking coordinates recomputed and checked before they are mapped to `R2D2_phi_stickbreaking__` (which needs
 AutoBayes's design columns in brms's order of `b`: the stick-breaking map is not symmetric in the entries).
 
+G05b: a multi-membership term's varying slope (brms's `Z_m_c_k` the slope's column for every member, or `mmc()`'s member column) is
+matched with the block's per-member covariates (`GroupBlock.covariates`) and brms's label of `mmc(x1, x2)`, `mmcx1x2`; a
+`gr(g, dist = "student")` term's `df_m` (`real<lower=1>`) maps to `df|g_interval__` (the probe's step checked as for `nu`) and
+`udf_m` entry by entry, in brms's level order, to `udf|g_log__`; `gr(g, cov = A)` has no parameter of its own (G1 checks `Lcov_m`).
+
 F02a: a CAR term (brms's `car(M, gr, type)`, `Model.car_names`) is checked by its Stan data of the type (`CAR_DATA`,
 `check_car_design`, G1); brms's `sdcar` maps to `sdcar_log__`, `car` and `rhocar` (`real<lower=0,upper=1>`) to their PyMC
 coordinate with the probe's step and Stan's logit at every point checked as for `zi`, and `rcar`, `zcar`, `nszcar` entry by entry,
@@ -248,7 +253,8 @@ def priors_from_spec(spec: dict) -> ab.Priors:
                      # F02a: a CAR term's {"sdcar": [...], "car": ["Flat"]} (escar) or {"sdcar": [...], "rhocar": ["Beta", a, b]} (bym2)
                      sdcar=_prior(spec.get("sdcar")), car=_prior(spec.get("car")), rhocar=_prior(spec.get("rhocar")),
                      lncor=_prior(spec.get("lncor")),                    # F01b: the logistic_normal family's {"lncor": ["LKJ", eta]}
-                     sbhaz=_prior(spec.get("sbhaz")))                    # F05: the cox baseline hazard's {"sbhaz": ["Dirichlet", a]}
+                     sbhaz=_prior(spec.get("sbhaz")),                    # F05: the cox baseline hazard's {"sbhaz": ["Dirichlet", a]}
+                     df=_prior(spec.get("df")))                          # G05b: gr(g, dist = "student")'s {"df": {"g": ["Gamma", 2, 0.1]}}
 
 
 def build_model(case: dict, data: pd.DataFrame) -> ab.Model:
@@ -735,7 +741,8 @@ def match_groups(fixture: Fixture, model: ab.Model) -> GroupMap:
                 raise OracleMismatch(f"multi-membership group {g!r}: {len(found)} brms group terms carry its memberships, weights and "
                                      f"covariates (J_m_k, W_m_k, Z_m_c_k) within {DESIGN_ABS}")
             grp, m = found[0]
-            if grp["coef"] != coef or [block.levels[i] for i in m] != list(grp["levels"]):
+            from autobayes.default_priors import brms_rename           # G05b: brms's label of mmc(x1, x2) is mmcx1x2
+            if grp["coef"] != brms_rename(coef) or [block.levels[i] for i in m] != list(grp["levels"]):
                 raise OracleMismatch(f"{g!r}: brms coefficient {grp['coef']!r} with levels {grp['levels']}; AutoBayes {coef!r} with "
                                      f"{[block.levels[i] for i in m]}")
             used.add((int(grp["id"]), int(grp["cn"])))
@@ -819,7 +826,8 @@ def _level_map(pairs, J: int) -> np.ndarray | None:
 def _match_mm(fixture: Fixture, block, used) -> list:
     """D08: the brms group coefficients that carry a multi-membership block: brms's member indices ``J_m_k`` give one
     bijection of the levels with the block's memberships over every member and row, brms's weights ``W_m_k`` are the block's
-    and ``Z_m_c_k`` its covariate (ones, the varying intercept), for every member ``k``."""
+    and ``Z_m_c_k`` its covariate (ones, the varying intercept), for every member ``k``. G05b: a varying slope's covariate is
+    the block's member ``k``'s own (``GroupBlock.covariates``: the slope's column, or ``mmc()``'s member column)."""
     sd, out, K = fixture.standata, [], len(block.memberships)
     for grp in fixture.groups:
         m_id, cn = int(grp["id"]), int(grp["cn"])
@@ -831,9 +839,10 @@ def _match_mm(fixture: Fixture, block, used) -> list:
         m = _level_map([(int(b), int(a)) for j, idx in zip(J, block.memberships) for b, a in zip(j, idx)], block.J)
         if m is None:
             continue
+        covariates = getattr(block, "covariates", ()) or (np.ones(block.group_index.shape),) * K
         same = all(f"W_{m_id}_{k}" in sd and abs_err(sd[f"W_{m_id}_{k}"], w) <= DESIGN_ABS
-                   and f"Z_{m_id}_{cn}_{k}" in sd and abs_err(sd[f"Z_{m_id}_{cn}_{k}"], np.ones(block.group_index.shape)) <= DESIGN_ABS
-                   for k, w in zip(range(1, K + 1), block.weights))
+                   and f"Z_{m_id}_{cn}_{k}" in sd and abs_err(sd[f"Z_{m_id}_{cn}_{k}"], c) <= DESIGN_ABS
+                   for k, w, c in zip(range(1, K + 1), block.weights, covariates))
         if same:
             out.append((grp, m))
     return out
@@ -1026,6 +1035,14 @@ def natural_point(model: ab.Model, point: Point, cmap: ColumnMap, gmap: GroupMap
         extras["bcs"] = {c: bcs[k] for k, c in enumerate(cmap.cs)}
     if getattr(model.design, "bhaz", None) is not None:   # F05: the cox baseline hazard's simplex, brms's sbhaz
         extras["sbhaz"] = np.atleast_1d(pars["sbhaz"]).astype(float)
+    students = getattr(model, "group_dist_names", {})        # G05b: gr(g, dist = "student")'s brms df_m and udf_m (brms's level order)
+    if students:
+        extras["df"] = {g: float(np.ravel(pars[f"df_{gmap.brms_id[g]}"])[0]) for g in students}
+        extras["udf"] = {}
+        for g in students:
+            u = np.empty(len(gmap.level_of[g]))
+            u[gmap.level_of[g]] = np.atleast_1d(pars[f"udf_{gmap.brms_id[g]}"]).astype(float)
+            extras["udf"][g] = u
     return dict(intercept=intercept, b=b, sd=sd or None, z=z or None, L=L or None, sigma=sigma, shape=shape, phi=phi, nu=nu,
                 zi=zi, hu=hu, bsp=bsp, simo=simo, theta=theta, sdgp=sdgp, lscale=lscale, zgp=zgp, ar=ar, ma=ma, **special, **extras, **sar,
                 **({"shrinkage": shrinkage} if shrinkage is not None else {}),
@@ -1393,6 +1410,15 @@ def coordinate_map(fixture: Fixture, model: ab.Model, cmap: ColumnMap, gmap: Gro
                 raise OracleMismatch(f"{par}[{elem + 1}]: brms has several {gp.group(1)} for one Gaussian process; AutoBayes has one")
             else:                                              # sdgp_k, lscale_k: real<lower=0>, sampled on the log scale
                 target, expect = (f"{roles[gp.group(1)]}_log__", 0), "log"
+        elif (st := re.fullmatch(r"(df|udf)_(\d+)", par)) and by_id.get(int(st.group(2))) in getattr(model, "group_dist_names", {}):
+            g = by_id[int(st.group(2))]                        # G05b: gr(g, dist = "student")'s real<lower=1> df_m and vector<lower=0>
+            dist_roles = model.group_dist_names[g]             # [N_m] udf_m: log(df - 1), as nu's, and log(udf), brms's level order
+            if st.group(1) == "df":
+                if elem != 0 or abs(float(e["du"]) - LOG_NU_MINUS_ONE_STEP) > 1e-9:
+                    raise OracleMismatch(f"brms's probe moved {par}[{elem + 1}] by {e['du']!r}; log(df - 1) moves it by {LOG_NU_MINUS_ONE_STEP!r}")
+                target, expect = (f"{dist_roles['df']}_interval__", 0), "other"
+            else:
+                target, expect = (f"{dist_roles['udf']}_log__", int(gmap.level_of[g][elem])), "log"
         elif par in CAR_PARS:                                  # F02a: a CAR term's parameters and latent vectors
             target, expect = car_coordinate(fixture, model, e, par, elem)
         elif (sh := getattr(model, "shrinkage_names", {})) and par in ("zb", "hs_global", "hs_slab", "hs_local", "R2D2_R2"):   # D07

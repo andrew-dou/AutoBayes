@@ -288,6 +288,15 @@ the response formula's term and log sigma's varying intercept, `Priors(sigma={"i
 and shared-ID factors are refused (D104-D106); `cs()` and the case `acat_cs` came with D04's acat family (D107, below); see
 [multi-membership and by](multi-membership-and-by.md).
 
+A known covariance, Student-t effects and multi-membership slopes: `(1 + x | gr(g, cov = A))` with `A` in `data2` (a DataFrame
+labelled by level; `vec(r)` has covariance `A kron Sigma`, where brms 2.23.0 drops the negative entries of chol(A), D185),
+`(1 | gr(g, dist = "student"))` (each level's effect Student-t, `Priors(df={"g": ab.Gamma(2, 0.1)})`, brms's class `df`),
+varying slopes in `mm()`, `mmc(x1, x2)` and `mm(..., scale = FALSE)`; `predict()`, `ab.log_lik` and the default priors take them.
+Verified against `gauss_gr_cov`, `gauss_gr_cov_slope`, `gauss_gr_student`, `gauss_mm_slope`, `gauss_mmc` and
+`gauss_mm_scale_false` (and `gauss_gr_cov_slope_signed`, where brms's construction differs); their combinations with one another
+and with the terms `mm()` is refused next to, and new levels of a `cov` or `dist` term, are refused (D186); see
+[known covariance and Student-t effects](gr-cov-dist.md).
+
 Weibull, exponential, skew-normal, shifted lognormal and ex-Gaussian responses (D01, brms's `weibull()`, `exponential()`,
 `skew_normal()`, `shifted_lognormal()`, `exgaussian()`): `ab.weibull` and `ab.exponential` with a log link on the mean,
 `ab.skew_normal` and `ab.exgaussian` with the identity link on the mean (brms's mean parameterisations), `ab.shifted_lognormal`

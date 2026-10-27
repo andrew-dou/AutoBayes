@@ -102,6 +102,10 @@ class GroupBlock:
     # level of g (brms's Jby_m - 1); the coefficient's SD is a vector over by_levels. Empty / None for every other term.
     by_levels: tuple[str, ...] = ()
     by_index: np.ndarray | None = None
+    # G05b, a varying slope of a multi-membership term (1 + x | mm(g, g2)), mmc(x1, x2): each member's covariate per row (brms's
+    # Z_m_c_k: the slope's column for every member, member k's own column for mmc()); Z is their weighted sum of indicators times
+    # them. Empty for the varying intercept (ones) and every other term.
+    covariates: tuple[np.ndarray, ...] = ()
 
     @property
     def J(self) -> int:
@@ -221,6 +225,7 @@ class Design:
     se: np.ndarray | None = None       # (n,) brms ``se`` of an ``se(col)`` term: each row's known standard error (F06a), or None
     denom: np.ndarray | None = None    # (n,) brms ``denom`` of a ``rate(col)`` term: each row's denominator (F06a), or None
     bhaz: object | None = None         # baseline_hazard.BaselineHazard: a cox model's knots, bases (brms's Zbhaz, Zcbhaz) and events (F05), or None
+    group_cov: Mapping[str, object] = field(default_factory=lambda: MappingProxyType({}))   # G05b: each gr(g, cov = A) term's group_cov.GroupCovariance, by factor
 
     def __post_init__(self):
         if not self.columns:
@@ -565,6 +570,12 @@ class Model:
         self._sar_design = sar_design(self.spec.sar, data2, len(self.data)) if self.spec.sar is not None else None
         self._fcor_design = fcor_design(self.spec.fcor, data2, len(self.data)) if self.spec.fcor is not None else None   # F03a
         check_data2(self.spec, data2)                         # Tier F: data2 holds what sar(), fcor() and car() read, nothing else
+        self._group_cov = {}                                  # G05b: each gr(g, cov = A) term's known covariance on its levels
+        for t in self.spec.group_terms:
+            if t.cov is not None:
+                from autobayes.group_cov import known_covariance
+                self._group_cov[t.factor], notes = known_covariance(t, self.spec.levels_by_group[t.factor], data2)
+                self.warnings.extend(notes)
 
         self._car_design = None                              # F02a: a CAR term's locations and graph on the fitted rows
         if self.spec.car is not None:
@@ -654,7 +665,7 @@ class Model:
         )
         self.bambi_model.build()
         self.pymc_model = self.bambi_model.backend.model
-        if self.spec.correlated_terms or self.spec.shared_ids:   # brms's correlated slopes (A02) and shared IDs (D08): a post-build
+        if any(not t.custom for t in self.spec.correlated_terms) or self.spec.shared_ids:   # brms's correlated slopes (A02) and shared IDs (D08): a post-build
             self.pymc_model = self._correlate_group_effects(self.pymc_model)   # edit of Bambi's graph
             self.bambi_model.backend.model = self.pymc_model  # what Bambi's fit() samples and cleans
         self.design = self._extract_design()
@@ -723,6 +734,7 @@ class Model:
         variable_names += list(simplex.get("sigma", ()))
         for roles in (*self.group_coefficient_names.values(), *self.dpar_group_names.values()):   # D08: a shared ID's dpar terms too
             variable_names.extend(roles[k] for k in ("sd", "offset", "group_effect", "by_normalisation") if k in roles)
+        variable_names += [roles[k] for roles in self.group_dist_names.values() for k in ("df", "udf", "dfm")]   # G05b
         for roles in self.correlation_names.values():
             variable_names.extend(roles[k] for k in ("L", "cor"))
         dpar_coefficients = [v for roles in self.dpar_names.values() for k, v in roles.items() if k != "value"]   # B01
@@ -782,7 +794,8 @@ class Model:
         replacements, added = [], []
         # D08: a correlation ID shared with a distributional formula is one more correlated group, its coefficients the
         # response formula's term's and then the distributional formula's (Bambi's sigma_1|g, under the component's prefix)
-        groups = [(t.factor, t.coefs, [self._group_roles(t.factor, c) for c in t.coefs]) for t in self.spec.correlated_terms]
+        groups = [(t.factor, t.coefs, [self._group_roles(t.factor, c) for c in t.coefs]) for t in self.spec.correlated_terms
+                  if not t.custom]                       # G05b: a term the model builds itself is correlated as it is built
         groups += [(s.factor, s.labels, [self._shared_roles(s.factor, dpar, c) for dpar, c in s.coefs]) for s in self.spec.shared_ids]
         for g, labels, roles in groups:
             M = len(labels)
@@ -921,11 +934,12 @@ class Model:
             for t in self.spec.group_terms:
                 g = t.factor
                 levels = self.spec.levels_by_group[g]
-                if t.custom:                                 # D08: the block built and checked against the graph here
-                    block = custom[g]
-                    group_blocks[(g, "Intercept")] = replace(block, column_slice=slice(start, start + len(levels)))
-                    parts.append(block.Z)
-                    start += len(levels)
+                if t.custom:                                 # D08: the block built and checked against the graph here (G05b:
+                    for coef in t.coefs:                     # one per coefficient)
+                        block = custom[(g, coef)]
+                        group_blocks[(g, coef)] = replace(block, column_slice=slice(start, start + len(levels)))
+                        parts.append(block.Z)
+                        start += len(levels)
                     continue
                 labels = self.data[t.column].to_numpy()
                 indicator = np.column_stack([labels == level for level in levels]).astype(float)
@@ -1017,7 +1031,8 @@ class Model:
                       missing=MappingProxyType(self._missing_design()),
                       category_specific=MappingProxyType(self._category_specific_design()),   # D04
                       thresholds=self._threshold_groups,                                     # F06b
-                      bhaz=self._bhaz_design)                                                # F05
+                      bhaz=self._bhaz_design,                                                # F05
+                      group_cov=MappingProxyType(dict(self._group_cov)))                     # G05b
 
     def _dpar_design(self, d: ModelSpec) -> DparDesign:
         """The design of distributional parameter ``d.response``'s formula (B01), as Bambi built its distributional
@@ -1294,19 +1309,28 @@ class Model:
     def _custom_term_layout(self, t) -> dict:
         """D08: what one multi-membership or ``by`` term reads off the fitted rows: its sorted levels; each member's 0-based
         level index per row and its weights (brms's ``J_m_k - 1`` and ``W_m_k``; one member, weight 1, for a ``by`` term);
-        for a ``by`` term the sorted levels of the by column and the 0-based by-level of each level (brms's ``Jby_m - 1``)."""
+        for a ``by`` term the sorted levels of the by column and the 0-based by-level of each level (brms's ``Jby_m - 1``).
+        G05b: the same for a ``gr(g, cov = A)`` or ``gr(g, dist = "student")`` term (one member, weight 1, no by levels), and
+        ``covariates``, each coefficient's covariate per member and row (brms's ``Z_m_c_k``: ones for the varying intercept, the
+        slope's column for every member, member ``k``'s own column for ``mmc()``)."""
         levels = self.spec.levels_by_group[t.factor]
         position = {level: j for j, level in enumerate(levels)}
+        n = len(self.data)
+        covariates = {c: tuple(np.ones(n) if col is None else self.data[col].to_numpy(dtype=float) for col in t.covariate_columns(c))
+                      for c in t.coefs}
         if t.is_mm:
             index = tuple(np.array([position[str(v)] for v in self.data[c]], dtype=np.int64) for c in t.members)
             weights = mm_weights(t, self.data)
             return {"levels": levels, "index": index, "weights": tuple(weights[:, k] for k in range(len(t.members))),
-                    "by_levels": (), "by_index": None}
+                    "by_levels": (), "by_index": None, "covariates": covariates}
         index = (np.array([position[str(v)] for v in self.data[t.column]], dtype=np.int64),)
+        if t.by is None:                                     # G05b: gr(g, cov = A), gr(g, dist = "student")
+            return {"levels": levels, "index": index, "weights": (np.ones(n),), "by_levels": (), "by_index": None,
+                    "covariates": covariates}
         by_of = by_levels_of(t, self.data)
         by_levels = tuple(sorted(set(by_of.values())))
-        return {"levels": levels, "index": index, "weights": (np.ones(len(self.data)),), "by_levels": by_levels,
-                "by_index": np.array([by_levels.index(by_of[level]) for level in levels], dtype=np.int64)}
+        return {"levels": levels, "index": index, "weights": (np.ones(n),), "by_levels": by_levels,
+                "by_index": np.array([by_levels.index(by_of[level]) for level in levels], dtype=np.int64), "covariates": covariates}
 
     def _add_custom_group_effects(self, eta):
         """brms's multi-membership terms ``(1 | mm(g, g2, weights = cbind(w1, w2)))`` and ``(1 | gr(g, by = gby))`` (D08), built
@@ -1314,70 +1338,144 @@ class Model:
         link), named as Bambi names a varying intercept: the SD ``1|g_sigma`` under the term's ``sd`` prior (sampled on its log;
         with ``by``, one SD per level of the by column on ``g__by_dim``), the standardised effects ``1|g_offset ~ Normal(0, 1)``
         and the effects ``1|g = sd[by of the level] * 1|g_offset`` (a deterministic on ``g__factor_dim``); each row adds
-        ``sum_k W_k * 1|g[J_k]`` (brms's ``W_m_k r_m_1[J_m_k]``), its one level's effect for a ``by`` term."""
+        ``sum_k W_k * 1|g[J_k]`` (brms's ``W_m_k r_m_1[J_m_k]``), its one level's effect for a ``by`` term.
+
+        G05b (docs/gr-cov-dist.md): every coefficient of such a term (varying slopes in ``mm()``, ``mmc()``, and the terms with
+        ``gr(g, cov = A)`` or ``gr(g, dist = "student")``) has its own SD and standardised effects, as Bambi names a slope's
+        (``x|g_sigma``, ``x|g_offset``); with ``|`` they are correlated through ``L|g`` (brms's ``L_m``, ``lkj_corr_cholesky``,
+        sampled on Stan's ``cholesky_corr`` coordinates; ``cor|g`` its matrix), brms's ``scale_r_cor``: coefficient ``c``'s effects
+        are ``sd_c sum_k L[c, k] z_k``. A known covariance multiplies each coefficient's effects over the levels by ``Lcov`` (brms's
+        ``Lcov_m``, so that ``vec(r)`` has covariance ``A kron Sigma``); Student-t effects multiply each level's by ``dfm|g =
+        sqrt(df|g * udf|g)``, ``df|g`` under its prior truncated to ``df > 1`` (brms's ``real<lower=1> df_m``) and ``udf|g[j] ~
+        InverseGamma(df / 2, 1 / 2)``, Stan's ``inv_chi_square(df)``. Each row adds ``sum_k W_k sum_c r_c[J_k] Z_c,k``."""
         import pymc as pm
         import pytensor.tensor as pt
 
         model = pm.modelcontext(None)
         sds = self.priors.sd_priors(self.spec)
         for t in self.spec.custom_group_terms:
-            roles, layout = self.group_coefficient_names[(t.factor, "Intercept")], self._custom_term_layout(t)
-            model.add_coord(roles["coordinate"], list(layout["levels"]))
-            prior = sds[(t.factor, "Intercept")]
-            dist = getattr(pm, prior.name)
-            params = {k: np.float64(v) for k, v in prior.params.items()}
-            if t.by is not None:
-                model.add_coord(roles["by_coordinate"], list(layout["by_levels"]))
-                sd = dist(roles["sd"], **params, dims=roles["by_coordinate"])
-                scale = sd[layout["by_index"]]
-                # brms's lprior of sd_m (M_m x Nby_m, M_m = 1 here) adds the untruncated density of every entry and subtracts
-                # the lower bound's log CCDF once for the term, not once per by level (gauss_gr_by's lprior): for a prior
-                # symmetric about 0 (normal, student_t, cauchy) brms's density is log 2 below the half prior's for each by
-                # level after the first. The constant is reproduced so that the log density is brms's; it moves no parameter.
-                missing = (len(layout["by_levels"]) - 1) * (np.log(2.0) if prior.name in _SYMMETRIC_HALF else 0.0)
-                if missing:
-                    pm.Potential(roles["by_normalisation"], pt.as_tensor_variable(np.float64(-missing)))
+            layout = self._custom_term_layout(t)
+            roles = [self.group_coefficient_names[(t.factor, c)] for c in t.coefs]
+            model.add_coord(roles[0]["coordinate"], list(layout["levels"]))
+            scales, zs = [], []
+            for c, r in zip(t.coefs, roles):
+                prior = sds[(t.factor, c)]
+                dist = getattr(pm, prior.name)
+                params = {k: np.float64(v) for k, v in prior.params.items()}
+                if t.by is not None:
+                    model.add_coord(r["by_coordinate"], list(layout["by_levels"]))
+                    sd = dist(r["sd"], **params, dims=r["by_coordinate"])
+                    scale = sd[layout["by_index"]]
+                    # brms's lprior of sd_m (M_m x Nby_m, M_m = 1 here) adds the untruncated density of every entry and subtracts
+                    # the lower bound's log CCDF once for the term, not once per by level (gauss_gr_by's lprior): for a prior
+                    # symmetric about 0 (normal, student_t, cauchy) brms's density is log 2 below the half prior's for each by
+                    # level after the first. The constant is reproduced so that the log density is brms's; it moves no parameter.
+                    missing = (len(layout["by_levels"]) - 1) * (np.log(2.0) if prior.name in _SYMMETRIC_HALF else 0.0)
+                    if missing:
+                        pm.Potential(r["by_normalisation"], pt.as_tensor_variable(np.float64(-missing)))
+                else:
+                    scale = dist(r["sd"], **params)
+                scales.append(scale)
+                zs.append(pm.Normal(r["offset"], mu=np.float64(0.0), sigma=np.float64(1.0), dims=r["coordinate"]))
+            effects = [scales[0] * zs[0]]
+            if t.has_correlation:                            # G05b: brms's scale_r_cor, (diag(sd) L z)^T
+                L = self._custom_correlation(model, t)
+                effects += [scales[c] * sum(L[c, k] * zs[k] for k in range(c + 1)) for c in range(1, len(t.coefs))]
             else:
-                scale = dist(roles["sd"], **params)
-            z = pm.Normal(roles["offset"], mu=np.float64(0.0), sigma=np.float64(1.0), dims=roles["coordinate"])
-            r = pm.Deterministic(roles["group_effect"], scale * z, dims=roles["coordinate"])
-            for index, weight in zip(layout["index"], layout["weights"]):
-                eta = eta + (r[index] if t.by is not None else np.asarray(weight, dtype=np.float64) * r[index])
+                effects += [s * z for s, z in zip(scales[1:], zs[1:])]
+            if t.cov is not None:                            # G05b: brms's Lcov_m over the levels, every coefficient (A kron Sigma)
+                Lcov = pt.as_tensor_variable(np.asarray(self._group_cov[t.factor].L, dtype=np.float64))
+                effects = [pt.dot(Lcov, e) for e in effects]
+            if t.is_student:                                 # G05b: each level's effects times brms's dfm_m = sqrt(df udf)
+                dfm = self._student_scale(model, t)
+                effects = [dfm * e for e in effects]
+            rs = [pm.Deterministic(r["group_effect"], e, dims=r["coordinate"]) for r, e in zip(roles, effects)]
+            for k, (index, weight) in enumerate(zip(layout["index"], layout["weights"])):
+                for c, r in zip(t.coefs, rs):
+                    part = r[index] if c == "Intercept" else r[index] * np.asarray(layout["covariates"][c][k], dtype=np.float64)
+                    eta = eta + (np.asarray(weight, dtype=np.float64) * part if t.is_mm else part)
         return eta
 
-    def _custom_group_blocks(self) -> dict[str, GroupBlock]:
-        """The block of each multi-membership and ``by`` term (D08), by factor, checked against the graph: the SD a free
-        positive variable sampled on its log (a vector over the by levels with ``by``), the standardised effects a free vector
-        and the effects a deterministic on the level dimension, the coordinates the sorted levels; and the term's contribution
-        to the parent's linear predictor recomputed from the data (``_check_custom_group_effects``). ``Z`` is the weighted sum
-        of the members' indicators (the indicator of the level for a ``by`` term)."""
+    def _custom_correlation(self, model, t):
+        """G05b: the correlation factor of a correlated term the model builds itself (``(1 + x | mm(g, g2))``, ``(1 + x | gr(g,
+        cov = A))``): the free variable ``L|g`` (brms's ``L_m``) under ``lkj_corr_cholesky(eta)``, sampled on Stan's
+        ``cholesky_corr`` coordinates ``L|g_cholesky_corr__``, and the deterministic ``cor|g = L L^T`` (brms's ``Cor_m``), on the
+        coefficient dimensions, as ``_correlate_group_effects`` adds them to the terms Bambi builds."""
+        import pymc as pm
+
+        names, M = self._correlation_roles(t.factor), len(t.coefs)
+        for dim in (names["coordinate"], names["coordinate_T"]):
+            model.add_coord(dim, list(t.coefs))
+        rv, transform, _ = cholesky_corr_rv(names["L"], float(self.priors.cor_priors(self.spec)[t.factor].params["eta"]), M)
+        L = model.register_rv(rv, names["L"], transform=transform, dims=(names["coordinate"], names["coordinate_T"]))
+        pm.Deterministic(names["cor"], L @ L.T, dims=(names["coordinate"], names["coordinate_T"]))
+        return L
+
+    def _student_scale(self, model, t):
+        """G05b, brms's ``gr(g, dist = "student")``: the degrees of freedom ``df|g`` (brms's ``real<lower=1> df_m``) under the
+        term's ``df`` prior truncated to ``df > 1`` and renormalised there (brms's lprior subtracts the prior's log CCDF at 1),
+        sampled as ``log(df - 1)``; the per-level scales ``udf|g[j] ~ InverseGamma(df / 2, 1 / 2)`` (Stan's ``inv_chi_square(df)``,
+        brms's ``udf_m``, sampled on their logs); and the deterministic ``dfm|g = sqrt(df * udf)`` (brms's ``dfm_m``) on the level
+        dimension, which multiplies each level's effects."""
+        import pymc as pm
+        import pytensor.tensor as pt
+
+        names = self.group_dist_names[t.factor]
+        prior = self.priors.df_priors(self.spec)[t.factor]
+        base = getattr(pm, prior.name).dist(**{k: np.float64(v) for k, v in prior.params.items()})
+        df = pm.Truncated(names["df"], base, lower=np.float64(1.0))
+        udf = pm.InverseGamma(names["udf"], alpha=df / np.float64(2.0), beta=np.float64(0.5), dims=names["coordinate"])
+        return pm.Deterministic(names["dfm"], pt.sqrt(df * udf), dims=names["coordinate"])
+
+    def _custom_group_blocks(self) -> dict[tuple[str, str], GroupBlock]:
+        """The block of each coefficient of each multi-membership and ``by`` term (D08) and ``gr(g, cov = A)`` and ``gr(g, dist =
+        "student")`` term (G05b), by ``(factor, coefficient)``, checked against the graph: each SD a free positive variable sampled
+        on its log (a vector over the by levels with ``by``), the standardised effects a free vector and the effects a
+        deterministic on the level dimension, the coordinates the sorted levels; a Student-t term's ``df|g`` free on its interval
+        coordinate, ``udf|g`` free on its log and ``dfm|g`` a deterministic, on the level dimension; and the term's contribution to
+        the parent's linear predictor recomputed from the data (``_check_custom_group_effects``). ``Z`` is the weighted sum of the
+        members' indicators times the coefficient's covariate (the indicator of the level times it for one member); a
+        multi-membership slope's block also keeps each member's covariate (``covariates``)."""
         pmm, blocks = self.pymc_model, {}
         start = pmm.initial_point()
         for t in self.spec.custom_group_terms:
-            roles, layout = self.group_coefficient_names[(t.factor, "Intercept")], self._custom_term_layout(t)
+            layout = self._custom_term_layout(t)
             levels, n = layout["levels"], len(self.data)
-            sd = pmm[roles["sd"]]
-            shape = (len(layout["by_levels"]),) if t.by is not None else ()
-            if (sd not in pmm.free_RVs or pmm.rvs_to_values[sd].name != f"{roles['sd']}_log__"
-                    or np.shape(start.get(f"{roles['sd']}_log__")) != shape):
-                raise RuntimeError(f"{roles['sd']!r} is not a free positive variable of shape {shape} sampled on its log")
-            if t.by is not None and (tuple(pmm.named_vars_to_dims.get(roles["sd"], ())) != (roles["by_coordinate"],)
-                                     or tuple(str(v) for v in pmm.coords[roles["by_coordinate"]]) != layout["by_levels"]):
-                raise RuntimeError(f"PyMC dims of {roles['sd']!r} are not ({roles['by_coordinate']!r},) with the levels of {t.by!r}")
-            if tuple(str(v) for v in pmm.coords[roles["coordinate"]]) != levels:
-                raise RuntimeError(f"PyMC coordinate {roles['coordinate']!r} differs from the fitted labels")
-            if pmm[roles["offset"]] not in pmm.free_RVs or pmm[roles["group_effect"]] not in pmm.deterministics:
-                raise RuntimeError(f"{roles['offset']!r} is not a free variable or {roles['group_effect']!r} not a deterministic")
-            for key in ("offset", "group_effect"):
-                if tuple(pmm.named_vars_to_dims.get(roles[key], ())) != (roles["coordinate"],):
-                    raise RuntimeError(f"PyMC dims of {roles[key]!r} are not ({roles['coordinate']!r},)")
-            Z = np.zeros((n, len(levels)))
-            for index, weight in zip(layout["index"], layout["weights"]):
-                np.add.at(Z, (np.arange(n), index), weight)
-            blocks[t.factor] = GroupBlock(levels, Z, layout["index"][0], slice(0, len(levels)),
-                                          memberships=layout["index"] if t.is_mm else (),
-                                          weights=layout["weights"] if t.is_mm else (),
-                                          by_levels=layout["by_levels"], by_index=layout["by_index"])
+            for c in t.coefs:
+                roles = self.group_coefficient_names[(t.factor, c)]
+                sd = pmm[roles["sd"]]
+                shape = (len(layout["by_levels"]),) if t.by is not None else ()
+                if (sd not in pmm.free_RVs or pmm.rvs_to_values[sd].name != f"{roles['sd']}_log__"
+                        or np.shape(start.get(f"{roles['sd']}_log__")) != shape):
+                    raise RuntimeError(f"{roles['sd']!r} is not a free positive variable of shape {shape} sampled on its log")
+                if t.by is not None and (tuple(pmm.named_vars_to_dims.get(roles["sd"], ())) != (roles["by_coordinate"],)
+                                         or tuple(str(v) for v in pmm.coords[roles["by_coordinate"]]) != layout["by_levels"]):
+                    raise RuntimeError(f"PyMC dims of {roles['sd']!r} are not ({roles['by_coordinate']!r},) with the levels of {t.by!r}")
+                if tuple(str(v) for v in pmm.coords[roles["coordinate"]]) != levels:
+                    raise RuntimeError(f"PyMC coordinate {roles['coordinate']!r} differs from the fitted labels")
+                if pmm[roles["offset"]] not in pmm.free_RVs or pmm[roles["group_effect"]] not in pmm.deterministics:
+                    raise RuntimeError(f"{roles['offset']!r} is not a free variable or {roles['group_effect']!r} not a deterministic")
+                for key in ("offset", "group_effect"):
+                    if tuple(pmm.named_vars_to_dims.get(roles[key], ())) != (roles["coordinate"],):
+                        raise RuntimeError(f"PyMC dims of {roles[key]!r} are not ({roles['coordinate']!r},)")
+                Z = np.zeros((n, len(levels)))
+                for index, weight, covariate in zip(layout["index"], layout["weights"], layout["covariates"][c]):
+                    np.add.at(Z, (np.arange(n), index), weight if c == "Intercept" else weight * covariate)
+                blocks[(t.factor, c)] = GroupBlock(levels, Z, layout["index"][0], slice(0, len(levels)),
+                                                   memberships=layout["index"] if t.is_mm else (),
+                                                   weights=layout["weights"] if t.is_mm else (),
+                                                   by_levels=layout["by_levels"], by_index=layout["by_index"],
+                                                   covariates=layout["covariates"][c] if t.is_mm and c != "Intercept" else ())
+            if t.is_student:                                 # G05b: df on (1, inf), udf positive, dfm their deterministic
+                names = self.group_dist_names[t.factor]
+                if (pmm[names["df"]] not in pmm.free_RVs or pmm.rvs_to_values[pmm[names["df"]]].name != f"{names['df']}_interval__"
+                        or pmm[names["udf"]] not in pmm.free_RVs or pmm.rvs_to_values[pmm[names["udf"]]].name != f"{names['udf']}_log__"
+                        or pmm[names["dfm"]] not in pmm.deterministics):
+                    raise RuntimeError(f"{names['df']!r} and {names['udf']!r} are not free variables on their interval and log "
+                                       f"coordinates, or {names['dfm']!r} is not a deterministic")
+                for key in ("udf", "dfm"):
+                    if tuple(pmm.named_vars_to_dims.get(names[key], ())) != (names["coordinate"],):
+                        raise RuntimeError(f"PyMC dims of {names[key]!r} are not ({names['coordinate']!r},)")
         self._check_custom_group_effects(blocks)
         return blocks
 
@@ -1386,25 +1484,38 @@ class Model:
         standardised effects at 0, and every other variable at the graph's initial point, the parent's linear predictor (on
         Bambi's link scale: the parent itself, or the log of ``mu`` under a log link) must move, row by row, by exactly
         ``sum_k W_k * test[J_k]`` (``Z @ test``, recomputed from the data) when the term's standardised effects go from 0 to
-        a fixed vector ``test``."""
+        a fixed vector ``test``. G05b: so must every coefficient's of every term the model builds (the correlation factor at its
+        initial point, the identity, so that coefficient ``c``'s ``z`` moves its own effects alone), by ``Z_c @ (dfm * (Lcov @
+        test))``: ``Lcov`` the known covariance's Cholesky factor (the identity without one) and ``dfm`` the graph's
+        Student-t scale at the point (ones without one)."""
         pmm, parent = self.pymc_model, self.family_spec.parent
         link = self.bambi_model.family.link[parent].name
         if link not in ("identity", "log"):
             raise RuntimeError(f"Bambi's link of {parent!r} is {link}; the mm() and gr(by = ) terms are checked under the identity "
                                "and log links")
-        fn = pmm.compile_fn(pmm.replace_rvs_by_values([pmm[parent]]), inputs=pmm.value_vars, point_fn=True,
-                            on_unused_input="ignore", mode="FAST_COMPILE")
+        students = [self.group_dist_names[t.factor]["dfm"] for t in self.spec.custom_group_terms if t.is_student]
+        fn = pmm.compile_fn(pmm.replace_rvs_by_values([pmm[parent], *(pmm[v] for v in students)]), inputs=pmm.value_vars,
+                            point_fn=True, on_unused_input="ignore", mode="FAST_COMPILE")
         at0 = pmm.initial_point()
-        for factor in blocks:
-            roles = self.group_coefficient_names[(factor, "Intercept")]
+        for (factor, c), block in blocks.items():
+            roles = self.group_coefficient_names[(factor, c)]
             at0[f"{roles['sd']}_log__"] = np.zeros(np.shape(at0[f"{roles['sd']}_log__"]))
-            at0[roles["offset"]] = np.zeros(blocks[factor].J)
-        for factor, block in blocks.items():
-            roles = self.group_coefficient_names[(factor, "Intercept")]
+            at0[roles["offset"]] = np.zeros(block.J)
+        for t in self.spec.custom_group_terms:               # G05b: the correlation factor at the identity
+            if t.has_correlation:
+                value = f"{self.correlation_names[t.factor]['L']}_cholesky_corr__"
+                at0[value] = np.zeros(np.shape(at0[value]))
+        base = fn(at0)
+        dfm = dict(zip(students, (np.asarray(v, dtype=float) for v in base[1:])))
+        for (factor, c), block in blocks.items():
+            roles, t = self.group_coefficient_names[(factor, c)], self.spec.group_term_of(factor)
             test = np.cos(np.arange(1.0, block.J + 1.0))
             lo, hi = (np.asarray(fn(p)[0], dtype=float).ravel() for p in (at0, {**at0, roles["offset"]: test}))
             moved = hi - lo if link == "identity" else np.log(hi) - np.log(lo)
-            expected = block.Z @ test
+            effect = self._group_cov[factor].L @ test if t.cov is not None else test
+            if t.is_student:
+                effect = dfm[self.group_dist_names[factor]["dfm"]] * effect
+            expected = block.Z @ effect
             if moved.shape != expected.shape or not np.allclose(moved, expected, rtol=1e-10, atol=1e-10):
                 raise RuntimeError(f"the graph's {parent!r} does not move by the weighted effects of {factor!r} at its rows' levels; "
                                    f"largest difference {np.max(np.abs(moved - expected)) if moved.shape == expected.shape else moved.shape}")
@@ -1896,7 +2007,23 @@ class Model:
                 roles.update({k: v for k, v in self._correlation_roles(t.factor).items() if k in ("L", "cor")})
             if t.by is not None:                               # D08: the dimension of gr(by = )'s SD
                 roles["by_coordinate"] = f"{factor_column(t.factor)}__by_dim"
+            if t.is_student:                                   # G05b: gr(g, dist = "student")'s df, udf and dfm
+                roles.update({k: v for k, v in self.group_dist_names[t.factor].items() if k != "coordinate"})
             out[t.factor] = roles
+        return out
+
+    @property
+    def group_dist_names(self) -> dict[str, dict[str, str]]:
+        """G05b, brms's ``gr(g, dist = "student")`` (docs/gr-cov-dist.md): PyMC names of each such term's degrees of freedom
+        ``df`` (``df|g``, brms's ``df_m``, sampled as ``df|g_interval__``, ``log(df - 1)``), its per-level scales ``udf`` (``udf|g``,
+        brms's ``udf_m``, sampled on their logs) and their deterministic ``dfm = sqrt(df * udf)`` (``dfm|g``, brms's ``dfm_m``), on
+        the level dimension ``coordinate``, by factor in formula order; also in ``group_names``. Empty without one."""
+        out = {}
+        for t in self.spec.group_terms:
+            if t.is_student:
+                column = factor_column(t.factor)
+                out[t.factor] = {"df": f"df|{column}", "udf": f"udf|{column}", "dfm": f"dfm|{column}",
+                                 "coordinate": f"{column}__factor_dim"}
         return out
 
     @property
@@ -1924,7 +2051,7 @@ class Model:
                     sdgp=None, lscale=None, zgp=None, ar=None, ma=None, meanme=None, sdme=None, zme=None,
                     Ymi=None, alpha=None, beta=None, ndt=None, shrinkage=None, bcs=None, zoi=None, coi=None,
                     kappa=None, quantile=None, tmp_xi=None, lagsar=None, errorsar=None, bs=None, bias=None,
-                    car=None, Llncor=None, Lcortime=None, cosy=None, sbhaz=None) -> dict[str, np.ndarray]:
+                    car=None, Llncor=None, Lcortime=None, cosy=None, sbhaz=None, df=None, udf=None) -> dict[str, np.ndarray]:
         """A point in PyMC's sampled (value) space, from natural-scale quantities.
 
         ``intercept`` is the *model* intercept (at the predictor means when centred),
@@ -2005,6 +2132,10 @@ class Model:
         ``cosy()``'s correlation, strictly between 0 and 1, stored as its logit; each given exactly for its term.
         F05 (docs/cox.md): ``sbhaz`` is a cox model's baseline hazard simplex (brms's ``sbhaz``: ``Kbhaz`` positive weights summing
         to 1), stored on Stan's stick-breaking coordinates, required for the cox family and refused for every other.
+        G05b (docs/gr-cov-dist.md): a ``gr(g, dist = "student")`` term takes ``df`` (its degrees of freedom, above 1) and ``udf``
+        (its per-level scales, brms's ``udf_m``), each keyed by factor or bare for one such term (``_student_group_point``); the
+        coefficients of a term the model builds itself (``mm()`` slopes, ``mmc()``, ``gr(cov = )``) take ``sd``, ``z`` and ``L``
+        as every term does.
         """
         from autobayes.car import value_entries
         car_point = value_entries(self, car)                  # F02a: a CAR term's values; refused for a model without one
@@ -2245,9 +2376,45 @@ class Model:
         point.update(car_point)                               # F02a
         from autobayes.baseline_hazard import value_entries as baseline_hazard_point
         point.update(baseline_hazard_point(self, sbhaz))      # F05: the cox baseline hazard's simplex
+        point.update(self._student_group_point(df, udf))      # G05b: gr(g, dist = "student")'s df and udf
         expected = {v.name for v in self.pymc_model.value_vars}
         if set(point) != expected:
             raise RuntimeError(f"value names {sorted(point)} do not match PyMC's {sorted(expected)}")
+        return point
+
+    def _student_group_point(self, df, udf) -> dict[str, np.ndarray]:
+        """G05b: ``value_point``'s entries of the ``gr(g, dist = "student")`` terms: ``df`` the degrees of freedom (a finite number
+        above 1, stored as ``log(df - 1)``, Stan's and PyMC's coordinate) and ``udf`` the per-level scales (``J`` positive numbers in
+        the level order, stored as their logs), each keyed by factor, or bare for the model's one such term; given exactly with
+        such terms."""
+        names = self.group_dist_names
+        if not names:
+            if df is not None or udf is not None:
+                raise ValueError("df and udf are the degrees of freedom and scales of a gr(g, dist = \"student\") term; this model has none")
+            return {}
+        factors, point = list(names), {}
+
+        def keyed(value, label):
+            if value is None:
+                raise ValueError(f"{label} is required: the model has the Student-t group-level term(s) of {factors}")
+            if isinstance(value, Mapping):
+                if set(value) != set(factors):
+                    raise ValueError(f"{label} must cover exactly the factors {factors}; got {list(value)}")
+                return value
+            if len(factors) != 1:
+                raise ValueError(f"{label} requires an exact-key mapping over the factors {factors}")
+            return {factors[0]: value}
+
+        dfs, udfs = keyed(df, "df"), keyed(udf, "udf")
+        for g, roles in names.items():
+            v = np.asarray(dfs[g], dtype=float)
+            if v.shape != () or not np.isfinite(v) or v <= 1:
+                raise ValueError(f"df for {g!r} must be a finite scalar > 1")
+            u = np.asarray(udfs[g], dtype=float)
+            J = len(self.design.group_designs[g].levels)
+            if u.shape != (J,) or not np.isfinite(u).all() or (u <= 0).any():
+                raise ValueError(f"udf for {g!r} must be {J} finite positive numbers, one per level")
+            point[f"{roles['df']}_interval__"], point[f"{roles['udf']}_log__"] = np.log(v - 1.0), np.log(u)
         return point
 
     def _sar_point(self, lagsar, errorsar) -> dict[str, np.ndarray]:
@@ -2591,6 +2758,8 @@ class Model:
                     + (["derived grouping factor(s)"] if any(t.derived for t in s.group_terms) else [])
                     + (["multi-membership term(s)"] if any(t.is_mm for t in s.group_terms) else [])           # D08
                     + (["group SDs by level of a factor (gr(by = ))"] if any(t.by for t in s.group_terms) else [])
+                    + (["a known covariance of a factor's levels (gr(cov = ))"] if any(t.cov for t in s.group_terms) else [])   # G05b
+                    + (["Student-t group effects (gr(dist = \"student\"))"] if any(t.is_student for t in s.group_terms) else [])
                     + (["correlation ID(s) shared with a distributional formula"] if s.shared_ids else [])
                     + ([f"response addition term(s) {', '.join(a.term for a in s.additions)}"] if s.additions else [])
                     + ([f"distributional formula(s) for {', '.join(s.dpar_names)}"] if s.dpars else [])
@@ -2674,6 +2843,8 @@ class Model:
             if t.is_mm:                                      # D08: brms's mm(): memberships and weights
                 w = ("the weight columns " + ", ".join(t.weights) + " divided by their sum on each row (brms's scale = TRUE)"
                      if t.weights else f"equal weights 1/{len(t.members)}")
+                if t.unscaled and t.weights:                 # G05b: brms's scale = FALSE
+                    w = "the weight columns " + ", ".join(t.weights) + " as given (brms's scale = FALSE)"
                 lines += [f"  {t.factor:<10}: multi-membership grouping {t.grouping} (brms's mm(); group name {t.factor}): each row belongs to its "
                           f"levels of {', '.join(repr(c) for c in t.members)} with {w}; the levels are the union of the members' labels "
                           f"(brms's J_m_k and W_m_k)"]
@@ -2682,6 +2853,7 @@ class Model:
                                    for k, b in enumerate(block.by_levels))
                 lines += [f"  {t.factor:<10}: gr({t.factor}, by = {t.by}): one SD per level of {t.by!r} ({groups}); each level of "
                           f"{t.factor!r} lies within one level of {t.by!r} (brms's Nby_m and Jby_m)"]
+            lines += self._custom_data_lines(t)              # G05b: gr(cov = ), gr(dist = "student"), mm() slopes
             if t.derived:
                 ga, gb = t.operands
                 name = _bambi_group_name(t.factor, "Intercept")
@@ -2715,9 +2887,12 @@ class Model:
                 + (f"; unused declared categories {list(cat.unused)}" if cat.unused else ""),
                 f"              proportions among fitted rows: {props}",
             ]
+        def mm_member(t, k, c):                             # G05b: member k's share, its varying slopes' covariates its own
+            slopes = "".join(f" + x_{t.covariate_columns(coef)[k]},i * {slope_effect(t.factor, coef)}[{c}_i]" for coef in t.slopes)
+            return f" + W_{c},i * ({effect(t.factor)}[{c}_i]{slopes})" if slopes else f" + W_{c},i * {effect(t.factor)}[{c}_i]"
         rest = "".join(f" + gp({g.column})_i" for g in s.gp_terms) + (" + offset_i" if s.offset is not None else "") + "".join(
-            ("".join(f" + W_{c},i * {effect(t.factor)}[{c}_i]" for c in t.members) if t.is_mm else   # D08: brms's W_m_k r_m_1[J_m_k]
-             f" + {effect(t.factor)}[{t.factor}_i]") + "".join(f" + x_{c},i * {slope_effect(t.factor, c)}[{t.factor}_i]" for c in t.slopes)
+            ("".join(mm_member(t, k, c) for k, c in enumerate(t.members)) if t.is_mm else   # D08: brms's W_m_k r_m_1[J_m_k]
+             f" + {effect(t.factor)}[{t.factor}_i]" + "".join(f" + x_{c},i * {slope_effect(t.factor, c)}[{t.factor}_i]" for c in t.slopes))
             for t in s.group_terms)
         rest += " + arma_i" if s.autocor is not None else ""   # C04: the autocorrelation term, last
         rest += f" + rcar[{s.car.gr}_i]" if s.car is not None else ""   # F02a: the CAR term
@@ -2881,8 +3056,9 @@ class Model:
                               "independent across categories; mu_i[k] adds u_" + f"{g}[{g}_i, k]"]
                 else:
                     lines += [f"  u_{g}[j] = sd_{g} * z_{g}[j], z_{g}[j] ~ Normal(0, 1), j = 0..{block.J - 1}"]
-                if t.is_mm:
+                if t.is_mm and not t.slopes and not t.unscaled:
                     lines += [f"  Row i adds sum_k W_k,i * u_{g}[level k of row i] over its members {', '.join(t.members)}, the weights summing to 1."]
+                lines += self._custom_effect_lines(t, block.J)  # G05b: mm() slopes and scale = FALSE, Lcov, Student-t scales
                 if shared is not None:                       # D08: one correlation matrix across the response and sigma formulas
                     effects = [f"u_{g}[j]"] + [f"{slope_effect(g, c)}[j]" for c in t.slopes] + [f"u_{dp},{g}[j]" for dp, _ in shared.coefs if dp]
                     sds = [f"sd_{g}"] + [f"sd_{c}|{g}" for c in t.slopes] + [f"sd_{dp},{g}" for dp, _ in shared.coefs if dp]
@@ -2976,6 +3152,8 @@ class Model:
             lines += [f"  (one prior per class, the same for every non-reference category k = {', '.join(self.categories[1:])})"]
         for (g, c), prior in pr.sd_priors(s).items():
             lines += [f"  sd_{sd_tag(g, c)}{each} ~ {describe_prior(prior, lb=0)}"]
+        for g, prior in pr.df_priors(s).items():             # G05b: gr(g, dist = "student")'s degrees of freedom
+            lines += [f"  df_{g} ~ {describe_prior(prior, lb=1)}, truncated to df_{g} > 1 and renormalised there (brms class df, group {g})"]
         for g, prior in pr.cor_priors(s).items():
             lines += [f"  Cor_{g} ~ {prior} (brms lkj({prior.params['eta']:g}) on the correlation matrix, placed on L_{g} as lkj_corr_cholesky)"
                       + ("   (brms default)" if prior.source == "default" else "")]
@@ -3048,6 +3226,9 @@ class Model:
             roles[names["offset"]] = f"z_{name},{g}"
         for g, names in self.correlation_names.items():
             roles[f"{names['L']}_cholesky_corr__"] = f"L_{g} on Stan's cholesky_corr coordinates (canonical partial correlations, arctanh scale)"
+        for g, names in self.group_dist_names.items():       # G05b: gr(g, dist = "student")'s df and udf
+            roles[f"{names['df']}_interval__"] = f"log(df_{g} - 1), the degrees of freedom of the Student-t effects of {g} (brms's df)"
+            roles[f"{names['udf']}_log__"] = f"log(udf_{g}[j]), the per-level scales (brms's udf; vector, dims {names['coordinate']})"
         if fam.scale_parameter is not None and fam.scale_parameter not in s.dpar_names:
             roles[f"{n[fam.scale_parameter]}_log__"] = f"log({fam.scale_parameter})"
         for ds in s.dpars:                                   # a distributional formula's variables (B01); scalar ones read b_sigma_x
@@ -3116,7 +3297,9 @@ class Model:
         lines.append("Deterministic: " + "".join(f"{names['group_effect']} = {effect(g) if c == 'Intercept' else slope_effect(g, c)}, "
                                                  for (g, c), names in self.group_coefficient_names.items())
                      + "".join(f"{names['group_effect']} = u_{name},{g}, " for (name, g, _), names in self.dpar_group_names.items())   # D08
-                     + "".join(f"{names['cor']} = Cor_{g} = L_{g} L_{g}^T, " for g, names in self.correlation_names.items()) + fam.deterministic_note
+                     + "".join(f"{names['cor']} = Cor_{g} = L_{g} L_{g}^T, " for g, names in self.correlation_names.items())
+                     + "".join(f"{names['dfm']} = sqrt(df_{g} * udf_{g}), " for g, names in self.group_dist_names.items())   # G05b
+                     + fam.deterministic_note
                      + "".join(f"; {dn['value']} = {_DPAR_INVERSE[self.design.dpars[name].link].format(name)}, one {name} per row"
                                for name, dn in self.dpar_names.items())
                      + "".join(f"; {me['latent']} = meanme_{x} + sdme_{x} * zme_{x}, one per row (brms's Xme)" for x, me in self.me_names.items())
@@ -3124,6 +3307,46 @@ class Model:
                      + shrinkage_note
                      + (f"; {n['linpred']} = mu_i[k], one per row and threshold" if s.cs_terms else ""))
         return "\n".join(lines)
+
+    def _custom_data_lines(self, t) -> list[str]:
+        """G05b, ``describe()``'s data lines of a term the model builds itself: a known covariance's matrix and levels, a Student-t
+        term's construction, and each varying slope of a multi-membership term with its covariate per member."""
+        lines = []
+        if t.cov is not None:
+            cov = self.design.group_cov[t.factor]
+            lines += [f"  {t.factor:<10}: gr({t.factor}, cov = {t.cov}): the levels' known covariance data2[{t.cov!r}] on the "
+                      f"{len(cov.levels)} fitted levels, Lcov_{t.factor} its lower Cholesky factor (brms's Lcov_m)"
+                      + (f"; its labels {list(cov.unused)} are no fitted level and are dropped" if cov.unused else "")]
+        if t.is_student:
+            lines += [f"  {t.factor:<10}: gr({t.factor}, dist = \"student\"): each level's effects are Student-t, with the degrees of "
+                      f"freedom df_{t.factor} (brms's df_m and udf_m)"]
+        for coef in (t.slopes if t.is_mm else ()):
+            cols = t.covariate_columns(coef)
+            lines += [f"  {coef:<10}: the varying slope of {coef} in {t.grouping} multiplies, for each member, "
+                      + ", ".join(f"{col!r} for {m!r}" for col, m in zip(cols, t.members)) + " (brms's Z_m_c_k)"]
+        return lines
+
+    def _custom_effect_lines(self, t, J: int) -> list[str]:
+        """G05b, ``describe()``'s group-effect lines of a term the model builds itself: a multi-membership term's row sum with its
+        slopes or raw weights, a known covariance's ``Lcov`` and a Student-t term's scales."""
+        g, lines = t.factor, []
+        if t.is_mm and (t.slopes or t.unscaled):
+            coefs = "".join(f" + Z_{c},k,i * v_{c}|{g}[level k of row i]" for c in t.slopes)
+            lines += [f"  Row i adds sum_k W_k,i * (u_{g}[level k of row i]{coefs}) over its members {', '.join(t.members)}"
+                      + (", the weights as given (brms's scale = FALSE)" if t.unscaled else ", the weights summing to 1")
+                      + (", Z_c,k,i coefficient c's covariate for member k (brms's Z_m_c_k)" if t.slopes else "") + "."]
+        if t.cov is not None:
+            effects = ", ".join([f"u_{g}"] + [f"v_{c}|{g}" for c in t.slopes])
+            lines += [f"  Known covariance: each coefficient's effects over the {J} levels ({effects}) are Lcov_{g} times the effects "
+                      f"written here without it (brms's Lcov_m), so u_{g} has covariance sd_{g}^2 A"
+                      + (f" and vec(r) = (Lcov_{g} kron diag(sd) L_{g}) vec(z) has covariance A kron Sigma, Sigma the coefficients' "
+                         "covariance (brms 2.23.0 drops the negative entries of Lcov here; divergence D185)" if t.slopes else "") + "."]
+        if t.is_student:
+            lines += [f"  Student-t effects: each level's effects are multiplied by dfm_{g}[j] = sqrt(df_{g} * udf_{g}[j]), udf_{g}[j] ~ "
+                      f"InverseGamma(df_{g} / 2, 1 / 2) (Stan's inv_chi_square(df_{g}), brms's udf_m), so u_{g}[j] ~ Student-t(df_{g}, 0, "
+                      f"sd_{g}), j = 0..{J - 1} (PyMC dfm|{factor_column(g)})"
+                      + ("; each level's vector of effects is multivariate Student-t" if t.slopes else "") + "."]
+        return lines
 
     def _measurement_data_lines(self) -> list[str]:
         """``describe()``'s data lines of the ``me()`` and ``mi()`` terms and of the response's own missing values (C06)."""
@@ -3423,6 +3646,7 @@ class Model:
         found = ([("intercept", pr.intercept)] if s.intercept else []) + [(f"b:{k}", v) for k, v in pr.coefficient_priors(s).items()]
         found += [(f"sd:{sd_tag(g, c)}", v) for (g, c), v in pr.sd_priors(s).items()]
         found += [(f"cor:{g}", v) for g, v in pr.cor_priors(s).items()]
+        found += [(f"df:{g}", v) for g, v in pr.df_priors(s).items()]              # gr(g, dist = "student")'s df
         found += [(f"simo:{c}", v) for c, v in pr.simo_priors(s).items()]          # a monotonic term's simplex (B03)
         found += [(f"sdgp:{c}", v) for c, v in pr.sdgp_priors(s).items()]          # a Gaussian process's SD and length-scale (C03)
         found += [(f"lscale:{c}", v) for c, v in pr.lscale_priors(s).items()]

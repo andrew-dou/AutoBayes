@@ -80,6 +80,8 @@ def _refuse_unsupported(model) -> None:
     for t in spec.group_terms:
         if t.members or t.by is not None or t.id is not None:
             refuse(f"the group term {t.canonical!r} (mm(), gr(by = ) or a shared ID)")
+        if t.cov is not None or t.is_student:                # G05b: brms's prior draws of these terms are not verified
+            refuse(f"the group term {t.canonical!r} (gr(cov = ) or gr(dist = \"student\"))")
 
 
 def _brms_group_coef(coef: str) -> str:

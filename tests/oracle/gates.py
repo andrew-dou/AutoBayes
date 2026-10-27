@@ -1,7 +1,8 @@
 """The oracle gates, as functions of a `Bundle` (case, fixture, data, AutoBayes model and the two maps).
 Each raises `OracleMismatch` naming the point and the quantities that differ; a passing gate returns None.
 
-G1 `check_design`        standata equals the model's design, response, trials, offsets, group coding and addition-term
+G1 `check_design`        standata equals the model's design, response, trials, offsets, group coding (G05b: gr(cov = )'s Lcov_m,
+                         `check_group_covariance`) and addition-term
                          data (weights, cens, lb, ub; B02; rcens, E04; dec, F04; se, denom and se()'s sigma = 0, F06a), each
                          distributional formula's X_<dpar> (B01), each
                          monotonic term's codes, number of steps and Dirichlet concentrations (Xmo_k, Jmo, con_simo_k; B03),
@@ -70,6 +71,9 @@ G3 compares the graph's per-threshold predictor mu_cs of a model with cs() terms
 F06b: grouped thresholds (thres(gr = z)): G1 matches brms's ngrthres, nthres (one per level) and Jthres to the model's levels
 (adapter.match_threshold_groups); G2 maps each Intercept_k to its level's block; G3 compares the graph's b_Intercept and the
 raw-scale thresholds with brms's b_Intercept_k of every level (and its merged_Intercept), in the model's merged order.
+
+G05b: G1 checks gr(g, cov = A)'s Lcov_m (`check_group_covariance`); G2's prior part holds gr(g, dist = "student")'s df with its
+truncation constant (its udf's inverse chi-square is in brms's model block).
 
 D08: G2's prior part includes a shared correlation ID's distributional SDs and the potential that carries brms's normalisation
 constant of gr(by = )'s SDs; G3 adds a shared ID's distributional effects (r_m_<dpar>_c) to brms's linear predictor of the
@@ -176,6 +180,7 @@ def prior_names(model) -> list[str]:
     out += [roles["by_normalisation"] for roles in model.group_coefficient_names.values()
             if roles.get("by_normalisation") in model.pymc_model.named_vars]
     out += [roles["L"] for roles in model.correlation_names.values()]
+    out += [roles["df"] for roles in getattr(model, "group_dist_names", {}).values()]   # G05b: gr(dist = "student")'s df (truncated)
     out += [roles["simplex"] for roles in model.mo_names.values()]
     mixture = getattr(model, "mixture_names", {})          # C05: each component's sigma<k> and theta
     out += [*mixture["sigma"], mixture["theta"]] if mixture else []
@@ -383,6 +388,7 @@ def check_design(b: Bundle) -> None:
     adapter.check_car_design(b.fixture, b.model)                 # F02a: a CAR term's locations, edges, Nneigh, eigenMcar, car_scale
     adapter.check_timecor_design(b.fixture, b.model)             # F03b: N_tg, begin_tg, end_tg, nobs_tg, Jtime_tg and the groups
     check_baseline_hazard(b)                                     # F05: a cox model's Zbhaz, Zcbhaz, Kbhaz and con_sbhaz
+    check_group_covariance(b)                                    # G05b: gr(g, cov = A)'s Lcov_m
     check_shrinkage_data(b)                                      # D07: Kscales and a shrinkage prior's data
     check_fixed_parameters(b)                                    # E02: a parameter the formula fixes (bf(quantile = p))
     # the design columns (every formula's), the group partitions and the monotonic codes were matched by content when the
@@ -416,6 +422,27 @@ def check_baseline_hazard(b: Bundle) -> None:
     theirs = np.atleast_1d(sd["con_sbhaz"])
     if theirs.shape != con.shape or abs_err(theirs, con) > DESIGN_ABS:
         raise OracleMismatch(f"brms con_sbhaz is {theirs!r}; the prior of sbhaz gives {con!r}")
+
+
+def check_group_covariance(b: Bundle) -> None:
+    """G1 of ``gr(g, cov = A)`` (G05b): brms's Stan data hold ``Lcov_m`` (the lower Cholesky factor of ``A`` on the factor's levels)
+    exactly for the brms groups of the model's terms with a known covariance, each in the model's level order (brms's levels
+    mapped by the group map must be the model's in order, or the Cholesky factors are not comparable) and equal to the model's
+    ``Design.group_cov[g].L`` to DESIGN_ABS, its ``L L^T`` to the model's ``A`` too."""
+    sd, mine = b.fixture.standata, getattr(b.model.design, "group_cov", {})
+    theirs = sorted(k for k in sd if re.fullmatch(r"Lcov_\d+", k))
+    expected = sorted(f"Lcov_{b.gmap.brms_id[g]}" for g in mine)
+    if theirs != expected:
+        raise OracleMismatch(f"brms's Stan data hold the known covariances {theirs}; the AutoBayes model's gr(cov = ) terms give {expected}")
+    for g, cov in mine.items():
+        m, order = b.gmap.brms_id[g], b.gmap.level_of[g]
+        if list(order) != list(range(len(order))):
+            raise OracleMismatch(f"{g!r}: brms orders the levels as {[cov.levels[i] for i in order]}, the model as {list(cov.levels)}; "
+                                 f"Lcov_{m} is not comparable")
+        L = np.atleast_2d(np.asarray(sd[f"Lcov_{m}"], dtype=float))
+        if L.shape != cov.L.shape or abs_err(L, cov.L) > DESIGN_ABS or abs_err(L @ L.T, cov.A) > DESIGN_ABS:
+            raise OracleMismatch(f"brms's Lcov_{m} differs from the Cholesky factor of {cov.matrix!r} on the levels of {g!r}"
+                                 + (f" by {abs_err(L, cov.L)}" if L.shape == cov.L.shape else f" ({L.shape} vs {cov.L.shape})"))
 
 
 def check_fixed_sigma(b: Bundle) -> None:

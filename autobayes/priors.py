@@ -462,6 +462,11 @@ class Priors:
     ``sbhaz`` is the prior of a cox model's baseline hazard simplex (F05, docs/cox.md): a ``Dirichlet`` (brms's class ``sbhaz``,
     default ``dirichlet(1)``), one concentration for every basis or one per basis, required for the cox family and refused for
     every other.
+
+    ``df`` is the prior of the degrees of freedom of each ``gr(g, dist = "student")`` term (G05b, docs/gr-cov-dist.md; brms's
+    class ``df`` with ``group = g``, default ``gamma(2, 0.1)``): one of ``TRUNCATABLE``, truncated to ``df > 1`` and renormalised
+    there as brms's ``real<lower=1> df_m`` (``nu``'s rule), keyed by factor (``df={"g": Gamma(2, 0.1)}``) or bare for the model's one
+    such term; required exactly for those terms and refused without one.
     """
 
     intercept: Prior | None = None
@@ -539,6 +544,9 @@ class Priors:
     # F05 (docs/cox.md): the Dirichlet prior of the cox family's baseline hazard simplex (brms class ``sbhaz``, default
     # ``dirichlet(1)``; one concentration for every basis or one per basis); required for the cox family, refused for every other
     sbhaz: Prior | None = None
+    # G05b (docs/gr-cov-dist.md): the degrees of freedom of each gr(g, dist = "student") term (brms class ``df``, group g;
+    # default gamma(2, 0.1)), by factor or bare for one such term; truncated to df > 1 as nu's is; refused without one
+    df: Prior | Mapping[str, Prior] | None = None
 
     def __post_init__(self):
         if isinstance(self.components, list):                         # one value for equal component lists (C05)
@@ -618,6 +626,9 @@ class Priors:
             raise PriorError("meanme and sdme are the priors of a measurement-error term me(x, sdx) (docs/missing-and-measurement-error.md); "
                              "a multivariate model takes neither: a measurement-error term in a multivariate model is not supported "
                              "(divergence D73)")
+        if self.df is not None:                                       # G05b
+            raise PriorError("df is the prior of the degrees of freedom of a gr(g, dist = \"student\") term (docs/gr-cov-dist.md); a "
+                             "multivariate model takes none: the term in a multivariate formula is not supported (divergence D186)")
         top = [name for name in self._RESPONSE_CLASSES if getattr(self, name) is not None]
         if top:
             raise PriorError(
@@ -824,6 +835,33 @@ class Priors:
                 )
             else:
                 out[(t.factor, "Intercept")] = entry
+        return out
+
+    def df_priors(self, spec) -> dict[str, Prior]:
+        """G05b: the prior of the degrees of freedom of each ``gr(g, dist = "student")`` term (brms class ``df``, group ``g``), keyed
+        by factor in formula order: one of ``TRUNCATABLE`` (truncated to ``df > 1`` and renormalised there, brms's ``real<lower=1>
+        df_m``); coverage exact, a single such term also takes the bare prior; refused when the formula has none."""
+        factors = [t.factor for t in getattr(spec, "group_terms", ()) if t.is_student]
+        if not factors:
+            if self.df is not None:
+                raise PriorError("df is the prior of the degrees of freedom of a gr(g, dist = \"student\") term (brms class df); "
+                                 "the formula has none")
+            return {}
+        if self.df is None:
+            raise PriorError(f"the Student-t group-level term(s) of {factors} need a prior on their degrees of freedom: pass "
+                             f"df={{{factors[0]!r}: ab.Gamma(2, 0.1)}} (brms's default gamma(2, 0.1), truncated to df > 1)")
+        if isinstance(self.df, Mapping):
+            if set(self.df) != set(factors):
+                raise PriorError(f"df must cover exactly the factors with gr(g, dist = \"student\") {factors}; got {list(self.df)}")
+            out = {g: self.df[g] for g in factors}
+        elif len(factors) != 1:
+            raise PriorError(f"several Student-t group-level terms {factors} need an exact-key df mapping; a bare prior is not broadcast")
+        else:
+            out = {factors[0]: self.df}
+        for g, prior in out.items():
+            if not isinstance(prior, Prior) or prior.name not in TRUNCATABLE:
+                raise PriorError(f"prior for 'df:{g}' must be a positive-support prior {sorted(TRUNCATABLE)}, which is truncated to "
+                                 f"df > 1 and renormalised there as brms's real<lower=1> df is; got {prior}")
         return out
 
     def cor_priors(self, spec) -> dict[str, Prior]:
@@ -1174,6 +1212,7 @@ class Priors:
 
         check_prior(self)                                             # D07: a shrinkage prior anywhere but the bare b is refused
         self.sar_priors(spec)                                         # F02b: lagsar / errorsar exactly with a SAR term, every model
+        self.df_priors(spec)                                          # G05b: df exactly with a gr(g, dist = "student") term
         self._refuse_lncor(fam)                                       # F01b: the logistic-normal family's alone
         from autobayes.baseline_hazard import check_priors as check_sbhaz
         check_sbhaz(self, spec, fam)                                  # F05: the cox family's sbhaz alone, and required there

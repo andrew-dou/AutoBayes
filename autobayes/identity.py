@@ -178,6 +178,16 @@ def freeze_target(model):
            if any(t.by is not None for t in s.group_terms) else {}),
         **({'shared_ids': [{'factor': sh.factor, 'id': sh.id, 'coefs': list(sh.labels)} for sh in s.shared_ids]}
            if getattr(s, 'shared_ids', ()) else {}),
+        # G05b: a gr(g, cov = A) term's known covariance on its levels, a gr(g, dist = "student") term's df prior, and an mm() term's
+        # raw weights (scale = FALSE) and its slopes' covariates per member, each only when the formula has one.
+        **({'group_covariance': [{'factor': g, 'matrix': c.matrix, 'levels': list(c.levels), 'A': c.A}
+                                 for g, c in getattr(d, 'group_cov', {}).items()]} if getattr(d, 'group_cov', {}) else {}),
+        **({'group_student': [{'factor': g, 'prior': prior(p)} for g, p in pr.df_priors(s).items()]}
+           if any(t.is_student for t in s.group_terms) else {}),
+        **({'multi_membership_options': [{'factor': t.factor, 'scale': not t.unscaled,
+                                       'covariates': {c: list(d.group_blocks[(t.factor, c)].covariates) for c in t.slopes}}
+                                      for t in s.group_terms if t.is_mm and (t.slopes or t.unscaled)]}
+           if any(t.is_mm and (t.slopes or t.unscaled) for t in s.group_terms) else {}),
         # The offset term (A06) likewise enters only when the formula has one.
         **({'offset': {'term': s.offset.term, 'values': d.offset}} if d.offset is not None else {}),
         # So do the response addition terms (B02): the terms as the canonical formula writes them (trunc()'s bounds are

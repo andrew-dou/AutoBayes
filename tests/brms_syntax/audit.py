@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import json
 import math
+import re
 import sys
 import traceback
 import warnings
@@ -356,12 +357,13 @@ def match_groups(blocks: dict, terms, reading: Reading, scope: dict, issues: lis
                 members = sum(1 for k in range(1, 50) if f"J_{grp['id']}_{k}" in reading.names)
                 if members != len(block.memberships):
                     continue
-                for k, (mem, wt) in enumerate(zip(block.memberships, block.weights), start=1):
+                covariates = getattr(block, "covariates", ()) or (np.ones(n),) * len(block.memberships)   # G05b: a slope's, per member
+                for k, (mem, wt, cv) in enumerate(zip(block.memberships, block.weights, covariates), start=1):
                     J = np.asarray(reading.get(f"J_{grp['id']}_{k}", raw=True)).astype(int) - 1
                     W = np.asarray(reading.get(f"W_{grp['id']}_{k}", raw=True), dtype=float)
                     Zc = np.asarray(reading.get(f"Z_{grp['id']}_{grp['cn']}_{k}", raw=True), dtype=float)
                     pairs += list(zip(J.tolist(), np.asarray(mem).tolist()))
-                    ok &= _close(W, wt) and _close(Zc, np.ones(n))
+                    ok &= _close(W, wt) and _close(Zc, cv)
                 m = dict(pairs)
                 if ok and len(m) == len(set(m.values())) and all(m[j] == a for j, a in pairs):
                     found.append((grp, [m.get(j, -1) for j in range(len(grp["levels"]))]))
@@ -476,6 +478,11 @@ def compare_univariate(model, reading: Reading, issues: list, notes: list, what:
         if dd.group_blocks:
             match_group_scope(model, dd.group_blocks, (), reading, {"dpar": name}, issues, notes, what)
     match_group_scope(model, d.group_blocks, spec.group_terms, reading, {}, issues, notes, what)
+    for g, cov in getattr(d, "group_cov", {}).items():               # G05b: gr(g, cov = A)'s Lcov_m, by content
+        keys = [k for k in reading.names if re.fullmatch(r"Lcov_\d+", k) and _close(reading.get(k), cov.L)]
+        if len(keys) != 1:
+            issues.append(f"{what}{g!r}: {len(keys)} of brms's Lcov_m equal the Cholesky factor of data2[{cov.matrix!r}] on its levels")
+        reading.used.update(keys)
     # addition terms and offsets
     for mine, key in ((d.trials, "trials"), (d.offset, "offsets"), (d.weights, "weights"), (d.cens, "cens"), (d.rcens, "rcens"),
                       (d.lb, "lb"), (d.ub, "ub"), (getattr(d, "dec", None), "dec"),     # F04: dec(col), the wiener decisions
