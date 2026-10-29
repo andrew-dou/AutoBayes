@@ -8,6 +8,9 @@ Every number and every sentence that depends on one is generated from the JSON; 
 limits (README.md). ``--previous`` adds a table of the models both runs have, end to end, then and now. ``--pdf`` runs
 pdflatex twice in the output's directory and removes the auxiliary files. A comparison built from smoke runs is marked as
 such on the first page; do not commit a report built from one.
+
+Given compare.py --scaling's scaling-<date>.json instead, it writes the scaling report,
+docs/brms-parity/reports/scaling-<date>.tex: each library's best configuration per model and size, then the full sweep.
 """
 import argparse
 import json
@@ -319,8 +322,89 @@ def what_was_run(rows) -> str:
         r"\end{itemize}", ""])
 
 
+def _med(c, key, nd=1) -> str:
+    v = c and c.get(key)
+    return f(v["median"], nd) if v else "--"
+
+
+def _range(c, key) -> str:
+    v = c and c.get(key)
+    return f"{f(v['median'], 0)} [{f(v['lo'], 0)}, {f(v['hi'], 0)}]" if v else "--"
+
+
+SCALING_METHOD = r"""\section{What was run}
+
+Five models (\file{benchmark\_data.py --scaling N}: S1 logistic \code{y \textasciitilde{} x1 + x2 + (1 + x1 | g)}, S2 Gaussian
+\code{(1 + x1 + x2 | g)}, S3 Poisson \code{(1 | g1) + (1 | g2)}, S4 cumulative \code{(1 | g)}, S5 \code{gp(x, k = 30)}) at
+each size, with $J = \min(N/100, 1000)$ groups (the cap is AutoBayes's memory: formulae's dense $N \times J$ indicator per
+group term), the same explicit priors in both libraries, four chains of 1000 warm-up and 1000 kept draws, target acceptance
+0.9, three sampler seeds per configuration. ESS is the smallest over the parameters every record of the model reports
+(ArviZ's rank-normalised bulk and tail ESS for both); per second means per second of the samplers' execution (warm-up and
+sampling of every chain, compilation excluded) unless marked end to end.
+
+\textbf{Cores.} brms runs four chains in parallel, each with $t$ threads under \code{threading(t)} (Stan's
+\code{reduce\_sum}, cmdstanr): $4t$ cores, the SLURM allocation. AutoBayes's \code{--cores c} sets the process's CPU affinity
+to $c$ cores before JAX starts (the enforced part), sizes the thread pools to $c$, and gives XLA one CPU device per chain;
+how XLA uses the $c$ cores inside a chain is its own decision. $U$ is the CPU seconds over the samplers' time, the cores
+kept busy on average; a value above the configuration's cores is flagged.
+"""
+
+
+def scaling_report(data: dict, out: str | None, pdf: bool) -> Path:
+    date, configs, best = data["date"], data["configs"], data["best"]
+    root = Path(__file__).resolve().parents[2]
+    dest = Path(out) if out else root / "docs" / "brms-parity" / "reports" / f"scaling-{date}.tex"
+    by = {(c["model"], c["n"], c["config"]): c for c in configs}
+    head = [r"& rows & \multicolumn{3}{c}{brms, best} & \multicolumn{3}{c}{AutoBayes, best} & \multicolumn{2}{c}{ratio} \\",
+            r"\cmidrule(lr){3-5}\cmidrule(lr){6-8}\cmidrule(lr){9-10}& & configuration & bulk ESS/s & tail ESS/s & "
+            r"configuration & bulk ESS/s & tail ESS/s & bulk & end to end \\"]
+    body = []
+    for b in best:
+        cb, ca = by.get((b["model"], b["n"], b["brms"])), by.get((b["model"], b["n"], b["autobayes"]))
+        body.append([short(b["model"]), f"{b['n']:,}", esc(b["brms"] or "--"), _range(cb, "ess_bulk_per_s"),
+                     _med(cb, "ess_tail_per_s", 0), esc(b["autobayes"] or "--"), _range(ca, "ess_bulk_per_s"),
+                     _med(ca, "ess_tail_per_s", 0), x(b["ratio_bulk"]), x(b["ratio_total"])])
+    t1 = table("Each library's best configuration (the highest median bulk ESS per second over the seeds): bulk ESS per "
+               "second as the median [smallest, largest] over the seeds, tail ESS per second the median. Ratio: "
+               "AutoBayes's over brms's, per second of the samplers' time and end to end.", "tab:best", "lrlrrlrrrr",
+               head, body, size=r"\scriptsize", sep="3pt")
+    sweep = [r"\begin{longtable}{@{}llrrrrrrrrr@{}}", r"\caption{\small The full sweep, medians over the seeds. cores: "
+             r"of the configuration; $U$: cores kept busy; ms/step: the slowest chain's time per leapfrog step; $T$ the "
+             r"samplers' time and total the end-to-end time, seconds. $^*$: CPU time above the configuration's cores in "
+             r"some seed.}\label{tab:sweep}\\", r"\toprule",
+             r"& rows & configuration & cores & $U$ & bulk ESS/s & tail ESS/s & $T$ & total & ms/step & max $\hat R$ \\",
+             r"\midrule\endhead"]
+    for c in configs:
+        sweep.append(" & ".join([short(c["model"]), f"{c['n']:,}", esc(c["config"]) + ("$^*$" if c["over_cap"] else ""),
+                                 str(c["cores"]), _med(c, "U", 2), _med(c, "ess_bulk_per_s", 0), _med(c, "ess_tail_per_s", 0),
+                                 _med(c, "T"), _med(c, "total"), _med(c, "step_ms", 3), _med(c, "max_rhat", 3)]) + r" \\")
+    sweep += [r"\bottomrule", r"\end{longtable}", ""]
+    parts = [PREAMBLE.replace(r"\usepackage{booktabs,", r"\usepackage{longtable,booktabs,"),
+             r"\title{AutoBayes against brms: scaling}", rf"\author{{Benchmark run of {esc(date)}, prepared for Andrew}}",
+             rf"\date{{{esc(date)}}}", "", r"\begin{document}", r"\maketitle", ""]
+    if data.get("smoke"):
+        parts.append(r"\begin{center}\fbox{\parbox{0.9\textwidth}{\textbf{Smoke run.} These numbers check the scripts "
+                     r"and mean nothing about speed. Do not commit this report.}}\end{center}" + "\n")
+    parts += [SCALING_METHOD, r"\section{Best against best}", "", t1, r"\section{The sweep}", "", "\n".join(sweep),
+              r"\end{document}", ""]
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    dest.write_text("\n".join(parts))
+    print(f"wrote {dest}")
+    if pdf:
+        for _ in range(2):
+            subprocess.run(["pdflatex", "-interaction=nonstopmode", "-halt-on-error", dest.name], cwd=dest.parent,
+                           check=True, stdout=subprocess.DEVNULL)
+        for ext in (".aux", ".log", ".out", ".toc"):
+            dest.with_suffix(ext).unlink(missing_ok=True)
+        print(f"wrote {dest.with_suffix('.pdf')}")
+    return dest
+
+
 def main(path: str, previous: str | None, out: str | None, pdf: bool) -> Path:
-    rows = [r for r in json.loads(Path(path).read_text()) if "stages" in r]
+    data = json.loads(Path(path).read_text())
+    if isinstance(data, dict) and "best" in data:              # compare.py --scaling's output
+        return scaling_report(data, out, pdf)
+    rows = [r for r in data if "stages" in r]
     if not rows:
         raise SystemExit(f"{path} has no model with stage records (compare.py output of the staged benchmark)")
     date = Path(path).stem.removeprefix("comparison-")

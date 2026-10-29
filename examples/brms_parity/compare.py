@@ -3,6 +3,7 @@
 and posterior agreement.
 
     python examples/brms_parity/compare.py <out_dir> [--date YYYY-MM-DD]
+    python examples/brms_parity/compare.py <results_root> --scaling [--date YYYY-MM-DD]
 
 Reads <out_dir>/autobayes_<model>.json and brms_<model>.json and writes <out_dir>/comparison-<date>.json (the date of
 the runs, from the records, unless given); copy it to examples/brms_parity/results/ to keep it. Both libraries' draws go
@@ -22,6 +23,15 @@ jitted JAX function on the CPU. Then exactly
 so brms's T over AutoBayes's is the product of four factors: steps S_b / S_a, gradient g_b / g_a, overhead O_b / O_a and
 parallelism U_a / U_b. The table also prints the additive form T = S_max * g + residual, with S_max the steps of the
 chain that took the most.
+
+``--scaling`` (examples/brms_parity/scaling/README.md) reads every record of a scaling model (S1-S5) under
+<results_root>, at any depth, one per (model, N, library, configuration, seed), and writes <results_root>/scaling-<date>.json
+without the draws: per record the smallest bulk and tail ESS over the parameters every record of that model reports, and
+those per second of the samplers' execution T (warm-up and sampling, compilation excluded) and end to end (build or
+compile plus the fit), the CPU seconds and cores used (U = C / T against the cores of the configuration), and the time
+per leapfrog step of the slowest chain (T / S_max, which needs no separate gradient and so is there for cmdstanr too);
+per configuration the median and range over the seeds; and per (model, N) each library's best configuration (the
+highest median bulk ESS per second of T) against the other's.
 """
 import argparse
 import json
@@ -68,6 +78,8 @@ def stages_brms(rec: dict) -> dict | None:
     if not st:
         return None
     g = st["gradient"]
+    if "skipped" in g:                                    # cmdstanr: no gradient measured; no decomposition
+        return None
     net = g["direct"]["median_us"] - g["dispatch"]["median_us"]           # the direct call less a call that does no work
     dec = _side(st["steps_warmup"], st["steps_sampling"], st["exec"], net if net > 0 else g["direct"]["median_us"],
                 st["cpu_exec"])
@@ -179,9 +191,114 @@ def print_decomposition(rows) -> None:
               f"x overhead {fmt(f['overhead'])} x parallelism {fmt(f['parallelism'])}  (largest: {f['largest']})")
 
 
+def config_label(rec: dict) -> str:
+    """The configuration a record was run with, from its own options: brms-<backend>[-t<threads>][-native][-unnorm],
+    autobayes[-c<cores>]."""
+    o = rec.get("options") or {}
+    if rec["library"] == "autobayes":
+        return f"autobayes-c{rec['cores']}" if rec.get("cores") else "autobayes"
+    label = f"brms-{rec.get('backend', 'rstan')}" + (f"-t{o['threads']}" if o.get("threads") else "")
+    if o.get("grainsize_requested"):
+        label += f"-g{o['grainsize_requested']}"
+    return label + ("-native" if o.get("march_native") else "") + ("" if o.get("normalize", True) else "-unnorm")
+
+
+def scaling_record(rec: dict, params: list[str]) -> dict:
+    """One scaling record's summary (module docstring)."""
+    chains, st = rec.get("chains", 4), rec["stages"]
+    ess = {p: (float(az.ess(_arr(rec["draws"][p], chains), method="bulk")),
+               float(az.ess(_arr(rec["draws"][p], chains), method="tail"))) for p in params}
+    rhat = [float(az.rhat(_arr(rec["draws"][p], chains))) for p in params] if chains > 1 else []
+    steps = [w + s for w, s in zip(np.atleast_1d(st["steps_warmup"]).tolist(), np.atleast_1d(st["steps_sampling"]).tolist())]
+    T, cpu = st["exec"], st["cpu_exec"]
+    if rec["library"] == "autobayes":
+        compile_s, total = st["sampler_compile"] + rec["build_seconds"], rec["build_seconds"] + rec["fit_seconds"]
+        cores = rec.get("cores") or (rec.get("machine") or {}).get("n_allowed")
+    else:
+        compile_s, total = rec["compile_seconds"], rec["compile_seconds"] + rec["sample_seconds"]
+        cores = rec.get("cores") or rec["settings"]["cores"]
+    bulk, tail = min(v[0] for v in ess.values()), min(v[1] for v in ess.values())
+    m = rec.get("machine") or {}
+    return dict(model=rec["model"], n=rec["n"], library=rec["library"], config=config_label(rec),
+                seed=(rec.get("options") or {}).get("seed", rec["settings"].get("seed")), smoke=bool(rec.get("smoke")),
+                T=T, compile=compile_s, total=total, min_ess_bulk=bulk, min_ess_tail=tail,
+                worst_bulk=min(ess, key=lambda p: ess[p][0]), ess_bulk_per_s=bulk / T, ess_tail_per_s=tail / T,
+                ess_bulk_per_s_total=bulk / total, cpu=cpu, cores=cores, U=cpu / T if T > 0 else None,
+                over_cap=bool(cores and cpu / T > 1.05 * cores), step_ms=T / max(steps) * 1e3 if max(steps) else None,
+                steps=float(sum(steps)), max_rhat=max(rhat) if rhat else None,
+                divergent=rec.get("divergent"), cpu_model=m.get("cpu_model"), host=m.get("host"),
+                versions=rec.get("versions"), options=rec.get("options"))
+
+
+def _summary(vals: list) -> dict:
+    vals = [v for v in vals if v is not None]
+    return dict(median=float(np.median(vals)), lo=float(min(vals)), hi=float(max(vals))) if vals else None
+
+
+def scaling(root: str, date: str | None = None) -> Path:
+    root_p = Path(root)
+    recs = []
+    for path in sorted(root_p.rglob("*.json")):
+        if not path.name.startswith(("autobayes_S", "brms_S")):
+            continue
+        rec = json.loads(path.read_text())
+        if rec.get("stages"):
+            recs.append(rec)
+    if not recs:
+        raise SystemExit(f"no scaling records (autobayes_S*.json, brms_S*.json) under {root}")
+    rows = []
+    for model in sorted({r["model"] for r in recs}):
+        mine = [r for r in recs if r["model"] == model]
+        params = sorted(set.intersection(*(set(r["draws"]) for r in mine)))
+        dropped = sorted(set.union(*(set(r["draws"]) for r in mine)) - set(params))
+        if dropped:
+            print(f"{model}: compared on {params}; not in every record: {dropped}")
+        rows += [scaling_record(r, params) | dict(params=params) for r in mine]
+    date = date or max(r.get("date", "") for r in recs)
+    configs = []
+    for key in sorted({(r["model"], r["n"], r["library"], r["config"]) for r in rows}):
+        rs = [r for r in rows if (r["model"], r["n"], r["library"], r["config"]) == key]
+        configs.append(dict(model=key[0], n=key[1], library=key[2], config=key[3], seeds=sorted(r["seed"] for r in rs),
+                            cores=rs[0]["cores"], **{k: _summary([r[k] for r in rs]) for k in (
+                                "ess_bulk_per_s", "ess_tail_per_s", "ess_bulk_per_s_total", "T", "compile", "total", "cpu",
+                                "U", "step_ms", "min_ess_bulk", "min_ess_tail", "max_rhat")},
+                            divergent=[r["divergent"] for r in rs], over_cap=any(r["over_cap"] for r in rs)))
+    best = []
+    for model, n in sorted({(c["model"], c["n"]) for c in configs}):
+        side = {}
+        for lib in ("brms", "autobayes"):
+            cs = [c for c in configs if (c["model"], c["n"], c["library"]) == (model, n, lib) and c["ess_bulk_per_s"]]
+            side[lib] = max(cs, key=lambda c: c["ess_bulk_per_s"]["median"]) if cs else None
+        b, a = side["brms"], side["autobayes"]
+        ratio = (a["ess_bulk_per_s"]["median"] / b["ess_bulk_per_s"]["median"]) if a and b else None
+        best.append(dict(model=model, n=n, brms=b and b["config"], autobayes=a and a["config"], ratio_bulk=ratio,
+                         ratio_tail=(a["ess_tail_per_s"]["median"] / b["ess_tail_per_s"]["median"]) if a and b else None,
+                         ratio_total=(a["ess_bulk_per_s_total"]["median"] / b["ess_bulk_per_s_total"]["median"])
+                         if a and b else None))
+    print(f"{'model':<20}{'N':>9}  {'configuration':<24}{'bulk/s':>9}{'tail/s':>9}{'T s':>9}{'total s':>9}{'cores':>6}"
+          f"{'U':>6}{'ms/step':>9}")
+    for c in configs:
+        f = lambda k, d=1: f"{c[k]['median']:.{d}f}" if c[k] else "--"       # noqa: E731
+        print(f"{c['model']:<20}{c['n']:>9}  {c['config']:<24}{f('ess_bulk_per_s'):>9}{f('ess_tail_per_s'):>9}{f('T'):>9}"
+              f"{f('total'):>9}{str(c['cores']):>6}{f('U', 2):>6}{f('step_ms', 3):>9}" + ("  CPU over the cap" if c["over_cap"] else ""))
+    print("\nbest configuration of each library (median bulk ESS per second of the samplers' time over the seeds)")
+    for b in best:
+        r = f"{b['ratio_bulk']:.2f}" if b["ratio_bulk"] else "--"
+        print(f"{b['model']:<20}{b['n']:>9}  brms {b['brms']}, AutoBayes {b['autobayes']}: AutoBayes / brms bulk ESS/s {r}")
+    path = root_p / f"scaling-{date}.json"
+    path.write_text(json.dumps(dict(date=date, smoke=any(r["smoke"] for r in rows), records=rows, configs=configs,
+                                    best=best), indent=1))
+    print(f"wrote {path}")
+    return path
+
+
 if __name__ == "__main__":
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("out_dir")
     ap.add_argument("--date", help="the date in the output name (default: the AutoBayes records' date)")
+    ap.add_argument("--scaling", action="store_true", help="summarise the scaling records under out_dir (module docstring)")
     a = ap.parse_args()
-    main(a.out_dir, a.date)
+    if a.scaling:
+        scaling(a.out_dir, a.date)
+    else:
+        main(a.out_dir, a.date)

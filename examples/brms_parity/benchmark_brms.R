@@ -1,7 +1,8 @@
 #!/usr/bin/env Rscript
 # The brms side of the benchmark (examples/brms_parity/README.md):
 #
-#   Rscript examples/brms_parity/benchmark_brms.R <data_dir> <out_dir> [models ...] [--smoke]
+#   Rscript examples/brms_parity/benchmark_brms.R <data_dir> <out_dir> [models ...] [--smoke] [--backend rstan|cmdstanr]
+#       [--threads t] [--grainsize g] [--march-native] [--normalize true|false] [--seed s] [--no-post]
 #
 # Same models, priors and sampler settings as benchmark_autobayes.py: rstan, four chains in parallel (cores = 4),
 # warmup = 1000 and 1000 kept draws each, adapt_delta = 0.9 (--smoke: one chain, 50 and 50, to check the scripts only).
@@ -24,19 +25,74 @@
 #   keep the standardised group effects, so the fit's own draws cannot be mapped back to Stan's unconstrained coordinates.
 #   Also the median of the same call through the model instance directly (skipping the S4 method) and of a call that does
 #   no work (num_pars_unconstrained()), the R-to-C++ call overhead.
+#
+# Options (examples/brms_parity/scaling/README.md); the defaults are the 25 October run's:
+# - --backend rstan (default) | cmdstanr. Under cmdstanr, compile is brm(chains = 0), which there also runs one chain of
+#   two iterations (brms's way of making an empty fit with cmdstanr); sampling is update(recompile = FALSE) with
+#   save_warmup = TRUE; exec is the slowest chain's warm-up plus sampling time as CmdStan reports it. The gradient is not
+#   measured under cmdstanr (the fit has no rstan model to call); compare.py then uses the time per leapfrog step.
+# - --threads t: brms's threading(t), Stan's reduce_sum within each chain (cmdstanr only); --grainsize g: its grainsize
+#   (default brms's). Each of the four chains then runs t threads: 4 t cores.
+# - --march-native: cmdstanr cpp_options STAN_CPP_OPTIMS=true and CXXFLAGS_OPTIM=-O3 -march=native (cmdstanr only).
+# - --normalize true (default) | false: brms's normalize, whether the Stan density keeps its normalising constants.
+#   TRUE matches AutoBayes, whose density is normalised.
+# - --seed s: the sampler's seed (default 2026). --no-post: skip the post-processing timings (the scaling runs: at 1M rows
+#   posterior_epred alone would be 4,000 x 1M doubles).
+# The record carries the backend, the CmdStan version, the threads, the grainsize brms used and the compiler flags.
 suppressPackageStartupMessages({
   library(brms)
   library(jsonlite)
 })
 args <- commandArgs(trailingOnly = TRUE)
-smoke <- "--smoke" %in% args
-args <- setdiff(args, "--smoke")
-data_dir <- args[1]
-out_dir <- args[2]
+opt <- list(backend = "rstan", threads = NULL, grainsize = NULL, march_native = FALSE, normalize = TRUE, seed = 2026L,
+            smoke = FALSE, post = TRUE)
+pos <- character(0)
+i <- 1
+while (i <= length(args)) {
+  a <- args[i]
+  if (a %in% c("--smoke", "--march-native", "--no-post")) {
+    if (a == "--smoke") opt$smoke <- TRUE
+    if (a == "--march-native") opt$march_native <- TRUE
+    if (a == "--no-post") opt$post <- FALSE
+    i <- i + 1
+  } else if (a %in% c("--backend", "--threads", "--grainsize", "--normalize", "--seed")) {
+    if (i == length(args)) stop(a, " needs a value")
+    v <- args[i + 1]
+    key <- sub("^--", "", a)
+    if (key == "backend") {
+      if (!v %in% c("rstan", "cmdstanr")) stop("--backend takes rstan or cmdstanr, not ", v)
+      opt$backend <- v
+    } else if (key == "normalize") {
+      if (!toupper(v) %in% c("TRUE", "FALSE")) stop("--normalize takes true or false, not ", v)
+      opt$normalize <- toupper(v) == "TRUE"
+    } else {
+      n <- suppressWarnings(as.integer(v))
+      if (is.na(n) || n < 1) stop(a, " takes a positive integer, not ", v)
+      opt[[key]] <- n
+    }
+    i <- i + 2
+  } else if (startsWith(a, "--")) {
+    stop("unknown option ", a)
+  } else {
+    pos <- c(pos, a)
+    i <- i + 1
+  }
+}
+if (length(pos) < 2) stop("usage: benchmark_brms.R <data_dir> <out_dir> [models ...] [options]")
+if (!is.null(opt$threads) && opt$backend != "cmdstanr") stop("--threads: within-chain threading is run with --backend cmdstanr")
+if (!is.null(opt$grainsize) && is.null(opt$threads)) stop("--grainsize needs --threads")
+if (opt$march_native && opt$backend != "cmdstanr") stop("--march-native: compiler flags are set through cmdstanr")
+smoke <- opt$smoke
+data_dir <- pos[1]
+out_dir <- pos[2]
 dir.create(out_dir, showWarnings = FALSE, recursive = TRUE)
 run <- if (smoke) list(chains = 1, cores = 1, warmup = 50, iter = 100, grad_warmup = 50) else
   list(chains = 4, cores = 4, warmup = 1000, iter = 2000, grad_warmup = 200)
+run$seed <- opt$seed
 grad_calls <- 2000
+threads_arg <- if (is.null(opt$threads)) NULL else threading(opt$threads, grainsize = opt$grainsize)
+cpp_options <- if (opt$march_native) list(STAN_CPP_OPTIMS = "true", CXXFLAGS_OPTIM = "-O3 -march=native") else list()
+stan_model_args <- if (length(cpp_options)) list(cpp_options = cpp_options) else list()
 
 h1 <- function(cls, ...) set_prior("normal(0, 1)", class = cls, ...)
 icpt <- set_prior("normal(0, 2.5)", class = "Intercept")
@@ -112,9 +168,26 @@ specs <- list(
   B18_distributional_sigma = list(
     formula = bf(y ~ x + (1 | g), sigma ~ z), family = gaussian(),
     prior = c(icpt, b01, h1("sd"), set_prior("normal(0, 1)", class = "Intercept", dpar = "sigma"),
-              set_prior("normal(0, 0.5)", class = "b", dpar = "sigma")))
+              set_prior("normal(0, 0.5)", class = "b", dpar = "sigma"))),
+  # the scaling models (benchmark_data.py --scaling N); run only when named
+  S1_logistic_glmm = list(
+    formula = y ~ x1 + x2 + (1 + x1 | g), family = bernoulli(),
+    prior = c(icpt, b01, h1("sd"), set_prior("lkj(2)", class = "cor"))),
+  S2_gaussian_slopes = list(
+    formula = y ~ x1 + x2 + (1 + x1 + x2 | g), family = gaussian(),
+    prior = c(icpt, b01, h1("sd"), set_prior("lkj(2)", class = "cor"), h1("sigma"))),
+  S3_poisson_crossed = list(
+    formula = y ~ x1 + (1 | g1) + (1 | g2), family = poisson(),
+    prior = c(icpt, b01, h1("sd"))),
+  S4_ordinal_glmm = list(
+    formula = y ~ x1 + x2 + (1 | g), family = cumulative("logit"),
+    prior = c(icpt, b01, h1("sd"))),
+  S5_gp_approx = list(
+    formula = y ~ gp(x, k = 30), family = gaussian(),
+    prior = c(icpt, h1("sdgp"), set_prior("inv_gamma(3, 1)", class = "lscale", coef = "gpx"), h1("sigma")))
 )
-if (length(args) > 2) specs <- specs[args[-(1:2)]]
+specs <- if (length(pos) > 2) specs[pos[-(1:2)]] else specs[grepl("^B", names(specs))]
+if (anyNA(names(specs))) stop("unknown model among ", paste(pos[-(1:2)], collapse = " "))
 # The post-processing functions timed on each fit, as benchmark_autobayes.py's POST (the same hypothesis and effect where
 # a model has no coefficient x). A function that stops on the model is recorded with its message, not timed.
 hypotheses <- c(B8_horseshoe_regression = "x1 > 0", B11_gauss_mixture = "mu1_x > 0", B12_gp_exact = "Intercept > 0",
@@ -147,7 +220,10 @@ keep <- c("b_Intercept", "b_Intercept[1]", "b_Intercept[2]", "b_Intercept[3]", "
           "sdgp_gpx", "lscale_gpx", "ar[1]", "b_a_Intercept", "b_b_Intercept", "sd_g__a_Intercept",
           "b_y1_Intercept", "b_y2_Intercept", "b_y1_x", "b_y2_x", "sd_g__y1_Intercept", "sd_g__y2_Intercept",
           "sigma_y1", "sigma_y2", "rescor__y1__y2", "bsp_moedu", paste0("simo_moedu1[", 1:4, "]"),
-          "b_sigma_Intercept", "b_sigma_z")
+          "b_sigma_Intercept", "b_sigma_z",
+          # S1-S5
+          "sd_g__x1", "sd_g__x2", "cor_g__Intercept__x1", "cor_g__Intercept__x2", "cor_g__x1__x2", "sd_g1__Intercept",
+          "sd_g2__Intercept")
 
 # Seconds per call of f over n calls after a first one, each timed with Sys.time().
 time_calls <- function(f, n) {
@@ -189,6 +265,32 @@ gradient_cost <- function(fit) {
        point_seconds = t_point, host = us(g), direct = us(direct), dispatch = us(null))
 }
 
+# Where this process may run (Linux: the CPUs the kernel allows it, SLURM's allocation), for the record.
+first_match <- function(file, pattern) tryCatch({
+  l <- grep(pattern, readLines(file, warn = FALSE), value = TRUE)[1]
+  if (is.na(l)) NA else trimws(sub("^[^:]*:", "", l))
+}, error = function(e) NA, warning = function(e) NA)
+machine_info <- function() list(
+  host = Sys.info()[["nodename"]], cpus_allowed = first_match("/proc/self/status", "^Cpus_allowed_list"),
+  cpu_model = first_match("/proc/cpuinfo", "^model name"), detect_cores = parallel::detectCores(),
+  slurm_job_id = Sys.getenv("SLURM_JOB_ID", unset = NA), slurm_cpus_per_task = Sys.getenv("SLURM_CPUS_PER_TASK", unset = NA))
+
+# The backend's versions and the compiler flags of the model (cmdstanr); each piece is recorded or its error is.
+backend_info <- function(fit) {
+  if (opt$backend == "rstan") return(list(versions = list(), compile_flags = NULL))
+  try_ <- function(expr) tryCatch(expr, error = function(e) paste("unavailable:", conditionMessage(e)))
+  m <- attributes(fit$fit)$CmdStanModel
+  make_local <- try_(cmdstanr::cmdstan_make_local())
+  cxx_line <- if (is.character(make_local)) grep("^\\s*CXX\\s*=", make_local, value = TRUE) else character(0)
+  cxx <- if (length(cxx_line)) trimws(sub("^[^=]*=", "", cxx_line[1])) else "g++"
+  list(versions = list(cmdstanr = as.character(packageVersion("cmdstanr")), cmdstan = try_(cmdstanr::cmdstan_version()),
+                       cmdstan_path = try_(cmdstanr::cmdstan_path())),
+       compile_flags = list(requested_cpp_options = cpp_options, stan_threads = !is.null(threads_arg),
+                            model_cpp_options = try_(m$cpp_options()), exe_info = try_(m$exe_info()),
+                            make_local = make_local, cxx = cxx,
+                            cxx_version = try_(system2(cxx, "--version", stdout = TRUE, stderr = TRUE)[1])))
+}
+
 sampler_stages <- function(sf) {
   sp <- rstan::get_sampler_params(sf, inc_warmup = TRUE)
   w <- run$warmup
@@ -215,11 +317,14 @@ for (name in names(specs)) {
     d <- read.csv(file.path(data_dir, paste0(name, ".csv")), stringsAsFactors = FALSE)
     if ("g" %in% names(d)) d$g <- factor(d$g)          # mm()'s g1 and g2 stay character: brms takes the union of their levels
     t0 <- proc.time()
-    fit0 <- brm(s$formula, data = d, family = s$family, prior = s$prior, chains = 0, backend = "rstan", silent = 2)
+    fit0 <- brm(s$formula, data = d, family = s$family, prior = s$prior, chains = 0, backend = opt$backend,
+                threads = threads_arg, normalize = opt$normalize, stan_model_args = stan_model_args, silent = 2)
     t_compile <- (proc.time() - t0)[["elapsed"]]
+    extra <- if (opt$backend == "cmdstanr") list(save_warmup = TRUE) else list()   # rstan keeps the warm-up by default
     t1 <- proc.time()
-    fit <- update(fit0, recompile = FALSE, chains = run$chains, cores = run$cores, iter = run$iter, warmup = run$warmup,
-                  seed = 2026, control = list(adapt_delta = 0.9), refresh = 0, silent = 2)
+    fit <- do.call(update, c(list(fit0, recompile = FALSE, chains = run$chains, cores = run$cores, iter = run$iter,
+                                  warmup = run$warmup, seed = run$seed, control = list(adapt_delta = 0.9), refresh = 0,
+                                  silent = 2), extra))
     dt <- proc.time() - t1
     t_sample <- dt[["elapsed"]]
     dr <- as_draws_df(fit)
@@ -230,23 +335,35 @@ for (name in names(specs)) {
     stages <- sampler_stages(fit$fit)
     stages$cpu_self <- dt[["user.self"]] + dt[["sys.self"]]
     stages$cpu_child <- dt[["user.child"]] + dt[["sys.child"]]
-    stages$cpu_exec <- if (run$cores > 1 && run$chains > 1) stages$cpu_child else stages$cpu_self
+    # cmdstanr's chains are always child processes; rstan's are only when forked (several chains on several cores)
+    stages$cpu_exec <- if (opt$backend == "cmdstanr" || (run$cores > 1 && run$chains > 1)) stages$cpu_child else stages$cpu_self
     stages$codegen <- system.time(suppressWarnings({
-      stancode(s$formula, data = d, family = s$family, prior = s$prior)
-      standata(s$formula, data = d, family = s$family, prior = s$prior)
+      stancode(s$formula, data = d, family = s$family, prior = s$prior, threads = threads_arg, normalize = opt$normalize)
+      sdat <- standata(s$formula, data = d, family = s$family, prior = s$prior, threads = threads_arg)
     }))[["elapsed"]]
-    stages$gradient <- gradient_cost(fit)
-    post <- time_post(fit, name)
-    rec <- list(model = name, n = nrow(d), library = "brms", backend = "rstan", divergent = divergent, post = post,
+    stages$gradient <- if (opt$backend == "rstan") gradient_cost(fit) else
+      list(skipped = "cmdstanr: the fit has no rstan model to call; compare.py uses the time per leapfrog step")
+    post <- if (opt$post) time_post(fit, name) else structure(list(), names = character(0))
+    bi <- backend_info(fit)
+    rec <- list(model = name, n = nrow(d), library = "brms", backend = opt$backend, divergent = divergent, post = post,
                 date = format(Sys.Date()), smoke = smoke, settings = run, chains = run$chains,
-                versions = list(brms = as.character(packageVersion("brms")), rstan = as.character(packageVersion("rstan")),
-                                R = paste(R.version$major, R.version$minor, sep = ".")),
+                options = list(threads = opt$threads, grainsize_requested = opt$grainsize,
+                               grainsize = if (is.null(sdat$grainsize)) NULL else sdat$grainsize,
+                               normalize = opt$normalize, march_native = opt$march_native, seed = run$seed, post = opt$post),
+                cores = run$cores * (if (is.null(opt$threads)) 1 else opt$threads), machine = machine_info(),
+                versions = c(list(brms = as.character(packageVersion("brms")), rstan = as.character(packageVersion("rstan")),
+                                  R = paste(R.version$major, R.version$minor, sep = ".")), bi$versions),
+                compile_flags = bi$compile_flags,
                 compile_seconds = t_compile, sample_seconds = t_sample,
                 chain_seconds = I(unname(rowSums(rstan::get_elapsed_time(fit$fit)))), stages = stages, draws = draws)
-    writeLines(toJSON(rec, auto_unbox = TRUE, digits = I(17), na = "null"), file.path(out_dir, paste0("brms_", name, ".json")))
+    writeLines(toJSON(rec, auto_unbox = TRUE, digits = I(17), na = "null", null = "null"),
+               file.path(out_dir, paste0("brms_", name, ".json")))
     g <- stages$gradient
-    cat(sprintf("%s: compile %.1f s, sample %.1f s (exec %.1f), steps %d+%d, gradient %.1f us (direct %.1f, null %.1f; lp check %.1e), %d divergent\n",
-                name, t_compile, t_sample, stages$exec, as.integer(sum(stages$steps_warmup)), as.integer(sum(stages$steps_sampling)),
-                g$host$median_us, g$direct$median_us, g$dispatch$median_us, g$lp_check, as.integer(divergent)))
+    grad <- if (is.null(g$skipped)) sprintf("gradient %.1f us (direct %.1f, null %.1f; lp check %.1e)", g$host$median_us,
+                                            g$direct$median_us, g$dispatch$median_us, g$lp_check) else "gradient not measured"
+    cat(sprintf("%s [%s%s]: compile %.1f s, sample %.1f s (exec %.1f), steps %d+%d, %s, %d divergent\n",
+                name, opt$backend, if (is.null(opt$threads)) "" else sprintf(", %d threads", opt$threads), t_compile, t_sample,
+                stages$exec, as.integer(sum(stages$steps_warmup)), as.integer(sum(stages$steps_sampling)), grad,
+                as.integer(divergent)))
   }, error = function(e) cat(sprintf("%s: FAILED %s\n", name, conditionMessage(e))))
 }

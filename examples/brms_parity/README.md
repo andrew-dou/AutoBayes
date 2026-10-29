@@ -42,6 +42,16 @@ Run one library at a time, never both at once, on a machine with as little else 
 is a wall time or a CPU time, and a busy machine inflates both. Further arguments name the models to run (`B12_gp_exact
 B13_ar1_panel`).
 
+## Options, and the scaling benchmark (29 October 2026)
+
+`benchmark_brms.R` takes `--backend rstan|cmdstanr` (default rstan), `--threads t` and `--grainsize g` (brms's
+`threading()`, cmdstanr only), `--march-native` (cmdstanr), `--normalize true|false` (default true), `--seed s`
+(default 2026) and `--no-post`; `benchmark_autobayes.py` takes `--cores c` (a cap on the process's cores, applied
+before JAX starts), `--seed s` and `--no-post`. Without them both behave as before. `benchmark_data.py <dir> --scaling
+N` writes the scaling models S1-S5 at N rows; the benchmarks run them only when they are named.
+`compare.py <results> --scaling` and `report.py scaling-<date>.json` summarise a sweep. The FASRC scripts, the grid
+and how the core cap works on each side are in [scaling/README.md](scaling/README.md).
+
 ## The models added on 21 October 2026
 
 Each is a construct AutoBayes on `main` fits the way brms does (an ungated oracle case covers the construct), with the same explicit

@@ -2,11 +2,20 @@
 """Simulated data sets for the AutoBayes-versus-brms benchmark (examples/brms_parity/README.md).
 
     python examples/brms_parity/benchmark_data.py <out_dir>
+    python examples/brms_parity/benchmark_data.py <out_dir> --scaling N [models ...]
 
 Writes one CSV per model. Every numeric predictor is standardised to mean 0 and SD 1, so that a centred intercept and
-the raw-scale intercept coincide and both libraries' intercepts are directly comparable.
+the raw-scale intercept coincide and both libraries' intercepts are directly comparable. Without ``--scaling`` it writes
+B1-B18, unchanged. With ``--scaling N`` it writes only the scaling models S1-S5 (SCALING below) with N rows each, under
+the same file names at every N (put each size in its own directory). Their seeds continue the scheme: 20261015 + k, k the
+model's position after B18 (S1 is k = 18), the same seed at every N.
+
+The scaling models have J = min(N / 100, J_MAX) groups. J_MAX = 1,000 is the memory cap: AutoBayes builds its design
+through Bambi and formulae, and formulae keeps a dense int64 indicator matrix of N x J for every group-level term (8 N J
+bytes: 80 GB a term at N = 1M and J = 10,000, 8 GB at J = 1,000). So J = N / 100 up to N = 100,000 and J = 1,000 at
+N = 1,000,000.
 """
-import sys
+import argparse
 from pathlib import Path
 
 import numpy as np
@@ -209,12 +218,87 @@ MODELS = {"B1_logistic_glmm": logistic_glmm, "B2_gaussian_glmm": gaussian_glmm,
           "B17_weibull_censored": weibull_censored, "B18_distributional_sigma": distributional_sigma}
 
 
-def main(out_dir: str) -> None:
+J_MAX = 1000
+
+
+def _groups(n):
+    return max(min(n // 100, J_MAX), 2)
+
+
+def _labels(idx):
+    return [f"g{k:04d}" for k in idx]
+
+
+def scaling_logistic(rng, n):
+    """S1: y ~ x1 + x2 + (1 + x1 | g), Bernoulli, correlated varying intercepts and slopes."""
+    J = _groups(n)
+    g = rng.integers(0, J, n)
+    x1, x2 = _std(rng.normal(size=n)), _std(rng.normal(size=n))
+    L = np.linalg.cholesky(np.array([[1.0, 0.3], [0.3, 1.0]]))
+    u = (L @ rng.normal(size=(2, J))).T * np.array([0.8, 0.4])
+    y = rng.binomial(1, expit(-0.4 + 0.9 * x1 - 0.5 * x2 + u[g, 0] + u[g, 1] * x1))
+    return pd.DataFrame({"y": y, "x1": x1, "x2": x2, "g": _labels(g)})
+
+
+def scaling_gaussian(rng, n):
+    """S2: y ~ x1 + x2 + (1 + x1 + x2 | g), Gaussian, three correlated group-level coefficients."""
+    J = _groups(n)
+    g = rng.integers(0, J, n)
+    x1, x2 = _std(rng.normal(size=n)), _std(rng.normal(size=n))
+    R = np.array([[1.0, -0.2, 0.3], [-0.2, 1.0, 0.1], [0.3, 0.1, 1.0]])
+    u = (np.linalg.cholesky(R) @ rng.normal(size=(3, J))).T * np.array([1.0, 0.5, 0.3])
+    y = 2.0 + 0.7 * x1 - 0.4 * x2 + u[g, 0] + u[g, 1] * x1 + u[g, 2] * x2 + rng.normal(0, 1.5, n)
+    return pd.DataFrame({"y": y, "x1": x1, "x2": x2, "g": _labels(g)})
+
+
+def scaling_poisson_crossed(rng, n):
+    """S3: y ~ x1 + (1 | g1) + (1 | g2), Poisson, two crossed groupings of J and J / 2 levels."""
+    J1 = _groups(n)
+    J2 = max(J1 // 2, 2)
+    g1, g2 = rng.integers(0, J1, n), rng.integers(0, J2, n)
+    x1 = _std(rng.normal(size=n))
+    y = rng.poisson(np.exp(0.5 + 0.4 * x1 + rng.normal(0, 0.5, J1)[g1] + rng.normal(0, 0.3, J2)[g2]))
+    return pd.DataFrame({"y": y, "x1": x1, "g1": _labels(g1), "g2": _labels(g2)})
+
+
+def scaling_ordinal(rng, n, cuts=(-1.5, -0.3, 0.6, 1.8)):
+    """S4: y ~ x1 + x2 + (1 | g), cumulative logit with five ordered categories."""
+    J = _groups(n)
+    g = rng.integers(0, J, n)
+    x1, x2 = _std(rng.normal(size=n)), _std(rng.normal(size=n))
+    latent = 0.8 * x1 - 0.3 * x2 + rng.normal(0, 0.7, J)[g] + rng.logistic(size=n)
+    return pd.DataFrame({"y": 1 + np.searchsorted(np.asarray(cuts), latent), "x1": x1, "x2": x2, "g": _labels(g)})
+
+
+def scaling_gp(rng, n):
+    """S5: y ~ gp(x, k = 30), the Hilbert-space approximate GP (brms's default c = 5/4) on n distinct inputs."""
+    x = _std(rng.uniform(-3, 3, n))
+    return pd.DataFrame({"y": np.sin(2.0 * x) + 0.3 * x + rng.normal(0, 0.3, n), "x": x})
+
+
+SCALING = {"S1_logistic_glmm": scaling_logistic, "S2_gaussian_slopes": scaling_gaussian,
+           "S3_poisson_crossed": scaling_poisson_crossed, "S4_ordinal_glmm": scaling_ordinal, "S5_gp_approx": scaling_gp}
+
+
+def main(out_dir: str, scaling: int | None = None, only=None) -> None:
     out = Path(out_dir)
     out.mkdir(parents=True, exist_ok=True)
-    for k, (name, make) in enumerate(MODELS.items()):
-        make(np.random.default_rng(20261015 + k)).to_csv(out / f"{name}.csv", index=False, float_format="%.10g")
+    if scaling is None:
+        for k, (name, make) in enumerate(MODELS.items()):
+            make(np.random.default_rng(20261015 + k)).to_csv(out / f"{name}.csv", index=False, float_format="%.10g")
+        return
+    for k, (name, make) in enumerate(SCALING.items(), start=len(MODELS)):
+        if only and name not in only:
+            continue
+        make(np.random.default_rng(20261015 + k), scaling).to_csv(out / f"{name}.csv", index=False, float_format="%.10g")
 
 
 if __name__ == "__main__":
-    main(sys.argv[1])
+    ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
+    ap.add_argument("out_dir")
+    ap.add_argument("models", nargs="*", help="with --scaling: the scaling models to write (default all five)")
+    ap.add_argument("--scaling", type=int, metavar="N", help="write the scaling models S1-S5 with N rows each, not B1-B18")
+    a = ap.parse_args()
+    if a.models and a.scaling is None:
+        ap.error("model names are taken with --scaling only")
+    main(a.out_dir, a.scaling, set(a.models) or None)

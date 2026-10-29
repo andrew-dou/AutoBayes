@@ -1,7 +1,8 @@
 #!/usr/bin/env python
 """The AutoBayes side of the brms benchmark: fit each data set with NumPyro on the CPU and record times, stages and draws.
 
-    python examples/brms_parity/benchmark_autobayes.py <data_dir> <out_dir> [models ...] [--smoke]
+    python examples/brms_parity/benchmark_autobayes.py <data_dir> <out_dir> [models ...] [--smoke] [--cores c] [--seed s]
+        [--no-post]
 
 Same models, priors and sampler settings as benchmark_brms.R: four chains run in parallel, 1000 warm-up and 1000
 kept draws each, target acceptance 0.9 (``--smoke``: one chain, 50 and 50, to check the scripts only). Writes
@@ -35,14 +36,64 @@ Stages, and how each is measured (README.md has the limits):
   point moved by 1e-300 times the previous gradient so that XLA cannot hoist the evaluation out of the loop.
 - sampler work: leapfrog steps (NumPyro's ``num_steps``) per chain for warm-up and for sampling, the mean tree depth
   (PyMC's ``floor(log2(num_steps)) + 1``) and the final step size per chain.
+
+Options (the defaults are the 25 October run's): ``--seed s`` the sampler's seed (default 2026); ``--no-post`` skips the
+post-processing timings (the scaling runs); ``--cores c`` caps the CPU cores of the whole process, applied in
+``_cap_cores`` before numpy, JAX or autobayes is imported (examples/brms_parity/scaling/README.md, "The core cap"):
+
+- on Linux the process's CPU affinity is set to c of the CPUs it is allowed (under SLURM, of its allocation). Every
+  thread created afterwards, XLA's thread pools among them, inherits it, so the process cannot use more than c cores at
+  once. This is the one enforced part. macOS has no CPU affinity: there the cap is not enforced (recorded as such).
+- the thread-pool sizes are set to c: NPROC (read by XLA's CPU client when it sizes its pool, in the XLA versions we
+  know of; otherwise the pool is sized by the affinity, also c), OMP_NUM_THREADS, MKL_NUM_THREADS and
+  OPENBLAS_NUM_THREADS (numpy's and scipy's BLAS).
+- the XLA host device count is the number of chains (AUTOBAYES_HOST_DEVICES, which autobayes passes to NumPyro's
+  set_host_device_count, i.e. XLA_FLAGS=--xla_force_host_platform_device_count): one CPU device per chain, the chains
+  run in parallel (NumPyro's chain_method="parallel") and share the c cores.
+
+What it cannot control: how XLA spreads the c cores over the chains and within one chain (whether a gradient is split
+over threads is XLA's decision per operation; there is no reduce_sum here), and threads that do not belong to this process.
 """
-import argparse
+import os
+import sys
+
+
+def _cap_cores(argv: list[str]) -> dict:
+    """``--cores c`` (module docstring), applied to this process before any library that starts threads is imported."""
+    cores = None
+    for i, a in enumerate(argv):
+        if a == "--cores" and i + 1 < len(argv):
+            cores = int(argv[i + 1])
+        elif a.startswith("--cores="):
+            cores = int(a.split("=", 1)[1])
+    if cores is None:
+        return dict(cores=None)
+    if cores < 1:
+        raise SystemExit("--cores takes a positive integer")
+    chains = 1 if "--smoke" in argv else 4                     # SMOKE's and SETTINGS's chains below
+    info = dict(cores=cores, host_devices=chains)
+    if hasattr(os, "sched_setaffinity"):
+        allowed = sorted(os.sched_getaffinity(0))
+        if len(allowed) < cores:
+            raise SystemExit(f"--cores {cores}: this process may use only {len(allowed)} CPUs ({allowed})")
+        os.sched_setaffinity(0, allowed[:cores])
+        info.update(enforced=True, affinity=allowed[:cores], allowed_before=len(allowed))
+    else:
+        info.update(enforced=False, affinity=None, allowed_before=None)
+    for var in ("NPROC", "OMP_NUM_THREADS", "MKL_NUM_THREADS", "OPENBLAS_NUM_THREADS"):
+        os.environ[var] = str(cores)
+    os.environ["AUTOBAYES_HOST_DEVICES"] = str(chains)
+    return info
+
+
+CORE_CAP = _cap_cores(sys.argv[1:])
+
+import argparse  # noqa: E402  (everything below is imported after the core cap)
 import datetime
 import json
 import platform
 import resource
 import statistics
-import sys
 import time
 import traceback
 import warnings
@@ -152,6 +203,36 @@ BUILD = {"B1_logistic_glmm": b1, "B2_gaussian_glmm": b2, "B3_ordinal_glmm": b3, 
          "B9_betabinomial_glmm": b9, "B10_multimembership": b10,
          "B11_gauss_mixture": b11, "B12_gp_exact": b12, "B13_ar1_panel": b13, "B14_nonlinear_growth": b14,
          "B15_mv_rescor": b15, "B16_monotonic": b16, "B17_weibull_censored": b17, "B18_distributional_sigma": b18}
+
+
+# The scaling models (benchmark_data.py --scaling N), run only when named; priors as benchmark_brms.R's.
+def s1(df):
+    pr = ab.Priors(intercept=ab.Normal(0, 2.5), b=N01, sd={"g": {"Intercept": H1, "x1": H1}}, cor={"g": ab.LKJ(2)})
+    return ab.bernoulli("y ~ x1 + x2 + (1 + x1 | g)", df, pr)
+
+
+def s2(df):
+    pr = ab.Priors(intercept=ab.Normal(0, 2.5), b=N01, sd={"g": {"Intercept": H1, "x1": H1, "x2": H1}}, cor={"g": ab.LKJ(2)},
+                   sigma=H1)
+    return ab.gaussian("y ~ x1 + x2 + (1 + x1 + x2 | g)", df, pr)
+
+
+def s3(df):
+    sd = {"g1": {"Intercept": H1}, "g2": {"Intercept": H1}}
+    return ab.poisson("y ~ x1 + (1 | g1) + (1 | g2)", df, ab.Priors(intercept=ab.Normal(0, 2.5), b=N01, sd=sd))
+
+
+def s4(df):
+    return ab.cumulative("y ~ x1 + x2 + (1 | g)", df, ab.Priors(intercept=ab.Normal(0, 2.5), b=N01, sd=H1))
+
+
+def s5(df):
+    return ab.gaussian("y ~ gp(x, k = 30)", df, ab.Priors(intercept=ab.Normal(0, 2.5), sigma=H1, sdgp=H1,
+                                                          lscale=ab.InverseGamma(3, 1)))
+
+
+SCALING = {"S1_logistic_glmm": s1, "S2_gaussian_slopes": s2, "S3_poisson_crossed": s3, "S4_ordinal_glmm": s4,
+           "S5_gp_approx": s5}
 # The post-processing functions timed on each fit, as brms's: posterior_epred(), log_lik(), loo(), waic(), bayes_R2(),
 # hypothesis(fit, "x > 0") and conditional_effects(fit, "x"), with the hypothesis and the effect below where a model has
 # no coefficient x (the same in benchmark_brms.R). A function that refuses the model is recorded as such.
@@ -243,7 +324,25 @@ RENAME = {
     "B18_distributional_sigma": [("b_Intercept", "Intercept", None), ("b_x", "x", None),
                                  ("sd_g__Intercept", "1|g_sigma", None), ("b_sigma_Intercept", "sigma_Intercept", None),
                                  ("b_sigma_z", "sigma_z", None)],
+    "S5_gp_approx": [("b_Intercept", "Intercept", None), ("sdgp_gpx", "sdgp_x", None), ("lscale_gpx", "lscale_x", None),
+                     ("sigma", "sigma", None)],
 }
+
+
+def correlations_by_brms_name(post) -> dict[str, list[float]]:
+    """Every correlation of every correlated group term (the scaling models), brms's cor_<g>__<c1>__<c2>: the
+    correlation matrix ``cor|<g>``'s upper triangle, its coefficients named by its coordinate labels."""
+    out = {}
+    for var in post.data_vars:
+        if not var.startswith("cor|"):
+            continue
+        c = post[var]
+        labels = ["Intercept" if str(v) in ("1", "Intercept") else str(v) for v in c.coords[c.dims[2]].values]
+        for i in range(len(labels)):
+            for j in range(i + 1, len(labels)):
+                out[f"cor_{var[4:]}__{labels[i]}__{labels[j]}"] = (
+                    np.asarray(c.isel({c.dims[2]: i, c.dims[3]: j}), dtype=float).reshape(-1).tolist())
+    return out
 
 
 def draws_renamed(name, post) -> tuple[dict[str, list[float]], list[str]]:
@@ -430,7 +529,21 @@ def versions() -> dict:
                 cpu_count=__import__("os").cpu_count())
 
 
-def run_model(name, build, data_dir, settings, smoke, probe) -> dict:
+def machine() -> dict:
+    """Where this process may run, for the record (Linux: the CPUs it is allowed, after the core cap; SLURM's job)."""
+    def first(path, key):
+        try:
+            return next(line.split(":", 1)[1].strip() for line in open(path) if line.startswith(key))
+        except (OSError, StopIteration):
+            return None
+    return dict(host=platform.node(), cpus_allowed=first("/proc/self/status", "Cpus_allowed_list"),
+                n_allowed=len(os.sched_getaffinity(0)) if hasattr(os, "sched_getaffinity") else None,
+                cpu_model=first("/proc/cpuinfo", "model name"), slurm_job_id=os.environ.get("SLURM_JOB_ID"),
+                slurm_cpus_per_task=os.environ.get("SLURM_CPUS_PER_TASK"), xla_flags=os.environ.get("XLA_FLAGS"),
+                jax_cpu_devices=len(jax.devices("cpu")))
+
+
+def run_model(name, build, data_dir, settings, smoke, probe, post=True) -> dict:
     """Build, fit and time one model; its record for compare.py."""
     df = pd.read_csv(Path(data_dir) / f"{name}.csv", dtype={"g": str, "g1": str, "g2": str})
     t0 = time.perf_counter()
@@ -448,23 +561,29 @@ def run_model(name, build, data_dir, settings, smoke, probe) -> dict:
         draws, missing = draws_renamed(name, fit.idata.posterior)
     else:
         draws, missing = draws_by_brms_name(model, fit.idata.posterior), []
+    if name in SCALING:                                        # every correlation, not only B1's and B2's one
+        draws.pop("cor_g__Intercept__x", None)
+        draws.update(correlations_by_brms_name(fit.idata.posterior))
     return dict(model=name, n=len(df), library="autobayes", backend="numpyro", device=fit.device_actual,
                 chain_method=fit.chain_method, date=datetime.date.today().isoformat(), smoke=smoke, settings=settings,
-                chains=settings["chains"], versions=versions(), build_seconds=t_build,
+                chains=settings["chains"], options=dict(seed=settings["seed"], post=post, cores=CORE_CAP["cores"]),
+                cores=CORE_CAP["cores"], core_cap=CORE_CAP, machine=machine(), versions=versions(), build_seconds=t_build,
                 compile_estimate_seconds=warm.wall_seconds, fit_seconds=fit.wall_seconds, stages=stages, divergent=divergent,
-                post=time_post(model, fit, name), draws=draws, missing_draws=missing)
+                post=time_post(model, fit, name) if post else {}, draws=draws, missing_draws=missing)
 
 
-def main(data_dir: str, out_dir: str, only=None, smoke: bool = False) -> None:
-    settings = SMOKE if smoke else SETTINGS
+def main(data_dir: str, out_dir: str, only=None, smoke: bool = False, seed: int = 2026, post: bool = True) -> None:
+    settings = dict(SMOKE if smoke else SETTINGS, seed=seed)
     out = Path(out_dir)
     out.mkdir(parents=True, exist_ok=True)
+    unknown = set(only or ()) - set(BUILD) - set(SCALING)
+    if unknown:
+        raise SystemExit(f"unknown models: {sorted(unknown)}")
     probe = StageProbe()
-    for name, build in BUILD.items():
-        if only and name not in only:
-            continue
+    models = {k: v for k, v in {**BUILD, **SCALING}.items() if k in only} if only else BUILD
+    for name, build in models.items():
         try:
-            rec = run_model(name, build, data_dir, settings, smoke, probe)
+            rec = run_model(name, build, data_dir, settings, smoke, probe, post)
         except Exception:                                      # one failing model does not stop the run
             traceback.print_exc()
             print(f"{name}: FAILED (traceback above)", flush=True)
@@ -484,5 +603,8 @@ if __name__ == "__main__":
     ap.add_argument("out_dir")
     ap.add_argument("models", nargs="*")
     ap.add_argument("--smoke", action="store_true", help="one chain, 50 warm-up and 50 kept draws: checks the scripts only")
+    ap.add_argument("--cores", type=int, help="cap the process's CPU cores (applied before the imports; module docstring)")
+    ap.add_argument("--seed", type=int, default=2026, help="the sampler's seed (default 2026)")
+    ap.add_argument("--no-post", dest="post", action="store_false", help="skip the post-processing timings")
     a = ap.parse_args()
-    main(a.data_dir, a.out_dir, set(a.models) or None, a.smoke)
+    main(a.data_dir, a.out_dir, set(a.models) or None, a.smoke, a.seed, a.post)
