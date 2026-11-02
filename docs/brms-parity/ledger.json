@@ -2583,12 +2583,16 @@
     "A03_grouping_syntax",
     "D08_cs_mm_gr"
    ],
-   "status": "gates_green",
+   "status": "merged",
    "summary": "group-level syntax still refused: slope-only (0 + x | g) and (x - 1 | g), one factor in two terms ((1 | g) + (0 + x | g)), factor slopes (1 + f | g), transform and interaction slopes, mo() slopes, three-level g:h:f2 and g/h/f2, a varying slope without its population term (corpus grp_*)",
-   "pr": null,
+   "pr": 114,
    "attempts": 0,
-   "divergences": [],
-   "next_action": "paused at the weekly usage cap (2026-10-27): implementation committed in worktree parity-g05a at ffbda16 (not pushed); resume after the reset: rebase onto main, full suite and gate tool, report",
+   "divergences": [
+    "D8",
+    "D183",
+    "D184"
+   ],
+   "next_action": "none",
    "reserved_divergences": "D183-D184",
    "gates": {
     "sha": "469a2ac31d60",
