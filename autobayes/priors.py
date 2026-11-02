@@ -360,6 +360,20 @@ def LKJ(eta: float) -> Prior:
     return Prior("LKJ", {"eta": _positive("eta", eta)})
 
 
+CLASS_WIDE = "*"     # D173 (docs/class-priors.md): the key of a class-wide prior in the mappings of b, sd and cor
+
+
+def class_default(entry, cls: str = "b"):
+    """D173: the class-wide prior of a mapping of ``b``, ``sd`` or ``cor`` (its ``"*"`` entry, which cannot be a term's or a
+    factor's name), or None; refused unless it is one ``Prior``."""
+    if not isinstance(entry, Mapping) or CLASS_WIDE not in entry:
+        return None
+    default = entry[CLASS_WIDE]
+    if not isinstance(default, Prior):
+        raise PriorError(f"the class-wide prior {cls}={{'*': ...}} must be one Prior (brms's class row), got {type(default).__name__}")
+    return default
+
+
 @dataclass(frozen=True)
 class Priors:
     """Priors for the parameter classes.
@@ -378,7 +392,13 @@ class Priors:
     g, coef = x``). ``cor`` is keyed by grouping factor too and covers exactly the correlated group terms
     ``(1 + x | g)``: ``cor={"g": LKJ(2)}`` (brms ``class = cor, group = g``; a single correlated factor also accepts
     the bare prior); it is refused for an independent (``||``) or intercept-only term, which has no correlation
-    matrix. No automatic priors are filled in silently and nothing is broadcast. ``sigma``, ``shape`` and
+    matrix. No automatic priors are filled in silently and nothing is broadcast, unless asked: D173 (docs/class-priors.md), a mapping
+    of ``b``, ``sd`` or ``cor`` may hold the class-wide prior under the key ``"*"``, brms's class row, which every coefficient (every
+    group-level SD, every correlated factor) the mapping does not name takes; the named entries override it with brms's
+    precedence, a coefficient's own prior over its factor's over the class's: ``b={"*": Normal(0, 2), "x": Normal(0.5, 1)}``,
+    ``sd={"*": HalfNormal(1), "h": HalfNormal(0.5)}`` (a factor's one prior covers all of its coefficients, a partial mapping over
+    them takes the class-wide prior for the rest), and a categorical term's partial mapping ``{"z": {"q": ...}}`` takes it for its
+    other levels; an entry naming no term (factor) of the model is refused, naming it. ``sigma``, ``shape`` and
     ``phi`` are the auxiliary parameters: exactly the one the family has (``FamilySpec.scale_parameter``) must be given.
     When that parameter has its own formula (B01, ``["y ~ x", "sigma ~ z"]``, docs/distributional.md) its entry is instead
     a mapping over that formula's intercept and coefficients, ``sigma={"intercept": Normal(0, 1), "b": Normal(0, 0.5)}``
@@ -659,6 +679,9 @@ class Priors:
             raise PriorError(f"b must be a Prior or a mapping from term to prior, got {type(self.b).__name__}")
         given = dict(self.b)
         keys = list(dict.fromkeys(_prior_key(spec, t) for t in spec.pop_terms))   # F08: an ordered factor's contrasts share one key
+        default = class_default(given, "b")                   # D173: the class-wide prior, which the other entries override
+        if default is not None:
+            given = {**{k: default for k in keys}, **{k: v for k, v in given.items() if k != CLASS_WIDE}}
         missing = [t for t in keys if t not in given]
         extra = [k for k in given if k not in keys]
         if missing or extra:
@@ -684,20 +707,21 @@ class Priors:
                     hint = f"; the monotonic term's coefficient is keyed by the term, b={{{mo.name!r}: prior}}"
                     break
             raise PriorError(
-                f"coefficient priors must cover exactly the predictor terms {keys}; "
-                f"missing {missing}, unexpected {extra}{hint}"
+                (f"the override(s) {extra} of b={{'*': ...}} name no population-level term of the formula; its terms are {keys}"
+                 if default is not None else
+                 f"coefficient priors must cover exactly the predictor terms {keys}; missing {missing}, unexpected {extra}") + hint
             )
         out: dict[str, Prior] = {}
         for t in spec.pop_terms:
             if t.kind == "contrast":                          # F08: keyed by the ordered factor's term, one prior or one per contrast
-                out[t.name] = _contrast_prior(spec, t, given)
+                out[t.name] = _contrast_prior(spec, t, given, default)
                 continue
             if t.kind == "product":                           # G03: keyed by the interaction, one prior or one per column
-                out[t.name] = _product_prior(spec, t, given)
+                out[t.name] = _product_prior(spec, t, given, default)
                 continue
             if t.basis is not None and (t.name != t.basis or t.transform.form in ("poly", "factor", "logical")):   # G04: a column of
                 # poly(), factor() or a logical (or, before the data are seen, the term itself), keyed by its term
-                out[t.name] = _basis_prior(spec, t, given)
+                out[t.name] = _basis_prior(spec, t, given, default)
                 continue
             term, entry = t.name, given[t.name]
             if not t.is_vector:
@@ -735,6 +759,8 @@ class Priors:
                         raise PriorError(f"prior for {term!r} level {lab!r} must be a Prior, got {type(v).__name__}")
                 continue
             wanted = list(t.levels)
+            if default is not None:                           # D173: the levels the mapping does not name take the class-wide prior
+                keyed = {**{l: default for l in wanted}, **keyed}
             missing_l = [l for l in wanted if l not in keyed]
             extra_l = [l for l in keyed if l not in wanted]
             if missing_l or extra_l:
@@ -785,7 +811,14 @@ class Priors:
                     )
                 raise PriorError(f"the varying intercept '(1 | {groups[0]})' needs a prior on the SD of its varying intercept: pass sd=...")
             raise PriorError(f"each varying intercept needs a prior on the SD: pass sd for {list(groups)}")
-        if isinstance(self.sd, Mapping):
+        default = class_default(self.sd, "sd")               # D173: the class-wide SD prior, which the factors' entries override
+        if default is not None:
+            extra = [k for k in self.sd if k != CLASS_WIDE and k not in groups]
+            if extra:
+                raise PriorError(f"the override(s) {extra} of sd={{'*': ...}} name no grouping factor of the formula; its factors are "
+                                 f"{list(groups)}")
+            by_factor = {g: self.sd.get(g, default) for g in groups}
+        elif isinstance(self.sd, Mapping):
             if set(self.sd) != set(groups):
                 hint = ""
                 if len(group_terms) == 1 and set(self.sd) <= set(group_terms[0].coefs):
@@ -796,11 +829,14 @@ class Priors:
             by_factor = {g: self.sd[g] for g in groups}
         else:
             if len(groups) != 1:
-                raise PriorError("multiple grouping factors require an exact-key sd mapping; scalar sd is not broadcast")
+                raise PriorError("multiple grouping factors require an exact-key sd mapping; scalar sd is not broadcast (sd={'*': "
+                                 "prior} gives every group-level SD one prior, brms's class sd; docs/class-priors.md)")
             by_factor = {groups[0]: self.sd}
         out: dict[tuple[str, str], Prior] = {}
         for t in group_terms:
             entry = by_factor[t.factor]
+            if isinstance(entry, Mapping) and default is not None:   # D173: the coefficients not named take the class-wide prior
+                entry = {**{c: default for c in t.coefs}, **entry}
             if isinstance(entry, Mapping):
                 missing = [c for c in t.coefs if c not in entry]
                 extra = [k for k in entry if k not in t.coefs]
@@ -817,10 +853,14 @@ class Priors:
                     )
                 for c in t.coefs:
                     out[(t.factor, c)] = entry[c]
+            elif t.slopes and default is not None:           # D173: a factor's one prior covers its coefficients (brms's group row)
+                for c in t.coefs:
+                    out[(t.factor, c)] = entry
             elif t.slopes:
                 raise PriorError(
                     f"sd for {t.factor!r} must be a mapping over its coefficients {list(t.coefs)} ('{t.canonical}' has "
-                    f"varying slopes), got a single {type(entry).__name__}; the same prior for every coefficient must be spelled out"
+                    f"varying slopes), got a single {type(entry).__name__}; the same prior for every coefficient must be spelled out, "
+                    "or given as the class-wide prior sd={'*': prior} (brms's class sd; docs/class-priors.md)"
                 )
             else:
                 out[(t.factor, "Intercept")] = entry
@@ -849,7 +889,14 @@ class Priors:
                 f"the group term '{t.canonical}' gives its coefficients {list(t.coefs)} a correlation matrix, which needs "
                 f"an LKJ prior: pass cor={{{t.factor!r}: ab.LKJ(eta)}}" + (f" (and for {factors[1:]})" if len(terms) > 1 else "")
             )
-        if isinstance(self.cor, Mapping):
+        default = class_default(self.cor, "cor")             # D173: the class-wide LKJ prior, which the factors' entries override
+        if default is not None:
+            extra = [k for k in self.cor if k != CLASS_WIDE and k not in factors]
+            if extra:
+                raise PriorError(f"the override(s) {extra} of cor={{'*': ...}} name no correlated grouping factor of the formula; its "
+                                 f"correlated factors are {factors}")
+            by_factor = {g: self.cor.get(g, default) for g in factors}
+        elif isinstance(self.cor, Mapping):
             if set(self.cor) != set(factors):
                 extra = [k for k in self.cor if k not in factors]
                 hint = ""
@@ -1507,10 +1554,11 @@ def _prior_key(spec, t) -> str:
     return t.basis if t.basis is not None else t.name
 
 
-def _basis_prior(spec, t, given) -> "Prior":
+def _basis_prior(spec, t, given, default=None) -> "Prior":
     """G04: the prior of one design column of an in-formula transform with several (``poly(w, 2)1``, ``factor(ord)2``, the
     logical's ``I(x > 0)TRUE``) from its term's entry: one ``Prior`` for every column, or a mapping by the columns' suffixes
-    (``{"1": ..., "2": ...}``, factor()'s levels, ``{"TRUE": ...}``) covering exactly the term's columns."""
+    (``{"1": ..., "2": ...}``, factor()'s levels, ``{"TRUE": ...}``) covering exactly the term's columns; with a class-wide prior
+    ``default`` (D173) the mapping may name some of them only."""
     entry = given[t.basis]
     if isinstance(entry, Prior):
         return entry
@@ -1524,6 +1572,8 @@ def _basis_prior(spec, t, given) -> "Prior":
     if t.name == t.basis:                                      # structure only; the columns need the data
         return next(iter(entry.values()))
     wanted = [t2.name[len(t.basis):] for t2 in spec.pop_terms if t2.basis == t.basis]
+    if default is not None:                                    # D173: the columns not named take the class-wide prior
+        entry = {**{k: default for k in wanted}, **{str(k): v for k, v in entry.items()}}
     keys = [str(k) for k in entry]
     missing, extra = [k for k in wanted if k not in keys], [k for k in keys if k not in wanted]
     if missing or extra:
@@ -1532,11 +1582,11 @@ def _basis_prior(spec, t, given) -> "Prior":
     return dict(zip(keys, entry.values()))[t.name[len(t.basis):]]
 
 
-def _product_prior(spec, t, given) -> "Prior":
+def _product_prior(spec, t, given, default=None) -> "Prior":
     """G03: the prior of the column ``t`` of an interaction coded by R's rule (docs/term-algebra.md) from the interaction's entry:
     one ``Prior`` for every column, or, for an interaction with a factor, a mapping by each column's levels joined by ``, ``
     (``{"q, h2": ..., "r, h2": ...}``, ``{"p": ...}`` for ``zp:x``) covering exactly its columns (structure only before the levels
-    are known)."""
+    are known); with a class-wide prior ``default`` (D173) the mapping may name some of them only."""
     term = t.product.term
     entry = given[term]
     if isinstance(entry, Prior):
@@ -1551,6 +1601,8 @@ def _product_prior(spec, t, given) -> "Prior":
     if not t.product.known:                                     # structure only; the columns need the data
         return next(iter(entry.values()))
     wanted = [c.product.label for c in spec.pop_terms if c.kind == "product" and c.product.term == term]
+    if default is not None:                                     # D173: the columns not named take the class-wide prior
+        entry = {**{k: default for k in wanted}, **entry}
     missing, extra = [k for k in wanted if k not in entry], [k for k in entry if k not in wanted]
     if missing or extra:
         raise PriorError(f"per-column priors for the interaction {term!r} must cover exactly its columns' levels {wanted} (columns "
@@ -1559,10 +1611,10 @@ def _product_prior(spec, t, given) -> "Prior":
     return entry[t.product.label]
 
 
-def _contrast_prior(spec, t, given) -> "Prior":
+def _contrast_prior(spec, t, given, default=None) -> "Prior":
     """F08: the prior of the polynomial contrast ``t`` (``fo.L``) from its factor's entry: one ``Prior`` for every contrast, or a
     mapping by R's contrast labels, ``{".L": ..., ".Q": ...}``, covering exactly the factor's contrasts (only their structure is
-    checked before the levels are known)."""
+    checked before the levels are known); with a class-wide prior ``default`` (D173) the mapping may name some of them only."""
     cat = spec.categorical(t.factor)
     key = cat.term_name
     entry = given[key]
@@ -1580,6 +1632,8 @@ def _contrast_prior(spec, t, given) -> "Prior":
     if not cat.levels:                                         # structure only; the contrasts need the data
         return next(iter(entry.values()))
     wanted = list(cat.contrast_labels)
+    if default is not None:                                    # D173: the contrasts not named take the class-wide prior
+        entry = {**{k: default for k in wanted}, **entry}
     missing, extra = [k for k in wanted if k not in entry], [k for k in entry if k not in wanted]
     if missing or extra:
         raise PriorError(f"per-contrast priors for the ordered factor {key!r} must cover exactly its polynomial contrasts {wanted} "

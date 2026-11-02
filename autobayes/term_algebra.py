@@ -384,7 +384,7 @@ def check_products(spec, data: pd.DataFrame, categoricals=()) -> None:
             continue
         labelled = data[list(t.product.operands)].copy()
         for f in t.product.factors:                               # the factors' labels as the fitted frame holds them
-            labelled[f] = categorical_labels(f"categorical predictor {f!r}", data[f])[0]
+            labelled[f] = categorical_labels(f"categorical predictor {f!r}", data[f], logical=True)[0]   # D172: a boolean too
         empty = [c.name for c in product_columns(t, categoricals) if not c.product.values(labelled).any()]
         if empty:
             raise FormulaError(

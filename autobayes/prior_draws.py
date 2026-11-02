@@ -61,6 +61,9 @@ def _refuse_unsupported(model) -> None:
         refuse("center_predictors=False (brms's center = FALSE makes the intercept a coefficient of class b)")
     if getattr(model, "shrinkage_names", None):
         refuse(f"a {model.priors.b.name}() prior on b")
+    from autobayes.priors import class_default
+    if any(class_default(getattr(model.priors, cls), cls) is not None for cls in ("b", "sd", "cor")):   # D173
+        refuse("a class-wide prior ('*') and its overrides (brms's class and coef rows; docs/class-priors.md)")
     constructs = [
         (bool(spec.dpars), lambda: f"a distributional formula for {', '.join(spec.dpar_names)}"),
         (bool(spec.mo_terms), lambda: f"the monotonic term {spec.mo_terms[0].name!r}"),

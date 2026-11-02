@@ -316,8 +316,10 @@ def _check_newdata(model, newdata: pd.DataFrame, *, need_trials: bool = False, i
             raise FormulaError(f"newdata column {t.operands[0]!r}, read by {t.name!r}, has missing values: on new rows an mi() "
                                "predictor must be observed (the model imputes the fitted rows only; "
                                "docs/missing-and-measurement-error.md, divergence D74)")
-    if df.isna().any().any():
-        raise FormulaError("newdata contains missing values")
+    if df.isna().any().any():                                    # D174: named, whether or not the model dropped rows (dropna)
+        na = df.isna().any()
+        raise FormulaError(f"newdata contains missing values in columns {list(na[na].index)}: a new row needs every column the "
+                           "model reads (dropna=True drops the fitted rows only; docs/missing-rows.md)")
     if getattr(model.design, "thresholds", None) is not None:   # F06b: a fitted level of thres(gr = z) on every row (D159)
         model.design.thresholds.level_index(df[model.design.thresholds.column], where="newdata column")
     categorical_names = {c.name for c in s.all_categoricals}
@@ -337,7 +339,7 @@ def _check_newdata(model, newdata: pd.DataFrame, *, need_trials: bool = False, i
     for m in s.monotonics:                                       # whole numbers in the fitted range, or a fitted category (B03)
         m.codes(df[m.column], where="newdata column")
     for cat in s.all_categoricals:
-        labels, _ = categorical_labels(f"newdata column {cat.name!r}", df[cat.name])
+        labels, _ = categorical_labels(f"newdata column {cat.name!r}", df[cat.name], logical=True)   # D172: a boolean column too
         unseen = sorted(set(labels.tolist()) - set(cat.levels))
         if unseen:
             raise FormulaError(

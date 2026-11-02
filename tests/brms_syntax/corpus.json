@@ -878,14 +878,13 @@
     "group_terms": []
    },
    "result": {
-    "status": "error",
-    "type": "FormulaError",
-    "message": "column 'fcat' has dtype category; a predictor is numeric unless it is declared categorical with its reference level, for example categorical={'fcat': <level>} (treatment coding, or R's polynomial contrasts for an ordered pandas Categorical declared with its lowest level, docs/ordered-factors.md; divergence D172).",
-    "raised_at": "formula.py:4081",
-    "stage": "default_priors",
-    "mechanism": "refusal",
-    "outcome": "refused_named",
-    "gap": "capability"
+    "status": "built",
+    "model": "Model",
+    "model_warnings": [],
+    "issues": [],
+    "notes": [],
+    "outcome": "match",
+    "gap": null
    }
   },
   {
@@ -1025,14 +1024,13 @@
     "group_terms": []
    },
    "result": {
-    "status": "error",
-    "type": "FormulaError",
-    "message": "column 'fo' has dtype category; a predictor is numeric unless it is declared categorical with its reference level, for example categorical={'fo': <level>} (treatment coding, or R's polynomial contrasts for an ordered pandas Categorical declared with its lowest level, docs/ordered-factors.md; divergence D172).",
-    "raised_at": "formula.py:4081",
-    "stage": "default_priors",
-    "mechanism": "refusal",
-    "outcome": "refused_named",
-    "gap": "capability"
+    "status": "built",
+    "model": "Model",
+    "model_warnings": [],
+    "issues": [],
+    "notes": [],
+    "outcome": "match",
+    "gap": null
    }
   },
   {
@@ -1073,14 +1071,13 @@
     "group_terms": []
    },
    "result": {
-    "status": "error",
-    "type": "FormulaError",
-    "message": "column 'lgl' has dtype bool; a predictor is numeric unless it is declared categorical with its reference level, for example categorical={'lgl': <level>} (treatment coding, or R's polynomial contrasts for an ordered pandas Categorical declared with its lowest level, docs/ordered-factors.md; divergence D172).",
-    "raised_at": "formula.py:4081",
-    "stage": "default_priors",
-    "mechanism": "refusal",
-    "outcome": "refused_named",
-    "gap": "capability"
+    "status": "built",
+    "model": "Model",
+    "model_warnings": [],
+    "issues": [],
+    "notes": [],
+    "outcome": "match",
+    "gap": null
    }
   },
   {
@@ -2045,7 +2042,9 @@
    "autobayes": {
     "constructor": "gaussian",
     "formula": "y ~ xm",
-    "kwargs": {},
+    "kwargs": {
+     "dropna": true
+    },
     "priors": "default"
    },
    "tokens": [
@@ -2072,14 +2071,15 @@
     "group_terms": []
    },
    "result": {
-    "status": "error",
-    "type": "FormulaError",
-    "message": "missing values in columns ['xm']; rows with missing values are not dropped here (brms drops them with a warning): drop or impute them explicitly before fitting, or model a missing predictor with mi() (docs/missing-and-measurement-error.md, divergence D174).",
-    "raised_at": "formula.py:4117",
-    "stage": "default_priors",
-    "mechanism": "refusal",
-    "outcome": "refused_named",
-    "gap": "capability"
+    "status": "built",
+    "model": "Model",
+    "model_warnings": [
+     "Rows containing NAs were excluded from the model. 5 of 40 rows have a missing value in ['xm'] and were dropped (dropna=True; positions [3, 11, 19, 27, 35], model.dropped_na_rows); the model is fitted to the other 35 rows in data order"
+    ],
+    "issues": [],
+    "notes": [],
+    "outcome": "match",
+    "gap": null
    }
   },
   {
@@ -2096,7 +2096,9 @@
    "autobayes": {
     "constructor": "gaussian",
     "formula": "xm ~ z",
-    "kwargs": {},
+    "kwargs": {
+     "dropna": true
+    },
     "priors": "default"
    },
    "tokens": [
@@ -2123,14 +2125,15 @@
     "group_terms": []
    },
    "result": {
-    "status": "error",
-    "type": "FormulaError",
-    "message": "missing values in columns ['xm']; rows with missing values are not dropped here (brms drops them with a warning): drop or impute them explicitly before fitting, or model a missing predictor with mi() (docs/missing-and-measurement-error.md, divergence D174).",
-    "raised_at": "formula.py:4117",
-    "stage": "default_priors",
-    "mechanism": "refusal",
-    "outcome": "refused_named",
-    "gap": "capability"
+    "status": "built",
+    "model": "Model",
+    "model_warnings": [
+     "Rows containing NAs were excluded from the model. 5 of 40 rows have a missing value in ['xm'] and were dropped (dropna=True; positions [3, 11, 19, 27, 35], model.dropped_na_rows); the model is fitted to the other 35 rows in data order"
+    ],
+    "issues": [],
+    "notes": [],
+    "outcome": "match",
+    "gap": null
    }
   },
   {
@@ -13402,13 +13405,13 @@
  ],
  "summary": {
   "outcomes": {
-   "match": 155,
-   "refused_named": 92,
+   "match": 160,
+   "refused_named": 87,
    "differs": 1
   },
   "gaps": {
-   "none": 157,
-   "capability": 90,
+   "none": 162,
+   "capability": 85,
    "divergence": 1
   },
   "brms_refuses": 2

@@ -525,3 +525,11 @@ column a coefficient named as brms names it. Verified against `gauss_three_way_n
 `bernoulli_three_way_varint`; a rank-deficient design is warned of (D179); `x^2`, `x:x` and R's rank-deficient coding of
 `0 + x + x:z` (D180), a column no fitted row reaches and these interactions in non-linear, count-matrix, multivariate models and
 the summaries (D179) are refused by name.
+
+The call surface (Andrew's decisions of 26 October on D172-D174): a pandas Categorical or boolean predictor needs no declaration, a
+factor with its categories' order and first fitted category as the reference (an ordered one with polynomial contrasts) and a
+logical coded `<name>TRUE`, declared or not (docs/column-types.md, verified against `gauss_pandas_categorical` and `gauss_logical`);
+a class-wide prior with overrides, `b={"*": ab.Normal(0, 2), "x": ab.Normal(0.5, 1)}`, `sd={"*": ..., "h": ...}`, `cor={"*": ...}`,
+with brms's precedence and table (docs/class-priors.md, verified against `gauss_prior_overrides`; D178); and `dropna=True`, which
+drops the rows with a missing value in a column the model reads (but `mi()`'s), warns and records them as `model.dropped_na_rows`
+(docs/missing-rows.md, verified against `gauss_missing_rows_dropped` and its `log_lik`, `bayes_R2` and `loo`; D177).
