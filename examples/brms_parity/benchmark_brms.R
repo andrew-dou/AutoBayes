@@ -2,7 +2,7 @@
 # The brms side of the benchmark (examples/brms_parity/README.md):
 #
 #   Rscript examples/brms_parity/benchmark_brms.R <data_dir> <out_dir> [models ...] [--smoke] [--backend rstan|cmdstanr]
-#       [--threads t] [--grainsize g] [--march-native] [--normalize true|false] [--seed s] [--no-post]
+#       [--threads t] [--grainsize g] [--static] [--march-native] [--normalize true|false] [--seed s] [--no-post]
 #
 # Same models, priors and sampler settings as benchmark_autobayes.py: rstan, four chains in parallel (cores = 4),
 # warmup = 1000 and 1000 kept draws each, adapt_delta = 0.9 (--smoke: one chain, 50 and 50, to check the scripts only).
@@ -32,7 +32,8 @@
 #   save_warmup = TRUE; exec is the slowest chain's warm-up plus sampling time as CmdStan reports it. The gradient is not
 #   measured under cmdstanr (the fit has no rstan model to call); compare.py then uses the time per leapfrog step.
 # - --threads t: brms's threading(t), Stan's reduce_sum within each chain (cmdstanr only); --grainsize g: its grainsize
-#   (default brms's). Each of the four chains then runs t threads: 4 t cores.
+#   (default brms's). Each of the four chains then runs t threads: 4 t cores. --static: threading(static = TRUE),
+#   Stan's reduce_sum_static, whose result is bitwise reproducible for a fixed grainsize (for replication runs).
 # - --march-native: cmdstanr cpp_options STAN_CPP_OPTIMS=true and CXXFLAGS_OPTIM=-O3 -march=native (cmdstanr only).
 # - --normalize true (default) | false: brms's normalize, whether the Stan density keeps its normalising constants.
 #   TRUE matches AutoBayes, whose density is normalised.
@@ -44,14 +45,15 @@ suppressPackageStartupMessages({
   library(jsonlite)
 })
 args <- commandArgs(trailingOnly = TRUE)
-opt <- list(backend = "rstan", threads = NULL, grainsize = NULL, march_native = FALSE, normalize = TRUE, seed = 2026L,
-            smoke = FALSE, post = TRUE)
+opt <- list(backend = "rstan", threads = NULL, grainsize = NULL, static = FALSE, march_native = FALSE, normalize = TRUE,
+            seed = 2026L, smoke = FALSE, post = TRUE)
 pos <- character(0)
 i <- 1
 while (i <= length(args)) {
   a <- args[i]
-  if (a %in% c("--smoke", "--march-native", "--no-post")) {
+  if (a %in% c("--smoke", "--march-native", "--no-post", "--static")) {
     if (a == "--smoke") opt$smoke <- TRUE
+    if (a == "--static") opt$static <- TRUE
     if (a == "--march-native") opt$march_native <- TRUE
     if (a == "--no-post") opt$post <- FALSE
     i <- i + 1
@@ -81,6 +83,7 @@ while (i <= length(args)) {
 if (length(pos) < 2) stop("usage: benchmark_brms.R <data_dir> <out_dir> [models ...] [options]")
 if (!is.null(opt$threads) && opt$backend != "cmdstanr") stop("--threads: within-chain threading is run with --backend cmdstanr")
 if (!is.null(opt$grainsize) && is.null(opt$threads)) stop("--grainsize needs --threads")
+if (opt$static && is.null(opt$threads)) stop("--static needs --threads")
 if (opt$march_native && opt$backend != "cmdstanr") stop("--march-native: compiler flags are set through cmdstanr")
 smoke <- opt$smoke
 data_dir <- pos[1]
@@ -90,7 +93,7 @@ run <- if (smoke) list(chains = 1, cores = 1, warmup = 50, iter = 100, grad_warm
   list(chains = 4, cores = 4, warmup = 1000, iter = 2000, grad_warmup = 200)
 run$seed <- opt$seed
 grad_calls <- 2000
-threads_arg <- if (is.null(opt$threads)) NULL else threading(opt$threads, grainsize = opt$grainsize)
+threads_arg <- if (is.null(opt$threads)) NULL else threading(opt$threads, grainsize = opt$grainsize, static = opt$static)
 cpp_options <- if (opt$march_native) list(STAN_CPP_OPTIMS = "true", CXXFLAGS_OPTIM = "-O3 -march=native") else list()
 stan_model_args <- if (length(cpp_options)) list(cpp_options = cpp_options) else list()
 
@@ -348,7 +351,7 @@ for (name in names(specs)) {
     rec <- list(model = name, n = nrow(d), library = "brms", backend = opt$backend, divergent = divergent, post = post,
                 date = format(Sys.Date()), smoke = smoke, settings = run, chains = run$chains,
                 options = list(threads = opt$threads, grainsize_requested = opt$grainsize,
-                               grainsize = if (is.null(sdat$grainsize)) NULL else sdat$grainsize,
+                               grainsize = if (is.null(sdat$grainsize)) NULL else sdat$grainsize, static = opt$static,
                                normalize = opt$normalize, march_native = opt$march_native, seed = run$seed, post = opt$post),
                 cores = run$cores * (if (is.null(opt$threads)) 1 else opt$threads), machine = machine_info(),
                 versions = c(list(brms = as.character(packageVersion("brms")), rstan = as.character(packageVersion("rstan")),

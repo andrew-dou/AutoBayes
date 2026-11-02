@@ -12,6 +12,8 @@ CONFIGS=(
   "brms-cmdstanr-t1|brms|4|--backend cmdstanr --threads 1"
   "brms-cmdstanr-t2|brms|8|--backend cmdstanr --threads 2"
   "brms-cmdstanr-t4|brms|16|--backend cmdstanr --threads 4"
+  "brms-cmdstanr-t4-static|brms|16|--backend cmdstanr --threads 4 --static"
+  "brms-cmdstanr-t4-g250-static|brms|16|--backend cmdstanr --threads 4 --grainsize 250 --static"   # JK's suggested settings
   "autobayes-c4|autobayes|4|--cores 4"
   "autobayes-c8|autobayes|8|--cores 8"
   "autobayes-c16|autobayes|16|--cores 16"
