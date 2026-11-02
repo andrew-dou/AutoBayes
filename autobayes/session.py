@@ -162,15 +162,16 @@ def fit_record(model, fit, *, panel: dict | None = None, max_treedepth: int = 10
             "n": int(d.n),
             **({"J": int(d.J), "group": s.group} if len(s.groups) <= 1 else {}),
             "groups": [{"factor": g, "levels": list(block.levels), "J": block.J,
-                        "term": f"1|{g}", "names": model.group_names[g],
+                        # G05a: a factor whose intercept does not vary, (0 + x | g), has its slopes' entries only
+                        **({"term": f"1|{g}"} if g in group_priors else {}), "names": model.group_names[g],
                         "coordinate": model.group_names[g]["coordinate"],
-                        "sd_prior": str(group_priors[g]), "noncentered": True,
+                        **({"sd_prior": str(group_priors[g])} if g in group_priors else {}), "noncentered": True,
                         "slopes": [{"coef": c, "term": f"{c}|{g}", "names": model.group_coefficient_names[(g, c)],
                                     "sd_prior": str(sd_priors[(g, c)])} for c in s.group_term_of(g).slopes],
                         # a correlated term (A02): its coefficients share a correlation matrix under an LKJ prior
                         **({"correlated": True, "cor_prior": str(cor_priors[g]), "correlation_names": model.correlation_names[g]}
                            if g in cor_priors else {})}
-                       for g, block in d.group_designs.items()],
+                       for g, block in d.factor_blocks.items()],
             "intercept": s.intercept,
             "center_predictors": bool(d.centered),
             "center_predictors_requested": model.center_predictors,

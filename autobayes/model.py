@@ -61,6 +61,7 @@ from autobayes.formula import (Categorical, FormulaError, ModelSpec, addition_da
                                measurement_values, missing_values, mm_weights, parse_formula, poly_contrasts, pop_term_design, sd_tag,
                                with_trials)
 from autobayes.formula import DATA2_UNIVARIATE, check_data2   # Tier F: brms's data2 (F02b, F03a)
+from autobayes.formula import derived_group_columns, group_covariate   # G05a: the covariates of group-level slopes
 from autobayes.priors import AUXILIARY, PriorError, Priors, class_default, describe_prior
 
 _bambi_group_name = bambi_group_name          # ``1|g`` for the varying intercept of ``g``, ``x|g`` for the slope of ``x``
@@ -102,6 +103,9 @@ class GroupBlock:
     # level of g (brms's Jby_m - 1); the coefficient's SD is a vector over by_levels. Empty / None for every other term.
     by_levels: tuple[str, ...] = ()
     by_index: np.ndarray | None = None
+    # G05a, a monotonic varying slope (1 + mo(ord) | g): the column of the monotonic term the level's effect multiplies (brms's
+    # r[J] * mo(simo, Xmo), no Z column); Z is then the level indicator. None for every other coefficient.
+    monotonic: str | None = None
 
     @property
     def J(self) -> int:
@@ -235,10 +239,19 @@ class Design:
         """The varying-intercept block of each factor: the ``(factor, "Intercept")`` entries of ``group_blocks``."""
         return {factor: block for (factor, coef), block in self.group_blocks.items() if coef == "Intercept"}
 
+    @property
+    def factor_blocks(self) -> dict[str, GroupBlock]:
+        """G05a: the first block of each factor, in formula order: its varying intercept's, or a slope's for a factor whose
+        intercept does not vary (``(0 + x | g)``). Every block of a factor has the same levels and group index."""
+        out: dict[str, GroupBlock] = {}
+        for (factor, _), block in self.group_blocks.items():
+            out.setdefault(factor, block)
+        return out
+
     def _single_group(self):
-        if len(self.group_designs) > 1:
+        if len(self.factor_blocks) > 1:
             raise ValueError("singular group design access is ambiguous with multiple grouping factors; use group_designs")
-        return next(iter(self.group_designs.values()), None)
+        return next(iter(self.factor_blocks.values()), None)
 
     @property
     def levels(self) -> tuple[str, ...]:
@@ -564,6 +577,8 @@ class Model:
                 )
         for t in (t for s in (self.spec, *self.spec.dpars) for t in s.pop_terms if t.kind in ("contrast", "product")):
             df[t.name] = pop_term_design(t, df, self.spec.all_categoricals)[:, 0]   # F08, G03: the column Bambi is handed
+        for c in derived_group_columns(self.spec):           # G05a: a product or factor-level slope's covariate, which Bambi reads
+            df[c] = group_covariate(self.spec, c, df)        # from the fitted frame under its own name
         self.data = df
         self._threshold_groups = None                        # F06b: thres(gr = z)'s levels on the fitted rows
         if self.spec.addition("thres") is not None:
@@ -932,7 +947,7 @@ class Model:
         else:
             # D08: the multi-membership and by terms are the model's own (_custom_group_blocks); Bambi's group design holds
             # the others, side by side, and Design.Z every block in formula order
-            expected_terms = [_bambi_group_name(t.factor, coef) for t in self.spec.bambi_group_terms for coef in t.coefs]
+            expected_terms = [_bambi_group_name(t.factor, coef) for t in self.spec.bambi_group_terms for coef in t.bambi_coefs]
             if (group is None) != (not expected_terms) or (group is not None and list(group.terms) != expected_terms):
                 raise RuntimeError("Bambi group terms differ from formula order")
             bambi_Z = group.design_matrix if group is not None else np.zeros((len(X_raw), 0))
@@ -951,6 +966,12 @@ class Model:
                 labels = self.data[t.column].to_numpy()
                 indicator = np.column_stack([labels == level for level in levels]).astype(float)
                 for coef in t.coefs:
+                    if coef in t.monotonic_slopes:           # G05a: brms's r[J] * mo(simo, Xmo), built by the model, no Z column
+                        group_blocks[(g, coef)] = GroupBlock(levels, indicator, indicator.argmax(1), slice(start, start + len(levels)),
+                                                             monotonic=self.spec.pop_term(coef).operands[0])
+                        parts.append(indicator)
+                        start += len(levels)
+                        continue
                     name = _bambi_group_name(g, coef)
                     bterm = group.terms[name]
                     if tuple(str(v) for v in bterm.groups) != levels:
@@ -968,7 +989,7 @@ class Model:
                         kind = getattr(getattr(bterm, "expr", None), "kind", None)
                         if kind != "numeric":
                             raise RuntimeError(f"Bambi coded the varying slope {name!r} as {kind!r}; expected a numeric slope")
-                        covariate = self.data[coef].to_numpy(dtype=float)
+                        covariate = group_covariate(self.spec, coef, self.data)   # G05a: a transform's, product's or level's too
                         if not np.array_equal(block, indicator * covariate[:, None]):
                             raise RuntimeError(
                                 f"Bambi's block for {name!r} is not the level indicator of {g!r} times the {coef!r} column"
@@ -992,6 +1013,8 @@ class Model:
             Z = np.concatenate(parts, axis=1) if parts else np.zeros((len(X_raw), 0))
             if Z.shape != (len(X_raw), start) or bambi_Z.shape != (len(X_raw), bambi_start):
                 raise RuntimeError("unexpected concatenated group design shape")
+            if any(t.monotonic_slopes for t in self.spec.group_terms):   # G05a: each monotonic slope's part of the graph, checked
+                self._check_monotonic_slopes(group_blocks)
             for g in self.correlation_names:                 # the correlation factor (A02; a shared ID's, D08): a free variable on
                 coefs = self.correlation_coefs(g)            # Stan's coordinates
                 t = SimpleNamespace(factor=g, coefs=coefs)
@@ -1127,8 +1150,57 @@ class Model:
             model.add_coord(roles["coordinate"], [str(k) for k in range(1, m.D + 1)])
             simplex = simplex_rv(roles["simplex"], dirichlet_concentration(simplexes[m.column], m.D), roles["coordinate"])
             coefficient = coefficient_rv(roles["b"], coefficients[t.name])
-            eta = eta + coefficient * monotonic_effect(simplex, m.codes(self.data[m.column]), m.D)
+            effect = monotonic_effect(simplex, m.codes(self.data[m.column]), m.D)
+            eta = eta + coefficient * effect + self._monotonic_slope_effects(t.name, effect)
         return eta
+
+    def _monotonic_slope_effects(self, term: str, effect):
+        """G05a: the varying slopes of the monotonic term ``term`` (``(1 + mo(ord) | g)``), built inside the monotonic hook with
+        the term's ``mo(simo, Xmo)`` per row (``effect``): brms's ``r_m_c[J_m] * mo(simo, Xmo)``, one simplex shared with the
+        population-level term and no Z column. Each is named as Bambi names a varying slope, ``mo(ord)|g_sigma`` under its ``sd``
+        prior, ``mo(ord)|g_offset ~ Normal(0, 1)`` and the deterministic ``mo(ord)|g = sd * offset`` on the factor's level
+        dimension (Bambi's, from the factor's varying intercept), which ``_correlate_group_effects`` correlates with the
+        intercept as for any slope. 0 when no term has one."""
+        import pymc as pm
+
+        out = 0.0
+        for t in self.spec.group_terms:
+            if term not in t.monotonic_slopes:
+                continue
+            roles = self.group_coefficient_names[(t.factor, term)]
+            position = {level: j for j, level in enumerate(self.spec.levels_by_group[t.factor])}
+            index = np.array([position[str(v)] for v in self.data[t.column]], dtype=np.int64)
+            sd = _prior_rv(roles["sd"], self.priors.sd_priors(self.spec)[(t.factor, term)], positive=True)
+            z = pm.Normal(roles["offset"], mu=np.float64(0.0), sigma=np.float64(1.0), dims=roles["coordinate"])
+            r = pm.Deterministic(roles["group_effect"], sd * z, dims=roles["coordinate"])
+            out = out + r[index] * effect
+        return out
+
+    def _check_monotonic_slopes(self, blocks) -> None:
+        """G05a: each monotonic varying slope's contribution, read off the graph: at a simplex with unequal steps, the slope's SD at
+        1 and every other variable at the graph's initial point (the standardised effects 0, the correlation factor the
+        identity), the parent's linear predictor (on Bambi's link scale: the parent itself, or the log of ``mu`` under a log
+        link) must move, row by row, by exactly ``test[J_i] * D * sum(simplex[:Xmo_i])`` (recomputed from the data's codes) when
+        the slope's standardised effects go from 0 to a fixed vector ``test``."""
+        from autobayes.monotonic import monotonic_values, stick_breaking_free
+
+        pmm, parent = self.pymc_model, self.family_spec.parent
+        link = self.bambi_model.family.link[parent].name
+        fn = pmm.compile_fn(pmm.replace_rvs_by_values([pmm[parent]]), inputs=pmm.value_vars, point_fn=True,
+                            on_unused_input="ignore", mode="FAST_COMPILE")
+        for (g, coef), block in blocks.items():
+            if block.monotonic is None:
+                continue
+            roles, mroles, m = self.group_coefficient_names[(g, coef)], self.mo_names[block.monotonic], self.spec.monotonic(block.monotonic)
+            simplex, test = np.arange(1.0, m.D + 1.0) / (m.D * (m.D + 1) / 2.0), np.cos(np.arange(1.0, block.J + 1.0))
+            at0 = {**pmm.initial_point(), f"{mroles['simplex']}_stickbreaking__": stick_breaking_free(simplex),
+                   pmm.rvs_to_values[pmm[roles["sd"]]].name: np.asarray(0.0)}
+            lo, hi = (np.asarray(fn(p)[0], dtype=float).ravel() for p in (at0, {**at0, roles["offset"]: test}))
+            moved = hi - lo if link == "identity" else np.log(hi) - np.log(lo)
+            expected = test[block.group_index] * monotonic_values(simplex, m.codes(self.data[block.monotonic]))
+            if moved.shape != expected.shape or not np.allclose(moved, expected, rtol=1e-10, atol=1e-10):
+                raise RuntimeError(f"the graph's {parent!r} does not move by r[{g}] * mo({block.monotonic}) per row with the varying slope "
+                                   f"{coef!r} of {g!r}")
 
     def _monotonic_design(self) -> dict[str, MonotonicBlock]:
         """The block of each monotonic term (B03), checked against the graph: the simplex a free Dirichlet of ``D`` entries
@@ -1911,6 +1983,8 @@ class Model:
         out = {}
         for t in self.spec.group_terms:
             roles = self._group_roles(t.factor)
+            if not t.has_intercept:                            # G05a: (0 + x | g), the slopes' roles and the level dimension alone
+                roles = {"coordinate": roles["coordinate"]}
             for coef in t.slopes:
                 roles.update({f"{k}:{coef}": v for k, v in self._group_roles(t.factor, coef).items() if k != "coordinate"})
             if t.has_correlation or t.id is not None:          # a correlated term, or a shared correlation ID (D08)
@@ -2593,7 +2667,7 @@ class Model:
         xs = " + ".join(_linear_terms(s, centred_x))
         lp = fam.linpred_symbol
         a = f"a{'_c' if d.centered else ''}" if s.intercept else "0"
-        grouping = ("; ".join(f"J = {block.J} levels of {g}" for g, block in d.group_designs.items())
+        grouping = ("; ".join(f"J = {block.J} levels of {g}" for g, block in d.factor_blocks.items())
                     if s.has_group else "no group-level term (population-level model)")
         data_line = f"  data      : n = {d.n} observations, {grouping}"
         if fam.has_trials:
@@ -2692,7 +2766,7 @@ class Model:
         lines += self._measurement_data_lines()              # C06: me() and mi() terms, and the response's missing values
         from autobayes.term_algebra import product_lines
         lines += product_lines(s)                            # G03: each interaction coded by R's rule
-        for g, block in d.group_designs.items():
+        for g, block in d.factor_blocks.items():
             lines += [f"  {'levels    ' if len(s.groups) == 1 else 'levels ' + g}: {', '.join(f'{j}={l}' for j, l in enumerate(block.levels))}"]
         for t in s.group_terms:
             block = d.group_blocks.get((t.factor, "Intercept"))
@@ -2708,11 +2782,12 @@ class Model:
                 lines += [f"  {t.factor:<10}: gr({t.factor}, by = {t.by}): one SD per level of {t.by!r} ({groups}); each level of "
                           f"{t.factor!r} lies within one level of {t.by!r} (brms's Nby_m and Jby_m)"]
             if t.derived:
-                ga, gb = t.operands
-                name = _bambi_group_name(t.factor, "Intercept")
-                lines += [f"  {t.factor:<10}: derived grouping factor, one level per observed ({ga}, {gb}) combination, labelled {ga}_{gb} as brms "
-                          f"does (paste({ga}, {gb}, sep = \"_\")); unobserved combinations have no level; handed to Bambi as the column "
+                ops = ", ".join(t.operands)                  # G05a: three columns too, g:h:f2
+                name = _bambi_group_name(t.factor, t.coefs[0])
+                lines += [f"  {t.factor:<10}: derived grouping factor, one level per observed ({ops}) combination, labelled {'_'.join(t.operands)} as brms "
+                          f"does (paste({ops}, sep = \"_\")); unobserved combinations have no level; handed to Bambi as the column "
                           f"{t.column!r}, so its PyMC variables are {name}, {name}_sigma, {name}_offset"]
+            lines += self._group_syntax_lines(t)            # G05a: slopes alone, several terms, factor/transform/product/mo slopes
         for cat in s.all_categoricals:                       # a distributional formula's too (B01), b_sigma_z
             owners = [(b, f.categorical(cat.name)) for b, f in [("b", s), *((f"b_{ds.response}", ds) for ds in s.dpars)]
                       if cat.name in f.categorical_names]
@@ -2743,7 +2818,8 @@ class Model:
             ]
         rest = "".join(f" + gp({g.column})_i" for g in s.gp_terms) + (" + offset_i" if s.offset is not None else "") + "".join(
             ("".join(f" + W_{c},i * {effect(t.factor)}[{c}_i]" for c in t.members) if t.is_mm else   # D08: brms's W_m_k r_m_1[J_m_k]
-             f" + {effect(t.factor)}[{t.factor}_i]") + "".join(f" + x_{c},i * {slope_effect(t.factor, c)}[{t.factor}_i]" for c in t.slopes)
+             (f" + {effect(t.factor)}[{t.factor}_i]" if t.has_intercept else ""))   # G05a: (0 + x | g) has no varying intercept
+            + "".join(f" + {self._slope_value(t, c)} * {slope_effect(t.factor, c)}[{t.factor}_i]" for c in t.slopes)
             for t in s.group_terms)
         rest += " + arma_i" if s.autocor is not None else ""   # C04: the autocorrelation term, last
         rest += f" + rcar[{s.car.gr}_i]" if s.car is not None else ""   # F02a: the CAR term
@@ -2896,7 +2972,7 @@ class Model:
         if s.has_group:
             lines += ["", "Group effects (non-centred)"]
             for t in s.group_terms:
-                g, block = t.factor, d.group_designs[t.factor]
+                g, block = t.factor, d.factor_blocks[t.factor]
                 shared = s.shared_id_of(g)
                 if t.by is not None:                         # D08: the SD of the level's by level
                     lines += [f"  u_{g}[j] = sd_{g}[{t.by}[j]] * z_{g}[j], z_{g}[j] ~ Normal(0, 1), j = 0..{block.J - 1}: one SD per level "
@@ -2905,8 +2981,11 @@ class Model:
                     lines += [f"  u_{g}[j, k] = sd_{g}[k] * z_{g}[j, k], z_{g}[j, k] ~ Normal(0, 1), j = 0..{block.J - 1}, for each "
                               f"non-reference category k = {', '.join(self.categories[1:])}: brms's own group term of {g} in each mu<k>, "
                               "independent across categories; mu_i[k] adds u_" + f"{g}[{g}_i, k]"]
-                else:
+                elif t.has_intercept:
                     lines += [f"  u_{g}[j] = sd_{g} * z_{g}[j], z_{g}[j] ~ Normal(0, 1), j = 0..{block.J - 1}"]
+                else:                                        # G05a: (0 + x | g), the slopes alone
+                    lines += self._slope_only_lines(t, block)
+                    continue
                 if t.is_mm:
                     lines += [f"  Row i adds sum_k W_k,i * u_{g}[level k of row i] over its members {', '.join(t.members)}, the weights summing to 1."]
                 if shared is not None:                       # D08: one correlation matrix across the response and sigma formulas
@@ -3155,6 +3234,62 @@ class Model:
                      + shrinkage_note
                      + (f"; {n['linpred']} = mu_i[k], one per row and threshold" if s.cs_terms else ""))
         return "\n".join(lines)
+
+    def _slope_value(self, t, c: str) -> str:
+        """``describe()``'s covariate of the varying slope ``c`` of ``t`` at row ``i``: ``x_c,i`` for a column, as it has always
+        read; G05a: a transform's value (``I(x^2)_i``), a product (``x_x,i * x_w,i``), a factor level's indicator (``1[z_i = q]``)
+        and a monotonic term's ``mo(ord)_i``."""
+        if c in t.monotonic_slopes:
+            return f"{c}_i"
+        term = next((pt for pt in self.spec.pop_terms if c in pt.columns and pt.kind != "numeric"), None)
+        if term is None:
+            return f"x_{c},i"
+        if term.kind == "transform":
+            return f"{c}_i"
+        if term.kind == "interaction":
+            return " * ".join(f"x_{o},i" for o in term.operands)
+        return f"1[{term.name}_i = {c[len(term.name) + 1:-1]}]"
+
+    def _group_syntax_lines(self, t) -> list[str]:
+        """G05a: ``describe()``'s data lines of a group-level term written in several terms, without its varying intercept, or
+        with a slope that is no population-level term, a factor, a transform, a product or a monotonic term
+        (docs/group-term-syntax.md); none for any other term."""
+        g, out = t.factor, []
+        if t.blocks:
+            out.append(f"  {g:<10}: written as {len(t.blocks)} terms, {t.canonical}: brms's {len(t.blocks)} group IDs of {g}, each with its "
+                       f"own SD(s) and no correlation with the other(s), so the coefficients {', '.join(t.coefs)} vary independently")
+        if not t.has_intercept:
+            out.append(f"  {g:<10}: {t.canonical} lets the slope(s) alone vary: the intercept does not vary by {g} (brms's term without "
+                       "its varying intercept)")
+        for c in t.slope_columns:
+            out.append(f"  {c:<10}: varies by {g} without a population-level term: no b_{c} (its population-level slope is 0); each "
+                       f"level's effect multiplies the raw column {c} (brms's Z)")
+        for w in (w for w in t.written if w in self.spec.categorical_names):
+            cat, coefs = self.spec.categorical(w), [c for c in t.coefs if t.term_of(c) == w]
+            out.append(f"  {w:<10}: a factor slope of {g}: one varying coefficient per non-reference level, {', '.join(coefs)}, each "
+                       f"multiplying the population design's indicator 1[{w}_i = l] (treatment contrasts against {cat.reference!r})")
+        for c in t.slopes:
+            if any(c in pt.columns and pt.kind in ("transform", "interaction") for pt in self.spec.pop_terms):
+                out.append(f"  {c:<10}: the slope of the population-level term {c} varies by {g}, multiplying its design column "
+                           f"{self._slope_value(t, c)}")
+        for c in t.monotonic_slopes:
+            column = self.spec.pop_term(c).operands[0]
+            out.append(f"  {c:<10}: the monotonic term's slope varies by {g}: row i adds (b_{c} + v_{c}|{g}[{g}_i]) * mo(simo_{column}, "
+                       f"{column}_i), one simplex shared with the population-level term and no design column (brms's (bsp + r) * "
+                       "mo(simo, Xmo))")
+        return out
+
+    def _slope_only_lines(self, t, block) -> list[str]:
+        """G05a: ``describe()``'s group-effect lines of a term whose intercept does not vary, ``(0 + x | g)``."""
+        g = t.factor
+        if not t.has_correlation:
+            return [f"  v_{c}|{g}[j] = sd_{c}|{g} * z_{c}|{g}[j], z_{c}|{g}[j] ~ Normal(0, 1), j = 0..{block.J - 1}: the slope of {c} "
+                    f"varies by {g}{' independently of the other slopes' if len(t.slopes) > 1 else ''}; the intercept does not"
+                    for c in t.slopes]
+        vec, sds = ", ".join(f"v_{c}|{g}[j]" for c in t.slopes), ", ".join(f"sd_{c}|{g}" for c in t.slopes)
+        return [f"  ({vec}) = diag({sds}) L_{g} ({', '.join(f'z_{c}|{g}[j]' for c in t.slopes)}), z ~ Normal(0, 1), j = 0..{block.J - 1}: "
+                f"the slopes vary by {g} with the correlation matrix Cor_{g} = L_{g} L_{g}^T of ({', '.join(t.slopes)}) (brms's "
+                f"scale_r_cor; PyMC {self._correlation_roles(g)['cor']}); the intercept does not vary by {g}"]
 
     def _measurement_data_lines(self) -> list[str]:
         """``describe()``'s data lines of the ``me()`` and ``mi()`` terms and of the response's own missing values (C06)."""

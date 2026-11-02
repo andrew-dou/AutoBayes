@@ -34,7 +34,7 @@ a column named `g_h` is refused, so the derived column cannot shadow a real one.
 
 ## Refused, with the construct named
 
-Three or more factors (`g:h:k`, `g/h/k`), mixing `/` and `:` (`g/h:k`), a factor combined with itself (`g:g`),
+Four or more factors (G05a takes three, `g:h:f2` and `g/h/f2`, docs/group-term-syntax.md; D11, D183), mixing `/` and `:` (`g/h:k`), a factor combined with itself (`g:g`),
 the same partition written twice (`(1 | g:h) + (1 | h:g)`), a duplicate after expansion (`(1 | g) + (1 | g/h)`),
 an operand that is the response, the trials column, a predictor or declared categorical, a varying slope equal to
 an operand, a derived column name that collides with a formula column (`g_h` next to `g:h`), and two distinct

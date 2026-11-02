@@ -74,7 +74,7 @@ REFUSALS = [
     ("k | trials(n) ~ x + x:n", {"family": "binomial"}, "the response or trials column cannot enter an interaction"),
     ("y ~ x + w + offset(w):x", {}, "offset() cannot enter an interaction; an offset is a known column added to the linear predictor with no coefficient"),
     ("y ~ x + z + log(x):z", {"categorical": {"z": "p"}}, "an interaction with a transformed term ('log(x)') is not supported"),
-    ("y ~ x + w + x:w + (1 + x:w || g)", {}, "an interaction cannot be a varying slope"),
+    ("y ~ x + w + (1 + x:w || g)", {}, "the varying slope 'x:w' must also be a population-level term of the formula"),   # G05a takes x:w's
     ("y ~ x + w + x:w + (1 | x:w)", {}, "'x': the grouping factor cannot also be a predictor or the response"),
 ]
 

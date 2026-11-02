@@ -82,6 +82,13 @@ The parameters of coefficient `c` are brms's `sd_m[c]` (`1|g_sigma`, `x|g_sigma`
 `Model.group_names[factor]` keeps the varying intercept's roles with each slope's as `sd:x`, `offset:x`,
 `group_effect:x` (docs/varying-slopes.md).
 
+G05a (docs/group-term-syntax.md): `coefs` may lack the intercept (`(0 + x | g)`, `term.has_intercept`); a factor written in several
+terms is one term whose `blocks` are its terms as written (brms's group IDs, uncorrelated); a factor slope `(1 + z | g)` becomes one
+coefficient per non-reference level once the data are seen (`z[q]`, `z[r]`; `written` keeps `z`); a transform, product or `mo()`
+slope is labelled as its population-level term (`I(x^2)`, `x:w`, `mo(ord)`, the last built by the model, `monotonic_slopes`, with
+`GroupBlock.monotonic` its column); a slope that is no population-level term is listed in `slope_columns`; and the factor may combine
+three columns (`g:h:f2`). `formula.group_covariate(spec, coef, frame)` is each coefficient's covariate, brms's `Z_m_c`.
+
 D08 (docs/multi-membership-and-by.md): `GroupTerm.members` and `weights` make the term brms's multi-membership
 `(1 | mm(g, g2, weights = cbind(w1, w2)))` (factor `mmgg2`, `operands` the member columns, `GroupBlock.memberships` and
 `weights` per row), `GroupTerm.by` brms's `(1 | gr(g, by = gby))` (`GroupBlock.by_levels`, `by_index`); both are

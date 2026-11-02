@@ -33,7 +33,7 @@ POP_KINDS = ("numeric", "categorical", "interaction", "transform")      # popula
 # construct that adds one is refused by name until its brms names are verified here
 SPEC_FIELDS = frozenset({"formula", "response", "intercept", "levels_by_group", "trials", "rhs", "categoricals", "pop_terms",
                          "group_terms", "dpars"})
-GROUP_FIELDS = frozenset({"factor", "coefs", "correlated"})
+GROUP_FIELDS = frozenset({"factor", "coefs", "correlated", "blocks", "slope_columns"})   # G05a: gauss_split_slope_post verifies
 
 
 def summarise(draws) -> np.ndarray:
@@ -82,10 +82,18 @@ def refuse_unsupported(model, what: str) -> None:
         if not d.intercept or d.group_terms:
             _refuse(what, f"the distributional formula {d.formula!r} (the summaries take a formula of sigma with an intercept and "
                           "population-level terms)")
-    for t in spec.group_terms:                                 # (a factor is in one term: the formula parser refuses another)
+    for t in spec.group_terms:
         extra = [f.name for f in dataclasses.fields(t) if f.name not in GROUP_FIELDS and getattr(t, f.name)]
         if extra or t.derived:
             _refuse(what, f"the group-level term {t.canonical} ({', '.join(extra) or 'a grouping factor of two columns'})")
+        # G05a: brms's names are verified for a factor in several terms whose first term has the varying intercept (its
+        # coefficients in the terms' order) and for slopes that are columns; not for slopes alone, a product, a transform, a
+        # factor's levels or mo()
+        if not t.has_intercept or (t.blocks and tuple(c for b in t.blocks for c in b) != t.coefs):
+            _refuse(what, f"the group-level term {t.canonical} (the varying intercept {'absent' if not t.has_intercept else 'after a slope'})")
+        odd = next((c for c in t.slopes if c not in spec.predictors and c not in t.slope_columns), None)
+        if odd is not None:
+            _refuse(what, f"the group-level term {t.canonical} (the varying slope {odd!r})")
 
 
 # -- brms's names of the draws ----------------------------------------------------------------------------------------
@@ -285,7 +293,8 @@ def coef(model, fit_result) -> dict[str, pd.DataFrame]:
     out = {}
     for g, coefs in groups.items():
         order = [*coefs, *(c for c in population if c not in coefs)]
-        per = {c: [population[c] + (coefs[c][1][..., k] if c in coefs else 0.0) for k in range(len(levels[g]))] for c in order}
+        # G05a: a slope without a population-level term (no b) is its group effect alone, as brms's coef()
+        per = {c: [population.get(c, 0.0) + (coefs[c][1][..., k] if c in coefs else 0.0) for k in range(len(levels[g]))] for c in order}
         out[g] = _three_way(levels[g], order, per)
     return out
 

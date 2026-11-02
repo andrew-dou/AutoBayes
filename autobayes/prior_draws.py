@@ -83,6 +83,9 @@ def _refuse_unsupported(model) -> None:
     for t in spec.group_terms:
         if t.members or t.by is not None or t.id is not None:
             refuse(f"the group term {t.canonical!r} (mm(), gr(by = ) or a shared ID)")
+    from autobayes.formula import extended_group_syntax
+    if extended_group_syntax(spec) is not None:                  # G05a: brms's prior draws' names not verified for them
+        refuse(extended_group_syntax(spec))
 
 
 def _brms_group_coef(coef: str) -> str:

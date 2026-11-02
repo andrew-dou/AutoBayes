@@ -83,11 +83,7 @@
       "HalfNormal",
       1
      ],
-     "zq": [
-      "HalfNormal",
-      1
-     ],
-     "zr": [
+     "z": [
       "HalfNormal",
       1
      ]
@@ -104,9 +100,5 @@
     1
    ]
   }
- },
- "gate": {
-  "expect": "fail",
-  "reason": "G05a_group_term_syntax not implemented; remove this field when it lands"
  }
 }

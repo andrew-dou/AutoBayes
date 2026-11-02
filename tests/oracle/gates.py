@@ -555,7 +555,7 @@ def check_derived(b: Bundle) -> None:
             if b.gmap.category:                                     # F01b: each category's column against its own group term
                 check_category_effects(b, k, p, g, coef, eff)
                 continue
-            m, cn = b.gmap.brms_id[g], b.gmap.coef_cn[(g, coef)]
+            m, cn = adapter.group_id(b.gmap, g, coef), b.gmap.coef_cn[(g, coef)]   # G05a: per coefficient
             r = np.asarray(eff, dtype=float).ravel()[b.gmap.level_of[g]]
             err = rel_err(r, np.atleast_1d(p.pars[f"r_{m}_{cn}"]))
             if err > PRED_REL:

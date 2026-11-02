@@ -419,7 +419,7 @@ def default_priors(formula: str | list[str], data: pd.DataFrame, *, family: str 
             intercept = fam.default_intercept_prior(location, scale)
     sd = {}
     for t in spec.group_terms:
-        sd[t.factor] = HalfStudentT(DF, scale) if not t.slopes else {c: HalfStudentT(DF, scale) for c in t.coefs}
+        sd[t.factor] = HalfStudentT(DF, scale) if not t.slopes else {c: HalfStudentT(DF, scale) for c in (t.written or t.coefs)}   # G05a: z
     cor = {t.factor: LKJ(1) for t in spec.correlated_terms}
     cor.update({s.factor: LKJ(1) for s in spec.shared_ids})          # D08: a correlation ID shared with a distributional formula
     auxiliary = {}

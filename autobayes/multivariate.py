@@ -65,6 +65,7 @@ from autobayes.formula import (_GROUP_RE, _IDENT, MI_CALL_RE, MVBIND_RE, Formula
                                parse_formula)
 from autobayes.formula import SUBSET_CALL_RE, group_labels   # F06c
 from autobayes.term_algebra import refuse_products           # G03
+from autobayes.formula import extended_group_syntax   # G05a
 from autobayes.priors import PriorError, Priors, describe_prior
 
 _MVBIND_FORMULA_RE = re.compile(r"^\s*mvbind\s*\(([^()]*)\)\s*([^~]*?)\s*~\s*(.*?)\s*$", re.S)   # mvbind(<responses>) <rest> ~ <rhs>
@@ -263,6 +264,9 @@ def parse_multivariate(formula, data: pd.DataFrame | None = None, family: str = 
         if s.custom_group_terms:                                         # D08: verified in univariate models only
             raise FormulaError(f"{formula!r}: '{s.custom_group_terms[0].canonical}' in a multivariate formula is not supported"
                                " (docs/multi-membership-and-by.md, divergences D104, D105)")
+        if extended_group_syntax(s) is not None:                         # G05a: verified in univariate models only
+            raise FormulaError(f"{formula!r}: {extended_group_syntax(s)} in a multivariate formula is not supported "
+                               "(docs/group-term-syntax.md, divergence D183)")
         reads = {*s.pop_columns, *(c for t in s.group_terms for c in t.operands), *(s.offset.columns if s.offset is not None else ())}
         others = sorted(reads & set(responses))
         if others:
@@ -324,6 +328,9 @@ def _parse_imputation(formulas, data, family, categorical, *, rescor) -> Multiva
         if specs0[-1].custom_group_terms:                               # D08: verified in univariate models only
             raise FormulaError(f"{formulas!r}, the formula {text!r}: '{specs0[-1].custom_group_terms[0].canonical}' in a multivariate "
                                "model is not supported (docs/multi-membership-and-by.md, divergences D104, D105)")
+        if extended_group_syntax(specs0[-1]) is not None:              # G05a: verified in univariate models only
+            raise FormulaError(f"{formulas!r}, the formula {text!r}: {extended_group_syntax(specs0[-1])} in a multivariate model is "
+                               "not supported (docs/group-term-syntax.md, divergence D183)")
     responses = tuple(s.response for s in specs0)
     dup = sorted({r for r in responses if responses.count(r) > 1})
     if dup:
@@ -527,6 +534,9 @@ def _parse_separate(formulas, data, family, categorical, *, rescor) -> Multivari
         if s.custom_group_terms:                                      # D08: verified in univariate models only
             raise FormulaError(f"{s.formula!r}: '{s.custom_group_terms[0].canonical}' in a multivariate model is not supported"
                                " (docs/multi-membership-and-by.md, divergences D104, D105)")
+        if extended_group_syntax(s) is not None:                      # G05a: verified in univariate models only
+            raise FormulaError(f"{s.formula!r}: {extended_group_syntax(s)} in a multivariate model is not supported "
+                               "(docs/group-term-syntax.md, divergence D183)")
         if s.me_terms:
             raise FormulaError(f"{s.formula!r}: a measurement-error term in a multivariate model is not supported; me() "
                                "belongs to a univariate Gaussian model here (docs/missing-and-measurement-error.md, divergence D73)")

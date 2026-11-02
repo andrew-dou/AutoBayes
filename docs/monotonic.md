@@ -68,8 +68,8 @@ the coefficient goes from 0 to `c = 1 / D` at a simplex with unequal steps.
 
 ## Refused, naming the construct
 
-Interactions with a monotonic term (`mo(x):z`, `mo(x) * z`, `mo(x):mo(w)`; D40), `mo()` in a group-level term
-(`(1 + mo(x) | g)`; D41), `mo()`'s `id` argument, an expression inside `mo()`, `mo()` in a distributional formula, the
+Interactions with a monotonic term (`mo(x):z`, `mo(x) * z`, `mo(x):mo(w)`; D40), `mo()` in a group-level term other than
+`(1 + mo(x) | g)`, which G05a takes (docs/group-term-syntax.md; D41, D184), `mo()`'s `id` argument, an expression inside `mo()`, `mo()` in a distributional formula, the
 categorical family, a predictor with two values (one step: write it as a 0/1 numeric term) or more than 10^6 steps (D42),
 a column that is not whole numbers or an ordered Categorical (brms refuses those too), with fewer than three values, a
 declared categorical column, and the response, the trials column or a grouping factor inside `mo()`.

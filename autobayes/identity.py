@@ -164,7 +164,13 @@ def freeze_target(model):
         'groups': [{'factor': g, 'levels': block.levels, 'index': block.group_index,
                     'Z': block.Z, 'noncentered': True} for g, block in d.group_designs.items()],
         **({'group_slopes': [{'factor': g, 'coef': c, 'Z': block.Z, 'correlated': s.group_term_of(g).correlated,
-                              'prior': prior(sd_priors[(g, c)])} for g, c, block in slopes]} if slopes else {}),
+                              'prior': prior(sd_priors[(g, c)]),
+                              **({'monotonic': block.monotonic} if getattr(block, 'monotonic', None) else {})}   # G05a: r * mo()
+                             for g, c, block in slopes]} if slopes else {}),
+        # G05a: a factor whose intercept does not vary, (0 + x | g), has no 'groups' entry: its levels and rows enter here
+        **({'slope_only_groups': [{'factor': g, 'levels': block.levels, 'index': block.group_index}
+                                  for g, block in d.factor_blocks.items() if g not in d.group_designs]}
+           if any(g not in d.group_designs for g in getattr(d, 'factor_blocks', {})) else {}),
         **({'correlations': [{'factor': g, 'coefs': list(s.group_term_of(g).coefs), 'prior': prior(p)}
                              for g, p in cor_priors.items()]} if cor_priors else {}),
         # D08: a multi-membership term's memberships and weights, a gr(by = ) term's by levels, and a correlation ID shared with
