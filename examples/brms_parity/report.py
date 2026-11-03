@@ -338,7 +338,7 @@ Five models (\file{benchmark\_data.py --scaling N}: S1 logistic \code{y \textasc
 \code{(1 + x1 + x2 | g)}, S3 Poisson \code{(1 | g1) + (1 | g2)}, S4 cumulative \code{(1 | g)}, S5 \code{gp(x, k = 30)}) at
 each size, with $J = \min(N/100, 1000)$ groups (the cap is AutoBayes's memory: formulae's dense $N \times J$ indicator per
 group term), the same explicit priors in both libraries, four chains of 1000 warm-up and 1000 kept draws, target acceptance
-0.9, three sampler seeds per configuration. ESS is the smallest over the parameters every record of the model reports
+0.9, @SEEDS@ per configuration. ESS is the smallest over the parameters every record of the model reports
 (ArviZ's rank-normalised bulk and tail ESS for both); per second means per second of the samplers' execution (warm-up and
 sampling of every chain, compilation excluded) unless marked end to end.
 
@@ -368,7 +368,9 @@ def scaling_report(data: dict, out: str | None, pdf: bool) -> Path:
                "second as the median [smallest, largest] over the seeds, tail ESS per second the median. Ratio: "
                "AutoBayes's over brms's, per second of the samplers' time and end to end.", "tab:best", "lrlrrlrrrr",
                head, body, size=r"\scriptsize", sep="3pt")
-    sweep = [r"\begin{longtable}{@{}llrrrrrrrrr@{}}", r"\caption{\small The full sweep, medians over the seeds. cores: "
+    # \scriptsize with narrow columns, as the best-against-best table: at normal size the sweep is wider than the text,
+    # and an overfull longtable stops pdflatex ("Infinite glue shrinkage found in box being split").
+    sweep = [r"{\scriptsize\setlength{\tabcolsep}{3pt}", r"\begin{longtable}{@{}llrrrrrrrrr@{}}", r"\caption{\small The full sweep, medians over the seeds. cores: "
              r"of the configuration; $U$: cores kept busy; ms/step: the slowest chain's time per leapfrog step; $T$ the "
              r"samplers' time and total the end-to-end time, seconds. $^*$: CPU time above the configuration's cores in "
              r"some seed.}\label{tab:sweep}\\", r"\toprule",
@@ -378,14 +380,16 @@ def scaling_report(data: dict, out: str | None, pdf: bool) -> Path:
         sweep.append(" & ".join([short(c["model"]), f"{c['n']:,}", esc(c["config"]) + ("$^*$" if c["over_cap"] else ""),
                                  str(c["cores"]), _med(c, "U", 2), _med(c, "ess_bulk_per_s", 0), _med(c, "ess_tail_per_s", 0),
                                  _med(c, "T"), _med(c, "total"), _med(c, "step_ms", 3), _med(c, "max_rhat", 3)]) + r" \\")
-    sweep += [r"\bottomrule", r"\end{longtable}", ""]
+    sweep += [r"\bottomrule", r"\end{longtable}", "}", ""]
     parts = [PREAMBLE.replace(r"\usepackage{booktabs,", r"\usepackage{longtable,booktabs,"),
              r"\title{AutoBayes against brms: scaling}", rf"\author{{Benchmark run of {esc(date)}, prepared for Andrew}}",
              rf"\date{{{esc(date)}}}", "", r"\begin{document}", r"\maketitle", ""]
     if data.get("smoke"):
         parts.append(r"\begin{center}\fbox{\parbox{0.9\textwidth}{\textbf{Smoke run.} These numbers check the scripts "
                      r"and mean nothing about speed. Do not commit this report.}}\end{center}" + "\n")
-    parts += [SCALING_METHOD, r"\section{Best against best}", "", t1, r"\section{The sweep}", "", "\n".join(sweep),
+    seeds = sorted({r["seed"] for r in data.get("records", [])})
+    n_seeds = {1: "one sampler seed", 2: "two sampler seeds", 3: "three sampler seeds"}.get(len(seeds), f"{len(seeds)} sampler seeds")
+    parts += [SCALING_METHOD.replace("@SEEDS@", n_seeds), r"\section{Best against best}", "", t1, r"\section{The sweep}", "", "\n".join(sweep),
               r"\end{document}", ""]
     dest.parent.mkdir(parents=True, exist_ok=True)
     dest.write_text("\n".join(parts))
