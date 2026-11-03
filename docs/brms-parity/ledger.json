@@ -2700,12 +2700,12 @@
     "E03_contexts_newer_families",
     "E04_cens_trunc_families"
    ],
-   "status": "queued",
+   "status": "probed",
    "summary": "the family-context matrix: cens(), trunc(), weights(), distributional formulas and group-level terms for every family brms supports them on and AutoBayes refuses; split into features once the matrix is probed",
    "pr": null,
    "attempts": 0,
    "divergences": [],
-   "next_action": "probe the matrix (wave G2)",
+   "next_action": "probed 2026-11-03 (1667 cells: 736 gaps, 95 where brms looks wrong, 8 kept refusals, 0 AutoBayes-only); proposed split into about 17 features (~140 cases), loop-notes/g07/proposed-split.md; waiting on Andrew for the scope",
    "reserved_divergences": "D189-D192"
   },
   {
