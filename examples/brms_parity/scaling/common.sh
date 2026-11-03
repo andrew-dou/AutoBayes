@@ -23,6 +23,7 @@ load_modules() {
   module load "$R_MODULE"
   [[ "$GCC_MODULE" == none ]] || module load "$GCC_MODULE"
   [[ "$PYTHON_MODULE" == none ]] || module load "$PYTHON_MODULE"
+  [[ "${CMAKE_MODULE:-none}" == none ]] || module load "$CMAKE_MODULE"
 }
 
 sbatch_common() {                      # the options every job shares

@@ -25,6 +25,7 @@ echo "== versions on $(hostname) =="
 R --version | head -1
 g++ --version | head -1
 make --version | head -1
+command -v cmake >/dev/null && cmake --version | head -1
 python3 --version || true
 module list 2>&1
 
