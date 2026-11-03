@@ -1,0 +1,145 @@
+{
+ "id": "gauss_mv_weights_rescor",
+ "tier": "G",
+ "feature": "G08_multivariate_ext",
+ "note": "G08 mvbind(y, y2) | weights(w) ~ x + (1 | g) with rescor TRUE: brms accepts it when every response has the same weights (different columns, bf(y | weights(w) ~ x) + bf(y2 | weights(wu1) ~ x) + set_rescor(TRUE), stop with \"All responses should use the sameweights if 'rescor' is estimated.\"), keeps weights_y and weights_y2 in its Stan data and weights each row's joint multi_normal_cholesky density once, by the first response's weights (transformed data weights = weights_y; target += weights[n] * multi_normal_cholesky_lpdf(Y[n] | Mu[n], LSigma)) (checked on the frozen points by tests/oracle/test_multivariate_gp_special_harness.py)",
+ "seed": 3305,
+ "n_points": 8,
+ "data": {
+  "generator": "tier_g3",
+  "seed": 3205,
+  "n": 36,
+  "newdata": {
+   "seed": 3305,
+   "n": 5
+  }
+ },
+ "brms": {
+  "formula": "mvbind(y, y2) | weights(w) ~ x + (1 | g)",
+  "rescor": true,
+  "family": {
+   "family": "gaussian"
+  },
+  "factors": {
+   "g": [
+    "a",
+    "b",
+    "c",
+    "d",
+    "e",
+    "f"
+   ]
+  },
+  "priors": [
+   {
+    "prior": "normal(0, 5)",
+    "class": "Intercept",
+    "resp": "y"
+   },
+   {
+    "prior": "normal(0, 2)",
+    "class": "b",
+    "resp": "y"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "sd",
+    "group": "g",
+    "resp": "y"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "sigma",
+    "resp": "y"
+   },
+   {
+    "prior": "normal(0, 5)",
+    "class": "Intercept",
+    "resp": "y2"
+   },
+   {
+    "prior": "normal(0, 2)",
+    "class": "b",
+    "resp": "y2"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "sd",
+    "group": "g",
+    "resp": "y2"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "sigma",
+    "resp": "y2"
+   },
+   {
+    "prior": "lkj(2)",
+    "class": "rescor"
+   }
+  ],
+  "extras": [
+   "group_scope",
+   "responses"
+  ]
+ },
+ "autobayes": {
+  "constructor": "gaussian",
+  "formula": "mvbind(y, y2) | weights(w) ~ x + (1 | g)",
+  "kwargs": {
+   "rescor": true
+  },
+  "priors": {
+   "resp": {
+    "y": {
+     "intercept": [
+      "Normal",
+      0,
+      5
+     ],
+     "b": [
+      "Normal",
+      0,
+      2
+     ],
+     "sigma": [
+      "HalfNormal",
+      1
+     ],
+     "sd": [
+      "HalfNormal",
+      1
+     ]
+    },
+    "y2": {
+     "intercept": [
+      "Normal",
+      0,
+      5
+     ],
+     "b": [
+      "Normal",
+      0,
+      2
+     ],
+     "sigma": [
+      "HalfNormal",
+      1
+     ],
+     "sd": [
+      "HalfNormal",
+      1
+     ]
+    }
+   },
+   "rescor": [
+    "LKJ",
+    2
+   ]
+  }
+ },
+ "gate": {
+  "expect": "fail",
+  "reason": "G08_multivariate_ext not implemented; remove this field when it lands"
+ }
+}

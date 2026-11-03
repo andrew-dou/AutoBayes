@@ -1,0 +1,86 @@
+{
+ "id": "gauss_gp_scale_false",
+ "tier": "G",
+ "feature": "G09_gp_ext",
+ "note": "G09 gp(ord, scale = FALSE): the inputs unscaled (Xgp_1 = the four distinct values of ord, no dmax_1 in the Stan data), so lscale is on ord's own scale; brms's default lscale prior inv_gamma(18.506437, 29.954434) is the scaled one's (18.506437, 9.984811) with b times 3, the largest distance (the case sets inv_gamma(3, 1)); no newdata (checked on the frozen points by tests/oracle/test_multivariate_gp_special_harness.py)",
+ "seed": 3319,
+ "n_points": 8,
+ "data": {
+  "generator": "tier_g3",
+  "seed": 3219,
+  "n": 36
+ },
+ "brms": {
+  "formula": "y ~ gp(ord, scale = FALSE) + (1 | g)",
+  "family": {
+   "family": "gaussian"
+  },
+  "factors": {
+   "g": [
+    "a",
+    "b",
+    "c",
+    "d",
+    "e",
+    "f"
+   ]
+  },
+  "priors": [
+   {
+    "prior": "normal(0, 5)",
+    "class": "Intercept"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "sdgp"
+   },
+   {
+    "prior": "inv_gamma(3, 1)",
+    "class": "lscale",
+    "coef": "gpord"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "sd",
+    "group": "g"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "sigma"
+   }
+  ]
+ },
+ "autobayes": {
+  "constructor": "gaussian",
+  "formula": "y ~ gp(ord, scale = FALSE) + (1 | g)",
+  "kwargs": {},
+  "priors": {
+   "intercept": [
+    "Normal",
+    0,
+    5
+   ],
+   "sdgp": [
+    "HalfNormal",
+    1
+   ],
+   "lscale": [
+    "InverseGamma",
+    3,
+    1
+   ],
+   "sd": [
+    "HalfNormal",
+    1
+   ],
+   "sigma": [
+    "HalfNormal",
+    1
+   ]
+  }
+ },
+ "gate": {
+  "expect": "fail",
+  "reason": "G09_gp_ext not implemented; remove this field when it lands"
+ }
+}

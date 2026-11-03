@@ -1,0 +1,91 @@
+{
+ "id": "gauss_gp_two_inputs_aniso",
+ "tier": "G",
+ "feature": "G09_gp_ext",
+ "note": "G09 gp(o2, b2, iso = FALSE): the inputs of gauss_gp_two_inputs with one length-scale per dimension, lscale_1 array[1] vector[2] (coefs gpo2b2o2 and gpo2b2b2; brms's defaults are per dimension, o2's inv_gamma(45.631905, 28.084743) on its distances and binary b2's normal(0, 0.5), D67's default for two distinct values), and the kernel the product of one-dimensional kernels, gp_exp_quad_cov(x[, 1], sdgp, lscale[1]) .* gp_exp_quad_cov(x[, 2], 1, lscale[2]) (for the squared exponential the same as Stan's ARD kernel); no newdata (checked on the frozen points by tests/oracle/test_multivariate_gp_special_harness.py)",
+ "seed": 3312,
+ "n_points": 8,
+ "data": {
+  "generator": "tier_g3",
+  "seed": 3212,
+  "n": 36
+ },
+ "brms": {
+  "formula": "y ~ gp(o2, b2, iso = FALSE) + (1 | g)",
+  "family": {
+   "family": "gaussian"
+  },
+  "factors": {
+   "g": [
+    "a",
+    "b",
+    "c",
+    "d",
+    "e",
+    "f"
+   ]
+  },
+  "priors": [
+   {
+    "prior": "normal(0, 5)",
+    "class": "Intercept"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "sdgp"
+   },
+   {
+    "prior": "inv_gamma(3, 1)",
+    "class": "lscale",
+    "coef": "gpo2b2o2"
+   },
+   {
+    "prior": "inv_gamma(3, 1)",
+    "class": "lscale",
+    "coef": "gpo2b2b2"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "sd",
+    "group": "g"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "sigma"
+   }
+  ]
+ },
+ "autobayes": {
+  "constructor": "gaussian",
+  "formula": "y ~ gp(o2, b2, iso = FALSE) + (1 | g)",
+  "kwargs": {},
+  "priors": {
+   "intercept": [
+    "Normal",
+    0,
+    5
+   ],
+   "sdgp": [
+    "HalfNormal",
+    1
+   ],
+   "lscale": [
+    "InverseGamma",
+    3,
+    1
+   ],
+   "sd": [
+    "HalfNormal",
+    1
+   ],
+   "sigma": [
+    "HalfNormal",
+    1
+   ]
+  }
+ },
+ "gate": {
+  "expect": "fail",
+  "reason": "G09_gp_ext not implemented; remove this field when it lands"
+ }
+}

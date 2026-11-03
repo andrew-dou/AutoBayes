@@ -1,0 +1,124 @@
+{
+ "id": "gauss_mo_mo_interaction",
+ "tier": "G",
+ "feature": "G10_special_term_ext",
+ "note": "G10 mo(ord) * mo(o2): four simplexes, one per monotonic variable of each term (simo_1 ord, simo_2 o2, and simo_3, simo_4 the interaction's own of ord and o2; coefs moord1, moo21, moord:moo21, moord:moo22), three coefficients: mu += bsp[1] mo(simo_1, Xmo_1) + bsp[2] mo(simo_2, Xmo_2) + bsp[3] mo(simo_3, Xmo_3) mo(simo_4, Xmo_4) (checked on the frozen points by tests/oracle/test_multivariate_gp_special_harness.py)",
+ "seed": 3332,
+ "n_points": 8,
+ "data": {
+  "generator": "tier_g3",
+  "seed": 3232,
+  "n": 36,
+  "newdata": {
+   "seed": 3332,
+   "n": 5
+  }
+ },
+ "brms": {
+  "formula": "y ~ mo(ord) * mo(o2) + (1 | g)",
+  "family": {
+   "family": "gaussian"
+  },
+  "factors": {
+   "g": [
+    "a",
+    "b",
+    "c",
+    "d",
+    "e",
+    "f"
+   ]
+  },
+  "priors": [
+   {
+    "prior": "normal(0, 5)",
+    "class": "Intercept"
+   },
+   {
+    "prior": "normal(0, 2)",
+    "class": "b"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "sd",
+    "group": "g"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "sigma"
+   },
+   {
+    "prior": "dirichlet(2, 2, 2)",
+    "class": "simo",
+    "coef": "moord1"
+   },
+   {
+    "prior": "dirichlet(2, 2)",
+    "class": "simo",
+    "coef": "moo21"
+   },
+   {
+    "prior": "dirichlet(1.5)",
+    "class": "simo",
+    "coef": "moord:moo21"
+   },
+   {
+    "prior": "dirichlet(1.5)",
+    "class": "simo",
+    "coef": "moord:moo22"
+   }
+  ]
+ },
+ "autobayes": {
+  "constructor": "gaussian",
+  "formula": "y ~ mo(ord) * mo(o2) + (1 | g)",
+  "kwargs": {},
+  "priors": {
+   "intercept": [
+    "Normal",
+    0,
+    5
+   ],
+   "b": [
+    "Normal",
+    0,
+    2
+   ],
+   "sd": [
+    "HalfNormal",
+    1
+   ],
+   "sigma": [
+    "HalfNormal",
+    1
+   ],
+   "simo": {
+    "ord": [
+     "Dirichlet",
+     2,
+     2,
+     2
+    ],
+    "o2": [
+     "Dirichlet",
+     2,
+     2
+    ],
+    "mo(ord):mo(o2)": {
+     "ord": [
+      "Dirichlet",
+      1.5
+     ],
+     "o2": [
+      "Dirichlet",
+      1.5
+     ]
+    }
+   }
+  }
+ },
+ "gate": {
+  "expect": "fail",
+  "reason": "G10_special_term_ext not implemented; remove this field when it lands"
+ }
+}

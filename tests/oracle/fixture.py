@@ -62,6 +62,14 @@ a newdata section's opt-in ``"triples_from_data": true`` copies (g, h, f2) from 
 fixtures record two kinds of Stan data no gate compared before, brms's Lcov_k of gr(cov = ) and a distributional formula's
 offsets_<dpar>: `gates.Bundle` fails such a case until G1's comparison of it lands (``check_group_covariance``,
 ``check_dpar_offsets``).
+
+Tier G part 3 cases (G08 multivariate, G09 gp() and G10 special-term extensions; the data generator `tier_g3` adds a second ordinal
+predictor `o2`, a binary `b2` that with `o2` makes the six inputs of a two-input Gaussian process, and a noisy covariate `xg` with
+known noise `sdxg`, both constant within each level of `g`) need no new key in the brms section either. Their fixtures record three
+kinds of Stan data no gate compared before, the covariate of a special term's interaction (Csp_k: mo(ord):x, me(xobs, sdx):w), the
+level index of the latent values of me(x, sdx, gr = g) (Jme_k) and a Gaussian process's by variable (Cgp_k, and Igp_k_l with Cgp_k_l
+for each level of a factor): `gates.Bundle` fails such a case until G1's comparison of it lands (``check_special_covariates``,
+``check_me_groups``, ``check_gp_by``).
 """
 from __future__ import annotations
 

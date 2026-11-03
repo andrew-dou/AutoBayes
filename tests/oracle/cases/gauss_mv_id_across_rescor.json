@@ -1,0 +1,156 @@
+{
+ "id": "gauss_mv_id_across_rescor",
+ "tier": "G",
+ "feature": "G08_multivariate_ext",
+ "note": "G08 mvbind(y, y2) ~ x + (1 |p| g) with rescor TRUE: the group block of gauss_mv_id_across (one 2 by 2 correlation L_1 of y's and y2's intercepts across the responses, each response's SD prior on its own entry of sd_1) beside the residual correlation Lrescor (lkj(2)); the rows' joint density multi_normal_cholesky with Sigma = diag(sigma) Rescor diag(sigma) (checked on the frozen points by tests/oracle/test_multivariate_gp_special_harness.py)",
+ "seed": 3303,
+ "n_points": 8,
+ "data": {
+  "generator": "tier_g3",
+  "seed": 3203,
+  "n": 36,
+  "newdata": {
+   "seed": 3303,
+   "n": 5
+  }
+ },
+ "brms": {
+  "formula": "mvbind(y, y2) ~ x + (1 |p| g)",
+  "rescor": true,
+  "family": {
+   "family": "gaussian"
+  },
+  "factors": {
+   "g": [
+    "a",
+    "b",
+    "c",
+    "d",
+    "e",
+    "f"
+   ]
+  },
+  "priors": [
+   {
+    "prior": "normal(0, 5)",
+    "class": "Intercept",
+    "resp": "y"
+   },
+   {
+    "prior": "normal(0, 2)",
+    "class": "b",
+    "resp": "y"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "sd",
+    "group": "g",
+    "resp": "y"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "sigma",
+    "resp": "y"
+   },
+   {
+    "prior": "normal(0, 5)",
+    "class": "Intercept",
+    "resp": "y2"
+   },
+   {
+    "prior": "normal(0, 2)",
+    "class": "b",
+    "resp": "y2"
+   },
+   {
+    "prior": "normal(0, 0.5)",
+    "class": "sd",
+    "group": "g",
+    "resp": "y2"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "sigma",
+    "resp": "y2"
+   },
+   {
+    "prior": "lkj(2)",
+    "class": "cor",
+    "group": "g"
+   },
+   {
+    "prior": "lkj(2)",
+    "class": "rescor"
+   }
+  ],
+  "extras": [
+   "group_scope",
+   "responses"
+  ]
+ },
+ "autobayes": {
+  "constructor": "gaussian",
+  "formula": "mvbind(y, y2) ~ x + (1 |p| g)",
+  "kwargs": {
+   "rescor": true
+  },
+  "priors": {
+   "resp": {
+    "y": {
+     "intercept": [
+      "Normal",
+      0,
+      5
+     ],
+     "b": [
+      "Normal",
+      0,
+      2
+     ],
+     "sigma": [
+      "HalfNormal",
+      1
+     ],
+     "sd": [
+      "HalfNormal",
+      1
+     ]
+    },
+    "y2": {
+     "intercept": [
+      "Normal",
+      0,
+      5
+     ],
+     "b": [
+      "Normal",
+      0,
+      2
+     ],
+     "sigma": [
+      "HalfNormal",
+      1
+     ],
+     "sd": [
+      "HalfNormal",
+      0.5
+     ]
+    }
+   },
+   "cor": {
+    "g": [
+     "LKJ",
+     2
+    ]
+   },
+   "rescor": [
+    "LKJ",
+    2
+   ]
+  }
+ },
+ "gate": {
+  "expect": "fail",
+  "reason": "G08_multivariate_ext not implemented; remove this field when it lands"
+ }
+}

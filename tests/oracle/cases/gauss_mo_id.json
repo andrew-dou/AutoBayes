@@ -1,0 +1,94 @@
+{
+ "id": "gauss_mo_id",
+ "tier": "G",
+ "feature": "G10_special_term_ext",
+ "note": "G10 mo(ord, id = \"a\") + mo(ord, id = \"a\"):x: the id shares one simplex between the terms of one formula (simo_1, the parameter; simo_2 = simo_1 a transformed parameter; one prior, class simo coef a, dirichlet(2, 2, 2)), each term keeping its coefficient (bsp[1], bsp[2]) and the interaction its covariate Csp_1 = x: brms's conditionally monotonic effects. The same id in mu's and sigma's formulas shares nothing (gauss_mo_id_sigma) (checked on the frozen points by tests/oracle/test_multivariate_gp_special_harness.py)",
+ "seed": 3333,
+ "n_points": 8,
+ "data": {
+  "generator": "tier_g3",
+  "seed": 3233,
+  "n": 36,
+  "newdata": {
+   "seed": 3333,
+   "n": 5
+  }
+ },
+ "brms": {
+  "formula": "y ~ mo(ord, id = \"a\") + mo(ord, id = \"a\"):x + (1 | g)",
+  "family": {
+   "family": "gaussian"
+  },
+  "factors": {
+   "g": [
+    "a",
+    "b",
+    "c",
+    "d",
+    "e",
+    "f"
+   ]
+  },
+  "priors": [
+   {
+    "prior": "normal(0, 5)",
+    "class": "Intercept"
+   },
+   {
+    "prior": "normal(0, 2)",
+    "class": "b"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "sd",
+    "group": "g"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "sigma"
+   },
+   {
+    "prior": "dirichlet(2, 2, 2)",
+    "class": "simo",
+    "coef": "a"
+   }
+  ]
+ },
+ "autobayes": {
+  "constructor": "gaussian",
+  "formula": "y ~ mo(ord, id = \"a\") + mo(ord, id = \"a\"):x + (1 | g)",
+  "kwargs": {},
+  "priors": {
+   "intercept": [
+    "Normal",
+    0,
+    5
+   ],
+   "b": [
+    "Normal",
+    0,
+    2
+   ],
+   "sd": [
+    "HalfNormal",
+    1
+   ],
+   "sigma": [
+    "HalfNormal",
+    1
+   ],
+   "simo": {
+    "a": [
+     "Dirichlet",
+     2,
+     2,
+     2
+    ]
+   }
+  }
+ },
+ "gate": {
+  "expect": "fail",
+  "reason": "G10_special_term_ext not implemented; remove this field when it lands"
+ }
+}

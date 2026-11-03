@@ -1,0 +1,68 @@
+{
+ "id": "gauss_gp_matern32_default_prior",
+ "tier": "G",
+ "feature": "G09_gp_ext",
+ "note": "G09 gp(size, cov = \"matern32\") under brms's default sdgp and lscale priors: sdgp student_t(3, 0, 2.5) (half), lscale inv_gamma(4.308447, 0.957567) (coef gpsize), the inverse gamma of D67 on the distinct scaled distances, the same rule as the squared exponential's: the default does not depend on the kernel (every G09 fixture's default lscale rows are that rule, also for matern52 and exponential); the intercept, sd and sigma priors explicit; no newdata (checked on the frozen points by tests/oracle/test_multivariate_gp_special_harness.py)",
+ "seed": 3320,
+ "n_points": 8,
+ "data": {
+  "generator": "tier_g3",
+  "seed": 3220,
+  "n": 36
+ },
+ "brms": {
+  "formula": "y ~ gp(size, cov = \"matern32\") + (1 | g)",
+  "family": {
+   "family": "gaussian"
+  },
+  "factors": {
+   "g": [
+    "a",
+    "b",
+    "c",
+    "d",
+    "e",
+    "f"
+   ]
+  },
+  "priors": [
+   {
+    "prior": "normal(0, 5)",
+    "class": "Intercept"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "sd",
+    "group": "g"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "sigma"
+   }
+  ]
+ },
+ "autobayes": {
+  "constructor": "gaussian",
+  "formula": "y ~ gp(size, cov = \"matern32\") + (1 | g)",
+  "kwargs": {},
+  "priors": {
+   "intercept": [
+    "Normal",
+    0,
+    5
+   ],
+   "sd": [
+    "HalfNormal",
+    1
+   ],
+   "sigma": [
+    "HalfNormal",
+    1
+   ]
+  }
+ },
+ "gate": {
+  "expect": "fail",
+  "reason": "G09_gp_ext not implemented; remove this field when it lands"
+ }
+}

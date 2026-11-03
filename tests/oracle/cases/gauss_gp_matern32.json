@@ -1,0 +1,86 @@
+{
+ "id": "gauss_gp_matern32",
+ "tier": "G",
+ "feature": "G09_gp_ext",
+ "note": "G09 gp(size, cov = \"matern32\"): brms 2.23.0's gp_matern32 (Stan's gp_matern32_cov, sdgp^2 (1 + sqrt(3) d / l) exp(-sqrt(3) d / l), plus 1e-12 on the diagonal) on the twelve distinct scaled values of size; the Stan data are the squared exponential's (the kernel is only in the Stan program); cond(K) below 1e6 at the frozen points; no newdata (checked on the frozen points by tests/oracle/test_multivariate_gp_special_harness.py)",
+ "seed": 3315,
+ "n_points": 8,
+ "data": {
+  "generator": "tier_g3",
+  "seed": 3215,
+  "n": 36
+ },
+ "brms": {
+  "formula": "y ~ gp(size, cov = \"matern32\") + (1 | g)",
+  "family": {
+   "family": "gaussian"
+  },
+  "factors": {
+   "g": [
+    "a",
+    "b",
+    "c",
+    "d",
+    "e",
+    "f"
+   ]
+  },
+  "priors": [
+   {
+    "prior": "normal(0, 5)",
+    "class": "Intercept"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "sdgp"
+   },
+   {
+    "prior": "inv_gamma(3, 1)",
+    "class": "lscale",
+    "coef": "gpsize"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "sd",
+    "group": "g"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "sigma"
+   }
+  ]
+ },
+ "autobayes": {
+  "constructor": "gaussian",
+  "formula": "y ~ gp(size, cov = \"matern32\") + (1 | g)",
+  "kwargs": {},
+  "priors": {
+   "intercept": [
+    "Normal",
+    0,
+    5
+   ],
+   "sdgp": [
+    "HalfNormal",
+    1
+   ],
+   "lscale": [
+    "InverseGamma",
+    3,
+    1
+   ],
+   "sd": [
+    "HalfNormal",
+    1
+   ],
+   "sigma": [
+    "HalfNormal",
+    1
+   ]
+  }
+ },
+ "gate": {
+  "expect": "fail",
+  "reason": "G09_gp_ext not implemented; remove this field when it lands"
+ }
+}

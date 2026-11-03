@@ -1,0 +1,129 @@
+{
+ "id": "gauss_mo_id_sigma",
+ "tier": "G",
+ "feature": "G10_special_term_ext",
+ "note": "G10 bf(y ~ mo(ord, id = \"a\") + (1 | g), sigma ~ mo(ord, id = \"a\")): brms 2.23.0 shares an id's simplex within one formula only (?mo: \"within one formula\"): mu has simo_1 and bsp[1], sigma simo_sigma_1 and bsp_sigma[1] (Xmo_sigma_1), separate parameters with separate priors (class simo coef a, dirichlet(2, 2, 2), and class simo coef a dpar sigma, dirichlet(1.5)); sigma = exp(Intercept_sigma + bsp_sigma[1] mo(simo_sigma_1, Xmo_sigma_1)) (checked on the frozen points by tests/oracle/test_multivariate_gp_special_harness.py)",
+ "seed": 3334,
+ "n_points": 8,
+ "data": {
+  "generator": "tier_g3",
+  "seed": 3234,
+  "n": 36,
+  "newdata": {
+   "seed": 3334,
+   "n": 5
+  }
+ },
+ "brms": {
+  "formula": [
+   "y ~ mo(ord, id = \"a\") + (1 | g)",
+   "sigma ~ mo(ord, id = \"a\")"
+  ],
+  "family": {
+   "family": "gaussian"
+  },
+  "factors": {
+   "g": [
+    "a",
+    "b",
+    "c",
+    "d",
+    "e",
+    "f"
+   ]
+  },
+  "priors": [
+   {
+    "prior": "normal(0, 5)",
+    "class": "Intercept"
+   },
+   {
+    "prior": "normal(0, 2)",
+    "class": "b"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "sd",
+    "group": "g"
+   },
+   {
+    "prior": "dirichlet(2, 2, 2)",
+    "class": "simo",
+    "coef": "a"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "Intercept",
+    "dpar": "sigma"
+   },
+   {
+    "prior": "normal(0, 0.5)",
+    "class": "b",
+    "dpar": "sigma"
+   },
+   {
+    "prior": "dirichlet(1.5)",
+    "class": "simo",
+    "coef": "a",
+    "dpar": "sigma"
+   }
+  ],
+  "extras": [
+   "group_scope"
+  ]
+ },
+ "autobayes": {
+  "constructor": "gaussian",
+  "formula": [
+   "y ~ mo(ord, id = \"a\") + (1 | g)",
+   "sigma ~ mo(ord, id = \"a\")"
+  ],
+  "kwargs": {},
+  "priors": {
+   "intercept": [
+    "Normal",
+    0,
+    5
+   ],
+   "b": [
+    "Normal",
+    0,
+    2
+   ],
+   "sd": [
+    "HalfNormal",
+    1
+   ],
+   "simo": {
+    "a": [
+     "Dirichlet",
+     2,
+     2,
+     2
+    ]
+   },
+   "sigma": {
+    "intercept": [
+     "Normal",
+     0,
+     1
+    ],
+    "b": [
+     "Normal",
+     0,
+     0.5
+    ],
+    "simo": {
+     "a": [
+      "Dirichlet",
+      1.5
+     ]
+    }
+   }
+  }
+ },
+ "gate": {
+  "expect": "fail",
+  "reason": "G10_special_term_ext not implemented; remove this field when it lands"
+ }
+}
