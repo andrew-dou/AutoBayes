@@ -2794,12 +2794,15 @@
     "C06_missing_and_measurement_error",
     "D08_cs_mm_gr"
    ],
-   "status": "gates_green",
+   "status": "merged",
    "summary": "mo() interactions and ids, me(gr = ) and me() interactions, cs() in group-level terms and on expressions (corpus sp_mo_*, sp_me_*, sp_cs_*)",
-   "pr": null,
+   "pr": 122,
    "attempts": 0,
-   "divergences": [],
-   "next_action": "feature agent on parity/g10",
+   "divergences": [
+    "D197",
+    "D198"
+   ],
+   "next_action": "none",
    "reserved_divergences": "D197-D198",
    "gates": {
     "sha": "684460a05cfc",
