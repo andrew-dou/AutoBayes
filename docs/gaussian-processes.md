@@ -1,6 +1,7 @@
 # Gaussian processes: `gp(x)` and `gp(x, k, c)`
 
-brms-parity feature C03 (brms's `gp()`).
+brms-parity feature C03 (brms's `gp()`); several inputs, `by`, the Matern and exponential kernels and `scale = FALSE` since G09
+("Several inputs, by, other kernels and scale = FALSE", below).
 
 ```python
 import autobayes as ab
@@ -98,13 +99,81 @@ processes, approximate processes, the floor). At `l = 0.5` and `l = 0.48188...` 
   list it under `gaussian_processes` and its priors as `sdgp:x` and `lscale:x`; `prior_table()` writes brms's `sdgp` and
   `lscale` rows (the `lscale` priors on the coefficient rows `gpx`, the class row empty); `prior_predictive()` draws it.
 
+## Several inputs, by, other kernels and scale = FALSE (G09)
+
+```python
+pri = ab.Priors(intercept=ab.Normal(0, 5), sigma=ab.HalfNormal(1), sdgp=ab.HalfNormal(1), lscale=ab.InverseGamma(3, 1))
+ab.gaussian("y ~ gp(o2, b2)", data, pri)                       # one process of the input rows (o2, b2)
+ab.gaussian("y ~ gp(o2, b2, iso = FALSE)", data, pri)          # one length-scale per input: lscale_o2b2o2, lscale_o2b2b2
+ab.gaussian("y ~ z + gp(ord, by = z)", data, pri, categorical={"z": "p"})   # one process per level of z
+ab.gaussian("y ~ gp(ord, by = w)", data, pri)                  # the process times the numeric column w
+ab.gaussian('y ~ gp(x, cov = "matern32")', data, pri)          # also "matern52", "exponential"; with k = ..., approximate
+ab.gaussian("y ~ gp(ord, scale = FALSE)", data, pri)           # the inputs as they are
+```
+
+- **Several inputs** `gp(o2, b2)`: one process of the distinct input rows in first-appearance order (brms's `Xgp`, `Dgp = 2`),
+  scaled by `dmax`, their largest Euclidean distance, with one length-scale and the kernel of the Euclidean distance between rows.
+  `iso = FALSE` gives each input its own length-scale; the squared-exponential kernel is then the product of one-dimensional
+  kernels, `sdgp^2 prod_d exp(-(u_j[d] - u_m[d])^2 / (2 lscale_d^2))` (Stan's ARD kernel; brms's `lscale_1` is a vector of
+  `Dgp`). Any number of inputs is accepted; the frozen cases have two.
+- **`by = <factor>`**: one process per level of a categorical predictor of the formula (`z + gp(ord, by = z)`; brms's default
+  `cmc = TRUE`), each on that level's rows (`Igp_k_l`) with its own `sdgp`, `lscale` and `zgp`, its inputs scaled by its own
+  `dmax` (brms's `dmax_k_l`: in `gauss_gp_by_factor` level q's inputs 1, 2, 3 are scaled by 2, the others' by 3), so each level's
+  length-scale is in its level's unit. A level with one distinct input is refused, as brms refuses to scale it. **`by =
+  <numeric>`**: the process multiplied row by row by the column (brms's `Cgp_k`), one process. A by that is neither is refused.
+- **Kernels** (`cov = `): the Matern 3/2, Matern 5/2 and exponential kernels of the Stan Functions Reference, `sdgp^2 k(r)` at
+  `r = d / lscale` with `k(r) = (1 + sqrt(3) r) exp(-sqrt(3) r)`, `(1 + sqrt(5) r + 5 r^2 / 3) exp(-sqrt(5) r)` and `exp(-r)`; the
+  approximate GP (`k`, `c`) uses their one-dimensional spectral densities (Rasmussen and Williams 2006, eq. 4.15 at nu = 3/2,
+  5/2 and 1/2), `sdgp^2 12 sqrt(3) l (3 + l^2 w^2)^-2`, `sdgp^2 (400 sqrt(5) / 3) l (5 + l^2 w^2)^-3` and
+  `sdgp^2 2 l (1 + l^2 w^2)^-1`, with C03's basis; `sqrt(S)` is formed directly. The Stan data are the squared exponential's: the
+  kernel is in brms's Stan program only.
+- **`scale = FALSE`**: the inputs unscaled (no `dmax` in brms's Stan data), so `lscale` is on the inputs' own scale.
+
+**Names and priors.** A process is named by brms's coefficient without `gp`: `x` for `gp(x)`, `o2b2` for `gp(o2, b2)`, `ordw` for
+`gp(ord, by = w)`, and per level `ordzp`, `ordzq`, `ordzr` for `gp(ord, by = z)` (brms's `gpordzp`, ...); `iso = FALSE`'s
+length-scales are `o2b2o2` and `o2b2b2`. These are the keys of `sdgp=` and `lscale=` (exact coverage, as for one process), of
+`value_point(sdgp=, lscale=, zgp=)` and of `model.gp_names` (`model.gp_lscale_names(key)` lists a process's length-scales); the
+PyMC variables are `sdgp_<key>`, `lscale_<key>` and `zgp_<key>`. A bare prior of a single `gp()` term is the prior of each of
+its processes and length-scales, as brms's class prior is. Two parameters that would share a name are refused.
+
+**Default priors.** `sdgp` gets a group-level SD's default for each process; `lscale` brms's inverse gamma of D67 for every kernel
+(`gauss_gp_matern32_default_prior`): on the Euclidean distances between the distinct scaled input rows, per input with
+`iso = FALSE` (that input's distinct scaled values, whose largest distance is then below 1), per level with a factor `by`, and
+`normal(0, 0.5)` with two distinct values. With `scale = FALSE` brms solves the same rule on the inputs scaled by their largest
+distance and multiplies the scale by it before rounding (probes: `x = (0, 0.001, 1, 2)` gives `inv_gamma(1.494197, 0.113215)`,
+twice the scaled solution's `0.056607`, so the floor 0.01 is relative to `dmax`), while its `normal(0, 0.5)` fallback is not
+rescaled; AutoBayes does the same. Level q of `gauss_gp_by_factor` meets D67's documented exception (brms prints
+`inv_gamma(45.631904, 31.399697)` at the distances 0.5 and 1, the exact solution rounds to `45.631905, 31.399698`): that case keeps
+a per-gate expected failure on G6 only.
+
+**New rows**: an exact process takes its value at a fitted input (of the row's own level with a factor `by`; a level the fit did
+not see is refused), a numeric `by` multiplies it by the new row's value, and an approximate process is evaluated anywhere inside
+its boundary (D65, D66 as above).
+
+**Refused** (D195, D196): `iso = FALSE` with a kernel other than the squared exponential, exact or approximate (brms's exact GP
+multiplies one-dimensional Materns while its approximate GP uses the spectral density of the Matern of the scaled Euclidean
+distance, two different kernels; with the squared exponential both are the same); any combination of several inputs, `by`, the
+approximate form, another kernel and `scale = FALSE` other than the approximate form with a kernel (each is verified against brms
+on its own, the combinations by no frozen case); `cmc = FALSE` (brms's contrast processes); a logical or ordered factor `by`;
+a factor `by` that is not a categorical predictor of the formula.
+
+**Evidence.** The frozen cases `gauss_gp_two_inputs`, `gauss_gp_two_inputs_aniso`, `gauss_gp_by_factor`, `gauss_gp_by_numeric`,
+`gauss_gp_matern32`, `gauss_gp_matern52`, `gauss_gp_exponential`, `gauss_gp_approx_matern32`, `gauss_gp_approx_matern52`,
+`gauss_gp_approx_exponential` (the last two frozen by G09 to verify the approximate Matern 5/2 and exponential kernels),
+`gauss_gp_scale_false` and `gauss_gp_matern32_default_prior` (its `sdgp` and `lscale` at `ab.default_priors()`'s, the case's
+`"sdgp": "default"`) pass G1-G6 against brms 2.23.0, G1 including the by variable (`gates.check_gp_by`: `Cgp_k`, and a factor's
+`Kgp_k`, `Igp_k_l`, `Cgp_k_l`, `Ngp_k`, `Nsubgp_k`), except G6 of `gauss_gp_by_factor` (D67, above). `tests/test_gp_ext.py`
+checks the kernels against the Stan Functions Reference written out, the spectral densities against numerical Fourier transforms
+of the kernels, every density and prediction against a hand computation, brms's default priors on probe frames, and every
+refusal. Corpus entries `sp_gp_two_inputs`, `sp_gp_by`, `sp_gp_matern` and `sp_gp_scale_false` match brms's Stan data.
+
 ## Refused, naming the construct (D64)
 
-Several covariates in one `gp()`, `by =`, other kernels (`matern32`, `matern52`, `exponential`), `iso`, `gr = FALSE`, `cmc`,
-`scale = FALSE`, `c` without `k`, an expression as input (`gp(log(x))`), two processes of one column, `gp()` in an interaction,
-a group-level term or a distributional formula, the categorical family, a non-numeric or infinite input column, a column with one
-distinct value, and a `c` that leaves a fitted input outside the boundary. An autocorrelation term `ar()`, `ma()`, `arma()` next
-to `gp()` is refused too (C04: brms takes the pair, which no frozen case verifies; docs/autocorrelation.md, D70).
+`gr = FALSE`, `c` without `k`, an expression as input (`gp(log(x))`), two processes sharing an input column, `iso` with one
+input, `cmc` without `by`, `gp()` in an interaction, a group-level term or a distributional formula, the categorical family, a
+non-numeric or infinite input column, a column with one distinct value, and a `c` that leaves a fitted input outside the
+boundary; the G09 refusals above (D195, D196). An autocorrelation term `ar()`, `ma()`, `arma()` next to `gp()` is refused too
+(C04: brms takes the pair, which no frozen case verifies; docs/autocorrelation.md, D70).
 
 ## Evidence
 

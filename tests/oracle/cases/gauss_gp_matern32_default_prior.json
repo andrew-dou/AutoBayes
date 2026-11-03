@@ -58,11 +58,9 @@
    "sigma": [
     "HalfNormal",
     1
-   ]
+   ],
+   "sdgp": "default",
+   "lscale": "default"
   }
- },
- "gate": {
-  "expect": "fail",
-  "reason": "G09_gp_ext not implemented; remove this field when it lands"
  }
 }

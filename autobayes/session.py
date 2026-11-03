@@ -81,7 +81,7 @@ def _summary_rows(model, idata) -> dict:
     names += [roles[k] for roles in getattr(model, "me_names", {}).values() for k in ("mean", "sd")]   # an me() term's (C06)
     mixture = getattr(model, "mixture_names", {})               # a mixture's sigma<k> and theta (C05)
     names += [*mixture["sigma"], mixture["theta"]] if mixture else []
-    names += [roles[k] for roles in getattr(model, "gp_names", {}).values() for k in ("sdgp", "lscale")]   # each GP's (C03)
+    names += list(getattr(model, "gp_parameter_names", ()))   # each GP's sdgp and lscale (C03; G09: each lscale)
     names += [v for k, v in getattr(model, "autocor_names", {}).items() if not k.endswith("_coordinate")]   # ar and ma (C04)
     names += list(getattr(model, "sar_names", {}).values())     # lagsar or errorsar (F02b)
     names += [v for k, v in getattr(model, "car_names", {}).items() if k in ("sdcar", "car", "rhocar")]   # a CAR term's (F02a)
@@ -97,6 +97,13 @@ def _summary_rows(model, idata) -> dict:
         rows[name] = {k: float(r[k]) for k in ("mean", "sd", "hdi_3%", "hdi_97%", "mcse_mean",
                                                 "ess_bulk", "ess_tail", "r_hat")}
     return rows
+
+
+def _gp_record(model, g) -> dict:
+    """G09: the fit record's entry of a Gaussian process with several inputs, a by variable, another kernel or scale = FALSE."""
+    from autobayes.gp_ext import gp_record
+
+    return gp_record(model, g)
 
 
 def _scale_priors(model, scale: str | None = None) -> dict:
@@ -226,7 +233,7 @@ def fit_record(model, fit, *, panel: dict | None = None, max_treedepth: int = 10
             # each Gaussian process (C03): its column, exact or approximate, its scaling and PyMC names
             **({"gaussian_processes": {g.term: {"column": g.column, "approximate": g.approximate, "k": g.k, "c": g.c,
                                                 "distinct_inputs": len(g.inputs), "dmax": g.dmax, "cmean": g.cmean,
-                                                "names": model.gp_names[g.column]}
+                                                "names": model.gp_names[g.column]} if g.plain else _gp_record(model, g)
                                        for g in s.gp_terms}} if getattr(s, "gp_terms", ()) else {}),
             # an autocorrelation term (C04): the term, its series and the PyMC names of ar and ma
             **({"autocorrelation": {"term": s.autocor.term, "time": s.autocor.time, "gr": s.autocor.gr, "p": s.autocor.p,
