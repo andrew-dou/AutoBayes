@@ -84,7 +84,10 @@ cat("threading check: STAN_THREADS on the compile line:", length(grep("STAN_THRE
 EOF
 
 # --- Python: a venv with AutoBayes's pinned dependencies (uv.lock), CPU JAX ------------------------------------------
-export UV_CACHE_DIR="$ENV_DIR/uv-cache" UV_PYTHON_INSTALL_DIR="$ENV_DIR/uv-python"
+# uv's cache (and the editable build of AutoBayes inside it) on the node's local disk: setuptools' clean-up fails on the
+# network filesystem ("Directory not empty"). Files are copied into the venv; the Python is uv's own CPython 3.11.
+export UV_CACHE_DIR="${TMPDIR:-/tmp}/ab-bench-uv-cache-${SLURM_JOB_ID:-$$}" UV_LINK_MODE=copy
+export UV_PYTHON_INSTALL_DIR="$ENV_DIR/uv-python" UV_PYTHON_PREFERENCE=only-managed
 uv_env="$ENV_DIR/uv-py3"   # (an earlier "$ENV_DIR/uv", made with the node's Python 3.6, is left unused)
 if [[ ! -x "$uv_env/bin/uv" ]]; then
   # DOWNLOAD: uv (the lock file's installer) from PyPI into its own small venv, made with a Python new enough for uv.
@@ -101,10 +104,10 @@ else
   "$py" -c 'import sys; assert sys.version_info[:2] == (3, 11), sys.version' \
     || { echo "PYTHON_MODULE gives $("$py" --version), not 3.11 (pyproject.toml requires 3.11)" >&2; exit 4; }
 fi
-if [[ ! -x "$ENV_DIR/venv/bin/python" ]]; then
-  # DOWNLOAD: the exact versions in uv.lock (pymc, bambi, jax/jaxlib CPU wheels, numpyro, ...) from PyPI.
-  UV_PROJECT_ENVIRONMENT="$ENV_DIR/venv" "$uv_env/bin/uv" sync --frozen --extra jax --project "$SRC_DIR" --python "$py"
-fi
+# DOWNLOAD: the exact versions in uv.lock (pymc, bambi, jax/jaxlib CPU wheels, numpyro, ...) from PyPI. Run every time:
+# uv sync is idempotent and completes a venv an earlier failed setup left half made.
+UV_PROJECT_ENVIRONMENT="$ENV_DIR/venv" "$uv_env/bin/uv" sync --frozen --extra jax --project "$SRC_DIR" --python "$py"
+rm -rf "$UV_CACHE_DIR"   # the node-local cache made above
 "$ENV_DIR/venv/bin/python" - "$SRC_DIR" <<'EOF'
 import sys
 from pathlib import Path
