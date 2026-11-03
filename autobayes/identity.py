@@ -1,7 +1,14 @@
-"""Versioned identity of the built target specification, without exporting rows."""
+"""Versioned identity of the built target specification, without exporting rows.
+
+The digest is the sha256 of ``json.dumps(_canonical(payload), sort_keys=True, separators=(',', ':'), ensure_ascii=False)``
+(schema v1). G11 (docs/scaling.md): ``digest`` writes those bytes into the hash piece by piece instead of building them, every
+array in chunks and a group block's dense ``Z`` row by row from its level codes (``LazyZ``), so that the identity of a model
+with many rows and levels takes memory proportional to the rows; the bytes hashed, and so every digest, are unchanged.
+"""
 from __future__ import annotations
 import hashlib
 import json
+import math
 from collections.abc import Mapping
 from numbers import Real
 import numpy as np
@@ -30,6 +37,144 @@ def _canonical(value):
     raise TypeError(f'unsupported target identity type: {type(value).__name__}')
 
 
+_ZERO = b'{"float64":"0x0.0p+0"}'                # the canonical form of 0.0 (and of -0.0)
+_CHUNK = 1 << 16                                   # array elements encoded at a time
+_BUFFER = 1 << 20                                  # bytes gathered before they are handed to the hash
+_DIRECT = 1 << 12                                  # a piece this long goes to the hash as it is, not through the buffer
+
+
+class _Digest:
+    """A sha256 fed in pieces, small ones gathered into one update."""
+
+    def __init__(self):
+        self.hash, self.parts, self.size = hashlib.sha256(), [], 0
+
+    def write(self, data) -> None:
+        if len(data) >= _DIRECT:
+            self.flush()
+            self.hash.update(data)
+            return
+        self.parts.append(bytes(data))
+        self.size += len(data)
+        if self.size >= _BUFFER:
+            self.flush()
+
+    def flush(self) -> None:
+        if self.parts:
+            self.hash.update(b"".join(self.parts))
+            self.parts, self.size = [], 0
+
+    def hexdigest(self) -> str:
+        self.flush()
+        return self.hash.hexdigest()
+
+
+def _number(value) -> bytes:
+    """``json.dumps(_canonical(value))`` of a real number."""
+    number = float(value)
+    if not math.isfinite(number):
+        raise ValueError('target identity requires finite numeric values')
+    return _ZERO if number == 0 else b'{"float64":"' + number.hex().encode('ascii') + b'"}'
+
+
+class LazyZ:
+    """The canonical form of a group block's dense ``Z`` (``model.GroupBlock``), ``{"shape": [n, J], "values": [...]}`` with
+    every entry a canonical number, written row by row from the block's level codes and values (``GroupBlock.row_values``)
+    without forming ``Z``: a row is its zeros up to each of its entries, the entry, and zeros to the end of the row."""
+
+    def __init__(self, block):
+        self.block = block
+
+    def stream(self, out: _Digest) -> None:
+        b = self.block
+        n, J = b.n, b.J
+        out.write(b'{"shape":[%d,%d],"values":[' % (n, J))
+        if n and J:
+            cols, vals = b.row_values()
+            width = len(_ZERO) + 1
+            run = memoryview((_ZERO + b",") * J)        # J zeros, each followed by a comma
+            for start in range(0, n, _CHUNK):
+                for i, (row_cols, row_vals) in enumerate(zip(cols[start:start + _CHUNK].tolist(), vals[start:start + _CHUNK].tolist()),
+                                                         start):
+                    last, pos = i == n - 1, 0
+                    for c, v in zip(row_cols, row_vals):
+                        if c < 0:                       # a member's level summed into an earlier place
+                            continue
+                        if c > pos:
+                            out.write(run[:(c - pos) * width])
+                        out.write(_number(v) + (b"" if last and c == J - 1 else b","))
+                        pos = c + 1
+                    if pos < J:
+                        out.write(run[:(J - pos) * width - (1 if last else 0)])
+        out.write(b"]}")
+
+
+def z_identity(block):
+    """What a group block's ``Z`` enters the identity as: its dense array when it was given one, else ``LazyZ``."""
+    return block.dense if getattr(block, 'dense', None) is not None else LazyZ(block)
+
+
+def _emit_array(value: np.ndarray, out: _Digest) -> None:
+    out.write(b'{"shape":[' + b",".join(b"%d" % s for s in value.shape) + b'],"values":[')
+    flat = value.ravel()
+    kind = value.dtype.kind
+    for start in range(0, flat.size, _CHUNK):
+        if start:
+            out.write(b",")
+        part = flat[start:start + _CHUNK].tolist()
+        if kind in "fiu":                               # Python floats and ints: canonical numbers
+            out.write(b",".join(_number(x) for x in part))
+        elif kind == "b":
+            out.write(b",".join(b"true" if x else b"false" for x in part))
+        else:                                           # objects, text and anything else: as _canonical takes them
+            for k, x in enumerate(part):
+                if k:
+                    out.write(b",")
+                _emit(x, out)
+    out.write(b"]}")
+
+
+def _emit(value, out: _Digest) -> None:
+    """Write ``json.dumps(_canonical(value), sort_keys=True, separators=(',', ':'), ensure_ascii=False, allow_nan=False)``
+    into ``out``, piece by piece, refusing what ``_canonical`` refuses."""
+    if value is None or isinstance(value, (str, bool)):
+        out.write(json.dumps(value, ensure_ascii=False).encode('utf-8'))
+    elif isinstance(value, np.ndarray):
+        _emit_array(value, out)
+    elif isinstance(value, Real):
+        out.write(_number(value))
+    elif isinstance(value, (list, tuple)):
+        out.write(b"[")
+        for k, v in enumerate(value):
+            if k:
+                out.write(b",")
+            _emit(v, out)
+        out.write(b"]")
+    elif isinstance(value, dict):
+        if not all(isinstance(k, str) for k in value):
+            raise TypeError('target identity mappings require string keys')
+        out.write(b"{")
+        for k, key in enumerate(sorted(value)):
+            if k:
+                out.write(b",")
+            out.write(json.dumps(key, ensure_ascii=False).encode('utf-8') + b":")
+            _emit(value[key], out)
+        out.write(b"}")
+    elif isinstance(value, LazyZ):
+        value.stream(out)
+    else:
+        raise TypeError(f'unsupported target identity type: {type(value).__name__}')
+
+
+def digest(payload) -> str:
+    """The sha256 of the canonical JSON of ``payload`` (schema v1), streamed: equal to
+    ``hashlib.sha256(json.dumps(_canonical(payload), sort_keys=True, separators=(',', ':'), ensure_ascii=False,
+    allow_nan=False).encode('utf-8')).hexdigest()`` with every ``LazyZ`` taken as its block's dense ``Z``."""
+    out = _Digest()
+    _emit(payload, out)
+    return out.hexdigest()
+
+
 def _prior(p):
     # an auxiliary parameter with its own formula (B01) has a mapping of priors, which enters with its formula instead
     return None if p is None or isinstance(p, Mapping) else {'name': p.name, 'parameters': dict(p.params)}
@@ -47,7 +192,7 @@ def _dpar_payload(model, ds):
                        'coefficients': {k: _prior(v) for k, v in sub.coefficient_priors(ds).items()}},
             # D08: a shared correlation ID's terms of the formula, only when it has one (every other identity is unchanged)
             **({'groups': [{'factor': g, 'coef': c, 'id': ds.group_term_of(g).id, 'levels': block.levels, 'index': block.group_index,
-                            'Z': block.Z, 'prior': _prior(sub.sd_priors(ds)[(g, c)])} for (g, c), block in dd.group_blocks.items()]}
+                            'Z': z_identity(block), 'prior': _prior(sub.sd_priors(ds)[(g, c)])} for (g, c), block in dd.group_blocks.items()]}
                if ds.group_terms else {}),
             # G06: the formula's offset (brms's offsets_<dpar>) and a likelihood's own centring, only when it has them
             **({'offset': {'term': ds.offset.term, 'values': dd.offset}} if ds.offset is not None else {}),
@@ -165,8 +310,8 @@ def freeze_target(model):
                          'coefficients': c.coefficients, 'full_rank': c.full_rank}
                         for c in s.categoricals],
         'groups': [{'factor': g, 'levels': block.levels, 'index': block.group_index,
-                    'Z': block.Z, 'noncentered': True} for g, block in d.group_designs.items()],
-        **({'group_slopes': [{'factor': g, 'coef': c, 'Z': block.Z, 'correlated': s.group_term_of(g).correlated,
+                    'Z': z_identity(block), 'noncentered': True} for g, block in d.group_designs.items()],   # G11: streamed
+        **({'group_slopes': [{'factor': g, 'coef': c, 'Z': z_identity(block), 'correlated': s.group_term_of(g).correlated,
                               'prior': prior(sd_priors[(g, c)]),
                               **({'monotonic': block.monotonic} if getattr(block, 'monotonic', None) else {})}   # G05a: r * mo()
                              for g, c, block in slopes]} if slopes else {}),
@@ -276,9 +421,7 @@ def freeze_target(model):
                                                                   'bs', 'bias')
                       if getattr(pr, name, None) is not None}},
     }
-    encoded = json.dumps(_canonical(payload), sort_keys=True, separators=(',', ':'),
-                         ensure_ascii=False, allow_nan=False).encode('utf-8')
-    return {'schema': SCHEMA, 'sha256': hashlib.sha256(encoded).hexdigest()}
+    return {'schema': SCHEMA, 'sha256': digest(payload)}   # G11: the v1 bytes, streamed
 
 
 def comparison_identity(a, b, *, allow_legacy=False):

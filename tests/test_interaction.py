@@ -99,7 +99,8 @@ def test_canonical_expansion_equivalence_and_refusals():
             assert set(m.spec.columns) == set(base.spec.columns)
             X_raw, Xc, xbar, gidx = hand(data, list(terms[:2]), {"z": "b"}, [("x", "z")], True)
             assert np.array_equal(m.design.X_raw, X_raw) and np.allclose(m.design.X_model, Xc)
-            assert m.bambi_model.formula.main.endswith("x:z + (1 | g)") if hasattr(m.bambi_model, "formula") else True
+            # G11 (docs/scaling.md): Bambi is handed the population-level formula; the group-level terms reach it as level codes
+            assert m.spec.bambi_formula.endswith("x:z + (1 | g)") and m.bambi_model.formula.main.endswith("x:z")
     # G03 (tests/test_term_algebra.py): a missing main effect is R's coding of the interaction, a repeated term is one term
     for formula in ("y ~ x + z + x*z + (1 | g)", "y ~ x + z + x:z + z:x + (1 | g)"):
         assert build("gaussian", df, G_PRIORS, formula=formula).spec.columns == base.spec.columns

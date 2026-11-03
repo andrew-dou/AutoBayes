@@ -62,6 +62,7 @@ from autobayes.formula import (Categorical, FormulaError, ModelSpec, addition_da
                                with_trials)
 from autobayes.formula import DATA2_UNIVARIATE, check_data2   # Tier F: brms's data2 (F02b, F03a)
 from autobayes.formula import derived_group_columns, group_covariate   # G05a: the covariates of group-level slopes
+from autobayes.group_index import level_codes   # G11: group-level terms from level codes (docs/scaling.md)
 from autobayes.priors import AUXILIARY, PriorError, Priors, class_default, describe_prior
 
 _bambi_group_name = bambi_group_name          # ``1|g`` for the varying intercept of ``g``, ``x|g`` for the slope of ``x``
@@ -87,7 +88,7 @@ def _prior_rv(name: str, prior, *, positive: bool = False):
     return dist(name, **{k: np.float64(v) for k, v in prior.params.items()})
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, init=False)
 class GroupBlock:
     """The design block of one group-level coefficient ``c`` of grouping factor ``m`` (docs/term-model.md).
 
@@ -96,9 +97,14 @@ class GroupBlock:
     is the one-hot indicator) in the column of row ``i``'s level, which is brms's ``Z_m_c[i]`` spread over
     its ``J_m[i]``. ``group_index`` is that level's 0-based index per row (brms ``J_m - 1``) and
     ``column_slice`` where the block sits in the concatenated ``Design.Z``.
+
+    G11 (docs/scaling.md): the block keeps the level codes and the covariate, not ``Z``: ``Z`` is built from them on access
+    (the zeros plus each row's value at its level, the array it always was) and refused above
+    ``group_index.DENSE_Z_MAX_ENTRIES`` entries. ``covariate`` is the slope's column per row (None: ones, the varying
+    intercept, or a monotonic slope's level indicator); a block given a dense ``Z`` (``GroupBlock(levels, Z, ...)``, which
+    the families that build their own designs use) keeps it as ``dense``.
     """
     levels: tuple[str, ...]
-    Z: np.ndarray
     group_index: np.ndarray
     column_slice: slice
     # D08, a multi-membership term (1 | mm(g, g2, ...)): each member's 0-based level index per row (brms's J_m_k - 1) and its
@@ -117,11 +123,93 @@ class GroupBlock:
     # Z_m_c_k: the slope's column for every member, member k's own column for mmc()); Z is their weighted sum of indicators times
     # them. Empty for the varying intercept (ones) and every other term.
     covariates: tuple[np.ndarray, ...] = ()
+    # G11: the covariate of a single-member block's coefficient per row (None for ones), and a dense Z given as such
+    covariate: np.ndarray | None = None
+    dense: np.ndarray | None = field(default=None, repr=False)
+
+    def __init__(self, levels, Z=None, group_index=None, column_slice=None, memberships=(), weights=(), by_levels=(),
+                 by_index=None, monotonic=None, covariates=(), *, covariate=None, dense=None):
+        """``GroupBlock(levels, Z, group_index, column_slice, ...)`` as before G11 (``Z`` dense), or ``Z=None`` with the codes
+        and ``covariate`` (the block's ``Z`` built on access); ``dataclasses.replace(block, Z=...)`` gives it a dense ``Z``."""
+        if group_index is None or column_slice is None:
+            raise TypeError("GroupBlock needs group_index and column_slice")
+        values = dict(levels=levels, group_index=group_index, column_slice=column_slice, memberships=memberships,
+                      weights=weights, by_levels=by_levels, by_index=by_index, monotonic=monotonic, covariates=covariates,
+                      covariate=covariate, dense=Z if Z is not None else dense)
+        for name, value in values.items():
+            object.__setattr__(self, name, value)
 
     @property
     def J(self) -> int:
         """The number of levels (brms ``N_m``; this library has always called it ``J``)."""
         return len(self.levels)
+
+    @property
+    def n(self) -> int:
+        """The number of rows."""
+        return len(self.group_index)
+
+    @property
+    def Z(self) -> np.ndarray:
+        """The dense ``(n, J)`` block, built on access (G11): zeros, then each row's value at its level (a multi-membership
+        term's weights summed member by member, ``np.add.at``); refused above ``group_index.DENSE_Z_MAX_ENTRIES`` entries."""
+        if self.dense is not None:
+            return self.dense
+        from autobayes.group_index import check_dense_size
+
+        check_dense_size(self.n, self.J, "GroupBlock.Z")
+        Z = np.zeros((self.n, self.J))
+        self.fill(Z)
+        return Z
+
+    def fill(self, Z: np.ndarray) -> None:
+        """Write the block into ``Z``, an ``(n, J)`` array of zeros (or a column slice of one): as ``Z`` is built."""
+        if self.dense is not None:
+            Z[...] = self.dense
+            return
+        rows = np.arange(self.n)
+        if self.memberships:                                 # D08, G05b: member by member, as the model's own blocks always were
+            for k, (index, weight) in enumerate(zip(self.memberships, self.weights)):
+                np.add.at(Z, (rows, index), weight if not self.covariates else weight * self.covariates[k])
+        else:
+            Z[rows, self.group_index] += 1.0 if self.covariate is None else self.covariate
+
+    def row_values(self) -> tuple[np.ndarray, np.ndarray]:
+        """Each row's entries of ``Z``, ``(columns, values)`` of shape ``(n, k)`` (k the members, 1 for every term but a
+        multi-membership one), columns ascending within a row and a member's repeat of a level summed into its first
+        place as ``Z`` sums it (a repeated place keeps column -1). Without forming ``Z``."""
+        if self.dense is not None:                           # a dense block: its nonzero entries, at most one row's width
+            raise ValueError("a dense GroupBlock has no row values; read its Z")
+        if not self.memberships:
+            values = 0.0 + (np.ones(self.n) if self.covariate is None else np.asarray(self.covariate, dtype=float))
+            return np.asarray(self.group_index, dtype=np.int64)[:, None], values[:, None]
+        k = len(self.memberships)
+        cols = np.stack([np.asarray(m, dtype=np.int64) for m in self.memberships], axis=1)
+        vals = np.zeros((self.n, k))
+        for j, weight in enumerate(self.weights):
+            v = np.asarray(weight if not self.covariates else weight * self.covariates[j], dtype=float)
+            placed = np.zeros(self.n, dtype=bool)
+            for i in range(j):                               # a level an earlier member holds: summed there, as np.add.at does
+                hit = ~placed & (cols[:, i] == cols[:, j])
+                vals[hit, i] = vals[hit, i] + v[hit]
+                placed |= hit
+            vals[~placed, j] = 0.0 + v[~placed]
+            cols[placed, j] = -1
+        order = np.argsort(np.where(cols < 0, np.iinfo(np.int64).max, cols), axis=1, kind="stable")
+        return np.take_along_axis(cols, order, axis=1), np.take_along_axis(vals, order, axis=1)
+
+    def dot(self, v: np.ndarray) -> np.ndarray:
+        """``Z @ v`` (one value per row) without forming ``Z``: each row's value times ``v`` at its level, summed over the
+        members of a multi-membership term."""
+        v = np.asarray(v)
+        if self.dense is not None:
+            return self.dense @ v
+        if not self.memberships:
+            return v[self.group_index] if self.covariate is None else self.covariate * v[self.group_index]
+        out = 0.0
+        for k, (index, weight) in enumerate(zip(self.memberships, self.weights)):
+            out = out + (weight if not self.covariates else weight * self.covariates[k]) * v[index]
+        return out
 
 
 @dataclass(frozen=True)
@@ -209,14 +297,14 @@ class MissingBlock:
 
 @dataclass(frozen=True)
 class Design:
-    """What the model was actually fit to. All arrays are dense NumPy."""
+    """What the model was actually fit to. All arrays are dense NumPy; the group-level design ``Z`` is built on access from
+    the blocks' level codes (G11, docs/scaling.md)."""
 
     y: np.ndarray                 # (n,)
     X_raw: np.ndarray             # (n, P) design columns as given (numeric values, 0/1 dummies), no intercept
     X_model: np.ndarray           # (n, P) what multiplies the coefficients: centred if center_predictors
     x_means: np.ndarray           # (P,) column means of X_raw (zeros if not centred); a dummy's mean is its level's proportion
     predictors: tuple[str, ...]   # numeric predictor terms
-    Z: np.ndarray                 # the group blocks side by side in formula order; (n, 0) without groups
     group_blocks: Mapping[tuple[str, str], GroupBlock]   # (factor, coefficient) -> block, in formula order
     centered: bool
     trials: np.ndarray | None = None   # binomial only: (n,) trials per fitted row; y holds the successes
@@ -253,6 +341,20 @@ class Design:
     @property
     def n(self) -> int:
         return len(self.y)
+
+    @property
+    def Z(self) -> np.ndarray:
+        """The group blocks side by side in formula order, ``(n, sum of the blocks' J)``; ``(n, 0)`` without groups. Built on
+        access from the blocks (G11, docs/scaling.md) and refused above ``group_index.DENSE_Z_MAX_ENTRIES`` entries."""
+        from autobayes.group_index import check_dense_size
+
+        blocks = list(self.group_blocks.values())
+        width = max((b.column_slice.stop for b in blocks), default=0)
+        check_dense_size(self.n, width, "Design.Z")
+        Z = np.zeros((self.n, width))
+        for b in blocks:
+            b.fill(Z[:, b.column_slice])
+        return Z
 
     @property
     def group_designs(self) -> dict[str, GroupBlock]:
@@ -689,14 +791,17 @@ class Model:
         for extra in fam.extra_parameters:                   # D01: alpha, beta, ndt; ndt truncated to (0, min y) of these rows;
             if extra.name not in self.spec.dpar_names:       # E03: an alpha with its own formula has its formula's priors there
                 bambi_priors[extra.variable] = extra.bambi_prior(getattr(priors, extra.name), self.data[self.spec.response])   # E02: tmp_xi
-        bambi_formula = self.spec.bambi_formula
+        # G11 (docs/scaling.md): Bambi is handed the population-level formula; each group-level coefficient it builds is added to
+        # its component from the level codes before build() (_add_index_group_terms), in the order formulae would give them
+        bambi_formula = self.spec.bambi_population_formula
         # Bambi centres every formula that has an intercept, or none. Without a distributional formula that is the
         # response formula's centring as it has always been; with one (B01), brms centres each formula that has an
         # intercept on its own means, and the refusal above leaves exactly that case. A family that builds what Bambi is
         # handed from the model (B05: cumulative, categorical; neither takes a distributional formula) decides it itself.
         self._bambi_centring = self.effective_center_predictors
         if self.spec.dpars:                                  # brms's bf(y ~ ..., sigma ~ ...): Bambi's distributional components (B01)
-            bambi_formula = bmb.Formula(bambi_formula, *(f"{self._bambi_dpar(d.response)} ~ {d.bambi_rhs}" for d in self.spec.dpars))
+            bambi_formula = bmb.Formula(bambi_formula, *(f"{self._bambi_dpar(d.response)} ~ {d.bambi_population_rhs}"
+                                                         for d in self.spec.dpars))
             self._bambi_centring = self.center_predictors
         if fam.bambi_setup is not None:                      # B05: the family builds what Bambi is handed from the model
             bambi_family, bambi_priors, self._bambi_centring = fam.bambi_setup(self, bambi_priors)
@@ -735,6 +840,7 @@ class Model:
             priors=bambi_priors,
             noncentered=True, center_predictors=self._bambi_centring,
         )
+        self._add_index_group_terms(bambi_priors)
         self.bambi_model.build()
         self.pymc_model = self.bambi_model.backend.model
         if any(not t.custom for t in self.spec.correlated_terms) or self.spec.shared_ids:   # brms's correlated slopes (A02) and shared IDs (D08): a post-build
@@ -847,6 +953,35 @@ class Model:
             raise FormulaError(f"generated variable/coordinate name collision: {duplicates}; rename the conflicting column")
 
     # -- correlated group effects (A02) -------------------------------------------------
+    def _add_index_group_terms(self, bambi_priors: dict) -> None:
+        """G11 (docs/scaling.md): add every group-level coefficient Bambi builds to its Bambi component before ``build()``, from
+        level codes: one ``group_index.IndexGroupTerm`` per coefficient of each term Bambi builds (the response formula's
+        ``bambi_group_terms`` and each distributional formula's group-level terms), in formulae's order (term by term, each
+        term's coefficients in order), holding the factor's sorted fitted levels, each row's level code, the column formulae
+        would read from Bambi's frame (int64 ones for a varying intercept) and the prior Bambi would have given it. Bambi's
+        backend then builds the graph it builds from formulae's dense design; ``_extract_design`` checks every term."""
+        from autobayes.group_index import bambi_formula_value, bambi_prior, index_group_term, level_codes
+
+        bm = self.bambi_model
+        parent = bm.family.likelihood.parent
+        owners = [(bm.components[self.family_spec.parent], bambi_priors[parent] if parent in bambi_priors else bambi_priors,
+                   self.spec.levels_by_group, [(t, t.bambi_coefs) for t in self.spec.bambi_group_terms])]
+        for d in self.spec.dpars:                            # G06, D08: a distributional formula's own and shared-ID terms
+            if d.group_terms:
+                name = self._bambi_dpar(d.response)
+                owners.append((bm.components[name], bambi_priors.get(name, {}), d.levels_by_group, [(t, t.coefs) for t in d.group_terms]))
+        codes: dict[str, np.ndarray] = {}                    # one code array per factor, shared by its coefficients
+        for comp, priors, levels_by_group, terms in owners:
+            for t, coefs in terms:
+                levels = levels_by_group[t.factor]
+                if t.column not in codes:
+                    codes[t.column] = level_codes(self.data[t.column], levels)
+                for coef in coefs:
+                    label = _bambi_group_name(t.factor, coef)
+                    comp.terms[label] = index_group_term(
+                        label, "intercept" if coef == "Intercept" else "numeric", levels, codes[t.column],
+                        bambi_formula_value(bm.data, None if coef == "Intercept" else coef), bambi_prior(priors, label), comp.prefix)
+
     def _correlate_group_effects(self, model):
         """brms's correlated construction for every ``(1 + x | g)`` term, as an edit of the PyMC graph Bambi built.
 
@@ -983,27 +1118,26 @@ class Model:
                 raise RuntimeError(f"the offset column of Bambi's common design does not equal {self.spec.offset.expression}")
             Xfull = np.delete(Xfull, common.slices[term], axis=1)
         X_raw = self._population_design(comp, self.spec, Xfull)
-        # One block per (factor, coefficient), in formula order; Bambi's concatenated group design is their
-        # side-by-side concatenation. The varying intercept's block is the one-hot indicator of the level; a
-        # varying slope's is that indicator times the slope's (raw, never centred) column, which is what brms's
-        # Z_m_c spread over J_m is. Bambi was handed '(1 + x | g)' for '(1 + x || g)': it builds '1|g' and 'x|g'
-        # as independent terms, and each block is checked here against the data, so a different coding is a
-        # hard error rather than a silently different model.
+        # One block per (factor, coefficient), in formula order; Design.Z is their side-by-side concatenation. The varying
+        # intercept's block is the one-hot indicator of the level; a varying slope's is that indicator times the slope's (raw,
+        # never centred) column, which is what brms's Z_m_c spread over J_m is. G11 (docs/scaling.md): a block keeps the level
+        # codes and the covariate, and Bambi builds each coefficient from the IndexGroupTerm _add_index_group_terms gave it
+        # (Bambi builds '(1 + x || g)' as the independent terms '1|g' and 'x|g'); each is checked here against the data, so a
+        # different coding is a hard error rather than a silently different model.
         group_blocks: dict[tuple[str, str], GroupBlock] = {}
+        bterms = comp.group_specific_terms
+        if group is not None:
+            raise RuntimeError("Bambi built a group design from the formula; the group-level terms are added from level codes")
         if not self.spec.has_group:
-            if group is not None:
+            if bterms:
                 raise RuntimeError("Bambi built a group design for a formula without a group-level term")
-            Z = np.zeros((len(X_raw), 0))
         else:
-            # D08: the multi-membership and by terms are the model's own (_custom_group_blocks); Bambi's group design holds
-            # the others, side by side, and Design.Z every block in formula order
+            # D08: the multi-membership and by terms are the model's own (_custom_group_blocks); Bambi builds the others
             expected_terms = [_bambi_group_name(t.factor, coef) for t in self.spec.bambi_group_terms for coef in t.bambi_coefs]
-            if (group is None) != (not expected_terms) or (group is not None and list(group.terms) != expected_terms):
+            if list(bterms) != expected_terms:
                 raise RuntimeError("Bambi group terms differ from formula order")
-            bambi_Z = group.design_matrix if group is not None else np.zeros((len(X_raw), 0))
-            bambi_Z = np.asarray(bambi_Z.toarray() if hasattr(bambi_Z, "toarray") else bambi_Z, dtype=float)
             custom = self._custom_group_blocks() if self.spec.custom_group_terms else {}
-            start, bambi_start, parts = 0, 0, []
+            start, n = 0, len(X_raw)
             for t in self.spec.group_terms:
                 g = t.factor
                 levels = self.spec.levels_by_group[g]
@@ -1011,41 +1145,34 @@ class Model:
                     for coef in t.coefs:                     # one per coefficient)
                         block = custom[(g, coef)]
                         group_blocks[(g, coef)] = replace(block, column_slice=slice(start, start + len(levels)))
-                        parts.append(block.Z)
                         start += len(levels)
                     continue
-                labels = self.data[t.column].to_numpy()
-                indicator = np.column_stack([labels == level for level in levels]).astype(float)
+                codes = level_codes(self.data[t.column], levels)
                 for coef in t.coefs:
                     if coef in t.monotonic_slopes:           # G05a: brms's r[J] * mo(simo, Xmo), built by the model, no Z column
-                        group_blocks[(g, coef)] = GroupBlock(levels, indicator, indicator.argmax(1), slice(start, start + len(levels)),
+                        group_blocks[(g, coef)] = GroupBlock(levels, None, codes, slice(start, start + len(levels)),
                                                              monotonic=self.spec.pop_term(coef).operands[0])
-                        parts.append(indicator)
                         start += len(levels)
                         continue
                     name = _bambi_group_name(g, coef)
-                    bterm = group.terms[name]
+                    bterm = bterms[name]
                     if tuple(str(v) for v in bterm.groups) != levels:
                         raise RuntimeError(f"Bambi level order for {g!r} differs from sorted fitted labels")
-                    if group.slices[name] != slice(bambi_start, bambi_start + len(levels)):
-                        raise RuntimeError(f"Bambi group slice for {g!r} differs from formula order")
-                    block_slice = slice(start, start + len(levels))
-                    block = bambi_Z[:, group.slices[name]]
-                    parts.append(block)
-                    bambi_start += len(levels)
+                    if tuple(bterm.shape) != (n, len(levels)) or not np.array_equal(bterm.group_index, codes):
+                        raise RuntimeError(f"group design for {g!r} does not encode original rows one-hot")
                     if coef == "Intercept":
-                        if not np.array_equal(block, indicator) or not np.array_equal(block.sum(1), np.ones(len(X_raw))):
+                        covariate = None
+                        if bterm.kind != "intercept" or not np.array_equal(bterm.predictor, np.ones(n)):
                             raise RuntimeError(f"group design for {g!r} does not encode original rows one-hot")
                     else:
-                        kind = getattr(getattr(bterm, "expr", None), "kind", None)
-                        if kind != "numeric":
-                            raise RuntimeError(f"Bambi coded the varying slope {name!r} as {kind!r}; expected a numeric slope")
-                        covariate = group_covariate(self.spec, coef, self.data)   # G05a: a transform's, product's or level's too
-                        if not np.array_equal(block, indicator * covariate[:, None]):
+                        if bterm.kind != "numeric":
+                            raise RuntimeError(f"Bambi coded the varying slope {name!r} as {bterm.kind!r}; expected a numeric slope")
+                        covariate = np.asarray(group_covariate(self.spec, coef, self.data), dtype=float)   # G05a: a transform's,
+                        if not np.array_equal(np.asarray(bterm.predictor, dtype=float), covariate):           # product's or level's
                             raise RuntimeError(
                                 f"Bambi's block for {name!r} is not the level indicator of {g!r} times the {coef!r} column"
                             )
-                    group_blocks[(g, coef)] = GroupBlock(levels, block, indicator.argmax(1), block_slice)
+                    group_blocks[(g, coef)] = GroupBlock(levels, None, codes, slice(start, start + len(levels)), covariate=covariate)
                     start += len(levels)
                 coord = self.group_names[g]["coordinate"]
                 if tuple(str(v) for v in self.pymc_model.coords[coord]) != levels:
@@ -1061,9 +1188,6 @@ class Model:
                             raise RuntimeError(f"PyMC dims of {roles[key]!r} are {dims}; expected {(coord, *category)}")
                     if category and tuple(self.pymc_model.named_vars_to_dims.get(roles["sd"], ())) != category:
                         raise RuntimeError(f"PyMC dims of {roles['sd']!r} are not {category}: one SD per non-reference category")
-            Z = np.concatenate(parts, axis=1) if parts else np.zeros((len(X_raw), 0))
-            if Z.shape != (len(X_raw), start) or bambi_Z.shape != (len(X_raw), bambi_start):
-                raise RuntimeError("unexpected concatenated group design shape")
             if any(t.monotonic_slopes for t in self.spec.group_terms):   # G05a: each monotonic slope's part of the graph, checked
                 self._check_monotonic_slopes(group_blocks)
             for g in self.correlation_names:                 # the correlation factor (A02; a shared ID's, D08): a free variable on
@@ -1096,7 +1220,7 @@ class Model:
         trials = np.asarray(self.data[self.spec.trials], dtype=np.int64) if self.spec.trials else None
         additions = addition_data(self.spec, self.data)      # brms's weights, cens, lb and ub on the fitted rows (B02)
         return Design(y=y, X_raw=X_raw, X_model=X_model, x_means=x_means,
-                      predictors=self.spec.predictors, Z=Z, group_blocks=group_blocks,
+                      predictors=self.spec.predictors, group_blocks=group_blocks,
                       centered=self.effective_center_predictors, trials=trials,
                       columns=self.spec.columns, categoricals=self.spec.categoricals, offset=offset,
                       weights=additions.get("weights"), cens=additions.get("cens"), lb=additions.get("lb"), ub=additions.get("ub"),
@@ -1126,7 +1250,7 @@ class Model:
         if comp is None or comp.design.common is None:
             raise RuntimeError(f"Bambi built no distributional component {bname!r} for the formula '{d.formula}'")
         group_blocks = self._dpar_group_blocks(d, comp) if d.group_terms else {}   # D08: a shared correlation ID's terms; G06: own
-        if comp.design.group is not None and not d.group_terms:
+        if (comp.design.group is not None or comp.group_specific_terms) and not d.group_terms:
             raise RuntimeError(f"Bambi built group-level terms for the formula '{d.formula}', which has none")
         names = list(comp.design.common.terms)
         offset_terms = [d.offset.bambi_name] if d.offset is not None else []   # G06: an offset of the formula, Bambi's last common term
@@ -1179,26 +1303,25 @@ class Model:
         column for a varying slope), and the effects ``<component>_1|g`` (``<component>_x|g``) and offsets on the factor's
         level dimension. D08: terms sharing a correlation ID with the response formula's; G06: the formula's own terms (brms's
         group of the parameter) and a shared ID's varying slopes."""
-        group = comp.design.group
+        bterms = comp.group_specific_terms                    # G11: the IndexGroupTerms _add_index_group_terms gave Bambi
         expected = [_bambi_group_name(t.factor, c) for t in d.group_terms for c in t.coefs]
-        if group is None or list(group.terms) != expected:
-            raise RuntimeError(f"Bambi's group terms of the formula '{d.formula}' are {None if group is None else list(group.terms)}; "
-                               f"expected {expected}")
-        Z = np.asarray(group.design_matrix.toarray() if hasattr(group.design_matrix, "toarray") else group.design_matrix, dtype=float)
+        if comp.design.group is not None or list(bterms) != expected:
+            raise RuntimeError(f"Bambi's group terms of the formula '{d.formula}' are {list(bterms)}; expected {expected}")
         blocks, start = {}, 0
         for t in d.group_terms:
             levels = d.levels_by_group[t.factor]
             if self.spec.levels_by_group.get(t.factor, levels) != levels:
                 raise RuntimeError(f"the levels of {t.factor!r} in the formula '{d.formula}' differ from the response formula's")
-            labels = self.data[t.column].to_numpy()
-            indicator = np.column_stack([labels == level for level in levels]).astype(float)
+            codes = level_codes(self.data[t.column], levels)
             for coef in t.coefs:
                 name = _bambi_group_name(t.factor, coef)
-                if tuple(str(v) for v in group.terms[name].groups) != levels:
+                bterm = bterms[name]
+                if tuple(str(v) for v in bterm.groups) != levels:
                     raise RuntimeError(f"Bambi's level order of {t.factor!r} in the formula '{d.formula}' differs from the sorted fitted labels")
-                covariate = np.ones(len(labels)) if coef == "Intercept" else self.data[coef].to_numpy(dtype=float)
+                covariate = None if coef == "Intercept" else self.data[coef].to_numpy(dtype=float)
                 block_slice = slice(start, start + len(levels))
-                if group.slices[name] != block_slice or not np.array_equal(Z[:, block_slice], indicator * covariate[:, None]):
+                if (not np.array_equal(bterm.group_index, codes)
+                        or not np.array_equal(np.asarray(bterm.predictor, dtype=float), np.ones(len(codes)) if covariate is None else covariate)):
                     raise RuntimeError(f"Bambi's group design of {name!r} in the formula '{d.formula}' is not the level indicator of "
                                        f"{t.factor!r}" + ("" if coef == "Intercept" else f" times the {coef!r} column"))
                 roles = self._shared_roles(t.factor, d.response, coef)
@@ -1207,7 +1330,7 @@ class Model:
                         raise RuntimeError(f"PyMC dims of {roles[key]!r} are not ({roles['coordinate']!r},)")
                 if self.pymc_model[roles["sd"]] not in self.pymc_model.free_RVs:
                     raise RuntimeError(f"{roles['sd']!r} is not a free variable of the graph")
-                blocks[(t.factor, coef)] = GroupBlock(levels, Z[:, block_slice], indicator.argmax(1), block_slice)
+                blocks[(t.factor, coef)] = GroupBlock(levels, None, codes, block_slice, covariate=covariate)
                 start += len(levels)
         return blocks
 
@@ -1252,8 +1375,7 @@ class Model:
             if term not in t.monotonic_slopes:
                 continue
             roles = self.group_coefficient_names[(t.factor, term)]
-            position = {level: j for j, level in enumerate(self.spec.levels_by_group[t.factor])}
-            index = np.array([position[str(v)] for v in self.data[t.column]], dtype=np.int64)
+            index = level_codes(self.data[t.column], self.spec.levels_by_group[t.factor])   # G11: each row's level, int64
             sd = _prior_rv(roles["sd"], self.priors.sd_priors(self.spec)[(t.factor, term)], positive=True)
             z = pm.Normal(roles["offset"], mu=np.float64(0.0), sigma=np.float64(1.0), dims=roles["coordinate"])
             r = pm.Deterministic(roles["group_effect"], sd * z, dims=roles["coordinate"])
@@ -1476,16 +1598,15 @@ class Model:
         ``covariates``, each coefficient's covariate per member and row (brms's ``Z_m_c_k``: ones for the varying intercept, the
         slope's column for every member, member ``k``'s own column for ``mmc()``)."""
         levels = self.spec.levels_by_group[t.factor]
-        position = {level: j for j, level in enumerate(levels)}
         n = len(self.data)
         covariates = {c: tuple(np.ones(n) if col is None else self.data[col].to_numpy(dtype=float) for col in t.covariate_columns(c))
                       for c in t.coefs}
         if t.is_mm:
-            index = tuple(np.array([position[str(v)] for v in self.data[c]], dtype=np.int64) for c in t.members)
+            index = tuple(level_codes(self.data[c].astype(str), levels) for c in t.members)   # G11: vectorised
             weights = mm_weights(t, self.data)
             return {"levels": levels, "index": index, "weights": tuple(weights[:, k] for k in range(len(t.members))),
                     "by_levels": (), "by_index": None, "covariates": covariates}
-        index = (np.array([position[str(v)] for v in self.data[t.column]], dtype=np.int64),)
+        index = (level_codes(self.data[t.column].astype(str), levels),)
         if t.by is None:                                     # G05b: gr(g, cov = A), gr(g, dist = "student")
             return {"levels": levels, "index": index, "weights": (np.ones(n),), "by_levels": (), "by_index": None,
                     "covariates": covariates}
@@ -1602,7 +1723,7 @@ class Model:
         start = pmm.initial_point()
         for t in self.spec.custom_group_terms:
             layout = self._custom_term_layout(t)
-            levels, n = layout["levels"], len(self.data)
+            levels = layout["levels"]
             for c in t.coefs:
                 roles = self.group_coefficient_names[(t.factor, c)]
                 sd = pmm[roles["sd"]]
@@ -1620,14 +1741,14 @@ class Model:
                 for key in ("offset", "group_effect"):
                     if tuple(pmm.named_vars_to_dims.get(roles[key], ())) != (roles["coordinate"],):
                         raise RuntimeError(f"PyMC dims of {roles[key]!r} are not ({roles['coordinate']!r},)")
-                Z = np.zeros((n, len(levels)))
-                for index, weight, covariate in zip(layout["index"], layout["weights"], layout["covariates"][c]):
-                    np.add.at(Z, (np.arange(n), index), weight if c == "Intercept" else weight * covariate)
-                blocks[(t.factor, c)] = GroupBlock(levels, Z, layout["index"][0], slice(0, len(levels)),
+                # G11: the block keeps each member's codes and weights (and a slope's covariates), its Z built on access as
+                # the weighted sum of the members' indicators times the covariate; one member, weight 1, for every other term
+                blocks[(t.factor, c)] = GroupBlock(levels, None, layout["index"][0], slice(0, len(levels)),
                                                    memberships=layout["index"] if t.is_mm else (),
                                                    weights=layout["weights"] if t.is_mm else (),
                                                    by_levels=layout["by_levels"], by_index=layout["by_index"],
-                                                   covariates=layout["covariates"][c] if t.is_mm and c != "Intercept" else ())
+                                                   covariates=layout["covariates"][c] if t.is_mm and c != "Intercept" else (),
+                                                   covariate=None if t.is_mm or c == "Intercept" else layout["covariates"][c][0])
             if t.is_student:                                 # G05b: df on (1, inf), udf positive, dfm their deterministic
                 names = self.group_dist_names[t.factor]
                 if (pmm[names["df"]] not in pmm.free_RVs or pmm.rvs_to_values[pmm[names["df"]]].name != f"{names['df']}_interval__"
@@ -1677,7 +1798,7 @@ class Model:
             effect = self._group_cov[factor].L @ test if t.cov is not None else test
             if t.is_student:
                 effect = dfm[self.group_dist_names[factor]["dfm"]] * effect
-            expected = block.Z @ effect
+            expected = block.dot(effect)                     # G11: Z @ effect without forming Z
             if moved.shape != expected.shape or not np.allclose(moved, expected, rtol=1e-10, atol=1e-10):
                 raise RuntimeError(f"the graph's {parent!r} does not move by the weighted effects of {factor!r} at its rows' levels; "
                                    f"largest difference {np.max(np.abs(moved - expected)) if moved.shape == expected.shape else moved.shape}")

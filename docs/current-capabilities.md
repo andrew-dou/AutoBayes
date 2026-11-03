@@ -560,3 +560,11 @@ priors alone, D188) are offered; predictions, `log_lik` and the summaries of sig
 `gauss_sigma_varint`, `gauss_sigma_shared_id_slopes`, `gauss_sigma_offset`, `student_nu_formula`, `zip_zi_formula`,
 `cumulative_disc` and `gauss_sigma_varint_post` (and `gauss_sigma_shared_id` but for D187's two gates); every other family's and
 parameter's group-level terms and offsets stay refused (D32, D116).
+
+Scaling (G11, docs/scaling.md): group-level terms are built from integer level codes, so a model with many rows and levels
+(`(1 + x1 | g)` at N = 1e6, J = 1e4) builds, evaluates its log density and gradient, and predicts in memory proportional to the
+rows times the coefficients; Bambi is handed the population-level formula and each group-level coefficient as level codes and
+its column, building the same graph. Every model is unchanged bit for bit (graph, log density, target identity, `describe()`,
+design arrays; recorded before and after with `tools/model_manifest.py`); `GroupBlock.Z` and `Design.Z` are built on access and
+refused above `group_index.DENSE_Z_MAX_ENTRIES`; the target identity is streamed (same digest); predictions of models with
+group-level terms are the library's own (`kind="response"` draws from its generator, D199).
