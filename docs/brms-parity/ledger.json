@@ -2716,12 +2716,15 @@
     "C01_multivariate",
     "F06c_subset"
    ],
-   "status": "gates_green",
+   "status": "merged",
    "summary": "multivariate extensions: mvbind() with brms's default rescor, weights() in multivariate models, bf() + bf() with a formula per response, IDs across responses (corpus mv_*)",
-   "pr": null,
+   "pr": 120,
    "attempts": 0,
-   "divergences": [],
-   "next_action": "feature agent on parity/g08",
+   "divergences": [
+    "D193",
+    "D194"
+   ],
+   "next_action": "none",
    "reserved_divergences": "D193-D194",
    "gates": {
     "sha": "6ac3e8c15e9b",
