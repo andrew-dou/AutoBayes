@@ -2716,13 +2716,33 @@
     "C01_multivariate",
     "F06c_subset"
    ],
-   "status": "implementing",
+   "status": "gates_green",
    "summary": "multivariate extensions: mvbind() with brms's default rescor, weights() in multivariate models, bf() + bf() with a formula per response, IDs across responses (corpus mv_*)",
    "pr": null,
    "attempts": 0,
    "divergences": [],
    "next_action": "feature agent on parity/g08",
-   "reserved_divergences": "D193-D194"
+   "reserved_divergences": "D193-D194",
+   "gates": {
+    "sha": "6ac3e8c15e9b",
+    "dirty_tree": false,
+    "base": "origin/main",
+    "when": "2026-11-03T12:46Z",
+    "results": {
+     "immutability": {
+      "status": "pass",
+      "seconds": 0.0
+     },
+     "oracle": {
+      "status": "pass",
+      "seconds": 889.2
+     },
+     "diff_coverage": {
+      "status": "pass",
+      "seconds": 303.3
+     }
+    }
+   }
   },
   {
    "id": "G09_gp_ext",

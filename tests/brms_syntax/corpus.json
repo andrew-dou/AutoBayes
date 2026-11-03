@@ -11645,14 +11645,13 @@
     ]
    },
    "result": {
-    "status": "error",
-    "type": "FormulaError",
-    "message": "'mvbind(y, y2) ~ x + (1 |p| g)': '(1 |p| g)': a correlation ID, brms's (1 |ID| g), which correlates the responses' group-level effects, is not supported; each response's group terms are separate and uncorrelated across responses, as brms's are without an ID (docs/multivariate.md, divergence D57)",
-    "raised_at": "multivariate.py:192",
-    "stage": "default_priors",
-    "mechanism": "refusal",
-    "outcome": "refused_named",
-    "gap": "capability"
+    "status": "built",
+    "model": "MultivariateModel",
+    "model_warnings": [],
+    "issues": [],
+    "notes": [],
+    "outcome": "match",
+    "gap": null
    }
   },
   {
@@ -11726,14 +11725,13 @@
     "group_terms": []
    },
    "result": {
-    "status": "error",
-    "type": "FormulaError",
-    "message": "['y ~ x', 'y2 ~ z']: a formula of its own per response (brms's bf(y ~ ...) + bf(y2 ~ ...)) is not supported with a residual correlation (rescor=True): no frozen case verifies the joint likelihood of responses with designs of their own; pass rescor=False (docs/subset.md), or write one formula, 'mvbind(y, y2) ~ <terms>', whose right-hand side every response shares (docs/multivariate.md, divergence D56)",
-    "raised_at": "multivariate.py:498",
-    "stage": "default_priors",
-    "mechanism": "refusal",
-    "outcome": "refused_named",
-    "gap": "capability"
+    "status": "built",
+    "model": "MultivariateModel",
+    "model_warnings": [],
+    "issues": [],
+    "notes": [],
+    "outcome": "match",
+    "gap": null
    }
   },
   {
@@ -12026,14 +12024,13 @@
     "group_terms": []
    },
    "result": {
-    "status": "error",
-    "type": "FormulaError",
-    "message": "'mvbind(y, y2) | weights(wt) ~ x': '| weights(wt)' after mvbind(): addition terms (weights(), cens(), trunc(), ...) on the responses of a multivariate model are not supported (docs/multivariate.md, divergence D56)",
-    "raised_at": "multivariate.py:202",
-    "stage": "default_priors",
-    "mechanism": "refusal",
-    "outcome": "refused_named",
-    "gap": "capability"
+    "status": "built",
+    "model": "MultivariateModel",
+    "model_warnings": [],
+    "issues": [],
+    "notes": [],
+    "outcome": "match",
+    "gap": null
    }
   },
   {
@@ -13387,13 +13384,13 @@
  ],
  "summary": {
   "outcomes": {
-   "match": 180,
-   "refused_named": 67,
+   "match": 183,
+   "refused_named": 64,
    "differs": 1
   },
   "gaps": {
-   "none": 182,
-   "capability": 65,
+   "none": 185,
+   "capability": 62,
    "divergence": 1
   },
   "brms_refuses": 2

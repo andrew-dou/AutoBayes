@@ -137,9 +137,5 @@
     2
    ]
   }
- },
- "gate": {
-  "expect": "fail",
-  "reason": "G08_multivariate_ext not implemented; remove this field when it lands"
  }
 }

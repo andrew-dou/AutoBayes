@@ -207,6 +207,16 @@ are refused as brms refuses them. Verified against `gauss_mv_subset`; `rescor=Tr
 terms beside it, other indicators, grouping levels a subset does not reach and the univariate `subset()` are refused (D160,
 D161); see [subset() and a formula per response](subset.md).
 
+Multivariate extensions (G08): a formula per response under a residual correlation (`ab.gaussian(["y ~ x + (1 | g)", "y2 ~ z"],
+data, priors, rescor=True)`, one joint multivariate normal per row over the responses' own designs), a correlation ID across
+responses (`(1 |p| g)` in `mvbind()` or in each response's formula: one LKJ correlation matrix `L|g` over the responses' varying
+intercepts of `g`, each response's SD under its own prior) and `weights()` in multivariate models (`mvbind(y, y2) | weights(w) ~
+...`: each response's density weighted by its own weights, or under a residual correlation each row's joint density once).
+Verified against `gauss_mv_separate_rescor`, `gauss_mv_id_across`, `gauss_mv_id_across_rescor`, `gauss_mv_weights` and
+`gauss_mv_weights_rescor`; slopes in an ID across responses, IDs on `gr()`, `mm()`, `g:h`, with `subset()` or `mi()`, joint
+predictions at new levels of an ID's factor (D193), differing weights under a residual correlation and `weights()` with
+`subset()` (D194) are refused; see [multivariate extensions](multivariate-ext.md).
+
 Gaussian processes (C03, brms's `gp()`): `gp(x)`, the exact process of one numeric column, and `gp(x, k = K, c = C)`, its
 Hilbert-space approximation with `K` basis functions, both with the squared-exponential kernel and brms's scaling of the input,
 add the process's value at each row's input to the linear predictor, under `Priors(sdgp=..., lscale=...)` keyed by column (brms's

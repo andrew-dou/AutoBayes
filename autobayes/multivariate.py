@@ -21,10 +21,10 @@ draws x rows x responses (a ``response`` dimension in the order written, brms's 
 array); ``kind="response"`` draws each row's responses jointly from the multivariate normal. ``fit()`` samples the
 assembled graph with PyMC's ``pm.sample`` (``sample_posterior``) and cleans the result as Bambi does.
 
-Refused, naming the construct: a formula per response (brms's ``bf(y ~ ...) + bf(y2 ~ ...)``) without ``mi()``,
-distributional formulas and addition terms (D56), ``mi()`` in an ``mvbind()`` formula, ``mo()`` (not verified in a
-multivariate model; D56), correlated group effects across responses ``(1 |ID| g)`` (D57), families other than the Gaussian
-(``FamilySpec.multivariate``; D58), and a model without an explicit ``rescor`` (D58).
+Refused, naming the construct: distributional formulas and addition terms other than ``weights()`` (D56), ``mi()`` in an
+``mvbind()`` formula, ``mo()`` (not verified in a multivariate model; D56), correlated group effects across responses other
+than G08's (D57, D193), families other than the Gaussian (``FamilySpec.multivariate``; D58), and a model without an explicit
+``rescor`` (D58).
 
 Missing values (C06, docs/missing-and-measurement-error.md): brms's ``bf(y ~ mi(xm) + w) + bf(xm | mi() ~ w) +
 set_rescor(FALSE)`` is a list of formulas, one per response, ``ab.gaussian(["y ~ mi(xm) + w", "xm | mi() ~ w"], data,
@@ -41,11 +41,20 @@ subset (those whose 0/1 or logical indicator is 1; every row without ``subset()`
 the assembled graph gives each response its own observation coordinate (``observation_dims``). ``predict()`` takes one response
 at a time (``resp=``), on its rows of the fitted data or of ``newdata`` (by the new rows' own indicator), as brms's
 ``posterior_linpred(resp = )``; brms refuses the joint predictions of such a model, and so does ``predict()``. A list of formulas
-without ``subset()`` or ``mi()`` is the same model on every row. Refused, naming the construct: ``rescor=True`` (brms refuses
-``subset()`` with it; a formula per response without ``subset()`` is not verified with it, D56), ``subset()`` with ``mi()`` (brms
-requires ``mi(idx = )``) or with other addition terms, an indicator other than a 0/1 or logical column, an empty subset, a
-grouping level of the data that a response's subset does not reach (brms keeps it as a prior-only effect), and the univariate
-``subset()`` (D160, D161).
+without ``subset()`` or ``mi()`` is the same model on every row. Refused, naming the construct: ``rescor=True`` with
+``subset()`` (brms refuses it), ``subset()`` with ``mi()`` (brms requires ``mi(idx = )``) or with other addition terms, an
+indicator other than a 0/1 or logical column, an empty subset, a grouping level of the data that a response's subset does not
+reach (brms keeps it as a prior-only effect), and the univariate ``subset()`` (D160, D161).
+
+Multivariate extensions (G08, docs/multivariate-ext.md): a list of formulas without ``subset()`` or ``mi()`` takes ``rescor=True``
+(each response's own design in the joint likelihood); brms's correlation ID across responses, ``(1 |p| g)`` in ``mvbind()`` or in
+each response's formula (``CrossId``, ``MultivariateSpec.cross_ids``), is each response's plain ``(1 | g)`` correlated across the
+responses by the model (``L|g``, ``cor|g``, ``id_names``; the ID's LKJ prior is the top-level ``cor`` of its factor,
+``split_cor``); ``weights()`` after ``mvbind()`` or on a response's own formula is each response's weighted likelihood, or under
+a residual correlation each row's joint density weighted once (``joint_weights``, ``weighted_logp``). Refused, naming the
+construct: slopes, ``gr()``, ``mm()``, ``g:h`` with an ID across responses, an ID in one response alone, two IDs on one factor,
+an ID with ``subset()`` or ``mi()``, joint predictions at new levels of an ID's factor (D193), differing weights under a residual
+correlation, ``weights()`` with ``subset()`` (D194).
 """
 from __future__ import annotations
 
@@ -81,6 +90,162 @@ PREDICTION_DIM = "response"                                 # predict()'s respon
 _LHS_RE = re.compile(rf"^\s*({_IDENT})\s*\|\s*(.*?)\s*~\s*(.*?)\s*$", re.S)                       # <response> | <terms> ~ <rhs> (F06c)
 _SUBSET_TERM_RE = re.compile(r"^subset\s*\((.*)\)$", re.S)                                          # subset(<inside>) (F06c)
 SUBSET_REFUSED = "brms refuses the joint predictions of a model with subset()"               # F06c: predict() without resp=
+_ID_PIECE_RE = re.compile(rf"^\(\s*([^|]*?)\s*\|\s*({_IDENT})\s*\|\s*([^|]*?)\s*\)$", re.S)        # (<inner> |<ID>| <factor>) (G08)
+_WEIGHTS_TERM_RE = re.compile(r"^weights\s*\(", re.S)                                                # weights(...) (G08)
+ID_ROW = "docs/multivariate-ext.md, divergence D193"                                                 # G08: IDs across responses
+WEIGHTS_ROW = "docs/multivariate-ext.md, divergence D194"                                            # G08: weights() under rescor
+
+
+@dataclass(frozen=True)
+class CrossId:
+    """G08: brms's correlation ID shared by the group-level terms of several responses, ``(1 |p| g)`` in ``mvbind(y, y2) ~ ...``
+    or in each response's own formula: one group of brms (``sd_m`` with one entry per response, each under that response's
+    ``sd`` prior, ``z_m``, one ``L_m``) over the varying intercepts of ``responses`` (in the model's order of the responses) on
+    the grouping column ``factor``. Each response's model has the plain ``(1 | g)``; the model correlates them."""
+    id: str
+    factor: str
+    responses: tuple[str, ...]
+
+    @property
+    def coefs(self) -> tuple[tuple[str, str], ...]:
+        """``(response, coefficient)`` in brms's order (``cn`` 1, 2, ...): each response's varying intercept."""
+        return tuple((r, "Intercept") for r in self.responses)
+
+    @property
+    def labels(self) -> tuple[str, ...]:
+        """The coordinates of the correlation matrix, ``y_Intercept``, ``y2_Intercept`` (brms's ``cor_g__y_Intercept__y2_Intercept``)."""
+        return tuple(f"{r}_{c}" for r, c in self.coefs)
+
+
+def _strip_ids(rhs: str, what: str) -> tuple[str, dict[str, str]]:
+    """G08: ``rhs`` with each group-level term that carries a correlation ID, ``(1 |p| g)``, written without it, ``(1 | g)``,
+    and the IDs met, ``{"p": "g"}``; ``rhs`` unchanged without one. Taken: the varying intercept alone on a grouping column.
+    Refused, naming the construct: varying slopes or no varying intercept with the ID, an ID on ``gr()``, ``mm()``, ``g:h`` or
+    ``g/h``, and one ID twice in a formula."""
+    pieces, ids = [], {}
+    for piece in _split_top_level(rhs):
+        m = _ID_PIECE_RE.match(piece)
+        if m is None:
+            pieces.append(piece)
+            continue
+        inner, term_id, factor = (s.strip() for s in m.groups())
+        if re.sub(r"\s+", "", inner) != "1":
+            raise FormulaError(f"{what}: {piece!r}: varying slopes (or a term without the varying intercept) in a correlation ID across "
+                               f"responses are not supported; the ID is offered on the varying intercepts, '(1 |{term_id}| {factor})' "
+                               f"({ID_ROW})")
+        if not re.fullmatch(_IDENT, factor):
+            raise FormulaError(f"{what}: {piece!r}: a correlation ID across responses is offered on a grouping column, "
+                               f"'(1 |{term_id}| g)'; the grouping {factor!r} (gr(), mm(), g:h, g/h) is not supported with it ({ID_ROW})")
+        if term_id in ids:
+            raise FormulaError(f"{what}: the correlation ID {term_id!r} appears in two terms of one formula; brms writes the "
+                               "coefficients of one factor in one term (\"Can only combine group-level terms of the same grouping "
+                               f"factors\" for two factors; {ID_ROW})")
+        ids[term_id] = factor
+        pieces.append(f"(1 | {factor})")
+    return (" + ".join(pieces), ids) if ids else (rhs, ids)
+
+
+def _strip_formula_ids(text: str, what: str) -> tuple[str, dict[str, str]]:
+    """G08: a response's formula ``<lhs> ~ <rhs>`` with its right-hand side's correlation IDs stripped (``_strip_ids``)."""
+    lhs, rhs = text.split("~", 1)
+    stripped, ids = _strip_ids(rhs.strip(), what)
+    return (f"{lhs.strip()} ~ {stripped}" if ids else text), ids
+
+
+def _cross_ids(found: Mapping[str, Mapping[str, str]], responses, what) -> tuple[CrossId, ...]:
+    """G08: the correlation IDs across responses from each response's IDs (``found``: response -> {ID: grouping column}), in the
+    order met. An ID must join the same grouping column in two or more responses (brms refuses two columns: "Can only combine
+    group-level terms of the same grouping factors."); an ID in one response alone is refused as a univariate formula refuses
+    it (divergence D106), and two IDs on one grouping column (D193)."""
+    uses: dict[str, list[tuple[str, str]]] = {}
+    for r in responses:
+        for term_id, factor in found.get(r, {}).items():
+            uses.setdefault(term_id, []).append((r, factor))
+    out = []
+    for term_id, pairs in uses.items():
+        factors = sorted({f for _, f in pairs})
+        if len(factors) > 1:
+            raise FormulaError(f"{what}: the correlation ID {term_id!r} joins the grouping factors {factors}; brms refuses it (\"Can "
+                               f"only combine group-level terms of the same grouping factors.\"); an ID joins one factor's terms ({ID_ROW})")
+        if len(pairs) < 2:
+            raise FormulaError(f"{what}: the correlation ID {term_id!r} of '(1 |{term_id}| {factors[0]})' is used by the response "
+                               f"{pairs[0][0]!r} alone; an ID correlates the varying intercepts of two or more responses here (in one "
+                               f"formula it is not supported, divergence D106): write '(1 | {factors[0]})' without it")
+        out.append(CrossId(term_id, factors[0], tuple(r for r, _ in pairs)))
+    twice = sorted({c.factor for c in out if sum(o.factor == c.factor for o in out) > 1})
+    if twice:
+        raise FormulaError(f"{what}: two correlation IDs across responses on the grouping factor {twice[0]!r} are not supported ({ID_ROW})")
+    return tuple(out)
+
+
+def _restore_ids(text: str, spec: ModelSpec, response: str, cross_ids) -> str:
+    """G08: ``text`` (a response's canonical formula or right-hand side) with the response's terms of a correlation ID across
+    responses written with their ID, ``(1 |p| g)`` for ``(1 | g)``."""
+    for cid in cross_ids:
+        if response in cid.responses:
+            t = spec.group_term_of(cid.factor)
+            text = text.replace(t.canonical, replace(t, id=cid.id).canonical)
+    return text
+
+
+def _mvbind_additions(formula: str, rest: str) -> str:
+    """G08: the addition terms after ``mvbind()``, ``| weights(w)``, as written after the bar: ``weights()`` alone is taken (each
+    response's formula carries it, brms's ``weights_y``, ``weights_y2``); anything else is refused naming it (D56)."""
+    terms = _split_top_level(rest[1:]) if rest.startswith("|") else [rest]
+    others = [t for t in terms if not _WEIGHTS_TERM_RE.match(t)]
+    if others or not rest.startswith("|"):
+        raise FormulaError(f"{formula!r}: {rest!r} after mvbind(): addition terms other than weights() ({', '.join(others)}) on the "
+                           "responses of a multivariate model are not supported (docs/multivariate.md, divergence D56)")
+    return rest[1:].strip()
+
+
+def split_cor(priors: Priors, spec) -> tuple[dict, object]:
+    """G08: ``priors.cor`` split between the correlation IDs across responses (each one's LKJ prior, keyed by its grouping
+    column, brms's ``class = cor, group = g``) and the ``cor`` the responses' own correlated terms take (``response_priors``):
+    a factor's own entry, else the class-wide ``"*"`` entry (D173); a bare prior when the model has one correlation matrix in
+    all. Without an ID across responses: ``({}, priors.cor)``."""
+    from autobayes.priors import _CORRELATION, CLASS_WIDE, Prior, class_default
+
+    cross = [c.factor for c in getattr(spec, "cross_ids", ())]
+    if not cross:
+        return {}, priors.cor
+    own = sorted({t.factor for s in spec.specs.values() for t in s.group_terms if t.has_correlation})
+    cor, first = priors.cor, spec.cross_ids[0]
+    if cor is None:
+        raise PriorError(f"the correlation ID {first.id!r} across the responses {list(first.responses)} gives their varying intercepts "
+                         f"of {first.factor!r} a correlation matrix, which needs an LKJ prior: pass cor={{{first.factor!r}: ab.LKJ(eta)}} "
+                         f"(brms class cor, group {first.factor}; its default is lkj(1))")
+    if isinstance(cor, Mapping):
+        default = class_default(cor, "cor")
+        out = {g: cor.get(g, default) for g in cross}
+        missing = [g for g, p in out.items() if p is None]
+        if missing:
+            raise PriorError(f"cor has no prior for {missing}, whose varying intercepts a correlation ID correlates across the "
+                             f"responses: pass cor={{{missing[0]!r}: ab.LKJ(eta), ...}}")
+        rest = {k: v for k, v in cor.items() if k not in cross}
+        rest = None if not rest or (set(rest) == {CLASS_WIDE} and not own) else rest
+    elif len(cross) + len(own) != 1:
+        raise PriorError(f"multiple correlated grouping factors ({cross + own}) require an exact-key cor mapping; a bare prior is not "
+                         "broadcast")
+    else:
+        out, rest = {cross[0]: cor}, None
+    for g, p in out.items():
+        if not isinstance(p, Prior) or p.name not in _CORRELATION:
+            raise PriorError(f"prior for 'cor:{g}' must be a correlation prior ({sorted(_CORRELATION)}, brms's lkj(eta)), got {p!r}")
+    return out, rest
+
+
+def _check_rescor_weights(specs: Mapping[str, ModelSpec], responses, what) -> None:
+    """G08: with a residual correlation brms weights each row's joint density once, so every response must have the same weights:
+    the same ``weights()`` column, or none. brms refuses two columns ("All responses should use the same weights if 'rescor' is
+    estimated."); with only some responses weighted it weights the joint density by the first response's weights, or writes Stan
+    code that does not compile when only a later one is weighted (divergence D194): refused here, naming the columns."""
+    cols = {r: (a.column if (a := specs[r].addition("weights")) is not None else None) for r in responses}
+    if len(set(cols.values())) > 1:
+        shown = ", ".join(f"{r}: {'weights(' + c + ')' if c else 'no weights'}" for r, c in cols.items())
+        raise FormulaError(f"{what}: with a residual correlation (rescor=True) every response must have the same weights, got {shown}; "
+                           "brms refuses differing weights columns (\"All responses should use the same weights if 'rescor' is "
+                           f"estimated.\") and the responses' weights must be one column here, or none ({WEIGHTS_ROW})")
 
 
 def _has_subset(formula: str) -> bool:
@@ -119,6 +284,7 @@ class MultivariateSpec:
     specs: Mapping[str, ModelSpec]
     rescor: bool
     subsets: Mapping[str, str] = field(default_factory=lambda: MappingProxyType({}))
+    cross_ids: tuple[CrossId, ...] = ()      # G08: the correlation IDs across responses, each response's term (1 | g) in ``specs``
 
     @property
     def separate(self) -> bool:
@@ -135,6 +301,7 @@ class MultivariateSpec:
         """``response``'s canonical formula as brms writes it in ``bf()``, its ``subset()`` term included (F06c):
         ``y | subset(sub1) ~ x + (1 | g)``."""
         text, column = self.specs[response].canonical_formula, self.subsets.get(response)
+        text = _restore_ids(text, self.specs[response], response, self.cross_ids)     # G08: (1 |p| g)
         if column is None:
             return text
         lhs, rhs = text.split("~", 1)
@@ -143,10 +310,14 @@ class MultivariateSpec:
     @property
     def canonical_formula(self) -> str:
         """``mvbind(y, y2) ~ <the canonical right-hand side>``; a formula per response (C06, F06c) as brms writes it,
-        ``bf(y ~ mi(xm) + w) + bf(xm | mi() ~ w)``, ``bf(y | subset(sub1) ~ x) + bf(y2 | subset(sub2) ~ x)``."""
+        ``bf(y ~ mi(xm) + w) + bf(xm | mi() ~ w)``, ``bf(y | subset(sub1) ~ x) + bf(y2 | subset(sub2) ~ x)``. G08: with the addition
+        terms after ``mvbind()`` (``mvbind(y, y2) | weights(w) ~ ...``) and the correlation IDs across responses (``(1 |p| g)``)."""
         if self.separate:
             return " + ".join(f"bf({self.response_formula(r)})" for r in self.responses)
-        return f"mvbind({', '.join(self.responses)}) ~ {self.specs[self.responses[0]].rhs}"
+        first = self.specs[self.responses[0]]
+        adds = " + ".join(a.term for a in first.additions)
+        rhs = _restore_ids(first.rhs, first, self.responses[0], self.cross_ids)
+        return f"mvbind({', '.join(self.responses)}){' | ' + adds if adds else ''} ~ {rhs}"
 
     @property
     def groups(self) -> tuple[str, ...]:
@@ -164,7 +335,9 @@ def parse_multivariate(formula, data: pd.DataFrame | None = None, family: str = 
                        rescor) -> MultivariateSpec:
     """Parse brms's ``mvbind(y1, y2, ...) ~ rhs`` (C01): two or more distinct response columns sharing one right-hand side,
     each response's formula ``y ~ rhs`` parsed (and validated against ``data``) as the univariate formula it is; ``rescor``
-    must be True or False. Everything outside the verified subset is refused naming the construct (module docstring)."""
+    must be True or False. G08: ``mvbind(y, y2) | weights(w) ~ rhs`` gives each response ``y | weights(w) ~ rhs``, and a
+    correlation ID ``(1 |p| g)`` is each response's ``(1 | g)`` and one ``CrossId`` over the responses. Everything outside the
+    verified subset is refused naming the construct (module docstring)."""
     fam = get_family(family)
     if not fam.multivariate:
         raise FormulaError(f"a multivariate model (brms's mvbind() or mvbf()) is offered for the {', '.join(_offering()) or 'no'} family "
@@ -198,9 +371,7 @@ def parse_multivariate(formula, data: pd.DataFrame | None = None, family: str = 
     if not m:
         raise FormulaError(f"{formula!r}: expected 'mvbind(y1, y2, ...) ~ <terms>', the responses as column names inside mvbind()")
     inside, rest, rhs = m.group(1), m.group(2).strip(), m.group(3).strip()
-    if rest:
-        raise FormulaError(f"{formula!r}: {rest!r} after mvbind(): addition terms (weights(), cens(), trunc(), ...) on the responses of a "
-                           "multivariate model are not supported (docs/multivariate.md, divergence D56)")
+    additions = _mvbind_additions(formula, rest) if rest else ""      # G08: '| weights(w)', each response's
     responses = tuple(p.strip() for p in inside.split(","))
     bad = [p for p in responses if not re.fullmatch(_IDENT, p)]
     if bad:
@@ -212,7 +383,8 @@ def parse_multivariate(formula, data: pd.DataFrame | None = None, family: str = 
         raise FormulaError(f"{formula!r}: the response(s) {dup} appear more than once in mvbind()")
     if not rhs:
         raise FormulaError(f"{formula!r}: empty right-hand side")
-    for piece in _split_top_level(rhs):
+    stripped, ids = _strip_ids(rhs, repr(formula))                     # G08: (1 |p| g), every response's term in one block
+    for piece in _split_top_level(stripped):
         if _MI_RE.search(piece):
             raise FormulaError(f"{formula!r}: {piece!r}: brms's mi() (missing values modelled by a response's own formula) is not supported"
                                " (docs/multivariate.md, divergence D56): not in an mvbind() formula, "
@@ -248,16 +420,16 @@ def parse_multivariate(formula, data: pd.DataFrame | None = None, family: str = 
                                "response would have its own coefficient and simplex, brms's bsp_y and simo_y); write it in a "
                                "univariate model (docs/multivariate.md, divergence D56)")
         gm = _GROUP_RE.match(piece)
-        if gm and "|" in gm.group(3):
-            raise FormulaError(f"{formula!r}: {piece!r}: a correlation ID, brms's (1 |ID| g), which correlates the responses' group-level "
-                               "effects, is not supported; each response's group terms are separate and uncorrelated across responses, "
-                               "as brms's are without an ID (docs/multivariate.md, divergence D57)")
+        if gm and "|" in gm.group(3):                                  # G08: a correlation ID not written (1 |p| g)
+            raise FormulaError(f"{formula!r}: {piece!r}: a correlation ID across responses is written '(1 |p| g)', the ID between "
+                               f"two single bars ({ID_ROW})")
     specs = {}
     for r in responses:
+        text = f"{r}{' | ' + additions if additions else ''} ~ {stripped}"
         try:
-            s = parse_formula(f"{r} ~ {rhs}", data, family, categorical)
+            s = parse_formula(text, data, family, categorical)
         except FormulaError as e:
-            raise FormulaError(f"{formula!r}, the formula of the response {r!r} ('{r} ~ {rhs}'): {e}") from None
+            raise FormulaError(f"{formula!r}, the formula of the response {r!r} ('{text}'): {e}") from None
         refuse_products([s], "a multivariate model")                    # G03: verified in univariate models only
         if s.custom_group_terms:                                         # D08: verified in univariate models only
             raise FormulaError(f"{formula!r}: '{s.custom_group_terms[0].canonical}' in a multivariate formula is not supported"
@@ -270,8 +442,12 @@ def parse_multivariate(formula, data: pd.DataFrame | None = None, family: str = 
         if others:
             raise FormulaError(f"{formula!r}: the response(s) {others} cannot also be predictors, grouping factors or offsets of the "
                                "right-hand side every response shares")
+        weighted = sorted({c for a in s.additions for c in a.columns} & set(responses))
+        if weighted:                                                   # G08
+            raise FormulaError(f"{formula!r}: the response(s) {weighted} cannot also be the weights of the responses")
         specs[r] = s
-    return MultivariateSpec(formula.strip(), responses, rhs, MappingProxyType(specs), bool(rescor))
+    cross = _cross_ids({r: ids for r in responses}, responses, repr(formula))
+    return MultivariateSpec(formula.strip(), responses, rhs, MappingProxyType(specs), bool(rescor), cross_ids=cross)
 
 
 IMPUTATION_FORM = ("a list of formulas, one per response, the formula of a response with missing values written 'x | mi() ~ ...' "
@@ -316,6 +492,10 @@ def _parse_imputation(formulas, data, family, categorical, *, rescor) -> Multiva
         raise FormulaError(f"{formulas!r}: mi() with a residual correlation (rescor=True, brms's set_rescor(TRUE)) is not supported"
                            ": brms would correlate the imputed values' residuals with the other responses'; pass "
                            "rescor=False (docs/missing-and-measurement-error.md, divergence D72)")
+    for text in texts:                                         # G08: not verified with mi()
+        if "~" in text and any(_ID_PIECE_RE.match(p) for p in _split_top_level(text.split("~", 1)[1].strip())):
+            raise FormulaError(f"{formulas!r}, the formula {text!r}: a correlation ID across responses in a model with mi() is not "
+                               f"supported ({ID_ROW})")
     specs0 = []
     for text in texts:
         try:
@@ -480,8 +660,9 @@ def _check_subset_levels(spec: ModelSpec, data: pd.DataFrame, rows: np.ndarray, 
 def _parse_separate(formulas, data, family, categorical, *, rescor) -> MultivariateSpec:
     """A formula per response without ``mi()`` (F06c): each ``'<response> ~ <terms>'`` or ``'<response> | subset(<indicator>) ~
     <terms>'`` parsed as the univariate formula it is, without its ``subset()`` term, and validated against the rows of its
-    subset (every row without one), the responses distinct, ``rescor=False``. Refused, naming the construct: ``rescor=True``
-    (brms refuses ``subset()`` with it; without ``subset()`` not verified, D56), other addition terms, ``me()`` (D73), ``mo()``,
+    subset (every row without one), the responses distinct. G08: ``rescor=True`` without ``subset()``, ``weights()`` (one column
+    for every response under ``rescor``) and correlation IDs across responses (``_strip_formula_ids``, ``_cross_ids``). Refused,
+    naming the construct: ``rescor=True`` with ``subset()`` (brms refuses it), other addition terms, ``me()`` (D73), ``mo()``,
     ``gp()`` (D56), autocorrelation (D70) and SAR terms (D143), ``fcor()`` (D144), ``car()`` (D141), ``unstr()`` and ``cosy()``
     (D146), ``mm()`` and ``gr(by = )`` (D104, D105), a distributional formula, a response read by another formula, and an
     indicator that is a response."""
@@ -498,15 +679,17 @@ def _parse_separate(formulas, data, family, categorical, *, rescor) -> Multivari
     if not isinstance(rescor, (bool, np.bool_)):
         raise ValueError(f"rescor must be True or False, got {rescor!r}")
     split = [_split_subset(text) for text in texts]
-    if rescor:
-        if any(column is not None for _, column in split):
-            raise FormulaError(f"{formulas!r}: subset() with a residual correlation (rescor=True, brms's set_rescor(TRUE)) is refused, "
-                               "as brms refuses it (\"Only 'se', 'weights', 'mi' are supported addition arguments when 'rescor' is "
-                               "estimated.\"): pass rescor=False (docs/subset.md, divergence D160)")
-        raise FormulaError(f"{formulas!r}: a formula of its own per response (brms's bf(y ~ ...) + bf(y2 ~ ...)) is not supported"
-                           " with a residual correlation (rescor=True): no frozen case verifies the joint likelihood of "
-                           "responses with designs of their own; pass rescor=False (docs/subset.md), or write one formula, "
-                           "'mvbind(y, y2) ~ <terms>', whose right-hand side every response shares (docs/multivariate.md, divergence D56)")
+    if rescor and any(column is not None for _, column in split):
+        raise FormulaError(f"{formulas!r}: subset() with a residual correlation (rescor=True, brms's set_rescor(TRUE)) is refused, "
+                           "as brms refuses it (\"Only 'se', 'weights', 'mi' are supported addition arguments when 'rescor' is "
+                           "estimated.\"): pass rescor=False (docs/subset.md, divergence D160)")
+    found = []                                                            # G08: each formula's correlation IDs, stripped
+    for i, (stripped, column) in enumerate(split):
+        text, ids = _strip_formula_ids(stripped, repr(formulas))
+        if ids and column is not None:
+            raise FormulaError(f"{formulas!r}, the formula {texts[i]!r}: a correlation ID across responses with subset() is not "
+                               f"supported ({ID_ROW})")
+        split[i], found = (text, column), found + [ids]
     fam = get_family(family)
     specs0 = []
     for text, (stripped, _) in zip(texts, split):
@@ -525,7 +708,7 @@ def _parse_separate(formulas, data, family, categorical, *, rescor) -> Multivari
             raise FormulaError(f"{s.formula!r}: a distributional formula in a multivariate model is not supported "
                                f"({s.response!r} is a parameter of the {fam.name} family, not a response; docs/multivariate.md, "
                                "divergence D56)")
-        others = [a.term for a in s.additions]
+        others = [a.term for a in s.additions if a.kind != "weights"]  # G08: weights() is taken
         if others or s.trials is not None:
             raise FormulaError(f"{s.formula!r}: addition terms ({', '.join(others or ['trials()'])}) on a response of a multivariate model "
                                "are not supported (docs/multivariate.md, divergence D56)")
@@ -565,13 +748,22 @@ def _parse_separate(formulas, data, family, categorical, *, rescor) -> Multivari
         if plain:
             raise FormulaError(f"{s.formula!r}: the response(s) {plain} of another formula cannot also be predictors, grouping factors or "
                                "offsets here (a response's missing values are modelled with mi(), docs/missing-and-measurement-error.md)")
+        weighted = sorted({c for a in s.additions for c in a.columns} & set(responses))
+        if weighted:                                                  # G08
+            raise FormulaError(f"{s.formula!r}: the response(s) {weighted} cannot also be the weights of a response")
+    if rescor:                                                        # G08: the joint density is weighted once
+        _check_rescor_weights({s.response: s for s in specs0}, responses, repr(formulas))
+    weighted = [s.response for s in specs0 if s.addition("weights") is not None]
+    if weighted and any(column is not None for _, column in split):   # G08: not verified together
+        raise FormulaError(f"{formulas!r}: weights() (on {weighted}) in a multivariate model with subset() is not supported ({WEIGHTS_ROW})")
+    cross = _cross_ids(dict(zip(responses, found)), responses, repr(formulas))
     subsets = {r: column for r, (_, column) in zip(responses, split) if column is not None}
     indicator_responses = sorted(set(subsets.values()) & set(responses))
     if indicator_responses:
         raise FormulaError(f"{formulas!r}: the subset() indicator(s) {indicator_responses} are responses of the model; an indicator "
                            "is a 0/1 or logical column of the data")
     spec0 = MultivariateSpec(tuple(t.strip() for t in texts), responses, "", MappingProxyType({s.response: s for s in specs0}),
-                             False, MappingProxyType(subsets))
+                             bool(rescor), MappingProxyType(subsets), cross_ids=cross)
     cats = response_categorical(spec0, categorical)
     specs = {}
     for text, (stripped, column), r in zip(texts, split, responses):
@@ -612,6 +804,25 @@ def multi_normal_cholesky_logp(value, mu, sigma, L):
         quad = quad + es[k] ** 2
         logdet = logdet + pt.log(LS[..., k, k])
     return np.float64(-0.5 * K * np.log(2.0 * np.pi)) - logdet - np.float64(0.5) * quad
+
+
+def weighted_logp(weights):
+    """G08: ``multi_normal_cholesky_logp`` with each row's joint log density multiplied by its weight, brms's ``weights[n] *
+    multi_normal_cholesky_lpdf(Y[n] | Mu[n], LSigma)`` under ``weights()`` and a residual correlation (``weights`` the ``(n,)``
+    weights of every response)."""
+    w = np.asarray(weights, dtype=np.float64)
+
+    def logp(value, mu, sigma, L):
+        return w * multi_normal_cholesky_logp(value, mu, sigma, L)
+
+    return logp
+
+
+def _ancestors(var) -> set:
+    """G08: the variables ``var`` is computed from (PyTensor's ``ancestors``)."""
+    from pytensor.graph.traversal import ancestors
+
+    return set(ancestors([var]))
 
 
 def _rename_dim(fg, old: str, new: str, coords) -> None:
@@ -661,6 +872,8 @@ class MultivariateModel:
     submodels : {response: Model}   each response's univariate model (its own Bambi graph, design and names)
     design : MultivariateDesign     ``Y`` and each response's design
     pymc_model : pymc.Model         the assembled graph that is sampled; inspect it directly
+    id_cor_priors : {factor: Prior} G08: the LKJ prior of each correlation ID across responses (``id_names``), by factor
+    joint_weights : ndarray | None  G08: the weights of each row's joint density under a residual correlation, or None
     """
 
     def __init__(self, formula, data: pd.DataFrame, priors: Priors, *, family: str = "gaussian", rescor: bool | None = None,
@@ -678,6 +891,8 @@ class MultivariateModel:
         if not isinstance(priors, Priors):
             raise PriorError(f"priors must be an ab.Priors, got {type(priors).__name__}")
         priors.validate_multivariate(spec0, fam)
+        self.id_cor_priors, own_cor = split_cor(priors, spec0)     # G08: the IDs across responses', and the responses' own
+        own = replace(priors, cor=own_cor) if spec0.cross_ids else priors
         self.family, self.family_spec, self.priors = family, fam, priors
         self.responses: tuple[str, ...] = spec0.responses
         self.rescor = bool(rescor)
@@ -697,7 +912,7 @@ class MultivariateModel:
         subsets = spec0.subsets                                  # F06c: a response with subset() is built on its subset's rows
         rows = {r: subset_rows(data, subsets[r], r) for r in subsets}
         self.submodels = MappingProxyType({r: Model(spec0.formulas[r], data.iloc[rows[r]] if r in subsets else data,
-                                                    priors.response_priors(r), family=family,
+                                                    own.response_priors(r), family=family,
                                                     center_predictors=center_predictors, categorical=cats[r], imputed=spec0.imputed)
                                            for r in self.responses})
         subs = list(self.submodels.values())
@@ -706,7 +921,10 @@ class MultivariateModel:
         if not subsets and (len({sub.design.n for sub in subs}) != 1 or any(len(sub.dropped_rows) for sub in subs)):
             raise RuntimeError("the responses' models were fit to different rows")
         self.spec = MultivariateSpec(spec0.formula, spec0.responses, spec0.rhs,
-                                     MappingProxyType({r: sub.spec for r, sub in self.submodels.items()}), self.rescor, subsets)
+                                     MappingProxyType({r: sub.spec for r, sub in self.submodels.items()}), self.rescor, subsets,
+                                     cross_ids=spec0.cross_ids)
+        # G08: with a residual correlation each row's joint density is weighted once, by the responses' one weights column
+        self.joint_weights = subs[0].design.weights if self.rescor else None
         # one right-hand side: the responses' centring; a formula per response (C06): the flag, which each response's table
         # applies when its formula has an intercept
         self.effective_center_predictors = self.center_predictors if self.spec.separate else subs[0].effective_center_predictors
@@ -789,6 +1007,22 @@ class MultivariateModel:
             out.update(y=self.observed_names[0], Lrescor="Lrescor", rescor="rescor")
         for r, roles in self.response_names.items():
             out.update({f"{r}:{role}": name for role, name in roles.items()})
+        for g, roles in self.id_names.items():                # G08: "L:g" and "cor:g" of a correlation ID across responses
+            out.update({f"L:{g}": roles["L"], f"cor:{g}": roles["cor"]})
+        return out
+
+    @property
+    def id_names(self) -> dict[str, dict[str, object]]:
+        """G08: each correlation ID across responses, by grouping factor: ``L`` the Cholesky factor of the correlation matrix of the
+        responses' varying intercepts (``L|g``, brms's ``L_m``, sampled as ``L|g_cholesky_corr__``), ``cor`` the matrix (``cor|g``,
+        brms's ``Cor_m``), ``coordinate`` / ``coordinate_T`` its dimensions (``g__id_dim``, labelled ``y_Intercept``, ...), ``id``
+        the ID and ``effects`` the graph's names of the correlated effects, in order (``y_1|g``, ``y2_1|g``). Empty without one."""
+        out = {}
+        for cid in self.spec.cross_ids:
+            g = cid.factor
+            out[g] = {"L": f"L|{g}", "cor": f"cor|{g}", "coordinate": f"{g}__id_dim", "coordinate_T": f"{g}__id_dim_T", "id": cid.id,
+                      "effects": tuple(self._names[r][self.submodels[r].group_coefficient_names[(g, c)]["group_effect"]]
+                                       for r, c in cid.coefs)}
         return out
 
     @property
@@ -847,6 +1081,8 @@ class MultivariateModel:
                     coords[dim], lengths[dim] = values, fg._dim_lengths[dim]
         added = ([*self.observed_names, "Lrescor", "rescor", "Lrescor_cholesky_corr__", RESPONSE_DIM, RESPONSE_DIM_T]
                  if self.rescor else [])
+        added += [n for roles in self.id_names.values()                                 # G08
+                  for n in (roles["L"], roles["cor"], f"{roles['L']}_cholesky_corr__", roles["coordinate"], roles["coordinate_T"])]
         value_names = [o.owner.inputs[1].name for o in outputs                 # the value variables named apart from their variable
                        if isinstance(o.owner.op, ModelFreeRV) and o.owner.inputs[1].name != o.name]
         names = [o.name for o in outputs] + value_names + list(coords) + added
@@ -862,6 +1098,8 @@ class MultivariateModel:
             if old in merged.variables:
                 merged.replace(old, new, import_missing=True)
         merged._coords, merged._dim_lengths = coords, lengths
+        if self.spec.cross_ids:                              # G08: the responses' varying intercepts in one correlation matrix
+            self._correlate_across(merged)
         model = model_from_fgraph(merged, mutate_fgraph=True)
         if self.rescor:
             K = len(self.responses)
@@ -873,9 +1111,48 @@ class MultivariateModel:
                 pm.Deterministic("rescor", L @ L.T, dims=(RESPONSE_DIM, RESPONSE_DIM_T))
                 mu = pt.stack([model[self._names[r][sub.names["linpred"]]] for r, sub in self.submodels.items()], axis=-1)
                 sigma = pt.stack([model[self._names[r][sub.names["sigma"]]] for r, sub in self.submodels.items()])
-                pm.CustomDist(self.observed_names[0], mu, sigma, L, logp=multi_normal_cholesky_logp, observed=self.design.Y,
+                logp = multi_normal_cholesky_logp if self.joint_weights is None else weighted_logp(self.joint_weights)
+                pm.CustomDist(self.observed_names[0], mu, sigma, L, logp=logp, observed=self.design.Y,
                               signature="(k),(k),(k,k)->(k)", dims=("__obs__", RESPONSE_DIM))
         return model
+
+    def _correlate_across(self, fgraph) -> None:
+        """G08: brms's correlation ID across responses as an edit of the assembled function graph, as A02 and D08 correlate a
+        univariate model's coefficients (``Model._correlate_group_effects``): each response's model built its varying intercept
+        ``(1 | g)`` as ``r_k = sd_k * z_k`` (``y2_1|g = y2_1|g_sigma * y2_1|g_offset``); brms's ``r = (diag(sd) L z)^T`` over the
+        responses is ``r_k = sd_k * sum_{j <= k} L[k, j] z_j``, so the first response's effects are unchanged (``L[0, 0] = 1``)
+        and each later one's deterministic is replaced, everywhere it is used, by the correlated expression. ``L|g`` is a free
+        ``M x M`` Cholesky factor under ``lkj_corr_cholesky(eta)`` (the ID's ``cor`` prior), sampled on Stan's ``cholesky_corr``
+        coordinates, and ``cor|g = L L^T`` a deterministic (brms's ``Cor_m``), both on the ID's coordinates."""
+        import pytensor
+        from pymc.model.fgraph import model_deterministic, model_free_rv
+        from pymc.pytensorf import toposort_replace
+
+        by_name = {o.name: o for o in fgraph.outputs}
+        replacements, added = [], []
+        for cid in self.spec.cross_ids:
+            roles, M = self.id_names[cid.factor], len(cid.coefs)
+            rv, transform, value = cholesky_corr_rv(roles["L"], float(self.id_cor_priors[cid.factor].params["eta"]), M)
+            for dim in (roles["coordinate"], roles["coordinate_T"]):
+                fgraph._coords[dim] = cid.labels
+                fgraph._dim_lengths[dim] = pytensor.shared(M, name=dim)
+            L = model_free_rv(rv, value, transform, roles["coordinate"], roles["coordinate_T"])
+            L.name = roles["L"]
+            cor = L @ L.T
+            cor_det = model_deterministic(cor, roles["coordinate"], roles["coordinate_T"])
+            cor_det.name = roles["cor"]
+            added += [L, cor_det]
+            coef = [{k: self._names[r][v] if k != "coordinate" else v for k, v in self.submodels[r].group_coefficient_names[(cid.factor, c)].items()
+                     if k in ("sd", "offset", "group_effect", "coordinate")} for r, c in cid.coefs]
+            zs = [by_name[c["offset"]] for c in coef]
+            for k in range(1, M):
+                expr = by_name[coef[k]["sd"]] * sum(L[k, j] * zs[j] for j in range(k + 1))
+                det = model_deterministic(expr, coef[k]["coordinate"])
+                det.name = coef[k]["group_effect"]
+                replacements.append((by_name[coef[k]["group_effect"]], det))
+        toposort_replace(fgraph, tuple(replacements))
+        for var in added:
+            fgraph.add_output(var)
 
     def _check_graph(self) -> None:
         """The assembled graph holds exactly the responses' variables under their new names with their transforms, the
@@ -884,6 +1161,7 @@ class MultivariateModel:
         pmm, K = self.pymc_model, len(self.responses)
         expected = {self.value_name(r, v.name) for r, sub in self.submodels.items() for v in sub.pymc_model.value_vars}
         expected |= {"Lrescor_cholesky_corr__"} if self.rescor else set()
+        expected |= {f"{roles['L']}_cholesky_corr__" for roles in self.id_names.values()}      # G08
         got = {v.name for v in pmm.value_vars}
         if got != expected:
             raise RuntimeError(f"the multivariate graph's value variables {sorted(got)} differ from the responses' {sorted(expected)}")
@@ -909,15 +1187,28 @@ class MultivariateModel:
                     raise RuntimeError(f"PyMC dims of {name!r} are not the response coordinates")
             if tuple(pmm.named_vars_to_dims.get(self.observed_names[0], ())) != ("__obs__", RESPONSE_DIM):
                 raise RuntimeError(f"PyMC dims of {self.observed_names[0]!r} are not (__obs__, {RESPONSE_DIM})")
+        for cid in self.spec.cross_ids:                       # G08: L|g free on the ID's coordinates, the later effects correlated
+            roles, M = self.id_names[cid.factor], len(cid.coefs)
+            L = pmm[roles["L"]]
+            if (L not in pmm.free_RVs or tuple(L.type.shape) != (M, M) or tuple(pmm.rvs_to_values[L].type.shape) != (n_free(M),)
+                    or any(tuple(pmm.named_vars_to_dims.get(n, ())) != (roles["coordinate"], roles["coordinate_T"]) for n in (roles["L"], roles["cor"]))
+                    or tuple(pmm.coords[roles["coordinate"]]) != cid.labels):
+                raise RuntimeError(f"{roles['L']!r} is not a free {M} x {M} correlation Cholesky factor on {roles['coordinate']!r}")
+            for name in roles["effects"][1:]:
+                if L not in _ancestors(pmm[name]):
+                    raise RuntimeError(f"the effects {name!r} are not correlated through {roles['L']!r}")
 
     # -- points --------------------------------------------------------------------------------------------
-    def value_point(self, *, resp: Mapping[str, Mapping], Lrescor=None, Ymi=None) -> dict[str, np.ndarray]:
+    def value_point(self, *, resp: Mapping[str, Mapping], Lrescor=None, Ymi=None, L=None) -> dict[str, np.ndarray]:
         """A point in the graph's value space: ``resp`` maps each response to the keyword arguments of its univariate
         model's ``Model.value_point`` (``{"y": {"intercept": ..., "b": ..., "sd": ..., "z": ..., "sigma": ...}, ...}``),
         ``Lrescor`` is the Cholesky factor of the residual correlation matrix (lower triangular, unit-norm rows, in the
         responses' order), required exactly with ``rescor=True`` and stored on Stan's ``cholesky_corr`` coordinates. ``Ymi``
         (C06) gives the missing values of each column of ``missing_names`` (``{"xm": array(Nmi)}``, one per missing row; a
-        single column also takes the bare array), which every response holding them shares: it is not part of ``resp``."""
+        single column also takes the bare array), which every response holding them shares: it is not part of ``resp``. ``L``
+        (G08) gives the Cholesky factor of each correlation ID across responses by grouping factor (``{"g": array(M, M)}``, in
+        the order of ``id_names[g]["effects"]``), required exactly when the model has one; each response's ``z`` holds its own
+        standardised effects (brms's row of ``z_m``)."""
         if not isinstance(resp, Mapping) or set(resp) != set(self.responses):
             raise ValueError(f"resp must map exactly the responses {list(self.responses)} to their value_point arguments")
         missing = list(self.missing_names)
@@ -944,6 +1235,14 @@ class MultivariateModel:
             point["Lrescor_cholesky_corr__"] = cholesky_corr_free(check_correlation_cholesky(Lrescor, len(self.responses), "Lrescor"))
         elif Lrescor is not None:
             raise ValueError("this model has no residual correlation (rescor=False); Lrescor does not apply")
+        ids = self.id_names                                  # G08: each ID's L on Stan's cholesky_corr coordinates
+        if ids and (not isinstance(L, Mapping) or set(L) != set(ids)):
+            raise ValueError(f"L must map exactly the grouping factors of the correlation IDs across responses {list(ids)} to their "
+                             "Cholesky factors")
+        if not ids and L is not None:
+            raise ValueError("this model has no correlation ID across responses; L does not apply")
+        for g, roles in ids.items():
+            point[f"{roles['L']}_cholesky_corr__"] = cholesky_corr_free(check_correlation_cholesky(L[g], len(roles["effects"]), f"L for {g!r}"))
         expected = {v.name for v in self.pymc_model.value_vars}
         if set(point) != expected:
             raise RuntimeError(f"value names {sorted(point)} do not match PyMC's {sorted(expected)}")
@@ -1038,13 +1337,34 @@ class MultivariateModel:
                       f"  {R[0]} and {R[1]} at the same predictors and group effects, not of the responses themselves.",
                       f"  Lrescor ~ {describe_prior(self.priors.rescor)} (brms lkj({eta:g}) on Rescor, placed on Lrescor as "
                       "lkj_corr_cholesky), sampled on Stan's cholesky_corr coordinates"]
+            if self.joint_weights is not None:                # G08: brms's weights[n] * multi_normal_cholesky_lpdf(...)
+                w, column = self.joint_weights, self.spec.specs[R[0]].addition("weights").column
+                lines += [f"  weights({column}): each row's joint log density is multiplied by its weight, once (brms's weights[n] * "
+                          f"multi_normal_cholesky_lpdf(Y[n] | ...), the weights of every response); weights {w.min():.4f} to "
+                          f"{w.max():.4f}, sum {w.sum():.4f}"]
         else:
             lines += ["Likelihood",
                       "  each response its own Normal likelihood, independent given the parameters (no residual correlation): "
                       + "; ".join(f"{r}_i ~ Normal(mu_{r},i, sigma_{r})" for r in R)]
-        if s.groups:
+        if s.groups and not s.cross_ids:
             lines += ["  Group-level effects are separate per response (each response's group terms have their own sd, z and effects, brms's "
                       "sd_m, z_m and r_m of that response) and uncorrelated across responses (no shared ID)."]
+        if s.cross_ids:                                       # G08: brms's correlation ID across responses
+            lines += ["", "Group-level effects correlated across responses (brms's correlation ID)"]
+            for cid in s.cross_ids:
+                g, roles, prior = cid.factor, self.id_names[cid.factor], self.id_cor_priors[cid.factor]
+                lines += [f"  ({', '.join(f'u_{r},{g}[j]' for r in cid.responses)}) = diag({', '.join(f'sd_{r},{g}' for r in cid.responses)}) "
+                          f"L_{g} z[j], z[j] ~ Normal(0, I): the ID {cid.id!r} of (1 |{cid.id}| {g}) puts the responses' varying intercepts "
+                          f"of {g!r} in one correlation matrix",
+                          f"  (brms's one group: sd_m with one entry per response, each under that response's sd prior, and one L_m). "
+                          f"{roles['L']} ~ {describe_prior(prior)} (brms lkj({float(prior.params['eta']):g}) on cor_{g}), sampled on "
+                          f"Stan's cholesky_corr coordinates;",
+                          f"  {roles['cor']} = L L^T (brms Cor_m) on {roles['coordinate']} ({', '.join(cid.labels)}). The responses' "
+                          f"effects {', '.join(roles['effects'])} are these correlated effects (each response's own (1 | {g}) below, "
+                          "with its sd and z)."]
+            others = [g for g in s.groups if g not in {c.factor for c in s.cross_ids}]
+            if others:
+                lines += [f"  The group-level terms of {others} are separate per response and uncorrelated across responses."]
         for col, roles in self.missing_names.items():         # C06: the missing values, shared by the responses that hold them
             rows = self.submodels[col].design.missing[col].index.tolist()
             readers = [r for r, sub in self.submodels.items() if any(t.operands[0] == col for t in sub.spec.mi_terms)]
@@ -1069,8 +1389,11 @@ class MultivariateModel:
                                  f"  {name:<28} the missing values of {v.name[len('Ymi_'):]} (shared)")
         if self.rescor:
             lines.append(f"  {'Lrescor_cholesky_corr__':<28} Lrescor on Stan's cholesky_corr coordinates (canonical partial correlations, arctanh scale)")
+        for g, roles in self.id_names.items():               # G08
+            lines.append(f"  {roles['L'] + '_cholesky_corr__':<28} {roles['L']} on Stan's cholesky_corr coordinates (the ID across responses)")
         deterministic = {d.name for d in self.pymc_model.deterministics}
         dets = [f"{new} = {r}'s {old}" for r, names in self._names.items() for old, new in names.items() if new in deterministic]
+        dets += [f"{roles['cor']} = {roles['L']} {roles['L']}^T (brms Cor_m)" for roles in self.id_names.values()]   # G08
         lines.append("Deterministic: " + ", ".join(dets + (["rescor = Lrescor Lrescor^T (brms Rescor)"] if self.rescor else [])))
         for w in self.warnings:
             lines += ["", "WARNING: " + w]
@@ -1129,6 +1452,10 @@ def predict_multivariate(model: MultivariateModel, fit_result, *, newdata: pd.Da
                 f"newdata has levels of {g!r} not seen in training: {unseen}. Pass new_groups='population' to draw their effects "
                 "from Normal(0, sd), or new_groups='resample_observed' for brms's default 'uncertainty' behaviour; an exact-key "
                 "mapping can set the policy separately for each factor.")
+        if unseen and g in model.id_names:                    # G08: the responses' effects would be drawn independently
+            raise FormulaError(f"newdata has levels of {g!r} not seen in training: {unseen}, whose effects a correlation ID correlates "
+                               "across the responses; drawing them jointly is not supported (each response's own predictions, "
+                               f"predict(resp=...), draw its effects from its own marginal; {ID_ROW})")
     rng = np.random.default_rng(seed)
     posts = {r: model.response_posterior(post, r) for r in model.responses}
     eta = np.stack([_predict_by_hand(sub, SimpleNamespace(posterior=posts[r]), dfs[r], "linear", rng,
@@ -1244,6 +1571,8 @@ def multivariate_default_priors(formula, data: pd.DataFrame, *, family: str = "g
     cor = resp[spec.responses[0]].cor
     if spec.separate:                                           # C06: every response's correlated terms, each factor once
         cor = {g: p for r in spec.responses for g, p in dict(resp[r].cor or {}).items()} or None
+    if spec.cross_ids:                                          # G08: brms's lkj(1) on each correlation ID across responses
+        cor = {**dict(cor or {}), **{c.factor: replace(LKJ(1), source="default") for c in spec.cross_ids}}
     priors = Priors(resp={r: replace(p, cor=None) for r, p in resp.items()}, cor=cor,
                     rescor=replace(LKJ(1), source="default") if spec.rescor else None)
     priors.validate_multivariate(spec, family)
@@ -1255,22 +1584,50 @@ def multivariate_prior_table(priors: Priors, spec: MultivariateSpec, family="gau
     with its ``resp``, the ``cor`` rows once without ``resp`` (brms's correlation prior is per factor, shared by the responses),
     and the ``rescor`` row; sorted as brms sorts them."""
     from autobayes.default_priors import COLUMNS, prior_table
-    from autobayes.priors import brms_prior
+    from autobayes.priors import brms_prior, class_default
 
     priors.validate_multivariate(spec, family)
     rows, cor_rows = [], set()
+    cross, own_cor = split_cor(priors, spec)                    # G08: the IDs across responses' cor, and the responses' own
+    own = replace(priors, cor=own_cor) if cross else priors
     for r in spec.responses:
-        for row in prior_table(priors.response_priors(r), spec.specs[r], family, center_predictors=center_predictors):
+        for row in prior_table(own.response_priors(r), spec.specs[r], family, center_predictors=center_predictors):
             if row["class"] == "cor":                       # once per factor (C06: whichever response has the correlated term)
+                if cross:                                   # G08: written with the IDs' rows, below
+                    continue
                 if (row["group"], row["coef"]) not in cor_rows:
                     cor_rows.add((row["group"], row["coef"]))
                     rows.append(row)
                 continue
             rows.append({**row, "resp": r})
+    if cross:
+        every = {g: p for r in spec.responses for g, p in own.response_priors(r).cor_priors(spec.specs[r]).items()}
+        rows += _cor_rows({**every, **cross}, class_default(priors.cor, "cor"))
     if spec.rescor:
         rows.append(dict(zip(COLUMNS, (brms_prior(priors.rescor), "rescor", "", "", "", "", "", "", "", "", priors.rescor.source))))
     rows.sort(key=lambda row: (row["resp"], row["dpar"], row["nlpar"], row["class"], row["group"], row["coef"], row["tag"]))
     return rows
+
+
+def _cor_rows(cor: Mapping, default) -> list[dict[str, str]]:
+    """G08: brms's ``cor`` rows of a model with a correlation ID across responses, written as a univariate table writes them
+    (``default_priors.prior_table``) for every correlation matrix of the model at once (the IDs' and the responses' own): the
+    class-wide prior and each factor's override (D173), the prior every factor shares on the class row over empty group rows, or
+    an empty class row over each factor's own."""
+    from autobayes.default_priors import COLUMNS
+    from autobayes.priors import brms_prior
+
+    def row(prior, group="", source=None):
+        text = brms_prior(prior) if prior is not None else ""
+        src = source if source is not None else (prior.source if prior is not None else "default")
+        return dict(zip(COLUMNS, (text, "cor", "", group, "", "", "", "", "", "", src)))
+
+    ps = list(cor.values())
+    if default is not None:
+        return [row(default)] + [row(None if p == default else p, g, default.source if p == default else None) for g, p in cor.items()]
+    if all(p == ps[0] for p in ps):
+        return [row(ps[0])] + [row(None, g, p.source) for g, p in cor.items()]
+    return [row(None)] + [row(p, g) for g, p in cor.items()]
 
 
 # -- identity ------------------------------------------------------------------------------------------------
@@ -1292,5 +1649,9 @@ def _freeze_target(model: MultivariateModel) -> dict[str, str]:
                                    if missing.any() else {}),
                                 "targets": {r: sub.target_identity["sha256"] for r, sub in model.submodels.items()},
                                 **({"subsets": {r: {"column": c, "rows": model.design.rows[r]} for r, c in model.spec.subsets.items()}}
-                                   if model.spec.subsets else {})}}
+                                   if model.spec.subsets else {}),
+                                # G08: the correlation IDs across responses and their priors (the responses' own targets lack them)
+                                **({"cross_ids": [{"id": c.id, "factor": c.factor, "responses": list(c.responses),
+                                                   "prior": _prior(model.id_cor_priors[c.factor])} for c in model.spec.cross_ids]}
+                                   if model.spec.cross_ids else {})}}
     return {"schema": SCHEMA, "sha256": digest(payload)}   # G11: the canonical bytes, streamed (identity.digest)

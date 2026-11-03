@@ -665,9 +665,13 @@ class Priors:
             raise PriorError(f"a multivariate model needs the priors of each response: pass resp={{{', '.join(f'{r!r}: {{...}}' for r in responses)}}}")
         if set(self.resp) != set(responses):
             raise PriorError(f"resp must cover exactly the responses {responses}; got {list(self.resp)}")
+        own = self
+        if getattr(spec, "cross_ids", ()):                            # G08: the IDs across responses take their cor priors
+            from autobayes.multivariate import split_cor
+            own = replace(self, cor=split_cor(self, spec)[1])
         for r in responses:
             try:
-                self.response_priors(r).validate(spec.specs[r], fam)
+                own.response_priors(r).validate(spec.specs[r], fam)
             except PriorError as e:
                 raise PriorError(f"response {r!r}: {e}") from None
         if spec.rescor:

@@ -648,6 +648,17 @@ def _compare(model, entry_id: str, store: dict) -> tuple[list[str], list[str]]:
             issues.append("AutoBayes correlates the residuals; brms's Stan data has no nrescor")
         for r, sub in model.submodels.items():
             compare_univariate(sub, Reading(sd, names, groups, used, resp=r), issues, notes, what=f"[{r}] ")
+        # G08: a brms group whose coefficients belong to several responses is one correlation matrix across them (a correlation ID,
+        # (1 |p| g)); the model's correlation IDs across responses must be exactly those groups, their responses in brms's order
+        spans: dict = {}
+        for g in groups:
+            spans.setdefault(g["id"], []).append(g)
+        theirs = sorted((gs[0]["group"], tuple(g["resp"] for g in sorted(gs, key=lambda g: g["cn"])))
+                        for gs in spans.values() if len({g.get("resp") for g in gs}) > 1)
+        mine = sorted((c.factor, tuple(c.responses)) for c in getattr(model.spec, "cross_ids", ()))
+        if theirs != mine:
+            issues.append(f"brms correlates the group-level effects {theirs} across responses; AutoBayes's correlation IDs across "
+                          f"responses are {mine}")
     elif getattr(getattr(model, "spec", None), "is_nonlinear", False):            # a non-linear model
         d = model.design
         reading = Reading(sd, names, groups, used)
