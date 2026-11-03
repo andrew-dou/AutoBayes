@@ -481,7 +481,7 @@ def test_the_links_multivariate_and_nonlinear_models_refuse_them():
         with pytest.raises(ab.FormulaError, match=needle):
             getattr(ab, family)(f"{lhs} ~ x", FRAME, priors(family, False), link=link)
     from autobayes.multivariate import parse_multivariate
-    with pytest.raises(ab.FormulaError, match=r"addition terms \(weights\(\), cens\(\), trunc\(\), \.\.\.\) on the responses of a multivariate"):
+    with pytest.raises(ab.FormulaError, match=r"addition terms other than weights\(\) \(cens\(c\)\) on the responses of a multivariate"):   # G08
         parse_multivariate("mvbind(ypos, ypos2) | cens(c) ~ x", rescor=True)
     with pytest.raises(ab.FormulaError, match=r"response addition terms .* with a non-linear formula"):
         ab.gaussian(["ypos | cens(c01) ~ a * exp(x)", "a ~ 1"], FRAME, ab.Priors(b={"a": ab.Normal(0, 1)}, sigma=ab.HalfNormal(1)), nl=True)

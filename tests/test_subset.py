@@ -99,8 +99,8 @@ def test_subset_rows(data):
 @pytest.mark.parametrize("formulas, rescor, error, message", [
     (F, True, FormulaError, "subset() with a residual correlation (rescor=True, brms's set_rescor(TRUE)) is refused, as brms refuses "
                             "it (\"Only 'se', 'weights', 'mi' are supported addition arguments when 'rescor' is estimated.\")"),
-    (["y2f ~ x", "wf ~ w"], True, FormulaError, "a formula of its own per response (brms's bf(y ~ ...) + bf(y2 ~ ...)) is not supported"
-                                                " with a residual correlation (rescor=True)"),
+    (["y2f | weights(w) ~ x", "wf ~ w"], True, FormulaError, "with a residual correlation (rescor=True) every response must have the "
+                                                              "same weights"),   # G08: a formula per response takes rescor
     (F, None, ValueError, "a formula per response takes rescor=False (brms's set_rescor(FALSE); docs/subset.md)"),
     (F, "no", ValueError, "rescor must be True or False, got 'no'"),
     (F[:1], False, FormulaError, "one formula is a univariate model; a multivariate model is a list of formulas, one per response"),
@@ -112,7 +112,7 @@ def test_subset_rows(data):
     ([F[0], "y2 | subset(s2) ~ x + foo(x)"], False, FormulaError, "the formula 'y2 | subset(s2) ~ x + foo(x)': 'foo(x)': the function foo() is not supported"),
     ([F[0], "y | subset(s2) ~ w"], False, FormulaError, "the response(s) ['y'] have more than one formula"),
     ([F[0], "sigma ~ w"], False, FormulaError, "'sigma ~ w': a distributional formula in a multivariate model is not supported"),
-    ([F[0], "y2 | weights(w) ~ x"], False, FormulaError, "addition terms (weights(w)) on a response of a multivariate model are not supported"),
+    ([F[0], "y2 | weights(w) ~ x"], False, FormulaError, "weights() (on ['y2']) in a multivariate model with subset() is not supported"),   # G08
     (["y | subset(s1) ~ x + (1 | mm(g, h))", F[1]], False, FormulaError, "'(1 | mm(g, h))' in a multivariate model is not supported"),
     (["y | subset(s1) ~ me(x, w)", F[1]], False, FormulaError, "a measurement-error term in a multivariate model is not supported"),
     (["y | subset(s1) ~ mo(k)", F[1]], False, FormulaError, "a monotonic term in a multivariate model is not supported"),

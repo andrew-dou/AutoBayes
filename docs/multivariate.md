@@ -83,13 +83,14 @@ coordinate per response, `observation_dims`), and `predict(resp=)` predicts one 
 
 ## Refused, with the construct named
 
-A formula per response without `mi()` (`["y ~ x", "y2 ~ z"]`, brms's `bf(y ~ ...) + bf(y2 ~ ...)`) with `rescor=True` (with
-`rescor=False` it is F06c's, with or without `subset()`, docs/subset.md; with `mi()` it is C06's),
-a distributional formula in a multivariate model, addition terms after `mvbind()`, `mi()` inside `mvbind()` (C06 takes it in a
+A formula per response with `subset()` and `rescor=True` (without `subset()` it is taken with either since G08,
+docs/multivariate-ext.md; with `subset()` it is F06c's with `rescor=False`, docs/subset.md; with `mi()` it is C06's),
+a distributional formula in a multivariate model, addition terms other than `weights()` after `mvbind()` (G08 takes `weights()`,
+docs/multivariate-ext.md), `mi()` inside `mvbind()` (C06 takes it in a
 list of formulas), `me()` (D73) and `mo()` (D56); an autocorrelation term `ar()`, `ma()`, `arma()` (C04: brms gives each
 response its own, `ar_y` and `ar_y2`; docs/autocorrelation.md, D70) and the `ar` and `ma` priors at the top level or in a
 response's; correlated group effects across
-responses `(1 |ID| g)` (D57); families other than the Gaussian and a missing `rescor` (D58); a response that is also a
+responses other than G08's varying intercepts `(1 |p| g)` (D57, D193; docs/multivariate-ext.md); families other than the Gaussian and a missing `rescor` (D58); a response that is also a
 predictor, grouping factor or offset; fewer than two or repeated responses; a top-level class other than `resp`, `cor` and
 `rescor`, a response-specific `cor`, a `rescor` prior without `rescor=True`; `resp` or `rescor` for a model with one
 response. Names and layout differ from brms's (D59). Not part of this slice: `prior_predictive()` and `fit_record()` of a

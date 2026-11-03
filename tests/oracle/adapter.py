@@ -1013,7 +1013,9 @@ def natural_point(model: ab.Model, point: Point, cmap: ColumnMap, gmap: GroupMap
                 **({"Lrescor": np.atleast_2d(point.pars["Lrescor"])} if model.rescor else {}),
                 # C06: the model's missing values, brms's Ymi_<col>, shared by the responses that hold them
                 **({"Ymi": {c: np.atleast_1d(point.pars[f"Ymi_{c}"]).astype(float) for c in model.missing_names}}
-                   if getattr(model, "missing_names", {}) else {})}
+                   if getattr(model, "missing_names", {}) else {}),
+                # G08: each correlation ID across responses' L_m (brms's order of its coefficients is the model's, match_cross_groups)
+                **({"L": {g: np.atleast_2d(point.pars[f"L_{m}"]) for g, m in gmap.cross.items()}} if getattr(gmap, "cross", None) else {})}
     pars = point.pars
     intercept = None
     if cmap.dpars:                                             # B05, categorical: one column of b and one intercept per category
@@ -1881,19 +1883,38 @@ class ResponseView(Fixture):
         self.parent, self.response = parent, response
         r, groups = response, [g for g in parent.groups if g.get("resp") == response]
         # C06: a response's special terms (Ksp_y, bsp_y: its mi() term) and its own missing values (Jmi_xm, Nmi_xm, lbmi_xm,
-        # ubmi_xm; Ymi_xm), under brms's univariate names
-        self.data_names = {f"{base}_{r}": base for base in ("N", "Y", "K", "Kc", "X", "offsets", "Ksp", "Jmi", "Nmi", "lbmi", "ubmi")}
+        # ubmi_xm; Ymi_xm), under brms's univariate names; G08: its weights (weights_y)
+        self.data_names = {f"{base}_{r}": base for base in ("N", "Y", "K", "Kc", "X", "offsets", "Ksp", "Jmi", "Nmi", "lbmi", "ubmi",
+                                                             "weights")}
         self.par_names = {f"b_{r}": "b", f"Intercept_{r}": "Intercept", f"sigma_{r}": "sigma", f"b_{r}_Intercept": "b_Intercept",
                           f"bsp_{r}": "bsp", f"Ymi_{r}": "Ymi"}
+        # G08: a group whose coefficients belong to several responses (brms's correlation ID across responses, `(1 |p| g)` in
+        # mvbind()) is shown to each response as a group of its own coefficients alone, renumbered 1, 2, ... in brms's order
+        # (`local_cn`): its M_m and NC_m those of its coefficients (`overrides`), its sd_m and z_m their entries and rows (`slices`),
+        # without the correlation matrix L_m, Cor_m, which `match_cross_groups` checks and `response_coordinate_map` maps for the
+        # whole group
+        spans: dict[int, set] = {}
+        for g in parent.groups:
+            spans.setdefault(int(g["id"]), set()).add(g.get("resp"))
+        self.local_cn, self.overrides, self.slices = {}, {}, {}
         for g in groups:
             m, cn = int(g["id"]), int(g["cn"])
+            if len(spans[int(g["id"])]) > 1:
+                mine = sorted(int(h["cn"]) for h in groups if int(h["id"]) == m)
+                local = mine.index(cn) + 1
+                self.local_cn[(m, cn)] = local
+                self.data_names.update({f"J_{m}_{r}": f"J_{m}", f"Z_{m}_{r}_{cn}": f"Z_{m}_{local}", **{f"{k}_{m}": f"{k}_{m}" for k in ("N", "M", "NC")}})
+                self.par_names.update({f"r_{m}_{r}_{cn}": f"r_{m}_{local}", f"sd_{m}": f"sd_{m}", f"z_{m}": f"z_{m}"})
+                self.overrides.update({f"M_{m}": np.asarray(len(mine)), f"NC_{m}": np.asarray(len(mine) * (len(mine) - 1) // 2)})
+                self.slices[f"sd_{m}"] = self.slices[f"z_{m}"] = [c - 1 for c in mine]
+                continue
             self.data_names.update({f"J_{m}_{r}": f"J_{m}", f"Z_{m}_{r}_{cn}": f"Z_{m}_{cn}", **{f"{k}_{m}": f"{k}_{m}" for k in ("N", "M", "NC")}})
             self.par_names.update({f"r_{m}_{r}_{cn}": f"r_{m}_{cn}", **{f"{k}_{m}": f"{k}_{m}" for k in ("sd", "z", "L", "Cor", "cor")}})
 
     @cached_property
     def standata(self) -> dict[str, np.ndarray]:
         sd = self.parent.standata
-        return {new: sd[old] for old, new in self.data_names.items() if old in sd}
+        return {new: self.overrides.get(new, sd[old]) for old, new in self.data_names.items() if old in sd}   # G08: overrides
 
     def colnames(self, name: str) -> list[str] | None:
         old = next((o for o, n in self.data_names.items() if n == name and o in self.parent.raw["standata"]), None)
@@ -1902,7 +1923,14 @@ class ResponseView(Fixture):
     def point(self, p: Point) -> Point:
         """The response's view of a point: its parameters under the univariate names; ``u``, the log density and gradient are
         the joint model's."""
-        return replace(p, pars={new: p.pars[old] for old, new in self.par_names.items() if old in p.pars})
+        return replace(p, pars={new: self._slice(old, p.pars[old]) for old, new in self.par_names.items() if old in p.pars})
+
+    def _slice(self, name: str, value):
+        """G08: a group across responses' sd_m (its entries) and z_m (its rows) of this response's coefficients; anything else as is."""
+        rows = self.slices.get(name)
+        if rows is None:
+            return value
+        return np.atleast_1d(value)[rows] if name.startswith("sd_") else np.atleast_2d(value)[rows]
 
     @cached_property
     def points(self) -> list[Point]:
@@ -1910,11 +1938,24 @@ class ResponseView(Fixture):
 
     @property
     def upars(self) -> list[dict]:
-        return [{**e, "par": self.par_names[e["par"]]} for e in self.parent.upars if e["par"] in self.par_names]
+        out = []
+        for e in self.parent.upars:
+            if e["par"] not in self.par_names:
+                continue
+            rows = self.slices.get(e["par"])
+            if rows is not None:                               # G08: sd_m[c] and z_m[c, j] (column-major) of this response's rows
+                M, elem = int(self.parent.standata[f"M_{e['par'].split('_')[1]}"]), int(e["elem"]) - 1
+                c, j = (elem, 0) if e["par"].startswith("sd_") else (elem % M, elem // M)
+                if c not in rows:
+                    continue
+                e = {**e, "elem": j * len(rows) + rows.index(c) + 1}
+            out.append({**e, "par": self.par_names[e["par"]]})
+        return out
 
     @property
     def groups(self) -> list[dict]:
-        return [g for g in self.parent.groups if g.get("resp") == self.response]
+        return [{**g, "cn": self.local_cn[(int(g["id"]), int(g["cn"]))], "cor": False} if (int(g["id"]), int(g["cn"])) in self.local_cn
+                else g for g in self.parent.groups if g.get("resp") == self.response]   # G08: renumbered, without the matrix
 
     @property
     def declarations(self) -> dict[str, str]:
@@ -1933,6 +1974,7 @@ class ResponseMaps:
     (``maps``: a ``ColumnMap`` from ``match_columns``, a ``GroupMap`` from ``match_groups``)."""
     views: dict
     maps: dict
+    cross: dict = None                   # G08: brms's group id m of each correlation ID across responses, by grouping factor
 
 
 _GLOBAL_DATA = ("N", "nresp", "nrescor", "prior_only")        # a multivariate model's data that no single response owns
@@ -1964,7 +2006,45 @@ def match_response_columns(fixture: Fixture, model) -> ResponseMaps:
 
 def match_response_groups(fixture: Fixture, model) -> ResponseMaps:
     views = _response_views(fixture, model)
-    return ResponseMaps(views, {r: match_groups(views[r], sub) for r, sub in model.submodels.items()})
+    maps = {r: match_groups(views[r], sub) for r, sub in model.submodels.items()}
+    return ResponseMaps(views, maps, match_cross_groups(fixture, model, maps) or None)   # G08
+
+
+def match_cross_groups(fixture: Fixture, model, maps: dict) -> dict[str, int]:
+    """G08: brms's groups whose coefficients belong to several responses (a correlation ID across responses, ``(1 |p| g)`` in
+    ``mvbind()``) against the model's (``model.spec.cross_ids``), by grouping factor: the group's (response, coefficient) pairs in
+    brms's coefficient order are the ID's (each response's varying intercept, in the order of the responses), ``M_m`` counts them,
+    every one is flagged ``cor`` and ``L_m`` is declared; each response's view matched its coefficient by content (``match_groups``),
+    with the same levels in the same order for every response; and every ID of the model is such a group of brms."""
+    groups: dict[int, list] = {}
+    for g in fixture.groups:
+        groups.setdefault(int(g["id"]), []).append(g)
+    ids = {c.factor: c for c in getattr(model.spec, "cross_ids", ())}
+    out = {}
+    for m, gs in sorted(groups.items()):
+        if len({g.get("resp") for g in gs}) < 2:
+            continue
+        gs = sorted(gs, key=lambda g: int(g["cn"]))
+        factor, brms = gs[0]["group"], [(g["resp"], g["coef"]) for g in gs]
+        cid = ids.get(factor)
+        if cid is None or brms != list(cid.coefs) or len({g["group"] for g in gs}) != 1:
+            raise OracleMismatch(f"brms group {m} correlates {brms} of {factor!r} across the responses; the AutoBayes model's "
+                                 f"correlation IDs across responses are {[(c.factor, c.coefs) for c in ids.values()]}")
+        M = int(fixture.standata[f"M_{m}"])
+        if (M != len(gs) or [int(g["cn"]) for g in gs] != list(range(1, M + 1)) or not all(g["cor"] for g in gs)
+                or f"L_{m}" not in fixture.declarations):
+            raise OracleMismatch(f"brms group {m} of {factor!r}: M_{m} = {M}, coefficients {[int(g['cn']) for g in gs]}, cor "
+                                 f"{[bool(g['cor']) for g in gs]}, L_{m} {'' if f'L_{m}' in fixture.declarations else 'not '}declared; "
+                                 f"the correlation ID {cid.id!r} gives its {len(gs)} coefficients one correlation matrix")
+        levels = [maps[r].level_of[factor] for r in cid.responses]
+        if any(not np.array_equal(lv, levels[0]) for lv in levels):
+            raise OracleMismatch(f"brms group {m} of {factor!r}: the responses' blocks order brms's levels differently")
+        out[factor] = m
+    missing = sorted(set(ids) - set(out))
+    if missing:
+        raise OracleMismatch(f"the AutoBayes model correlates the responses' varying intercepts of {missing} (a correlation ID across "
+                             "responses); brms has no group across the responses for it")
+    return out
 
 
 def response_coordinate_map(fixture: Fixture, model, cmap: ResponseMaps, gmap: ResponseMaps) -> list[tuple[int, str, int]]:
@@ -1974,6 +2054,21 @@ def response_coordinate_map(fixture: Fixture, model, cmap: ResponseMaps, gmap: R
     out = []
     for r, sub in model.submodels.items():                     # C06: the missing values keep brms's name, Ymi_<col> (value_name)
         out += [(idx, model.value_name(r, var), j) for idx, var, j in coordinate_map(cmap.views[r], sub, cmap.maps[r], gmap.maps[r])]
+    cross = {f"L_{m}": g for g, m in (gmap.cross or {}).items()}   # G08: each correlation ID across responses' L_m
+    seen: dict[str, int] = {}
+    for e in fixture.upars:
+        if e["par"] not in cross:
+            continue
+        idx, j = int(e["index"]) - 1, seen.get(e["par"], 0)
+        seen[e["par"]] = j + 1
+        if e["transform"] not in ("other", "joint"):
+            raise OracleMismatch(f"brms transform of {e['par']}[{e['elem']}] is {e['transform']!r}; AutoBayes uses cholesky_corr")
+        for q, pt_ in enumerate(fixture.points):              # Stan's cholesky_corr coordinates, recomputed and checked as L_m's
+            u = cholesky_corr_free(np.atleast_2d(pt_.pars[e["par"]]))
+            if j >= u.size or abs(u[j] - pt_.u[idx]) > 1e-10:
+                raise OracleMismatch(f"point {q}: Stan's cholesky_corr coordinate {j} of {e['par']} is {u[j] if j < u.size else 'absent'!r}; "
+                                     f"brms's unconstrained value is {pt_.u[idx]!r}")
+        out.append((idx, f"{model.id_names[cross[e['par']]]['L']}_cholesky_corr__", j))
     k = 0
     for e in fixture.upars:
         if e["par"] != "Lrescor":
@@ -2012,6 +2107,12 @@ def response_draws(fixture: Fixture, model, cmap: ResponseMaps, gmap: ResponseMa
         post = post.assign({roles["values"]: (("chain", "draw", roles["coordinate"]),
                                               np.stack([np.atleast_1d(p.pars[f"Ymi_{col}"]) for p in fixture.points])[None])})
         post = post.assign_coords({roles["coordinate"]: rows})
+    for g, m in (gmap.cross or {}).items():                    # G08: a correlation ID across responses' L_m and Cor_m
+        roles, L = model.id_names[g], np.stack([np.atleast_2d(p.pars[f"L_{m}"]) for p in fixture.points])
+        dims = ("chain", "draw", roles["coordinate"], roles["coordinate_T"])
+        post = post.assign({roles["L"]: (dims, L[None]), roles["cor"]: (dims, (L @ np.swapaxes(L, -1, -2))[None])})
+        labels = list(next(c.labels for c in model.spec.cross_ids if c.factor == g))
+        post = post.assign_coords({roles["coordinate"]: labels, roles["coordinate_T"]: labels})
     if model.rescor:
         L = np.stack([np.atleast_2d(p.pars["Lrescor"]) for p in fixture.points])
         dims = ("chain", "draw", RESPONSE_DIM, RESPONSE_DIM_T)

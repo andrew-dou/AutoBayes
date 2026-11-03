@@ -144,7 +144,8 @@ def prior_names(model) -> list[str]:
     auxiliary parameter; an autocorrelation term's ``ar`` and ``ma`` (C04); a residual correlation term's ``Lcortime``
     (``lkj_corr_cholesky_lpdf``) or ``cosy`` (F03b)."""
     if adapter.is_multivariate(model):                       # C01: each response's, under its names, and the residual correlation's
-        return [model.variable(r, name) for r, sub in model.submodels.items() for name in prior_names(sub)] + (["Lrescor"] if model.rescor else [])
+        return ([model.variable(r, name) for r, sub in model.submodels.items() for name in prior_names(sub)] + (["Lrescor"] if model.rescor else [])
+                + [roles["L"] for roles in getattr(model, "id_names", {}).values()])   # G08: lkj_corr_cholesky_lpdf(L_m | eta) of an ID across responses
     if adapter.is_nonlinear(model):
         out = [v for roles in model.nlpar_names.values() for k, v in roles.items() if k != "value"]
         out += [roles["sd"] for roles in model.nlpar_group_names.values()]
@@ -1647,6 +1648,13 @@ def _check_design_multivariate(b: Bundle) -> None:
         raise OracleMismatch(f"brms has nresp = {sd.get('nresp')}, nrescor = {sd.get('nrescor')}; AutoBayes has {K} correlated responses")
     if not m.rescor and "nrescor" in sd:
         raise OracleMismatch("brms has a residual correlation (nrescor) but the AutoBayes model has rescor=False")
+    # G08: with a residual correlation brms weights each row's joint density by the first response's weights (weights_<first>);
+    # the model by its joint weights, which must be those
+    if m.rescor and (getattr(m, "joint_weights", None) is not None or f"weights_{m.responses[0]}" in sd):
+        theirs, mine = sd.get(f"weights_{m.responses[0]}"), getattr(m, "joint_weights", None)
+        if theirs is None or mine is None or np.shape(theirs) != np.shape(mine) or not abs_err(theirs, mine) <= DESIGN_ABS:
+            raise OracleMismatch(f"brms weights each row's joint density by weights_{m.responses[0]} ({'present' if theirs is not None else 'absent'}); "
+                                 f"the AutoBayes model's joint weights are {'absent' if mine is None else 'different'}")
     if m.design.rows is not None:                                   # F06c: subset(), each response on its rows (N_<resp>, Y_<resp>)
         return _check_design_subset(b)
     Y_brms = np.column_stack([sd[f"Y_{r}"] for r in m.responses])
@@ -1702,6 +1710,7 @@ def _check_derived_multivariate(b: Bundle) -> None:
         wanted += [m.variable(r, sub.names["linpred"])] + [m.variable(r, roles["group_effect"]) for roles in sub.group_coefficient_names.values()]
         wanted += [m.variable(r, roles["cor"]) for roles in sub.correlation_names.values()]
     wanted += ["rescor"] if m.rescor else []
+    wanted += [m.id_names[g]["cor"] for g in (b.gmap.cross or {})]       # G08
     fn = pmm.compile_fn(pmm.replace_rvs_by_values([pmm[v] for v in wanted]), inputs=pmm.value_vars, point_fn=True, on_unused_input="ignore")
     ref = b.fixture.prediction("fitted", "linpred")
     # F06c: brms refuses a subset() model's joint predictions; each response's own, on its rows, are its linear predictor
@@ -1722,7 +1731,8 @@ def _check_derived_multivariate(b: Bundle) -> None:
                 mm, cn = gmap.brms_id[g], gmap.coef_cn[(g, coef)]
                 eff = np.asarray(out[m.variable(r, roles["group_effect"])], dtype=float).ravel()[gmap.level_of[g]]
                 err = rel_err(eff, np.atleast_1d(pars[f"r_{mm}_{cn}"]))
-                if err > PRED_REL:
+                if err > PRED_REL:                                   # G08: brms's own number of a coefficient of an ID across responses
+                    cn = next((c for (i, c), local in getattr(view, "local_cn", {}).items() if i == mm and local == cn), cn)
                     raise OracleMismatch(f"point {k}: group effects of {coef!r} of {g!r} for {r!r} differ from brms r_{mm}_{r}_{cn} by {err}")
             for g, roles in sub.correlation_names.items():
                 mm, perm = gmap.brms_id[g], adapter.correlation_order(sub, gmap, g)
@@ -1738,6 +1748,10 @@ def _check_derived_multivariate(b: Bundle) -> None:
             err = rel_err(np.asarray(out["rescor"], dtype=float), np.atleast_2d(p.pars["Rescor"]))
             if err > PRED_REL:
                 raise OracleMismatch(f"point {k}: the residual correlation matrix differs from brms Rescor by {err}")
+        for g, mm in (b.gmap.cross or {}).items():                  # G08: a correlation ID across responses' Cor_m
+            err = rel_err(np.asarray(out[m.id_names[g]["cor"]], dtype=float), np.atleast_2d(p.pars[f"Cor_{mm}"]))
+            if err > PRED_REL:
+                raise OracleMismatch(f"point {k}: the correlation matrix of {g!r} across the responses differs from brms Cor_{mm} by {err}")
 
 
 def _check_default_prior_multivariate(b: Bundle) -> None:

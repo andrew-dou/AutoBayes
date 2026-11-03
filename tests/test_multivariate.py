@@ -112,10 +112,11 @@ def test_parse_multivariate(data):
     ("mvbind(y, y) ~ x", "the response(s) ['y'] appear more than once"),
     ("mvbind(y, log(y2)) ~ x", "expected 'mvbind(y1, y2, ...) ~ <terms>', the responses as column names inside mvbind()"),
     ("mvbind(y, 2y) ~ x", "mvbind() takes response column names, got ['2y']"),
-    ("mvbind(y, y2) | weights(w) ~ x", "addition terms (weights(), cens(), trunc(), ...) on the responses of a multivariate model are not supported"),
+    ("mvbind(y, y2) | cens(c) ~ x", "addition terms other than weights() (cens(c)) on the responses of a multivariate model are not supported"),   # G08: weights() is taken
     ("mvbind(y, y2) ~ x + mi(w)", "brms's mi() (missing values modelled by a response's own formula) is not supported (docs/multivariate.md"),
     ("mvbind(y, y2) ~ x + mo(w)", "a monotonic term in a multivariate formula is not supported"),
-    ("mvbind(y, y2) ~ x + (1 |p| g)", "a correlation ID, brms's (1 |ID| g), which correlates the responses' group-level effects, is not supported"),
+    ("mvbind(y, y2) ~ x + (1 + x |p| g)", "varying slopes (or a term without the varying intercept) in a correlation ID across responses are not "
+                                         "supported"),   # G08: (1 |p| g) is taken (tests/test_multivariate_ext.py)
     ("mvbind(y, y2) ~ x + y2", "the response(s) ['y2'] cannot also be predictors, grouping factors or offsets"),
     ("mvbind(y, y2) ~ x + y", "the formula of the response 'y' ('y ~ x + y'): 'y': the response cannot also be a predictor"),
     ("mvbind(y, y2) ~ x + (1 | y2)", "cannot also be predictors, grouping factors or offsets"),
@@ -126,9 +127,9 @@ def test_grammar_refusals(data, formula, message):
 
 
 def test_refused_forms_and_families(data):
-    with pytest.raises(ab.FormulaError, match=re.escape("a formula of its own per response (brms's bf(y ~ ...) + bf(y2 ~ ...)) is not "
-                                                        "supported") + ".*divergence D56"):
-        ab.gaussian(["y ~ x", "y2 ~ w"], data, priors(), rescor=True)
+    plain = ab.Priors(resp={r: {k: v for k, v in response().items() if k != "sd"} for r in ("y", "y2")}, rescor=ab.LKJ(2))
+    separate = ab.gaussian(["y ~ x", "y2 ~ w"], data, plain, rescor=True)            # G08: taken with rescor (was refused, D56)
+    assert separate.rescor and separate.spec.separate
     with pytest.raises(ab.FormulaError, match=re.escape("a distributional formula in a multivariate model")):
         ab.gaussian(["mvbind(y, y2) ~ x", "sigma ~ w"], data, priors(), rescor=True)
     with pytest.raises(ab.FormulaError, match=re.escape("if 'y2' is a second response, a formula of its own per response")):

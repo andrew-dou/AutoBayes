@@ -9,6 +9,7 @@ slice, with the other Tier C features among them (non-linear models, Gaussian pr
 other's prior fields) and the single fit hook. Nothing samples. The numbers against brms are the oracle's (tests/oracle, cases
 gauss_me and gauss_mi)."""
 import re
+from dataclasses import replace
 
 import arviz as az
 import numpy as np
@@ -200,11 +201,13 @@ def test_me_refused_in_multivariate(me_data):
         ab.gaussian("mvbind(y, w) ~ me(xobs, sdx)", me_data, mi_priors(("y", "w")), rescor=False)
 
 
-def test_a_formula_per_response_without_mi_stays_refused(mi_data):
-    """With rescor=True; F06c offers it with rescor=False (tests/test_subset.py)."""
-    with pytest.raises(FormulaError, match=re.escape("a formula of its own per response (brms's bf(y ~ ...) + bf(y2 ~ ...)) is not "
-                                                     "supported") + ".*divergence D56"):
+def test_a_formula_per_response_without_mi_takes_rescor(mi_data):
+    """F06c offers it with rescor=False (tests/test_subset.py); since G08 rescor=True is taken too (tests/test_multivariate_ext.py),
+    with its LKJ prior."""
+    with pytest.raises(ab.PriorError, match=re.escape("rescor=True gives the responses a residual correlation matrix")):
         ab.gaussian(["y ~ w", "v ~ w"], mi_data, mi_priors(("y", "v")), rescor=True)
+    m = ab.gaussian(["y ~ w", "v ~ w"], mi_data, replace(mi_priors(("y", "v")), rescor=ab.LKJ(2)), rescor=True)
+    assert m.rescor and m.spec.separate and m.observed_names == ("mvbind(y, v)",)
 
 
 # -- 3. me(): the graph, its density and its points -----------------------------------------------------------------------

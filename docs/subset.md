@@ -64,8 +64,8 @@ coordinates shared. `model.design.rows` holds the rows, `model.design.Y` each re
 
 ## Refused, with the construct named
 
-`rescor=True`: with `subset()` brms refuses it too ("Only 'se', 'weights', 'mi' are supported addition arguments when 'rescor'
-is estimated."), and a formula per response without `subset()` is not verified with a residual correlation (D56). `subset()`
+`rescor=True` with `subset()`: brms refuses it too ("Only 'se', 'weights', 'mi' are supported addition arguments when 'rescor'
+is estimated."); since G08 a formula per response without `subset()` takes `rescor=True` (docs/multivariate-ext.md). `subset()`
 with `mi()` (brms requires `mi(x, idx = )`, not part of this slice), with another addition term, twice, or with an expression
 (`subset(s == 1)`: write the indicator as a column); an indicator with missing values, text or numbers other than 0 and 1
 (brms takes any non-zero number as TRUE), or no row in the subset; missing values on a response's subset rows (brms drops the
