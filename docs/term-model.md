@@ -20,6 +20,7 @@ One entry per term as written, in design order (main effects, then interactions)
 | `log(xpos)`, `I(x^2)` (A05, docs/transforms.md) | `transform` | `("log(xpos)",)`, the evaluated column named as written | `()` | `()` |
 | `I(x * w)`, `scale(x)`, `poly(w, 2)`, `factor(ord)`, `I(x > 0)` (docs/expressions.md) | `transform`, one term per design column once the data are seen, `basis` the term as written and `fitted` its fitted parameters | `("poly(w, 2)1",)`, R's model-matrix name of the column | `()` | `()` |
 | `mo(ord)` (B03, docs/monotonic.md) | `monotonic` | `()`: no column in `X`; its coefficient (brms's `bsp`) and simplex act through its own block | `()` | `()` |
+| `mo(ord):x`, `mo(ord) * mo(o2)`'s product, `mo(ord, id = "a")`, `me(x, sdx):w`, `mo(ord):zp` (G10, docs/special-term-ext.md) | `special_product` (`term.special`, a `special_terms.SpecialProduct`: its sides, factor and level, `mo()` codings) | `()`: brms's `bsp` times the product of its `mo()` and `me()` parts and its covariate `Csp` | `()` | `()` |
 | `me(x, sdx)` (C06, docs/missing-and-measurement-error.md) | `measurement_error` | `()`: its coefficient (brms's `bsp`) multiplies the latent values of `x` | `()` | `()` |
 | `mi(col)` (C06) | `missing` | `()`: its coefficient (brms's `bsp`) multiplies `col` completed by its missing values | `()` | `()` |
 | `cs(x)` (D04, docs/ordinal-categorical.md) | `category_specific` | `()`: one coefficient per threshold (brms's `bcs` row of `x`, a vector `cs(x)`) multiplies `x` in each threshold's predictor `mu_cs` | `()` | `()` |

@@ -87,8 +87,9 @@ term's values when its coefficient goes from 0 to `c`.
 `mi()`: without its column's `| mi()` formula (brms refuses it too), with `rescor=True`, in interactions, group-level and
 distributional formulas, with brms's `idx` argument, `mi(sdy)` on a response, other families, a cycle of imputations, a
 univariate `y | mi() ~ ...`, `mi()` with `weights()`, `cens()` or `trunc()`, with `mo()` or `me()` in one formula, inside an
-`mvbind()` formula, and a response read by another formula other than through `mi()` (D72). `me()`: with brms's `gr` argument,
-several `me()` terms (brms correlates their latent values by default), in interactions, group-level and distributional formulas,
+`mvbind()` formula, and a response read by another formula other than through `mi()` (D72). `me()` (`me(x, sdx, gr = g)` and
+`me(x, sdx) * w` are taken since G10, docs/special-term-ext.md): several `me()` terms (brms correlates their latent values by
+default), in an interaction without its main effect or with a factor's main effect (D197, D198), group-level and distributional formulas,
 in multivariate models, other families, expressions inside `me()`, missing noisy values and non-positive noise (D73).
 `predict(newdata=...)` of a model with `me()`, missing values of an `mi()` column on new rows, and `log_lik()`, `loo()` and
 `bayes_R2()` of models with `me()` or `mi()` (D74). Names and layout differ from brms's (D75).

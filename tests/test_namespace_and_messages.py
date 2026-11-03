@@ -195,7 +195,8 @@ REWORDED = [   # refusals whose wording F09 changed and that no other changed te
     (lambda: parse_formula("y ~ x + (1 |p| g:h)"), "a correlation ID with a combined grouping factor ('g:h') is not supported (docs/"),
     (lambda: parse_formula("y ~ x + z + cs(x):z", family="acat", categorical={"z": "p"}),
      "an interaction with a category-specific term ('cs(x)') is not supported: brms's cs(x):z"),
-    (lambda: parse_formula("y ~ x + cs(z)", family="acat", categorical={"z": "p"}), "'z' is declared categorical; cs() takes a numeric column (brms's"),
+    # G10 takes cs(z) of a declared factor (docs/special-term-ext.md); a category-specific slope in a group term stays refused
+    (lambda: parse_formula("y ~ x + (cs(x) | g)", family="acat"), "a category-specific group-level term is offered as (cs(1) | g)"),
     (lambda: check_counts("y", pd.Series([2e6, 1.0]), domain="poisson"),
      "y exceeds the Poisson input-count limit 1000000; see docs/poisson-responses.md"),
     (lambda: ab.default_priors("yo ~ x + cs(s)", _refusal_frame(), family="acat"),

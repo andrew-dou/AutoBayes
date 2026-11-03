@@ -188,6 +188,7 @@ import xarray as xr
 
 import autobayes as ab
 from autobayes.correlation import cholesky_corr_free
+from autobayes.formula import cs_label
 from autobayes.monotonic import stick_breaking_free
 from tests.oracle.fixture import Fixture, Point, decode
 from tests.oracle.tolerances import DESIGN_ABS, abs_err
@@ -314,6 +315,7 @@ class ColumnMap:
     cs: tuple = ()                        # D04: the model's cs() columns in brms's Xcs column order (row k of bcs is cs[k]'s), match_cs
     mus: dict = None                      # F01a: brms's b_<mu> entry of each design column of each category's formula, by name
     thres_levels: tuple = ()              # F06b: the model's level of thres(gr = z) of each brms Intercept_k, k = 1.. (match_threshold_groups)
+    sp: object = None                     # G10: a model with special products or me(gr = ): brms's bsp, simo_k and Csp_k (match_special_terms)
 
     def b_index(self, x_col: int) -> int:
         """Index into brms's ``b`` of design column ``x_col``."""
@@ -466,6 +468,9 @@ def match_columns(fixture: Fixture, model: ab.Model) -> ColumnMap:
         return match_mixture(fixture, model)
     if not fam.per_category:
         cmap = _with_distributional(fixture, model, _match_design(fixture, model, thresholds=fam.thresholds))
+        if has_special_terms(model):                               # G10: every special term in brms's order (match_special_terms)
+            return replace(cmap, gp=match_gp(fixture, model), gp_levels=match_gp_levels(fixture, model), cs=match_cs(fixture, model),
+                           **match_special_terms(fixture, model))
         return replace(cmap, monotonic=match_monotonic(fixture, model), gp=match_gp(fixture, model), **match_special(fixture, model),
                        gp_levels=match_gp_levels(fixture, model),        # G09: gp(x, by = <factor>)
                        cs=match_cs(fixture, model))                    # D04
@@ -535,6 +540,113 @@ def match_monotonic(fixture: Fixture, model: ab.Model) -> dict[str, int]:
         out[column] = hits[0]
         used.add(hits[0])
     return out
+
+
+@dataclass(frozen=True)
+class SpecialMap:
+    """G10: brms's special terms of a model with special products (``mo(ord):x``, ``mo(ord, id = "a")``, ``me(x, sdx):w``),
+    ``me(x, sdx, gr = g)`` or ``mo()`` in a distributional formula, every formula's in brms's order. ``bsp``: brms's ``bsp`` /
+    ``bsp_<dpar>`` -> one ``(value_point key, PyMC variable)`` per entry; ``simplexes``: brms's ``simo_k`` / ``simo_<dpar>_k`` of
+    every ``Xmo_k`` -> ``(value_point simo key, PyMC simplex, its coordinate, D)`` (the parts sharing an id share the
+    variable); ``covariates``: brms's ``Csp_k`` -> ``(term, the model's covariate)``; ``concentrations``: brms's ``con_simo_k``
+    -> the model's prior concentrations, for each simplex brms declares; ``terms``: brms's ``bsp`` / ``bsp_<dpar>`` -> one
+    ``(the numbers k of its Xmo_k, its Csp name or None)`` per entry, brms's own structure of each term."""
+    bsp: dict
+    simplexes: dict
+    covariates: dict
+    concentrations: dict
+    terms: dict
+
+
+def has_special_terms(model) -> bool:
+    """G10: whether the model has a special product, ``me(x, sdx, gr = g)`` or a special product in a distributional formula."""
+    from autobayes.formula import measurement_error_group
+
+    spec = model.spec
+    return bool(getattr(spec, "sp_terms", ()) or any(getattr(d, "sp_terms", ()) for d in spec.dpars)
+                or any(measurement_error_group(t.name) for t in getattr(spec, "me_terms", ())))
+
+
+def match_special_terms(fixture: Fixture, model: ab.Model) -> dict:
+    """G10: brms's special terms of every formula of the model in brms's order, which is the formula's term order (each special
+    term one entry of ``bsp``; its ``mo()`` parts the next ``Xmo_k``, its covariate, if any, the next ``Csp_k``), checked entry by
+    entry: ``Ksp``, ``Imo``, every ``Xmo_k`` and ``Jmo[k]`` against the model's codes and steps, every ``Csp_k`` against the
+    model's covariate (``check_special_covariates`` repeats it), and no ``Xmo_k`` or ``Csp_k`` beyond them; an ``me()`` term is
+    brms's measurement-error group 1, whose ``Xn_1`` and ``noise_1`` (one per level of ``gr``) equal the model's. Returns the
+    ``ColumnMap`` fields ``sp`` and ``measurement``."""
+    from autobayes import special_terms
+    from autobayes.priors import dirichlet_concentration
+
+    sd = fixture.standata
+    bsp, simplexes, covariates, concentrations, structure = {}, {}, {}, {}, {}
+    formulas = [("", model.spec, "", model.design)] + [(f"_{d.response}", d, f"{model._bambi_dpar(d.response)}_", model.design.dpars[d.response])
+                                                        for d in model.spec.dpars]
+    for suffix, spec, prefix, design in formulas:
+        special = getattr(design, "special", {}) or {}
+        sp_names = special_terms.names(spec, prefix) if getattr(spec, "sp_terms", ()) else {"simplex": {}, "coordinate": {}}
+        sp_priors = (model.priors if not suffix else model.priors.dpar_priors(model.spec, suffix[1:])).special_simo_priors(spec)
+        entries, k_mo, k_csp, shapes = [], 0, 0, []
+        for t in spec.pop_terms:
+            if t.kind == "monotonic":
+                column = t.operands[0]
+                roles, block = model.mo_names[column], design.monotonic[column]
+                entries.append((column, roles["b"]))
+                parts = [(column, block.codes, block.D, roles["simplex"], roles["coordinate"],
+                          dirichlet_concentration(model.priors.simo_priors(spec)[column], block.D))]
+                cov = None
+            elif t.kind in ("measurement_error", "missing"):
+                entries.append((t.operands[0], model.me_names[t.operands[0]]["b"] if t.kind == "measurement_error" else t.name))
+                parts, cov = [], None
+            elif t.kind == "special_product":
+                block = special[t.name]
+                entries.append((t.name, f"{prefix}{t.name}"))
+                parts = [(key, codes, D, sp_names["simplex"][key], sp_names["coordinate"][key], dirichlet_concentration(sp_priors[key], D))
+                         for _, key, codes, D in block.mo]
+                cov = block.covariate
+            else:
+                continue
+            shapes.append((tuple(range(k_mo + 1, k_mo + 1 + len(parts))), f"Csp{suffix}_{k_csp + 1}" if cov is not None else None))
+            for key, codes, D, simplex, coordinate, con in parts:
+                k_mo += 1
+                name = f"Xmo{suffix}_{k_mo}"
+                if name not in sd or np.shape(sd[name]) != codes.shape or abs_err(sd[name], codes) > DESIGN_ABS:
+                    raise OracleMismatch(f"brms's {name} is not the codes of the monotonic part {key!r} of {t.name!r}")
+                if int(np.atleast_1d(sd[f"Jmo{suffix}"])[k_mo - 1]) != D:
+                    raise OracleMismatch(f"brms's Jmo{suffix}[{k_mo}] is not the {D} steps of {key!r}")
+                simplexes[f"simo{suffix}_{k_mo}"] = (key, simplex, coordinate, D)
+                if f"con_simo{suffix}_{k_mo}" in sd:
+                    concentrations[f"con_simo{suffix}_{k_mo}"] = con
+            if cov is not None:
+                k_csp += 1
+                covariates[f"Csp{suffix}_{k_csp}"] = (t.name, cov)
+        if not entries:
+            continue
+        bsp[f"bsp{suffix}"] = tuple(entries)
+        structure[f"bsp{suffix}"] = tuple(shapes)
+        if f"Ksp{suffix}" not in sd or int(sd[f"Ksp{suffix}"]) != len(entries):
+            raise OracleMismatch(f"brms has Ksp{suffix} = {sd.get(f'Ksp{suffix}')} special terms; the AutoBayes formula has {len(entries)}")
+        if int(sd.get(f"Imo{suffix}", 0)) != k_mo:
+            raise OracleMismatch(f"brms has Imo{suffix} = {sd.get(f'Imo{suffix}')} monotonic variables; the AutoBayes formula has {k_mo}")
+        extra = [key for key in sd if (re.fullmatch(rf"Csp{re.escape(suffix)}_\d+", key) and key not in covariates)
+                 or (re.fullmatch(rf"Xmo{re.escape(suffix)}_\d+", key) and f"simo{key[len('Xmo'):]}" not in simplexes)]
+        if extra:
+            raise OracleMismatch(f"brms has {extra}, which no special term of the AutoBayes model holds")
+    for name, (term, cov) in covariates.items():
+        if np.shape(sd[name]) != cov.shape or abs_err(sd[name], cov) > DESIGN_ABS:
+            raise OracleMismatch(f"brms's {name} is not the covariate of {term!r}")
+    measurement = {}
+    groups = sorted(int(key[len("Mme_"):]) for key in sd if key.startswith("Mme_") and key[len("Mme_"):].isdigit())
+    for t in getattr(model.spec, "me_terms", ()):
+        x, block = t.operands[0], model.design.measurement_error[t.operands[0]]
+        if groups != [1] or int(sd["Mme_1"]) != 1 or int(sd.get("NCme_1", 0)) != 0:
+            raise OracleMismatch(f"brms's measurement-error groups {groups} are not the one latent variable of {t.name!r}")
+        for key, mine in (("Xn_1", block.Xn), ("noise_1", block.noise)):
+            if key not in sd or sd[key].shape != mine.shape or abs_err(sd[key], mine) > DESIGN_ABS:
+                raise OracleMismatch(f"brms's {key} is not the {'noisy values' if key == 'Xn_1' else 'known noise'} of {t.name!r}")
+        measurement[x] = 1
+    if groups and not measurement:
+        raise OracleMismatch(f"brms has measurement-error groups {groups}; the AutoBayes model has no me() term")
+    return {"sp": SpecialMap(bsp, simplexes, covariates, concentrations, structure), "measurement": measurement or None}
 
 
 def match_gp(fixture: Fixture, model: ab.Model) -> dict[str, int]:
@@ -743,6 +855,8 @@ def brms_coef_label(coef: str) -> str:
     """G05a: brms's label of a group-level coefficient, ``rename()`` of the AutoBayes one: ``x``, ``IxE2`` for ``I(x^2)``, ``zq`` for
     the factor level ``z[q]``, ``moord`` for ``mo(ord)``, ``x:w`` (the population-level coefficient's name in both)."""
     from autobayes.default_priors import brms_rename
+    if re.fullmatch(r"Intercept\[\d+\]", coef):          # G10: (cs(1) | g)'s per-threshold intercepts keep brms's label
+        return coef
     return "Intercept" if coef == "Intercept" else brms_rename(coef)
 
 
@@ -867,6 +981,8 @@ def match_groups(fixture: Fixture, model: ab.Model) -> GroupMap:
                 Z = fixture.standata.get(f"Z_{grp['id']}_{grp['cn']}")
                 if Z is not None and Z.shape == (n,) and np.max(np.abs(Z - covariate)) <= DESIGN_ABS:
                     found.append((grp, m))
+        if len(found) > 1 and re.fullmatch(r"Intercept\[\d+\]", coef):   # G10: (cs(1) | g)'s ones, told apart by brms's label
+            found = [(grp, m) for grp, m in found if grp["coef"] == coef]
         if len(found) != 1:
             raise OracleMismatch(
                 f"group-level coefficient {coef!r} of {g!r}: {len(found)} brms group terms induce its partition of "
@@ -1173,6 +1289,12 @@ def natural_point(model: ab.Model, point: Point, cmap: ColumnMap, gmap: GroupMap
     if cmap.special:                                       # C06: the me() / mi() term's coefficient, brms's bsp[1], by its column
         terms = {t.name: t for t in model.spec.pop_terms}
         bsp = {terms[name].operands[0]: float(np.atleast_1d(pars["bsp"])[k]) for k, name in enumerate(cmap.special)}
+    if cmap.sp is not None:                                # G10: every special term's coefficient and every simplex, by formula
+        for name, (bsp_f, simo_f) in special_point(cmap, pars).items():
+            if name:
+                formulas[name].update({"bsp": bsp_f, **({"simo": simo_f} if simo_f else {})})
+            else:
+                bsp, simo = bsp_f, simo_f or None
     if cmap.measurement:                                   # C06: an me() term's meanme_k, sdme_k and zme_k, by noisy column
         special = {cls: {x: (np.atleast_1d(pars[f"{cls}_{k}"]).astype(float) if cls == "zme" else float(np.atleast_1d(pars[f"{cls}_{k}"])[0]))
                          for x, k in cmap.measurement.items()} for cls in ("meanme", "sdme", "zme")}
@@ -1203,6 +1325,47 @@ def natural_point(model: ab.Model, point: Point, cmap: ColumnMap, gmap: GroupMap
                 **({"shrinkage": shrinkage} if shrinkage is not None else {}),
                 **({"car": car_point(model, pars)} if getattr(model, "car_names", {}) else {}),   # F02a
                 **({"Lcortime": Lcortime} if Lcortime is not None else {}), **({"cosy": cosy} if cosy is not None else {}))
+
+
+def brms_special_predictor(fixture: Fixture, cmap: ColumnMap, pars: dict, suffix: str = "") -> np.ndarray | float:
+    """G10: brms's special terms' part of a linear predictor (``""``: mu's, ``"_sigma"``: sigma's) at the point ``pars``, from
+    brms's own data and parameters alone: ``sum_i bsp[i] * prod_k mo(simo_k, Xmo_k) * Csp`` over brms's terms (an ``me()``
+    term's ``Xme_1`` at its rows, ``Jme_1``, for the one ``me()`` latent variable), ``mo(simo, x) = D * sum(simo[1:x])``."""
+    sd, out = fixture.standata, 0.0
+    if cmap.sp is None or f"bsp{suffix}" not in cmap.sp.terms:
+        return out
+    values = np.atleast_1d(pars[f"bsp{suffix}"]).astype(float)
+    for i, (ks, csp) in enumerate(cmap.sp.terms[f"bsp{suffix}"]):
+        term = values[i] * np.ones(int(sd["N"]))
+        for k in ks:
+            simo = np.atleast_1d(pars[f"simo{suffix}_{k}"]).astype(float)
+            cum = np.concatenate([[0.0], np.cumsum(simo)])
+            term = term * simo.size * cum[np.asarray(sd[f"Xmo{suffix}_{k}"]).astype(int)]
+        if not ks:                                          # an me() term: brms's latent values Xme_1 (at Jme_1)
+            xme = np.atleast_1d(pars["Xme_1"]).astype(float)
+            term = term * (xme[np.asarray(sd["Jme_1"]).astype(int) - 1] if "Jme_1" in sd else xme)
+        out = out + (term if csp is None else term * np.asarray(sd[csp], dtype=float))
+    return out
+
+
+def special_point(cmap: ColumnMap, pars: dict) -> dict:
+    """G10: ``value_point``'s ``bsp`` and ``simo`` of each formula (``""`` the response formula's, else the parameter's name)
+    from brms's ``bsp`` / ``bsp_<dpar>`` and ``simo_k`` / ``simo_<dpar>_k`` (a simplex shared by an id is brms's first ``simo_k``
+    and its transformed copies, which must be equal)."""
+    out = {}
+    for name, entries in cmap.sp.bsp.items():
+        suffix = name[len("bsp"):]
+        values = np.atleast_1d(pars[name]).astype(float)
+        bsp = {key: float(values[i]) for i, (key, _) in enumerate(entries)}
+        simo = {}
+        for brms, (key, _, _, _) in cmap.sp.simplexes.items():
+            if brms.startswith(f"simo{suffix}_") and brms[len(f"simo{suffix}_"):].isdigit():
+                value = np.atleast_1d(pars[brms]).astype(float)
+                if key in simo and np.max(np.abs(simo[key] - value)) > 0.0:
+                    raise OracleMismatch(f"brms's {brms} differs from the simplex {key!r} it shares an id with")
+                simo[key] = value
+        out[suffix[1:]] = (bsp, simo)
+    return out
 
 
 _SHRINKAGE_PARS = {"Horseshoe": ("zb", "hs_global", "hs_slab", "hs_local"), "R2D2": ("zb", "R2D2_R2", "R2D2_phi")}
@@ -1336,7 +1499,7 @@ def coordinate_map(fixture: Fixture, model: ab.Model, cmap: ColumnMap, gmap: Gro
         elif par == "bcs" and cmap.cs:                         # D04: brms's matrix[Kcs, nthres] bcs, column-major
             Kcs = len(cmap.cs)
             column, k = cmap.cs[elem % Kcs], elem // Kcs
-            target, expect = (next(t.name for t in model.spec.cs_terms if t.operands[0] == column), k), "identity"
+            target, expect = (next(t.name for t in model.spec.cs_terms if cs_label(t) == column), k), "identity"
         elif cmap.thres_levels and re.fullmatch(r"Intercept_\d+", par):   # F06b: level k's ordered[nthres[k]] Intercept_k
             k = int(par[len("Intercept_"):])
             if k > len(cmap.thres_levels):
@@ -1374,6 +1537,11 @@ def coordinate_map(fixture: Fixture, model: ab.Model, cmap: ColumnMap, gmap: Gro
                 target, expect = (term, 0 if j is None else j), "identity"
         elif par == "Intercept":
             target, expect = (names["intercept"], 0), "identity"
+        elif cmap.sp is not None and par in cmap.sp.bsp:      # G10: brms's bsp / bsp_<dpar>, every special term in brms's order
+            entries = cmap.sp.bsp[par]
+            if elem >= len(entries):
+                raise OracleMismatch(f"{par}[{elem + 1}] is not the coefficient of a special term of the AutoBayes model")
+            target, expect = (entries[elem][1], 0), "identity"
         elif par == "bsp" and cmap.special:                    # C06: the coefficient of the model's me() / mi() term
             if elem >= len(cmap.special):
                 raise OracleMismatch(f"bsp[{elem + 1}] is not the coefficient of an me() or mi() term of the AutoBayes model")
@@ -1689,6 +1857,20 @@ def _simplex_coordinates(fixture: Fixture, model: ab.Model, cmap: ColumnMap) -> 
             for j, i in enumerate(index):
                 out[i] = ("sbhaz_stickbreaking__", j)
             continue
+        if cmap.sp is not None and name in cmap.sp.simplexes:   # G10: a simplex of a special product (or of any mo() term beside one)
+            _, simplex, _, D = cmap.sp.simplexes[name]
+            index = unreached[pos:pos + D - 1]
+            pos += D - 1
+            if len(index) != D - 1:
+                raise OracleMismatch(f"brms's simplex {name!r} needs {D - 1} unreached coordinates; {len(index)} are left")
+            for q, pt_ in enumerate(fixture.points):
+                u = stick_breaking_free(np.atleast_1d(pt_.pars[name]))
+                if np.max(np.abs(u - pt_.u[index])) > 1e-10:
+                    raise OracleMismatch(f"point {q}: Stan's stick-breaking coordinates of {name} are {u!r}; brms's unconstrained "
+                                         f"values at {[i + 1 for i in index]} are {pt_.u[index]!r}")
+            for j, i in enumerate(index):
+                out[i] = (f"{simplex}_stickbreaking__", j)
+            continue
         k = int(name[len("simo_"):]) if name.startswith("simo_") and name[len("simo_"):].isdigit() else None
         if k not in by_k:
             raise OracleMismatch(f"brms's simplex {name!r} ({declaration}) is not the simplex of a monotonic term of the AutoBayes model")
@@ -1755,6 +1937,13 @@ def draws(fixture: Fixture, model: ab.Model, cmap: ColumnMap, gmap: GroupMap) ->
         data[roles["b"]] = (("chain", "draw"), np.array([float(np.atleast_1d(p.pars["bsp"])[k - 1]) for p in pts])[None, :])
         data[roles["simplex"]] = (("chain", "draw", roles["coordinate"]), np.stack([np.atleast_1d(p.pars[f"simo_{k}"]) for p in pts])[None])
         coords[roles["coordinate"]] = [str(j) for j in range(1, model.design.monotonic[column].D + 1)]
+    if cmap.sp is not None:                                      # G10: every special term's coefficient and simplex
+        for par, entries in cmap.sp.bsp.items():
+            for i, (_, var) in enumerate(entries):
+                data[var] = (("chain", "draw"), np.array([float(np.atleast_1d(p.pars[par])[i]) for p in pts])[None, :])
+        for brms, (_, var, coordinate, D) in cmap.sp.simplexes.items():
+            data[var] = (("chain", "draw", coordinate), np.stack([np.atleast_1d(p.pars[brms]) for p in pts])[None])
+            coords[coordinate] = [str(j) for j in range(1, D + 1)]
     if getattr(model.design, "bhaz", None) is not None:          # F05: the cox baseline hazard's simplex, brms's sbhaz
         data["sbhaz"] = (("chain", "draw", "sbhaz_dim"), np.stack([np.atleast_1d(p.pars["sbhaz"]) for p in pts])[None])
         coords["sbhaz_dim"] = list(model.design.bhaz.labels)
@@ -1774,7 +1963,7 @@ def draws(fixture: Fixture, model: ab.Model, cmap: ColumnMap, gmap: GroupMap) ->
         data[roles["zgp"]] = (("chain", "draw", roles["coordinate"]), zs[None])
         coords[roles["coordinate"]] = [str(j) for j in range(1, zs.shape[1] + 1)]
     for k, column in enumerate(cmap.cs or ()):                  # D04: each cs() term's coefficients, brms's bcs row k
-        term = next(t.name for t in model.spec.cs_terms if t.operands[0] == column)
+        term = next(t.name for t in model.spec.cs_terms if cs_label(t) == column)
         data[term] = (("chain", "draw", names["threshold_dim"]), np.stack([np.atleast_2d(p.pars["bcs"])[k] for p in pts])[None])
         coords[names["threshold_dim"]] = [str(j) for j in range(1, len(model.categories))]
     for k, name in enumerate(cmap.special or ()):               # C06: the me() / mi() term's coefficient, brms's bsp[1]
@@ -1783,6 +1972,10 @@ def draws(fixture: Fixture, model: ab.Model, cmap: ColumnMap, gmap: GroupMap) ->
         roles = model.me_names[x]
         for cls, key in (("meanme", "mean"), ("sdme", "sd")):
             data[roles[key]] = (("chain", "draw"), np.array([float(np.atleast_1d(p.pars[f"{cls}_{k}"])[0]) for p in pts])[None, :])
+        if "coordinate" in roles:                                # G10: me(x, sdx, gr = g), one per level of g
+            data[roles["z"]] = (("chain", "draw", roles["coordinate"]), np.stack([np.atleast_1d(p.pars[f"zme_{k}"]) for p in pts])[None])
+            coords[roles["coordinate"]] = list(model.design.measurement_error[x].levels)
+            continue
         data[roles["z"]] = (("chain", "draw", "__obs__"), np.stack([np.atleast_1d(p.pars[f"zme_{k}"]) for p in pts])[None])
         coords["__obs__"] = np.arange(model.design.n)
     for term in (t.name for t in model.spec.bambi_terms):       # the terms with design columns (a monotonic term has none)
@@ -1865,7 +2058,7 @@ def draws(fixture: Fixture, model: ab.Model, cmap: ColumnMap, gmap: GroupMap) ->
             a = [float(p.pars[f"Intercept_{name}" if centred else f"b_{name}_Intercept"]) if dmap.centred_intercept
                  else float(coefficients(p.pars, f"b_{name}")[dmap.b_index(dmap.intercept_column)]) for p in pts]
             data[roles["intercept"]] = (("chain", "draw"), np.array(a)[None, :])
-        for t in ds.pop_terms:
+        for t in ds.bambi_terms:                            # G10: a special product's draws are cmap.sp's
             positions = [(c, j) for c, (_, term, j) in enumerate(ds.column_terms) if term == t.name]
             vals = np.array([[coefficients(p.pars, f"b_{name}")[dmap.b_index(dmap.x_column[c])] for c, _ in positions] for p in pts])
             var = roles[f"b:{t.name}"]

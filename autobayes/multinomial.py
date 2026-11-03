@@ -255,7 +255,8 @@ def _check_category_formula(text: str, d: ModelSpec) -> None:
         _refuse(text, f"the offset term {d.offset.term!r}")
     if d.expression_terms:                                             # G04 (divergence D182)
         _refuse(text, f"the in-formula transform {d.expression_terms[0].basis!r}")
-    for kind, terms in (("monotonic term", d.mo_terms), ("measurement-error term", d.me_terms), ("missing-value term", d.mi_terms)):
+    for kind, terms in (("monotonic term", d.mo_terms), ("measurement-error term", d.me_terms), ("missing-value term", d.mi_terms),
+                        ("special term", getattr(d, "sp_terms", ()))):   # G10
         if terms:
             _refuse(text, f"the {kind} {terms[0].name!r}")
     if d.gp_terms:

@@ -93,7 +93,7 @@ def test_terms(me_data, mi_data):
 
 
 @pytest.mark.parametrize("formula, message", [
-    ("y ~ me(x, sdx, gr = g)", "brms's gr argument (me(x, sdx, gr = g)"),
+    ("y ~ me(x, sdx, g = g)", "me() takes the noisy column, the column of its known standard deviations and optionally brms's gr"),
     ("y ~ me(x)", "me() takes two column names"),
     ("y ~ me(log(x), sdx)", "me() takes column names here, not expressions"),
     ("y ~ me(x, x)", "the noisy column and the column of its standard deviations must differ"),
@@ -102,7 +102,7 @@ def test_terms(me_data, mi_data):
     ("y ~ mi(log(x))", "mi() takes a column name here"),
     ("y ~ mi(y)", "the response 'y' cannot be its own mi() predictor"),
     ("y ~ w * mi(x)", "an interaction with a missing-value term ('mi(x)') is not supported"),
-    ("y ~ me(x, s):w", "an interaction with a measurement-error term ('me(x, s)') is not supported"),
+    ("y ~ me(x, s):w", "'me(x, s):w' multiplies the latent values of 'me(x, s)', which is no main effect of the formula"),   # G10
     ("y ~ (1 + mi(x) | g)", "a missing-value term cannot vary by 'g'"),
     ("y ~ (1 + me(x, s) || g)", "a measurement-error term cannot vary by 'g'"),
     ("y | mi(s) ~ x", "brms's mi(sdy), a response measured with known noise, is not supported"),
