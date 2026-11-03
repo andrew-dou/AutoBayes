@@ -288,6 +288,15 @@ the response formula's term and log sigma's varying intercept, `Priors(sigma={"i
 and shared-ID factors are refused (D104-D106); `cs()` and the case `acat_cs` came with D04's acat family (D107, below); see
 [multi-membership and by](multi-membership-and-by.md).
 
+A known covariance, Student-t effects and multi-membership slopes: `(1 + x | gr(g, cov = A))` with `A` in `data2` (a DataFrame
+labelled by level; `vec(r)` has covariance `A kron Sigma`, where brms 2.23.0 drops the negative entries of chol(A), D185),
+`(1 | gr(g, dist = "student"))` (each level's effect Student-t, `Priors(df={"g": ab.Gamma(2, 0.1)})`, brms's class `df`),
+varying slopes in `mm()`, `mmc(x1, x2)` and `mm(..., scale = FALSE)`; `predict()`, `ab.log_lik` and the default priors take them.
+Verified against `gauss_gr_cov`, `gauss_gr_cov_slope`, `gauss_gr_student`, `gauss_mm_slope`, `gauss_mmc` and
+`gauss_mm_scale_false` (and `gauss_gr_cov_slope_signed`, where brms's construction differs); their combinations with one another
+and with the terms `mm()` is refused next to, and new levels of a `cov` or `dist` term, are refused (D186); see
+[known covariance and Student-t effects](gr-cov-dist.md).
+
 Weibull, exponential, skew-normal, shifted lognormal and ex-Gaussian responses (D01, brms's `weibull()`, `exponential()`,
 `skew_normal()`, `shifted_lognormal()`, `exgaussian()`): `ab.weibull` and `ab.exponential` with a log link on the mean,
 `ab.skew_normal` and `ab.exgaussian` with the identity link on the mean (brms's mean parameterisations), `ab.shifted_lognormal`
@@ -525,3 +534,37 @@ column a coefficient named as brms names it. Verified against `gauss_three_way_n
 `bernoulli_three_way_varint`; a rank-deficient design is warned of (D179); `x^2`, `x:x` and R's rank-deficient coding of
 `0 + x + x:z` (D180), a column no fitted row reaches and these interactions in non-linear, count-matrix, multivariate models and
 the summaries (D179) are refused by name.
+
+The call surface (Andrew's decisions of 26 October on D172-D174): a pandas Categorical or boolean predictor needs no declaration, a
+factor with its categories' order and first fitted category as the reference (an ordered one with polynomial contrasts) and a
+logical coded `<name>TRUE`, declared or not (docs/column-types.md, verified against `gauss_pandas_categorical` and `gauss_logical`);
+a class-wide prior with overrides, `b={"*": ab.Normal(0, 2), "x": ab.Normal(0.5, 1)}`, `sd={"*": ..., "h": ...}`, `cor={"*": ...}`,
+with brms's precedence and table (docs/class-priors.md, verified against `gauss_prior_overrides`; D178); and `dropna=True`, which
+drops the rows with a missing value in a column the model reads (but `mi()`'s), warns and records them as `model.dropped_na_rows`
+(docs/missing-rows.md, verified against `gauss_missing_rows_dropped` and its `log_lik`, `bayes_R2` and `loo`; D177).
+Group-level term syntax (G05a, docs/group-term-syntax.md): the slopes alone, `(0 + x | g)` and `(x - 1 | g)`; one factor in
+several terms, `(1 | g) + (0 + x | g)` (one term of uncorrelated coefficients, as brms's two IDs); a factor slope `(1 + z | g)`
+coded as the population design (`z[q]`, `z[r]`); transform and product slopes `(1 + I(x^2) + x:w | g)`; a monotonic slope `(1 +
+mo(ord) | g)` on the population term's simplex; three grouping columns, `g:h:f2` and `g/h/f2`; and a numeric slope without its
+population-level term, `w + (1 + x | g)` (D8 resolved). Verified against eight frozen cases (`gauss_split_slope_post` with brms's
+summaries); a correlated term next to another term of its factor, duplicated terms, four or more grouping columns and the factor or
+`mo()` slope in other forms are refused naming the construct (D183, D184).
+
+Group-level terms, offsets and more parameters in distributional formulas (G06, docs/distributional-groups.md): the Gaussian's
+sigma takes a group of its own, `sigma ~ z + (1 | g)` (brms's own ID, `Priors(sigma={..., "sd": ...})`), varying slopes in a
+correlation ID shared with the response formula (`(1 + x |p| g)` in both formulas, four correlated coefficients) and `offset()`;
+the Student-t's `nu ~ z` (brms's `logm1` link), the zero-inflated Poisson's `zi ~ z + (1 | g)` (logit, a group of its own) and the
+cumulative logit family's `disc ~ z` (log, its design centred as brms's; the model warns that its scale is identified by the
+priors alone, D188) are offered; predictions, `log_lik` and the summaries of sigma's own varying intercept follow brms. With
+`(1 |p| g)` in both formulas the model applies brms's prior table where brms's own log density contradicts it (D187). Verified on
+`gauss_sigma_varint`, `gauss_sigma_shared_id_slopes`, `gauss_sigma_offset`, `student_nu_formula`, `zip_zi_formula`,
+`cumulative_disc` and `gauss_sigma_varint_post` (and `gauss_sigma_shared_id` but for D187's two gates); every other family's and
+parameter's group-level terms and offsets stay refused (D32, D116).
+
+Scaling (G11, docs/scaling.md): group-level terms are built from integer level codes, so a model with many rows and levels
+(`(1 + x1 | g)` at N = 1e6, J = 1e4) builds, evaluates its log density and gradient, and predicts in memory proportional to the
+rows times the coefficients; Bambi is handed the population-level formula and each group-level coefficient as level codes and
+its column, building the same graph. Every model is unchanged bit for bit (graph, log density, target identity, `describe()`,
+design arrays; recorded before and after with `tools/model_manifest.py`); `GroupBlock.Z` and `Design.Z` are built on access and
+refused above `group_index.DENSE_Z_MAX_ENTRIES`; the target identity is streamed (same digest); predictions of models with
+group-level terms are the library's own (`kind="response"` draws from its generator, D199).

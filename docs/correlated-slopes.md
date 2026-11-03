@@ -74,9 +74,9 @@ construction of Lewandowski, Kurowicka and Joe (Stan's `lkj_corr_cholesky_rng`).
 
 Correlation IDs (`(1 + x |p| g)`, brms's sharing of a correlation matrix across terms) and brms's `gr()` options
 (`(1 + x | gr(g, cor = FALSE))`; `||` is the independent form), divergence D20; `cor` for a term without a
-correlation matrix (`||`, or one coefficient); a non-LKJ `cor` prior; everything A01 refuses about slopes (no varying
-intercept, `(x | g)` being refused with the form `(1 + x | g)` to write; categorical or interaction slopes; a slope
-that is not a population-level term).
+correlation matrix (`||`, or one coefficient); a non-LKJ `cor` prior; everything A01 refuses about slopes. G05a
+(docs/group-term-syntax.md) takes correlated slopes alone, `(0 + x + w | g)`, and factor, transform, product and `mo()` slopes,
+`(1 + z | g)`, `(1 + I(x^2) + x:w | g)`, `(1 + mo(ord) | g)`.
 
 ## Evidence
 

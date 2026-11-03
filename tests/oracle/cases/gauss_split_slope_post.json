@@ -119,9 +119,5 @@
     "method": "posterior_epred"
    }
   }
- },
- "gate": {
-  "expect": "fail",
-  "reason": "G05a_group_term_syntax not implemented; remove this field when it lands"
  }
 }

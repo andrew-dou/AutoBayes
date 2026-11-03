@@ -360,6 +360,20 @@ def LKJ(eta: float) -> Prior:
     return Prior("LKJ", {"eta": _positive("eta", eta)})
 
 
+CLASS_WIDE = "*"     # D173 (docs/class-priors.md): the key of a class-wide prior in the mappings of b, sd and cor
+
+
+def class_default(entry, cls: str = "b"):
+    """D173: the class-wide prior of a mapping of ``b``, ``sd`` or ``cor`` (its ``"*"`` entry, which cannot be a term's or a
+    factor's name), or None; refused unless it is one ``Prior``."""
+    if not isinstance(entry, Mapping) or CLASS_WIDE not in entry:
+        return None
+    default = entry[CLASS_WIDE]
+    if not isinstance(default, Prior):
+        raise PriorError(f"the class-wide prior {cls}={{'*': ...}} must be one Prior (brms's class row), got {type(default).__name__}")
+    return default
+
+
 @dataclass(frozen=True)
 class Priors:
     """Priors for the parameter classes.
@@ -378,7 +392,13 @@ class Priors:
     g, coef = x``). ``cor`` is keyed by grouping factor too and covers exactly the correlated group terms
     ``(1 + x | g)``: ``cor={"g": LKJ(2)}`` (brms ``class = cor, group = g``; a single correlated factor also accepts
     the bare prior); it is refused for an independent (``||``) or intercept-only term, which has no correlation
-    matrix. No automatic priors are filled in silently and nothing is broadcast. ``sigma``, ``shape`` and
+    matrix. No automatic priors are filled in silently and nothing is broadcast, unless asked: D173 (docs/class-priors.md), a mapping
+    of ``b``, ``sd`` or ``cor`` may hold the class-wide prior under the key ``"*"``, brms's class row, which every coefficient (every
+    group-level SD, every correlated factor) the mapping does not name takes; the named entries override it with brms's
+    precedence, a coefficient's own prior over its factor's over the class's: ``b={"*": Normal(0, 2), "x": Normal(0.5, 1)}``,
+    ``sd={"*": HalfNormal(1), "h": HalfNormal(0.5)}`` (a factor's one prior covers all of its coefficients, a partial mapping over
+    them takes the class-wide prior for the rest), and a categorical term's partial mapping ``{"z": {"q": ...}}`` takes it for its
+    other levels; an entry naming no term (factor) of the model is refused, naming it. ``sigma``, ``shape`` and
     ``phi`` are the auxiliary parameters: exactly the one the family has (``FamilySpec.scale_parameter``) must be given.
     When that parameter has its own formula (B01, ``["y ~ x", "sigma ~ z"]``, docs/distributional.md) its entry is instead
     a mapping over that formula's intercept and coefficients, ``sigma={"intercept": Normal(0, 1), "b": Normal(0, 0.5)}``
@@ -462,6 +482,15 @@ class Priors:
     ``sbhaz`` is the prior of a cox model's baseline hazard simplex (F05, docs/cox.md): a ``Dirichlet`` (brms's class ``sbhaz``,
     default ``dirichlet(1)``), one concentration for every basis or one per basis, required for the cox family and refused for
     every other.
+
+    ``df`` is the prior of the degrees of freedom of each ``gr(g, dist = "student")`` term (G05b, docs/gr-cov-dist.md; brms's
+    class ``df`` with ``group = g``, default ``gamma(2, 0.1)``): one of ``TRUNCATABLE``, truncated to ``df > 1`` and renormalised
+    there as brms's ``real<lower=1> df_m`` (``nu``'s rule), keyed by factor (``df={"g": Gamma(2, 0.1)}``) or bare for the model's one
+    such term; required exactly for those terms and refused without one.
+
+    ``disc`` (G06, docs/distributional-groups.md) is the priors of a cumulative model's discrimination formula ``disc ~ ...``,
+    ``{"intercept": ..., "b": ...}`` (brms's class ``Intercept`` and ``b`` with ``dpar = disc``), required exactly with that
+    formula. A Student-t ``nu`` with its own formula takes that formula's priors in ``nu`` alike.
     """
 
     intercept: Prior | None = None
@@ -539,6 +568,12 @@ class Priors:
     # F05 (docs/cox.md): the Dirichlet prior of the cox family's baseline hazard simplex (brms class ``sbhaz``, default
     # ``dirichlet(1)``; one concentration for every basis or one per basis); required for the cox family, refused for every other
     sbhaz: Prior | None = None
+    # G05b (docs/gr-cov-dist.md): the degrees of freedom of each gr(g, dist = "student") term (brms class ``df``, group g;
+    # default gamma(2, 0.1)), by factor or bare for one such term; truncated to df > 1 as nu's is; refused without one
+    df: Prior | Mapping[str, Prior] | None = None
+    # G06 (docs/distributional-groups.md): the priors of the cumulative family's discrimination formula ``disc ~ ...``,
+    # {"intercept": ..., "b": ...} (brms's dpar = disc); required with that formula, refused for every other model
+    disc: Mapping[str, object] | None = None
 
     def __post_init__(self):
         if isinstance(self.components, list):                         # one value for equal component lists (C05)
@@ -618,6 +653,9 @@ class Priors:
             raise PriorError("meanme and sdme are the priors of a measurement-error term me(x, sdx) (docs/missing-and-measurement-error.md); "
                              "a multivariate model takes neither: a measurement-error term in a multivariate model is not supported "
                              "(divergence D73)")
+        if self.df is not None:                                       # G05b
+            raise PriorError("df is the prior of the degrees of freedom of a gr(g, dist = \"student\") term (docs/gr-cov-dist.md); a "
+                             "multivariate model takes none: the term in a multivariate formula is not supported (divergence D186)")
         top = [name for name in self._RESPONSE_CLASSES if getattr(self, name) is not None]
         if top:
             raise PriorError(
@@ -659,6 +697,9 @@ class Priors:
             raise PriorError(f"b must be a Prior or a mapping from term to prior, got {type(self.b).__name__}")
         given = dict(self.b)
         keys = list(dict.fromkeys(_prior_key(spec, t) for t in spec.pop_terms))   # F08: an ordered factor's contrasts share one key
+        default = class_default(given, "b")                   # D173: the class-wide prior, which the other entries override
+        if default is not None:
+            given = {**{k: default for k in keys}, **{k: v for k, v in given.items() if k != CLASS_WIDE}}
         missing = [t for t in keys if t not in given]
         extra = [k for k in given if k not in keys]
         if missing or extra:
@@ -684,20 +725,21 @@ class Priors:
                     hint = f"; the monotonic term's coefficient is keyed by the term, b={{{mo.name!r}: prior}}"
                     break
             raise PriorError(
-                f"coefficient priors must cover exactly the predictor terms {keys}; "
-                f"missing {missing}, unexpected {extra}{hint}"
+                (f"the override(s) {extra} of b={{'*': ...}} name no population-level term of the formula; its terms are {keys}"
+                 if default is not None else
+                 f"coefficient priors must cover exactly the predictor terms {keys}; missing {missing}, unexpected {extra}") + hint
             )
         out: dict[str, Prior] = {}
         for t in spec.pop_terms:
             if t.kind == "contrast":                          # F08: keyed by the ordered factor's term, one prior or one per contrast
-                out[t.name] = _contrast_prior(spec, t, given)
+                out[t.name] = _contrast_prior(spec, t, given, default)
                 continue
             if t.kind == "product":                           # G03: keyed by the interaction, one prior or one per column
-                out[t.name] = _product_prior(spec, t, given)
+                out[t.name] = _product_prior(spec, t, given, default)
                 continue
             if t.basis is not None and (t.name != t.basis or t.transform.form in ("poly", "factor", "logical")):   # G04: a column of
                 # poly(), factor() or a logical (or, before the data are seen, the term itself), keyed by its term
-                out[t.name] = _basis_prior(spec, t, given)
+                out[t.name] = _basis_prior(spec, t, given, default)
                 continue
             term, entry = t.name, given[t.name]
             if not t.is_vector:
@@ -735,6 +777,8 @@ class Priors:
                         raise PriorError(f"prior for {term!r} level {lab!r} must be a Prior, got {type(v).__name__}")
                 continue
             wanted = list(t.levels)
+            if default is not None:                           # D173: the levels the mapping does not name take the class-wide prior
+                keyed = {**{l: default for l in wanted}, **keyed}
             missing_l = [l for l in wanted if l not in keyed]
             extra_l = [l for l in keyed if l not in wanted]
             if missing_l or extra_l:
@@ -785,7 +829,14 @@ class Priors:
                     )
                 raise PriorError(f"the varying intercept '(1 | {groups[0]})' needs a prior on the SD of its varying intercept: pass sd=...")
             raise PriorError(f"each varying intercept needs a prior on the SD: pass sd for {list(groups)}")
-        if isinstance(self.sd, Mapping):
+        default = class_default(self.sd, "sd")               # D173: the class-wide SD prior, which the factors' entries override
+        if default is not None:
+            extra = [k for k in self.sd if k != CLASS_WIDE and k not in groups]
+            if extra:
+                raise PriorError(f"the override(s) {extra} of sd={{'*': ...}} name no grouping factor of the formula; its factors are "
+                                 f"{list(groups)}")
+            by_factor = {g: self.sd.get(g, default) for g in groups}
+        elif isinstance(self.sd, Mapping):
             if set(self.sd) != set(groups):
                 hint = ""
                 if len(group_terms) == 1 and set(self.sd) <= set(group_terms[0].coefs):
@@ -796,14 +847,18 @@ class Priors:
             by_factor = {g: self.sd[g] for g in groups}
         else:
             if len(groups) != 1:
-                raise PriorError("multiple grouping factors require an exact-key sd mapping; scalar sd is not broadcast")
+                raise PriorError("multiple grouping factors require an exact-key sd mapping; scalar sd is not broadcast (sd={'*': "
+                                 "prior} gives every group-level SD one prior, brms's class sd; docs/class-priors.md)")
             by_factor = {groups[0]: self.sd}
         out: dict[tuple[str, str], Prior] = {}
         for t in group_terms:
             entry = by_factor[t.factor]
+            if isinstance(entry, Mapping) and default is not None:   # D173: the coefficients not named take the class-wide prior
+                entry = {**{c: default for c in (t.written or t.coefs)}, **entry}   # G05a: a factor slope by its factor
             if isinstance(entry, Mapping):
-                missing = [c for c in t.coefs if c not in entry]
-                extra = [k for k in entry if k not in t.coefs]
+                written = t.written or t.coefs                 # G05a: a factor slope z's SD prior is keyed by z (all its levels)
+                missing = [c for c in written if c not in entry]
+                extra = [k for k in entry if k not in written]
                 if missing or extra:
                     hint = ""
                     for k in extra:
@@ -811,19 +866,69 @@ class Priors:
                             hint = (f" ({k!r} is a population-level term, but '{t.canonical}' has no varying slope on it; "
                                     f"write '(1 + {k} || {t.factor})' to add one)")
                             break
+                        level = next((w for w in written if w in getattr(spec, "categorical_names", ()) and isinstance(k, str)
+                                      and k.startswith(w)), None)
+                        if level is not None:
+                            hint = (f" ({k!r} names a level's coefficient of the factor slope {level!r}: its SD prior is keyed by the "
+                                    f"factor, {level!r}: <prior>, one prior for the SDs of all its coefficients)")
+                            break
                     raise PriorError(
-                        f"SD priors for {t.factor!r} must cover exactly its coefficients {list(t.coefs)}; "
+                        f"SD priors for {t.factor!r} must cover exactly its coefficients {list(written)}; "
                         f"missing {missing}, unexpected {extra}{hint}"
                     )
                 for c in t.coefs:
-                    out[(t.factor, c)] = entry[c]
+                    prior, written_as = entry[t.term_of(c)], t.term_of(c)
+                    if (written_as != c or c in getattr(spec, "categorical_names", ())) and not isinstance(prior, Prior):
+                        raise PriorError(f"the SD prior of the factor slope {written_as!r} of {t.factor!r} is one Prior for the SDs of "
+                                         f"all its coefficients (one per non-reference level), got {type(prior).__name__} "
+                                         "(docs/group-term-syntax.md)")
+                    out[(t.factor, c)] = prior
+            elif t.slopes and default is not None:           # D173: a factor's one prior covers its coefficients (brms's group row)
+                for c in t.coefs:
+                    out[(t.factor, c)] = entry
             elif t.slopes:
                 raise PriorError(
                     f"sd for {t.factor!r} must be a mapping over its coefficients {list(t.coefs)} ('{t.canonical}' has "
-                    f"varying slopes), got a single {type(entry).__name__}; the same prior for every coefficient must be spelled out"
+                    f"varying slopes), got a single {type(entry).__name__}; the same prior for every coefficient must be spelled out, "
+                    "or given as the class-wide prior sd={'*': prior} (brms's class sd; docs/class-priors.md)"
                 )
             else:
                 out[(t.factor, "Intercept")] = entry
+        return out
+
+    def df_priors(self, spec) -> dict[str, Prior]:
+        """G05b: the prior of the degrees of freedom of each ``gr(g, dist = "student")`` term (brms class ``df``, group ``g``), keyed
+        by factor in formula order: one of ``TRUNCATABLE`` (truncated to ``df > 1`` and renormalised there, brms's ``real<lower=1>
+        df_m``); coverage exact, a single such term also takes the bare prior, and ``"*"`` (D173) gives every such term's prior with
+        factors' entries overriding it; refused when the formula has none."""
+        factors = [t.factor for t in getattr(spec, "group_terms", ()) if t.is_student]
+        if not factors:
+            if self.df is not None:
+                raise PriorError("df is the prior of the degrees of freedom of a gr(g, dist = \"student\") term (brms class df); "
+                                 "the formula has none")
+            return {}
+        if self.df is None:
+            raise PriorError(f"the Student-t group-level term(s) of {factors} need a prior on their degrees of freedom: pass "
+                             f"df={{{factors[0]!r}: ab.Gamma(2, 0.1)}} (brms's default gamma(2, 0.1), truncated to df > 1)")
+        default = class_default(self.df, "df")               # D173: a class-wide prior ("*"), which the factors' entries override
+        if default is not None:
+            extra = [k for k in self.df if k != CLASS_WIDE and k not in factors]
+            if extra:
+                raise PriorError(f"the override(s) {extra} of df={{'*': ...}} name no factor with gr(g, dist = \"student\"); those "
+                                 f"factors are {factors}")
+            out = {g: self.df.get(g, default) for g in factors}
+        elif isinstance(self.df, Mapping):
+            if set(self.df) != set(factors):
+                raise PriorError(f"df must cover exactly the factors with gr(g, dist = \"student\") {factors}; got {list(self.df)}")
+            out = {g: self.df[g] for g in factors}
+        elif len(factors) != 1:
+            raise PriorError(f"several Student-t group-level terms {factors} need an exact-key df mapping; a bare prior is not broadcast")
+        else:
+            out = {factors[0]: self.df}
+        for g, prior in out.items():
+            if not isinstance(prior, Prior) or prior.name not in TRUNCATABLE:
+                raise PriorError(f"prior for 'df:{g}' must be a positive-support prior {sorted(TRUNCATABLE)}, which is truncated to "
+                                 f"df > 1 and renormalised there as brms's real<lower=1> df is; got {prior}")
         return out
 
     def cor_priors(self, spec) -> dict[str, Prior]:
@@ -849,7 +954,14 @@ class Priors:
                 f"the group term '{t.canonical}' gives its coefficients {list(t.coefs)} a correlation matrix, which needs "
                 f"an LKJ prior: pass cor={{{t.factor!r}: ab.LKJ(eta)}}" + (f" (and for {factors[1:]})" if len(terms) > 1 else "")
             )
-        if isinstance(self.cor, Mapping):
+        default = class_default(self.cor, "cor")             # D173: the class-wide LKJ prior, which the factors' entries override
+        if default is not None:
+            extra = [k for k in self.cor if k != CLASS_WIDE and k not in factors]
+            if extra:
+                raise PriorError(f"the override(s) {extra} of cor={{'*': ...}} name no correlated grouping factor of the formula; its "
+                                 f"correlated factors are {factors}")
+            by_factor = {g: self.cor.get(g, default) for g in factors}
+        elif isinstance(self.cor, Mapping):
             if set(self.cor) != set(factors):
                 extra = [k for k in self.cor if k not in factors]
                 hint = ""
@@ -1174,6 +1286,7 @@ class Priors:
 
         check_prior(self)                                             # D07: a shrinkage prior anywhere but the bare b is refused
         self.sar_priors(spec)                                         # F02b: lagsar / errorsar exactly with a SAR term, every model
+        self.df_priors(spec)                                          # G05b: df exactly with a gr(g, dist = "student") term
         self._refuse_lncor(fam)                                       # F01b: the logistic-normal family's alone
         from autobayes.baseline_hazard import check_priors as check_sbhaz
         check_sbhaz(self, spec, fam)                                  # F05: the cox family's sbhaz alone, and required there
@@ -1184,6 +1297,9 @@ class Priors:
         if self.dpars is not None:                                    # F01a, refused for every other model
             raise PriorError("dpars gives the priors of a multinomial model's category formulas (ab.multinomial, "
                              "ab.dirichlet_multinomial; docs/multinomial.md); this model has none")
+        if self.disc is not None and "disc" not in getattr(spec, "dpar_names", ()):   # G06: with a disc formula only
+            raise PriorError("disc gives the priors of a cumulative model's discrimination formula ('disc ~ ...', brms's dpar = "
+                             "disc; docs/distributional-groups.md); this model has none")
         if getattr(spec, "is_nonlinear", False):                       # a non-linear model (C02): priors per non-linear parameter
             from autobayes.nonlinear import check_nonlinear_priors
 
@@ -1247,8 +1363,8 @@ class Priors:
                     + "".join(f" Its {e.meaning} is {e.name}: pass {e.name}=..." for e in extras.values())
                     + (f" Its intercept and slope priors are on the {fam.link_scale} scale." if fam.link_scale is not None else "")
                 )
-        if self.nu is not None:                                       # the learned Student-t degrees of freedom (A13)
-            if "nu" not in fam.learnable_parameters:
+        if self.nu is not None and "nu" not in getattr(spec, "dpar_names", ()):   # the learned Student-t degrees of freedom (A13); G06:
+            if "nu" not in fam.learnable_parameters:                             # with a formula of its own, its priors below
                 raise PriorError(
                     f"the {fam.name} family has no degrees of freedom; do not pass nu."
                     + (f" Its auxiliary parameter is {scale}: pass {scale}=..." if scale is not None else "")
@@ -1271,12 +1387,14 @@ class Priors:
         location = ([("intercept", self.intercept)] if has_intercept else [])
         location += [] if shrinkage else list(self.coefficient_priors(spec).items())
         location += list(self.autocor_priors(spec).items())          # an ARMA term's ar and ma, unbounded (C04)
+        from autobayes.formula import sd_tag
+
         dpar_sds = []
         if predicted:                                                 # its formula's intercept and coefficients (B01): location priors
             dspec, sub = spec.dpar(scale), self.dpar_priors(spec, scale)
             location += (([(f"{scale}:intercept", sub.intercept)] if dspec.intercept else [])
                          + [(f"{scale}:b:{col}", p) for col, p in sub.coefficient_priors(dspec).items()])
-            dpar_sds = [(f"{scale}:sd:{g}", p) for (g, c), p in sub.sd_priors(dspec).items()]   # D08: a shared ID's terms
+            dpar_sds = [(f"{scale}:sd:{sd_tag(g, c)}", p) for (g, c), p in sub.sd_priors(dspec).items()]   # D08, G06: its terms' SDs
         elif scale is not None and isinstance(auxiliary[scale], Mapping):
             raise PriorError(
                 f"prior for {scale!r} is a mapping, the form of the priors of {scale}'s own formula ('{scale} ~ ...'); "
@@ -1290,6 +1408,7 @@ class Priors:
                 if fam.distributional_parameter_link(name) == "logit":
                     logistic.add(f"{name}:intercept")
             location += [(f"{name}:b:{col}", p) for col, p in sub.coefficient_priors(dspec).items()]
+            dpar_sds += [(f"{name}:sd:{sd_tag(g, c)}", p) for (g, c), p in sub.sd_priors(dspec).items()]   # G06: zi's own terms
         for label, prior in location:
             if not isinstance(prior, Prior):
                 raise PriorError(f"prior for {label!r} must be a Prior, got {type(prior).__name__}")
@@ -1302,8 +1421,6 @@ class Priors:
                     f"prior for {label!r} must be a location prior ({sorted(_LOCATION | ({'Logistic'} if label in logistic else set()))}), "
                     f"got {prior}"
                 )
-        from autobayes.formula import sd_tag
-
         scales = [(f"sd:{sd_tag(g, c)}", prior) for (g, c), prior in sd_priors.items()] + ([(scale, auxiliary[scale])] if scale is not None and not predicted else [])
         scales += dpar_sds
         for label, prior in scales:
@@ -1390,10 +1507,13 @@ class Priors:
         for name in spec.dpar_names:                        # E03: zi, hu, alpha with a formula of their own, under brms's name
             if name != fam.scale_parameter:
                 sub, dspec = self.dpar_priors(spec, name), spec.dpar(name)
-                out[name] = {**({"Intercept": sub.intercept.to_bambi()} if dspec.intercept else {}), **sub._bambi_terms(dspec)}
+                out[name] = {**({"Intercept": sub.intercept.to_bambi()} if dspec.intercept else {}), **sub._bambi_terms(dspec),
+                             # G06: its group-level terms (zi's own), Normal(0, sd) with their own sd prior
+                             **{bambi_group_name(g, c): bmb.Prior("Normal", mu=0.0, sigma=p.to_bambi())
+                                for (g, c), p in sub.sd_priors(dspec).items()}}
         if fam.zero_parameter is not None and fam.zero_parameter not in spec.dpar_names:   # under brms's name (B06)
             out[fam.zero_parameter] = getattr(self, fam.zero_parameter).to_bambi()
-        if self.nu is not None:                             # a learned Student-t nu (A13): its prior truncated at the bound
+        if self.nu is not None and "nu" not in spec.dpar_names:   # a learned Student-t nu (A13): its prior truncated at the bound
             out["nu"] = self.nu.to_bambi_truncated(fam.learnable_parameters["nu"])
         if is_shrinkage(self.b):                            # D07: each term's coefficients are its slice of b = zb * sdb
             from autobayes.shrinkage import bambi_priors
@@ -1507,10 +1627,11 @@ def _prior_key(spec, t) -> str:
     return t.basis if t.basis is not None else t.name
 
 
-def _basis_prior(spec, t, given) -> "Prior":
+def _basis_prior(spec, t, given, default=None) -> "Prior":
     """G04: the prior of one design column of an in-formula transform with several (``poly(w, 2)1``, ``factor(ord)2``, the
     logical's ``I(x > 0)TRUE``) from its term's entry: one ``Prior`` for every column, or a mapping by the columns' suffixes
-    (``{"1": ..., "2": ...}``, factor()'s levels, ``{"TRUE": ...}``) covering exactly the term's columns."""
+    (``{"1": ..., "2": ...}``, factor()'s levels, ``{"TRUE": ...}``) covering exactly the term's columns; with a class-wide prior
+    ``default`` (D173) the mapping may name some of them only."""
     entry = given[t.basis]
     if isinstance(entry, Prior):
         return entry
@@ -1524,6 +1645,8 @@ def _basis_prior(spec, t, given) -> "Prior":
     if t.name == t.basis:                                      # structure only; the columns need the data
         return next(iter(entry.values()))
     wanted = [t2.name[len(t.basis):] for t2 in spec.pop_terms if t2.basis == t.basis]
+    if default is not None:                                    # D173: the columns not named take the class-wide prior
+        entry = {**{k: default for k in wanted}, **{str(k): v for k, v in entry.items()}}
     keys = [str(k) for k in entry]
     missing, extra = [k for k in wanted if k not in keys], [k for k in keys if k not in wanted]
     if missing or extra:
@@ -1532,11 +1655,11 @@ def _basis_prior(spec, t, given) -> "Prior":
     return dict(zip(keys, entry.values()))[t.name[len(t.basis):]]
 
 
-def _product_prior(spec, t, given) -> "Prior":
+def _product_prior(spec, t, given, default=None) -> "Prior":
     """G03: the prior of the column ``t`` of an interaction coded by R's rule (docs/term-algebra.md) from the interaction's entry:
     one ``Prior`` for every column, or, for an interaction with a factor, a mapping by each column's levels joined by ``, ``
     (``{"q, h2": ..., "r, h2": ...}``, ``{"p": ...}`` for ``zp:x``) covering exactly its columns (structure only before the levels
-    are known)."""
+    are known); with a class-wide prior ``default`` (D173) the mapping may name some of them only."""
     term = t.product.term
     entry = given[term]
     if isinstance(entry, Prior):
@@ -1551,6 +1674,8 @@ def _product_prior(spec, t, given) -> "Prior":
     if not t.product.known:                                     # structure only; the columns need the data
         return next(iter(entry.values()))
     wanted = [c.product.label for c in spec.pop_terms if c.kind == "product" and c.product.term == term]
+    if default is not None:                                     # D173: the columns not named take the class-wide prior
+        entry = {**{k: default for k in wanted}, **entry}
     missing, extra = [k for k in wanted if k not in entry], [k for k in entry if k not in wanted]
     if missing or extra:
         raise PriorError(f"per-column priors for the interaction {term!r} must cover exactly its columns' levels {wanted} (columns "
@@ -1559,10 +1684,10 @@ def _product_prior(spec, t, given) -> "Prior":
     return entry[t.product.label]
 
 
-def _contrast_prior(spec, t, given) -> "Prior":
+def _contrast_prior(spec, t, given, default=None) -> "Prior":
     """F08: the prior of the polynomial contrast ``t`` (``fo.L``) from its factor's entry: one ``Prior`` for every contrast, or a
     mapping by R's contrast labels, ``{".L": ..., ".Q": ...}``, covering exactly the factor's contrasts (only their structure is
-    checked before the levels are known)."""
+    checked before the levels are known); with a class-wide prior ``default`` (D173) the mapping may name some of them only."""
     cat = spec.categorical(t.factor)
     key = cat.term_name
     entry = given[key]
@@ -1580,6 +1705,8 @@ def _contrast_prior(spec, t, given) -> "Prior":
     if not cat.levels:                                         # structure only; the contrasts need the data
         return next(iter(entry.values()))
     wanted = list(cat.contrast_labels)
+    if default is not None:                                    # D173: the contrasts not named take the class-wide prior
+        entry = {**{k: default for k in wanted}, **entry}
     missing, extra = [k for k in wanted if k not in entry], [k for k in entry if k not in wanted]
     if missing or extra:
         raise PriorError(f"per-contrast priors for the ordered factor {key!r} must cover exactly its polynomial contrasts {wanted} "

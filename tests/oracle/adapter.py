@@ -93,6 +93,14 @@ correlation ID shared with a distributional formula is one brms group whose coef
 them in the order `correlation_order` gives (three coefficients: the probe calls the later `cholesky_corr` coordinates
 'joint', each still recomputed from `L_m` and checked against `u`).
 
+G06: a distributional formula's term of its own is a brms group of its own labelled with the parameter (`Z_m_<dpar>_c`, its
+`J_m` inducing the block's partition, `M_m` the term's coefficients, no `L_m`), matched by that label, its covariate and its
+partition (`GroupMap.dpar_id`, `GroupMap.dpar_level_of`, `dpar_group_of`); its `sd_m` and `z_m` map to the parameter's
+`<dpar>_1|g_sigma_log__` and `<dpar>_1|g_offset`. A shared ID's varying slopes in the distributional formula (`Z_m_sigma_c` the
+slope's raw column) map as its intercept does. The Student-t's `Intercept_nu` / `b_nu`, the zero-inflated Poisson's `zi`
+formula and the cumulative `Intercept_disc` / `b_disc` are B01's mapping (`disc` handed to `value_point` as its formula; a
+fit's posterior holds `disc`'s centred intercept, `DparDesign.centred_draws`, so the draws carry `Intercept_disc`).
+
 D04: the sratio, cratio and acat families' thresholds are brms's unordered `vector[nthres] Intercept` (identity coordinates),
 mapped to AutoBayes's `Intercept` entry by entry (`ColumnMap.ordered` False); the cumulative probit model's are ordered, as the
 logit model's. A category-specific term `cs(x)` is brms's column of `Xcs` (`Kcs` of them, matched by content to the model's
@@ -155,6 +163,11 @@ brms's `b[k]`, `hs_global` and `hs_slab` to their logs, `R2D2_R2` (`real<lower=0
 step and Stan's logit checked as for `zi`, and the simplex `R2D2_phi` takes unreached coordinates as a monotonic term's simplex
 does, its stick-breaking coordinates recomputed and checked before they are mapped to `R2D2_phi_stickbreaking__` (which needs
 AutoBayes's design columns in brms's order of `b`: the stick-breaking map is not symmetric in the entries).
+
+G05b: a multi-membership term's varying slope (brms's `Z_m_c_k` the slope's column for every member, or `mmc()`'s member column) is
+matched with the block's per-member covariates (`GroupBlock.covariates`) and brms's label of `mmc(x1, x2)`, `mmcx1x2`; a
+`gr(g, dist = "student")` term's `df_m` (`real<lower=1>`) maps to `df|g_interval__` (the probe's step checked as for `nu`) and
+`udf_m` entry by entry, in brms's level order, to `udf|g_log__`; `gr(g, cov = A)` has no parameter of its own (G1 checks `Lcov_m`).
 
 F02a: a CAR term (brms's `car(M, gr, type)`, `Model.car_names`) is checked by its Stan data of the type (`CAR_DATA`,
 `check_car_design`, G1); brms's `sdcar` maps to `sdcar_log__`, `car` and `rhocar` (`real<lower=0,upper=1>`) to their PyMC
@@ -248,7 +261,9 @@ def priors_from_spec(spec: dict) -> ab.Priors:
                      # F02a: a CAR term's {"sdcar": [...], "car": ["Flat"]} (escar) or {"sdcar": [...], "rhocar": ["Beta", a, b]} (bym2)
                      sdcar=_prior(spec.get("sdcar")), car=_prior(spec.get("car")), rhocar=_prior(spec.get("rhocar")),
                      lncor=_prior(spec.get("lncor")),                    # F01b: the logistic_normal family's {"lncor": ["LKJ", eta]}
-                     sbhaz=_prior(spec.get("sbhaz")))                    # F05: the cox baseline hazard's {"sbhaz": ["Dirichlet", a]}
+                     sbhaz=_prior(spec.get("sbhaz")),                    # F05: the cox baseline hazard's {"sbhaz": ["Dirichlet", a]}
+                     df=_prior(spec.get("df")),                          # G05b: gr(g, dist = "student")'s {"df": {"g": ["Gamma", 2, 0.1]}}
+                     disc=_prior(spec.get("disc")))                      # G06: the cumulative disc formula's {"intercept": ..., "b": ...}
 
 
 def build_model(case: dict, data: pd.DataFrame) -> ab.Model:
@@ -653,6 +668,34 @@ class GroupMap:
     # F01b: a per-category family's group-level coefficient (factor, coefficient) -> brms's (group id m, coefficient number c) of
     # each non-reference category's own group term, in category order (sd_m[c], z_m[c], r_m_<dpar>_c, Z_m_<dpar>_c, dpar mu<k>)
     category: dict = None
+    # G05a: (factor, coefficient) -> brms group id m of each coefficient, for a factor whose terms brms numbers as several groups,
+    # (1 | g) + (0 + x | g) (GroupTerm.blocks); None or absent: the factor's one id, brms_id[factor]
+    coef_id: dict = None
+    # G06: a distributional formula's group-level term (parameter, factor) -> brms's group id m (the response formula's term's
+    # for a shared correlation ID, D08; a group of its own labelled with the parameter otherwise) and the AutoBayes level index of
+    # each of brms's levels of that group (0-based), as brms_id and level_of are for the response formula's terms
+    dpar_id: dict = None
+    dpar_level_of: dict = None
+
+
+def group_id(gmap: GroupMap, g: str, coef: str) -> int:
+    """G05a: brms's group id of the coefficient ``coef`` of factor ``g``: its own (``coef_id``, a factor written in several
+    terms) or the factor's."""
+    return (gmap.coef_id or {}).get((g, coef), gmap.brms_id[g])
+
+
+def brms_coef_label(coef: str) -> str:
+    """G05a: brms's label of a group-level coefficient, ``rename()`` of the AutoBayes one: ``x``, ``IxE2`` for ``I(x^2)``, ``zq`` for
+    the factor level ``z[q]``, ``moord`` for ``mo(ord)``, ``x:w`` (the population-level coefficient's name in both)."""
+    from autobayes.default_priors import brms_rename
+    return "Intercept" if coef == "Intercept" else brms_rename(coef)
+
+
+def term_blocks(model, g: str) -> tuple[tuple[str, ...], ...]:
+    """G05a: the coefficients of each brms group id of factor ``g``: the terms as written of a factor written in several terms
+    (``GroupTerm.blocks``), else the factor's one term."""
+    t = model.spec.group_term_of(g)
+    return getattr(t, "blocks", ()) or (t.coefs,)
 
 
 def match_category_groups(fixture: Fixture, model: ab.Model) -> GroupMap:
@@ -726,7 +769,7 @@ def match_groups(fixture: Fixture, model: ab.Model) -> GroupMap:
         return match_multinomial_groups(fixture, model)
     if model.family_spec.per_category and model.spec.group_terms:   # F01b: one brms group term per non-reference category
         return match_category_groups(fixture, model)
-    ids, cns, levels_of, coef_cn, used = {}, {}, {}, {}, set()
+    ids, cns, levels_of, coef_cn, coef_id, used = {}, {}, {}, {}, {}, set()
     n = model.design.n
     for (g, coef), block in model.design.group_blocks.items():
         if block.memberships:                            # D08: a multi-membership term, brms's J_m_k, W_m_k, Z_m_c_k
@@ -735,7 +778,8 @@ def match_groups(fixture: Fixture, model: ab.Model) -> GroupMap:
                 raise OracleMismatch(f"multi-membership group {g!r}: {len(found)} brms group terms carry its memberships, weights and "
                                      f"covariates (J_m_k, W_m_k, Z_m_c_k) within {DESIGN_ABS}")
             grp, m = found[0]
-            if grp["coef"] != coef or [block.levels[i] for i in m] != list(grp["levels"]):
+            from autobayes.default_priors import brms_rename           # G05b: brms's label of mmc(x1, x2) is mmcx1x2
+            if grp["coef"] != brms_rename(coef) or [block.levels[i] for i in m] != list(grp["levels"]):
                 raise OracleMismatch(f"{g!r}: brms coefficient {grp['coef']!r} with levels {grp['levels']}; AutoBayes {coef!r} with "
                                      f"{[block.levels[i] for i in m]}")
             used.add((int(grp["id"]), int(grp["cn"])))
@@ -743,6 +787,7 @@ def match_groups(fixture: Fixture, model: ab.Model) -> GroupMap:
             continue
         gidx = block.group_index
         covariate = block.Z[np.arange(n), gidx]          # the coefficient's covariate per row (brms Z_m_c)
+        monotonic = getattr(block, "monotonic", None)   # G05a: a monotonic slope, brms's r * mo(simo, Xmo), has no Z_m_c
         found = []
         for grp in fixture.groups:
             key = (int(grp["id"]), int(grp["cn"]))
@@ -760,33 +805,43 @@ def match_groups(fixture: Fixture, model: ab.Model) -> GroupMap:
             else:
                 if len(np.unique(m)) != block.J:
                     continue
-                Z = fixture.standata[f"Z_{grp['id']}_{grp['cn']}"]
-                if Z.shape == (n,) and np.max(np.abs(Z - covariate)) <= DESIGN_ABS:
+                if monotonic is not None:                   # G05a: matched by its partition, its label and the absence of Z
+                    if f"Z_{grp['id']}_{grp['cn']}" not in fixture.standata and grp["coef"] == brms_coef_label(coef):
+                        found.append((grp, m))
+                    continue
+                Z = fixture.standata.get(f"Z_{grp['id']}_{grp['cn']}")
+                if Z is not None and Z.shape == (n,) and np.max(np.abs(Z - covariate)) <= DESIGN_ABS:
                     found.append((grp, m))
         if len(found) != 1:
             raise OracleMismatch(
                 f"group-level coefficient {coef!r} of {g!r}: {len(found)} brms group terms induce its partition of "
                 f"the rows and carry its covariate column within {DESIGN_ABS}")
         grp, m = found[0]
-        if grp["coef"] != coef:
+        if grp["coef"] != brms_coef_label(coef):          # G05a: brms's rename() of the label (IxE2, zq, moord); x is x
             raise OracleMismatch(f"{g!r}: the brms coefficient matched by content is labelled {grp['coef']!r}, AutoBayes has {coef!r}")
         if [block.levels[i] for i in m] != list(grp["levels"]):
             raise OracleMismatch(f"{g!r}: brms levels {grp['levels']} vs AutoBayes {[block.levels[i] for i in m]}")
-        if g in ids and ids[g] != int(grp["id"]):
-            raise OracleMismatch(f"{g!r}: its coefficients match different brms groups ({ids[g]} and {grp['id']})")
+        # every coefficient of one term as written is in one brms group, and two terms of a factor (G05a) in two groups
+        written = next(b for b in term_blocks(model, g) if coef in b)
+        mates = [coef_id[(g, c)] for c in written if (g, c) in coef_id]
+        others = [coef_id[(g, c)] for b in term_blocks(model, g) if b is not written for c in b if (g, c) in coef_id]
+        if any(i != int(grp["id"]) for i in mates) or int(grp["id"]) in others:
+            raise OracleMismatch(f"{g!r}: its coefficients match different brms groups ({sorted(set(mates + others))} and {grp['id']})")
         used.add((int(grp["id"]), int(grp["cn"])))
-        ids[g], levels_of[g], coef_cn[(g, coef)] = int(grp["id"]), m, int(grp["cn"])
+        ids.setdefault(g, int(grp["id"]))
+        levels_of[g], coef_cn[(g, coef)], coef_id[(g, coef)] = m, int(grp["cn"]), int(grp["id"])
         if coef == "Intercept":
             cns[g] = int(grp["cn"])
-    dpar_cn = _match_dpar_groups(fixture, model, ids, levels_of, used)   # D08: a shared ID's distributional coefficients
+    # D08: a shared ID's distributional coefficients; G06: and a distributional formula's own groups
+    dpar_cn, dpar_id, dpar_level_of = _match_dpar_groups(fixture, model, ids, levels_of, used)
     unmatched = [(grp["group"], grp["coef"]) for grp in fixture.groups if (int(grp["id"]), int(grp["cn"])) not in used]
     if unmatched:
         raise OracleMismatch(f"brms group-level terms without an AutoBayes counterpart: {unmatched}")
-    for t in model.spec.group_terms:
-        m = ids[t.factor]
+    for t, written in ((t, b) for t in model.spec.group_terms for b in term_blocks(model, t.factor)):   # G05a: each term as written
+        m = coef_id.get((t.factor, written[0]), ids[t.factor])
         M = int(fixture.standata[f"M_{m}"])
         shared = model.spec.shared_id_of(t.factor) if hasattr(model.spec, "shared_id_of") else None
-        coefs = shared.labels if shared is not None else t.coefs   # D08: a shared ID's group spans the formulas
+        coefs = shared.labels if shared is not None else written   # D08: a shared ID's group spans the formulas
         if M != len(coefs):
             raise OracleMismatch(f"{t.factor!r}: brms group {m} has M_{m} = {M} coefficients, AutoBayes {len(coefs)}")
         _check_by(fixture, model, t, m, levels_of[t.factor])            # D08: gr(by = )'s Nby_m and Jby_m
@@ -802,7 +857,8 @@ def match_groups(fixture: Fixture, model: ab.Model) -> GroupMap:
                 f"{t.factor!r}: brms group {m} has {M} coefficients with cor = {correlated}"
                 f"{' and a correlation matrix L_' + str(m) if declared else ''}; AutoBayes's term '{t.canonical}' is "
                 f"{'correlated' if t.has_correlation else 'independent'}")
-    return GroupMap(ids, cns, levels_of, coef_cn, dpar_cn or None)
+    return GroupMap(ids, cns, levels_of, coef_cn, dpar_cn or None, coef_id=coef_id, dpar_id=dpar_id or None,
+                    dpar_level_of=dpar_level_of or None)
 
 
 def _level_map(pairs, J: int) -> np.ndarray | None:
@@ -819,7 +875,8 @@ def _level_map(pairs, J: int) -> np.ndarray | None:
 def _match_mm(fixture: Fixture, block, used) -> list:
     """D08: the brms group coefficients that carry a multi-membership block: brms's member indices ``J_m_k`` give one
     bijection of the levels with the block's memberships over every member and row, brms's weights ``W_m_k`` are the block's
-    and ``Z_m_c_k`` its covariate (ones, the varying intercept), for every member ``k``."""
+    and ``Z_m_c_k`` its covariate (ones, the varying intercept), for every member ``k``. G05b: a varying slope's covariate is
+    the block's member ``k``'s own (``GroupBlock.covariates``: the slope's column, or ``mmc()``'s member column)."""
     sd, out, K = fixture.standata, [], len(block.memberships)
     for grp in fixture.groups:
         m_id, cn = int(grp["id"]), int(grp["cn"])
@@ -831,9 +888,10 @@ def _match_mm(fixture: Fixture, block, used) -> list:
         m = _level_map([(int(b), int(a)) for j, idx in zip(J, block.memberships) for b, a in zip(j, idx)], block.J)
         if m is None:
             continue
+        covariates = getattr(block, "covariates", ()) or (np.ones(block.group_index.shape),) * K
         same = all(f"W_{m_id}_{k}" in sd and abs_err(sd[f"W_{m_id}_{k}"], w) <= DESIGN_ABS
-                   and f"Z_{m_id}_{cn}_{k}" in sd and abs_err(sd[f"Z_{m_id}_{cn}_{k}"], np.ones(block.group_index.shape)) <= DESIGN_ABS
-                   for k, w in zip(range(1, K + 1), block.weights))
+                   and f"Z_{m_id}_{cn}_{k}" in sd and abs_err(sd[f"Z_{m_id}_{cn}_{k}"], c) <= DESIGN_ABS
+                   for k, w, c in zip(range(1, K + 1), block.weights, covariates))
         if same:
             out.append((grp, m))
     return out
@@ -857,27 +915,62 @@ def _check_by(fixture: Fixture, model, t, m: int, level_of: np.ndarray) -> None:
                              f"{(block.by_index[level_of] + 1).tolist()} (by levels {list(block.by_levels)})")
 
 
-def _match_dpar_groups(fixture: Fixture, model, ids: dict, levels_of: dict, used: set) -> dict:
-    """D08: each group-level coefficient of a distributional formula (a correlation ID shared with the response formula's
-    term of its factor) is brms's coefficient of the same group ``m`` labelled with the parameter (``groups[*].dpar``), whose
-    ``Z_m_<parameter>_c`` is its covariate (ones) and whose level order is the response formula's term's."""
-    out = {}
+def _match_dpar_groups(fixture: Fixture, model, ids: dict, levels_of: dict, used: set) -> tuple[dict, dict, dict]:
+    """D08: each group-level coefficient of a distributional formula's term sharing a correlation ID with the response formula's
+    term of its factor is brms's coefficient of the same group ``m`` labelled with the parameter (``groups[*].dpar``), whose
+    ``Z_m_<parameter>_c`` is its covariate (ones; G06: the slope's column) and whose level order is the response formula's
+    term's. G06: a term of the formula's own is a brms group of its own labelled with the parameter, whose ``J_m`` induces the
+    block's partition of the rows and whose ``Z_m_<parameter>_c`` is its covariate; its ``M_m`` is the term's number of
+    coefficients and it has no correlation matrix. Returns ``(dpar_cn, dpar_id, dpar_level_of)`` (``GroupMap``)."""
+    out, dpar_id, dpar_level_of, sd = {}, {}, {}, fixture.standata
     for name, dd in getattr(model.design, "dpars", {}).items():
+        dspec = model.spec.dpar(name)
         for (g, coef), block in getattr(dd, "group_blocks", {}).items():
-            hits = [grp for grp in fixture.groups if grp.get("dpar") == name and grp["coef"] == coef and int(grp["id"]) == ids.get(g)
-                    and (int(grp["id"]), int(grp["cn"])) not in used]
-            hits = [grp for grp in hits if f"Z_{grp['id']}_{name}_{grp['cn']}" in fixture.standata
-                    and abs_err(fixture.standata[f"Z_{grp['id']}_{name}_{grp['cn']}"], block.Z[np.arange(block.Z.shape[0]), block.group_index]) <= DESIGN_ABS
-                    and [block.levels[i] for i in levels_of[g]] == list(grp["levels"])]
+            covariate = block.Z[np.arange(block.Z.shape[0]), block.group_index]
+            own = dspec.group_term_of(g).id is None
+            hits = []
+            for grp in fixture.groups:
+                m_id, cn = int(grp["id"]), int(grp["cn"])
+                key = f"Z_{m_id}_{name}_{cn}"
+                if grp.get("dpar") != name or grp["coef"] != coef or (m_id, cn) in used or key not in sd or abs_err(sd[key], covariate) > DESIGN_ABS:
+                    continue
+                if own:                                    # G06: the group's own partition of the rows, and its levels
+                    if (name, g) in dpar_id and dpar_id[(name, g)] != m_id:
+                        continue
+                    J = sd[f"J_{m_id}"].astype(int) - 1
+                    m = _level_map(zip(J.tolist(), block.group_index.tolist()), block.J) if J.shape == block.group_index.shape else None
+                elif m_id == ids.get(g):                   # D08: the response formula's group of the factor
+                    m = levels_of[g]
+                else:
+                    continue
+                if m is not None and [block.levels[i] for i in m] == list(grp["levels"]):
+                    hits.append((grp, m))
             if len(hits) != 1:
-                raise OracleMismatch(f"the coefficient {coef!r} of {g!r} in {name}'s formula: {len(hits)} brms coefficients of group "
-                                     f"{ids.get(g)} with dpar = {name!r} carry its covariate and levels")
-            used.add((int(hits[0]["id"]), int(hits[0]["cn"])))
-            out[(name, g, coef)] = int(hits[0]["cn"])
+                raise OracleMismatch(f"the coefficient {coef!r} of {g!r} in {name}'s formula: {len(hits)} brms coefficients "
+                                     + (f"of a group of its own" if own else f"of group {ids.get(g)}")
+                                     + f" with dpar = {name!r} carry its covariate and levels")
+            grp, m = hits[0]
+            used.add((int(grp["id"]), int(grp["cn"])))
+            out[(name, g, coef)] = int(grp["cn"])
+            dpar_id[(name, g)], dpar_level_of[(name, g)] = int(grp["id"]), m
+        for t in (t for t in dspec.group_terms if t.id is None):   # G06: a group of the formula's own: its M and no correlation
+            m_id = dpar_id[(name, t.factor)]
+            if int(sd[f"M_{m_id}"]) != len(t.coefs) or f"L_{m_id}" in fixture.declarations:
+                raise OracleMismatch(f"{t.factor!r} in {name}'s formula: brms group {m_id} has M_{m_id} = {int(sd[f'M_{m_id}'])} "
+                                     f"coefficients{' and a correlation matrix' if f'L_{m_id}' in fixture.declarations else ''}; the "
+                                     f"AutoBayes term '{t.canonical}' has {len(t.coefs)}, uncorrelated")
     unclaimed = [(grp["group"], grp["coef"], grp["dpar"]) for grp in fixture.groups if grp.get("dpar") and (int(grp["id"]), int(grp["cn"])) not in used]
     if unclaimed:
         raise OracleMismatch(f"brms group-level coefficients of distributional formulas without an AutoBayes counterpart: {unclaimed}")
-    return out
+    return out, dpar_id, dpar_level_of
+
+
+def dpar_group_of(gmap: GroupMap, name: str, factor: str) -> tuple[int, np.ndarray]:
+    """G06: brms's group id of distributional parameter ``name``'s term of ``factor`` and the AutoBayes level of each of its
+    levels: the formula's own group, or the response formula's group of a shared correlation ID (D08)."""
+    if gmap.dpar_id and (name, factor) in gmap.dpar_id:
+        return gmap.dpar_id[(name, factor)], gmap.dpar_level_of[(name, factor)]
+    return gmap.brms_id[factor], gmap.level_of[factor]
 
 
 def correlation_order(model: ab.Model, gmap: GroupMap, factor: str) -> list[int]:
@@ -947,10 +1040,10 @@ def natural_point(model: ab.Model, point: Point, cmap: ColumnMap, gmap: GroupMap
             z[g][gmap.level_of[g], k] = np.atleast_2d(pars[f"z_{m}"])[cn - 1]
     for t in (model.spec.group_terms if not gmap.category else ()):
         g = t.factor
-        m = gmap.brms_id[g]
-        sd_m, zb = np.atleast_1d(pars[f"sd_{m}"]), np.atleast_2d(pars[f"z_{m}"])    # z_m is (M_m, N_m), brms level order
         per_sd, per_z = {}, {}
         for coef in t.coefs:
+            m = group_id(gmap, g, coef)                        # G05a: a factor in several terms has a brms group per term
+            sd_m, zb = np.atleast_1d(pars[f"sd_{m}"]), np.atleast_2d(pars[f"z_{m}"])    # z_m is (M_m, N_m), brms level order
             cn = gmap.coef_cn[(g, coef)]
             za = np.empty(zb.shape[1])
             za[gmap.level_of[g]] = zb[cn - 1]
@@ -978,14 +1071,19 @@ def natural_point(model: ab.Model, point: Point, cmap: ColumnMap, gmap: GroupMap
             formulas[name]["intercept"] = (float(pars[f"Intercept_{name}"]) if dmap.centred_intercept
                                            else float(bd[dmap.b_index(dmap.intercept_column)]))
         if ds.group_terms:                                 # D08: a shared ID's coefficient: brms's sd_m[c] and z_m[c] of its group
-            formulas[name]["sd"], formulas[name]["z"] = {}, {}
-            for t in ds.group_terms:
-                m, cn = gmap.brms_id[t.factor], gmap.dpar_cn[(name, t.factor, "Intercept")]
-                za = np.empty(np.atleast_2d(pars[f"z_{m}"]).shape[1])
-                za[gmap.level_of[t.factor]] = np.atleast_2d(pars[f"z_{m}"])[cn - 1]
-                formulas[name]["sd"][t.factor], formulas[name]["z"][t.factor] = float(np.atleast_1d(pars[f"sd_{m}"])[cn - 1]), za
+            formulas[name]["sd"], formulas[name]["z"] = {}, {}   # G06: or of the formula's own group; a mapping by coefficient
+            for t in ds.group_terms:                       # for a term with varying slopes
+                m, level_of = dpar_group_of(gmap, name, t.factor)
+                per_sd, per_z = {}, {}
+                for c in t.coefs:
+                    cn = gmap.dpar_cn[(name, t.factor, c)]
+                    za = np.empty(np.atleast_2d(pars[f"z_{m}"]).shape[1])
+                    za[level_of] = np.atleast_2d(pars[f"z_{m}"])[cn - 1]
+                    per_sd[c], per_z[c] = float(np.atleast_1d(pars[f"sd_{m}"])[cn - 1]), za
+                formulas[name]["sd"][t.factor] = per_sd if t.slopes else per_sd["Intercept"]
+                formulas[name]["z"][t.factor] = per_z if t.slopes else per_z["Intercept"]
     sigma, shape, phi = formulas.get("sigma", sigma), formulas.get("shape", shape), formulas.get("phi", phi)
-    nu = float(pars["nu"]) if "nu" in model.names else None
+    nu = float(pars["nu"]) if "nu" in model.names and "nu" not in formulas else formulas.get("nu")   # G06: nu's formula
     zi = float(pars["zi"]) if "zi" in pars else None
     hu = float(pars["hu"]) if "hu" in pars else None
     zi, hu = formulas.get("zi", zi), formulas.get("hu", hu)   # E03: a zi / hu formula's intercept (as sampled) and b
@@ -1026,6 +1124,16 @@ def natural_point(model: ab.Model, point: Point, cmap: ColumnMap, gmap: GroupMap
         extras["bcs"] = {c: bcs[k] for k, c in enumerate(cmap.cs)}
     if getattr(model.design, "bhaz", None) is not None:   # F05: the cox baseline hazard's simplex, brms's sbhaz
         extras["sbhaz"] = np.atleast_1d(pars["sbhaz"]).astype(float)
+    students = getattr(model, "group_dist_names", {})        # G05b: gr(g, dist = "student")'s brms df_m and udf_m (brms's level order)
+    if students:
+        extras["df"] = {g: float(np.ravel(pars[f"df_{gmap.brms_id[g]}"])[0]) for g in students}
+        extras["udf"] = {}
+        for g in students:
+            u = np.empty(len(gmap.level_of[g]))
+            u[gmap.level_of[g]] = np.atleast_1d(pars[f"udf_{gmap.brms_id[g]}"]).astype(float)
+            extras["udf"][g] = u
+    if "disc" in formulas:                                 # G06: the cumulative family's disc formula, as sampled
+        extras["disc"] = formulas["disc"]
     return dict(intercept=intercept, b=b, sd=sd or None, z=z or None, L=L or None, sigma=sigma, shape=shape, phi=phi, nu=nu,
                 zi=zi, hu=hu, bsp=bsp, simo=simo, theta=theta, sdgp=sdgp, lscale=lscale, zgp=zgp, ar=ar, ma=ma, **special, **extras, **sar,
                 **({"shrinkage": shrinkage} if shrinkage is not None else {}),
@@ -1104,8 +1212,16 @@ def coordinate_map(fixture: Fixture, model: ab.Model, cmap: ColumnMap, gmap: Gro
         return multinomial_coordinate_map(fixture, model, cmap, gmap)
     names = model.names
     by_id = {m: g for g, m in gmap.brms_id.items()}
+    by_id.update({m: g for (g, _), m in (gmap.coef_id or {}).items()})    # G05a: every brms group of a factor in several terms
     by_cn = {(g, cn): coef for (g, coef), cn in gmap.coef_cn.items()}     # (factor, brms coefficient number) -> coefficient
-    by_dpar_cn = {(g, cn): (name, g, coef) for (name, g, coef), cn in (gmap.dpar_cn or {}).items()}   # D08: a shared ID's
+    by_id_cn = {(group_id(gmap, g, coef), cn): coef for (g, coef), cn in gmap.coef_cn.items()}   # G05a: (group, number) -> coefficient
+    dpar_ids = gmap.dpar_id or {}
+    by_dpar_cn = {(g, cn): (name, g, coef) for (name, g, coef), cn in (gmap.dpar_cn or {}).items()   # D08: a shared ID's
+                  if dpar_ids.get((name, g), gmap.brms_id.get(g)) == gmap.brms_id.get(g)}
+    # G06: a distributional formula's own group, brms id -> (parameter, factor), and (id, coefficient number) -> its coefficient
+    own_groups = {m: key for key, m in dpar_ids.items() if m != gmap.brms_id.get(key[1])}
+    by_own_cn = {(dpar_ids[(name, g)], cn): (name, g, coef) for (name, g, coef), cn in (gmap.dpar_cn or {}).items()
+                 if dpar_ids.get((name, g)) in own_groups}
     roles = model.group_coefficient_names
     pars = fixture.points[0].pars
     seen_L: dict[str, int] = {}                                            # L_m coordinates met so far, in index order
@@ -1341,6 +1457,16 @@ def coordinate_map(fixture: Fixture, model: ab.Model, cmap: ColumnMap, gmap: Gro
                     raise OracleMismatch(f"point {q}: Stan's cholesky_corr coordinate {k} of {par} is {u[k] if k < u.size else 'absent'!r}; "
                                          f"brms's unconstrained value is {pt_.u[idx]!r}")
             target, expect = (f"{par}_cholesky_corr__", k), ("joint" if transform == "joint" else "other")
+        elif (own := re.fullmatch(r"(sd|z)_(\d+)", par)) and int(own.group(2)) in own_groups:   # G06: a distributional formula's
+            m_id = int(own.group(2))                                                            # own group (sd_m, z_m)
+            name, g = own_groups[m_id]
+            M = int(fixture.standata[f"M_{m_id}"])
+            c, j = elem % M, elem // M                          # z_m is (M, N), column-major
+            key = by_own_cn[(m_id, c + 1)]
+            if own.group(1) == "sd":
+                target, expect = (f"{model.dpar_group_names[key]['sd']}_log__", 0), "log"
+            else:
+                target, expect = (model.dpar_group_names[key]["offset"], int(gmap.dpar_level_of[(name, g)][j])), "identity"
         elif par.startswith("sd_") and int(par[3:]) in by_id:
             g = by_id[int(par[3:])]
             M = int(fixture.standata[f"M_{par[3:]}"])
@@ -1348,10 +1474,10 @@ def coordinate_map(fixture: Fixture, model: ab.Model, cmap: ColumnMap, gmap: Gro
             dpar = by_dpar_cn.get((g, c + 1))                   # D08: a shared ID's distributional coefficient
             if dpar is not None:
                 target, expect = (f"{model.dpar_group_names[dpar]['sd']}_log__", 0), "log"
-            elif (g, c + 1) not in by_cn:
+            elif (int(par[3:]), c + 1) not in by_id_cn:
                 raise OracleMismatch(f"{par}[{elem + 1}] is not the SD of a group-level coefficient of {g!r}")
             else:
-                target, expect = (f"{roles[(g, by_cn[(g, c + 1)])]['sd']}_log__", b), "log"
+                target, expect = (f"{roles[(g, by_id_cn[(int(par[3:]), c + 1)])]['sd']}_log__", b), "log"
         elif par.startswith("z_") and int(par[2:]) in by_id:
             g = by_id[int(par[2:])]
             M = pars[par].shape[0]
@@ -1359,10 +1485,10 @@ def coordinate_map(fixture: Fixture, model: ab.Model, cmap: ColumnMap, gmap: Gro
             dpar = by_dpar_cn.get((g, c + 1))                   # D08: a shared ID's distributional coefficient
             if dpar is not None:
                 target, expect = (model.dpar_group_names[dpar]["offset"], int(gmap.level_of[g][j])), "identity"
-            elif (g, c + 1) not in by_cn:
+            elif (int(par[2:]), c + 1) not in by_id_cn:
                 raise OracleMismatch(f"{par} coefficient {c + 1} is not a group-level coefficient of {g!r}")
             else:
-                target, expect = (roles[(g, by_cn[(g, c + 1)])]["offset"], int(gmap.level_of[g][j])), "identity"
+                target, expect = (roles[(g, by_id_cn[(int(par[2:]), c + 1)])]["offset"], int(gmap.level_of[g][j])), "identity"
         elif par.startswith("L_") and int(par[2:]) in by_id:     # the Cholesky factor of a correlated factor (A02)
             g = by_id[int(par[2:])]
             if g not in model.correlation_names:
@@ -1393,6 +1519,15 @@ def coordinate_map(fixture: Fixture, model: ab.Model, cmap: ColumnMap, gmap: Gro
                 raise OracleMismatch(f"{par}[{elem + 1}]: brms has several {gp.group(1)} for one Gaussian process; AutoBayes has one")
             else:                                              # sdgp_k, lscale_k: real<lower=0>, sampled on the log scale
                 target, expect = (f"{roles[gp.group(1)]}_log__", 0), "log"
+        elif (st := re.fullmatch(r"(df|udf)_(\d+)", par)) and by_id.get(int(st.group(2))) in getattr(model, "group_dist_names", {}):
+            g = by_id[int(st.group(2))]                        # G05b: gr(g, dist = "student")'s real<lower=1> df_m and vector<lower=0>
+            dist_roles = model.group_dist_names[g]             # [N_m] udf_m: log(df - 1), as nu's, and log(udf), brms's level order
+            if st.group(1) == "df":
+                if elem != 0 or abs(float(e["du"]) - LOG_NU_MINUS_ONE_STEP) > 1e-9:
+                    raise OracleMismatch(f"brms's probe moved {par}[{elem + 1}] by {e['du']!r}; log(df - 1) moves it by {LOG_NU_MINUS_ONE_STEP!r}")
+                target, expect = (f"{dist_roles['df']}_interval__", 0), "other"
+            else:
+                target, expect = (f"{dist_roles['udf']}_log__", int(gmap.level_of[g][elem])), "log"
         elif par in CAR_PARS:                                  # F02a: a CAR term's parameters and latent vectors
             target, expect = car_coordinate(fixture, model, e, par, elem)
         elif (sh := getattr(model, "shrinkage_names", {})) and par in ("zb", "hs_global", "hs_slab", "hs_local", "R2D2_R2"):   # D07
@@ -1578,7 +1713,7 @@ def draws(fixture: Fixture, model: ab.Model, cmap: ColumnMap, gmap: GroupMap) ->
             (c, _), = positions
             data[term] = (("chain", "draw"), np.array([coefficients(p.pars)[cmap.b_index(cmap.x_column[c])] for p in pts])[None, :])
     for (g, coef), roles in model.group_coefficient_names.items():
-        m, cn = gmap.brms_id[g], gmap.coef_cn[(g, coef)]
+        m, cn = group_id(gmap, g, coef), gmap.coef_cn[(g, coef)]   # G05a: per coefficient
         r = np.empty((len(pts), len(gmap.level_of[g])))
         for d, p in enumerate(pts):
             r[d, gmap.level_of[g]] = np.atleast_1d(p.pars[f"r_{m}_{cn}"])
@@ -1592,12 +1727,13 @@ def draws(fixture: Fixture, model: ab.Model, cmap: ColumnMap, gmap: GroupMap) ->
         data[roles["group_effect"]] = (("chain", "draw", roles["coordinate"]), r[None])
         coords[roles["coordinate"]] = list(model.design.group_blocks[(g, coef)].levels)
     for (name, g, coef), roles in getattr(model, "dpar_group_names", {}).items():   # D08: a shared ID's distributional coefficients
-        m, cn = gmap.brms_id[g], gmap.dpar_cn[(name, g, coef)]
-        r = np.empty((len(pts), len(gmap.level_of[g])))
+        (m, level_of), cn = dpar_group_of(gmap, name, g), gmap.dpar_cn[(name, g, coef)]   # G06: or a formula's own group's
+        r = np.empty((len(pts), len(level_of)))
         for d, p in enumerate(pts):
-            r[d, gmap.level_of[g]] = np.atleast_1d(p.pars[f"r_{m}_{name}_{cn}"])
+            r[d, level_of] = np.atleast_1d(p.pars[f"r_{m}_{name}_{cn}"])
         data[roles["sd"]] = (("chain", "draw"), np.array([np.atleast_1d(p.pars[f"sd_{m}"])[cn - 1] for p in pts])[None, :])
         data[roles["group_effect"]] = (("chain", "draw", roles["coordinate"]), r[None])
+        coords.setdefault(roles["coordinate"], list(model.design.dpars[name].group_blocks[(g, coef)].levels))   # G06: its own factor
     for g, roles in model.correlation_names.items():             # L and the correlation matrix of a correlated factor (A02)
         L = np.stack([brms_cholesky(model, gmap, g, p.pars) for p in pts])
         dims = ("chain", "draw", roles["coordinate"], roles["coordinate_T"])
@@ -1639,8 +1775,9 @@ def draws(fixture: Fixture, model: ab.Model, cmap: ColumnMap, gmap: GroupMap) ->
         data[timecor["cosy"]] = (("chain", "draw"), np.array([float(p.pars["cosy"]) for p in pts])[None, :])
     for name, dmap in (cmap.distributional or {}).items():       # B01: an auxiliary parameter's own formula, raw-scale intercept and b
         ds, roles = model.spec.dpar(name), model.dpar_names[name]
-        if ds.intercept:
-            a = [float(p.pars[f"b_{name}_Intercept"]) if dmap.centred_intercept
+        if ds.intercept:                                    # G06: the centred one where the model's draws hold it (the disc)
+            centred = getattr(model.design.dpars[name], "centred_draws", False)
+            a = [float(p.pars[f"Intercept_{name}" if centred else f"b_{name}_Intercept"]) if dmap.centred_intercept
                  else float(coefficients(p.pars, f"b_{name}")[dmap.b_index(dmap.intercept_column)]) for p in pts]
             data[roles["intercept"]] = (("chain", "draw"), np.array(a)[None, :])
         for t in ds.pop_terms:

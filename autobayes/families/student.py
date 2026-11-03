@@ -1,15 +1,18 @@
 """Student-t response: identity link on ``mu``, scale ``sigma``, and degrees of freedom ``nu`` either fixed by the user
 (``nu > 1``) or learned under its own prior truncated to ``nu > 1`` (brms-parity A13, docs/student-learned-nu.md). ``sigma``
-may have its own formula under a log link (B01, docs/distributional.md)."""
+may have its own formula under a log link (B01, docs/distributional.md), and ``nu`` its own under brms's ``logm1`` link (G06,
+docs/distributional-groups.md: ``["y ~ x", "nu ~ z"]``, ``nu_i = 1 + exp(eta_nu,i)``, its intercept's default prior ``normal(2.7,
+0.8)``; ``student_nu_formula``)."""
 from __future__ import annotations
 
 from types import MappingProxyType
 
 import numpy as np
 
-from autobayes.families.spec import STANDARD_PREDICTION_KINDS, FamilySpec, auxiliary, scale_line, scale_symbol
+from autobayes.families.spec import (STANDARD_PREDICTION_KINDS, DistributionalFormula, FamilySpec, auxiliary, dpar_pointer,
+                                     is_distributional, scale_line, scale_symbol)
 from autobayes.formula import validate_numeric_response
-from autobayes.priors import Gamma, HalfStudentT, StudentT, describe_prior
+from autobayes.priors import Gamma, HalfStudentT, Normal, StudentT, describe_prior
 
 NU_LOWER = 1.0                    # brms's real<lower=1> nu: a learned nu's prior is truncated here, and it is sampled as log(nu - 1)
 
@@ -33,11 +36,16 @@ def _scale(model, post, df):
     return row_scale(model, auxiliary(model, post, "sigma") if has_scale(model) else None, standard_errors(model, df))
 
 
+def _nu(model, post):
+    """Each draw's degrees of freedom (learned, A13), or each draw's and row's (its own formula, G06), with a row axis; the fixed
+    value otherwise."""
+    return auxiliary(model, post, "nu") if model.nu is None else model.nu
+
+
 def _draw_response(model, post, eta, mean, df, rng):
     sigma = _scale(model, post, df)                            # per draw, or per draw and row (B01; F06a's se())
-    if model.nu is None:                                       # learned: each posterior draw's own degrees of freedom
-        nu = post[model.names["nu"]].to_numpy()[..., None]
-        return mean + sigma * rng.standard_t(nu, size=mean.shape)
+    if model.nu is None:                                       # learned: each posterior draw's own degrees of freedom (G06: or each
+        return mean + sigma * rng.standard_t(_nu(model, post), size=mean.shape)   # row's, from its formula)
     return mean + sigma * rng.standard_t(model.nu, size=mean.shape)
 
 
@@ -45,8 +53,7 @@ def _log_likelihood(model, post, eta):
     """brms's log_lik (C07): ``log StudentT(y_i | nu, mu_i, sigma)``, a learned nu per draw (A13)."""
     from autobayes.families.pointwise import student_t
 
-    nu = post[model.names["nu"]].to_numpy()[..., None] if model.nu is None else model.nu
-    return student_t(model.design.y, nu, eta, _scale(model, post, None))      # F06a: se()'s row scale
+    return student_t(model.design.y, _nu(model, post), eta, _scale(model, post, None))      # F06a: se()'s row scale; G06: nu per row
 
 
 def _time_correlation():
@@ -60,6 +67,11 @@ def _likelihood_lines(model) -> list[str]:
 
     sigma = scale_text(model, scale_symbol(model))             # "sigma", or "sigma_i" with its own formula (B01); F06a: se()'s
     head = [scale_line(model)] if has_scale(model) else []     # (no sigma under se(col) without sigma = TRUE)
+    if is_distributional(model, "nu"):                         # G06: its own formula, one nu per row
+        return [*head, dpar_pointer(model, "nu"), "", "Likelihood",
+                f"  y_i ~ StudentT(nu_i, mu_i, {sigma}); E[y_i] = mu_i; nu_i > 1 (brms's logm1 link)",
+                "  sigma is scale, not residual SD; variance = sigma^2 * nu_i/(nu_i-2) for nu_i>2",
+                "  variance is infinite for 1<nu_i<=2."]
     if model.nu is None:                                       # learned (A13)
         return [*head,
                 f"  nu ~ {describe_prior(model.priors.nu, lb=NU_LOWER)}, truncated to nu > {NU_LOWER:g} and renormalised there (brms's real<lower=1> nu:",
@@ -105,4 +117,6 @@ STUDENT = FamilySpec(
     monotonic=True,                                                 # B03: mo(x), verified against student_monotonic
     log_likelihood=_log_likelihood,                                 # C07: log_lik(), checked against the model's own density (test_post_processing.py)
     time_correlation=_time_correlation,                             # F03b: cosy(), verified against student_cosy and student_cosy_post
+    # G06: nu ~ z under brms's logm1 link, nu = 1 + exp(eta) (student_nu_formula); its intercept's default normal(2.7, 0.8)
+    distributional_formulas=(DistributionalFormula("nu", "logm1", lambda: Normal(2.7, 0.8)),),
 )

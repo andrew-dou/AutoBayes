@@ -139,7 +139,7 @@ FORMULA_REFUSALS = [
     ("y ~ x + mo(ord) + x:mo(ord)", r"an interaction with a monotonic term \('mo\(ord\)'\) is not supported.*D40"),
     ("y ~ mo(ord) * x", r"an interaction with a monotonic term.*D40"),
     ("y ~ mo(ord):mo(neg)", r"an interaction with a monotonic term.*D40"),
-    ("y ~ mo(ord) + (1 + mo(ord) | g)", r"a monotonic effect cannot vary by 'g'.*D41"),
+    ("y ~ mo(ord) + (1 + mo(ord) || g)", r"the monotonic term 'mo\(ord\)' varies by 'g' here only correlated.*D184"),   # G05a takes '|'
     ("y ~ mo(ord, id = 'a')", r"mo\(\) takes one column here; brms's id argument.*D42"),
     ("y ~ mo(log(ord))", r"mo\(\) takes a column name here, not an expression \('log\(ord\)'.*D42"),
     ("y ~ mo(ord + 1)", r"not an expression"),

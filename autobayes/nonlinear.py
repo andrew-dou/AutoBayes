@@ -45,7 +45,6 @@ priors (C06, D72-D73).
 """
 from __future__ import annotations
 
-import hashlib
 import json
 import re
 from collections.abc import Mapping
@@ -58,6 +57,7 @@ import pandas as pd
 from autobayes.formula import (_FORMULA_RE, _IDENT, MI_CALL_RE, FormulaError, ModelSpec, _is_numeric, bambi_group_name,
                                categorical_labels, factor_column, group_labels, parse_formula, pop_term_design, reject_complex,
                                sd_tag, validate_data)
+from autobayes.formula import extended_group_syntax   # G05a
 from autobayes.model import Design, GroupBlock, Model
 from autobayes.term_algebra import refuse_products           # G03
 from autobayes.priors import AUXILIARY, Prior, PriorError, Priors, describe_prior
@@ -619,6 +619,9 @@ def parse_nonlinear(formulas, data: pd.DataFrame | None = None, family: str = "g
         if d.custom_group_terms:                                       # D08: brms's mm() and gr(by = ) are verified in linear models
             raise FormulaError(f"{text!r}: '{d.custom_group_terms[0].canonical}' in a non-linear parameter's formula is not supported"
                                " (docs/multi-membership-and-by.md, divergences D104, D105)")
+        if extended_group_syntax(d) is not None:                       # G05a: verified in linear models only
+            raise FormulaError(f"{text!r}: {extended_group_syntax(d)} in a non-linear parameter's formula is not supported "
+                               "(docs/group-term-syntax.md, divergence D183)")
         if d.offset is not None:
             raise FormulaError(f"{text!r}: {d.offset.term!r} in a non-linear parameter's formula is not supported "
                                "(divergence D61)")
@@ -1098,7 +1101,7 @@ class NonlinearModel(Model):
             nlpars[d.response] = NlparDesign(name=d.response, columns=(("Intercept",) if d.intercept else ()) + d.columns, X=X,
                                              intercept=d.intercept, group_blocks=MappingProxyType(group_blocks), Z=Z)
         return NonlinearDesign(y=df[s.response].to_numpy(dtype=float), X_raw=np.zeros((n, 0)), X_model=np.zeros((n, 0)),
-                               x_means=np.zeros(0), predictors=(), Z=np.zeros((n, 0)), group_blocks=MappingProxyType({}),
+                               x_means=np.zeros(0), predictors=(), group_blocks=MappingProxyType({}),
                                centered=False, covariates=MappingProxyType({c: df[c].to_numpy(dtype=float) for c in s.covariates}),
                                nlpars=MappingProxyType(nlpars))
 
@@ -1785,7 +1788,7 @@ def freeze_nonlinear_target(model: NonlinearModel) -> dict[str, str]:
     """The target identity of a non-linear model (``identity.freeze_target``'s schema and encoding): the family and link, the
     canonical non-linear formula, the response, each covariate's column, each parameter's canonical formula, design, coding,
     group blocks and priors, and the auxiliary and correlation priors. Only the digest is retained."""
-    from autobayes.identity import SCHEMA, _canonical, _prior
+    from autobayes.identity import SCHEMA, _prior, digest
 
     s, d, fam = model.spec, model.design, model.family_spec
     nlpars = []
@@ -1802,8 +1805,7 @@ def freeze_nonlinear_target(model: NonlinearModel) -> dict[str, str]:
                "nonlinear": {"formula": s.canonical_formula, "response": s.response, "y": d.y,
                              "covariates": [{"name": c, "values": d.covariates[c]} for c in s.covariates], "nlpars": nlpars},
                "priors": {label: _prior(p) for label, p in nonlinear_prior_labels(model.priors, s, fam)}}
-    encoded = json.dumps(_canonical(payload), sort_keys=True, separators=(",", ":"), ensure_ascii=False, allow_nan=False).encode("utf-8")
-    return {"schema": SCHEMA, "sha256": hashlib.sha256(encoded).hexdigest()}
+    return {"schema": SCHEMA, "sha256": digest(payload)}   # G11: the canonical bytes, streamed (identity.digest)
 
 
 def nonlinear_summary_rows(model: NonlinearModel, idata) -> dict:

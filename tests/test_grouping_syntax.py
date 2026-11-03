@@ -59,14 +59,14 @@ def slash():
 
 # -- 1. the grammar: expansion, the term model and every refusal by message -------------------------------------
 REFUSALS = [
-    ("y ~ x + (1 | g:h:k)", {}, "only two factors can be combined in a grouping factor ('g:h:k' names 3 columns)"),
-    ("y ~ x + (1 | g/h/k)", {}, "only two factors can be combined in a grouping factor ('g/h/k' names 3 columns)"),
+    ("y ~ x + (1 | g:h:k:m)", {}, "at most 3 columns can be combined in a grouping factor ('g:h:k:m' names 4 columns)"),   # G05a takes
+    ("y ~ x + (1 | g/h/k/m)", {}, "at most 3 columns can be combined in a grouping factor ('g/h/k/m' names 4 columns)"),   # g:h:k, g/h/k
     ("y ~ x + (1 | g/h:k)", {}, "mixing '/' and ':' in a grouping factor ('g/h:k') is not supported"),
     ("y ~ x + (1 | g:g)", {}, "a grouping factor cannot be combined with itself ('g:g')"),
     ("y ~ x + (1 | g/g)", {}, "a grouping factor cannot be combined with itself ('g/g')"),
-    ("y ~ x + (1 | g:h) + (1 | g:h)", {}, "duplicate grouping factor 'g:h'; a factor appears in one group term, '(1 | g:h)' or '(1 + x || g:h)'"),
+    ("y ~ x + (1 | g:h) + (1 | g:h)", {}, "duplicate grouping factor 'g:h': its coefficient 'Intercept' varies in '(1 | g:h)' and in '(1 | g:h)'"),
     ("y ~ x + (1 | g:h) + (1 | h:g)", {}, "'(1 | h:g)' groups by the same columns as '(1 | g:h)' ('h:g' and 'g:h' induce the same partition of the rows); keep one of them"),
-    ("y ~ x + (1 | g) + (1 | g/h)", {}, "duplicate grouping factor 'g'; a factor appears in one group term, '(1 | g)' or '(1 + x || g)' ('(1 | g/h)' expands to '(1 | g) + (1 | g:h)')"),
+    ("y ~ x + (1 | g) + (1 | g/h)", {}, "duplicate grouping factor 'g': its coefficient 'Intercept' varies in '(1 | g)' and in '(1 | g/h)' ('(1 | g/h)' expands to '(1 | g) + (1 | g:h)')"),
     ("y ~ x + (1 | g/h) + (1 | g:h)", {}, "duplicate grouping factor 'g:h'"),
     ("y ~ x + (1 | y:h)", {}, "'y': the grouping factor cannot also be a predictor or the response"),
     ("y ~ x + (1 | x:h)", {}, "'x': the grouping factor cannot also be a predictor or the response"),

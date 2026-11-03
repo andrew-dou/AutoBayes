@@ -1571,6 +1571,16 @@ def addition_family(base, family_spec, data: Mapping[str, np.ndarray]):
     return family
 
 
+def logm1_link():
+    """G06: brms's ``logm1`` link of the Student-t ``nu`` as a Bambi link, which Bambi does not have: ``nu = 1 + exp(eta)``,
+    ``eta = log(nu - 1)`` (docs/distributional-groups.md)."""
+    import bambi as bmb
+
+    one = np.float64(1.0)
+    return bmb.Link("logm1", link=lambda nu: np.log(np.asarray(nu, dtype=float) - one), linkinv=lambda eta: one + np.exp(eta),
+                    linkinv_backend=lambda eta: one + pt.exp(eta))
+
+
 def monotonic_family(base, add_effects: Callable):
     """The Bambi family ``base`` (a built-in family's name or a family object) whose parent linear predictor gains brms's
     monotonic effects (B03, docs/monotonic.md): Bambi passes the parent's linear predictor through the family's
@@ -1842,13 +1852,48 @@ def ordered_thresholds(name, prior_name: str, params: dict, labels, dim: str):
                          dims=dim)
 
 
-def cumulative_logit_family(terms, means, dim: str):
+def discriminated_logistic_logp(value, eta, thresholds, disc):
+    """G06: brms's ``cumulative("logit")`` with the discrimination ``disc`` (one per row, ``disc ~ ...``): ``P(y <= k) =
+    inv_logit(disc (tau_k - eta))``, ``ordered_logistic_logp`` of ``disc eta`` and ``disc tau``."""
+    return ordered_logistic_logp(value, disc * eta, disc[..., None] * thresholds)
+
+
+def discriminated_logistic_random(eta, thresholds, disc, rng=None, size=None):
+    disc = np.asarray(disc, dtype=float)
+    return draw_categories(cumulative_probabilities(disc * np.asarray(eta, dtype=float), disc[..., None] * np.asarray(thresholds)), rng, size)
+
+
+def centred_log_link(terms, means):
+    """G06: the cumulative family's link of its ``disc`` formula as a Bambi link, ``disc = exp(eta - sum_p means[p] b_p)``: Bambi
+    builds that formula on its raw design (it centres every formula or none, and the cumulative family's mean is not centred),
+    and brms centres it (``Xc_disc``), so the formula's intercept is brms's centred ``Intercept_disc`` and the link takes the
+    column means times the coefficients (``terms``: the formula's coefficient variables in design order) off its linear
+    predictor; the per-row deterministic ``disc`` is brms's."""
+    import bambi as bmb
+
+    means = np.asarray(means, dtype=np.float64)
+    names = tuple(terms)
+
+    def linkinv_backend(eta):
+        if not names:
+            return pt.exp(eta)
+        model = pm.modelcontext(None)
+        b = pt.concatenate([pt.atleast_1d(model[term]) for term in names])
+        return pt.exp(eta - pt.dot(means, b))
+
+    return bmb.Link("log_centred", link=lambda disc: np.log(np.asarray(disc, dtype=float)), linkinv=np.exp,
+                    linkinv_backend=linkinv_backend)
+
+
+def cumulative_logit_family(terms, means, dim: str, disc=None):
     """Bambi family for brms's ``cumulative("logit")``: the linear predictor ``mu`` (brms's ``mu``, without thresholds) as
     the parent under the identity link and the thresholds ``Intercept`` (built by ``ordered_thresholds`` from the prior
     dict) as an auxiliary parameter. The likelihood adds ``sum_p means[p] b_p`` to the sampled thresholds, ``terms`` being
     the population-level terms in design order (PyMC variables of those names, scalar or one entry per column), and
     registers the result as the deterministic ``b_Intercept`` (brms's thresholds of the raw design), which is what
-    ``ordered_logistic_logp`` reads with ``mu`` on the raw design: brms's likelihood with its centred thresholds."""
+    ``ordered_logistic_logp`` reads with ``mu`` on the raw design: brms's likelihood with its centred thresholds. G06:
+    ``disc``, a Bambi link (``centred_log_link``), gives the family brms's discrimination with a formula of its own
+    (``disc ~ ...``) as a third parameter under that link, read by ``discriminated_logistic_logp``."""
     import bambi as bmb
 
     means = np.asarray(means, dtype=np.float64)
@@ -1857,21 +1902,27 @@ def cumulative_logit_family(terms, means, dim: str):
     class CumulativeLogit:
         """``y ~ OrderedLogistic(mu, b_Intercept)``, ``b_Intercept = Intercept + sum_p mean(x_p) b_p``."""
 
-        def __new__(cls, name, mu, Intercept, **kwargs):
+        def __new__(cls, name, mu, Intercept, disc=None, **kwargs):
             model = pm.modelcontext(None)
             thresholds = Intercept
             if names:
                 b = pt.concatenate([pt.atleast_1d(model[term]) for term in names])
                 thresholds = Intercept + pt.dot(means, b)
             thresholds = pm.Deterministic("b_Intercept", thresholds, dims=dim)
+            if disc is not None:                             # G06: each row's discrimination, from its formula
+                return pm.CustomDist(name, mu, thresholds, disc, logp=discriminated_logistic_logp,
+                                     random=discriminated_logistic_random, signature="(),(k),()->()", dtype="int64", **kwargs)
             return pm.CustomDist(name, mu, thresholds, logp=ordered_logistic_logp, random=ordered_logistic_random,
                                  signature="(),(k)->()", dtype="int64", **kwargs)
 
     class CumulativeLogitFamily(bmb.Family):
         SUPPORTED_LINKS = {"mu": ["identity"], "Intercept": ["identity"]}
 
-    likelihood = bmb.Likelihood("CumulativeLogit", params=["mu", "Intercept"], parent="mu", dist=CumulativeLogit)
-    return CumulativeLogitFamily("cumulative_logit", likelihood, link={"mu": "identity", "Intercept": "identity"})
+    params, links = ["mu", "Intercept"], {"mu": "identity", "Intercept": "identity"}
+    if disc is not None:
+        params, links = [*params, "disc"], {**links, "disc": disc}
+    likelihood = bmb.Likelihood("CumulativeLogit", params=params, parent="mu", dist=CumulativeLogit)
+    return CumulativeLogitFamily("cumulative_logit", likelihood, link=links)
 
 
 # ---- more ordinal models (brms-parity D04, docs/ordinal-categorical.md) ------------------------------------------------------

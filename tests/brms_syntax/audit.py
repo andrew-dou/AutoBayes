@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import json
 import math
+import re
 import sys
 import traceback
 import warnings
@@ -188,7 +189,7 @@ def decode(obj) -> np.ndarray:
 
 # -- the AutoBayes side -------------------------------------------------------------------------------------
 DEFAULT_PRIOR_KWARGS = ("categorical", "nu", "link", "center_predictors", "families", "order", "rescor", "nl", "imputed",
-                        "quantile", "data2")
+                        "quantile", "data2", "dropna")       # G02: dropna=True reads the defaults from the rows the model keeps
 
 
 def make_data2(n: int = N_ROWS) -> dict:
@@ -336,6 +337,12 @@ def _jkey(grp: dict, resp: str = "") -> str:
     return f"J_{grp['id']}_{r}" if r else f"J_{grp['id']}"
 
 
+def _brms_coef(coef: str) -> str:
+    """G05a: brms's label of an AutoBayes group-level coefficient: its rename(), IxE2 for I(x^2), fb for f[b], moo for mo(o)."""
+    from autobayes.default_priors import brms_rename
+    return brms_rename(coef)
+
+
 def match_groups(blocks: dict, terms, reading: Reading, scope: dict, issues: list, notes: list, what: str = "") -> None:
     """AutoBayes's group blocks ``{(factor, coef): GroupBlock}`` against brms's group-level terms in ``scope`` (``dpar`` /
     ``nlpar``): each block must meet exactly one brms coefficient whose ``J`` induces its partition of the rows and whose
@@ -356,12 +363,13 @@ def match_groups(blocks: dict, terms, reading: Reading, scope: dict, issues: lis
                 members = sum(1 for k in range(1, 50) if f"J_{grp['id']}_{k}" in reading.names)
                 if members != len(block.memberships):
                     continue
-                for k, (mem, wt) in enumerate(zip(block.memberships, block.weights), start=1):
+                covariates = getattr(block, "covariates", ()) or (np.ones(n),) * len(block.memberships)   # G05b: a slope's, per member
+                for k, (mem, wt, cv) in enumerate(zip(block.memberships, block.weights, covariates), start=1):
                     J = np.asarray(reading.get(f"J_{grp['id']}_{k}", raw=True)).astype(int) - 1
                     W = np.asarray(reading.get(f"W_{grp['id']}_{k}", raw=True), dtype=float)
                     Zc = np.asarray(reading.get(f"Z_{grp['id']}_{grp['cn']}_{k}", raw=True), dtype=float)
                     pairs += list(zip(J.tolist(), np.asarray(mem).tolist()))
-                    ok &= _close(W, wt) and _close(Zc, np.ones(n))
+                    ok &= _close(W, wt) and _close(Zc, cv)
                 m = dict(pairs)
                 if ok and len(m) == len(set(m.values())) and all(m[j] == a for j, a in pairs):
                     found.append((grp, [m.get(j, -1) for j in range(len(grp["levels"]))]))
@@ -380,6 +388,12 @@ def match_groups(blocks: dict, terms, reading: Reading, scope: dict, issues: lis
             else:
                 if len(set(m.values())) != len(m):
                     continue
+                if getattr(block, "monotonic", None):                # G05a: a monotonic slope, r * mo(simo, Xmo), has no Z_m_c
+                    if _zkey(grp, reading.resp) not in reading.names and grp["coef"] == _brms_coef(coef):
+                        found.append((grp, [m.get(j, -1) for j in range(len(grp["levels"]))]))
+                    continue
+                if _zkey(grp, reading.resp) not in reading.names:    # G05a: brms's monotonic slope, which no other block is
+                    continue
                 Zc = np.asarray(reading.get(_zkey(grp, reading.resp), raw=True), dtype=float)
                 covariate = block.Z[np.arange(n), gidx]
                 if _close(Zc, covariate):
@@ -396,7 +410,7 @@ def match_groups(blocks: dict, terms, reading: Reading, scope: dict, issues: lis
             issues.append(f"{what}{factor!r}: brms's levels {grp['levels']} are AutoBayes's {mine}")
         elif list(block.levels) != list(grp["levels"]):
             notes.append(f"{what}{factor!r}: the same levels in another order (brms {grp['levels']}, AutoBayes {list(block.levels)})")
-        if grp["coef"] != coef:
+        if grp["coef"] != _brms_coef(coef):                         # G05a: brms's rename() of I(x^2), z[q], mo(o); x is x
             notes.append(f"{what}{factor!r}: brms names the coefficient {grp['coef']!r}, AutoBayes {coef!r}")
         for k in (f"N_{grp['id']}", f"M_{grp['id']}", f"NC_{grp['id']}"):
             reading.used.add(k)
@@ -408,13 +422,14 @@ def match_groups(blocks: dict, terms, reading: Reading, scope: dict, issues: lis
     for grp in groups:
         if (grp["id"], grp["cn"]) not in used:
             issues.append(f"{what}brms group-level coefficient {grp['coef']!r} of {grp['group']!r} (id {grp['id']}) has no AutoBayes counterpart")
-    for t in terms:
-        brms_cor = {bool(g["cor"]) for g in groups if g["id"] in ids.get(t.factor, set())}
-        M = sum(1 for g in groups if g["id"] in ids.get(t.factor, set()))
-        if M > 1 and brms_cor == {True} and not (t.has_correlation or t.id is not None):
-            issues.append(f"{what}{t.factor!r}: brms correlates the term's {M} coefficients; AutoBayes's {t.canonical!r} does not")
-        if M > 1 and brms_cor == {False} and t.has_correlation:
-            issues.append(f"{what}{t.factor!r}: AutoBayes correlates {t.canonical!r}; brms does not")
+    for t in terms:                                                  # G05a: per brms group of the factor (a factor in several terms
+        for gid in sorted(ids.get(t.factor, set())):                 # has one per term, each of one coefficient or uncorrelated)
+            brms_cor = {bool(g["cor"]) for g in groups if g["id"] == gid}
+            M = sum(1 for g in groups if g["id"] == gid)
+            if M > 1 and brms_cor == {True} and not (t.has_correlation or t.id is not None):
+                issues.append(f"{what}{t.factor!r}: brms correlates the term's {M} coefficients; AutoBayes's {t.canonical!r} does not")
+            if M > 1 and brms_cor == {False} and t.has_correlation:
+                issues.append(f"{what}{t.factor!r}: AutoBayes correlates {t.canonical!r}; brms does not")
 
 
 def _y_matches(Y, y) -> bool:
@@ -475,7 +490,17 @@ def compare_univariate(model, reading: Reading, issues: list, notes: list, what:
         reading.used.update({reading.key(f"K_{name}"), reading.key(f"Kc_{name}")})
         if dd.group_blocks:
             match_group_scope(model, dd.group_blocks, (), reading, {"dpar": name}, issues, notes, what)
+        offset = getattr(dd, "offset", None)                        # G06: the formula's offset, brms's offsets_<dpar>
+        if offset is not None and not reading.has(f"offsets_{name}"):
+            issues.append(f"{what}AutoBayes gives {name}'s formula an offset; brms's Stan data has no offsets_{name}")
+        elif offset is not None and not _close(reading.get(f"offsets_{name}"), offset):
+            issues.append(f"{what}offsets_{name} differ from brms's")
     match_group_scope(model, d.group_blocks, spec.group_terms, reading, {}, issues, notes, what)
+    for g, cov in getattr(d, "group_cov", {}).items():               # G05b: gr(g, cov = A)'s Lcov_m, by content
+        keys = [k for k in reading.names if re.fullmatch(r"Lcov_\d+", k) and _close(reading.get(k), cov.L)]
+        if len(keys) != 1:
+            issues.append(f"{what}{g!r}: {len(keys)} of brms's Lcov_m equal the Cholesky factor of data2[{cov.matrix!r}] on its levels")
+        reading.used.update(keys)
     # addition terms and offsets
     for mine, key in ((d.trials, "trials"), (d.offset, "offsets"), (d.weights, "weights"), (d.cens, "cens"), (d.rcens, "rcens"),
                       (d.lb, "lb"), (d.ub, "ub"), (getattr(d, "dec", None), "dec"),     # F04: dec(col), the wiener decisions

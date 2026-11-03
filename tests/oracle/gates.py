@@ -1,7 +1,8 @@
 """The oracle gates, as functions of a `Bundle` (case, fixture, data, AutoBayes model and the two maps).
 Each raises `OracleMismatch` naming the point and the quantities that differ; a passing gate returns None.
 
-G1 `check_design`        standata equals the model's design, response, trials, offsets, group coding and addition-term
+G1 `check_design`        standata equals the model's design, response, trials, offsets, group coding (G05b: gr(cov = )'s Lcov_m,
+                         `check_group_covariance`) and addition-term
                          data (weights, cens, lb, ub; B02; rcens, E04; dec, F04; se, denom and se()'s sigma = 0, F06a), each
                          distributional formula's X_<dpar> (B01), each
                          monotonic term's codes, number of steps and Dirichlet concentrations (Xmo_k, Jmo, con_simo_k; B03),
@@ -13,7 +14,8 @@ G1 `check_design`        standata equals the model's design, response, trials, o
                          a SAR term's Msar, eigenMsar, N_tg and its parameter's bounds (F02b, adapter.check_sar_design);
                          an fcor() term's Mfcor and N_tg (F03a, adapter.check_fcor_design);
                          a residual correlation term's groups (N_tg, begin_tg, end_tg, nobs_tg; unstr's n_unique_t,
-                         n_unique_cortime, Jtime_tg) through the same permutation (F03b, adapter.check_timecor_design)
+                         n_unique_cortime, Jtime_tg) through the same permutation (F03b, adapter.check_timecor_design);
+                         a distributional formula's offset, offsets_<dpar> (G06, check_dpar_offsets)
 G2 `check_logp`          log density with and without the Jacobian, and its prior part, at every point
 G2 `check_gradient`      every gradient coordinate, mapped through the probed parameter table
 G3 `check_derived`       the graph's linear predictor, group effects and correlation matrices, and the raw-scale intercept
@@ -70,6 +72,9 @@ G3 compares the graph's per-threshold predictor mu_cs of a model with cs() terms
 F06b: grouped thresholds (thres(gr = z)): G1 matches brms's ngrthres, nthres (one per level) and Jthres to the model's levels
 (adapter.match_threshold_groups); G2 maps each Intercept_k to its level's block; G3 compares the graph's b_Intercept and the
 raw-scale thresholds with brms's b_Intercept_k of every level (and its merged_Intercept), in the model's merged order.
+
+G05b: G1 checks gr(g, cov = A)'s Lcov_m (`check_group_covariance`); G2's prior part holds gr(g, dist = "student")'s df with its
+truncation constant (its udf's inverse chi-square is in brms's model block).
 
 D08: G2's prior part includes a shared correlation ID's distributional SDs and the potential that carries brms's normalisation
 constant of gr(by = )'s SDs; G3 adds a shared ID's distributional effects (r_m_<dpar>_c) to brms's linear predictor of the
@@ -163,8 +168,8 @@ def prior_names(model) -> list[str]:
     if "phi" in names and "phi" not in distributional:       # Beta precision
         out.append(names["phi"])
     out += [v for name in distributional for k, v in model.dpar_names[name].items() if k != "value"]   # their formulas (B01)
-    if "nu" in names:                                      # a learned Student-t nu, its prior truncated to nu > 1 (A13)
-        out.append(names["nu"])
+    if "nu" in names and "nu" not in distributional:       # a learned Student-t nu, its prior truncated to nu > 1 (A13); G06: with
+        out.append(names["nu"])                            # a formula of its own, its formula's (above)
     out += [names[par] for par in ("zi", "hu") if par in names and par not in distributional]   # the zero-inflation / hurdle
     out += [names[e.variable] for e in model.family_spec.extra_parameters                      # probability (B06); D01: alpha,
             if e.name not in distributional]                    # beta, ndt (ndt's truncation constant included); E02: kappa, quantile,
@@ -176,6 +181,7 @@ def prior_names(model) -> list[str]:
     out += [roles["by_normalisation"] for roles in model.group_coefficient_names.values()
             if roles.get("by_normalisation") in model.pymc_model.named_vars]
     out += [roles["L"] for roles in model.correlation_names.values()]
+    out += [roles["df"] for roles in getattr(model, "group_dist_names", {}).values()]   # G05b: gr(dist = "student")'s df (truncated)
     out += [roles["simplex"] for roles in model.mo_names.values()]
     mixture = getattr(model, "mixture_names", {})          # C05: each component's sigma<k> and theta
     out += [*mixture["sigma"], mixture["theta"]] if mixture else []
@@ -383,12 +389,33 @@ def check_design(b: Bundle) -> None:
     adapter.check_car_design(b.fixture, b.model)                 # F02a: a CAR term's locations, edges, Nneigh, eigenMcar, car_scale
     adapter.check_timecor_design(b.fixture, b.model)             # F03b: N_tg, begin_tg, end_tg, nobs_tg, Jtime_tg and the groups
     check_baseline_hazard(b)                                     # F05: a cox model's Zbhaz, Zcbhaz, Kbhaz and con_sbhaz
+    check_group_covariance(b)                                    # G05b: gr(g, cov = A)'s Lcov_m
     check_shrinkage_data(b)                                      # D07: Kscales and a shrinkage prior's data
     check_fixed_parameters(b)                                    # E02: a parameter the formula fixes (bf(quantile = p))
+    check_dpar_offsets(b)                                        # G06: a distributional formula's offsets_<dpar>
     # the design columns (every formula's), the group partitions and the monotonic codes were matched by content when the
     # maps were built
     adapter.match_columns(b.fixture, b.model)
     adapter.match_groups(b.fixture, b.model)
+
+
+def check_dpar_offsets(b: Bundle) -> None:
+    """G1 of a distributional formula's offset (G06, ``sigma ~ z + offset(soff)``): brms's ``offsets_<dpar>`` exactly for the
+    formulas with an offset, each equal to the model's ``DparDesign.offset`` on the fitted rows to DESIGN_ABS; brms's
+    ``offsets_<p>`` of any distributional parameter of the family whose formula in the model has none is a mismatch."""
+    sd, dpars = b.fixture.standata, getattr(b.model.design, "dpars", {})
+    for p in (*b.model.family_spec.distributional_parameters, *dpars):
+        mine = getattr(dpars.get(p), "offset", None)
+        if mine is None:
+            if f"offsets_{p}" in sd:
+                raise OracleMismatch(f"brms has offsets_{p}; the AutoBayes model's formula of {p} has no offset")
+            continue
+        if f"offsets_{p}" not in sd:
+            raise OracleMismatch(f"the AutoBayes model's formula of {p} has an offset; brms's standata has no offsets_{p}")
+        theirs = np.asarray(sd[f"offsets_{p}"], dtype=float)
+        if theirs.shape != mine.shape or abs_err(theirs, mine) > DESIGN_ABS:
+            raise OracleMismatch(f"offsets_{p} differ from the offset of {p}'s formula"
+                                 + (f" by {abs_err(theirs, mine)}" if theirs.shape == mine.shape else f" ({theirs.shape} vs {mine.shape})"))
 
 
 def check_baseline_hazard(b: Bundle) -> None:
@@ -416,6 +443,27 @@ def check_baseline_hazard(b: Bundle) -> None:
     theirs = np.atleast_1d(sd["con_sbhaz"])
     if theirs.shape != con.shape or abs_err(theirs, con) > DESIGN_ABS:
         raise OracleMismatch(f"brms con_sbhaz is {theirs!r}; the prior of sbhaz gives {con!r}")
+
+
+def check_group_covariance(b: Bundle) -> None:
+    """G1 of ``gr(g, cov = A)`` (G05b): brms's Stan data hold ``Lcov_m`` (the lower Cholesky factor of ``A`` on the factor's levels)
+    exactly for the brms groups of the model's terms with a known covariance, each in the model's level order (brms's levels
+    mapped by the group map must be the model's in order, or the Cholesky factors are not comparable) and equal to the model's
+    ``Design.group_cov[g].L`` to DESIGN_ABS, its ``L L^T`` to the model's ``A`` too."""
+    sd, mine = b.fixture.standata, getattr(b.model.design, "group_cov", {})
+    theirs = sorted(k for k in sd if re.fullmatch(r"Lcov_\d+", k))
+    expected = sorted(f"Lcov_{b.gmap.brms_id[g]}" for g in mine)
+    if theirs != expected:
+        raise OracleMismatch(f"brms's Stan data hold the known covariances {theirs}; the AutoBayes model's gr(cov = ) terms give {expected}")
+    for g, cov in mine.items():
+        m, order = b.gmap.brms_id[g], b.gmap.level_of[g]
+        if list(order) != list(range(len(order))):
+            raise OracleMismatch(f"{g!r}: brms orders the levels as {[cov.levels[i] for i in order]}, the model as {list(cov.levels)}; "
+                                 f"Lcov_{m} is not comparable")
+        L = np.atleast_2d(np.asarray(sd[f"Lcov_{m}"], dtype=float))
+        if L.shape != cov.L.shape or abs_err(L, cov.L) > DESIGN_ABS or abs_err(L @ L.T, cov.A) > DESIGN_ABS:
+            raise OracleMismatch(f"brms's Lcov_{m} differs from the Cholesky factor of {cov.matrix!r} on the levels of {g!r}"
+                                 + (f" by {abs_err(L, cov.L)}" if L.shape == cov.L.shape else f" ({L.shape} vs {cov.L.shape})"))
 
 
 def check_fixed_sigma(b: Bundle) -> None:
@@ -516,7 +564,9 @@ def check_gradient(b: Bundle) -> None:
 _BRMS_DPAR_LINK = {"sigma": ("log", np.exp), "shape": ("log", np.exp), "phi": ("log", np.exp),
                    "zi": ("logit", expit), "hu": ("logit", expit),
                    "alpha": ("identity", lambda eta: eta),
-                   "bs": ("log", np.exp)}                      # F04: wiener()'s link_bs
+                   "bs": ("log", np.exp),                      # F04: wiener()'s link_bs
+                   "nu": ("logm1", lambda eta: 1.0 + np.exp(eta)),   # G06: student()'s link_nu, brms's logm1
+                   "disc": ("log", np.exp)}                    # G06: cumulative()'s link_disc
 
 
 def check_derived(b: Bundle) -> None:
@@ -555,7 +605,7 @@ def check_derived(b: Bundle) -> None:
             if b.gmap.category:                                     # F01b: each category's column against its own group term
                 check_category_effects(b, k, p, g, coef, eff)
                 continue
-            m, cn = b.gmap.brms_id[g], b.gmap.coef_cn[(g, coef)]
+            m, cn = adapter.group_id(b.gmap, g, coef), b.gmap.coef_cn[(g, coef)]   # G05a: per coefficient
             r = np.asarray(eff, dtype=float).ravel()[b.gmap.level_of[g]]
             err = rel_err(r, np.atleast_1d(p.pars[f"r_{m}_{cn}"]))
             if err > PRED_REL:
@@ -581,9 +631,11 @@ def check_derived(b: Bundle) -> None:
                 eta = float(p.pars[f"Intercept_{name}"]) + (Xc - Xc.mean(0)) @ bd
             else:
                 eta = X @ bd
+            if f"offsets_{name}" in b.fixture.standata:              # G06: plus brms's offsets_<name>
+                eta = eta + b.fixture.standata[f"offsets_{name}"]
             for (dname, g, coef), _ in dpar_groups:                # D08: plus brms's r_m_<name>_c[J_m] Z_m_<name>_c of a shared ID
-                if dname == name:
-                    m, cn = b.gmap.brms_id[g], b.gmap.dpar_cn[(name, g, coef)]
+                if dname == name:                                  # G06: or of the formula's own group
+                    m, cn = adapter.dpar_group_of(b.gmap, name, g)[0], b.gmap.dpar_cn[(name, g, coef)]
                     J = b.fixture.standata[f"J_{m}"].astype(int) - 1
                     eta = eta + np.atleast_1d(p.pars[f"r_{m}_{name}_{cn}"])[J] * b.fixture.standata[f"Z_{m}_{name}_{cn}"]
             err = rel_err(np.asarray(value, dtype=float).ravel(), inverse(eta))
@@ -599,8 +651,8 @@ def check_derived(b: Bundle) -> None:
                                          f"{float(p.pars[f'b_{name}_Intercept'])!r}")
         start = 1 + len(groups) + len(cors) + len(distributional)
         for ((name, g, coef), _), eff in zip(dpar_groups, out[start:start + len(dpar_groups)]):   # D08: brms's r_m_<name>_c
-            m, cn = b.gmap.brms_id[g], b.gmap.dpar_cn[(name, g, coef)]
-            err = rel_err(np.asarray(eff, dtype=float).ravel()[b.gmap.level_of[g]], np.atleast_1d(p.pars[f"r_{m}_{name}_{cn}"]))
+            (m, level_of), cn = adapter.dpar_group_of(b.gmap, name, g), b.gmap.dpar_cn[(name, g, coef)]   # G06: own groups too
+            err = rel_err(np.asarray(eff, dtype=float).ravel()[level_of], np.atleast_1d(p.pars[f"r_{m}_{name}_{cn}"]))
             if err > PRED_REL:
                 raise OracleMismatch(f"point {k}: group effects of {coef!r} of {g!r} in {name}'s formula differ from brms r_{m}_{name}_{cn} "
                                      f"by {err}")
@@ -1019,7 +1071,7 @@ def check_default_prior(b: Bundle) -> None:
         wanted = ({("Intercept", name)} if ds.intercept else set()) | ({("b", name)} if ds.columns else set())
         if not wanted <= dpar_rows:
             raise OracleMismatch(f"brms default_prior lacks the rows {sorted(wanted - dpar_rows)} of {name}'s formula")
-    if "nu" in b.model.names:
+    if "nu" in b.model.names and "nu" not in distributional:   # G06: a nu with its own formula has its dpar rows instead
         expected.add("nu")
     expected |= {par for par in ("zi", "hu") if par in b.model.names and par not in distributional}     # B06; E03: its dpar rows
     expected |= {e.name for e in b.model.family_spec.extra_parameters if e.name not in distributional}     # D01: alpha, beta, ndt

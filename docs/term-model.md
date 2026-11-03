@@ -82,11 +82,20 @@ The parameters of coefficient `c` are brms's `sd_m[c]` (`1|g_sigma`, `x|g_sigma`
 `Model.group_names[factor]` keeps the varying intercept's roles with each slope's as `sd:x`, `offset:x`,
 `group_effect:x` (docs/varying-slopes.md).
 
+G05a (docs/group-term-syntax.md): `coefs` may lack the intercept (`(0 + x | g)`, `term.has_intercept`); a factor written in several
+terms is one term whose `blocks` are its terms as written (brms's group IDs, uncorrelated); a factor slope `(1 + z | g)` becomes one
+coefficient per non-reference level once the data are seen (`z[q]`, `z[r]`; `written` keeps `z`); a transform, product or `mo()`
+slope is labelled as its population-level term (`I(x^2)`, `x:w`, `mo(ord)`, the last built by the model, `monotonic_slopes`, with
+`GroupBlock.monotonic` its column); a slope that is no population-level term is listed in `slope_columns`; and the factor may combine
+three columns (`g:h:f2`). `formula.group_covariate(spec, coef, frame)` is each coefficient's covariate, brms's `Z_m_c`.
+
 D08 (docs/multi-membership-and-by.md): `GroupTerm.members` and `weights` make the term brms's multi-membership
 `(1 | mm(g, g2, weights = cbind(w1, w2)))` (factor `mmgg2`, `operands` the member columns, `GroupBlock.memberships` and
 `weights` per row), `GroupTerm.by` brms's `(1 | gr(g, by = gby))` (`GroupBlock.by_levels`, `by_index`); both are
 `GroupTerm.custom`, built by the model in the linear-predictor hook rather than by Bambi (`ModelSpec.bambi_group_terms` are the
-others). `GroupTerm.id` is a correlation ID shared with a distributional formula's term of the same factor
+others). So are `GroupTerm.cov` (brms's `gr(g, cov = A)`, the name of a matrix in `data2`; `Design.group_cov`), `GroupTerm.dist`
+(`"student"` for `gr(g, dist = "student")`; `Model.group_dist_names`) and a multi-membership term's varying slopes, `mmc(x1, x2)`
+(`GroupTerm.covariate_columns`, `GroupBlock.covariates`) and `GroupTerm.unscaled` (brms's `scale = FALSE`); docs/gr-cov-dist.md. `GroupTerm.id` is a correlation ID shared with a distributional formula's term of the same factor
 (`ModelSpec.shared_ids`, `DparDesign.group_blocks`, `Model.dpar_group_names`).
 
 ## Gaussian processes: `ModelSpec.gp_terms`
@@ -148,7 +157,8 @@ linear predictor, and Bambi's formula never sees it.
 A model given a list of formulas (B01, docs/distributional.md), `["y ~ x + (1 | g)", "sigma ~ z"]`, holds each formula
 after the first as a `ModelSpec` of its own in `ModelSpec.dpars`, whose `response` is the parameter's brms name
 (`spec.dpar("sigma")`, `spec.dpar_names`, `spec.formulas`): its population-level terms are `PopTerm`s of every kind, with
-its own intercept, columns, coefficients and centring; it has no group-level term, offset or addition term (refused).
+its own intercept, columns, coefficients and centring; it has no addition term (refused), and group-level terms and an offset
+only where G06 verifies them (`DparDesign.group_blocks`, `DparDesign.offset`; docs/distributional-groups.md).
 `spec.all_categoricals` and `spec.model_columns` gather every formula's categorical columns and data columns;
 `Design.dpars[name]` (`DparDesign`) is its design and `Model.dpar_names[name]` its PyMC variables (`sigma_Intercept`,
 `sigma_z`), Bambi's distributional component named after the parameter (`alpha` for brms's `shape`).
@@ -168,15 +178,18 @@ value (one for the intercept, so the block is the one-hot indicator; the raw `x`
 column of row `i`'s level, which is brms's `Z_m_c[i]` spread over its group index `J_m[i]`; `group_index` is
 that index, 0-based; `J` the number of levels (brms `N_m`). `Design.Z` is the blocks side by side, exactly
 Bambi's concatenated group design, and `column_slice` says where each sits. `Design.group_designs` (the
-varying-intercept block per factor), `levels`, `group_index`, `J` and `group_slices` are derived views.
+varying-intercept block per factor), `levels`, `group_index`, `J` and `group_slices` are derived views. Since G11
+(docs/scaling.md) a block keeps `group_index` and `covariate` (and a multi-membership term's members) rather than `Z`:
+`GroupBlock.Z` and `Design.Z` are built from them on access, the same arrays, and refused above
+`group_index.DENSE_Z_MAX_ENTRIES` entries; Bambi builds each coefficient from the level codes (`group_index.IndexGroupTerm`).
 
 ## Adding a term kind
 
 1. Parse it in `parse_formula` into a `PopTerm` of a new `kind` (add the kind to `POP_TERM_KINDS` and its
    levels/columns rule to `pop_term`) or into a `GroupTerm` with the right `coefs` and `correlated`.
 2. Give it its design block: the `kind` branch of `pop_term_design` for a population-level term; for a
-   group-level coefficient, the block `Model._extract_design` expects from Bambi (indicator times covariate)
-   under the Bambi name `_bambi_group_name(factor, coef)`.
+   group-level coefficient, the level codes and covariate `Model._add_index_group_terms` hands Bambi and
+   `Model._extract_design` checks, under the Bambi name `_bambi_group_name(factor, coef)`.
 3. Say how it reads: the `kind` branch of the linear predictor in `Model.describe()` and, for a vector term,
    the prior coverage rule in `Priors.coefficient_priors` if it differs from the existing one.
 4. Extend the oracle adapter to the new brms parameters and add a frozen case (`oracle/README.md`).

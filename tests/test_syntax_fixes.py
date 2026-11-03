@@ -252,16 +252,11 @@ def test_implicit_intercept_of_a_group_term():
         assert a.names == b.names and a.group_names == b.group_names and np.array_equal(a.design.Z, b.design.Z)
 
 
-@pytest.mark.parametrize("formula, message", [
-    ("y ~ x + (0 + x | g)", "'0' removes the varying intercept of 'g': varying slopes without the varying intercept are not supported; "
-                            r"write '\(1 \+ x \| g\)'"),
-    ("y ~ x + (x - 1 | g)", r"'\(x - 1 \| g\)': '- 1' removes the varying intercept of 'g'"),
+@pytest.mark.parametrize("formula, message", [   # G05a takes (0 + x | g), (x - 1 | g) and (1 | g) + (0 + x | g) (test_group_term_syntax.py)
     ("y ~ x + (x - z | g)", r"'-' inside a group term removes only the varying intercept, '- 1'"),
     ("y ~ x + (- 1 | g)", r"'-' inside a group term removes only the varying intercept"),
-    ("y ~ x + (1 | g) + (0 + x | g)", r"next to '\(1 \| g\)' it is brms's varying intercept and slope without a correlation, which is "
-                                      r"one term here: write '\(1 \+ x \|\| g\)'"),
     ("y ~ x + z + (1 + x |p| g) + (0 + z |p| g)", r"share the correlation ID 'p' as one block .* write '\(1 \+ x \+ z \| g\)'"),
-    ("y ~ x + z + (1 + z | g) + (0 + x | g)", r"varying slopes without the varying intercept are not supported; write '\(1 \+ x \| g\)'"),
+    ("y ~ x + z + (1 + z | g) + (0 + x | g)", r"'\(1 \+ z \| g\)' is one of several terms of 'g' and correlates its coefficients"),
 ])
 def test_slope_only_refusals_give_brms_reading(formula, message):
     with pytest.raises(FormulaError, match=message):
@@ -278,7 +273,7 @@ def test_gr_cor_and_id_spellings():
                              ("y ~ x + (1 + x || gr(g, cor = TRUE))", "'\\|\\|' leaves the coefficients uncorrelated"),
                              ("y ~ x + (1 + x | gr(g, id = p))", "gr\\(\\)'s id = takes a quoted name"),
                              ("y ~ x + (1 + x || gr(g, id = 'p'))", "'\\|\\|' with an ID is not brms syntax"),
-                             ("y ~ x + (1 | gr(g, dist = 'student'))", r"brms's gr\(\) options \['dist'\] are not supported")]:
+                             ("y ~ x + (1 | gr(g, dist = 'cauchy'))", r"gr\(\)'s dist = takes \"gaussian\" or \"student\"")]:   # G05b takes student
         with pytest.raises(FormulaError, match=message):
             parse_formula(formula)
     pr = ab.Priors(intercept=ab.Normal(0, 5), b=ab.Normal(0, 2), sd={"g": {"Intercept": ab.HalfNormal(1), "x": ab.HalfNormal(1)}},
@@ -311,8 +306,8 @@ def test_refusals_name_the_construct(formula, family, message):
 
 def test_distributional_and_nonlinear_refusals_name_the_construct(corpus_frame):
     df = corpus_frame
-    with pytest.raises(FormulaError, match="brms's disc ~ ... \\(the discrimination of an ordinal family"):
-        parse_formula(["yord ~ x", "disc ~ z"], None, "cumulative")
+    with pytest.raises(FormulaError, match="brms's disc ~ ... \\(the discrimination of an ordinal family"):   # G06: the
+        parse_formula(["yord ~ x", "disc ~ z"], None, "sratio")              # cumulative logit family's is offered
     with pytest.raises(FormulaError, match="'a' is a parameter of a non-linear formula of sigma \\(brms's nlf\\(sigma ~ ...\\)"):
         parse_formula(["y ~ x", "sigma ~ a * exp(c * z)", "a ~ 1", "c ~ 1"])
     with pytest.raises(FormulaError, match="'c' is a parameter of the formula of the non-linear parameter 'a' \\(brms's nlf\\(a ~ ...\\)"):

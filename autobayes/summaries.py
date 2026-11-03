@@ -33,7 +33,7 @@ POP_KINDS = ("numeric", "categorical", "interaction", "transform")      # popula
 # construct that adds one is refused by name until its brms names are verified here
 SPEC_FIELDS = frozenset({"formula", "response", "intercept", "levels_by_group", "trials", "rhs", "categoricals", "pop_terms",
                          "group_terms", "dpars"})
-GROUP_FIELDS = frozenset({"factor", "coefs", "correlated"})
+GROUP_FIELDS = frozenset({"factor", "coefs", "correlated", "blocks", "slope_columns"})   # G05a: gauss_split_slope_post verifies
 
 
 def summarise(draws) -> np.ndarray:
@@ -79,13 +79,35 @@ def refuse_unsupported(model, what: str) -> None:
             if t.kind not in POP_KINDS:
                 _refuse(what, f"the {t.kind} term {t.name!r}")
     for d in spec.dpars:                                      # the Gaussian's sigma: its only distributional parameter
-        if not d.intercept or d.group_terms:
+        if not d.intercept or not _summarised_dpar_groups(spec, d):
             _refuse(what, f"the distributional formula {d.formula!r} (the summaries take a formula of sigma with an intercept and "
-                          "population-level terms)")
-    for t in spec.group_terms:                                 # (a factor is in one term: the formula parser refuses another)
+                          "population-level terms, and a varying intercept of its own, '(1 | g)', of the response formula's one "
+                          "group-level term '(1 | g)')")
+    for t in spec.group_terms:
         extra = [f.name for f in dataclasses.fields(t) if f.name not in GROUP_FIELDS and getattr(t, f.name)]
         if extra or t.derived:
             _refuse(what, f"the group-level term {t.canonical} ({', '.join(extra) or 'a grouping factor of two columns'})")
+        # G05a: brms's names are verified for a factor in several terms whose first term has the varying intercept (its
+        # coefficients in the terms' order) and for slopes that are columns; not for slopes alone, a product, a transform, a
+        # factor's levels or mo()
+        if not t.has_intercept or (t.blocks and tuple(c for b in t.blocks for c in b) != t.coefs):
+            _refuse(what, f"the group-level term {t.canonical} (the varying intercept {'absent' if not t.has_intercept else 'after a slope'})")
+        odd = next((c for c in t.slopes if c not in spec.predictors and c not in t.slope_columns), None)
+        if odd is not None:
+            _refuse(what, f"the group-level term {t.canonical} (the varying slope {odd!r})")
+
+
+def _summarised_dpar_groups(spec, d) -> bool:
+    """G06: whether the summaries take the group-level terms of distributional formula ``d``: none, or (verified on
+    ``gauss_sigma_varint_post``) one varying intercept of its own, ``(1 | g)``, of the factor of the response formula's one
+    group-level term, itself ``(1 | g)``; brms's names then merge both into ``g``'s tables (``sigma_Intercept``) and name sigma's
+    effects ``r_g__sigma[level,Intercept]``."""
+    if not d.group_terms:
+        return True
+    if len(d.group_terms) != 1 or len(spec.group_terms) != 1:
+        return False
+    own, main = d.group_terms[0], spec.group_terms[0]
+    return own.id is None and own.coefs == ("Intercept",) and main.factor == own.factor and main.coefs == ("Intercept",) and main.id is None
 
 
 # -- brms's names of the draws ----------------------------------------------------------------------------------------
@@ -120,14 +142,26 @@ def _centred(intercept, b, x_means):
 
 
 def _group_effects(model, posterior):
-    """``{factor: {coef: (sd (chain, draw), r (chain, draw, levels))}}`` by brms name, in formula order, and each factor's levels."""
+    """``{factor: {coef: (sd (chain, draw), r (chain, draw, levels))}}`` by brms name, in formula order, and each factor's levels;
+    G06: a distributional formula's varying intercept of the factor follows the response formula's coefficients under brms's
+    name ``<dpar>_Intercept`` (``sigma_Intercept``)."""
     from autobayes.default_priors import brms_rename
 
     out, levels = {}, {}
     for (g, coef_name), roles in model.group_coefficient_names.items():
         out.setdefault(g, {})[brms_rename(coef_name)] = (_values(posterior, roles["sd"]), _values(posterior, roles["group_effect"]))
         levels[g] = [str(v) for v in model.design.group_blocks[(g, coef_name)].levels]
+    for (name, g, coef_name), roles in model.dpar_group_names.items():   # G06 (refuse_unsupported: own varying intercepts)
+        out[g][f"{name}_{brms_rename(coef_name)}"] = (_values(posterior, roles["sd"]), _values(posterior, roles["group_effect"]))
     return out, levels
+
+
+def _effect_name(model, g: str, c: str, level: str) -> str:
+    """brms's name of one group-level effect: ``r_g[a,Intercept]``; G06: a distributional formula's ``r_g__sigma[a,Intercept]``."""
+    for name in model.spec.dpar_names:
+        if c.startswith(f"{name}_") and (name, g, c[len(name) + 1:]) in model.dpar_group_names:
+            return f"r_{g}__{name}[{level},{c[len(name) + 1:]}]"
+    return f"r_{g}[{level},{c}]"
 
 
 def _correlations(model, posterior):
@@ -155,7 +189,7 @@ def log_densities(model, posterior) -> tuple[np.ndarray, np.ndarray]:
     intercepts, _, in_order = _population(model, posterior)
     groups = _group_effects(model, posterior)[0]
     cors = _correlations(model, posterior)
-    offsets = {roles["offset"] for roles in model.group_coefficient_names.values()}
+    offsets = {roles["offset"] for roles in (*model.group_coefficient_names.values(), *model.dpar_group_names.values())}   # G06
     pmm = model.pymc_model
     lp_fn = pmm.compile_logp()
     lprior_fn = pmm.compile_logp(vars=[rv for rv in pmm.free_RVs if rv.name not in offsets], jacobian=False)
@@ -179,6 +213,10 @@ def log_densities(model, posterior) -> tuple[np.ndarray, np.ndarray]:
             bd = in_order[d.response][idx] if in_order[d.response] is not None else np.zeros(0)
             natural[d.response] = {"b": bd, "intercept": float(_centred(intercepts[f"{d.response}_Intercept"][idx], bd,
                                                                         design.dpars[d.response].x_means))}
+            for t in d.group_terms:                              # G06: its own varying intercept, z = r / sd
+                sd, r = groups[t.factor][f"{d.response}_Intercept"]
+                natural[d.response].setdefault("sd", {})[t.factor] = float(sd[idx])
+                natural[d.response].setdefault("z", {})[t.factor] = r[idx] / sd[idx]
         if "sigma" in model.names and not spec.dpars:
             natural["sigma"] = float(_values(posterior, model.names["sigma"])[idx])
         point = model.value_point(**natural)
@@ -204,7 +242,7 @@ def _named_draws(model, posterior, *, densities: bool = True) -> dict[str, np.nd
                                                   design.dpars[d.response].x_means)
     for g, coefs in groups.items():
         for c, (_, r) in coefs.items():
-            out.update({f"r_{g}[{level},{c}]": r[..., k] for k, level in enumerate(levels[g])})
+            out.update({_effect_name(model, g, c, level): r[..., k] for k, level in enumerate(levels[g])})   # G06: r_g__sigma[...]
     if densities:
         out["lprior"], out["lp__"] = log_densities(model, posterior)
     return out
@@ -285,7 +323,8 @@ def coef(model, fit_result) -> dict[str, pd.DataFrame]:
     out = {}
     for g, coefs in groups.items():
         order = [*coefs, *(c for c in population if c not in coefs)]
-        per = {c: [population[c] + (coefs[c][1][..., k] if c in coefs else 0.0) for k in range(len(levels[g]))] for c in order}
+        # G05a: a slope without a population-level term (no b) is its group effect alone, as brms's coef()
+        per = {c: [population.get(c, 0.0) + (coefs[c][1][..., k] if c in coefs else 0.0) for k in range(len(levels[g]))] for c in order}
         out[g] = _three_way(levels[g], order, per)
     return out
 

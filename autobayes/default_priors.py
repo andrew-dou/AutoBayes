@@ -62,7 +62,8 @@ from dataclasses import replace
 import numpy as np
 import pandas as pd
 
-from autobayes.priors import (LKJ, Beta, Dirichlet, Flat, HalfNormal, HalfStudentT, InverseGamma, Prior, PriorError, Priors,
+from autobayes.priors import class_default   # D173: a mapping's class-wide prior ("*")
+from autobayes.priors import (LKJ, Beta, Dirichlet, Flat, Gamma, HalfNormal, HalfStudentT, InverseGamma, Prior, PriorError, Priors,
                               StudentT, brms_prior)
 
 BRMS_VERSION = "2.23.0"          # the brms whose default_prior() this reproduces (the oracle fixtures' meta.brms)
@@ -274,7 +275,8 @@ def default_priors(formula: str | list[str], data: pd.DataFrame, *, family: str 
                    nu: float | None = None, link: str | None = None, center_predictors: bool = True,
                    families: list[str] | None = None, order: str | bool | None = None,
                    rescor: bool | None = None, nl: bool = False, imputed: tuple[str, ...] = (),
-                   quantile: float | None = None, data2: Mapping[str, object] | None = None, refcat: str | None = None) -> Priors:
+                   quantile: float | None = None, data2: Mapping[str, object] | None = None, refcat: str | None = None,
+                   dropna: bool = False) -> Priors:
     """brms's default priors for ``formula`` on ``data`` under ``family`` (brms 2.23's ``default_prior()``), as a
     ``Priors`` the constructors accept: ``ab.gaussian(f, df, ab.default_priors(f, df))``. ``formula`` may be a list with a
     distributional formula (B01, ``["y ~ x", "sigma ~ z"]``), whose priors are its intercept's and coefficients'.
@@ -321,7 +323,15 @@ def default_priors(formula: str | list[str], data: pd.DataFrame, *, family: str 
     (``Priors(sigma=...)``) and ``lkj(1)`` on ``lncor``.
 
     F05 (docs/cox.md): the cox family's baseline hazard simplex gets brms's ``dirichlet(1)`` (``Priors(sbhaz=...)``); its
-    Intercept's default reads the times under the log link, as brms's does."""
+    Intercept's default reads the times under the log link, as brms's does.
+
+    ``dropna`` (D174, docs/missing-rows.md) is the constructor's: with ``dropna=True`` the defaults are read from the rows the
+    model keeps, as brms reads them from the rows it keeps. A pandas Categorical or boolean predictor is a factor without a
+    ``categorical=`` entry, as in the model (D172, docs/column-types.md).
+
+    A ``gr(g, dist = "student")`` term (docs/gr-cov-dist.md) gets brms's ``gamma(2, 0.1)`` on its degrees of freedom
+    (``Priors(df={"g": ...})``, truncated to ``df > 1``); ``gr(g, cov = A)`` adds no prior class and its ``A`` is read from ``data2``
+    and checked as the constructor checks it."""
     from autobayes.families import FAMILIES, get_family
     from autobayes.formula import DATA2_UNIVARIATE, FormulaError, check_data2, check_imputation, parse_formula
     from autobayes.multivariate import is_multivariate_formula, multivariate_default_priors
@@ -331,6 +341,9 @@ def default_priors(formula: str | list[str], data: pd.DataFrame, *, family: str 
                          "multivariate asym_laplace model is not offered (divergence D112)")
     if data2 is not None and (nl or rescor is not None or is_multivariate_formula(formula)):   # F02b, F03a, as ab.gaussian refuses it
         raise FormulaError(DATA2_UNIVARIATE)
+    if nl and dropna:                                                 # D174: as ab.gaussian(..., nl=True) refuses it (D177)
+        raise ValueError("dropna=True is not offered for a non-linear model (docs/missing-rows.md, divergence D177): drop the rows "
+                         "with missing values from the data first")
     if nl:                                                            # a non-linear model (C02): its parameters' defaults; it refuses
         from autobayes.nonlinear import nonlinear_default_priors     # a mixture's and a multivariate model's arguments itself
 
@@ -338,7 +351,7 @@ def default_priors(formula: str | list[str], data: pd.DataFrame, *, family: str 
                                         families=families, order=order, rescor=rescor)
     if rescor is not None or is_multivariate_formula(formula):       # C01: each response's defaults, and rescor's
         return multivariate_default_priors(formula, data, family=family, categorical=categorical, nu=nu, link=link,
-                                           center_predictors=center_predictors, rescor=rescor)
+                                           center_predictors=center_predictors, rescor=rescor, dropna=dropna)
 
     fam = get_family(family, link)                                    # an unknown family, or a withheld link, is refused here
     if fam.matrix_response:                                           # F01a: the count-matrix families, per category
@@ -346,6 +359,9 @@ def default_priors(formula: str | list[str], data: pd.DataFrame, *, family: str 
 
         if nu is not None or quantile is not None or families is not None or order is not None or data2:
             raise ValueError(f"nu, quantile, families, order and data2 do not apply to the {fam.name} family")
+        if dropna:                                                    # D174: its constructor takes no dropna (D177)
+            raise ValueError(f"dropna=True is not offered for the {fam.name} family (docs/missing-rows.md, divergence D177): drop "
+                             "the rows with missing values from the data first")
         return multinomial_default_priors(formula, data, family=fam.name, categorical=categorical,
                                           center_predictors=center_predictors, imputed=imputed)
     from autobayes.families.simplex import check_refcat
@@ -367,6 +383,7 @@ def default_priors(formula: str | list[str], data: pd.DataFrame, *, family: str 
         from autobayes.families.mixture import check_mixture
 
         components = check_mixture(formula, families, order, None, center_predictors)
+        categorical, data = _as_the_model_reads(formula, data, family, categorical, dropna)   # D172, D174
         spec = parse_formula(formula, data, family, categorical)      # the mixture's own refusals (group terms, offsets, ...)
         priors = Priors(components=[default_priors(formula, data, family=name, categorical=categorical) for name in components],
                         theta=_default(Dirichlet(1)))
@@ -374,7 +391,10 @@ def default_priors(formula: str | list[str], data: pd.DataFrame, *, family: str 
         return priors
     if families is not None or order is not None:
         raise ValueError(f"families= and order= are a mixture's (family='mixture'); the {fam.name} family takes neither")
+    categorical, data = _as_the_model_reads(formula, data, family, categorical, dropna)   # D172, D174
     spec = parse_formula(formula, data, family, categorical)
+    if "nu" in spec.dpar_names:                                       # G06: nu's own formula has its formula's defaults, not gamma(2, 0.1)
+        learned.pop("nu", None)
     if fam is not get_family(family) and fam.check_formula is not None:   # a link's own refusals (E06, divergence D133)
         fam.check_formula(spec)
     check_imputation(spec, imputed)                                   # C06: mi() belongs to a multivariate model
@@ -405,8 +425,14 @@ def default_priors(formula: str | list[str], data: pd.DataFrame, *, family: str 
             intercept = fam.default_intercept_prior(location, scale)
     sd = {}
     for t in spec.group_terms:
-        sd[t.factor] = HalfStudentT(DF, scale) if not t.slopes else {c: HalfStudentT(DF, scale) for c in t.coefs}
+        sd[t.factor] = HalfStudentT(DF, scale) if not t.slopes else {c: HalfStudentT(DF, scale) for c in (t.written or t.coefs)}   # G05a: z
     cor = {t.factor: LKJ(1) for t in spec.correlated_terms}
+    df = {t.factor: Gamma(2, 0.1) for t in spec.group_terms if t.is_student}   # G05b: brms's gamma(2, 0.1) on gr(dist = "student")'s df
+    for t in spec.group_terms:                                        # G05b: gr(g, cov = A)'s matrix, checked as the model checks it
+        if t.cov is not None:
+            from autobayes.group_cov import known_covariance
+
+            known_covariance(t, spec.levels_by_group[t.factor], data2)
     cor.update({s.factor: LKJ(1) for s in spec.shared_ids})          # D08: a correlation ID shared with a distributional formula
     auxiliary = {}
     if fam.scale_parameter in spec.dpar_names:                       # its own formula (B01): brms's def_dpar_prior, log link
@@ -417,8 +443,11 @@ def default_priors(formula: str | list[str], data: pd.DataFrame, *, family: str 
         _, log_scale = location_scale(y, "log")                      # brms's def_scale_prior with the formula's log link
         auxiliary[fam.scale_parameter] = {**({"intercept": fam.default_distributional_intercept(log_scale)} if ds.intercept else {}),
                                           **({"b": Flat()} if ds.pop_terms else {}),
-                                          # D08: a shared ID's terms: brms's def_scale_prior of the parameter, its log link
-                                          **({"sd": {t.factor: HalfStudentT(DF, log_scale) for t in ds.group_terms}} if ds.group_terms else {})}
+                                          # D08: a shared ID's terms: brms's def_scale_prior of the parameter, its log link; G06:
+                                          # the formula's own terms alike, and one per coefficient of a term with varying slopes
+                                          **({"sd": {t.factor: HalfStudentT(DF, log_scale) if not t.slopes else
+                                                     {c: HalfStudentT(DF, log_scale) for c in t.coefs} for t in ds.group_terms}}
+                                             if ds.group_terms else {})}
     elif fam.scale_parameter is not None:
         if fam.default_scale_prior is None:
             raise PriorError(f"no brms default prior is recorded for the {fam.name} family's {fam.scale_parameter}; "
@@ -428,7 +457,10 @@ def default_priors(formula: str | list[str], data: pd.DataFrame, *, family: str 
         if name != fam.scale_parameter:                               # def_dpar_prior on the intercept, flat coefficients
             ds, formula = spec.dpar(name), fam.distributional_formula(name)
             auxiliary[name] = {**({"intercept": formula.default_intercept()} if ds.intercept else {}),
-                               **({"b": Flat()} if ds.pop_terms else {})}
+                               **({"b": Flat()} if ds.pop_terms else {}),
+                               # G06: its own group-level terms (zi's): brms's def_scale_prior under the logit link, which does
+                               # not read the response, student_t(3, 0, 2.5)
+                               **({"sd": {t.factor: HalfStudentT(DF, 2.5) for t in ds.group_terms}} if ds.group_terms else {})}
     if fam.zero_parameter is not None and fam.zero_parameter not in spec.dpar_names:   # zi or hu (B06): beta(1, 1)
         if fam.default_zero_prior is None:
             raise PriorError(f"no brms default prior is recorded for the {fam.name} family's {fam.zero_parameter}; "
@@ -469,15 +501,34 @@ def default_priors(formula: str | list[str], data: pd.DataFrame, *, family: str 
     if spec.timecor is not None:
         timecor = {spec.timecor.prior_class: LKJ(1) if spec.timecor.call == "unstr" else Flat()}
     sbhaz = Dirichlet(1) if fam.baseline_hazard else None              # F05: brms's dirichlet(1) on the cox baseline hazard
+    if "nu" in auxiliary:                                             # G06: nu's own formula's priors, under Priors(nu=...)
+        learned["nu"] = auxiliary.pop("nu")
     priors = Priors(intercept=mark(intercept), b=mark(Flat()) if spec.pop_terms else None, sd=mark(sd) or None,
                     cor=mark(cor) or None, nu=mark(learned.get("nu")), simo=mark(simo) or None,
                     sdgp=mark(sdgp) or None, lscale=mark(lscale) or None, meanme=mark(me) or None, sdme=mark(me) or None,
-                    lncor=mark(lncor), sbhaz=mark(sbhaz),
+                    lncor=mark(lncor), sbhaz=mark(sbhaz), df=mark(df) or None,
                     **{k: mark(v) for k, v in auxiliary.items()}, **{k: mark(v) for k, v in autocor.items()},
                     **{k: mark(v) for k, v in sar.items()}, **{k: mark(v) for k, v in car.items()},
                     **{k: mark(v) for k, v in timecor.items()})
     priors.validate(spec, fam)
     return priors
+
+
+def _as_the_model_reads(formula, data: pd.DataFrame, family: str, categorical, dropna) -> tuple:
+    """``categorical`` and ``data`` as a univariate model of ``formula`` reads them: an undeclared pandas Categorical or boolean
+    predictor declared by its dtype (D172, ``column_types.typed_categorical``) and, with ``dropna=True`` (D174), without the rows
+    the model drops (``missing_rows.drop_missing`` over the columns it reads, those whose missing values are parameters aside)."""
+    from autobayes.column_types import typed_categorical
+    from autobayes.formula import parse_formula, with_trials
+    from autobayes.missing_rows import check_dropna, columns_read, drop_missing, row_terms
+
+    categorical = typed_categorical(data, categorical, lambda cat: parse_formula(formula, None, family, cat))
+    if check_dropna(dropna):
+        spec0 = parse_formula(formula, None, family, categorical)
+        frame = with_trials(spec0, data).reset_index(drop=True)
+        _, rows, _ = drop_missing(frame, [c for c in columns_read(spec0) if c not in spec0.missing_columns], row_terms(spec0))
+        data = data.iloc[np.setdiff1d(np.arange(len(data)), rows)]
+    return categorical, data
 
 
 # -- brms's table ---------------------------------------------------------------------------------------------------
@@ -602,8 +653,12 @@ def prior_table(priors: Priors, spec, family="gaussian", *, center_predictors: b
     def same(ps):
         return all(p == ps[0] for p in ps)
 
-    def add_coefficients(coefs, dpar=""):
-        if coefs:
+    def add_coefficients(coefs, dpar="", default=None):
+        if coefs and default is not None:                             # D173: the class-wide prior on the class row, as brms's
+            add(default, "b", dpar=dpar)                              # prior_summary() shows it, and each override on its row
+            for name, p in coefs:
+                add(None if p == default else p, "b", coef=name, dpar=dpar, source=default.source if p == default else None)
+        elif coefs:
             ps = [p for _, p in coefs]
             if same(ps):
                 add(ps[0], "b", dpar=dpar)
@@ -641,12 +696,13 @@ def prior_table(priors: Priors, spec, family="gaussian", *, center_predictors: b
                     add(None, "Intercept", coef=str(k), source=priors.intercept.source)
         elif spec.intercept:
             coefs.insert(0, ("Intercept", priors.intercept))          # brms's uncentred intercept is a b coefficient
-        add_coefficients(coefs, dpar=dpar)
+        add_coefficients(coefs, dpar=dpar, default=class_default(priors.b))
     for ds in spec.dpars:                                             # an auxiliary parameter's own formula (B01): its dpar rows
         sub, dnames = priors.dpar_priors(spec, ds.response), brms_coefficient_names(ds)
         if ds.intercept:                                              # brms's centred Intercept_<dpar>, class Intercept
             add(sub.intercept, "Intercept", dpar=ds.response)
-        add_coefficients([(dnames[col], p) for col, p in sub.coefficient_priors(ds).items()], dpar=ds.response)
+        add_coefficients([(dnames[col], p) for col, p in sub.coefficient_priors(ds).items()], dpar=ds.response,
+                         default=class_default(sub.b))
         dsd = sub.sd_priors(ds) if ds.group_terms else {}             # D08: a shared ID's terms, class sd with dpar = <parameter>
         if dsd:
             ps = list(dsd.values())
@@ -704,12 +760,24 @@ def prior_table(priors: Priors, spec, family="gaussian", *, center_predictors: b
         if extra.name not in spec.dpar_names:                         # E03: alpha's own formula has its dpar rows instead
             lb, ub = extra.bounds
             add(getattr(priors, extra.name), extra.name, lb=lb, ub=ub)
-    if priors.nu is not None:
+    if priors.nu is not None and "nu" not in spec.dpar_names:        # G06: nu's own formula has its dpar rows instead
         add(priors.nu, "nu", lb=r_number(fam.learnable_parameters["nu"]))
     sd = priors.sd_priors(spec)
     # F01b: a per-category family's group terms are brms's once per non-reference category, each block under its dpar mu<k>
+    sd_default = class_default(priors.sd, "sd")
     for dp in ((brms_dpar_names(categories[1:]) if fam.per_category else [""]) if sd else []):
         ps = list(sd.values())
+        if sd_default is not None:                                    # D173: the class-wide prior on the class row, a factor's
+            add(sd_default, "sd", lb="0", dpar=dp)                    # own on its group row, a coefficient's own on its row
+            for t in spec.group_terms:
+                mine = [sd[(t.factor, c)] for c in t.coefs]
+                group = mine[0] if same(mine) and mine[0] != sd_default else None
+                add(group, "sd", group=t.factor, dpar=dp, source=None if group is not None else sd_default.source)
+                for c, p in zip(t.coefs, mine):
+                    covering = group if group is not None else sd_default
+                    add(None if p == covering else p, "sd", coef=brms_rename(c), group=t.factor, dpar=dp,
+                        source=covering.source if p == covering else None)
+            continue
         if same(ps):
             add(ps[0], "sd", lb="0", dpar=dp)
         else:
@@ -728,8 +796,15 @@ def prior_table(priors: Priors, spec, family="gaussian", *, center_predictors: b
                 add(None, "sd", group=t.factor, dpar=dp)
                 for c, p in zip(t.coefs, mine):
                     add(p, "sd", coef=brms_rename(c), group=t.factor, dpar=dp)
+    for g, prior in priors.df_priors(spec).items():                    # G05b: gr(g, dist = "student")'s df, a group row (lb 1)
+        add(prior, "df", group=g, lb="1")
     cor = priors.cor_priors(spec)
-    if cor:
+    cor_default = class_default(priors.cor, "cor")
+    if cor and cor_default is not None:                               # D173: the class-wide prior and each factor's override
+        add(cor_default, "cor")
+        for g, p in cor.items():
+            add(None if p == cor_default else p, "cor", group=g, source=cor_default.source if p == cor_default else None)
+    elif cor:
         ps = list(cor.values())
         add(ps[0] if same(ps) else None, "cor")
         for g, p in cor.items():

@@ -25,6 +25,7 @@ model only when `ab.default_priors()` is called and its result passed in.
 | `shape` (negative binomial) | `inv_gamma(0.4, 0.3)`, lower bound 0 | `InverseGamma(0.4, 0.3)` (shape and scale, as Stan's `inv_gamma`) |
 | `shape` (Gamma), `phi` (Beta) | `gamma(0.01, 0.01)`, lower bound 0 | `Gamma(0.01, 0.01)` |
 | `nu` (Student-t, learned) | `gamma(2, 0.1)`, lower bound 1 | `Gamma(2, 0.1)`, truncated at 1 as in A13 |
+| `df` of `gr(g, dist = "student")` (class `df`, group `g`) | `gamma(2, 0.1)`, lower bound 1 (its group row only) | `Gamma(2, 0.1)`, truncated to `df > 1` (docs/gr-cov-dist.md) |
 | `zi`, `hu` (zero-inflated, hurdle; B06) | `beta(1, 1)`, lower bound 0, upper bound 1 | `Beta(1, 1)` |
 | `shape` (Weibull; D01) | `gamma(0.01, 0.01)`, lower bound 0 | `Gamma(0.01, 0.01)` |
 | `alpha` (skew normal; D01) | `normal(0, 4)`, unbounded | `Normal(0, 4)` |
@@ -76,7 +77,10 @@ parameters take the family's own defaults (`FamilySpec.default_scale_prior`, `de
 
 - `ab.default_priors(formula, data, *, family="gaussian", categorical=None, nu=None, link=None, center_predictors=True)`
   takes the constructor's own keywords, which say which model the defaults are for. `nu=None` for the Student-t family
-  means nu is learned and gets `gamma(2, 0.1)`; a fixed `nu=4` gets no prior.
+  means nu is learned and gets `gamma(2, 0.1)`; a fixed `nu=4` gets no prior. `dropna=True` reads the defaults from the rows a
+  model with `dropna=True` keeps (docs/missing-rows.md), and a pandas Categorical or boolean predictor is a factor without a
+  declaration, as in the model (docs/column-types.md).
+- A class-wide prior with overrides is the entry `"*"` of the mapping of `b`, `sd` or `cor` (docs/class-priors.md).
 - Every prior it returns has `source="default"` (a field of `Prior` that equality, `str()`, the target identity and the
   graph ignore). `describe()` marks each with brms's spelling and adds a "Default priors" paragraph,
   `model.default_prior_labels` lists them, and `fit_record()` records them under `"default_priors"`. Replacing a class

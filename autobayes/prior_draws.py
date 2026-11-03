@@ -61,6 +61,9 @@ def _refuse_unsupported(model) -> None:
         refuse("center_predictors=False (brms's center = FALSE makes the intercept a coefficient of class b)")
     if getattr(model, "shrinkage_names", None):
         refuse(f"a {model.priors.b.name}() prior on b")
+    from autobayes.priors import class_default
+    if any(class_default(getattr(model.priors, cls), cls) is not None for cls in ("b", "sd", "cor")):   # D173
+        refuse("a class-wide prior ('*') and its overrides (brms's class and coef rows; docs/class-priors.md)")
     constructs = [
         (bool(spec.dpars), lambda: f"a distributional formula for {', '.join(spec.dpar_names)}"),
         (bool(spec.mo_terms), lambda: f"the monotonic term {spec.mo_terms[0].name!r}"),
@@ -80,6 +83,11 @@ def _refuse_unsupported(model) -> None:
     for t in spec.group_terms:
         if t.members or t.by is not None or t.id is not None:
             refuse(f"the group term {t.canonical!r} (mm(), gr(by = ) or a shared ID)")
+        if t.cov is not None or t.is_student:                # G05b: brms's prior draws of these terms are not verified
+            refuse(f"the group term {t.canonical!r} (gr(cov = ) or gr(dist = \"student\"))")
+    from autobayes.formula import extended_group_syntax
+    if extended_group_syntax(spec) is not None:                  # G05a: brms's prior draws' names not verified for them
+        refuse(extended_group_syntax(spec))
 
 
 def _brms_group_coef(coef: str) -> str:

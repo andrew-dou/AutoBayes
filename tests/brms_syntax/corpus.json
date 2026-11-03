@@ -878,14 +878,13 @@
     "group_terms": []
    },
    "result": {
-    "status": "error",
-    "type": "FormulaError",
-    "message": "column 'fcat' has dtype category; a predictor is numeric unless it is declared categorical with its reference level, for example categorical={'fcat': <level>} (treatment coding, or R's polynomial contrasts for an ordered pandas Categorical declared with its lowest level, docs/ordered-factors.md; divergence D172).",
-    "raised_at": "formula.py:4081",
-    "stage": "default_priors",
-    "mechanism": "refusal",
-    "outcome": "refused_named",
-    "gap": "capability"
+    "status": "built",
+    "model": "Model",
+    "model_warnings": [],
+    "issues": [],
+    "notes": [],
+    "outcome": "match",
+    "gap": null
    }
   },
   {
@@ -1025,14 +1024,13 @@
     "group_terms": []
    },
    "result": {
-    "status": "error",
-    "type": "FormulaError",
-    "message": "column 'fo' has dtype category; a predictor is numeric unless it is declared categorical with its reference level, for example categorical={'fo': <level>} (treatment coding, or R's polynomial contrasts for an ordered pandas Categorical declared with its lowest level, docs/ordered-factors.md; divergence D172).",
-    "raised_at": "formula.py:4081",
-    "stage": "default_priors",
-    "mechanism": "refusal",
-    "outcome": "refused_named",
-    "gap": "capability"
+    "status": "built",
+    "model": "Model",
+    "model_warnings": [],
+    "issues": [],
+    "notes": [],
+    "outcome": "match",
+    "gap": null
    }
   },
   {
@@ -1073,14 +1071,13 @@
     "group_terms": []
    },
    "result": {
-    "status": "error",
-    "type": "FormulaError",
-    "message": "column 'lgl' has dtype bool; a predictor is numeric unless it is declared categorical with its reference level, for example categorical={'lgl': <level>} (treatment coding, or R's polynomial contrasts for an ordered pandas Categorical declared with its lowest level, docs/ordered-factors.md; divergence D172).",
-    "raised_at": "formula.py:4081",
-    "stage": "default_priors",
-    "mechanism": "refusal",
-    "outcome": "refused_named",
-    "gap": "capability"
+    "status": "built",
+    "model": "Model",
+    "model_warnings": [],
+    "issues": [],
+    "notes": [],
+    "outcome": "match",
+    "gap": null
    }
   },
   {
@@ -2045,7 +2042,9 @@
    "autobayes": {
     "constructor": "gaussian",
     "formula": "y ~ xm",
-    "kwargs": {},
+    "kwargs": {
+     "dropna": true
+    },
     "priors": "default"
    },
    "tokens": [
@@ -2072,14 +2071,15 @@
     "group_terms": []
    },
    "result": {
-    "status": "error",
-    "type": "FormulaError",
-    "message": "missing values in columns ['xm']; rows with missing values are not dropped here (brms drops them with a warning): drop or impute them explicitly before fitting, or model a missing predictor with mi() (docs/missing-and-measurement-error.md, divergence D174).",
-    "raised_at": "formula.py:4117",
-    "stage": "default_priors",
-    "mechanism": "refusal",
-    "outcome": "refused_named",
-    "gap": "capability"
+    "status": "built",
+    "model": "Model",
+    "model_warnings": [
+     "Rows containing NAs were excluded from the model. 5 of 40 rows have a missing value in ['xm'] and were dropped (dropna=True; positions [3, 11, 19, 27, 35], model.dropped_na_rows); the model is fitted to the other 35 rows in data order"
+    ],
+    "issues": [],
+    "notes": [],
+    "outcome": "match",
+    "gap": null
    }
   },
   {
@@ -2096,7 +2096,9 @@
    "autobayes": {
     "constructor": "gaussian",
     "formula": "xm ~ z",
-    "kwargs": {},
+    "kwargs": {
+     "dropna": true
+    },
     "priors": "default"
    },
    "tokens": [
@@ -2123,14 +2125,15 @@
     "group_terms": []
    },
    "result": {
-    "status": "error",
-    "type": "FormulaError",
-    "message": "missing values in columns ['xm']; rows with missing values are not dropped here (brms drops them with a warning): drop or impute them explicitly before fitting, or model a missing predictor with mi() (docs/missing-and-measurement-error.md, divergence D174).",
-    "raised_at": "formula.py:4117",
-    "stage": "default_priors",
-    "mechanism": "refusal",
-    "outcome": "refused_named",
-    "gap": "capability"
+    "status": "built",
+    "model": "Model",
+    "model_warnings": [
+     "Rows containing NAs were excluded from the model. 5 of 40 rows have a missing value in ['xm'] and were dropped (dropna=True; positions [3, 11, 19, 27, 35], model.dropped_na_rows); the model is fitted to the other 35 rows in data order"
+    ],
+    "issues": [],
+    "notes": [],
+    "outcome": "match",
+    "gap": null
    }
   },
   {
@@ -4013,14 +4016,13 @@
     ]
    },
    "result": {
-    "status": "error",
-    "type": "FormulaError",
-    "message": "'(0 + x | g)': '0' removes the varying intercept of 'g': varying slopes without the varying intercept are not supported; write '(1 + x | g)' so that the intercept varies by 'g' as well",
-    "raised_at": "formula.py:2370",
-    "stage": "default_priors",
-    "mechanism": "refusal",
-    "outcome": "refused_named",
-    "gap": "capability"
+    "status": "built",
+    "model": "Model",
+    "model_warnings": [],
+    "issues": [],
+    "notes": [],
+    "outcome": "match",
+    "gap": null
    }
   },
   {
@@ -4068,14 +4070,13 @@
     ]
    },
    "result": {
-    "status": "error",
-    "type": "FormulaError",
-    "message": "'(x - 1 | g)': '- 1' removes the varying intercept of 'g': varying slopes without the varying intercept are not supported; write '(1 + x | g)' so that the intercept varies by 'g' as well",
-    "raised_at": "formula.py:2370",
-    "stage": "default_priors",
-    "mechanism": "refusal",
-    "outcome": "refused_named",
-    "gap": "capability"
+    "status": "built",
+    "model": "Model",
+    "model_warnings": [],
+    "issues": [],
+    "notes": [],
+    "outcome": "match",
+    "gap": null
    }
   },
   {
@@ -4185,14 +4186,13 @@
     ]
    },
    "result": {
-    "status": "error",
-    "type": "FormulaError",
-    "message": "'(0 + x | g)': '0' removes the varying intercept of 'g'; next to '(1 | g)' it is brms's varying intercept and slope without a correlation, which is one term here: write '(1 + x || g)' (docs/varying-slopes.md)",
-    "raised_at": "formula.py:2370",
-    "stage": "default_priors",
-    "mechanism": "refusal",
-    "outcome": "refused_named",
-    "gap": "capability"
+    "status": "built",
+    "model": "Model",
+    "model_warnings": [],
+    "issues": [],
+    "notes": [],
+    "outcome": "match",
+    "gap": null
    }
   },
   {
@@ -4242,8 +4242,8 @@
    "result": {
     "status": "error",
     "type": "FormulaError",
-    "message": "'y ~ x + (1 | g) + (1 | g)': duplicate grouping factor 'g'; a factor appears in one group term, '(1 | g)' or '(1 + x || g)'",
-    "raised_at": "formula.py:2795",
+    "message": "'y ~ x + (1 | g) + (1 | g)': duplicate grouping factor 'g': its coefficient 'Intercept' varies in '(1 | g)' and in '(1 | g)'; each coefficient of a factor varies in one of its terms (docs/group-term-syntax.md)",
+    "raised_at": "formula.py:2620",
     "stage": "default_priors",
     "mechanism": "refusal",
     "outcome": "refused_named",
@@ -4296,14 +4296,13 @@
     ]
    },
    "result": {
-    "status": "error",
-    "type": "FormulaError",
-    "message": "'(1 + x | g)': the varying slope 'x' must also be a population-level term of the formula, as in 'y ~ x + (1 + x | g)' (brms adds the group-level slope without the population-level one; AutoBayes does not, divergence D8)",
-    "raised_at": "formula.py:3349",
-    "stage": "default_priors",
-    "mechanism": "refusal",
-    "outcome": "refused_named",
-    "gap": "capability"
+    "status": "built",
+    "model": "Model",
+    "model_warnings": [],
+    "issues": [],
+    "notes": [],
+    "outcome": "match",
+    "gap": null
    }
   },
   {
@@ -4360,14 +4359,13 @@
     ]
    },
    "result": {
-    "status": "error",
-    "type": "FormulaError",
-    "message": "'(1 + f | g)': 'f' is declared categorical; a categorical varying slope (one varying coefficient per level of 'f') is not supported; only a numeric population-level term can vary by 'g'",
-    "raised_at": "formula.py:3584",
-    "stage": "default_priors",
-    "mechanism": "refusal",
-    "outcome": "refused_named",
-    "gap": "capability"
+    "status": "built",
+    "model": "Model",
+    "model_warnings": [],
+    "issues": [],
+    "notes": [],
+    "outcome": "match",
+    "gap": null
    }
   },
   {
@@ -4417,14 +4415,13 @@
     ]
    },
    "result": {
-    "status": "error",
-    "type": "FormulaError",
-    "message": "'(1 + I(x^2) | g)': function calls and transformations inside a group term are not supported; transform the column in the data frame instead.",
-    "raised_at": "formula.py:1956",
-    "stage": "default_priors",
-    "mechanism": "refusal",
-    "outcome": "refused_named",
-    "gap": "capability"
+    "status": "built",
+    "model": "Model",
+    "model_warnings": [],
+    "issues": [],
+    "notes": [],
+    "outcome": "match",
+    "gap": null
    }
   },
   {
@@ -4476,14 +4473,13 @@
     ]
    },
    "result": {
-    "status": "error",
-    "type": "FormulaError",
-    "message": "'(1 + x:z | g)': an interaction cannot be a varying slope; only a numeric population-level term of the formula can vary by 'g'",
-    "raised_at": "formula.py:2348",
-    "stage": "default_priors",
-    "mechanism": "refusal",
-    "outcome": "refused_named",
-    "gap": "capability"
+    "status": "built",
+    "model": "Model",
+    "model_warnings": [],
+    "issues": [],
+    "notes": [],
+    "outcome": "match",
+    "gap": null
    }
   },
   {
@@ -4536,14 +4532,13 @@
     ]
    },
    "result": {
-    "status": "error",
-    "type": "FormulaError",
-    "message": "'(1 + mo(o) | g)': a monotonic effect cannot vary by 'g': brms's '(1 + mo(o) | g)' gives every level its own coefficient of the monotonic term, which is not verified here (docs/monotonic.md, divergence D41); keep mo(o) as a population-level term, 'y ~ ... + mo(o) + (1 | g)'",
-    "raised_at": "formula.py:2330",
-    "stage": "default_priors",
-    "mechanism": "refusal",
-    "outcome": "refused_named",
-    "gap": "capability"
+    "status": "built",
+    "model": "Model",
+    "model_warnings": [],
+    "issues": [],
+    "notes": [],
+    "outcome": "match",
+    "gap": null
    }
   },
   {
@@ -4699,14 +4694,13 @@
     ]
    },
    "result": {
-    "status": "error",
-    "type": "FormulaError",
-    "message": "'(1 | g:h:f2)': only two factors can be combined in a grouping factor ('g:h:f2' names 3 columns); three-way nesting or interaction of grouping factors is not supported",
-    "raised_at": "formula.py:2300",
-    "stage": "default_priors",
-    "mechanism": "refusal",
-    "outcome": "refused_named",
-    "gap": "capability"
+    "status": "built",
+    "model": "Model",
+    "model_warnings": [],
+    "issues": [],
+    "notes": [],
+    "outcome": "match",
+    "gap": null
    }
   },
   {
@@ -4766,14 +4760,13 @@
     ]
    },
    "result": {
-    "status": "error",
-    "type": "FormulaError",
-    "message": "'(1 | g/h/f2)': only two factors can be combined in a grouping factor ('g/h/f2' names 3 columns); three-way nesting or interaction of grouping factors is not supported",
-    "raised_at": "formula.py:2300",
-    "stage": "default_priors",
-    "mechanism": "refusal",
-    "outcome": "refused_named",
-    "gap": "capability"
+    "status": "built",
+    "model": "Model",
+    "model_warnings": [],
+    "issues": [],
+    "notes": [],
+    "outcome": "match",
+    "gap": null
    }
   },
   {
@@ -5155,14 +5148,13 @@
     ]
    },
    "result": {
-    "status": "error",
-    "type": "FormulaError",
-    "message": "'(1 | gr(g, dist = \"student\"))': brms's gr() options ['dist'] are not supported; gr() takes one grouping column, by = <column>, cor = FALSE (brms's '||') and id = \"p\" (brms's '|p|') here; cov, dist and a grouping expression are not offered (docs/multi-membership-and-by.md, divergence D105)",
-    "raised_at": "formula.py:2264",
-    "stage": "default_priors",
-    "mechanism": "refusal",
-    "outcome": "refused_named",
-    "gap": "capability"
+    "status": "built",
+    "model": "Model",
+    "model_warnings": [],
+    "issues": [],
+    "notes": [],
+    "outcome": "match",
+    "gap": null
    }
   },
   {
@@ -5221,14 +5213,13 @@
     ]
    },
    "result": {
-    "status": "error",
-    "type": "FormulaError",
-    "message": "'(1 | gr(g, cov = A_cov))': brms's gr() options ['cov'] are not supported; gr() takes one grouping column, by = <column>, cor = FALSE (brms's '||') and id = \"p\" (brms's '|p|') here; cov, dist and a grouping expression are not offered (docs/multi-membership-and-by.md, divergence D105)",
-    "raised_at": "formula.py:2264",
-    "stage": "default_priors",
-    "mechanism": "refusal",
-    "outcome": "refused_named",
-    "gap": "capability"
+    "status": "built",
+    "model": "Model",
+    "model_warnings": [],
+    "issues": [],
+    "notes": [],
+    "outcome": "match",
+    "gap": null
    }
   },
   {
@@ -5390,14 +5381,13 @@
     ]
    },
    "result": {
-    "status": "error",
-    "type": "FormulaError",
-    "message": "'(1 | mm(g, g2, weights = cbind(w1, w2), scale = FALSE))': mm()'s argument 'scale' is not supported; mm(g, g2, ..., weights = cbind(w1, w2, ...)) with brms's default scale = TRUE is offered (docs/multi-membership-and-by.md, divergence D104)",
-    "raised_at": "formula.py:2409",
-    "stage": "default_priors",
-    "mechanism": "refusal",
-    "outcome": "refused_named",
-    "gap": "capability"
+    "status": "built",
+    "model": "Model",
+    "model_warnings": [],
+    "issues": [],
+    "notes": [],
+    "outcome": "match",
+    "gap": null
    }
   },
   {
@@ -5452,14 +5442,13 @@
     ]
    },
    "result": {
-    "status": "error",
-    "type": "FormulaError",
-    "message": "'(1 + x | mm(g, g2))': only the varying intercept '(1 | mm(...))' is supported for a multi-membership term; varying slopes (and brms's mmc()) are not verified by a frozen case (docs/multi-membership-and-by.md, divergence D104)",
-    "raised_at": "formula.py:2431",
-    "stage": "default_priors",
-    "mechanism": "refusal",
-    "outcome": "refused_named",
-    "gap": "capability"
+    "status": "built",
+    "model": "Model",
+    "model_warnings": [],
+    "issues": [],
+    "notes": [],
+    "outcome": "match",
+    "gap": null
    }
   },
   {
@@ -5514,14 +5503,13 @@
     ]
    },
    "result": {
-    "status": "error",
-    "type": "FormulaError",
-    "message": "'(1 + mmc(x1, x2) | mm(g, g2))': only the varying intercept '(1 | mm(...))' is supported for a multi-membership term; varying slopes (and brms's mmc()) are not verified by a frozen case (docs/multi-membership-and-by.md, divergence D104)",
-    "raised_at": "formula.py:2431",
-    "stage": "default_priors",
-    "mechanism": "refusal",
-    "outcome": "refused_named",
-    "gap": "capability"
+    "status": "built",
+    "model": "Model",
+    "model_warnings": [],
+    "issues": [],
+    "notes": [],
+    "outcome": "match",
+    "gap": null
    }
   },
   {
@@ -8503,8 +8491,8 @@
    "result": {
     "status": "error",
     "type": "FormulaError",
-    "message": "'(cs(1) | g)': function calls and transformations inside a group term are not supported; transform the column in the data frame instead.",
-    "raised_at": "formula.py:1956",
+    "message": "'(cs(1) | g)': function calls and transformations inside a group term are not supported ('cs(1)'); a varying slope is a numeric column, a factor declared categorical, a population-level transform (log(col), exp(col), sqrt(col), I(col^k), I(col * k), I(col + k), I(col - k)), a product of two numeric columns x:w or a monotonic term mo(col) (docs/group-term-syntax.md); transform the column in the data frame instead.",
+    "raised_at": "formula.py:2573",
     "stage": "default_priors",
     "mechanism": "refusal",
     "outcome": "refused_named",
@@ -9960,14 +9948,13 @@
     ]
    },
    "result": {
-    "status": "error",
-    "type": "FormulaError",
-    "message": "'sigma ~ z + (1 | g)': group-level terms in a distributional formula ((1 | g)) are not supported: brms would give sigma its own varying effects; a distributional formula takes population-level terms only here, and group-level terms only with a correlation ID shared with the response formula's term of the same factor, 'sigma ~ ... + (1 |p| g)' next to '... + (1 + x |p| g)' (docs/distributional.md, divergence D32; docs/multi-membership-and-by.md, D106)",
-    "raised_at": "formula.py:2692",
-    "stage": "default_priors",
-    "mechanism": "refusal",
-    "outcome": "refused_named",
-    "gap": "capability"
+    "status": "built",
+    "model": "Model",
+    "model_warnings": [],
+    "issues": [],
+    "notes": [],
+    "outcome": "match",
+    "gap": null
    }
   },
   {
@@ -10204,14 +10191,13 @@
     "group_terms": []
    },
    "result": {
-    "status": "error",
-    "type": "FormulaError",
-    "message": "'sigma ~ z + offset(off)': 'offset(off)' in a distributional formula is not supported; an offset belongs to the response formula here (docs/distributional.md, divergence D32)",
-    "raised_at": "formula.py:2718",
-    "stage": "default_priors",
-    "mechanism": "refusal",
-    "outcome": "refused_named",
-    "gap": "capability"
+    "status": "built",
+    "model": "Model",
+    "model_warnings": [],
+    "issues": [],
+    "notes": [],
+    "outcome": "match",
+    "gap": null
    }
   },
   {
@@ -10334,14 +10320,13 @@
     "group_terms": []
    },
    "result": {
-    "status": "error",
-    "type": "FormulaError",
-    "message": "'nu ~ z': brms's nu ~ ... is not offered here; a distributional formula is offered for the auxiliary parameter of the gaussian (sigma), student (sigma), negbinomial (shape), gamma (shape), lognormal (sigma), beta (phi), weibull (shape), beta_binomial (phi) families, with a log link (docs/distributional.md, divergence D33), and for the skew_normal (alpha, identity link), zero_inflated_negbinomial (zi, logit link), hurdle_lognormal (hu, logit link), wiener (bs, log link) families (docs/contexts-newer-families.md, divergence D116)",
-    "raised_at": "formula.py:2637",
-    "stage": "default_priors",
-    "mechanism": "refusal",
-    "outcome": "refused_named",
-    "gap": "capability"
+    "status": "built",
+    "model": "Model",
+    "model_warnings": [],
+    "issues": [],
+    "notes": [],
+    "outcome": "match",
+    "gap": null
    }
   },
   {
@@ -10567,14 +10552,13 @@
     "group_terms": []
    },
    "result": {
-    "status": "error",
-    "type": "FormulaError",
-    "message": "'zi ~ z': brms's zi ~ ... is not offered here; a distributional formula is offered for the auxiliary parameter of the gaussian (sigma), student (sigma), negbinomial (shape), gamma (shape), lognormal (sigma), beta (phi), weibull (shape), beta_binomial (phi) families, with a log link (docs/distributional.md, divergence D33), and for the skew_normal (alpha, identity link), zero_inflated_negbinomial (zi, logit link), hurdle_lognormal (hu, logit link), wiener (bs, log link) families (docs/contexts-newer-families.md, divergence D116)",
-    "raised_at": "formula.py:2637",
-    "stage": "default_priors",
-    "mechanism": "refusal",
-    "outcome": "refused_named",
-    "gap": "capability"
+    "status": "built",
+    "model": "Model",
+    "model_warnings": [],
+    "issues": [],
+    "notes": [],
+    "outcome": "match",
+    "gap": null
    }
   },
   {
@@ -10628,14 +10612,15 @@
     "group_terms": []
    },
    "result": {
-    "status": "error",
-    "type": "FormulaError",
-    "message": "'disc ~ z': brms's disc ~ ... (the discrimination of an ordinal family, 1 unless it has a formula) is not offered for the cumulative family here (docs/ordinal-categorical.md, divergence D38)",
-    "raised_at": "formula.py:2620",
-    "stage": "default_priors",
-    "mechanism": "refusal",
-    "outcome": "refused_named",
-    "gap": "capability"
+    "status": "built",
+    "model": "Model",
+    "model_warnings": [
+     "the formula 'disc ~ z' can shift every row's log disc by one constant, and the cumulative likelihood is unchanged by (disc, thresholds, b, r) -> (c disc, thresholds / c, b / c, r / c): the model's scale is identified by the priors alone (brms estimates it the same way and does not warn; a formula without an intercept, 'disc ~ 0 + x' with numeric terms only, fixes disc = 1 where they are 0; docs/distributional-groups.md, divergence D188)"
+    ],
+    "issues": [],
+    "notes": [],
+    "outcome": "match",
+    "gap": null
    }
   },
   {
@@ -13402,13 +13387,13 @@
  ],
  "summary": {
   "outcomes": {
-   "match": 155,
-   "refused_named": 92,
+   "match": 180,
+   "refused_named": 67,
    "differs": 1
   },
   "gaps": {
-   "none": 157,
-   "capability": 90,
+   "none": 182,
+   "capability": 65,
    "divergence": 1
   },
   "brms_refuses": 2

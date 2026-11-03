@@ -2461,13 +2461,39 @@
    "depends_on": [
     "F09_namespace_and_messages"
    ],
-   "status": "implementing",
+   "status": "merged",
    "summary": "F09's call-surface changes Andrew accepted (2026-10-26): undeclared pandas Categorical and boolean columns coded as brms codes factors and logicals (D172); a class-wide prior with per-coefficient and per-group overrides, brms's coef and group rows (D173); an opt-in to drop rows with missing values and report them (D174). target_accept stays 0.9 (D175)",
-   "pr": null,
+   "pr": 113,
    "attempts": 0,
-   "divergences": [],
-   "next_action": "paused at the weekly usage cap (2026-10-27): implementation committed in worktree parity-g02 at 126bd14 (off d5ccb69, not pushed; diff coverage 373/373); resume after the reset: bring onto main (G03 #112, G04 #111 touch the same code), full suite and gate tool, report",
-   "reserved_divergences": "D177-D178"
+   "divergences": [
+    "D172",
+    "D173",
+    "D174",
+    "D177",
+    "D178"
+   ],
+   "next_action": "none",
+   "reserved_divergences": "D177-D178",
+   "gates": {
+    "sha": "f9733e39cbd9",
+    "dirty_tree": false,
+    "base": "origin/main",
+    "when": "2026-11-02T17:43Z",
+    "results": {
+     "immutability": {
+      "status": "pass",
+      "seconds": 0.0
+     },
+     "oracle": {
+      "status": "pass",
+      "seconds": 852.9
+     },
+     "diff_coverage": {
+      "status": "pass",
+      "seconds": 83.3
+     }
+    }
+   }
   },
   {
    "id": "G03_interactions",
@@ -2557,13 +2583,37 @@
     "A03_grouping_syntax",
     "D08_cs_mm_gr"
    ],
-   "status": "implementing",
+   "status": "merged",
    "summary": "group-level syntax still refused: slope-only (0 + x | g) and (x - 1 | g), one factor in two terms ((1 | g) + (0 + x | g)), factor slopes (1 + f | g), transform and interaction slopes, mo() slopes, three-level g:h:f2 and g/h/f2, a varying slope without its population term (corpus grp_*)",
-   "pr": null,
+   "pr": 114,
    "attempts": 0,
-   "divergences": [],
-   "next_action": "paused at the weekly usage cap (2026-10-27): implementation committed in worktree parity-g05a at ffbda16 (not pushed); resume after the reset: rebase onto main, full suite and gate tool, report",
-   "reserved_divergences": "D183-D184"
+   "divergences": [
+    "D8",
+    "D183",
+    "D184"
+   ],
+   "next_action": "none",
+   "reserved_divergences": "D183-D184",
+   "gates": {
+    "sha": "469a2ac31d60",
+    "dirty_tree": false,
+    "base": "origin/main",
+    "when": "2026-11-02T21:58Z",
+    "results": {
+     "immutability": {
+      "status": "pass",
+      "seconds": 0.0
+     },
+     "oracle": {
+      "status": "pass",
+      "seconds": 836.9
+     },
+     "diff_coverage": {
+      "status": "pass",
+      "seconds": 583.6
+     }
+    }
+   }
   },
   {
    "id": "G05b_gr_cov_dist",
@@ -2572,13 +2622,36 @@
    "depends_on": [
     "D08_cs_mm_gr"
    ],
-   "status": "implementing",
+   "status": "merged",
    "summary": "gr(g, cov = A) with a known covariance matrix from data2 (phylogenetic and kinship models), gr(g, dist = 'student'), varying slopes in mm(), mmc() (corpus grp_gr_cov, grp_gr_dist_student, grp_mm_slope, grp_mmc, grp_mm_scale_false)",
-   "pr": null,
+   "pr": 115,
    "attempts": 0,
-   "divergences": [],
-   "next_action": "paused at the weekly usage cap (2026-10-27): implementation committed in worktree parity-g05b at 8ad67b8 (not pushed); resume after the reset: rebase onto main, full suite and gate tool, report",
-   "reserved_divergences": "D185-D186"
+   "divergences": [
+    "D185",
+    "D186"
+   ],
+   "next_action": "none",
+   "reserved_divergences": "D185-D186",
+   "gates": {
+    "sha": "ff24d81f129f",
+    "dirty_tree": false,
+    "base": "origin/main",
+    "when": "2026-11-03T02:11Z",
+    "results": {
+     "immutability": {
+      "status": "pass",
+      "seconds": 0.0
+     },
+     "oracle": {
+      "status": "pass",
+      "seconds": 868.8
+     },
+     "diff_coverage": {
+      "status": "pass",
+      "seconds": 143.4
+     }
+    }
+   }
   },
   {
    "id": "G06_distributional_groups",
@@ -2588,13 +2661,36 @@
     "B01_distributional",
     "E03_contexts_newer_families"
    ],
-   "status": "implementing",
+   "status": "merged",
    "summary": "group-level terms in distributional formulas (sigma ~ z + (1 | g)), IDs shared between mu and a distributional parameter ((1 |p| g)), offsets in distributional formulas, and the distributional formulas still refused (nu ~ z, zi ~ z for zero-inflated Poisson, disc ~ z) (corpus dist_*)",
-   "pr": null,
+   "pr": 116,
    "attempts": 0,
-   "divergences": [],
-   "next_action": "paused at the weekly usage cap (2026-10-27): implementation committed in worktree parity-g06 at 95ce3fa (not pushed); resume after the reset: rebase onto main, full suite and gate tool, report",
-   "reserved_divergences": "D187-D188"
+   "divergences": [
+    "D187",
+    "D188"
+   ],
+   "next_action": "none",
+   "reserved_divergences": "D187-D188",
+   "gates": {
+    "sha": "885c3ba2c375",
+    "dirty_tree": false,
+    "base": "origin/main",
+    "when": "2026-11-03T05:53Z",
+    "results": {
+     "immutability": {
+      "status": "pass",
+      "seconds": 0.0
+     },
+     "oracle": {
+      "status": "pass",
+      "seconds": 880.3
+     },
+     "diff_coverage": {
+      "status": "pass",
+      "seconds": 127.1
+     }
+    }
+   }
   },
   {
    "id": "G07_family_contexts",
@@ -2604,12 +2700,12 @@
     "E03_contexts_newer_families",
     "E04_cens_trunc_families"
    ],
-   "status": "queued",
+   "status": "probed",
    "summary": "the family-context matrix: cens(), trunc(), weights(), distributional formulas and group-level terms for every family brms supports them on and AutoBayes refuses; split into features once the matrix is probed",
    "pr": null,
    "attempts": 0,
    "divergences": [],
-   "next_action": "probe the matrix (wave G2)",
+   "next_action": "probed 2026-11-03 (1667 cells: 736 gaps, 95 where brms looks wrong, 8 kept refusals, 0 AutoBayes-only); proposed split into about 17 features (~140 cases), loop-notes/g07/proposed-split.md; waiting on Andrew for the scope",
    "reserved_divergences": "D189-D192"
   },
   {
@@ -2659,6 +2755,46 @@
    "divergences": [],
    "next_action": "fixtures (wave G2)",
    "reserved_divergences": "D197-D198"
+  },
+  {
+   "id": "G11_index_group_design",
+   "tier": "G",
+   "lane": "formula",
+   "depends_on": [
+    "G02_call_surface",
+    "G05a_group_term_syntax",
+    "G05b_gr_cov_dist",
+    "G06_distributional_groups"
+   ],
+   "status": "merged",
+   "summary": "scale to large N and many groups (Andrew, 2026-11-02): group terms from integer codes injected into Bambi as GroupSpecificTerm (option A; Bambi 0.17.2 internals, upgrade test), lazy GroupBlock.Z / Design.Z, the target identity streamed with the same schema-v1 digest, predict/log_lik by index gather (mean may change in the last digit; response draws from AutoBayes's RNG, accepted). Today a (1 + x | g) model at N=1e5, J=1e3 needs ~60 GB to build, mostly freeze_target. Every oracle case bit-for-bit unchanged against a manifest recorded on main first; memory test N=2e5, J=2e4 under ~0.5 GB. Design: scratchpad/scale-design/",
+   "pr": 117,
+   "attempts": 0,
+   "divergences": [
+    "D199"
+   ],
+   "next_action": "none",
+   "reserved_divergences": "D199-D200",
+   "gates": {
+    "sha": "d4b57a3611e2",
+    "dirty_tree": false,
+    "base": "origin/main",
+    "when": "2026-11-03T08:41Z",
+    "results": {
+     "immutability": {
+      "status": "pass",
+      "seconds": 0.0
+     },
+     "oracle": {
+      "status": "pass",
+      "seconds": 775.4
+     },
+     "diff_coverage": {
+      "status": "pass",
+      "seconds": 140.2
+     }
+    }
+   }
   }
  ]
 }

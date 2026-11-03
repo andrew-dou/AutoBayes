@@ -63,6 +63,16 @@ def _expit_parameter(eta, name: str):
     return expit(eta)
 
 
+def _logm1_parameter(eta, name: str):
+    """G06: ``1 + exp(eta)``, brms's inverse ``logm1`` link of the Student-t ``nu`` (a value above 1), refused where it
+    overflows."""
+    with np.errstate(over="ignore", invalid="ignore"):
+        value = 1.0 + np.exp(eta)
+    if not np.isfinite(value).all():
+        raise ValueError(f"{name} = 1 + exp(linear predictor) overflows for some draws and rows; inspect the draws of {name}'s formula")
+    return value
+
+
 def _identity_parameter(eta, name: str):
     """E03: the linear predictor itself (the skew normal's ``alpha``), refused where it is not finite."""
     value = np.asarray(eta, dtype=float)
@@ -75,9 +85,10 @@ def _identity_parameter(eta, name: str):
 # value per draw and row, refused rather than clipped where it is not a positive finite number (log), or where the linear
 # predictor is not finite (E03: logit, identity).
 DISTRIBUTIONAL_INVERSE_LINKS: Mapping[str, Callable] = MappingProxyType({"log": _exp_parameter, "logit": _expit_parameter,
-                                                                         "identity": _identity_parameter})
-# How describe() writes a distributional parameter at row i, the inverse link of its linear predictor (B01; E03)
-_DPAR_VALUE_TEXT = {"log": "exp(eta_{n},i)", "logit": "inv_logit(eta_{n},i)", "identity": "eta_{n},i"}
+                                                                         "identity": _identity_parameter,
+                                                                         "logm1": _logm1_parameter})          # G06: the Student-t nu
+# How describe() writes a distributional parameter at row i, the inverse link of its linear predictor (B01; E03; G06's logm1)
+_DPAR_VALUE_TEXT = {"log": "exp(eta_{n},i)", "logit": "inv_logit(eta_{n},i)", "identity": "eta_{n},i", "logm1": "1 + exp(eta_{n},i)"}
 
 
 @dataclass(frozen=True)
@@ -92,6 +103,13 @@ class DistributionalFormula:
     parameter: str                               # brms's name of the parameter: "zi", "hu", "alpha"
     link: str                                    # a key of DISTRIBUTIONAL_INVERSE_LINKS: "logit", "identity"
     default_intercept: Callable[[], object]
+    # G06 (docs/distributional-groups.md): whether the formula takes group-level terms of its own (brms's group of the
+    # parameter, ``zi ~ z + (1 | g)``), set where a frozen case verifies them; and whether the family's likelihood centres the
+    # formula's design itself (brms's ``Xc_<parameter>``) while Bambi, which centres every formula or none, is handed it
+    # uncentred (the cumulative family's ``disc``): the formula's intercept is then the centred one in the graph and in a fit's
+    # posterior (``DparDesign.centred_draws``), and its Bambi link the centred form of ``link``, named ``<link>_centred``.
+    group_terms: bool = False
+    centred_by_likelihood: bool = False
 
 
 def parameter_symbol(model, parameter: str) -> str:
@@ -467,6 +485,11 @@ class FamilySpec:
     # parameters of ``distributional_formulas`` take population-level terms only.
     distributional_formulas: tuple[DistributionalFormula, ...] = ()
     distributional_group_terms: bool = True
+    # G06 (docs/distributional-groups.md): what the scale parameter's own formula takes beyond population-level terms and D08's
+    # shared varying intercept, each where a frozen case verifies it: "own_groups" (a group of the parameter's own, brms's
+    # sigma ~ z + (1 | g); gauss_sigma_varint), "shared_slopes" (varying slopes in an ID shared with the response formula;
+    # gauss_sigma_shared_id_slopes), "offset" (brms's offsets_sigma; gauss_sigma_offset). Empty: none of them.
+    distributional_constructs: frozenset = frozenset()
     # F01a (docs/multinomial.md): the response is brms's count matrix cbind(y_1, ..., y_K) | trials(n), with one linear
     # predictor per non-reference category (``per_category``), each with a formula of its own (brms's mu<k>, its own centred
     # intercept, coefficients and group-level terms): ``autobayes.multinomial.MultinomialModel`` builds the model, which

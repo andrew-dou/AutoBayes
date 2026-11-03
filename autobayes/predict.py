@@ -105,6 +105,8 @@ from autobayes.families import family_of
 from autobayes.families.spec import DISTRIBUTIONAL_INVERSE_LINKS
 from autobayes.formula import (FormulaError, by_levels_of, categorical_labels, check_counts, group_labels, mm_weights, pop_term_design,
                                reject_complex, with_trials)
+from autobayes.formula import derived_group_columns, group_covariate   # G05a: the covariates of group-level slopes
+from autobayes.group_index import level_codes   # G11: each row's level, one gather per coefficient
 
 _NEW_GROUPS = {"error", "resample_observed", "population"}
 
@@ -152,6 +154,17 @@ def monotonic_contribution(model, post, df: pd.DataFrame) -> np.ndarray | float:
         simplex = post[roles["simplex"]].transpose("chain", "draw", roles["coordinate"]).to_numpy()
         out = out + post[roles["b"]].to_numpy()[..., None] * monotonic_values(simplex, codes)
     return out
+
+
+def _monotonic_covariate(model, post, df: pd.DataFrame, coef: str) -> np.ndarray:
+    """G05a: (chain, draw, row) draws of the covariate of the monotonic varying slope ``coef`` (``mo(ord)``) on the rows of ``df``:
+    ``mo(simo, Xmo)`` of the population-level term's simplex draws at the rows' codes (brms's ``r[J] * mo(simo, Xmo)``)."""
+    from autobayes.monotonic import monotonic_values
+
+    column = model.spec.pop_term(coef).operands[0]
+    roles = model.mo_names[column]
+    simplex = post[roles["simplex"]].transpose("chain", "draw", roles["coordinate"]).to_numpy()
+    return monotonic_values(simplex, model.spec.monotonic(column).codes(df[column], where="newdata column"))
 
 
 def gp_contribution(model, post, df: pd.DataFrame) -> np.ndarray | float:
@@ -237,24 +250,32 @@ def dpar_linear_predictor(model, post, df: pd.DataFrame, name: str, *, include_g
     the response formula's is computed here; with its group-level terms (D08: a correlation ID shared with the response
     formula's term) each row adds the effect of its level, unless ``include_group_effects`` is False. A level the fit has not
     seen is refused here (``predict()`` refuses new levels of a shared ID's factor first)."""
-    ds, roles = model.spec.dpar(name), model.dpar_names[name]
+    ds, roles, dd = model.spec.dpar(name), model.dpar_names[name], model.design.dpars[name]
     shape = (post.sizes["chain"], post.sizes["draw"])
     a = post[roles["intercept"]].to_numpy() if ds.intercept else np.zeros(shape)
     eta = np.repeat(a[..., None], len(df), axis=-1)
     if ds.pop_terms:
         X = np.concatenate([pop_term_design(t, df, ds.categoricals) for t in ds.pop_terms], axis=1)
+        if getattr(dd, "centred_draws", False):               # G06: the posterior holds the centred intercept (the cumulative disc)
+            X = X - dd.x_means
         b = np.concatenate([post[roles[f"b:{t.name}"]].to_numpy() if t.levels else post[roles[f"b:{t.name}"]].to_numpy()[..., None]
                             for t in ds.pop_terms], axis=-1)
         eta = eta + np.einsum("cdp,np->cdn", b, X)
-    for t in (ds.group_terms if include_group_effects else ()):   # D08: a shared ID's varying intercept of the parameter
-        levels = list(model.design.dpars[name].group_blocks[(t.factor, "Intercept")].levels)
+    if ds.offset is not None:                                  # G06: the formula's offset, brms's offsets_<dpar>
+        eta = eta + ds.offset.values(df, where="newdata column")
+    for t in (ds.group_terms if include_group_effects else ()):   # D08: a shared ID's varying intercept of the parameter; G06: its
+        levels = list(dd.group_blocks[(t.factor, "Intercept")].levels)   # own terms and a shared ID's varying slopes
         labels = group_labels(t.factor, df).to_numpy()
         unseen = sorted(set(labels) - set(levels))
         if unseen:
-            raise FormulaError(f"levels {unseen} of {t.factor!r} were not seen in training; {name}'s formula has no effect for them "
-                               "(new levels of a factor whose correlation ID is shared are not offered; divergence D106)")
-        u = post[model.dpar_group_names[(name, t.factor, "Intercept")]["group_effect"]].transpose("chain", "draw", ...).to_numpy()
-        eta = eta + u[..., [levels.index(l) for l in labels]]
+            why = ("new levels of a factor whose correlation ID is shared are not offered; divergence D106" if t.id is not None else
+                   "new levels of a distributional formula's own group-level term are not offered; docs/distributional-groups.md, "
+                   "divergence D32")
+            raise FormulaError(f"levels {unseen} of {t.factor!r} were not seen in training; {name}'s formula has no effect for them ({why})")
+        index = level_codes(labels, levels)                    # G11: one gather per coefficient
+        for c in t.coefs:
+            u = post[model.dpar_group_names[(name, t.factor, c)]["group_effect"]].transpose("chain", "draw", ...).to_numpy()[..., index]
+            eta = eta + (u if c == "Intercept" else u * df[c].to_numpy(dtype=float))
     return eta
 
 
@@ -288,6 +309,7 @@ def _check_newdata(model, newdata: pd.DataFrame, *, need_trials: bool = False, i
     operands = [c for t in s.group_terms for c in t.data_columns] if include_group_effects else []   # g and h, never g_h; D08:
     operands += [c for d in s.dpars for t in d.group_terms for c in t.data_columns] if include_group_effects else []   # mm(), by
     cols = [*s.model_columns] + (list(s.offset.columns) if s.offset is not None else []) + operands   # every formula's columns (B01)
+    cols += [c for d in s.dpars if d.offset is not None for c in d.offset.columns]   # G06: a distributional formula's offset columns
     cols += list(s.car.columns) if getattr(s, "car", None) is not None else []   # F02a: the locations, needed with or without groups
     cols += [a.column for a in s.additions if a.kind == "thres"]   # F06b: each row's level of thres(gr = z)
     cols += list(extra)                                          # F06a: se()'s and rate()'s columns where the kind needs them
@@ -316,8 +338,10 @@ def _check_newdata(model, newdata: pd.DataFrame, *, need_trials: bool = False, i
             raise FormulaError(f"newdata column {t.operands[0]!r}, read by {t.name!r}, has missing values: on new rows an mi() "
                                "predictor must be observed (the model imputes the fitted rows only; "
                                "docs/missing-and-measurement-error.md, divergence D74)")
-    if df.isna().any().any():
-        raise FormulaError("newdata contains missing values")
+    if df.isna().any().any():                                    # D174: named, whether or not the model dropped rows (dropna)
+        na = df.isna().any()
+        raise FormulaError(f"newdata contains missing values in columns {list(na[na].index)}: a new row needs every column the "
+                           "model reads (dropna=True drops the fitted rows only; docs/missing-rows.md)")
     if getattr(model.design, "thresholds", None) is not None:   # F06b: a fitted level of thres(gr = z) on every row (D159)
         model.design.thresholds.level_index(df[model.design.thresholds.column], where="newdata column")
     categorical_names = {c.name for c in s.all_categoricals}
@@ -337,7 +361,7 @@ def _check_newdata(model, newdata: pd.DataFrame, *, need_trials: bool = False, i
     for m in s.monotonics:                                       # whole numbers in the fitted range, or a fitted category (B03)
         m.codes(df[m.column], where="newdata column")
     for cat in s.all_categoricals:
-        labels, _ = categorical_labels(f"newdata column {cat.name!r}", df[cat.name])
+        labels, _ = categorical_labels(f"newdata column {cat.name!r}", df[cat.name], logical=True)   # D172: a boolean column too
         unseen = sorted(set(labels.tolist()) - set(cat.levels))
         if unseen:
             raise FormulaError(
@@ -349,6 +373,12 @@ def _check_newdata(model, newdata: pd.DataFrame, *, need_trials: bool = False, i
         df[cat.name] = pd.Categorical(labels, categories=list(cat.categories), ordered=True)
     for t in (t for f in (s, *s.dpars) for t in f.pop_terms if t.kind in ("contrast", "product")):   # F08: an ordered factor's
         df[t.name] = pop_term_design(t, df, s.all_categoricals)[:, 0]       # contrast columns, G03: R's interaction columns, by name
+    for c in (c for t in s.group_terms for c in t.slope_columns) if include_group_effects else ():   # G05a: a slope that is no
+        reject_complex(f"newdata column {c!r}", df[c])                                            # population-level term
+        if not pd.api.types.is_numeric_dtype(df[c]):
+            raise FormulaError(f"newdata column {c!r} must be numeric (a varying slope)")
+    for c in derived_group_columns(s) if include_group_effects else ():   # G05a: a product's or factor level's covariate, which
+        df[c] = group_covariate(s, c, df)                                 # Bambi reads by name
     if need_trials:
         df[s.trials] = check_counts(f"newdata trials {s.trials!r}", df[s.trials])
     for t in (s.group_terms if include_group_effects else ()):   # labels as text; a derived factor's column is built here
@@ -441,17 +471,20 @@ def _predict_by_hand(model, idata, df: pd.DataFrame | None, kind: str, seed, pol
     new_levels = {}
     for term in (model.spec.group_terms if include_group_effects else ()):
         g = term.factor
-        levels = list(model.design.group_designs[g].levels)
+        levels = list(model.design.factor_blocks[g].levels)    # G05a: a factor whose intercept does not vary has slopes' blocks
         members = term_labels(term, df)                         # D08: one label array per member of a multi-membership term
         weights = mm_weights(term, df) if term.is_mm else np.ones((len(df), 1))
         labels = members[0]
         new_levels[g] = sorted(set().union(*(set(m) for m in members)) - set(levels))
-        # (sd draws, effect draws, covariate column) per coefficient: ones for the intercept, the raw column for a slope
+        # (sd draws, effect draws, covariate column per member) per coefficient: ones for the intercept, the raw column for a slope;
+        # G05a: a transform's, product's or factor level's design column, and a monotonic slope's mo(simo, Xmo) per draw and row;
+        # G05b: a multi-membership term's mmc(x1, x2) reads member k's own column
         coefs = []
         for coef in term.coefs:
             names = model.group_coefficient_names[(g, coef)]
-            covariate = np.ones(len(df)) if coef == "Intercept" else df[coef].to_numpy(dtype=float)
-            coefs.append((post[names["sd"]].to_numpy(), post[names["group_effect"]].to_numpy(), covariate))
+            covariates = ([_monotonic_covariate(model, post, df, coef)] if coef in term.monotonic_slopes else
+                          [np.ones(len(df)) if col is None else df[col].to_numpy(dtype=float) for col in term.covariate_columns(coef)])
+            coefs.append((post[names["sd"]].to_numpy(), post[names["group_effect"]].to_numpy(), covariates))
         # a correlated term (A02) drawing unseen levels from the population: the draws' Cholesky factors,
         # (chain, draw, M, M), rows and columns selected by coefficient label in the term's order
         L = None
@@ -470,14 +503,20 @@ def _predict_by_hand(model, idata, df: pd.DataFrame | None, kind: str, seed, pol
             else:                                        # one observed level per draw; its whole effect vector is reused
                 chosen = rng.integers(0, len(levels), size=coefs[0][0].shape)
                 new_effects[lvl] = [np.take_along_axis(u, chosen[..., None], axis=-1)[..., 0] for _, u, _ in coefs]
-        for member, w in zip(members, weights.T):                # one member, weight 1, except for a multi-membership term (D08)
-            for i, lvl in enumerate(member):
-                for k, (_, u, covariate) in enumerate(coefs):
-                    if fam.per_category:                         # F01b: (chain, draw, level, category) effects of fitted levels
-                        mu[..., i, :] += u[..., levels.index(lvl), :] * covariate[i]
-                        continue
-                    effect = (new_effects[lvl][k] if lvl in new_effects else u[..., levels.index(lvl)]) * covariate[i]
-                    mu[..., i] += effect if not term.is_mm else w[i] * effect
+        # G11 (docs/scaling.md): one gather per member and coefficient, the unseen labels' effects appended to the fitted levels'
+        # (codes J, J + 1, ... in sorted order), added member by member and coefficient by coefficient as a row's always were
+        extended = list(levels) + list(new_levels[g])
+        effects = [np.concatenate([u, np.stack([new_effects[lvl][k] for lvl in new_levels[g]], axis=-1)], axis=-1)
+                   if new_effects else u for k, (_, u, _) in enumerate(coefs)]
+        for m, (member, w) in enumerate(zip(members, weights.T)):   # one member, weight 1, except for a multi-membership term (D08)
+            codes = level_codes(member, extended)
+            for u, (_, _, covariates) in zip(effects, coefs):
+                covariate = covariates[m]                        # G05b: the member's own covariate
+                if fam.per_category:                             # F01b: (chain, draw, level, category) effects of fitted levels
+                    mu += u[..., codes, :] * covariate[:, None]
+                    continue
+                effect = u[..., codes] * covariate
+                mu += effect if not term.is_mm else w * effect
     if model.spec.autocor is not None:                          # C04: the ARMA term on the fitted rows' residuals, added last
         mu = autocor_predictor(model, post, mu)
     cs = getattr(model.spec, "cs_terms", ())
@@ -702,7 +741,7 @@ def predict(model, fit_result, *, newdata: pd.DataFrame | None = None, kind: str
         model, newdata, need_trials=(fam.has_trials and kind in ("mean", "response")), include_group_effects=include_group_effects,
         extra=extra))
     new_levels = {t.factor: ([] if df is None else sorted(set().union(*(set(m) for m in term_labels(t, df)))
-                                                          - set(model.design.group_designs[t.factor].levels)))
+                                                          - set(model.design.factor_blocks[t.factor].levels)))
                   for t in (model.spec.group_terms if include_group_effects else ())}
     for g, unseen in new_levels.items():
         t = model.spec.group_term_of(g)
@@ -711,6 +750,12 @@ def predict(model, fit_result, *, newdata: pd.DataFrame | None = None, kind: str
                 f"newdata has levels of {g!r} not seen in training: {unseen}; new levels in a {model.family} model, whose every "
                 "non-reference category has its own group term, are not offered (no frozen case verifies how brms "
                 f"draws them; docs/dirichlet-logistic-normal.md, divergence {fam.simplex.divergence if fam.simplex else 'D37'})")
+        if unseen and policies[g] != "error" and (t.cov is not None or t.is_student):   # G05b
+            raise FormulaError(
+                f"newdata has levels of {g!r} not seen in training: {unseen}; new levels of '{t.canonical}' are not offered: "
+                + ("a level outside the known covariance has no covariance with the fitted ones" if t.cov is not None else
+                   "no frozen brms case verifies how its Student-t scales are drawn for new levels")
+                + " (docs/gr-cov-dist.md, divergence D186)")
         if unseen and policies[g] != "error" and (t.by is not None or t.id is not None):   # D08
             raise FormulaError(
                 f"newdata has levels of {g!r} not seen in training: {unseen}; new levels of "
@@ -734,7 +779,8 @@ def predict(model, fit_result, *, newdata: pd.DataFrame | None = None, kind: str
               or getattr(model.spec, "car", None) is not None  # nor a CAR term (F02a)
               or timecor is not None                           # nor a residual correlation term's joint draws (F03b)
               or bool(model.spec.me_terms) or bool(model.spec.mi_terms)    # nor the me() and mi() terms (C06)
-              or bool(model.spec.custom_group_terms))          # nor the mm() and gr(by = ) terms (D08)
+              or bool(model.spec.custom_group_terms)           # nor the mm() and gr(by = ) terms (D08)
+              or model.spec.has_group)                         # G11: Bambi builds the group terms from codes and does not predict them
     if dpar is not None:
         ds = _predict_dpar(model, idata, df, kind, dpar, include_group_effects=include_group_effects)
     elif fam.mixture:                                           # C05: every component's linear predictor, theta's mean and draws
