@@ -119,7 +119,9 @@ def test_the_registry_offers_exactly_the_verified_formulas():
     assert scale == {"gaussian", "student", "lognormal", "negbinomial", "gamma", "beta", "weibull", "beta_binomial"}
     others = {(name, f.parameter, f.link) for name, spec in FAMILIES.items() for f in spec.distributional_formulas}
     assert others == {("zero_inflated_negbinomial", "zi", "logit"), ("hurdle_lognormal", "hu", "logit"),
-                      ("skew_normal", "alpha", "identity"), ("wiener", "bs", "log")}   # F04: wiener's bs ~ z
+                      ("skew_normal", "alpha", "identity"), ("wiener", "bs", "log"),   # F04: wiener's bs ~ z
+                      ("student", "nu", "logm1"), ("zero_inflated_poisson", "zi", "logit"),   # G06: nu ~ z, the zero-inflated
+                      ("cumulative", "disc", "log")}                                           # Poisson's zi ~ z, disc ~ z
     for family, (_, name, _, _) in SPECS.items():
         fam = get_family(family)
         assert fam.distributional_parameters == (name,) and fam.distributional_parameter_link(name) == LINK[family]
@@ -132,12 +134,16 @@ def test_the_registry_offers_exactly_the_verified_formulas():
 
 REFUSED = [
     ("zero_inflated_negbinomial", ["zcnt ~ x", "shape ~ w"], r"brms's shape ~ \.\.\. is not offered here.*D33.*and for the "
+     r"student \(nu, logm1 link\), zero_inflated_poisson \(zi, logit link\), cumulative \(disc, log link\), "   # G06's three
      r"skew_normal \(alpha, identity link\), zero_inflated_negbinomial \(zi, logit link\), hurdle_lognormal \(hu, logit link\), wiener \(bs, log link\) families.*D116"),
     ("hurdle_lognormal", ["zpos ~ x", "sigma ~ w"], r"brms's sigma ~ \.\.\. is not offered here"),
     ("skew_normal", ["y ~ x", "sigma ~ w"], r"brms's sigma ~ \.\.\. is not offered here"),
     ("exgaussian", ["y ~ x", "beta ~ w"], r"brms's beta ~ \.\.\. is not offered here"),
     ("shifted_lognormal", ["ypos ~ x", "ndt ~ w"], r"brms's ndt ~ \.\.\. is not offered here"),
-    ("zero_inflated_poisson", ["zcnt ~ x", "zi ~ w"], r"brms's zi ~ \.\.\. is not offered here"),
+    # G06 offers the zero-inflated Poisson's zi ~ w, with a group of its own; a correlation ID shared with it stays refused
+    ("zero_inflated_poisson", ["zcnt ~ x + (1 |p| g)", "zi ~ w + (1 |p| g)"],
+     r"group-level terms in the formula of zi of the zero_inflated_poisson family \(\(1 \|p\| g\)\) are not supported.*a group of its "
+     r"own, '\(1 \| g\)'.*D116"),
     ("hurdle_negbinomial", ["zcnt ~ x", "hu ~ w"], r"brms's hu ~ \.\.\. is not offered here"),
     ("zero_inflated_beta", ["zprop ~ x", "zi ~ w"], r"brms's zi ~ \.\.\. is not offered here"),
     ("weibull", ["ypos ~ x", "sigma ~ w"], r"the weibull family has no parameter 'sigma'"),
@@ -197,7 +203,7 @@ def test_priors_of_the_formulas():
                                             r"own formula.*; this model gives it none\)"):
         ab.zero_inflated_negbinomial("zcnt ~ x", DATA, ab.Priors(**base, zi=DPAR))
     with pytest.raises(ab.PriorError, match=r"prior for 'zi' must be a Prior, got dict$"):          # a family whose zi takes none
-        ab.zero_inflated_poisson("zcnt ~ x", DATA, ab.Priors(intercept=ab.Normal(0, 2), b=ab.Normal(0, 1), zi=DPAR))
+        ab.zero_inflated_beta("zprop ~ x", DATA, ab.Priors(intercept=ab.Normal(0, 2), b=ab.Normal(0, 1), phi=ab.Gamma(1, 1), zi=DPAR))
     with pytest.raises(ab.PriorError, match=r"prior for 'alpha' must be a Prior, got dict \(a mapping is the form of the priors of "
                                             r"alpha's own formula.*no formula of its own, divergence D79\)"):
         ab.skew_normal("y ~ x", DATA, ab.Priors(intercept=ab.Normal(0, 2), b=ab.Normal(0, 1), sigma=ab.HalfNormal(1), alpha=DPAR))

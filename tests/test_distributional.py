@@ -69,11 +69,15 @@ def test_a_list_of_formulas_parses_into_the_response_formula_and_its_distributio
 
 
 REFUSALS = [
-    (["yn ~ x", "sigma ~ x + (1 | g)"], "gaussian", r"group-level terms in a distributional formula \(\(1 \| g\)\) are not supported.*D32"),
-    (["yn ~ x", "sigma ~ x + offset(ypos)"], "gaussian", r"'offset\(ypos\)' in a distributional formula is not supported.*D32"),
-    (["yn ~ x", "nu ~ x"], "student", r"brms's nu ~ \.\.\. is not offered here; a distributional formula is offered for the auxiliary "
-                                      r"parameter of the gaussian \(sigma\), student \(sigma\).*divergence D33"),
-    (["cnt ~ x", "zi ~ x"], "zero_inflated_poisson", r"brms's zi ~ \.\.\. is not offered here.*D33"),
+    # G06 offers sigma's own group-level terms and offset for the Gaussian (docs/distributional-groups.md); the Student-t's stay refused
+    (["yn ~ x", "sigma ~ x + (1 | g)"], "student", r"group-level terms in a distributional formula \(\(1 \| g\)\) are not supported "
+                                                   r"for sigma of the student family.*D32"),
+    (["yn ~ x", "sigma ~ x + offset(ypos)"], "student", r"'offset\(ypos\)' in a distributional formula is not supported for sigma of the "
+                                                         r"student family.*D32"),
+    # G06 offers the Student-t's nu ~ x and the zero-inflated Poisson's zi ~ x; the Frechet nu and the hurdle Poisson hu stay refused
+    (["ypos ~ x", "nu ~ x"], "frechet", r"brms's nu ~ \.\.\. is not offered here; a distributional formula is offered for the auxiliary "
+                                        r"parameter of the gaussian \(sigma\), student \(sigma\).*divergence D33"),
+    (["cnt ~ x", "hu ~ x"], "hurdle_poisson", r"brms's hu ~ \.\.\. is not offered here.*D33"),
     (["yn ~ x", "shape ~ x"], "gaussian", r"the gaussian family has no parameter 'shape' \(its parameters besides the mean are \['sigma'\]\)"),
     (["cnt ~ x", "sigma ~ x"], "poisson", r"the poisson family has no parameter 'sigma' \(it has no parameter besides the mean\)"),
     (["yn ~ x", "mu ~ x"], "gaussian", r"'mu' is the response formula's; the first formula of the list is the response's"),

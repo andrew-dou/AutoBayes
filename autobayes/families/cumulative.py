@@ -25,6 +25,14 @@ and defaults equal brms's and its log density and gradient equal the 50-digit va
 own log density there is off by 5.9e-7 relative at one point (it forms the last category's probability 1 - inv_cloglog by
 subtraction), so that case keeps G2 as an expected failure (docs/links.md, divergences D38, D132). brms's other cumulative links
 are withheld (divergence D38).
+
+G06 (docs/distributional-groups.md): under the logit link brms's discrimination takes a formula of its own, ``["ord ~ x + (1 |
+g)", "disc ~ z"]``: ``disc_i = exp(eta_disc,i)`` and ``P(y_i <= k) = inv_logit(disc_i (b_Intercept[k] - mu_i))``, its design
+centred on its own means as brms's ``Xc_disc`` (by the family's link, ``likelihoods.centred_log_link``: Bambi is handed the
+cumulative model uncentred), its intercept's default prior ``normal(0, 1)``; checked against brms in the oracle case
+``cumulative_disc``. The likelihood is unchanged by ``(disc, b_Intercept, b, r) -> (c disc, b_Intercept / c, b / c, r / c)``, so
+with an intercept in that formula (or a factor coded by all its levels) only the priors identify the model's scale: the model
+warns, where brms is silent (divergence D188).
 """
 from __future__ import annotations
 
@@ -35,8 +43,10 @@ from types import MappingProxyType
 import numpy as np
 from scipy.special import expit, ndtr
 
-from autobayes.families.spec import NO_FIXED_PARAMETERS, STANDARD_PREDICTION_KINDS, FamilySpec
+from autobayes.families.spec import (NO_FIXED_PARAMETERS, STANDARD_PREDICTION_KINDS, DistributionalFormula, FamilySpec, auxiliary,
+                                     dpar_pointer, is_distributional)
 from autobayes.formula import FormulaError, ordinal_categories, pop_term_design
+from autobayes.priors import Normal
 
 # brms's ordinal links that no frozen case verifies here, with the reason FamilySpec.with_link gives (divergence D38)
 PARKED_ORDINAL_LINKS = MappingProxyType({
@@ -86,10 +96,39 @@ def _bambi_setup(model, bambi_priors):
     def thresholds(name, **kwargs):
         return ordered_thresholds(name, prior.name, dict(prior.params), labels, dim)
 
-    terms = {k: v for k, v in bambi_priors.items() if k != "Intercept"}
+    terms = {k: v for k, v in bambi_priors.items() if k != "Intercept" and k not in spec.dpar_names}
     priors = {"mu": {**terms, "Intercept": bmb.Prior("NoIntercept", dist=no_intercept)},
               "Intercept": bmb.Prior("OrderedThresholds", dist=thresholds)}
-    return cumulative_logit_family([t.name for t in spec.bambi_terms], means, dim), priors, False
+    disc = None
+    if "disc" in spec.dpar_names:                                   # G06: the discrimination's formula, centred by its link
+        from autobayes.likelihoods import centred_log_link
+
+        ds = spec.dpar("disc")
+        columns = [pop_term_design(t, model.data, ds.categoricals) for t in ds.bambi_terms]
+        X = np.concatenate(columns, axis=1) if columns else np.zeros((len(model.data), 0))
+        disc_means = X.mean(0) if ds.intercept else np.zeros(X.shape[1])   # brms centres a formula with an intercept
+        disc = centred_log_link([model.dpar_names["disc"][f"b:{t.name}"] for t in ds.bambi_terms], disc_means)
+        priors["disc"] = bambi_priors["disc"]
+    return cumulative_logit_family([t.name for t in spec.bambi_terms], means, dim, disc=disc), priors, False
+
+
+def _disc(model, post):
+    """G06: each draw's and row's discrimination (its formula's, with a row axis), or 1 without a formula of its own."""
+    return auxiliary(model, post, "disc") if is_distributional(model, "disc") else 1.0
+
+
+def _response_warnings(spec, df) -> list[str]:
+    """G06: a discrimination formula that can move every row's log disc by one constant (an intercept, or a factor coded by all
+    its levels) leaves the model's scale to the priors: brms estimates it so too, silently (divergence D188)."""
+    if "disc" not in spec.dpar_names:
+        return []
+    ds = spec.dpar("disc")
+    if not (ds.intercept or any(ds.categorical(c).full_rank for t in ds.pop_terms if t.kind == "categorical" for c in t.categorical)):
+        return []
+    return [f"the formula '{ds.formula}' can shift every row's log disc by one constant, and the cumulative likelihood is unchanged "
+            "by (disc, thresholds, b, r) -> (c disc, thresholds / c, b / c, r / c): the model's scale is identified by the priors "
+            "alone (brms estimates it the same way and does not warn; a formula without an intercept, 'disc ~ 0 + x' with numeric "
+            "terms only, fixes disc = 1 where they are 0; docs/distributional-groups.md, divergence D188)"]
 
 
 def _expected_response(model, post, eta):
@@ -97,7 +136,8 @@ def _expected_response(model, post, eta):
     from autobayes.likelihoods import cumulative_probabilities
 
     tau = post[model.names["thresholds"]].transpose("chain", "draw", model.names["threshold_dim"]).to_numpy()
-    return cumulative_probabilities(eta, tau[..., None, :])
+    disc = _disc(model, post)                                       # G06: P(y <= k) = expit(disc (tau_k - eta))
+    return cumulative_probabilities(disc * eta, np.asarray(disc)[..., None] * tau[..., None, :])
 
 
 def _draw_response(model, post, eta, mean, df, rng):
@@ -111,7 +151,8 @@ def _log_likelihood(model, post, eta):
     from autobayes.families.pointwise import ordered_logistic
 
     tau = post[model.names["thresholds"]].transpose("chain", "draw", model.names["threshold_dim"]).to_numpy()
-    return ordered_logistic(model.design.y, eta, tau[..., None, :])
+    disc = _disc(model, post)                                       # G06: with each row's discrimination
+    return ordered_logistic(model.design.y, disc * eta, np.asarray(disc)[..., None] * tau[..., None, :])
 
 
 def _categories(model) -> str:
@@ -123,6 +164,12 @@ def _categories(model) -> str:
 
 def _mean_lines(model) -> list[str]:
     K = len(model.categories)
+    if is_distributional(model, "disc"):                            # G06: each row's discrimination from its formula
+        return [f"  P(y_i <= k) = expit(disc_i (b_Intercept[k] - mu_i)), k = 1..{K - 1}, for the {K} ordered categories "
+                f"{_categories(model)};",
+                "  P(y_i = k) is the difference of consecutive ones (brms's posterior_epred). mu has no intercept: the thresholds",
+                "  b_Intercept[k] take its place, and a larger mu moves probability towards the higher categories; disc_i > 0 scales",
+                "  every gap, its formula below."]
     return [f"  P(y_i <= k) = expit(b_Intercept[k] - mu_i), k = 1..{K - 1}, for the {K} ordered categories {_categories(model)};",
             "  P(y_i = k) is the difference of consecutive ones (brms's posterior_epred). mu has no intercept: the thresholds",
             "  b_Intercept[k] take its place, and a larger mu moves probability towards the higher categories."]
@@ -142,6 +189,12 @@ def _intercept_lines(model) -> list[str]:
 
 
 def _likelihood_lines(model) -> list[str]:
+    if is_distributional(model, "disc"):                            # G06
+        return [dpar_pointer(model, "disc"), "", "Likelihood",
+                "  y_i ~ OrderedLogistic(disc_i mu_i, disc_i b_Intercept): brms's cumulative(\"logit\") with disc_i from its formula,",
+                "  written as -softplus(disc_i (mu_i - b_Intercept[y])) - softplus(disc_i (b_Intercept[y - 1] - mu_i)) + log(1 -",
+                "  exp(-disc_i (b_Intercept[y] - b_Intercept[y - 1]))) with the end terms dropped for the first and last category",
+                "  (autobayes/likelihoods.py). The response is fitted as its 1-based category (brms's Y)."]
     return ["", "Likelihood",
             "  y_i ~ OrderedLogistic(mu_i, b_Intercept): brms's ordered_logistic_lpmf (cumulative(\"logit\"), disc = 1), written",
             "  as -softplus(mu_i - b_Intercept[y]) - softplus(b_Intercept[y - 1] - mu_i) + log(1 - exp(-(b_Intercept[y] -",
@@ -155,7 +208,7 @@ CUMULATIVE = FamilySpec(
     scale_parameter=None, bambi_scale_parameter=None, fixed_parameters=NO_FIXED_PARAMETERS,
     bambi_family=lambda: None,                                      # built per model by bambi_setup
     validate_response=_validate_response,
-    response_warnings=lambda spec, df: [],
+    response_warnings=_response_warnings,                           # G06: a disc formula's scale left to the priors (D188)
     response_upper_bound=lambda model: len(model.categories),
     inverse_link=expit,                                             # P(y <= k) = expit(tau_k - mu)
     expected_response=_expected_response,
@@ -183,6 +236,9 @@ CUMULATIVE = FamilySpec(
     parked_links=_CUMULATIVE_PARKED_LINKS,
     addition_terms=frozenset({"thres"}),                            # F06b: thres(gr = z), the logit link's (_grouped)
     grouped_thresholds=lambda: _grouped(),
+    # G06: disc ~ z under brms's log link, its design centred by the family's link (cumulative_disc); its intercept's default
+    # normal(0, 1)
+    distributional_formulas=(DistributionalFormula("disc", "log", lambda: Normal(0, 1), centred_by_likelihood=True),),
 )
 
 
@@ -194,9 +250,17 @@ def _refuse_grouped_thresholds(spec, link: str) -> None:
                            "are verified for the logit link only (docs/grouped-thresholds.md, divergence D158)")
 
 
+def _refuse_disc(spec, link: str) -> None:
+    """G06: brms's ``disc ~ ...`` is offered for the cumulative family's logit link only (divergence D38)."""
+    if spec.dpars:
+        raise FormulaError(f"{spec.dpars[0].formula!r}: brms's disc ~ ... is offered for the cumulative family's logit link only; no "
+                           f"frozen brms case verifies it under the {link} link (docs/distributional-groups.md, divergence D38)")
+
+
 def _probit_check_formula(spec) -> None:
     _check_formula(spec)
     _refuse_grouped_thresholds(spec, "probit")
+    _refuse_disc(spec, "probit")                                    # G06
 
 
 # -- D04: the probit link ------------------------------------------------------------------------------------------------
@@ -231,6 +295,7 @@ def _probit() -> FamilySpec:
         log_likelihood=ordinal_log_likelihood("cumulative_probit"),
         links=MappingProxyType({"logit": lambda: CUMULATIVE, "cloglog": lambda: _cloglog()}),
         check_formula=_probit_check_formula, addition_terms=frozenset(), grouped_thresholds=None,   # F06b: logit only (D158)
+        distributional_formulas=(), response_warnings=lambda spec, df: [],   # G06: disc ~ ... under the logit link only (D38)
     )
 
 
@@ -278,6 +343,7 @@ def _cloglog() -> FamilySpec:
         monotonic=False, check_formula=_cloglog_check_formula,       # D133
         links=MappingProxyType({"logit": lambda: CUMULATIVE, "probit": lambda: _probit()}),
         addition_terms=frozenset(), grouped_thresholds=None,         # F06b: logit only (D158)
+        distributional_formulas=(), response_warnings=lambda spec, df: [],   # G06: disc ~ ... under the logit link only (D38)
     )
 
 
@@ -296,4 +362,5 @@ def _grouped() -> FamilySpec:
         mean_lines=gt.mean_lines, likelihood_lines=gt.likelihood_lines, intercept_lines=gt.intercept_lines,
         deterministic_note="mu = linear predictor (no intercept); b_Intercept = Intercept, the thresholds of every level (not centred)",
         monotonic=False, links=MappingProxyType({}), parked_links=MappingProxyType({}), grouped_thresholds=None,
+        distributional_formulas=(), response_warnings=lambda spec, df: [],   # G06: no disc ~ ... with grouped thresholds (D38)
     )

@@ -2661,13 +2661,33 @@
     "B01_distributional",
     "E03_contexts_newer_families"
    ],
-   "status": "implementing",
+   "status": "gates_green",
    "summary": "group-level terms in distributional formulas (sigma ~ z + (1 | g)), IDs shared between mu and a distributional parameter ((1 |p| g)), offsets in distributional formulas, and the distributional formulas still refused (nu ~ z, zi ~ z for zero-inflated Poisson, disc ~ z) (corpus dist_*)",
    "pr": null,
    "attempts": 0,
    "divergences": [],
    "next_action": "paused at the weekly usage cap (2026-10-27): implementation committed in worktree parity-g06 at 95ce3fa (not pushed); resume after the reset: rebase onto main, full suite and gate tool, report",
-   "reserved_divergences": "D187-D188"
+   "reserved_divergences": "D187-D188",
+   "gates": {
+    "sha": "885c3ba2c375",
+    "dirty_tree": false,
+    "base": "origin/main",
+    "when": "2026-11-03T05:53Z",
+    "results": {
+     "immutability": {
+      "status": "pass",
+      "seconds": 0.0
+     },
+     "oracle": {
+      "status": "pass",
+      "seconds": 880.3
+     },
+     "diff_coverage": {
+      "status": "pass",
+      "seconds": 127.1
+     }
+    }
+   }
   },
   {
    "id": "G07_family_contexts",
