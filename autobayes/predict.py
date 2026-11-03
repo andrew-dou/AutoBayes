@@ -478,13 +478,17 @@ def _predict_by_hand(model, idata, df: pd.DataFrame | None, kind: str, seed, pol
         new_levels[g] = sorted(set().union(*(set(m) for m in members)) - set(levels))
         # (sd draws, effect draws, covariate column per member) per coefficient: ones for the intercept, the raw column for a slope;
         # G05a: a transform's, product's or factor level's design column, and a monotonic slope's mo(simo, Xmo) per draw and row;
-        # G05b: a multi-membership term's mmc(x1, x2) reads member k's own column
+        # G05b: a multi-membership term's mmc(x1, x2) reads member k's own column. The draws are read by dimension name, the effects
+        # as (chain, draw, level) and a per-category family's (F01b) as (chain, draw, level, category): a fit's posterior holds
+        # the latter with the level dimension last (Bambi moves every __factor_dim after the others), the graph with it first
+        category = (n["category_dim"],) if fam.per_category else ()
         coefs = []
         for coef in term.coefs:
             names = model.group_coefficient_names[(g, coef)]
             covariates = ([_monotonic_covariate(model, post, df, coef)] if coef in term.monotonic_slopes else
                           [np.ones(len(df)) if col is None else df[col].to_numpy(dtype=float) for col in term.covariate_columns(coef)])
-            coefs.append((post[names["sd"]].to_numpy(), post[names["group_effect"]].to_numpy(), covariates))
+            coefs.append((post[names["sd"]].transpose("chain", "draw", ...).to_numpy(),
+                          post[names["group_effect"]].transpose("chain", "draw", names["coordinate"], *category).to_numpy(), covariates))
         # a correlated term (A02) drawing unseen levels from the population: the draws' Cholesky factors,
         # (chain, draw, M, M), rows and columns selected by coefficient label in the term's order
         L = None

@@ -461,7 +461,9 @@ logistic-normal family's `sigma<k>` (`Priors(sigma=...)`) and the LKJ-correlated
 priors and `describe()`. Verified against `dirichlet_varint`, `logistic_normal_varint` and `logistic_normal_refcat` (log
 densities within 1.1e-15 relative); brms's `posterior_epred` refusal for the logistic-normal family is matched, and slopes,
 offsets, addition terms, distributional formulas and the other special terms are refused naming the construct (D138, D139);
-see [responses on the simplex](dirichlet-logistic-normal.md).
+see [responses on the simplex](dirichlet-logistic-normal.md). The group effects are read by dimension name, so `predict()`,
+`log_lik()`, `waic()` and `loo()` of a fitted model with `(1 | g)` take the posterior as a fit leaves it (each effect by category,
+then level), where they failed or, with K - 1 levels, returned wrong numbers; tests/test_percategory_predict_layout.py.
 
 Grouped thresholds (F06b, brms's `thres(gr = z)` and `thres(K, gr = z)` in `cumulative("logit")`): one ordered set of
 thresholds per level of `z` (each level's largest category less one, or `K`), the design uncentred as brms leaves it, the
