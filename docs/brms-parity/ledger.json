@@ -2661,12 +2661,15 @@
     "B01_distributional",
     "E03_contexts_newer_families"
    ],
-   "status": "gates_green",
+   "status": "merged",
    "summary": "group-level terms in distributional formulas (sigma ~ z + (1 | g)), IDs shared between mu and a distributional parameter ((1 |p| g)), offsets in distributional formulas, and the distributional formulas still refused (nu ~ z, zi ~ z for zero-inflated Poisson, disc ~ z) (corpus dist_*)",
-   "pr": null,
+   "pr": 116,
    "attempts": 0,
-   "divergences": [],
-   "next_action": "paused at the weekly usage cap (2026-10-27): implementation committed in worktree parity-g06 at 95ce3fa (not pushed); resume after the reset: rebase onto main, full suite and gate tool, report",
+   "divergences": [
+    "D187",
+    "D188"
+   ],
+   "next_action": "none",
    "reserved_divergences": "D187-D188",
    "gates": {
     "sha": "885c3ba2c375",
@@ -2768,7 +2771,7 @@
    "pr": null,
    "attempts": 0,
    "divergences": [],
-   "next_action": "feature agent after G02, G05a, G05b, G06 merge",
+   "next_action": "feature agent (G02, G05a, G05b, G06 merged): brief from loop-notes/scale-design; manifest recorded on main first",
    "reserved_divergences": "D199-D200"
   }
  ]
