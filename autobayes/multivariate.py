@@ -49,8 +49,6 @@ grouping level of the data that a response's subset does not reach (brms keeps i
 """
 from __future__ import annotations
 
-import hashlib
-import json
 import re
 from collections.abc import Mapping
 from dataclasses import dataclass, field, replace
@@ -1279,7 +1277,7 @@ def multivariate_prior_table(priors: Priors, spec: MultivariateSpec, family="gau
 def _freeze_target(model: MultivariateModel) -> dict[str, str]:
     """The target identity of a multivariate model: the responses' own targets (each a univariate model's digest: its
     formula, design, response, priors), their order, ``Y``, and the residual correlation and its prior."""
-    from autobayes.identity import SCHEMA, _canonical, _prior
+    from autobayes.identity import SCHEMA, _prior, digest
 
     Y = model.design.Y
     missing = np.isnan(Y)                                   # C06: the missing values are parameters; their rows enter instead
@@ -1295,5 +1293,4 @@ def _freeze_target(model: MultivariateModel) -> dict[str, str]:
                                 "targets": {r: sub.target_identity["sha256"] for r, sub in model.submodels.items()},
                                 **({"subsets": {r: {"column": c, "rows": model.design.rows[r]} for r, c in model.spec.subsets.items()}}
                                    if model.spec.subsets else {})}}
-    encoded = json.dumps(_canonical(payload), sort_keys=True, separators=(",", ":"), ensure_ascii=False, allow_nan=False).encode("utf-8")
-    return {"schema": SCHEMA, "sha256": hashlib.sha256(encoded).hexdigest()}
+    return {"schema": SCHEMA, "sha256": digest(payload)}   # G11: the canonical bytes, streamed (identity.digest)

@@ -106,6 +106,7 @@ from autobayes.families.spec import DISTRIBUTIONAL_INVERSE_LINKS
 from autobayes.formula import (FormulaError, by_levels_of, categorical_labels, check_counts, group_labels, mm_weights, pop_term_design,
                                reject_complex, with_trials)
 from autobayes.formula import derived_group_columns, group_covariate   # G05a: the covariates of group-level slopes
+from autobayes.group_index import level_codes   # G11: each row's level, one gather per coefficient
 
 _NEW_GROUPS = {"error", "resample_observed", "population"}
 
@@ -271,7 +272,7 @@ def dpar_linear_predictor(model, post, df: pd.DataFrame, name: str, *, include_g
                    "new levels of a distributional formula's own group-level term are not offered; docs/distributional-groups.md, "
                    "divergence D32")
             raise FormulaError(f"levels {unseen} of {t.factor!r} were not seen in training; {name}'s formula has no effect for them ({why})")
-        index = [levels.index(l) for l in labels]
+        index = level_codes(labels, levels)                    # G11: one gather per coefficient
         for c in t.coefs:
             u = post[model.dpar_group_names[(name, t.factor, c)]["group_effect"]].transpose("chain", "draw", ...).to_numpy()[..., index]
             eta = eta + (u if c == "Intercept" else u * df[c].to_numpy(dtype=float))
@@ -502,15 +503,20 @@ def _predict_by_hand(model, idata, df: pd.DataFrame | None, kind: str, seed, pol
             else:                                        # one observed level per draw; its whole effect vector is reused
                 chosen = rng.integers(0, len(levels), size=coefs[0][0].shape)
                 new_effects[lvl] = [np.take_along_axis(u, chosen[..., None], axis=-1)[..., 0] for _, u, _ in coefs]
+        # G11 (docs/scaling.md): one gather per member and coefficient, the unseen labels' effects appended to the fitted levels'
+        # (codes J, J + 1, ... in sorted order), added member by member and coefficient by coefficient as a row's always were
+        extended = list(levels) + list(new_levels[g])
+        effects = [np.concatenate([u, np.stack([new_effects[lvl][k] for lvl in new_levels[g]], axis=-1)], axis=-1)
+                   if new_effects else u for k, (_, u, _) in enumerate(coefs)]
         for m, (member, w) in enumerate(zip(members, weights.T)):   # one member, weight 1, except for a multi-membership term (D08)
-            for i, lvl in enumerate(member):
-                for k, (_, u, covariates) in enumerate(coefs):
-                    covariate = covariates[m]                    # G05b: the member's own covariate
-                    if fam.per_category:                         # F01b: (chain, draw, level, category) effects of fitted levels
-                        mu[..., i, :] += u[..., levels.index(lvl), :] * covariate[i]
-                        continue
-                    effect = (new_effects[lvl][k] if lvl in new_effects else u[..., levels.index(lvl)]) * covariate[..., i]
-                    mu[..., i] += effect if not term.is_mm else w[i] * effect
+            codes = level_codes(member, extended)
+            for u, (_, _, covariates) in zip(effects, coefs):
+                covariate = covariates[m]                        # G05b: the member's own covariate
+                if fam.per_category:                             # F01b: (chain, draw, level, category) effects of fitted levels
+                    mu += u[..., codes, :] * covariate[:, None]
+                    continue
+                effect = u[..., codes] * covariate
+                mu += effect if not term.is_mm else w * effect
     if model.spec.autocor is not None:                          # C04: the ARMA term on the fitted rows' residuals, added last
         mu = autocor_predictor(model, post, mu)
     cs = getattr(model.spec, "cs_terms", ())
@@ -773,7 +779,8 @@ def predict(model, fit_result, *, newdata: pd.DataFrame | None = None, kind: str
               or getattr(model.spec, "car", None) is not None  # nor a CAR term (F02a)
               or timecor is not None                           # nor a residual correlation term's joint draws (F03b)
               or bool(model.spec.me_terms) or bool(model.spec.mi_terms)    # nor the me() and mi() terms (C06)
-              or bool(model.spec.custom_group_terms))          # nor the mm() and gr(by = ) terms (D08)
+              or bool(model.spec.custom_group_terms)           # nor the mm() and gr(by = ) terms (D08)
+              or model.spec.has_group)                         # G11: Bambi builds the group terms from codes and does not predict them
     if dpar is not None:
         ds = _predict_dpar(model, idata, df, kind, dpar, include_group_effects=include_group_effects)
     elif fam.mixture:                                           # C05: every component's linear predictor, theta's mean and draws

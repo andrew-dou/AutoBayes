@@ -2339,6 +2339,20 @@ class ModelSpec:
         parts += ([self.offset.bambi_term] if self.offset is not None else []) + [t.bambi_canonical for t in self.bambi_group_terms]
         return " + ".join(parts) if parts else "1"
 
+    @property
+    def bambi_population_formula(self) -> str:
+        """G11 (docs/scaling.md): ``bambi_formula`` without its group-level terms, which is what Bambi is handed: the model adds
+        each group-level coefficient to Bambi's component from its level codes (``group_index.IndexGroupTerm``)."""
+        lhs = self.response if self.trials is None else f"p({self.response}, {self.trials})"
+        return f"{lhs} ~ {self.bambi_population_rhs}"
+
+    @property
+    def bambi_population_rhs(self) -> str:
+        """G11: ``bambi_rhs`` without its group-level terms."""
+        parts = ([] if self.intercept else ["0"]) + [t.bambi_name for t in self.bambi_terms]
+        parts += [self.offset.bambi_term] if self.offset is not None else []
+        return " + ".join(parts) if parts else "1"
+
 
 # -- Tier F: brms's data2, the matrices a formula's terms read by name ----------------------------------------------------
 DATA2_UNIVARIATE = ("data2 is read by a SAR term sar(M, type = ...), a fixed residual covariance fcor(M) or a CAR term car(W, gr = "

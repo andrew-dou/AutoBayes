@@ -46,7 +46,6 @@ response formula's right-hand side that no category uses (brms ignores it silent
 """
 from __future__ import annotations
 
-import hashlib
 import json
 import re
 from collections.abc import Mapping
@@ -678,7 +677,7 @@ class MultinomialModel(Model):
             mus[d.response] = MuDesign(name=d.response, columns=d.columns, X_raw=X, X_model=X - means, x_means=means,
                                        group_blocks=MappingProxyType(group_blocks), Z=Z)
         return MultinomialDesign(y=Y, X_raw=np.zeros((n, 0)), X_model=np.zeros((n, 0)), x_means=np.zeros(0), predictors=(),
-                                 Z=np.zeros((n, 0)), group_blocks=MappingProxyType({}), centered=True, trials=trials,
+                                 group_blocks=MappingProxyType({}), centered=True, trials=trials,
                                  categories=s.categories, mus=MappingProxyType(mus))
 
     def _build_graph(self):
@@ -1210,7 +1209,7 @@ def freeze_multinomial_target(model: MultinomialModel) -> dict[str, str]:
     """The target identity of a count-matrix model (``identity.freeze_target``'s schema and encoding): the family and link,
     the response's categories, counts and trials, each category's canonical formula, design, means, coding and group blocks,
     and every prior. Only the digest is retained."""
-    from autobayes.identity import SCHEMA, _canonical, _prior
+    from autobayes.identity import SCHEMA, _prior, digest
 
     s, d, fam = model.spec, model.design, model.family_spec
     mus = []
@@ -1226,8 +1225,7 @@ def freeze_multinomial_target(model: MultinomialModel) -> dict[str, str]:
                "multinomial": {"response": s.response, "formula": s.canonical_formula, "categories": list(s.categories),
                                "trials": s.trials, "y": d.y, "n": d.trials, "mus": mus},
                "priors": {label: _prior(p) for label, p in prior_labels(model.priors, s, fam)}}
-    encoded = json.dumps(_canonical(payload), sort_keys=True, separators=(",", ":"), ensure_ascii=False, allow_nan=False).encode("utf-8")
-    return {"schema": SCHEMA, "sha256": hashlib.sha256(encoded).hexdigest()}
+    return {"schema": SCHEMA, "sha256": digest(payload)}   # G11: the canonical bytes, streamed (identity.digest)
 
 
 def multinomial_summary_rows(model: MultinomialModel, idata) -> dict:

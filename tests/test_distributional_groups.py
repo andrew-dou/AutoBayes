@@ -563,18 +563,18 @@ def test_dpar_design_checks_bambi_s_link_and_group_build(monkeypatch):
 
     m = own_model()
     d, comp = m.spec.dpar("sigma"), m.bambi_model.components["sigma"]
-    group = comp.design.group
-    Zb = group.design_matrix.toarray() if hasattr(group.design_matrix, "toarray") else group.design_matrix
+    built = comp.group_specific_terms["1|g"]                # G11: the term Bambi built from the level codes (IndexGroupTerm)
 
-    def fake(terms=None, matrix=None):
-        return SimpleNamespace(design=SimpleNamespace(group=SimpleNamespace(terms=terms or group.terms, slices=group.slices,
-                                                                            design_matrix=Zb if matrix is None else matrix)))
+    def fake(groups=None, codes=None):
+        term = SimpleNamespace(groups=built.groups if groups is None else groups, predictor=built.predictor,
+                               group_index=built.group_index if codes is None else codes)
+        return SimpleNamespace(design=SimpleNamespace(group=None), group_specific_terms={"1|g": term})
     assert set(m._dpar_group_blocks(d, fake())) == {("g", "Intercept")}
     with pytest.raises(RuntimeError, match=re.escape("Bambi's level order of 'g' in the formula 'sigma ~ z + (1 | g)' differs")):
-        m._dpar_group_blocks(d, fake(terms={"1|g": SimpleNamespace(groups=list(reversed(LEVELS)))}))
+        m._dpar_group_blocks(d, fake(groups=list(reversed(LEVELS))))
     with pytest.raises(RuntimeError, match=re.escape("Bambi's group design of '1|g' in the formula 'sigma ~ z + (1 | g)' is not the level "
                                                      "indicator of 'g'")):
-        m._dpar_group_blocks(d, fake(matrix=np.zeros_like(np.asarray(Zb, dtype=float))))
+        m._dpar_group_blocks(d, fake(codes=(built.group_index + 1) % len(LEVELS)))
     roles = m._shared_roles("g", "sigma", "Intercept")
     with monkeypatch.context() as mp:
         mp.setitem(m.pymc_model.named_vars_to_dims, roles["offset"], ("elsewhere",))

@@ -2772,7 +2772,27 @@
    "attempts": 0,
    "divergences": [],
    "next_action": "feature agent (G02, G05a, G05b, G06 merged): brief from loop-notes/scale-design; manifest recorded on main first",
-   "reserved_divergences": "D199-D200"
+   "reserved_divergences": "D199-D200",
+   "gates": {
+    "sha": "d4b57a3611e2",
+    "dirty_tree": false,
+    "base": "origin/main",
+    "when": "2026-11-03T08:41Z",
+    "results": {
+     "immutability": {
+      "status": "pass",
+      "seconds": 0.0
+     },
+     "oracle": {
+      "status": "pass",
+      "seconds": 775.4
+     },
+     "diff_coverage": {
+      "status": "pass",
+      "seconds": 140.2
+     }
+    }
+   }
   }
  ]
 }

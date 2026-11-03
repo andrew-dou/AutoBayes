@@ -178,15 +178,18 @@ value (one for the intercept, so the block is the one-hot indicator; the raw `x`
 column of row `i`'s level, which is brms's `Z_m_c[i]` spread over its group index `J_m[i]`; `group_index` is
 that index, 0-based; `J` the number of levels (brms `N_m`). `Design.Z` is the blocks side by side, exactly
 Bambi's concatenated group design, and `column_slice` says where each sits. `Design.group_designs` (the
-varying-intercept block per factor), `levels`, `group_index`, `J` and `group_slices` are derived views.
+varying-intercept block per factor), `levels`, `group_index`, `J` and `group_slices` are derived views. Since G11
+(docs/scaling.md) a block keeps `group_index` and `covariate` (and a multi-membership term's members) rather than `Z`:
+`GroupBlock.Z` and `Design.Z` are built from them on access, the same arrays, and refused above
+`group_index.DENSE_Z_MAX_ENTRIES` entries; Bambi builds each coefficient from the level codes (`group_index.IndexGroupTerm`).
 
 ## Adding a term kind
 
 1. Parse it in `parse_formula` into a `PopTerm` of a new `kind` (add the kind to `POP_TERM_KINDS` and its
    levels/columns rule to `pop_term`) or into a `GroupTerm` with the right `coefs` and `correlated`.
 2. Give it its design block: the `kind` branch of `pop_term_design` for a population-level term; for a
-   group-level coefficient, the block `Model._extract_design` expects from Bambi (indicator times covariate)
-   under the Bambi name `_bambi_group_name(factor, coef)`.
+   group-level coefficient, the level codes and covariate `Model._add_index_group_terms` hands Bambi and
+   `Model._extract_design` checks, under the Bambi name `_bambi_group_name(factor, coef)`.
 3. Say how it reads: the `kind` branch of the linear predictor in `Model.describe()` and, for a vector term,
    the prior coverage rule in `Priors.coefficient_priors` if it differs from the existing one.
 4. Extend the oracle adapter to the new brms parameters and add a frozen case (`oracle/README.md`).
