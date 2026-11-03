@@ -163,15 +163,13 @@ def test_a_boundary_inside_the_inputs_is_refused():
         parse_formula("y ~ gp(x, k = 3, c = 0.5)", FRAME)
 
 
-FORMULA_REFUSALS = [
-    ("y ~ gp(x, w)", r"one covariate per gp\(\) here; brms's gp\(x, w, \.\.\.\) is one Gaussian process of several covariates.*D64"),
-    ("y ~ gp(x, by = g)", r"brms's by = g .* is not supported.*D64"),
-    ("y ~ gp(x, cov = \"matern32\")", r"cov = \"matern32\" is not offered here; only brms's default squared-exponential kernel.*D64"),
+FORMULA_REFUSALS = [   # G09 lifted gp(x, w), by =, the other kernels and scale = FALSE (tests/test_gp_ext.py)
+    ("y ~ gp(x, by = g)", r"by variable of the Gaussian process 'gp\(x, by = g\)'\) has dtype .*a by variable is a numeric column or a "
+                          r"categorical predictor of the formula"),
     ("y ~ gp(x, cov = exp_quad)", r"cov = exp_quad is not offered here"),
     ("y ~ gp(x, iso = FALSE)", r"gp\(\)'s iso decides whether several covariates share one length-scale.*drop it.*D64"),
     ("y ~ gp(x, cmc = TRUE)", r"gp\(\)'s cmc only matters with a factor by =.*D64"),
     ("y ~ gp(x, gr = FALSE)", r"gr = FALSE gives every row its own latent value.*D64"),
-    ("y ~ gp(x, scale = FALSE)", r"scale = FALSE keeps the inputs unscaled.*D64"),
     ("y ~ gp(x, scale = maybe)", r"scale takes TRUE or FALSE, got 'maybe'"),
     ("y ~ gp(x, k = 0)", r"k is the number of basis functions of the approximate Gaussian process, a positive whole number, got '0'"),
     ("y ~ gp(x, k = 2.5)", r"a positive whole number, got '2\.5'"),

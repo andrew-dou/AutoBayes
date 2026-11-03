@@ -264,6 +264,8 @@ class GPBlock:
     inputs: np.ndarray
     basis: np.ndarray | None = None
     slambda: np.ndarray | None = None
+    rows: np.ndarray | None = None          # G09: a factor by's level: the fitted rows (0-based) the process is added to
+    multiplier: np.ndarray | None = None    # G09: a numeric by: the column the process is multiplied by on the fitted rows
 
 
 @dataclass(frozen=True)
@@ -647,6 +649,8 @@ class Model:
                         )
                 df = df.drop(index=zero).reset_index(drop=True)
         self.spec: ModelSpec = parse_formula(formula, df, family, categorical)   # levels over the fitted rows
+        if any(g.is_by_factor for g in getattr(self.spec, "gp_terms", ())):   # G09: a factor by's processes, known now
+            priors.sdgp_priors(self.spec), priors.lscale_priors(self.spec)
         for s in (self.spec, *self.spec.dpars):              # a distributional formula's terms too (B01)
             for t in s.pop_terms:                            # a cell of z:h with no fitted rows has a zero column (brms keeps it too)
                 if t.kind == "interaction" and len(t.categorical) == 2:
@@ -919,7 +923,8 @@ class Model:
         dpar_coefficients = [v for roles in self.dpar_names.values() for k, v in roles.items() if k != "value"]   # B01
         variable_names += dpar_coefficients
         variable_names += [roles["simplex"] for roles in self.mo_names.values()]   # each monotonic term's simplex (B03)
-        variable_names += [roles[k] for roles in self.gp_names.values() for k in ("sdgp", "lscale", "zgp")]   # each GP's (C03)
+        variable_names += [name for key, roles in self.gp_names.items()   # each GP's (C03; G09: each lscale)
+                           for name in (roles["sdgp"], *self.gp_lscale_names(key).values(), roles["zgp"])]
         variable_names += [v for k, v in self.autocor_names.items() if not k.endswith("_coordinate")]   # ar and ma (C04)
         variable_names += list(self.sar_names.values())      # lagsar or errorsar (F02b)
         variable_names += [v for k, v in self.car_names.items() if not k.endswith("coordinate")]   # a CAR term's (F02a)
@@ -1524,15 +1529,28 @@ class Model:
         model = pm.modelcontext(None)
         sdgp, lscale = self.priors.sdgp_priors(self.spec), self.priors.lscale_priors(self.spec)
         for g in self.spec.gp_terms:
-            roles = self.gp_names[g.column]
-            model.add_coord(roles["coordinate"], [str(j) for j in range(1, g.size + 1)])
-            s, l = positive_rv(roles["sdgp"], sdgp[g.column]), positive_rv(roles["lscale"], lscale[g.column])
-            z = pm.Normal(roles["zgp"], mu=np.float64(0.0), sigma=np.float64(1.0), shape=(g.size,), dims=roles["coordinate"])
-            if g.approximate:
-                f = approximate_effect(g.basis(pd.Series(g.inputs)), g.slambda, s, l, z)
-            else:
-                f = exact_effect(g.scaled_inputs, s, l, z)
-            eta = eta + f[g.index(self.data[g.column])]
+            rows_by = g.level_rows(self.data) if g.is_by_factor else {}   # G09: a factor by's rows per level
+            for p in g.subprocesses:
+                roles = self.gp_names[p.key]
+                model.add_coord(roles["coordinate"], [str(j) for j in range(1, p.size + 1)])
+                s = positive_rv(roles["sdgp"], sdgp[p.key])
+                ls = [positive_rv(name, lscale[k]) for k, name in self.gp_lscale_names(p.key).items()]
+                l = ls[0] if p.iso else ls                       # G09: iso = FALSE, one length-scale per input
+                z = pm.Normal(roles["zgp"], mu=np.float64(0.0), sigma=np.float64(1.0), shape=(p.size,), dims=roles["coordinate"])
+                kernel = {} if p.cov == "exp_quad" else {"cov": p.cov}   # G09: another kernel
+                if p.approximate:
+                    f = approximate_effect(p.basis(pd.Series(p.inputs)), p.slambda, s, l, z, **kernel)
+                else:
+                    f = exact_effect(p.scaled_inputs, s, l, z, **kernel)
+                if g.is_by_factor:                               # G09: the level's process on the level's rows
+                    import pytensor.tensor as pt
+
+                    rows = rows_by[p.level]
+                    eta = pt.inc_subtensor(eta[rows], f[p.index(self.data.iloc[rows])])
+                elif g.by is not None:                           # G09: the process times the numeric by column (brms's Cgp)
+                    eta = eta + g.multiplier(self.data) * f[p.index(self.data)]
+                else:
+                    eta = eta + f[p.index(self.data)]
         return eta
 
     def _gp_design(self) -> dict[str, GPBlock]:
@@ -1541,18 +1559,24 @@ class Model:
         contribution to the parent's linear predictor recomputed from the data (``_check_gp_effects``). Empty without one."""
         pmm, blocks = self.pymc_model, {}
         for g in self.spec.gp_terms:
-            roles = self.gp_names[g.column]
-            for key in ("sdgp", "lscale"):
-                rv = pmm[roles[key]]
-                if rv not in pmm.free_RVs or rv.type.ndim != 0 or pmm.rvs_to_values[rv].name != f"{roles[key]}_log__":
-                    raise RuntimeError(f"{roles[key]!r} is not a free positive scalar of the graph sampled on its log")
-            z = pmm[roles["zgp"]]
-            if (z not in pmm.free_RVs or tuple(z.type.shape) != (g.size,) or pmm.rvs_to_values[z].name != roles["zgp"]
-                    or tuple(pmm.named_vars_to_dims.get(roles["zgp"], ())) != (roles["coordinate"],)
-                    or tuple(str(v) for v in pmm.coords[roles["coordinate"]]) != tuple(str(j) for j in range(1, g.size + 1))):
-                raise RuntimeError(f"{roles['zgp']!r} is not a free vector of {g.size} entries with the coordinate {roles['coordinate']!r}")
-            blocks[g.column] = GPBlock(g.term, g.column, g.index(self.data[g.column]), g.scaled_inputs,
-                                       g.basis(pd.Series(g.inputs)) if g.approximate else None, g.slambda if g.approximate else None)
+            rows_by = g.level_rows(self.data) if g.is_by_factor else {}   # G09: a factor by's rows per level
+            multiplier = g.multiplier(self.data) if g.by is not None and not g.is_by_factor else None   # G09: a numeric by
+            for p in g.subprocesses:
+                roles = self.gp_names[p.key]
+                for name in (roles["sdgp"], *self.gp_lscale_names(p.key).values()):
+                    rv = pmm[name]
+                    if rv not in pmm.free_RVs or rv.type.ndim != 0 or pmm.rvs_to_values[rv].name != f"{name}_log__":
+                        raise RuntimeError(f"{name!r} is not a free positive scalar of the graph sampled on its log")
+                z = pmm[roles["zgp"]]
+                if (z not in pmm.free_RVs or tuple(z.type.shape) != (p.size,) or pmm.rvs_to_values[z].name != roles["zgp"]
+                        or tuple(pmm.named_vars_to_dims.get(roles["zgp"], ())) != (roles["coordinate"],)
+                        or tuple(str(v) for v in pmm.coords[roles["coordinate"]]) != tuple(str(j) for j in range(1, p.size + 1))):
+                    raise RuntimeError(f"{roles['zgp']!r} is not a free vector of {p.size} entries with the coordinate {roles['coordinate']!r}")
+                rows = rows_by.get(p.level)
+                frame = self.data if rows is None else self.data.iloc[rows]
+                blocks[p.key] = GPBlock(g.term, p.column, p.index(frame), p.scaled_inputs,
+                                        p.basis(pd.Series(p.inputs)) if p.approximate else None, p.slambda if p.approximate else None,
+                                        rows=rows, multiplier=multiplier)
         if blocks:
             self._check_gp_effects(blocks)
         return blocks
@@ -1574,17 +1598,26 @@ class Model:
         at0, scales = pmm.initial_point(), {}
         for column, block in blocks.items():
             g, roles = self.spec.gp(column), self.gp_names[column]
-            scales[column] = 0.3 if g.approximate else smallest_distance(block.inputs)
-            at0.update({f"{roles['sdgp']}_log__": np.asarray(0.0), f"{roles['lscale']}_log__": np.asarray(np.log(scales[column])),
-                        roles["zgp"]: np.zeros(g.size)})
+            if g.iso:
+                scales[column] = 0.3 if g.approximate else smallest_distance(block.inputs)
+            else:                                                # G09: each input's smallest distance, its own length-scale
+                scales[column] = [smallest_distance(np.unique(block.inputs[:, d])) for d in range(g.ndim)]
+            for name, lscale in zip(self.gp_lscale_names(column).values(), np.atleast_1d(scales[column])):
+                at0[f"{name}_log__"] = np.asarray(np.log(lscale))
+            at0.update({f"{roles['sdgp']}_log__": np.asarray(0.0), roles["zgp"]: np.zeros(g.size)})
         for column, block in blocks.items():
             g, roles, lscale = self.spec.gp(column), self.gp_names[column], scales[column]
             test = np.cos(np.arange(1.0, g.size + 1.0))
             lo, hi = (np.asarray(fn(p)[0], dtype=float).ravel() for p in (at0, {**at0, roles["zgp"]: test}))
             moved = hi - lo if link == "identity" else np.log(hi) - np.log(lo)
-            f = (approximate_values(block.basis, block.slambda, 1.0, lscale, test) if g.approximate
-                 else exact_values(block.inputs, 1.0, lscale, test))
+            f = (approximate_values(block.basis, block.slambda, 1.0, lscale, test, g.cov) if g.approximate
+                 else exact_values(block.inputs, 1.0, lscale, test, g.cov))
             expected = f[block.index]
+            if block.rows is not None:                           # G09: a factor by's level moves its own rows only
+                expected = np.zeros(lo.shape)
+                expected[block.rows] = f[block.index]
+            elif block.multiplier is not None:                   # G09: a numeric by multiplies the process
+                expected = block.multiplier * expected
             if moved.shape != expected.shape or not np.allclose(moved, expected, rtol=1e-10, atol=1e-10):
                 raise RuntimeError(f"the graph's {parent!r} does not move by the values of {block.term!r} at its rows' inputs; largest "
                                    f"difference {np.max(np.abs(moved - expected)) if moved.shape == expected.shape else moved.shape}")
@@ -2085,7 +2118,9 @@ class Model:
             "y": self.spec.response if self.spec.trials is None else f"p({self.spec.response}, {self.spec.trials})",
             **{f"b:{t.name}": t.name for t in self.spec.pop_terms},
             **{f"simo:{column}": roles["simplex"] for column, roles in self.mo_names.items()},   # B03
-            **{f"{key}:{column}": roles[key] for column, roles in self.gp_names.items() for key in ("sdgp", "lscale", "zgp")},   # C03
+            **{f"{label}:{k}": name for column, roles in self.gp_names.items()      # C03 (G09: each lscale by its key)
+               for label, k, name in (("sdgp", column, roles["sdgp"]), *(("lscale", lk, ln) for lk, ln in self.gp_lscale_names(column).items()),
+                                      ("zgp", column, roles["zgp"]))},
             **{f"{label}:{x}": roles[key] for x, roles in self.me_names.items()                   # C06: me()'s latent values
                for key, label in (("mean", "meanme"), ("sd", "sdme"), ("z", "zme"), ("latent", "Xme"), ("noisy", "Xn"))},
             **{f"Ymi:{col}": roles["values"] for col, roles in self.missing_names.items()},       # C06: the missing values
@@ -2166,9 +2201,28 @@ class Model:
         (brms's ``sdgp``; ``sdgp_x``, sampled as ``sdgp_x_log__``), ``"lscale"`` its length-scale on the scaled input (brms's
         ``lscale``; ``lscale_x``, sampled as ``lscale_x_log__``), ``"zgp"`` its standardised values (brms's ``zgp``; ``zgp_x``,
         one per distinct input of the exact GP or per basis function of the approximate one) and ``"coordinate"`` their
-        dimension (``zgp_x_dim``, coordinates ``"1"``..``"N"``); also ``names["sdgp:x"]`` and so on. Empty without one."""
-        return {g.column: {"sdgp": f"sdgp_{g.column}", "lscale": f"lscale_{g.column}", "zgp": f"zgp_{g.column}",
-                           "coordinate": f"zgp_{g.column}_dim"} for g in self.spec.gp_terms}
+        dimension (``zgp_x_dim``, coordinates ``"1"``..``"N"``); also ``names["sdgp:x"]`` and so on. Empty without one.
+
+        G09: keyed by each process's ``key`` (``spec.gp_processes``: ``o2b2`` for ``gp(o2, b2)``, ``ordzp`` for level ``p`` of
+        ``gp(ord, by = z)``, brms's coefficient names without ``gp``); with ``iso = FALSE`` ``"lscales"`` replaces ``"lscale"``,
+        each input's length-scale by its key (``lscale_o2b2o2``, ``lscale_o2b2b2``; ``gp_lscale_names``)."""
+        out = {}
+        for p in getattr(self.spec, "gp_processes", ()):     # (a non-linear or count-matrix model's spec has none)
+            k = p.key
+            lscale = {"lscale": f"lscale_{k}"} if p.iso else {"lscales": {lk: f"lscale_{lk}" for lk in p.lscale_keys}}
+            out[k] = {"sdgp": f"sdgp_{k}", **lscale, "zgp": f"zgp_{k}", "coordinate": f"zgp_{k}_dim"}
+        return out
+
+    def gp_lscale_names(self, key: str) -> dict[str, str]:
+        """G09: the PyMC names of the length-scales of the Gaussian process ``key``, by their keys: ``{key: lscale_<key>}``, or
+        with ``iso = FALSE`` one per input (``{"o2b2o2": "lscale_o2b2o2", "o2b2b2": "lscale_o2b2b2"}``)."""
+        roles = self.gp_names[key]
+        return dict(roles["lscales"]) if "lscales" in roles else {key: roles["lscale"]}
+
+    @property
+    def gp_parameter_names(self) -> list[str]:
+        """G09: the marginal SD and the length-scales of every Gaussian process, in order (what brms's lprior holds)."""
+        return [name for key, roles in self.gp_names.items() for name in (roles["sdgp"], *self.gp_lscale_names(key).values())]
 
     @property
     def autocor_names(self) -> dict[str, str]:
@@ -2808,26 +2862,29 @@ class Model:
             return {}
         columns = list(roles_by)
         if sdgp is None or lscale is None or zgp is None:
-            raise ValueError(f"sdgp, lscale and zgp are required for the Gaussian processes {[self.spec.gp(c).term for c in columns]}, "
+            raise ValueError(f"sdgp, lscale and zgp are required for the Gaussian processes {[g.term for g in self.spec.gp_terms]}, "
                              f"keyed by column {columns}")
+        lscales = {lk: (c, name) for c in columns for lk, name in self.gp_lscale_names(c).items()}   # G09: iso = FALSE's
 
-        def by_column(value, label):
+        def by_column(value, label, keys=columns):
             if isinstance(value, Mapping):
-                if set(value) != set(columns):
-                    raise ValueError(f"{label} must cover exactly the columns of the Gaussian processes {columns}; got {list(value)}")
-                return {c: value[c] for c in columns}
-            if len(columns) != 1:
-                raise ValueError(f"{label} requires an exact-key mapping over the Gaussian processes' columns {columns}")
-            return {columns[0]: value}
+                if set(value) != set(keys):
+                    raise ValueError(f"{label} must cover exactly the columns of the Gaussian processes {keys}; got {list(value)}")
+                return {c: value[c] for c in keys}
+            if len(keys) != 1:
+                raise ValueError(f"{label} requires an exact-key mapping over the Gaussian processes' columns {keys}")
+            return {keys[0]: value}
 
-        sds, scales, zs, point = by_column(sdgp, "sdgp"), by_column(lscale, "lscale"), by_column(zgp, "zgp"), {}
-        for c, roles in roles_by.items():
-            g = self.spec.gp(c)
-            for label, given in (("sdgp", sds[c]), ("lscale", scales[c])):
+        sds, scales, zs, point = by_column(sdgp, "sdgp"), by_column(lscale, "lscale", list(lscales)), by_column(zgp, "zgp"), {}
+        for label, values, names in (("sdgp", sds, {c: (c, roles_by[c]["sdgp"]) for c in columns}), ("lscale", scales, lscales)):
+            for k, given in values.items():
+                c, name = names[k]
                 value = np.asarray(given, dtype=float)
                 if value.shape != () or not np.isfinite(value) or value <= 0:
-                    raise ValueError(f"{label} for {g.term!r} must be a finite positive scalar")
-                point[f"{roles[label]}_log__"] = np.asarray(np.log(value))
+                    raise ValueError(f"{label} for {self.spec.gp(c).term!r}{'' if k == c else f' ({k})'} must be a finite positive scalar")
+                point[f"{name}_log__"] = np.asarray(np.log(value))
+        for c, roles in roles_by.items():
+            g = self.spec.gp(c)
             z = np.asarray(zs[c], dtype=float)
             if z.shape != (g.size,) or not np.isfinite(z).all():
                 what = "distinct input" if not g.approximate else "basis function"
@@ -3149,6 +3206,10 @@ class Model:
             lines += [f"  {t.name:<10}: monotonic effect of {m.column!r} (brms mo()): {coding} (brms's Xmo), D = {m.D} steps (brms's "
                       f"Jmo); recomputed from {m.column!r} on new rows, where a value outside the fitted coding is refused"]
         for g in s.gp_terms:                                 # C03: each Gaussian process's inputs and scaling
+            if not g.plain:                                  # G09: several inputs, by, another kernel, scale = FALSE
+                from autobayes.gp_ext import gp_data_lines
+                lines += gp_data_lines(g)
+                continue
             kind = "approximate (Hilbert-space) Gaussian process" if g.approximate else "exact Gaussian process"
             basis = (f"; k = {g.k} basis functions on [-L, L], L = c = {g.L:g}, of the scaled input less the mean of its distinct values, "
                      f"{g.cmean:.6g}" if g.approximate else "")
@@ -3214,7 +3275,7 @@ class Model:
         def mm_member(t, k, c):                             # G05b: member k's share, its varying slopes' covariates its own
             slopes = "".join(f" + x_{t.covariate_columns(coef)[k]},i * {slope_effect(t.factor, coef)}[{c}_i]" for coef in t.slopes)
             return f" + W_{c},i * ({effect(t.factor)}[{c}_i]{slopes})" if slopes else f" + W_{c},i * {effect(t.factor)}[{c}_i]"
-        rest = "".join(f" + gp({g.column})_i" for g in s.gp_terms) + (" + offset_i" if s.offset is not None else "") + "".join(
+        rest = "".join(f" + gp({g.column})_i" if g.plain else f" + {g.term}_i" for g in s.gp_terms) + (" + offset_i" if s.offset is not None else "") + "".join(
             ("".join(mm_member(t, k, c) for k, c in enumerate(t.members)) if t.is_mm else   # D08: brms's W_m_k r_m_1[J_m_k] (G05b: slopes)
              (f" + {effect(t.factor)}[{t.factor}_i]" if t.has_intercept else "")   # G05a: (0 + x | g) has no varying intercept
              + "".join(f" + {self._slope_value(t, c)} * {slope_effect(t.factor, c)}[{t.factor}_i]" for c in t.slopes))
@@ -3453,6 +3514,10 @@ class Model:
 
             sdgp, lscale = pr.sdgp_priors(s), pr.lscale_priors(s)
             for g in s.gp_terms:
+                if not g.plain:                              # G09: each process's (each level's, each input's length-scale)
+                    from autobayes.gp_ext import gp_prior_lines
+                    lines += gp_prior_lines(self, g, sdgp, lscale)
+                    continue
                 roles, brms = self.gp_names[g.column], brms_rename(f"gp({g.column})")
                 lines += [f"  {roles['sdgp']} ~ {describe_prior(sdgp[g.column], lb=0)}   (brms class sdgp, coefficient {brms})",
                           f"  {roles['lscale']} ~ {describe_prior(lscale[g.column], lb=0)}   (brms class lscale, coefficient {brms}; "
@@ -3585,6 +3650,10 @@ class Model:
             roles[f"{mo['simplex']}_stickbreaking__"] = (f"{mo['simplex']}[1..{D}] on Stan's stick-breaking simplex coordinates ({D - 1} "
                                                          f"entries; brms's simo); dims {mo['coordinate']}")
         for g in s.gp_terms:                                 # C03: each Gaussian process's SD, length-scale and standardised values
+            if not g.plain:                                  # G09
+                from autobayes.gp_ext import gp_variable_roles
+                roles.update(gp_variable_roles(self, g))
+                continue
             gn = self.gp_names[g.column]
             roles[f"{gn['sdgp']}_log__"] = f"log({gn['sdgp']}), the marginal SD of gp({g.column}) (brms's sdgp)"
             roles[f"{gn['lscale']}_log__"] = f"log({gn['lscale']}), the length-scale of gp({g.column}) on the scaled input (brms's lscale)"
@@ -3796,6 +3865,10 @@ class Model:
         rows take."""
         out = []
         for g in self.spec.gp_terms:
+            if not g.plain:                                  # G09: several inputs, by, another kernel, scale = FALSE
+                from autobayes.gp_ext import gp_paragraph
+                out += gp_paragraph(self, g, lp)
+                continue
             c, roles = g.column, self.gp_names[g.column]
             sd, ls, z = roles["sdgp"], roles["lscale"], roles["zgp"]
             if g.approximate:

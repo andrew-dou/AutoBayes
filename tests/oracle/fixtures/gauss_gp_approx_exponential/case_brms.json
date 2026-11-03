@@ -1,0 +1,43 @@
+{
+ "factors": {
+  "g": [
+   "a",
+   "b",
+   "c",
+   "d",
+   "e",
+   "f"
+  ]
+ },
+ "family": {
+  "family": "gaussian"
+ },
+ "formula": "y ~ gp(x, k = 10, c = 5/4, cov = \"exponential\") + (1 | g)",
+ "id": "gauss_gp_approx_exponential",
+ "n_points": 8,
+ "priors": [
+  {
+   "class": "Intercept",
+   "prior": "normal(0, 5)"
+  },
+  {
+   "class": "sdgp",
+   "prior": "normal(0, 1)"
+  },
+  {
+   "class": "lscale",
+   "coef": "gpx",
+   "prior": "inv_gamma(3, 1)"
+  },
+  {
+   "class": "sd",
+   "group": "g",
+   "prior": "normal(0, 1)"
+  },
+  {
+   "class": "sigma",
+   "prior": "normal(0, 1)"
+  }
+ ],
+ "seed": 3322
+}

@@ -242,8 +242,14 @@ def _gp_payload(model):
     s, pr = model.spec, model.priors
     sdgp, lscale = pr.sdgp_priors(s), pr.lscale_priors(s)
     out = []
+    for g in s.gp_terms:
+        if not g.plain:                                     # G09: several inputs, by, another kernel, scale = FALSE
+            from autobayes.gp_ext import gp_identity
+            out.append(gp_identity(model, g, sdgp, lscale, _prior))
     for column, block in model.design.gp.items():
         g = s.gp(column)
+        if not s.gp_owner(column).plain:
+            continue
         out.append({'term': g.term, 'column': column, 'k': g.k, 'c': g.c, 'inputs': list(g.inputs), 'dmax': g.dmax,
                     'cmean': g.cmean, 'index': block.index,
                     **({'basis': block.basis, 'slambda': block.slambda} if g.approximate else {}),

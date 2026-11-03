@@ -7542,14 +7542,13 @@
     "group_terms": []
    },
    "result": {
-    "status": "error",
-    "type": "FormulaError",
-    "message": "'gp(x, z)': one covariate per gp() here; brms's gp(x, z, ...) is one Gaussian process of several covariates (one kernel over their joint distance, or one length-scale each with iso = FALSE), which is not supported; add a separate gp() per covariate if that is the model meant (docs/gaussian-processes.md, divergence D64)",
-    "raised_at": "formula.py:626",
-    "stage": "default_priors",
-    "mechanism": "refusal",
-    "outcome": "refused_named",
-    "gap": "capability"
+    "status": "built",
+    "model": "Model",
+    "model_warnings": [],
+    "issues": [],
+    "notes": [],
+    "outcome": "match",
+    "gap": null
    }
   },
   {
@@ -7638,14 +7637,13 @@
     "group_terms": []
    },
    "result": {
-    "status": "error",
-    "type": "FormulaError",
-    "message": "'gp(x, by = f)': brms's by = f (a Gaussian process scaled by a numeric column, or one per level of a factor) is not supported (docs/gaussian-processes.md, divergence D64)",
-    "raised_at": "formula.py:665",
-    "stage": "default_priors",
-    "mechanism": "refusal",
-    "outcome": "refused_named",
-    "gap": "capability"
+    "status": "built",
+    "model": "Model",
+    "model_warnings": [],
+    "issues": [],
+    "notes": [],
+    "outcome": "match",
+    "gap": null
    }
   },
   {
@@ -7699,14 +7697,13 @@
     "group_terms": []
    },
    "result": {
-    "status": "error",
-    "type": "FormulaError",
-    "message": "'gp(x, cov = \"matern32\")': cov = \"matern32\" is not offered here; only brms's default squared-exponential kernel cov = \"exp_quad\" is offered (brms's matern32, matern52 and exponential kernels are not) (docs/gaussian-processes.md, divergence D64)",
-    "raised_at": "formula.py:652",
-    "stage": "default_priors",
-    "mechanism": "refusal",
-    "outcome": "refused_named",
-    "gap": "capability"
+    "status": "built",
+    "model": "Model",
+    "model_warnings": [],
+    "issues": [],
+    "notes": [],
+    "outcome": "match",
+    "gap": null
    }
   },
   {
@@ -7759,14 +7756,13 @@
     "group_terms": []
    },
    "result": {
-    "status": "error",
-    "type": "FormulaError",
-    "message": "'gp(x, scale = FALSE)': scale = FALSE keeps the inputs unscaled, which changes what lscale measures and the default lscale prior; here the inputs are scaled so that their largest distance is 1, brms's default scale = TRUE (docs/gaussian-processes.md, divergence D64)",
-    "raised_at": "formula.py:582",
-    "stage": "default_priors",
-    "mechanism": "refusal",
-    "outcome": "refused_named",
-    "gap": "capability"
+    "status": "built",
+    "model": "Model",
+    "model_warnings": [],
+    "issues": [],
+    "notes": [],
+    "outcome": "match",
+    "gap": null
    }
   },
   {
@@ -13384,13 +13380,13 @@
  ],
  "summary": {
   "outcomes": {
-   "match": 183,
-   "refused_named": 64,
+   "match": 187,
+   "refused_named": 60,
    "differs": 1
   },
   "gaps": {
-   "none": 185,
-   "capability": 62,
+   "none": 189,
+   "capability": 58,
    "divergence": 1
   },
   "brms_refuses": 2

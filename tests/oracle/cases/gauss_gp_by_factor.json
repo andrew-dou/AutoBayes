@@ -109,6 +109,9 @@
  },
  "gate": {
   "expect": "fail",
-  "reason": "G09_gp_ext not implemented; remove this field when it lands"
+  "gates": [
+   "g6"
+  ],
+  "reason": "brms 2.23.0's default lscale prior of level q (scaled inputs 0.5, 1, 1.5: distances 0.5 and 1) is printed inv_gamma(45.631904, 31.399697), where the exact solution of its rule (45.6319046088, 31.3996975374) rounds to inv_gamma(45.631905, 31.399698), which ab.default_priors() returns: brms's iterative solver stops just below a rounding boundary, the documented exception at x = (0, 0.5, 1) of divergence D67; levels p and r, gauss_gp_two_inputs_aniso's inv_gamma(45.631905, 28.084743) (the same shape at other distances) and every other G09 case's default table agree, and every other gate of this case passes"
  }
 }
