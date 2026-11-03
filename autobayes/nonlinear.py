@@ -628,6 +628,8 @@ def parse_nonlinear(formulas, data: pd.DataFrame | None = None, family: str = "g
         if d.mo_terms:
             raise FormulaError(f"{text!r}: the monotonic term {d.mo_terms[0].name!r} in a non-linear parameter's formula is not "
                                "supported (divergence D61)")
+        from autobayes.special_terms import refuse_in             # G10: nor a special product
+        refuse_in(d, "a non-linear parameter's formula")
         if d.expression_terms:                                         # G04: not verified in a parameter's formula
             raise FormulaError(f"{text!r}: the in-formula transform {d.expression_terms[0].basis!r} in a non-linear parameter's formula "
                                "is not supported: no frozen case verifies it (docs/expressions.md, divergence D182)")

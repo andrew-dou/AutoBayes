@@ -857,6 +857,9 @@ class Priors:
         out: dict[tuple[str, str], Prior] = {}
         for t in group_terms:
             entry = by_factor[t.factor]
+            if isinstance(entry, Mapping) and getattr(t, "thresholds", False) and t.coefs == ("Intercept",):   # G10: (cs(1) | g)
+                out[(t.factor, "Intercept")] = next(iter(entry.values()), None)   # before the response is seen: checked once its
+                continue                                                          # thresholds are known
             if isinstance(entry, Mapping) and default is not None:   # D173: the coefficients not named take the class-wide prior
                 entry = {**{c: default for c in (t.written or t.coefs)}, **entry}   # G05a: a factor slope by its factor
             if isinstance(entry, Mapping):
@@ -887,8 +890,8 @@ class Priors:
                                          f"all its coefficients (one per non-reference level), got {type(prior).__name__} "
                                          "(docs/group-term-syntax.md)")
                     out[(t.factor, c)] = prior
-            elif t.slopes and default is not None:           # D173: a factor's one prior covers its coefficients (brms's group row)
-                for c in t.coefs:
+            elif (t.slopes and default is not None) or getattr(t, "thresholds", False):   # D173: a factor's one prior covers its
+                for c in t.coefs:                            # coefficients (brms's group row); G10: (cs(1) | g)'s per-threshold SDs
                     out[(t.factor, c)] = entry
             elif t.slopes:
                 raise PriorError(
@@ -995,6 +998,8 @@ class Priors:
         none. Once the data are seen (the term's coding known), a vector of concentrations must have one entry per step."""
         terms = tuple(getattr(spec, "mo_terms", ()))
         columns = [t.operands[0] for t in terms]
+        if getattr(spec, "sp_terms", ()) and any(t.special.mo_parts for t in spec.sp_terms):   # G10: the special products' simplexes
+            return self._split_simo(spec, columns)[0]                                         # too (special_simo_priors)
         if not terms:
             if self.simo is not None:
                 raise PriorError("the formula has no monotonic term mo(x); do not pass simo (the prior of a monotonic term's simplex)")
@@ -1028,6 +1033,42 @@ class Priors:
                     raise PriorError(f"prior for 'simo:{c}' ({coding.term}, {coding.D} steps from {coding.lowest} to "
                                      f"{coding.highest}): {e}") from None
         return by_column
+
+    def _split_simo(self, spec, columns: list[str]) -> tuple[dict[str, Prior], dict[str, Prior]]:
+        """G10 (docs/special-term-ext.md): ``simo`` of a formula with special products, as ``(the plain monotonic terms' priors by
+        column, the special products' by flat simplex key)``: a mapping by column, id, term name and, for a term with several
+        ``mo()`` parts, term name and column (``{"mo(ord):mo(o2)": {"ord": ..., "o2": ...}}``), or one bare prior for a formula
+        with one simplex. Each a Dirichlet with one concentration or one per step of its part's coding."""
+        from autobayes import special_terms
+
+        if any(t.special.factor is not None and t.special.level is None for t in spec.sp_terms):
+            return {}, {}                                    # a factor's terms are known once the data are seen; checked then
+        keys = [special_terms.flat(k) for k in special_terms.prior_keys(spec)]
+        if self.simo is None:
+            raise PriorError(f"the monotonic simplexes {columns + keys} need priors: pass simo={{...}} keyed by column, id or term (brms "
+                             f"class simo; brms's default is dirichlet(1), ab.Dirichlet(1); {special_terms.DOC})")
+        try:
+            plain, special = special_terms.split_simo(self.simo, spec, columns)
+        except ValueError as e:
+            raise PriorError(str(e)) from None
+        plain = dict(zip(columns, [plain[c] for c in columns])) if plain else {}
+        codings = {**{c: spec.monotonic(c) for c in columns}, **{k: v[0] for k, v in special_terms.simplexes(spec).items()}}
+        for k, prior in {**plain, **special}.items():
+            if not isinstance(prior, Prior) or prior.name not in _SIMPLEX:
+                raise PriorError(f"prior for 'simo:{k}' must be a prior on a simplex ({sorted(_SIMPLEX)}, brms's dirichlet()), got {prior}")
+            if codings[k].known:
+                try:
+                    dirichlet_concentration(prior, codings[k].D)
+                except PriorError as e:
+                    raise PriorError(f"prior for 'simo:{k}' ({codings[k].D} steps): {e}") from None
+        return plain, special
+
+    def special_simo_priors(self, spec) -> dict[str, Prior]:
+        """G10: the ``Dirichlet`` prior of each simplex of the formula's special products (brms class ``simo``), by flat key in
+        first-use order (``special_terms.simplexes``); empty without one."""
+        if not any(t.special.mo_parts for t in getattr(spec, "sp_terms", ())):
+            return {}
+        return self._split_simo(spec, [t.operands[0] for t in spec.mo_terms])[1]
 
     def sdgp_priors(self, spec) -> dict[str, Prior]:
         """The prior of each Gaussian process's marginal SD (C03, brms class ``sdgp``), keyed by its column in formula order."""
@@ -1223,6 +1264,7 @@ class Priors:
                 f"{name} has its own formula '{dspec.formula}': its priors are a mapping {{'intercept': prior, 'b': prior}} over "
                 f"that formula's intercept and coefficients ({brms}), not {type(entry).__name__} {entry}")
         keys = ("intercept", "b", "sd") if dspec.group_terms else ("intercept", "b")   # D08: a shared ID's terms have an sd
+        keys += ("simo",) if any(t.special.mo_parts for t in dspec.sp_terms) else ()   # G10: the formula's own simplexes
         extra = [k for k in entry if k not in keys]
         if extra:
             keys_text = "'intercept', 'b' and 'sd'" if dspec.group_terms else "'intercept' and 'b'"
@@ -1238,7 +1280,8 @@ class Priors:
         if dspec.pop_terms and entry.get("b") is None:
             raise PriorError(f"'{dspec.formula}' has the population-level term(s) {list(dspec.terms)}, which need priors: pass "
                              f"{name}={{..., 'b': ...}} (one prior, or a mapping by term as for the response formula's b)")
-        return Priors(intercept=entry.get("intercept"), b=entry.get("b"), sd=entry.get("sd") if dspec.group_terms else None)
+        return Priors(intercept=entry.get("intercept"), b=entry.get("b"), sd=entry.get("sd") if dspec.group_terms else None,
+                      **({"simo": entry.get("simo")} if "simo" in keys else {}))
 
     def table(self, spec, family="gaussian", *, center_predictors: bool = True, categories=None) -> list[dict[str, str]]:
         """These priors in brms's table form, the rows of brms's ``default_prior()`` (prior, class, coef, group, resp,

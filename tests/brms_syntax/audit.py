@@ -398,6 +398,8 @@ def match_groups(blocks: dict, terms, reading: Reading, scope: dict, issues: lis
                 covariate = block.Z[np.arange(n), gidx]
                 if _close(Zc, covariate):
                     found.append((grp, [m.get(j, -1) for j in range(len(grp["levels"]))]))
+        if len(found) > 1:                                           # G10: (cs(1) | g)'s per-threshold intercepts, all ones, by label
+            found = [(grp, m) for grp, m in found if grp["coef"] == _brms_coef(coef)]
         if len(found) != 1:
             issues.append(f"{what}group-level coefficient {coef!r} of {factor!r}: {len(found)} brms group-level terms have its "
                           f"partition of the rows and its covariate column")
@@ -518,6 +520,8 @@ def compare_univariate(model, reading: Reading, issues: list, notes: list, what:
                           + ("learns sigma" if "sigma" in model.names else "does not match it"))
     for column, block in d.monotonic.items():                       # mo(): Xmo_k, Jmo
         ks = [k for k in range(1, 50) if reading.has(f"Xmo_{k}") and _close(reading.sd.get(reading.key(f"Xmo_{k}")), block.codes)]
+        if len(ks) > 1 and getattr(d, "special", {}):                # G10: a special product's part of the same column has its
+            ks = ks[:1]                                              # codes too (compare_special); brms's first is the main effect
         if len(ks) != 1:
             issues.append(f"{what}{block.term!r}: {len(ks)} brms monotonic terms carry its codes")
             continue
@@ -557,6 +561,7 @@ def compare_univariate(model, reading: Reading, issues: list, notes: list, what:
     for t in spec.pop_terms:                                         # mi(col) terms: brms's special terms (Ksp)
         if t.kind == "missing":
             reading.used.add(reading.key("Ksp"))
+    compare_special(model, reading, issues, what)                    # G10: special products, me(gr = ), every formula's
     if spec.response in d.missing:                                   # a response with missing values: Jmi, Nmi
         idx = d.missing[spec.response].index
         if int(reading.get("Nmi")) != idx.size or not _close(reading.get("Jmi"), idx + 1):
@@ -595,6 +600,39 @@ def compare_univariate(model, reading: Reading, issues: list, notes: list, what:
     if q is not None:
         if not reading.has("quantile") or not _close(reading.get("quantile"), q):
             issues.append(f"{what}brms's fixed quantile differs from AutoBayes's {q}")
+
+
+def compare_special(model, reading: Reading, issues: list, what: str = "") -> None:
+    """G10: each special product's ``mo()`` codes (``Xmo_k``, ``Jmo``, ``con_simo_k``) and covariate (``Csp_k``), of the response
+    formula and of each distributional formula (``Xmo_<dpar>_k``, ...), by content; and ``me(x, sdx, gr = g)``'s level index
+    ``Jme_k`` and number of levels ``Nme_k``."""
+    d, spec = model.design, model.spec
+    formulas = [("", getattr(d, "special", {}) or {})] + [(f"_{name}", getattr(dd, "special", {}) or {}) for name, dd in d.dpars.items()]
+    for suffix, blocks in formulas:
+        for name, block in blocks.items():
+            for column, key, codes, D in block.mo:
+                ks = [k for k in range(1, 50) if reading.has(f"Xmo{suffix}_{k}") and _close(reading.sd.get(reading.key(f"Xmo{suffix}_{k}")), codes)
+                      and int(np.atleast_1d(reading.sd.get(reading.key(f"Jmo{suffix}")))[k - 1]) == D]
+                if not ks:
+                    issues.append(f"{what}{name!r}: no brms monotonic variable carries the codes and steps of its mo({column}) part")
+                for k in ks:
+                    reading.used.update({reading.key(f"Xmo{suffix}_{k}"), reading.key(f"con_simo{suffix}_{k}")})
+                reading.used.update({reading.key(f"Imo{suffix}"), reading.key(f"Jmo{suffix}")})
+            reading.used.add(reading.key(f"Ksp{suffix}"))
+            if block.covariate is not None:
+                ks = [k for k in range(1, 50) if reading.has(f"Csp{suffix}_{k}")
+                      and _close(reading.sd.get(reading.key(f"Csp{suffix}_{k}")), block.covariate)]
+                if not ks:
+                    issues.append(f"{what}{name!r}: no brms Csp{suffix}_k is its covariate")
+                reading.used.update(reading.key(f"Csp{suffix}_{k}") for k in ks)
+    for block in d.measurement_error.values():
+        if getattr(block, "index", None) is None:
+            continue
+        ks = [k for k in range(1, 20) if reading.has(f"Jme_{k}") and _close(reading.sd.get(reading.key(f"Jme_{k}")), block.index + 1)]
+        if len(ks) != 1 or int(reading.get(f"Nme_{ks[0]}")) != len(block.levels):
+            issues.append(f"{what}{block.term!r}: brms's Jme / Nme differ from AutoBayes's levels of gr")
+            continue
+        reading.used.add(reading.key(f"Jme_{ks[0]}"))
 
 
 def data2_data(model) -> dict:

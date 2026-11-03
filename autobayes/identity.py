@@ -214,13 +214,34 @@ def _monotonic_payload(model):
     return out
 
 
+def _special_payload(model):
+    """G10: the target identity's entries of every formula's special products (``special_terms.SpecialBlock``) and simplexes."""
+    from autobayes.priors import dirichlet_concentration
+    from autobayes.special_terms import simplexes
+
+    out = []
+    for name, ds, d, pr in [("", model.spec, model.design, model.priors)] + [
+            (ds.response, ds, model.design.dpars[ds.response], model.priors.dpar_priors(model.spec, ds.response)) for ds in model.spec.dpars]:
+        if not ds.sp_terms:
+            continue
+        given = pr.special_simo_priors(ds)
+        out.append({'formula': name or 'mu',
+                    'terms': [{'term': b.term, 'mo': [{'column': c, 'key': k, 'codes': codes, 'D': D} for c, k, codes, D in b.mo],
+                               'me': list(b.me), 'covariate': b.covariate} for b in d.special.values()],
+                    'simplexes': [{'key': k, 'prior': _prior(given[k]), 'concentration': dirichlet_concentration(given[k], m.D)}
+                                  for k, (m, _, _, _) in simplexes(ds).items()]})
+    return out
+
+
 def _measurement_payload(model):
     """The target identity's entries of the me() terms (C06): each term's noisy values and known noise and the priors of its
     latent values (its coefficient's prior is among the coefficients)."""
     s, pr = model.spec, model.priors
     means, sds = pr.me_priors(s, 'meanme'), pr.me_priors(s, 'sdme')
     return [{'term': block.term, 'column': x, 'noise_column': block.noise_column, 'Xn': block.Xn, 'noise': block.noise,
-             'meanme': _prior(means[x]), 'sdme': _prior(sds[x])} for x, block in model.design.measurement_error.items()]
+             'meanme': _prior(means[x]), 'sdme': _prior(sds[x]),
+             **({'levels': list(block.levels), 'index': block.index} if block.index is not None else {})}   # G10: gr's levels
+            for x, block in model.design.measurement_error.items()]
 
 
 def _mixture_payload(model):
@@ -366,6 +387,10 @@ def freeze_target(model):
         **({'distributional': [_dpar_payload(model, ds) for ds in s.dpars]} if s.dpars else {}),
         # So do monotonic terms (B03): their coding, codes and simplex priors (each coefficient's prior is a coefficient's).
         **({'monotonic': _monotonic_payload(model)} if s.mo_terms else {}),
+        # So do G10's special products (docs/special-term-ext.md), every formula's: each term's parts, codes, covariate and
+        # simplex keys, and each simplex's prior with its concentrations.
+        **({'special_products': _special_payload(model)} if getattr(s, 'sp_terms', ()) or any(getattr(ds, 'sp_terms', ()) for ds in s.dpars)
+           else {}),
         # So does a mixture (C05): its components, their priors and theta's; its own entries under 'priors' are then empty.
         **({'mixture': _mixture_payload(model)} if mixture else {}),
         # So do Gaussian processes (C03): their inputs, scaling, row index, basis and priors.

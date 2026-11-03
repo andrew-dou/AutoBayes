@@ -123,6 +123,7 @@ def check_link_formula(spec, fam) -> None:
 
     found = []
     found += [f"the monotonic term {t.name!r}" for t in getattr(spec, "mo_terms", ())]
+    found += [f"the special term {t.name!r}" for t in getattr(spec, "sp_terms", ())]                         # G10
     found += [f"the Gaussian process {g.term!r}" for g in getattr(spec, "gp_terms", ())]
     found += [f"the group term '{t.canonical}'" for t in getattr(spec, "custom_group_terms", ())]
     found += [f"the measurement-error term {t.name!r}" for t in getattr(spec, "me_terms", ())]

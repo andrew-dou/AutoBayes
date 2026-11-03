@@ -120,6 +120,12 @@
  },
  "gate": {
   "expect": "fail",
-  "reason": "G10_special_term_ext not implemented; brms 2.23.0 multiplies every level's term of mo(ord):z by one indicator column (Csp_1; see the note): when the feature lands, implement the interaction as written and carry a per-gate expected failure or a P6 reference, or keep refusing it"
+  "gates": [
+   "g2_logp",
+   "g2_gradient",
+   "g3",
+   "g4"
+  ],
+  "reason": "brms 2.23.0 multiplies every level's term of mo(ord):z by the first level's indicator Csp_1 (the note); AutoBayes builds the interaction as written, one indicator per level (divergence D197): the log density, its gradient, the linear predictor and the predictions differ from brms's, while the Stan data (G1), the JAX density (G5) and the default priors (G6) agree"
  }
 }

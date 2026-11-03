@@ -2771,13 +2771,33 @@
     "C06_missing_and_measurement_error",
     "D08_cs_mm_gr"
    ],
-   "status": "implementing",
+   "status": "gates_green",
    "summary": "mo() interactions and ids, me(gr = ) and me() interactions, cs() in group-level terms and on expressions (corpus sp_mo_*, sp_me_*, sp_cs_*)",
    "pr": null,
    "attempts": 0,
    "divergences": [],
    "next_action": "feature agent on parity/g10",
-   "reserved_divergences": "D197-D198"
+   "reserved_divergences": "D197-D198",
+   "gates": {
+    "sha": "b325bf07f220",
+    "dirty_tree": false,
+    "base": "origin/main",
+    "when": "2026-11-03T13:40Z",
+    "results": {
+     "immutability": {
+      "status": "pass",
+      "seconds": 0.0
+     },
+     "oracle": {
+      "status": "pass",
+      "seconds": 894.7
+     },
+     "diff_coverage": {
+      "status": "pass",
+      "seconds": 296.6
+     }
+    }
+   }
   },
   {
    "id": "G11_index_group_design",

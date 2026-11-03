@@ -57,7 +57,7 @@ from autobayes.correlation import check_correlation_cholesky, cholesky_corr_free
 from autobayes import expressions
 from autobayes.families import FAMILIES, FamilySpec, get_family
 from autobayes.formula import (Categorical, FormulaError, ModelSpec, addition_data, bambi_group_name, binomial_counts, by_levels_of,
-                               categorical_labels, check_imputation, factor_column, group_labels, interaction_cells,
+                               categorical_labels, check_imputation, cs_label, cs_values, factor_column, group_labels, interaction_cells,
                                measurement_values, missing_values, mm_weights, parse_formula, poly_contrasts, pop_term_design, sd_tag,
                                with_trials)
 from autobayes.formula import DATA2_UNIVARIATE, check_data2   # Tier F: brms's data2 (F02b, F03a)
@@ -238,6 +238,8 @@ class DparDesign:
     # rather than Bambi's raw-scale one: True where the family's likelihood centres the formula (``DistributionalFormula
     # .centred_by_likelihood``, the cumulative disc), whose posterior Bambi does not uncentre
     centred_draws: bool = False
+    # G10: the formula's special products (special_terms.SpecialBlock, by term name; docs/special-term-ext.md)
+    special: Mapping[str, object] = field(default_factory=lambda: MappingProxyType({}))
 
 
 @dataclass(frozen=True)
@@ -277,6 +279,8 @@ class MeasurementBlock:
     noise_column: str
     Xn: np.ndarray
     noise: np.ndarray
+    levels: tuple = ()                 # G10: me(x, sdx, gr = g): the sorted levels of g, whose values Xn and noise hold, and
+    index: np.ndarray | None = None    # each fitted row's level, 0-based (brms's Jme_k - 1); () and None without gr
 
 
 @dataclass(frozen=True)
@@ -333,6 +337,7 @@ class Design:
     denom: np.ndarray | None = None    # (n,) brms ``denom`` of a ``rate(col)`` term: each row's denominator (F06a), or None
     bhaz: object | None = None         # baseline_hazard.BaselineHazard: a cox model's knots, bases (brms's Zbhaz, Zcbhaz) and events (F05), or None
     group_cov: Mapping[str, object] = field(default_factory=lambda: MappingProxyType({}))   # G05b: each gr(g, cov = A) term's group_cov.GroupCovariance, by factor
+    special: Mapping[str, object] = field(default_factory=lambda: MappingProxyType({}))     # G10: each special product's special_terms.SpecialBlock, by name
 
     def __post_init__(self):
         if not self.columns:
@@ -446,6 +451,9 @@ def _linear_terms(spec: ModelSpec, centered: bool, b: str = "b") -> list[str]:
             parts.append(f"{b}_{term} * {t.operands[0]}_i")
         elif t.kind == "category_specific":                  # D04: one coefficient per threshold, in mu_i[k] (the family's lines)
             continue
+        elif t.kind == "special_product":                    # G10: brms's bsp * prod(parts) * Csp, never centred
+            from autobayes.special_terms import row_expression
+            parts.append(f"{b}_{term} * {row_expression(t.special, '' if b == 'b' else b[2:] + '_')}")
         elif t.kind == "contrast":                           # F08: a polynomial contrast of an ordered factor, at row i's level
             value = f"{term}[{t.factor}_i]"
             parts.append(f"({value} - mean({term})) * {b}_{term}" if centered else f"{value} * {b}_{term}")
@@ -805,6 +813,9 @@ class Model:
             self._bambi_centring = self.center_predictors
         if fam.bambi_setup is not None:                      # B05: the family builds what Bambi is handed from the model
             bambi_family, bambi_priors, self._bambi_centring = fam.bambi_setup(self, bambi_priors)
+        if self.spec.sp_terms:                               # G10: brms's special products, added after every hook below (the
+            from autobayes.likelihoods import monotonic_family   # latent values of me() among them)
+            bambi_family = monotonic_family(bambi_family, self._add_special_products)
         if self.spec.mo_terms:                               # brms's mo() (B03): added to the parent's linear predictor at build
             from autobayes.likelihoods import monotonic_family
             bambi_family = monotonic_family(bambi_family, self._add_monotonic_effects)
@@ -835,6 +846,11 @@ class Model:
             if fam.distributional_parameter_link(d.response) == "logm1":
                 from autobayes.likelihoods import logm1_link
                 bambi_family.link = {**bambi_family.link, self._bambi_dpar(d.response): logm1_link()}
+            if d.sp_terms:                                   # G10: a distributional formula's special products, before its link
+                from autobayes.special_terms import check_dpar_link, special_link
+                link = fam.distributional_parameter_link(d.response)
+                check_dpar_link(d.response, link, d)
+                bambi_family.link = {**bambi_family.link, self._bambi_dpar(d.response): special_link(self, d)}
         self.bambi_model = bmb.Model(
             bambi_formula, bambi_data, family=bambi_family,
             priors=bambi_priors,
@@ -856,6 +872,8 @@ class Model:
             check_graph(self)
         if self.spec.me_terms or self.spec.mi_terms:         # C06: each term's contribution to the linear predictor, checked
             self._check_measurement_effects()
+        if self.spec.sp_terms or any(d.sp_terms for d in self.spec.dpars):   # G10: each special product's, read off the graph
+            self._special_design()
         if fam.mixture:                                      # C05: the graph built beside Bambi's components, checked
             from autobayes.families.mixture import check_graph
             check_graph(self)
@@ -901,7 +919,7 @@ class Model:
         variable_names += [v for v in (self._bambi_dpar(d.response) for d in self.spec.dpars) if v not in variable_names]   # G06: disc
         if self.family_spec.thresholds:                     # B05: the raw thresholds' deterministic and their coordinate
             variable_names += [self.names["thresholds"], self.names["threshold_dim"]]
-        if self.spec.cs_terms:                              # D04: Bambi's parent mu beside the thresholds' predictor mu_cs
+        if self.spec.has_category_specific:                 # D04: Bambi's parent mu beside the thresholds' predictor mu_cs
             variable_names += [self.family_spec.parent]
         if self.family_spec.per_category:                   # B05: the category coordinates Bambi adds
             variable_names += [self.names["category_dim"], f"{self.spec.response}_dim"]
@@ -919,6 +937,7 @@ class Model:
         dpar_coefficients = [v for roles in self.dpar_names.values() for k, v in roles.items() if k != "value"]   # B01
         variable_names += dpar_coefficients
         variable_names += [roles["simplex"] for roles in self.mo_names.values()]   # each monotonic term's simplex (B03)
+        variable_names += list(self.sp_names["simplex"].values()) if self.spec.sp_terms else []   # G10: the special products'
         variable_names += [roles[k] for roles in self.gp_names.values() for k in ("sdgp", "lscale", "zgp")]   # each GP's (C03)
         variable_names += [v for k, v in self.autocor_names.items() if not k.endswith("_coordinate")]   # ar and ma (C04)
         variable_names += list(self.sar_names.values())      # lagsar or errorsar (F02b)
@@ -939,6 +958,8 @@ class Model:
         coords += [f"{t.name}_dim" for t in self.spec.pop_terms if t.is_vector]
         coords += [f"{self.dpar_names[d.response][f'b:{t.name}']}_dim" for d in self.spec.dpars for t in d.pop_terms if t.is_vector]
         coords += [roles["coordinate"] for roles in self.mo_names.values()]
+        coords += list(self.sp_names["coordinate"].values()) if self.spec.sp_terms else []   # G10
+        coords += [f"{v}_dim" for roles in self.dpar_names.values() for k, v in roles.items() if k.startswith("simo:")]   # G10
         coords += [roles["coordinate"] for roles in self.gp_names.values()]       # C03
         coords += [v for k, v in self.autocor_names.items() if k.endswith("_coordinate")]   # ar_dim and ma_dim (C04)
         coords += [v for k, v in self.car_names.items() if k.endswith("coordinate")]   # rcar_dim, zcar_dim (F02a)
@@ -1254,7 +1275,7 @@ class Model:
             raise RuntimeError(f"Bambi built group-level terms for the formula '{d.formula}', which has none")
         names = list(comp.design.common.terms)
         offset_terms = [d.offset.bambi_name] if d.offset is not None else []   # G06: an offset of the formula, Bambi's last common term
-        if names != (["Intercept"] if d.intercept else []) + list(d.terms) + offset_terms:
+        if names != (["Intercept"] if d.intercept else []) + [t.name for t in d.bambi_terms] + offset_terms:   # G10: no special term
             raise RuntimeError(f"unexpected terms from Bambi for the formula '{d.formula}': {names}")
         Xfull = np.asarray(comp.design.common.design_matrix, dtype=float)
         offset = None
@@ -1272,6 +1293,7 @@ class Model:
         formula = self.family_spec.distributional_formula(d.response)        # G06: logm1 for nu; the cumulative disc's centred log
         by_likelihood = formula is not None and formula.centred_by_likelihood
         expected = f"{link}_centred" if by_likelihood else link
+        expected = f"{link}_special" if d.sp_terms else expected   # G10: the link that adds the formula's special products
         if self.bambi_model.family.link[bname].name != expected:
             raise RuntimeError(f"Bambi's link of {bname!r} is {self.bambi_model.family.link[bname].name}, expected {expected}")
         # an intercept-only formula has nothing to centre; G06: a family's likelihood may centre it where Bambi does not
@@ -1462,6 +1484,54 @@ class Model:
                 raise RuntimeError(f"the graph's {parent!r} does not move by D * sum(simplex[:Xmo]) per row with the coefficient of "
                                    f"{block.term!r}; largest difference {np.max(np.abs(moved - expected)) if moved.shape == expected.shape else moved.shape}")
 
+    # -- special products (G10, docs/special-term-ext.md) ---------------------------------
+    def _add_special_products(self, eta):
+        """brms's special products of the response formula (``mo(ord):x``, ``mo(ord, id = "a")``, ``me(x, sdx):w``), built inside
+        the model Bambi is building (``likelihoods.monotonic_family``'s hook, after the other terms' hooks): ``special_terms.add_effects``."""
+        from autobayes.special_terms import add_effects
+
+        return add_effects(self, eta, self.spec, self.priors.coefficient_priors(self.spec), self.priors.special_simo_priors(self.spec),
+                           self.data)
+
+    def _special_design(self) -> None:
+        """Each special product's block, read off the graph (``special_terms.check_effects``): the response formula's on the
+        parent under Bambi's link, a distributional formula's on its parameter's per-row deterministic under the log link."""
+        from dataclasses import replace
+
+        from autobayes.special_terms import check_effects
+
+        special = {}
+        if self.spec.sp_terms:
+            parent = self.family_spec.parent
+            special = check_effects(self, self.spec, parent, self.bambi_model.family.link[parent].name, self.data)
+        dpars = dict(self.design.dpars)
+        for d in self.spec.dpars:
+            if d.sp_terms:
+                bname = self._bambi_dpar(d.response)
+                dpars[d.response] = replace(dpars[d.response], special=MappingProxyType(
+                    check_effects(self, d, bname, self.family_spec.distributional_parameter_link(d.response), self.data, f"{bname}_")))
+        self.design = replace(self.design, special=MappingProxyType(special), dpars=MappingProxyType(dpars))
+
+    def _measurement_rows(self, x: str):
+        """G10: each fitted row's level of ``me(x, sdx, gr = g)`` (0-based, the index of its latent value), or None for an
+        ``me()`` term without ``gr`` (one latent value per row)."""
+        from autobayes.formula import measurement_error_group
+
+        t = next(t for t in self.spec.me_terms if t.operands[0] == x)
+        if measurement_error_group(t.name) is None:
+            return None
+        from autobayes.special_terms import measurement_levels
+
+        return measurement_levels(t.name, self.data)[1]
+
+    @property
+    def sp_names(self) -> dict:
+        """G10: PyMC names of the response formula's special products (``special_terms.names``): ``"b"`` by term name, and
+        ``"simplex"`` and ``"coordinate"`` by flat simplex key (``simo_<key>``). Empty mappings without one."""
+        from autobayes.special_terms import names
+
+        return names(self.spec)
+
     # -- category-specific effects (D04) -------------------------------------------------
     def _add_category_specific_effects(self, mu):
         """brms's category-specific effects ``cs(x)`` (D04, docs/ordinal-categorical.md), built inside the model Bambi is
@@ -1471,27 +1541,33 @@ class Model:
         threshold, ``mu_i + sum_c x_c,i bcs_c[k]`` (brms's ``mu`` and ``Xcs bcs``, the column never centred), registered as the
         deterministic ``names["linpred"]`` (``mu_cs``; dims ``__obs__`` and the thresholds'), which the likelihood reads."""
         import pymc as pm
+        import pytensor.tensor as pt
 
         coefficients = self.priors.coefficient_priors(self.spec)
         dim = self.names["threshold_dim"]
         eta = mu[:, None]
+        for factor, (rs, index) in getattr(self, "_threshold_effects", {}).items():   # G10: (cs(1) | g), r_k[J] on threshold k
+            eta = eta + pt.stack([r[index] for r in rs], axis=1)
         for t in self.spec.cs_terms:
             prior = coefficients[t.name]
             coef = getattr(pm, prior.name)(t.name, **{k: np.float64(v) for k, v in prior.params.items()}, dims=dim)
-            eta = eta + np.asarray(self.data[t.operands[0]], dtype=np.float64)[:, None] * coef[None, :]
+            eta = eta + cs_values(t, self.data)[:, None] * coef[None, :]   # G10: a factor's contrast column too
         return pm.Deterministic(self.names["linpred"], eta, dims=("__obs__", dim))
 
     def _category_specific_design(self) -> dict[str, np.ndarray]:
         """Each category-specific term's column on the fitted rows (brms's ``Xcs``, by column, in term order), checked against
         the graph: its coefficients a free vector over the thresholds' dimension, and the thresholds' predictor ``mu_cs`` moving,
         row by row and threshold by threshold, by exactly ``x_i * c[k]`` from ``mu`` when the coefficients go from 0 to a test
-        vector ``c``. Empty without a ``cs()`` term."""
+        vector ``c``. Empty without a ``cs()`` term. G10: a ``(cs(1) | g)`` term's per-threshold effects move it too, by
+        ``test_k[J]`` on threshold k when the term's SDs are 1, its correlation factor the identity and its standardised effects
+        ``test_k``."""
         terms = self.spec.cs_terms
-        if not terms:
+        thresholds = [t for t in self.spec.group_terms if t.thresholds]
+        if not terms and not thresholds:
             return {}
         pmm, dim = self.pymc_model, self.names["threshold_dim"]
         K1 = len(self.categories) - 1
-        blocks = {t.operands[0]: np.asarray(self.data[t.operands[0]], dtype=float) for t in terms}
+        blocks = {cs_label(t): cs_values(t, self.data) for t in terms}   # G10: by brms's Xcs column name (x, zq)
         for t in terms:
             rv = pmm[t.name]
             if rv not in pmm.free_RVs or tuple(pmm.named_vars_to_dims.get(t.name, ())) != (dim,) or pmm.rvs_to_values[rv].name != t.name:
@@ -1504,8 +1580,19 @@ class Model:
         tests = {t.name: np.cos(np.arange(1.0, K1 + 1.0) * (j + 1.0)) for j, t in enumerate(terms)}
         point = pmm.initial_point()
         point.update(tests)
+        group_part = 0.0
+        for t in thresholds:                                 # G10: (cs(1) | g) at unit SDs, the identity and test effects
+            index, effects = level_codes(self.data[t.column].astype(str), self.spec.levels_by_group[t.factor]), []
+            for k, c in enumerate(t.coefs):
+                roles = self.group_coefficient_names[(t.factor, c)]
+                point[f"{roles['sd']}_log__"] = np.asarray(0.0)
+                point[roles["offset"]] = np.sin(np.arange(1.0, len(self.spec.levels_by_group[t.factor]) + 1.0) * (k + 1.0))
+                effects.append(point[roles["offset"]][index])
+            value = f"{self.correlation_names[t.factor]['L']}_cholesky_corr__"
+            point[value] = np.zeros(np.shape(point[value]))
+            group_part = group_part + np.stack(effects, axis=1)
         mu, mu_cs = (np.asarray(v, dtype=float) for v in fn(point))
-        expected = mu[:, None] + sum(blocks[t.operands[0]][:, None] * tests[t.name][None, :] for t in terms)
+        expected = mu[:, None] + sum(blocks[cs_label(t)][:, None] * tests[t.name][None, :] for t in terms) + group_part
         if mu_cs.shape != expected.shape or not np.allclose(mu_cs, expected, rtol=1e-12, atol=1e-12):
             raise RuntimeError(f"the graph's {lin!r} is not mu plus the cs() columns times their coefficients")
         return blocks
@@ -1673,6 +1760,9 @@ class Model:
                 dfm = self._student_scale(model, t)
                 effects = [dfm * e for e in effects]
             rs = [pm.Deterministic(r["group_effect"], e, dims=r["coordinate"]) for r, e in zip(roles, effects)]
+            if t.thresholds:                                 # G10: (cs(1) | g): each threshold's own, added to mu_cs instead
+                self._threshold_effects = {**getattr(self, "_threshold_effects", {}), t.factor: (rs, layout["index"][0])}
+                continue
             for k, (index, weight) in enumerate(zip(layout["index"], layout["weights"])):
                 for c, r in zip(t.coefs, rs):
                     part = r[index] if c == "Intercept" else r[index] * np.asarray(layout["covariates"][c][k], dtype=np.float64)
@@ -1792,6 +1882,8 @@ class Model:
         dfm = dict(zip(students, (np.asarray(v, dtype=float) for v in base[1:])))
         for (factor, c), block in blocks.items():
             roles, t = self.group_coefficient_names[(factor, c)], self.spec.group_term_of(factor)
+            if t.thresholds:                                 # G10: checked on mu_cs (_category_specific_design)
+                continue
             test = np.cos(np.arange(1.0, block.J + 1.0))
             lo, hi = (np.asarray(fn(p)[0], dtype=float).ravel() for p in (at0, {**at0, roles["offset"]: test}))
             moved = hi - lo if link == "identity" else np.log(hi) - np.log(lo)
@@ -1914,15 +2006,22 @@ class Model:
         coefficients = self.priors.coefficient_priors(self.spec)
         means, sds = self.priors.me_priors(self.spec, "meanme"), self.priors.me_priors(self.spec, "sdme")
         for t in self.spec.me_terms:
-            x, sdx = t.operands
+            x, sdx = t.operands[:2]
             roles = self.me_names[x]
-            noisy, noise = measurement_values(t.name, self.data[x], self.data[sdx])
+            rows, dims = None, "__obs__"
+            if "coordinate" in roles:                        # G10: me(x, sdx, gr = g), one latent value per level of g (brms's Jme)
+                from autobayes.special_terms import measurement_levels
+                levels, rows, noisy, noise = measurement_levels(t.name, self.data)
+                dims = roles["coordinate"]
+                model.add_coord(dims, list(levels))
+            else:
+                noisy, noise = measurement_values(t.name, self.data[x], self.data[sdx])
             mean = _prior_rv(roles["mean"], means[x])
             sd = _prior_rv(roles["sd"], sds[x], positive=True)
-            z = pm.Normal(roles["z"], mu=np.float64(0.0), sigma=np.float64(1.0), dims="__obs__")
-            latent = pm.Deterministic(roles["latent"], mean + sd * z, dims="__obs__")
-            pm.Normal(roles["noisy"], mu=latent, sigma=np.asarray(noise, dtype=np.float64), observed=noisy, dims="__obs__")
-            eta = eta + coefficient_rv(roles["b"], coefficients[t.name]) * latent
+            z = pm.Normal(roles["z"], mu=np.float64(0.0), sigma=np.float64(1.0), dims=dims)
+            latent = pm.Deterministic(roles["latent"], mean + sd * z, dims=dims)
+            pm.Normal(roles["noisy"], mu=latent, sigma=np.asarray(noise, dtype=np.float64), observed=noisy, dims=dims)
+            eta = eta + coefficient_rv(roles["b"], coefficients[t.name]) * (latent if rows is None else latent[rows])
         for t in self.spec.mi_terms:
             col = t.operands[0]
             block, roles = self._missing_block(col), self.missing_names.get(col)
@@ -1945,9 +2044,17 @@ class Model:
         scalar. Empty without an ``me()`` term."""
         pmm, blocks = self.pymc_model, {}
         for t in self.spec.me_terms:
-            x, sdx = t.operands
+            x, sdx = t.operands[:2]
             roles = self.me_names[x]
-            noisy, noise = measurement_values(t.name, self.data[x], self.data[sdx])
+            levels, index, dims = (), None, "__obs__"
+            if "coordinate" in roles:                        # G10: me(x, sdx, gr = g): the values of each level of g
+                from autobayes.special_terms import measurement_levels
+                levels, index, noisy, noise = measurement_levels(t.name, self.data)
+                dims = roles["coordinate"]
+                if tuple(str(v) for v in pmm.coords[dims]) != levels:
+                    raise RuntimeError(f"PyMC coordinate {dims!r} is not the sorted levels of the gr column of {t.name!r}")
+            else:
+                noisy, noise = measurement_values(t.name, self.data[x], self.data[sdx])
             for key in ("mean", "sd", "b"):
                 if pmm[roles[key]] not in pmm.free_RVs or pmm[roles[key]].type.ndim != 0:
                     raise RuntimeError(f"{roles[key]!r} is not a free scalar of the graph")
@@ -1956,13 +2063,13 @@ class Model:
             if pmm[roles["z"]] not in pmm.free_RVs or pmm[roles["latent"]] not in pmm.deterministics:
                 raise RuntimeError(f"{roles['z']!r} is not a free variable or {roles['latent']!r} not a deterministic of the graph")
             for key in ("z", "latent", "noisy"):
-                if tuple(pmm.named_vars_to_dims.get(roles[key], ())) != ("__obs__",):
-                    raise RuntimeError(f"PyMC dims of {roles[key]!r} are not ('__obs__',)")
+                if tuple(pmm.named_vars_to_dims.get(roles[key], ())) != (dims,):
+                    raise RuntimeError(f"PyMC dims of {roles[key]!r} are not ({dims!r},)")
             observed = pmm[roles["noisy"]]
             held = np.asarray(getattr(pmm.rvs_to_values.get(observed), "data", np.nan), dtype=float)
             if observed not in pmm.observed_RVs or held.shape != noisy.shape or not np.array_equal(held, noisy):
                 raise RuntimeError(f"{roles['noisy']!r} is not the observed noisy values of {t.name!r}")
-            blocks[x] = MeasurementBlock(t.name, x, sdx, noisy, noise)
+            blocks[x] = MeasurementBlock(t.name, x, sdx, noisy, noise, levels, index)
         return blocks
 
     def _missing_design(self) -> dict[str, MissingBlock]:
@@ -1997,10 +2104,10 @@ class Model:
                             on_unused_input="ignore", mode="FAST_COMPILE")
         point, terms = pmm.initial_point(), []
         for t in self.spec.me_terms:
-            roles = self.me_names[t.operands[0]]
-            z = np.linspace(-1.0, 1.0, self.design.n)
+            roles, block = self.me_names[t.operands[0]], self.design.measurement_error[t.operands[0]]
+            z = np.linspace(-1.0, 1.0, self.design.n if block.index is None else len(block.levels))   # G10: one per level of gr
             point.update({roles["mean"]: np.asarray(0.3), f"{roles['sd']}_log__": np.asarray(np.log(0.7)), roles["z"]: z})
-            terms.append((t.name, roles["b"], 0.3 + 0.7 * z))
+            terms.append((t.name, roles["b"], (0.3 + 0.7 * z) if block.index is None else (0.3 + 0.7 * z)[block.index]))
         for t in self.spec.mi_terms:
             block, roles = self.design.missing[t.operands[0]], self.missing_names.get(t.operands[0])
             values = block.filled.copy()
@@ -2024,8 +2131,12 @@ class Model:
         ``sdme_x_log__``), ``"z"`` the standardised latent values (brms's ``zme``, ``zme_x``, one per row), ``"latent"`` the latent
         values (brms's ``Xme``, the deterministic ``Xme_x``) and ``"noisy"`` the observed noisy values (brms's ``Xn``, ``Xn_x``).
         Empty without an ``me()`` term."""
+        from autobayes.formula import measurement_error_group
+
         return {t.operands[0]: {"b": t.name, "mean": f"meanme_{t.operands[0]}", "sd": f"sdme_{t.operands[0]}",
-                                "z": f"zme_{t.operands[0]}", "latent": f"Xme_{t.operands[0]}", "noisy": f"Xn_{t.operands[0]}"}
+                                "z": f"zme_{t.operands[0]}", "latent": f"Xme_{t.operands[0]}", "noisy": f"Xn_{t.operands[0]}",
+                                # G10: me(x, sdx, gr = g)'s latent values, standardised values and noisy values are per level of g
+                                **({"coordinate": f"Xme_{t.operands[0]}_dim"} if measurement_error_group(t.name) else {})}
                 for t in self.spec.me_terms}
 
     @property
@@ -2085,6 +2196,7 @@ class Model:
             "y": self.spec.response if self.spec.trials is None else f"p({self.spec.response}, {self.spec.trials})",
             **{f"b:{t.name}": t.name for t in self.spec.pop_terms},
             **{f"simo:{column}": roles["simplex"] for column, roles in self.mo_names.items()},   # B03
+            **{f"simo:{key}": name for key, name in (self.sp_names["simplex"].items() if self.spec.sp_terms else ())},   # G10
             **{f"{key}:{column}": roles[key] for column, roles in self.gp_names.items() for key in ("sdgp", "lscale", "zgp")},   # C03
             **{f"{label}:{x}": roles[key] for x, roles in self.me_names.items()                   # C06: me()'s latent values
                for key, label in (("mean", "meanme"), ("sd", "sdme"), ("z", "zme"), ("latent", "Xme"), ("noisy", "Xn"))},
@@ -2103,7 +2215,7 @@ class Model:
         if fam.thresholds:                                    # B05: brms's b_Intercept, the thresholds of the raw design, and
             out["thresholds"] = "b_Intercept"                 # the coordinate of the thresholds ("1", ..., "K - 1")
             out["threshold_dim"] = "Intercept_dim"
-        if self.spec.cs_terms:                                # D04: each threshold's predictor, mu plus Xcs bcs (brms's
+        if self.spec.has_category_specific:                   # D04: each threshold's predictor, mu plus Xcs bcs (brms's
             out["linpred"] = "mu_cs"                          # posterior_linpred of a model with cs() terms)
         if fam.per_category:                                  # B05: the coordinate of the non-reference categories
             out["category_dim"] = f"{self.spec.response}_reduced_dim"
@@ -2228,6 +2340,9 @@ class Model:
             b = self._bambi_dpar(d.response)
             out[d.response] = {"value": b, **({"intercept": f"{b}_Intercept"} if d.intercept else {}),
                                **{f"b:{t.name}": f"{b}_{t.name}" for t in d.pop_terms}}
+            if d.sp_terms:                                    # G10: the formula's own simplexes, <component>_simo_<key>
+                from autobayes.special_terms import names as special_names
+                out[d.response].update({f"simo:{k}": v for k, v in special_names(d, f"{b}_")["simplex"].items()})
         return out
 
     @staticmethod
@@ -2664,6 +2779,8 @@ class Model:
             point[term.name] = np.array(b[i:i + k]) if term.levels else np.asarray(b[i])
             i += k
         point.update(shrunk)                                  # D07: zb, the scales on their coordinates
+        sp_point, bsp, simo = self._special_point(self.spec, "", bsp, simo)   # G10: the special products' entries of bsp and simo
+        point.update(sp_point)
         mo = bool(self.spec.mo_terms)                        # bsp is a monotonic term's (B03) or an me() / mi() term's (C06)
         point.update(self._monotonic_point(bsp if mo or not (self.spec.me_terms or self.spec.mi_terms) else None, simo))
         point.update(self._gp_point(sdgp, lscale, zgp))      # C03: each Gaussian process's sdgp, lscale and zgp
@@ -2745,7 +2862,7 @@ class Model:
             if bcs is not None:
                 raise ValueError("bcs gives the coefficients of category-specific terms cs(x); this model has none")
             return {}
-        columns = [t.operands[0] for t in terms]
+        columns = [cs_label(t) for t in terms]                # G10: zq for cs(z)[q]
         if bcs is None:
             raise ValueError(f"bcs is required: the coefficients of {[t.name for t in terms]}, one per threshold (brms's bcs)")
         if isinstance(bcs, Mapping):
@@ -2758,11 +2875,47 @@ class Model:
             raise ValueError(f"bcs requires a mapping by column for the category-specific columns {columns}")
         K1, out = len(self.categories) - 1, {}
         for t in terms:
-            arr = np.asarray(by_column[t.operands[0]], dtype=float)
+            arr = np.asarray(by_column[cs_label(t)], dtype=float)
             if arr.shape != (K1,) or not np.isfinite(arr).all():
-                raise ValueError(f"bcs for {t.operands[0]!r} must be {K1} finite numbers, one per threshold")
+                raise ValueError(f"bcs for {cs_label(t)!r} must be {K1} finite numbers, one per threshold")
             out[t.name] = arr
         return out
+
+    def _special_point(self, spec, prefix: str, bsp, simo):
+        """G10: ``value_point``'s entries of the special products of ``spec`` (the response formula, or a distributional formula
+        with ``prefix``): ``bsp`` keyed by term name (``"mo(ord):x"``) beside the plain terms' columns, ``simo`` by id, term name or
+        ``{term: {column: ...}}`` beside the plain monotonic terms' columns (``special_terms.split_simo``); each simplex stored on
+        Stan's stick-breaking coordinates. Returns the entries and what is left of ``bsp`` and ``simo`` for the plain terms
+        (None when nothing is)."""
+        from autobayes import special_terms
+        from autobayes.monotonic import check_simplex, stick_breaking_free
+
+        if not spec.sp_terms:
+            return {}, bsp, simo
+        roles, terms = special_terms.names(spec, prefix), [t.name for t in spec.sp_terms]
+        others = [*(t.operands[0] for t in spec.mo_terms), *(t.operands[0] for t in (*spec.me_terms, *spec.mi_terms))]
+        if not isinstance(bsp, Mapping) and not (len(terms) == 1 and not others and bsp is not None):
+            raise ValueError(f"bsp must map each special term {terms} (and the columns of the plain terms {others}) to its coefficient")
+        coefficients = bsp if isinstance(bsp, Mapping) else {terms[0]: bsp}
+        missing = [k for k in terms if k not in coefficients]
+        if missing:
+            raise ValueError(f"bsp has no coefficient for the special term(s) {missing}")
+        point = {}
+        for name in terms:
+            value = np.asarray(coefficients[name], dtype=float)
+            if value.shape != () or not np.isfinite(value):
+                raise ValueError(f"bsp for {name!r} must be a finite scalar")
+            point[roles["b"][name]] = value
+        keys = special_terms.simplexes(spec)
+        rest_simo = simo
+        if keys:
+            if simo is None:
+                raise ValueError(f"simo is required for the simplexes {list(keys)} of the special terms")
+            rest_simo, given = special_terms.split_simo(simo, spec, [t.operands[0] for t in spec.mo_terms])
+            for key, (m, _, _, _) in keys.items():
+                point[f"{roles['simplex'][key]}_stickbreaking__"] = stick_breaking_free(check_simplex(given[key], m.D, f"simo for {key!r}"))
+        rest = {k: v for k, v in coefficients.items() if k not in terms}
+        return point, (rest or None), rest_simo
 
     def _monotonic_point(self, bsp, simo) -> dict[str, np.ndarray]:
         """``value_point``'s entries of the monotonic terms (B03): each coefficient as given and each simplex on Stan's
@@ -2912,9 +3065,11 @@ class Model:
             for x, roles in self.me_names.items():
                 point[roles["mean"]] = scalar(means[x], f"meanme for {x!r}")
                 point[f"{roles['sd']}_log__"] = np.asarray(np.log(scalar(sds[x], f"sdme for {x!r}", positive=True)))
-                z = np.asarray(zs[x], dtype=float)
-                if z.shape != (self.design.n,) or not np.isfinite(z).all():
-                    raise ValueError(f"zme for {x!r} must have {self.design.n} finite entries, one per fitted row")
+                z, block = np.asarray(zs[x], dtype=float), self.design.measurement_error[x]
+                size = self.design.n if block.index is None else len(block.levels)   # G10: one per level of me()'s gr
+                if z.shape != (size,) or not np.isfinite(z).all():
+                    raise ValueError(f"zme for {x!r} must have {size} finite entries, one per "
+                                     + ("fitted row" if block.index is None else f"level of the gr column {list(block.levels)}"))
                 point[roles["z"]] = z
         elif any(v is not None for v in (meanme, sdme, zme)):
             raise ValueError("this model has no measurement-error term me(x, sdx); meanme, sdme and zme do not apply")
@@ -2935,6 +3090,7 @@ class Model:
         "b": array}``: the intercept (as sampled) and the coefficients term by term in design-column order."""
         d, roles = self.spec.dpar(name), self.dpar_names[name]
         keys = {"intercept", "b", "sd", "z"} if d.group_terms else {"intercept", "b"}   # D08: a shared ID's terms' sd and z
+        keys |= {"bsp", "simo"} if d.sp_terms else set()     # G10: the formula's special products
         if not isinstance(value, Mapping) or set(value) - keys:
             raise ValueError(f"{name} has its own formula '{d.formula}': give {name}={{'intercept': float, 'b': array"
                              + (", 'sd': {factor: float}, 'z': {factor: array}" if d.group_terms else "") + "} "
@@ -2956,10 +3112,12 @@ class Model:
             raise ValueError(f"{name}['b'] must have {len(d.columns)} finite entries, one per design column {list(d.columns)} "
                              f"of '{d.formula}'")
         i = 0
-        for term in d.pop_terms:
+        for term in d.bambi_terms:                            # G10: a special product's coefficient is bsp's, below
             k = len(term.columns)
             point[roles[f"b:{term.name}"]] = np.array(b[i:i + k]) if term.levels else np.asarray(b[i])
             i += k
+        if d.sp_terms:
+            point.update(self._special_point(d, f"{self._bambi_dpar(name)}_", value.get("bsp"), value.get("simo"))[0])
         return point
 
     def _dpar_group_point(self, name: str, sd, z) -> dict[str, np.ndarray]:
@@ -3235,6 +3393,9 @@ class Model:
             lines += [f"  offset_i = {per_row}: the offset term, a known quantity added to every row's {lp}_i; "
                       "it has no coefficient and no prior and is not centred."]
         lines += self._monotonic_lines(lp)
+        if s.sp_terms:                                       # G10: the special products written out (docs/special-term-ext.md)
+            from autobayes.special_terms import describe_lines
+            lines += describe_lines(s)
         lines += self._gp_lines(lp)
         lines += self._autocor_lines(lp)                     # C04
         lines += car_describe(self, "term", lp)              # F02a
@@ -3448,6 +3609,9 @@ class Model:
                 lines += [f"  b_{t.name} ~ {describe_prior(coef[t.name])}   (brms's bsp_{brms}: class b, coefficient {brms})",
                           f"  {self.mo_names[m.column]['simplex']} ~ {describe_prior(simplexes[m.column])}   (brms class simo, "
                           f"coefficient {brms}1; concentrations {con})"]
+        if s.sp_terms:                                       # G10: a special product's coefficient (class b) and simplexes
+            from autobayes.special_terms import prior_lines
+            lines += prior_lines(s, coef, pr.special_simo_priors(s), describe_prior)
         if s.gp_terms:                                       # each Gaussian process's marginal SD and length-scale (C03)
             from autobayes.default_priors import brms_rename
 
@@ -3495,6 +3659,10 @@ class Model:
             if ds.intercept:
                 lines += [f"  a_{name}{'_c' if dd.centered else ''} ~ {describe_prior(sub.intercept)}   (on the {dd.link} scale of {name})"]
             lines += [f"  b_{name}_{col} ~ {describe_prior(prior)}" for col, prior in sub.coefficient_priors(ds).items()]
+            if ds.sp_terms:                                  # G10: the formula's own simplexes
+                from autobayes.special_terms import prior_lines
+                lines += prior_lines(ds, sub.coefficient_priors(ds), sub.special_simo_priors(ds), describe_prior,
+                                     f"{self._bambi_dpar(name)}_")[len(ds.sp_terms):]
             lines += [f"  sd_{name},{sd_tag(g, c)} ~ {describe_prior(prior, lb=0)}   (brms class sd with dpar = {name})"   # D08, G06
                       for (g, c), prior in (sub.sd_priors(ds).items() if ds.group_terms else ())]
         if s.sar is None:
@@ -3568,6 +3736,9 @@ class Model:
             dn = self.dpar_names[ds.response]
             if ds.intercept:
                 roles[dn["intercept"]] = f"a_{ds.response}{'_c' if d.dpars[ds.response].centered else ''} (the intercept of {ds.response}'s formula)"
+            for k, v in dn.items():                         # G10: the formula's own simplexes
+                if k.startswith("simo:"):
+                    roles[f"{v}_stickbreaking__"] = f"{v} on Stan's stick-breaking simplex coordinates (brms's simo_{ds.response}); dims {v}_dim"
             for t in ds.pop_terms:
                 if t.is_vector:
                     var = dn[f"b:{t.name}"]
@@ -3584,6 +3755,12 @@ class Model:
             roles[mo["b"]] = f"b_{t.name}, the monotonic term's coefficient (brms's bsp)"
             roles[f"{mo['simplex']}_stickbreaking__"] = (f"{mo['simplex']}[1..{D}] on Stan's stick-breaking simplex coordinates ({D - 1} "
                                                          f"entries; brms's simo); dims {mo['coordinate']}")
+        if s.sp_terms:                                       # G10: each special product's coefficient and simplexes
+            from autobayes.special_terms import simplexes as sp_simplexes
+            sn = self.sp_names
+            roles.update({v: f"b_{k}, the special term's coefficient (brms's bsp)" for k, v in sn["b"].items()})
+            roles.update({f"{sn['simplex'][k]}_stickbreaking__": f"{sn['simplex'][k]}[1..{m.D}] on Stan's stick-breaking simplex "
+                          f"coordinates (brms's simo); dims {sn['coordinate'][k]}" for k, (m, _, _, _) in sp_simplexes(s).items()})
         for g in s.gp_terms:                                 # C03: each Gaussian process's SD, length-scale and standardised values
             gn = self.gp_names[g.column]
             roles[f"{gn['sdgp']}_log__"] = f"log({gn['sdgp']}), the marginal SD of gp({g.column}) (brms's sdgp)"
@@ -3638,7 +3815,7 @@ class Model:
                      + "".join(f"; {me['latent']} = meanme_{x} + sdme_{x} * zme_{x}, one per row (brms's Xme)" for x, me in self.me_names.items())
                      + (f"; {self.timecor_names['cor']} = Lcortime Lcortime^T (brms's Cortime)" if "cor" in self.timecor_names else "")
                      + shrinkage_note
-                     + (f"; {n['linpred']} = mu_i[k], one per row and threshold" if s.cs_terms else ""))
+                     + (f"; {n['linpred']} = mu_i[k], one per row and threshold" if s.has_category_specific else ""))
         return "\n".join(lines)
 
     def _slope_value(self, t, c: str) -> str:
@@ -3760,8 +3937,16 @@ class Model:
         the coefficient means, and that neither term is centred."""
         out = []
         for t in self.spec.me_terms:
-            x, sdx = t.operands
+            x, sdx = t.operands[:2]
             me = self.me_names[x]
+            if "coordinate" in me:                           # G10: me(x, sdx, gr = g), docs/special-term-ext.md
+                g = t.operands[2]
+                out += [f"  Xme_{x},j = meanme_{x} + sdme_{x} * zme_{x},j, zme_{x},j ~ Normal(0, 1): the latent (true) value of {x} in "
+                        f"level j of {g} (brms's Xme with gr = {g}), which every row of the level shares, and {x}_j ~ Normal(Xme_{x},j, "
+                        f"{sdx}_j), the level's noisy value observed with its known standard deviation (PyMC's observed {me['noisy']}).",
+                        f"  b_{t.name} (brms's bsp) is the change of {lp} per unit of the latent {x}; row i reads its level's Xme_{x},j "
+                        "(brms's Jme); not centred."]
+                continue
             out += [f"  Xme_{x},i = meanme_{x} + sdme_{x} * zme_{x},i, zme_{x},i ~ Normal(0, 1): the latent (true) value of {x} in row i "
                     f"(brms's Xme), and {x}_i ~ Normal(Xme_{x},i, {sdx}_i), the noisy value observed with the known standard deviation "
                     f"{sdx}_i (PyMC's observed {me['noisy']}).",

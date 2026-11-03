@@ -56,6 +56,7 @@ frozen fixture records.
 from __future__ import annotations
 
 import math
+import re
 from collections.abc import Mapping, Sequence
 from dataclasses import replace
 
@@ -447,7 +448,8 @@ def default_priors(formula: str | list[str], data: pd.DataFrame, *, family: str 
                                           # the formula's own terms alike, and one per coefficient of a term with varying slopes
                                           **({"sd": {t.factor: HalfStudentT(DF, log_scale) if not t.slopes else
                                                      {c: HalfStudentT(DF, log_scale) for c in t.coefs} for t in ds.group_terms}}
-                                             if ds.group_terms else {})}
+                                             if ds.group_terms else {}),
+                                          **({"simo": _special_simo_defaults(ds)} if _special_simo_defaults(ds) else {})}   # G10
     elif fam.scale_parameter is not None:
         if fam.default_scale_prior is None:
             raise PriorError(f"no brms default prior is recorded for the {fam.name} family's {fam.scale_parameter}; "
@@ -486,6 +488,7 @@ def default_priors(formula: str | list[str], data: pd.DataFrame, *, family: str 
         return _default(value)
 
     simo = {t.operands[0]: Dirichlet(1) for t in spec.mo_terms}         # B03: brms's dirichlet(1) on each monotonic simplex
+    simo.update(_special_simo_defaults(spec))                          # G10: and on each simplex of a special product
     sdgp = {g.column: HalfStudentT(DF, scale) for g in spec.gp_terms}   # C03: a group-level SD's default
     lscale = {g.column: default_lscale(g) for g in spec.gp_terms}      # C03: tuned to the process's inputs
     autocor = {part: Flat() for part, _ in spec.autocor.parts} if spec.autocor is not None else {}   # C04: flat ar and ma
@@ -514,6 +517,20 @@ def default_priors(formula: str | list[str], data: pd.DataFrame, *, family: str 
     return priors
 
 
+def _special_simo_defaults(spec) -> dict:
+    """G10: brms's ``dirichlet(1)`` on every simplex of the formula's special products, in ``Priors(simo=...)``'s keys (by id or
+    term name, and ``{term: {column: ...}}`` for a term with several ``mo()`` parts; docs/special-term-ext.md)."""
+    from autobayes.special_terms import prior_keys
+
+    out: dict = {}
+    for key in prior_keys(spec) if getattr(spec, "sp_terms", ()) else ():
+        if isinstance(key, str):
+            out[key] = Dirichlet(1)
+        else:
+            out.setdefault(key[0], {})[key[1]] = Dirichlet(1)
+    return out
+
+
 def _as_the_model_reads(formula, data: pd.DataFrame, family: str, categorical, dropna) -> tuple:
     """``categorical`` and ``data`` as a univariate model of ``formula`` reads them: an undeclared pandas Categorical or boolean
     predictor declared by its dtype (D172, ``column_types.typed_categorical``) and, with ``dropna=True`` (D174), without the rows
@@ -538,7 +555,10 @@ _RENAME = ((" ", ""), ("(", ""), (")", ""), ("[", ""), ("]", ""), (",", ""), ('"
 
 def brms_rename(name: str) -> str:
     """brms's ``rename()`` of a model-matrix column name into a coefficient name (``log(xpos)`` -> ``logxpos``,
-    ``I(x^2)`` -> ``IxE2``, ``(Intercept)`` -> ``Intercept``)."""
+    ``I(x^2)`` -> ``IxE2``, ``(Intercept)`` -> ``Intercept``). G10: ``Intercept[k]``, a ``(cs(1) | g)`` term's per-threshold
+    intercept, is brms's label as it is."""
+    if re.fullmatch(r"Intercept\[\d+\]", name):
+        return name
     for old, new in _RENAME:
         name = name.replace(old, new)
     return name
@@ -569,7 +589,8 @@ def brms_coefficient_names(spec) -> dict[str, str]:
         if t.kind == "numeric":
             out[t.columns[0]] = brms_rename(t.name)
         elif t.kind == "category_specific":                           # D04: brms lists cs(x)'s bcs under class b, coefficient x
-            out[t.name] = brms_rename(t.operands[0])
+            from autobayes.formula import cs_label                    # G10: zq for cs(z)[q]
+            out[t.name] = brms_rename(cs_label(t))
         elif t.is_special:                                            # mo(ord) -> moord, me(x, sdx) -> mexsdx, mi(x) -> mix (C06)
             out[t.name] = brms_rename(t.name)
         elif t.kind == "transform":
@@ -593,6 +614,18 @@ def brms_coefficient_names(spec) -> dict[str, str]:
                     piece = {zc.name: f"{zc.name}{lz}", hc.name: f"{hc.name}{lh}"}
                     out[col] = brms_rename(":".join(piece[op] for op in ops))
     return out
+
+
+def _special_simo_rows(add, priors, spec, dpar: str = "") -> None:
+    """G10: brms's class ``simo`` rows of the special products' simplexes, one per simplex, coefficient the id or the term's
+    ``rename()`` and the part's position (``moord:x1``, ``moord:moo22``; docs/special-term-ext.md), no class row."""
+    if not getattr(spec, "sp_terms", ()):
+        return
+    from autobayes.special_terms import simplexes
+
+    given = priors.special_simo_priors(spec)
+    for key, (_, coef, _, _) in simplexes(spec).items():
+        add(given[key], "simo", coef=coef, dpar=dpar)
 
 
 def brms_dpar_names(categories) -> list[str]:
@@ -703,6 +736,7 @@ def prior_table(priors: Priors, spec, family="gaussian", *, center_predictors: b
             add(sub.intercept, "Intercept", dpar=ds.response)
         add_coefficients([(dnames[col], p) for col, p in sub.coefficient_priors(ds).items()], dpar=ds.response,
                          default=class_default(sub.b))
+        _special_simo_rows(add, sub, ds, ds.response)                 # G10: the formula's own simplexes, class simo with its dpar
         dsd = sub.sd_priors(ds) if ds.group_terms else {}             # D08: a shared ID's terms, class sd with dpar = <parameter>
         if dsd:
             ps = list(dsd.values())
@@ -716,6 +750,7 @@ def prior_table(priors: Priors, spec, family="gaussian", *, center_predictors: b
                     add(None if top else p, "sd", coef=brms_rename(c), group=t.factor, dpar=ds.response, source=p.source if top else None)
     for column, prior in priors.simo_priors(spec).items():           # a monotonic term's simplex (B03): brms's class simo,
         add(prior, "simo", coef=f"{brms_rename(spec.monotonic(column).term)}1")   # coefficient mox1, no class row
+    _special_simo_rows(add, priors, spec)                             # G10: a special product's simplexes
     if fam.baseline_hazard:                                           # F05: the cox baseline hazard's simplex, a class row
         add(priors.sbhaz, "sbhaz")
     for cls, by_column in (("sdgp", priors.sdgp_priors(spec)), ("lscale", priors.lscale_priors(spec))):   # C03, coefficient gpx

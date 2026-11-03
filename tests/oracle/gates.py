@@ -184,6 +184,7 @@ def prior_names(model) -> list[str]:
     out += [roles["L"] for roles in model.correlation_names.values()]
     out += [roles["df"] for roles in getattr(model, "group_dist_names", {}).values()]   # G05b: gr(dist = "student")'s df (truncated)
     out += [roles["simplex"] for roles in model.mo_names.values()]
+    out += list(model.sp_names["simplex"].values()) if getattr(model.spec, "sp_terms", ()) else []   # G10: the special products'
     mixture = getattr(model, "mixture_names", {})          # C05: each component's sigma<k> and theta
     out += [*mixture["sigma"], mixture["theta"]] if mixture else []
     out += [roles[key] for roles in getattr(model, "gp_names", {}).values() for key in ("sdgp", "lscale")]   # C03
@@ -404,10 +405,53 @@ def check_design(b: Bundle) -> None:
     check_shrinkage_data(b)                                      # D07: Kscales and a shrinkage prior's data
     check_fixed_parameters(b)                                    # E02: a parameter the formula fixes (bf(quantile = p))
     check_dpar_offsets(b)                                        # G06: a distributional formula's offsets_<dpar>
+    check_special_covariates(b)                                  # G10: the special terms' Csp_k and con_simo_k
+    check_me_groups(b)                                           # G10: me(x, sdx, gr = g)'s Jme_k and Nme_k
     # the design columns (every formula's), the group partitions and the monotonic codes were matched by content when the
     # maps were built
     adapter.match_columns(b.fixture, b.model)
     adapter.match_groups(b.fixture, b.model)
+
+
+def check_special_covariates(b: Bundle) -> None:
+    """G1 of the special terms (G10, ``mo(ord):x``, ``me(xobs, sdx):w``, ``mo(ord):z``): every brms ``Csp_k`` / ``Csp_<dpar>_k`` is
+    the covariate of the special term the adapter numbered it for (brms's order: the special terms with a covariate, in term
+    order) row by row to DESIGN_ABS, and none is left over; every ``con_simo_k`` brms declares is the model's prior
+    concentrations of that simplex. brms's ``Csp_k`` in a model without special products is a mismatch."""
+    sd, sp = b.fixture.standata, b.cmap.sp
+    found = [k for k in sd if re.fullmatch(r"Csp(_[A-Za-z]+)?_\d+", k)]
+    if sp is None:
+        if found:
+            raise OracleMismatch(f"brms has {found}; the AutoBayes model has no special term with a covariate")
+        return
+    if sorted(found) != sorted(sp.covariates):
+        raise OracleMismatch(f"brms has {sorted(found)}; the AutoBayes model's special terms have the covariates {sorted(sp.covariates)}")
+    for name, (term, cov) in sp.covariates.items():
+        if np.shape(sd[name]) != cov.shape or abs_err(sd[name], cov) > DESIGN_ABS:
+            raise OracleMismatch(f"brms's {name} differs from the covariate of {term!r} by {abs_err(sd[name], cov) if np.shape(sd[name]) == cov.shape else np.shape(sd[name])}")
+    for name in [k for k in sd if k.startswith("con_simo")]:
+        if name not in sp.concentrations:
+            raise OracleMismatch(f"brms's {name} belongs to no simplex of the AutoBayes model")
+        theirs, mine = np.atleast_1d(sd[name]), sp.concentrations[name]
+        if theirs.shape != mine.shape or abs_err(theirs, mine) > DESIGN_ABS:
+            raise OracleMismatch(f"brms {name} is {theirs!r}; the model's prior gives {mine!r}")
+
+
+def check_me_groups(b: Bundle) -> None:
+    """G1 of ``me(x, sdx, gr = g)`` (G10): brms's ``Jme_1`` is each row's level of g (1-based, the sorted levels the model's
+    latent values follow) and ``Nme_1`` their number; brms's ``Jme_k`` without such a term, and the reverse, are a mismatch."""
+    sd = b.fixture.standata
+    blocks = [blk for blk in getattr(b.model.design, "measurement_error", {}).values() if blk.index is not None]
+    found = [k for k in sd if k.startswith("Jme_")]
+    if not blocks:
+        if found:
+            raise OracleMismatch(f"brms has {found}; the AutoBayes model has no me(x, sdx, gr = g) term")
+        return
+    (blk,) = blocks                                              # one me() term per formula (D73)
+    if found != ["Jme_1"] or np.shape(sd["Jme_1"]) != blk.index.shape or abs_err(sd["Jme_1"], blk.index + 1) > DESIGN_ABS:
+        raise OracleMismatch(f"brms's Jme_1 is not each row's level of the gr column of {blk.term!r}")
+    if int(sd.get("Nme_1", -1)) != len(blk.levels):
+        raise OracleMismatch(f"brms's Nme_1 is {sd.get('Nme_1')}; {blk.term!r} has {len(blk.levels)} levels")
 
 
 def check_dpar_offsets(b: Bundle) -> None:
@@ -608,7 +652,8 @@ def check_derived(b: Bundle) -> None:
         out = fn(vp)
         # B05: a categorical model's linear predictor has one column per non-reference category, brms's (rows, categories); D04:
         # an ordinal model with cs() terms one per threshold, brms's (rows, thresholds)
-        lin = np.asarray(out[0], dtype=float) if (b.cmap.dpars or b.cmap.cs) else np.asarray(out[0], dtype=float).ravel()
+        per_column = b.cmap.dpars or b.cmap.cs or getattr(b.model.spec, "has_category_specific", False)   # G10: (cs(1) | g) too
+        lin = np.asarray(out[0], dtype=float) if per_column else np.asarray(out[0], dtype=float).ravel()
         err = rel_err(lin, ref[k])
         if err > PRED_REL:
             raise OracleMismatch(f"point {k}: the graph's {names['linpred']!r} differs from brms by {err}")
@@ -644,6 +689,7 @@ def check_derived(b: Bundle) -> None:
                 eta = X @ bd
             if f"offsets_{name}" in b.fixture.standata:              # G06: plus brms's offsets_<name>
                 eta = eta + b.fixture.standata[f"offsets_{name}"]
+            eta = eta + adapter.brms_special_predictor(b.fixture, b.cmap, p.pars, f"_{name}")   # G10: brms's bsp_<name> terms
             for (dname, g, coef), _ in dpar_groups:                # D08: plus brms's r_m_<name>_c[J_m] Z_m_<name>_c of a shared ID
                 if dname == name:                                  # G06: or of the formula's own group
                     m, cn = adapter.dpar_group_of(b.gmap, name, g)[0], b.gmap.dpar_cn[(name, g, coef)]

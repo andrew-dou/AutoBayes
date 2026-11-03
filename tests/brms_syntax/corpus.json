@@ -8017,14 +8017,13 @@
     "group_terms": []
    },
    "result": {
-    "status": "error",
-    "type": "FormulaError",
-    "message": "'mo(o):x': an interaction with a monotonic term ('mo(o)') is not supported: brms's mo(x):z gives each interaction its own coefficient (and mo(x):mo(w) a simplex per factor), which is not verified here (docs/monotonic.md, divergence D40)",
-    "raised_at": "formula.py:3162",
-    "stage": "default_priors",
-    "mechanism": "refusal",
-    "outcome": "refused_named",
-    "gap": "capability"
+    "status": "built",
+    "model": "Model",
+    "model_warnings": [],
+    "issues": [],
+    "notes": [],
+    "outcome": "match",
+    "gap": null
    }
   },
   {
@@ -8069,14 +8068,13 @@
     "group_terms": []
    },
    "result": {
-    "status": "error",
-    "type": "FormulaError",
-    "message": "'mo(o, id = \"a\")': mo() takes one column here; brms's id argument (mo(x, id = 'a'), one simplex shared by the terms with the same id) is not supported (docs/monotonic.md, divergence D42)",
-    "raised_at": "formula.py:3243",
-    "stage": "default_priors",
-    "mechanism": "refusal",
-    "outcome": "refused_named",
-    "gap": "capability"
+    "status": "built",
+    "model": "Model",
+    "model_warnings": [],
+    "issues": [],
+    "notes": [],
+    "outcome": "match",
+    "gap": null
    }
   },
   {
@@ -8171,14 +8169,13 @@
     "group_terms": []
    },
    "result": {
-    "status": "error",
-    "type": "FormulaError",
-    "message": "'me(xg, sdxg, gr = g)': me() takes the noisy column and the column of its known standard deviations here, me(x, sdx); brms's gr argument (me(x, sdx, gr = g), latent values shared within the levels of g) is not supported (docs/missing-and-measurement-error.md, divergence D73)",
-    "raised_at": "formula.py:3264",
-    "stage": "default_priors",
-    "mechanism": "refusal",
-    "outcome": "refused_named",
-    "gap": "capability"
+    "status": "built",
+    "model": "Model",
+    "model_warnings": [],
+    "issues": [],
+    "notes": [],
+    "outcome": "match",
+    "gap": null
    }
   },
   {
@@ -8225,14 +8222,13 @@
     "group_terms": []
    },
    "result": {
-    "status": "error",
-    "type": "FormulaError",
-    "message": "'me(xobs, sdx) * z': an interaction with a measurement-error term ('me(xobs, sdx)') is not supported: brms gives it a special coefficient of its own times the product, which is not verified here (docs/missing-and-measurement-error.md, divergence D73)",
-    "raised_at": "formula.py:3181",
-    "stage": "default_priors",
-    "mechanism": "refusal",
-    "outcome": "refused_named",
-    "gap": "capability"
+    "status": "built",
+    "model": "Model",
+    "model_warnings": [],
+    "issues": [],
+    "notes": [],
+    "outcome": "match",
+    "gap": null
    }
   },
   {
@@ -8379,7 +8375,7 @@
     "status": "error",
     "type": "FormulaError",
     "message": "'cs(x)': brms's category-specific effect cs() is not supported for the cumulative family: brms takes it in its ordinal families, and this library in the sratio, cratio, acat families (one coefficient per threshold, brms's bcs; docs/ordinal-categorical.md, divergence D89)",
-    "raised_at": "formula.py:2646",
+    "raised_at": "formula.py:3805",
     "stage": "default_priors",
     "mechanism": "refusal",
     "outcome": "refused_named",
@@ -8428,14 +8424,13 @@
     "group_terms": []
    },
    "result": {
-    "status": "error",
-    "type": "FormulaError",
-    "message": "'cs(x + z)': cs() takes one column name here, not 'x + z'; brms's cs(x + w), cs(1) and expressions inside cs() are not supported: write one cs(<column>) per numeric column (docs/ordinal-categorical.md, divergence D89)",
-    "raised_at": "formula.py:3219",
-    "stage": "default_priors",
-    "mechanism": "refusal",
-    "outcome": "refused_named",
-    "gap": "capability"
+    "status": "built",
+    "model": "Model",
+    "model_warnings": [],
+    "issues": [],
+    "notes": [],
+    "outcome": "match",
+    "gap": null
    }
   },
   {
@@ -8489,14 +8484,13 @@
     ]
    },
    "result": {
-    "status": "error",
-    "type": "FormulaError",
-    "message": "'(cs(1) | g)': function calls and transformations inside a group term are not supported ('cs(1)'); a varying slope is a numeric column, a factor declared categorical, a population-level transform (log(col), exp(col), sqrt(col), I(col^k), I(col * k), I(col + k), I(col - k)), a product of two numeric columns x:w or a monotonic term mo(col) (docs/group-term-syntax.md); transform the column in the data frame instead.",
-    "raised_at": "formula.py:2573",
-    "stage": "default_priors",
-    "mechanism": "refusal",
-    "outcome": "refused_named",
-    "gap": "capability"
+    "status": "built",
+    "model": "Model",
+    "model_warnings": [],
+    "issues": [],
+    "notes": [],
+    "outcome": "match",
+    "gap": null
    }
   },
   {
@@ -13384,13 +13378,13 @@
  ],
  "summary": {
   "outcomes": {
-   "match": 183,
-   "refused_named": 64,
+   "match": 189,
+   "refused_named": 58,
    "differs": 1
   },
   "gaps": {
-   "none": 185,
-   "capability": 62,
+   "none": 191,
+   "capability": 56,
    "divergence": 1
   },
   "brms_refuses": 2

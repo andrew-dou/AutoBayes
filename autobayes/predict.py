@@ -212,6 +212,16 @@ def car_contribution(model, post, df: pd.DataFrame) -> np.ndarray | float:
     return rcar[..., location_index(model.design.car, df[term.gr], term)]
 
 
+def latent_draws(model, post, x: str) -> np.ndarray:
+    """(chain, draw, row) draws of the latent values of the ``me()`` term of noisy column ``x`` on the fitted rows (C06): brms's
+    ``Xme = meanme + sdme * zme``; G10: of ``me(x, sdx, gr = g)`` at each row's level (brms's ``Xme[Jme]``)."""
+    roles = model.me_names[x]
+    latent = (post[roles["mean"]].transpose("chain", "draw").to_numpy()[..., None]
+              + post[roles["sd"]].transpose("chain", "draw").to_numpy()[..., None] * post[roles["z"]].transpose("chain", "draw", ...).to_numpy())
+    rows = model.design.measurement_error[x].index
+    return latent if rows is None else latent[..., rows]
+
+
 def measurement_contribution(model, post, df: pd.DataFrame, *, in_sample: bool) -> np.ndarray | float:
     """(chain, draw, row) draws of the ``me()`` and ``mi()`` terms' part of the linear predictor (C06,
     docs/missing-and-measurement-error.md) on the rows of ``df``. On the fitted rows (``in_sample``) an ``me(x, sdx)`` term adds
@@ -226,10 +236,7 @@ def measurement_contribution(model, post, df: pd.DataFrame, *, in_sample: bool) 
                                "new rows, which no fixed rule reproduces; predict on the fitted rows (newdata=None) "
                                "(docs/missing-and-measurement-error.md, divergence D74)")
         roles = model.me_names[t.operands[0]]
-        latent = (post[roles["mean"]].transpose("chain", "draw").to_numpy()[..., None]
-                  + post[roles["sd"]].transpose("chain", "draw").to_numpy()[..., None]
-                  * post[roles["z"]].transpose("chain", "draw", ...).to_numpy())
-        out = out + post[roles["b"]].transpose("chain", "draw").to_numpy()[..., None] * latent
+        out = out + post[roles["b"]].transpose("chain", "draw").to_numpy()[..., None] * latent_draws(model, post, t.operands[0])
     for t in getattr(model.spec, "mi_terms", ()):
         col = t.operands[0]
         coefficient = post[t.name].transpose("chain", "draw").to_numpy()[..., None]
@@ -254,13 +261,16 @@ def dpar_linear_predictor(model, post, df: pd.DataFrame, name: str, *, include_g
     shape = (post.sizes["chain"], post.sizes["draw"])
     a = post[roles["intercept"]].to_numpy() if ds.intercept else np.zeros(shape)
     eta = np.repeat(a[..., None], len(df), axis=-1)
-    if ds.pop_terms:
-        X = np.concatenate([pop_term_design(t, df, ds.categoricals) for t in ds.pop_terms], axis=1)
+    if ds.bambi_terms:                                        # G10: the special products below
+        X = np.concatenate([pop_term_design(t, df, ds.categoricals) for t in ds.bambi_terms], axis=1)
         if getattr(dd, "centred_draws", False):               # G06: the posterior holds the centred intercept (the cumulative disc)
             X = X - dd.x_means
         b = np.concatenate([post[roles[f"b:{t.name}"]].to_numpy() if t.levels else post[roles[f"b:{t.name}"]].to_numpy()[..., None]
-                            for t in ds.pop_terms], axis=-1)
+                            for t in ds.bambi_terms], axis=-1)
         eta = eta + np.einsum("cdp,np->cdn", b, X)
+    if ds.sp_terms:                                            # G10: the formula's special products (docs/special-term-ext.md)
+        from autobayes.special_terms import contribution
+        eta = eta + contribution(model, post, df, ds, f"{model._bambi_dpar(name)}_")
     if ds.offset is not None:                                  # G06: the formula's offset, brms's offsets_<dpar>
         eta = eta + ds.offset.values(df, where="newdata column")
     for t in (ds.group_terms if include_group_effects else ()):   # D08: a shared ID's varying intercept of the parameter; G06: its
@@ -467,8 +477,11 @@ def _predict_by_hand(model, idata, df: pd.DataFrame | None, kind: str, seed, pol
     mu = mu + monotonic_contribution(model, post, df)           # the monotonic terms (B03), population-level as well
     mu = mu + gp_contribution(model, post, df)                  # the Gaussian processes (C03), population-level as well
     mu = mu + measurement_contribution(model, post, df, in_sample=in_sample)   # the me() and mi() terms (C06)
+    if model.spec.sp_terms:                                     # G10: the special products (docs/special-term-ext.md)
+        from autobayes.special_terms import contribution
+        mu = mu + contribution(model, post, df, in_sample=in_sample)
     mu = mu + car_contribution(model, post, df)                 # a CAR term (F02a), with or without group effects
-    new_levels = {}
+    new_levels, threshold_effects = {}, []
     for term in (model.spec.group_terms if include_group_effects else ()):
         g = term.factor
         levels = list(model.design.factor_blocks[g].levels)    # G05a: a factor whose intercept does not vary has slopes' blocks
@@ -514,6 +527,9 @@ def _predict_by_hand(model, idata, df: pd.DataFrame | None, kind: str, seed, pol
                    if new_effects else u for k, (_, u, _) in enumerate(coefs)]
         for m, (member, w) in enumerate(zip(members, weights.T)):   # one member, weight 1, except for a multi-membership term (D08)
             codes = level_codes(member, extended)
+            if term.thresholds:                                  # G10: (cs(1) | g), one effect per threshold (added below)
+                threshold_effects.append(np.stack([u[..., codes] for u in effects], axis=-1))
+                continue
             for u, (_, _, covariates) in zip(effects, coefs):
                 covariate = covariates[m]                        # G05b: the member's own covariate
                 if fam.per_category:                             # F01b: (chain, draw, level, category) effects of fitted levels
@@ -524,9 +540,13 @@ def _predict_by_hand(model, idata, df: pd.DataFrame | None, kind: str, seed, pol
     if model.spec.autocor is not None:                          # C04: the ARMA term on the fitted rows' residuals, added last
         mu = autocor_predictor(model, post, mu)
     cs = getattr(model.spec, "cs_terms", ())
-    if cs:                                                       # D04: each threshold's predictor, mu + sum_c x_c bcs_c[k]
-        mu = mu[..., None] + sum(df[t.operands[0]].to_numpy(dtype=float)[:, None]
+    if cs or threshold_effects:                                  # D04: each threshold's predictor, mu + sum_c x_c bcs_c[k]
+        from autobayes.formula import cs_values
+        levels = {c.name: c.levels for c in model.spec.categoricals}   # G10: cs(z)[q]'s indicator, new levels refused
+        mu = mu[..., None] + sum(cs_values(t, df, levels.get(t.operands[0]), where="newdata column")[:, None]
                                  * post[t.name].transpose("chain", "draw", n["threshold_dim"]).to_numpy()[..., None, :] for t in cs)
+        mu = mu + sum(threshold_effects)                         # G10: (cs(1) | g)'s r_k[J] on threshold k
+        cs = True
     dims = ("chain", "draw", "__obs__")
     coords = {"chain": post["chain"], "draw": post["draw"], "__obs__": np.arange(len(df))}
     if kind == "linear":
@@ -783,6 +803,7 @@ def predict(model, fit_result, *, newdata: pd.DataFrame | None = None, kind: str
               or getattr(model.spec, "car", None) is not None  # nor a CAR term (F02a)
               or timecor is not None                           # nor a residual correlation term's joint draws (F03b)
               or bool(model.spec.me_terms) or bool(model.spec.mi_terms)    # nor the me() and mi() terms (C06)
+              or bool(model.spec.sp_terms) or any(d.sp_terms for d in model.spec.dpars)   # nor the special products (G10)
               or bool(model.spec.custom_group_terms)           # nor the mm() and gr(by = ) terms (D08)
               or model.spec.has_group)                         # G11: Bambi builds the group terms from codes and does not predict them
     if dpar is not None:

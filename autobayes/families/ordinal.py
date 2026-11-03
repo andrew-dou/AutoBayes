@@ -62,7 +62,7 @@ def ordinal_bambi_setup(kind: str, *, ordered: bool):
         terms = {k: v for k, v in bambi_priors.items() if k != "Intercept"}
         priors = {"mu": {**terms, "Intercept": bmb.Prior("NoIntercept", dist=no_intercept)},
                   "Intercept": bmb.Prior("OrderedThresholds" if ordered else "Thresholds", dist=thresholds)}
-        cs = model._add_category_specific_effects if spec.cs_terms else None
+        cs = model._add_category_specific_effects if spec.has_category_specific else None   # G10: or (cs(1) | g)
         return ordinal_family(kind, [t.name for t in spec.bambi_terms], means, dim, cs), priors, False
 
     return setup
@@ -74,7 +74,8 @@ def _gaps(model, post, eta):
     from autobayes.likelihoods import ordinal_gaps
 
     tau = post[model.names["thresholds"]].transpose("chain", "draw", model.names["threshold_dim"]).to_numpy()
-    return ordinal_gaps(np.asarray(eta, dtype=float), tau[..., None, :], bool(model.spec.cs_terms))
+    eta = np.asarray(eta, dtype=float)                       # G10: per threshold when cs() or (cs(1) | g)'s effects are in it
+    return ordinal_gaps(eta, tau[..., None, :], eta.ndim == tau.ndim + 1)
 
 
 def ordinal_expected_response(kind: str):
@@ -106,7 +107,7 @@ def _draw_response(model, post, eta, mean, df, rng):
 # -- sratio, cratio, acat -----------------------------------------------------------------------------------------------
 def _predictor(model) -> str:
     """How ``describe()`` writes the predictor of threshold k: ``mu_i``, or ``mu_i[k]`` with category-specific effects."""
-    return "mu_i[k]" if model.spec.cs_terms else "mu_i"
+    return "mu_i[k]" if model.spec.has_category_specific else "mu_i"
 
 
 _MEANS = {
@@ -134,8 +135,10 @@ def _mean_lines(name: str):
                second.format(p=_predictor(model))]
         out += ["  mu has no intercept: the thresholds b_Intercept[k] take its place, and a larger mu moves probability towards the",
                 "  higher categories."]
-        if model.spec.cs_terms:
-            cs = " + ".join(f"x_{t.operands[0]},i * bcs_{t.operands[0]}[k]" for t in model.spec.cs_terms)
+        if model.spec.has_category_specific:
+            from autobayes.formula import cs_label                # G10: zq, the indicator of level q, for cs(z)[q]; (cs(1) | g)
+            cs = " + ".join([f"x_{cs_label(t)},i * bcs_{cs_label(t)}[k]" for t in model.spec.cs_terms]
+                            + [f"r_{t.factor}[{t.factor}_i, k]" for t in model.spec.group_terms if t.thresholds])
             out += [f"  mu_i[k] = mu_i + {cs}: each category-specific effect cs() has one coefficient per threshold (brms's bcs; its",
                     "  column is never centred), the threshold's own predictor (brms's posterior_linpred, one column per threshold)."]
         else:

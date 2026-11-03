@@ -151,9 +151,10 @@ Each threshold's predictor `mu_i + sum_c x_c,i bcs_c[k]` is the deterministic `m
 `Intercept_dim`; brms subtracts `Xcs bcs` from the thresholds, which is the same), checked against the data at build;
 `value_point(bcs={"x": [...]})` gives the coefficients, and `predict(kind="linear")` returns `mu_cs` with a `threshold`
 dimension (brms's `posterior_linpred`, one column per threshold). Offered for the `sratio`, `cratio` and `acat` families,
-one numeric column per `cs()`, any number of them; brms's `cs(x + w)`, `cs(1)`, `cs()` of a factor or in an interaction,
-category-specific group-level terms `(cs(1) | g)`, `x + cs(x)` (whose `b_x` and `bcs_x` are not separately identified) and
-`cs()` in the cumulative family (brms: "experimental") are refused naming the construct (D89).
+one numeric column per `cs()`, any number of them; since G10 also `cs(x + z)`, `cs()` of a factor (treatment contrasts) and the
+category-specific group-level term `(cs(1) | g)` (docs/special-term-ext.md); brms's `cs(1)` in the population-level formula, `cs()`
+in an interaction, `x + cs(x)` (whose `b_x` and `bcs_x` are not separately identified) and `cs()` in the cumulative family (brms:
+"experimental"; its thresholds cross, D89) are refused naming the construct (D89).
 
 **What combines.** Categorical predictors, interactions, transforms, the offset, any number of grouping factors, independent
 and correlated slopes and Gaussian processes (C03's check at build) enter `mu` as for the cumulative family; `predict()` takes

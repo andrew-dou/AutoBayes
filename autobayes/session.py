@@ -78,6 +78,7 @@ def _summary_rows(model, idata) -> dict:
     names = ([n["intercept"]] if model.spec.intercept else []) + list(model.spec.terms) + [roles["sd"] for roles in model.group_coefficient_names.values()] + scale_names
     names += [n[name] for name in model.learned_parameters]     # a learned Student-t nu (A13)
     names += [roles["simplex"] for roles in getattr(model, "mo_names", {}).values()]   # each monotonic term's simplex (B03)
+    names += list(model.sp_names["simplex"].values()) if getattr(model.spec, "sp_terms", ()) else []   # G10: a special product's
     names += [roles[k] for roles in getattr(model, "me_names", {}).values() for k in ("mean", "sd")]   # an me() term's (C06)
     mixture = getattr(model, "mixture_names", {})               # a mixture's sigma<k> and theta (C05)
     names += [*mixture["sigma"], mixture["theta"]] if mixture else []
@@ -223,6 +224,11 @@ def fit_record(model, fit, *, panel: dict | None = None, max_treedepth: int = 10
                                        "values": [s.monotonic(t.operands[0]).lowest, s.monotonic(t.operands[0]).highest],
                                        "D": s.monotonic(t.operands[0]).D, "names": model.mo_names[t.operands[0]]}
                                for t in s.mo_terms}} if s.mo_terms else {}),
+            # each special product (G10, docs/special-term-ext.md): its parts, covariate columns and PyMC names
+            **({"special_products": {t.name: {"parts": list(t.special.parts), "covariates": list(t.special.numeric),
+                                              "factor": t.special.factor, "level": t.special.level,
+                                              "simplexes": [t.special.simplex_key(j) for j in range(len(t.special.mo_parts))]}
+                                     for t in s.sp_terms}} if getattr(s, "sp_terms", ()) else {}),
             # each Gaussian process (C03): its column, exact or approximate, its scaling and PyMC names
             **({"gaussian_processes": {g.term: {"column": g.column, "approximate": g.approximate, "k": g.k, "c": g.c,
                                                 "distinct_inputs": len(g.inputs), "dmax": g.dmax, "cmean": g.cmean,

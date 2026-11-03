@@ -50,6 +50,8 @@ def _refuse_unsupported_effects(model) -> None:
     constructs = [
         (s.offset is not None, lambda: f"the offset {s.offset.term!r}"),
         (bool(s.mo_terms), lambda: f"the monotonic term {s.mo_terms[0].name!r}"),
+        (bool(getattr(s, "sp_terms", ())), lambda: f"the special term {s.sp_terms[0].name!r}"),                   # G10
+        (any(getattr(t, "thresholds", False) for t in s.group_terms), lambda: "the category-specific group-level term (cs(1) | g)"),
         (bool(s.gp_terms), lambda: f"the Gaussian process {s.gp_terms[0].term!r}"),
         (bool(getattr(s, "me_terms", ())), lambda: f"the measurement-error term {s.me_terms[0].name!r}"),
         (bool(getattr(s, "mi_terms", ())) or bool(getattr(s, "missing_columns", ())), lambda: "missing values modelled by mi()"),

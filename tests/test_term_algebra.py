@@ -272,8 +272,8 @@ def test_a_product_term_is_checked():
     ("y ~ x + x:g + (1 | g)", {}, "'x:g': the grouping factor 'g' cannot enter a fixed interaction"),
     ("y ~ x:w:g + (1 | g)", {}, "'x:w:g': the grouping factor 'g' cannot enter a fixed interaction"),
     ("y ~ x + x:w:y", {}, "'x:w:y': the response or trials column cannot enter an interaction"),
-    ("y ~ mo(o):x:w", {}, "'mo\\(o\\):x:w': an interaction with a monotonic term \\('mo\\(o\\)'\\) is not supported"),
-    ("y ~ x * me(w, sdx)", {}, "'x \\* me\\(w, sdx\\)': an interaction with a measurement-error term"),
+    # G10 takes mo(o):x:w and x * me(w, sdx), brms's special terms (docs/special-term-ext.md); a transform beside mo() stays refused
+    ("y ~ mo(o):log(x)", {}, "'log\\(x\\)' in an interaction with a special term \\(mo\\(\\), me\\(\\)\\) is not supported"),
     ("y ~ x * mi(w)", {}, "an interaction with a missing-value term"),
     ("y ~ ordered(o):x:w", {}, "an interaction with an ordered factor \\('ordered\\(o\\)'\\) is not supported"),
     ("y ~ (x + w):log(v)", {}, "an interaction with a transformed term \\('log\\(v\\)'\\) is not supported"),
