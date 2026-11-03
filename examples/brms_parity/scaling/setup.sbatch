@@ -22,10 +22,10 @@ export MAKEFLAGS="-j${SLURM_CPUS_PER_TASK:-8}"
 
 load_modules
 echo "== versions on $(hostname) =="
-R --version | head -1
-g++ --version | head -1
-make --version | head -1
-command -v cmake >/dev/null && cmake --version | head -1
+R --version | sed -n 1p
+g++ --version | sed -n 1p
+make --version | sed -n 1p
+command -v cmake >/dev/null && cmake --version | sed -n 1p
 python3 --version || true
 module list 2>&1
 
