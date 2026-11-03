@@ -2766,12 +2766,14 @@
     "G05b_gr_cov_dist",
     "G06_distributional_groups"
    ],
-   "status": "queued",
+   "status": "merged",
    "summary": "scale to large N and many groups (Andrew, 2026-11-02): group terms from integer codes injected into Bambi as GroupSpecificTerm (option A; Bambi 0.17.2 internals, upgrade test), lazy GroupBlock.Z / Design.Z, the target identity streamed with the same schema-v1 digest, predict/log_lik by index gather (mean may change in the last digit; response draws from AutoBayes's RNG, accepted). Today a (1 + x | g) model at N=1e5, J=1e3 needs ~60 GB to build, mostly freeze_target. Every oracle case bit-for-bit unchanged against a manifest recorded on main first; memory test N=2e5, J=2e4 under ~0.5 GB. Design: scratchpad/scale-design/",
-   "pr": null,
+   "pr": 117,
    "attempts": 0,
-   "divergences": [],
-   "next_action": "feature agent (G02, G05a, G05b, G06 merged): brief from loop-notes/scale-design; manifest recorded on main first",
+   "divergences": [
+    "D199"
+   ],
+   "next_action": "none",
    "reserved_divergences": "D199-D200",
    "gates": {
     "sha": "d4b57a3611e2",
