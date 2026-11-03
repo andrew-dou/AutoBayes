@@ -79,15 +79,20 @@ hits <- grep("march=native", log, value = TRUE)
 cat(if (length(hits)) "march-native check: -march=native is on the compile line\n" else
   "march-native check: NOT FOUND in the captured compile output; read it below before using --march-native\n")
 if (!length(hits)) writeLines(tail(log, 40))
-cat("threading check: exe_info stan_threads =", tryCatch(format(m$exe_info()$stan_threads), error = function(e) "?"), "\n")
+cat("threading check: STAN_THREADS on the compile line:", length(grep("STAN_THREADS", log)) > 0, "| exe_info stan_threads =",
+    tryCatch(format(m$exe_info()$stan_threads), error = function(e) paste("error:", conditionMessage(e))), "\n")
 EOF
 
 # --- Python: a venv with AutoBayes's pinned dependencies (uv.lock), CPU JAX ------------------------------------------
 export UV_CACHE_DIR="$ENV_DIR/uv-cache" UV_PYTHON_INSTALL_DIR="$ENV_DIR/uv-python"
-if [[ ! -x "$ENV_DIR/uv/bin/uv" ]]; then
-  # DOWNLOAD: uv (the lock file's installer) from PyPI into its own small venv.
-  python3 -m venv "$ENV_DIR/uv"
-  "$ENV_DIR/uv/bin/pip" install --quiet uv==0.11.24
+uv_env="$ENV_DIR/uv-py3"   # (an earlier "$ENV_DIR/uv", made with the node's Python 3.6, is left unused)
+if [[ ! -x "$uv_env/bin/uv" ]]; then
+  # DOWNLOAD: uv (the lock file's installer) from PyPI into its own small venv, made with a Python new enough for uv.
+  (
+    [[ "${UV_BOOTSTRAP_MODULE:-none}" == none ]] || module load "$UV_BOOTSTRAP_MODULE"
+    python3 -m venv "$uv_env"
+  )
+  "$uv_env/bin/pip" install --quiet uv==0.11.24
 fi
 if [[ "$PYTHON_MODULE" == none ]]; then
   py=3.11            # DOWNLOAD (if no Python 3.11 is found): uv fetches a standalone CPython 3.11 into $UV_PYTHON_INSTALL_DIR
@@ -98,7 +103,7 @@ else
 fi
 if [[ ! -x "$ENV_DIR/venv/bin/python" ]]; then
   # DOWNLOAD: the exact versions in uv.lock (pymc, bambi, jax/jaxlib CPU wheels, numpyro, ...) from PyPI.
-  UV_PROJECT_ENVIRONMENT="$ENV_DIR/venv" "$ENV_DIR/uv/bin/uv" sync --frozen --extra jax --project "$SRC_DIR" --python "$py"
+  UV_PROJECT_ENVIRONMENT="$ENV_DIR/venv" "$uv_env/bin/uv" sync --frozen --extra jax --project "$SRC_DIR" --python "$py"
 fi
 "$ENV_DIR/venv/bin/python" - "$SRC_DIR" <<'EOF'
 import sys
