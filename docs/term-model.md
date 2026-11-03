@@ -93,7 +93,9 @@ D08 (docs/multi-membership-and-by.md): `GroupTerm.members` and `weights` make th
 `(1 | mm(g, g2, weights = cbind(w1, w2)))` (factor `mmgg2`, `operands` the member columns, `GroupBlock.memberships` and
 `weights` per row), `GroupTerm.by` brms's `(1 | gr(g, by = gby))` (`GroupBlock.by_levels`, `by_index`); both are
 `GroupTerm.custom`, built by the model in the linear-predictor hook rather than by Bambi (`ModelSpec.bambi_group_terms` are the
-others). `GroupTerm.id` is a correlation ID shared with a distributional formula's term of the same factor
+others). So are `GroupTerm.cov` (brms's `gr(g, cov = A)`, the name of a matrix in `data2`; `Design.group_cov`), `GroupTerm.dist`
+(`"student"` for `gr(g, dist = "student")`; `Model.group_dist_names`) and a multi-membership term's varying slopes, `mmc(x1, x2)`
+(`GroupTerm.covariate_columns`, `GroupBlock.covariates`) and `GroupTerm.unscaled` (brms's `scale = FALSE`); docs/gr-cov-dist.md. `GroupTerm.id` is a correlation ID shared with a distributional formula's term of the same factor
 (`ModelSpec.shared_ids`, `DparDesign.group_blocks`, `Model.dpar_group_names`).
 
 ## Gaussian processes: `ModelSpec.gp_terms`

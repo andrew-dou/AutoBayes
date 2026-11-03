@@ -72,7 +72,7 @@ REFUSALS = [                                   # '(1 + x | g)', once refused her
     ("y ~ x + (1 + 1 || g)", {}, "'1' appears more than once in the group term"),
     ("y ~ x + (1 + x || g:h:k:m)", {}, "at most 3 columns can be combined in a grouping factor"),   # A03 accepts '(1 + x || g:h)', G05a g:h:k
     ("y ~ x + (1 + x || g/h:k)", {}, "mixing '/' and ':' in a grouping factor"),
-    ("y ~ x + (1 + x || mm(g, h))", {}, "only the varying intercept '(1 | mm(...))' is supported for a multi-membership term"),   # D08
+    ("y ~ x + (0 + x || mm(g, h))", {}, "a multi-membership term without its varying intercept is not supported"),   # slopes in mm() are taken
     ("y ~ x + (1 + x || log(g))", {}, "transformed grouping factors are not supported"),
     ("y ~ x + (1 + x | id | g)", {}, "in a formula on its own it is not supported here"),   # D08: an ID is shared with sigma ~ only
     ("y ~ x + (1 + x |)", {}, "parenthesised term is not a '(1 | group)' or '(1 + x || group)' term"),

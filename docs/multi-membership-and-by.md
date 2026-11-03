@@ -50,8 +50,9 @@ formula's term is the varying intercept of the same factor, written with `1 +` (
 
 ## Refused, with the construct named
 
-Varying slopes in `mm()` and with `gr(by = )`, `mm()`'s `scale = FALSE` and `mmc()`, negative weights or rows whose weights sum
-to 0, `gr()`'s `cor`, `id`, `cov` and `dist` (D104, D105); `mm()` and `gr(by = )` next to `mo()`, `gp()`, `me()`, `mi()`, an
+Varying slopes with `gr(by = )`, negative weights (with brms's default `scale = TRUE`) or rows whose weights sum to 0, `gr()`'s
+`by` together with `cov` or `dist` (D104, D105; varying slopes in `mm()`, `mmc()`, `scale = FALSE` and `gr()`'s `cov` and `dist` on
+their own are offered, docs/gr-cov-dist.md); `mm()` and `gr(by = )` next to `mo()`, `gp()`, `me()`, `mi()`, an
 autocorrelation term, an addition term or a distributional formula, in multivariate and non-linear models, and for the families
 whose link is not identity or log (D104, D105); new levels of a `gr(by = )` term or of a factor whose ID is shared; an ID in a
 formula on its own, used by two factors, written `||p|` (not brms syntax), with `mm()` or `gr()`, with varying slopes in the
