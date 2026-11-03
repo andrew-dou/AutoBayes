@@ -185,7 +185,7 @@ def prior_names(model) -> list[str]:
     out += [roles["simplex"] for roles in model.mo_names.values()]
     mixture = getattr(model, "mixture_names", {})          # C05: each component's sigma<k> and theta
     out += [*mixture["sigma"], mixture["theta"]] if mixture else []
-    out += [roles[key] for roles in getattr(model, "gp_names", {}).values() for key in ("sdgp", "lscale")]   # C03
+    out += list(getattr(model, "gp_parameter_names", ()))   # C03: each GP's sdgp and lscale (G09: each level's, each input's lscale)
     out += [v for k, v in getattr(model, "autocor_names", {}).items() if not k.endswith("_coordinate")]   # an ARMA term's ar and ma (C04)
     # F02a: a CAR term's sdcar, car and rhocar (brms's lprior; its latent vectors' densities are in brms's model block)
     out += [v for k, v in getattr(model, "car_names", {}).items() if k in ("sdcar", "car", "rhocar")]
@@ -383,9 +383,16 @@ def check_design(b: Bundle) -> None:
         theirs = np.atleast_1d(sd[f"con_simo_{k}"])
         if theirs.shape != con.shape or abs_err(theirs, con) > DESIGN_ABS:
             raise OracleMismatch(f"brms con_simo_{k} is {theirs!r}; the prior of {block.term!r} gives {con!r}")
-    for column, k in (b.cmap.gp or {}).items():                 # C03: Jgp_k and Xgp_k were matched by content; the scaling
+    levels = {key: f"{k}_{l}" for key, (k, l) in (b.cmap.gp_levels or {}).items()}   # G09: a factor by's level l, suffix k_l
+    for column, k in [*(b.cmap.gp or {}).items(), *levels.items()]:   # C03: Jgp_k and Xgp_k were matched by content; the scaling
         g, block = b.model.spec.gp(column), d.gp[column]         # and the approximate GP's boundary and frequencies here
-        mine = {f"dmax_{k}": np.float64(g.dmax), f"cmeans_{k}": np.float64(g.cmean), f"Xgp_prior_{k}": block.inputs[:, None]}
+        inputs = block.inputs.reshape(len(block.inputs), -1)     # G09: (N, D) for several inputs, one cmeans per input
+        mine = {f"dmax_{k}": np.float64(g.dmax), f"cmeans_{k}": np.float64(g.cmean) if g.ndim == 1 else g.cmeans,
+                f"Xgp_prior_{k}": inputs}
+        if not g.scale:                                          # G09: scale = FALSE, the inputs unscaled and no dmax_k
+            if f"dmax_{k}" in sd:
+                raise OracleMismatch(f"brms's Gaussian process {k} has dmax_{k}; {g.term!r} leaves its inputs unscaled")
+            del mine[f"dmax_{k}"]
         if g.approximate:
             mine.update({f"Lgp_{k}": np.float64(g.L), f"NBgp_{k}": np.float64(g.k), f"slambda_{k}": block.slambda[:, None]})
         elif any(f"{key}_{k}" in sd for key in ("Lgp", "NBgp", "slambda")):
@@ -393,6 +400,7 @@ def check_design(b: Bundle) -> None:
         for key, value in mine.items():
             if key not in sd or np.shape(sd[key]) != np.shape(value) or abs_err(sd[key], value) > DESIGN_ABS:
                 raise OracleMismatch(f"Gaussian process {g.term!r}: brms {key} is {sd.get(key)!r}; AutoBayes has {value!r}")
+    check_gp_by(b)                                               # G09: a Gaussian process's by variable, Cgp_k, Igp_k_l, Cgp_k_l
     adapter.check_autocor_design(b.fixture, b.model)             # C04: Kar, Kma, J_lag and each sorted row's series and position
     adapter.check_sar_design(b.fixture, b.model)                 # F02b: Msar, eigenMsar, N_tg and the parameter's bounds
     adapter.check_fcor_design(b.fixture, b.model)                # F03a: Mfcor and N_tg
@@ -532,6 +540,41 @@ def check_response(sd: dict, model) -> None:
 
 
 # -- G2 -----------------------------------------------------------------------------------------------------
+def check_gp_by(b: Bundle) -> None:
+    """G1 of a Gaussian process's ``by`` variable (G09): brms's ``Cgp_k`` is the numeric by column on the fitted rows (the process's
+    multiplier) and is absent without one; a factor by's ``Kgp_k`` is its number of levels, each level's ``Cgp_k_l`` is ones on
+    its rows ``Igp_k_l`` (matched by content in ``adapter.match_gp_levels``), ``Ngp_k`` the levels' numbers of rows and
+    ``Nsubgp_k`` their numbers of distinct inputs; every ``Cgp_`` / ``Igp_`` entry of brms's Stan data is explained."""
+    sd, d, spec = b.fixture.standata, b.model.design, b.model.spec
+    seen = set()
+    for column, k in (b.cmap.gp or {}).items():
+        g, owner = spec.gp(column), spec.gp_owner(column)
+        if owner.by is None:
+            if f"Cgp_{k}" in sd:
+                raise OracleMismatch(f"brms's Gaussian process {k} has Cgp_{k}; {g.term!r} has no by variable")
+            continue
+        want = d.gp[column].multiplier
+        if f"Cgp_{k}" not in sd or np.shape(sd[f"Cgp_{k}"]) != want.shape or abs_err(sd[f"Cgp_{k}"], want) > DESIGN_ABS:
+            raise OracleMismatch(f"Gaussian process {g.term!r}: brms Cgp_{k} is {sd.get(f'Cgp_{k}')!r}; the by column {g.by!r} is {want!r}")
+        seen.add(f"Cgp_{k}")
+    ks = {}
+    for key, (k, l) in (b.cmap.gp_levels or {}).items():
+        block = d.gp[key]
+        ones = np.ones(len(block.rows))
+        if f"Cgp_{k}_{l}" not in sd or np.shape(sd[f"Cgp_{k}_{l}"]) != ones.shape or abs_err(sd[f"Cgp_{k}_{l}"], ones) > DESIGN_ABS:
+            raise OracleMismatch(f"brms Cgp_{k}_{l} is {sd.get(f'Cgp_{k}_{l}')!r}; level {spec.gp(key).level!r} adds its process once per row")
+        seen |= {f"Cgp_{k}_{l}", f"Igp_{k}_{l}"}
+        ks.setdefault(k, {})[l] = block
+    for k, by_level in ks.items():
+        n = [len(by_level[l].rows) for l in sorted(by_level)]
+        if int(sd[f"Kgp_{k}"]) != len(by_level) or np.atleast_1d(sd[f"Ngp_{k}"]).astype(int).tolist() != n:
+            raise OracleMismatch(f"brms Kgp_{k}, Ngp_{k} are {sd.get(f'Kgp_{k}')!r}, {sd.get(f'Ngp_{k}')!r}; AutoBayes has {len(n)} levels "
+                                 f"of {n} rows")
+    extra = sorted(key for key in sd if key.startswith(("Cgp_", "Igp_")) and key not in seen)
+    if extra:
+        raise OracleMismatch(f"brms's Stan data has {extra}, which no by variable of the model explains")
+
+
 def check_logp(b: Bundle) -> None:
     for k, p, vp in b.points():
         a, an, pri = float(b.logp(vp)), float(b.logp_nojac(vp)), float(b.lprior(vp))

@@ -1035,9 +1035,14 @@ class Priors:
 
     def _gp_priors(self, spec, cls: str, what: str, default: str) -> dict[str, Prior]:
         """``sdgp_priors`` / ``lscale_priors``: exact coverage of the Gaussian processes' columns (a single one also takes the
-        bare prior), positive-support priors only; refused when the formula has no Gaussian process."""
+        bare prior), positive-support priors only; refused when the formula has no Gaussian process.
+
+        G09: keyed by each process's key (``formula.GaussianProcess.key``: its column for ``gp(x)``, ``o2b2`` for
+        ``gp(o2, b2)``, ``ordzp`` for level ``p`` of ``gp(ord, by = z)``) and, for ``lscale``, by each length-scale's key
+        (``o2b2o2``, ``o2b2b2`` with ``iso = FALSE``): brms's coefficient names without ``gp``. A bare prior of a single
+        ``gp()`` term is the prior of each of its processes (each level's) and length-scales, as brms's class prior is."""
         terms = tuple(getattr(spec, "gp_terms", ()))
-        columns = [g.column for g in terms]
+        columns = [k for g in terms for p in g.subprocesses for k in ((p.key,) if cls == "sdgp" else p.lscale_keys)]
         given = getattr(self, cls)
         if not terms:
             if given is not None:
@@ -1047,18 +1052,20 @@ class Priors:
             raise PriorError(f"the Gaussian process(es) {[g.term for g in terms]} need a prior on their {what}: pass "
                              f"{cls}={{{', '.join(f'{c!r}: ...' for c in columns)}}} (brms class {cls}; brms's default is {default}, "
                              "which ab.default_priors() returns)")
-        if isinstance(given, Mapping):
+        if isinstance(given, Mapping) and any(g.by is not None and not g.known for g in terms):
+            by_column = dict(given)                         # G09: a by's levels are known once the data are seen (checked then)
+        elif isinstance(given, Mapping):
             if set(given) != set(columns):
                 extra = [k for k in given if k not in columns]
-                hint = next((f"; key the prior by the column, {cls}={{{c!r}: ...}}" for k in extra for g, c in zip(terms, columns)
-                             if k in (g.term, f"gp({c})", f"gp{c}")), "")
+                hint = next((f"; key the prior by the column, {cls}={{{c!r}: ...}}" for k in extra for g in terms
+                             for c in (g.key,) if g.plain and k in (g.term, f"gp({c})", f"gp{c}")), "")
                 raise PriorError(f"{cls} must cover exactly the columns of the Gaussian processes {columns}; got {list(given)}{hint}")
             by_column = {c: given[c] for c in columns}
         else:
-            if len(columns) != 1:
+            if len(terms) != 1:
                 raise PriorError(f"several Gaussian processes {[g.term for g in terms]} need an exact-key {cls} mapping over "
                                  f"{columns}; a bare prior is not broadcast")
-            by_column = {columns[0]: given}
+            by_column = {c: given for c in columns}            # G09: every process and length-scale of the one term
         for c, prior in by_column.items():
             if not isinstance(prior, Prior):
                 raise PriorError(f"prior for '{cls}:{c}' must be a Prior, got {type(prior).__name__}")

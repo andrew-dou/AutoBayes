@@ -533,21 +533,49 @@ def compare_univariate(model, reading: Reading, issues: list, notes: list, what:
             reading.used.add(reading.key("Kcs"))
     for column, block in d.gp.items():                              # gp(): Jgp_k, Xgp_k, dmax_k, cmeans_k, ...
         g = spec.gp(column)
+        if spec.gp_owner(column).is_by_factor:                     # G09: a factor by's levels, below
+            continue
         ks = [k for k in range(1, 20) if reading.has(f"Jgp_{k}") and _close(reading.sd.get(reading.key(f"Jgp_{k}")), block.index + 1)]
         if len(ks) != 1:
             issues.append(f"{what}{block.term!r}: {len(ks)} brms Gaussian processes have its row index Jgp")
             continue
         k = ks[0]
-        mine = {f"Xgp_prior_{k}": block.inputs[:, None], f"dmax_{k}": g.dmax, f"cmeans_{k}": g.cmean,
-                f"Xgp_{k}": block.basis if g.approximate else block.inputs[:, None]}
+        inputs = block.inputs.reshape(len(block.inputs), -1)       # G09: (N, D) for several inputs, a cmeans per input
+        mine = {f"Xgp_prior_{k}": inputs, f"dmax_{k}": g.dmax, f"cmeans_{k}": g.cmean if g.ndim == 1 else g.cmeans,
+                f"Xgp_{k}": block.basis if g.approximate else inputs}
+        if not g.scale:                                            # G09: scale = FALSE, no dmax
+            del mine[f"dmax_{k}"]
+            if reading.has(f"dmax_{k}"):
+                issues.append(f"{what}{block.term!r}: brms scales the inputs (dmax_{k}); AutoBayes leaves them unscaled")
+        if block.multiplier is not None:                           # G09: a numeric by, Cgp_k
+            mine[f"Cgp_{k}"] = block.multiplier
         if g.approximate:
             mine.update({f"NBgp_{k}": g.k, f"Lgp_{k}": g.L, f"slambda_{k}": block.slambda[:, None]})
         for key, value in mine.items():
             if not reading.has(key) or not _close(reading.get(key), value):
                 issues.append(f"{what}{block.term!r}: brms's {key} differs from AutoBayes's")
         reading.used.update({reading.key(f"Jgp_{k}"), reading.key(f"Kgp_{k}"), reading.key(f"Dgp_{k}"), reading.key(f"Nsubgp_{k}")})
-        if int(reading.get(f"Kgp_{k}")) != 1 or int(reading.get(f"Dgp_{k}")) != 1:
+        if int(reading.get(f"Kgp_{k}")) != 1 or int(reading.get(f"Dgp_{k}")) != g.ndim:
             issues.append(f"{what}{block.term!r}: brms's GP has Kgp, Dgp {int(reading.get(f'Kgp_{k}'))}, {int(reading.get(f'Dgp_{k}'))}")
+    for g in (t for t in getattr(spec, "gp_terms", ()) if t.is_by_factor):   # G09: gp(x, by = <factor>), one process per level
+        ks = [k for k in range(1, 20) if reading.has(f"Kgp_{k}") and not reading.has(f"Jgp_{k}")
+              and all(reading.has(f"Igp_{k}_{l}") for l in range(1, len(g.parts) + 1))]
+        if len(ks) != 1 or int(reading.get(f"Kgp_{ks[0]}")) != len(g.parts):
+            issues.append(f"{what}{g.term!r}: {len(ks)} brms Gaussian processes have {len(g.parts)} levels")
+            continue
+        k = ks[0]
+        for l, part in enumerate(g.parts, start=1):
+            block = d.gp[part.key]
+            mine = {f"Igp_{k}_{l}": block.rows + 1, f"Jgp_{k}_{l}": block.index + 1, f"Cgp_{k}_{l}": np.ones(len(block.rows)),
+                    f"Xgp_prior_{k}_{l}": block.inputs[:, None], f"Xgp_{k}_{l}": block.inputs[:, None], f"dmax_{k}_{l}": part.dmax,
+                    f"cmeans_{k}_{l}": part.cmean}
+            for key, value in mine.items():
+                if not reading.has(key) or not _close(reading.get(key), value):
+                    issues.append(f"{what}{g.term!r} at level {part.level!r}: brms's {key} differs from AutoBayes's")
+        for key, value in ((f"Ngp_{k}", [len(d.gp[p.key].rows) for p in g.parts]), (f"Nsubgp_{k}", [len(p.inputs) for p in g.parts]),
+                           (f"Dgp_{k}", g.ndim)):
+            if not reading.has(key) or not _close(reading.get(key), value):
+                issues.append(f"{what}{g.term!r}: brms's {key} differs from AutoBayes's")
     for column, block in d.measurement_error.items():               # me(): Xn_k, noise_k
         ks = [k for k in range(1, 20) if reading.has(f"Xn_{k}") and _close(reading.sd.get(reading.key(f"Xn_{k}")), block.Xn)]
         if len(ks) != 1 or not _close(reading.get(f"noise_{ks[0]}"), block.noise):

@@ -2731,13 +2731,33 @@
    "depends_on": [
     "C03_gaussian_process"
    ],
-   "status": "implementing",
+   "status": "gates_green",
    "summary": "gp() extensions: several inputs gp(x, z), gp(x, by = f), Matern kernels (cov = 'matern32', 'matern52'), scale = FALSE (corpus sp_gp_*)",
    "pr": null,
    "attempts": 0,
    "divergences": [],
    "next_action": "feature agent on parity/g09",
-   "reserved_divergences": "D195-D196"
+   "reserved_divergences": "D195-D196",
+   "gates": {
+    "sha": "0278370fe29b",
+    "dirty_tree": false,
+    "base": "origin/main",
+    "when": "2026-11-03T13:04Z",
+    "results": {
+     "immutability": {
+      "status": "pass",
+      "seconds": 0.0
+     },
+     "oracle": {
+      "status": "pass",
+      "seconds": 910.1
+     },
+     "diff_coverage": {
+      "status": "pass",
+      "seconds": 121.0
+     }
+    }
+   }
   },
   {
    "id": "G10_special_term_ext",

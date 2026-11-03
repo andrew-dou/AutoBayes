@@ -254,7 +254,7 @@ def _default(prior: Prior) -> Prior:
     return replace(prior, source="default")
 
 
-def default_lscale(gp) -> Prior:
+def default_lscale(gp, dimension: int | None = None) -> Prior:
     """brms's default prior of a Gaussian process's length-scale (C03, docs/gaussian-processes.md), on its scaled inputs
     (``gp`` a ``formula.GaussianProcess`` with its data seen): the inverse gamma with 1% of its mass below the smallest
     distance between distinct scaled inputs, floored at 0.01, and 1% above the largest (1), solved exactly
@@ -264,11 +264,39 @@ def default_lscale(gp) -> Prior:
     one crosses, the sixth decimal differs by one (divergence D67)."""
     from autobayes.gaussian_process import DIGITS, FALLBACK_SCALE, FLOOR, TAIL, inverse_gamma_tails, smallest_distance
 
+    if not gp.plain:                                              # G09: several inputs, iso = FALSE, scale = FALSE
+        return _default_lscale_ext(gp, dimension)
     x = gp.scaled_inputs
     if x.size == 2:
         return HalfNormal(FALLBACK_SCALE)
     a, b = inverse_gamma_tails(max(smallest_distance(x), FLOOR), float(x.max() - x.min()), TAIL)
     return InverseGamma(r_round(a, DIGITS), r_round(b, DIGITS))
+
+
+def _default_lscale_ext(gp, dimension: int | None) -> Prior:
+    """G09: ``default_lscale`` of a process with several inputs, another kernel or ``scale = FALSE`` (brms's rule, read off
+    every G09 fixture's ``default_prior()`` and probes): the same inverse gamma for every kernel, on the Euclidean distances
+    between the distinct scaled input rows, or with ``iso = FALSE`` (``dimension`` the input) on that input's distinct scaled
+    values (its largest distance then below 1); with ``scale = FALSE`` brms solves it on the inputs scaled by their largest
+    distance ``dmax`` (the floor 0.01 is ``0.01 dmax`` of the unscaled inputs) and multiplies the scale by ``dmax`` before
+    rounding (probes: ``x = (0, 0.001, 1, 2)`` gives ``inv_gamma(1.494197, 0.113215)``, twice the scaled ``0.056607``); two
+    distinct values give brms's ``normal(0, 0.5)``, which brms does not rescale with ``scale = FALSE`` (probe ``x = (0, 10)``)."""
+    from autobayes.gaussian_process import (DIGITS, FALLBACK_SCALE, FLOOR, TAIL, inverse_gamma_tails, largest_distance,
+                                            smallest_distance)
+
+    if gp.scale:
+        x, dmax = gp.scaled_inputs, 1.0
+    else:                                                         # scale = FALSE: solved on the inputs scaled by dmax
+        raw = np.asarray(gp.inputs, dtype=float)
+        dmax = largest_distance(raw)
+        x = raw / dmax
+    if dimension is not None:                                     # iso = FALSE: this input's distinct values
+        x = np.unique(x[:, dimension])
+    if len(x) == 2:
+        return HalfNormal(FALLBACK_SCALE)
+    upper = float(x.max() - x.min()) if x.ndim == 1 else largest_distance(x)
+    a, b = inverse_gamma_tails(max(smallest_distance(x), FLOOR), upper, TAIL)
+    return InverseGamma(r_round(a, DIGITS), r_round(b * dmax, DIGITS))
 
 
 def default_priors(formula: str | list[str], data: pd.DataFrame, *, family: str = "gaussian", categorical: Mapping[str, object] | None = None,
@@ -486,8 +514,10 @@ def default_priors(formula: str | list[str], data: pd.DataFrame, *, family: str 
         return _default(value)
 
     simo = {t.operands[0]: Dirichlet(1) for t in spec.mo_terms}         # B03: brms's dirichlet(1) on each monotonic simplex
-    sdgp = {g.column: HalfStudentT(DF, scale) for g in spec.gp_terms}   # C03: a group-level SD's default
-    lscale = {g.column: default_lscale(g) for g in spec.gp_terms}      # C03: tuned to the process's inputs
+    processes = [p for g in getattr(spec, "gp_terms", ()) for p in g.subprocesses]   # G09: each level's process of a factor by
+    sdgp = {p.key: HalfStudentT(DF, scale) for p in processes}         # C03: a group-level SD's default (G09: each process's)
+    lscale = {lk: default_lscale(p, None if p.iso else d)              # C03: tuned to the process's inputs (G09: each level's,
+              for p in processes for d, lk in enumerate(p.lscale_keys)}   # each input's with iso = FALSE)
     autocor = {part: Flat() for part, _ in spec.autocor.parts} if spec.autocor is not None else {}   # C04: flat ar and ma
     me = {t.operands[0]: Flat() for t in spec.me_terms}                  # C06: brms's flat meanme and sdme (sdme on (0, inf))
     sar = {spec.sar.parameter: Flat()} if spec.sar is not None else {}   # F02b: brms's flat lagsar / errorsar

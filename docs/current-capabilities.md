@@ -211,9 +211,13 @@ Gaussian processes (C03, brms's `gp()`): `gp(x)`, the exact process of one numer
 Hilbert-space approximation with `K` basis functions, both with the squared-exponential kernel and brms's scaling of the input,
 add the process's value at each row's input to the linear predictor, under `Priors(sdgp=..., lscale=...)` keyed by column (brms's
 defaults, including the inverse-gamma `lscale` tuned to the inputs, from `ab.default_priors()`); for every family but the
-categorical one, verified against `gauss_gp_exact` and `gauss_gp_approx`; several covariates, `by`, other kernels, `iso`,
-`gr = FALSE`, `scale = FALSE` and `gp()` in interactions, group-level or distributional formulas are refused (D64), an exact GP
-predicts at fitted inputs only (D65) and an approximate one inside its boundary (D66); see [Gaussian processes](gaussian-processes.md).
+categorical one, verified against `gauss_gp_exact` and `gauss_gp_approx`; `gr = FALSE` and `gp()` in interactions, group-level or
+distributional formulas are refused (D64), an exact GP predicts at fitted inputs only (D65) and an approximate one inside its
+boundary (D66); see [Gaussian processes](gaussian-processes.md). G09 adds several inputs (`gp(o2, b2)`, one length-scale, or
+`iso = FALSE` one per input), `by =` a factor of the model (one process per level, each scaled by its own `dmax`) or a numeric
+column (the process times it), the Matern 3/2, Matern 5/2 and exponential kernels, exact and approximate, and `scale = FALSE`,
+with brms's default priors, verified against twelve frozen cases (G6 of `gauss_gp_by_factor` excepted, D67); `iso = FALSE` with
+another kernel (D195), the combinations no case verifies and `cmc = FALSE` (D196) are refused.
 
 Non-linear formulas (C02, brms's `bf(y ~ a * exp(b * x), a ~ 1 + (1 | g), b ~ 1, nl = TRUE)`): `ab.gaussian([...], data, priors,
 nl=True)` builds an `ab.NonlinearModel` whose mean is an expression in non-linear parameters, numeric covariates and constants

@@ -177,6 +177,11 @@ def gp_contribution(model, post, df: pd.DataFrame) -> np.ndarray | float:
     out = 0.0
     for column, roles in model.gp_names.items():
         g = model.spec.gp(column)
+        if not model.spec.gp_owner(column).plain:            # G09: several inputs, by, another kernel, scale = FALSE
+            if model.spec.gp_owner(column).subprocesses[0].key == column:   # once per term
+                from autobayes.gp_ext import gp_values
+                out = out + gp_values(model, model.spec.gp_owner(column), post, df)
+            continue
         sdgp, lscale = post[roles["sdgp"]].to_numpy(), post[roles["lscale"]].to_numpy()
         z = post[roles["zgp"]].transpose("chain", "draw", roles["coordinate"]).to_numpy()
         if g.approximate:

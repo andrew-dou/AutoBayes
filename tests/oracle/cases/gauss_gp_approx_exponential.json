@@ -1,0 +1,86 @@
+{
+ "id": "gauss_gp_approx_exponential",
+ "tier": "G",
+ "feature": "G09_gp_ext",
+ "note": "G09 gp(x, k = 10, c = 5/4, cov = \"exponential\"): the Hilbert-space basis of gauss_gp_approx (Xgp_1 36 x 10, slambda_1, Lgp_1 = 1.25, NBgp_1 = 10) with the exponential kernel's (Matern 1/2) spectral density in one dimension, sdgp^2 2 l (1 + l^2 w^2)^(-1) (Rasmussen and Williams 2006, eq. 4.15 at nu = 1/2); new rows' predictions are deterministic, the basis at their scaled inputs (frozen by G09 to verify the approximate exponential kernel; checked on the frozen points by tests/oracle/test_multivariate_gp_special_harness.py)",
+ "seed": 3322,
+ "n_points": 8,
+ "data": {
+  "generator": "tier_g3",
+  "seed": 3222,
+  "n": 36,
+  "newdata": {
+   "seed": 3322,
+   "n": 5
+  }
+ },
+ "brms": {
+  "formula": "y ~ gp(x, k = 10, c = 5/4, cov = \"exponential\") + (1 | g)",
+  "family": {
+   "family": "gaussian"
+  },
+  "factors": {
+   "g": [
+    "a",
+    "b",
+    "c",
+    "d",
+    "e",
+    "f"
+   ]
+  },
+  "priors": [
+   {
+    "prior": "normal(0, 5)",
+    "class": "Intercept"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "sdgp"
+   },
+   {
+    "prior": "inv_gamma(3, 1)",
+    "class": "lscale",
+    "coef": "gpx"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "sd",
+    "group": "g"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "sigma"
+   }
+  ]
+ },
+ "autobayes": {
+  "constructor": "gaussian",
+  "formula": "y ~ gp(x, k = 10, c = 5/4, cov = \"exponential\") + (1 | g)",
+  "kwargs": {},
+  "priors": {
+   "intercept": [
+    "Normal",
+    0,
+    5
+   ],
+   "sdgp": [
+    "HalfNormal",
+    1
+   ],
+   "lscale": [
+    "InverseGamma",
+    3,
+    1
+   ],
+   "sd": [
+    "HalfNormal",
+    1
+   ],
+   "sigma": [
+    "HalfNormal",
+    1
+   ]
+  }
+ }
+}
