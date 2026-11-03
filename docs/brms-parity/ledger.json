@@ -2716,12 +2716,12 @@
     "C01_multivariate",
     "F06c_subset"
    ],
-   "status": "queued",
+   "status": "fixtures_frozen",
    "summary": "multivariate extensions: mvbind() with brms's default rescor, weights() in multivariate models, bf() + bf() with a formula per response, IDs across responses (corpus mv_*)",
    "pr": null,
    "attempts": 0,
    "divergences": [],
-   "next_action": "fixtures (wave G2)",
+   "next_action": "feature agent (fixtures #118)",
    "reserved_divergences": "D193-D194"
   },
   {
@@ -2731,12 +2731,12 @@
    "depends_on": [
     "C03_gaussian_process"
    ],
-   "status": "queued",
+   "status": "fixtures_frozen",
    "summary": "gp() extensions: several inputs gp(x, z), gp(x, by = f), Matern kernels (cov = 'matern32', 'matern52'), scale = FALSE (corpus sp_gp_*)",
    "pr": null,
    "attempts": 0,
    "divergences": [],
-   "next_action": "fixtures (wave G2)",
+   "next_action": "feature agent (fixtures #118)",
    "reserved_divergences": "D195-D196"
   },
   {
@@ -2748,12 +2748,12 @@
     "C06_missing_and_measurement_error",
     "D08_cs_mm_gr"
    ],
-   "status": "queued",
+   "status": "fixtures_frozen",
    "summary": "mo() interactions and ids, me(gr = ) and me() interactions, cs() in group-level terms and on expressions (corpus sp_mo_*, sp_me_*, sp_cs_*)",
    "pr": null,
    "attempts": 0,
    "divergences": [],
-   "next_action": "fixtures (wave G2)",
+   "next_action": "feature agent (fixtures #118)",
    "reserved_divergences": "D197-D198"
   },
   {
