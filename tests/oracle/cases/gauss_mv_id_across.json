@@ -1,0 +1,148 @@
+{
+ "id": "gauss_mv_id_across",
+ "tier": "G",
+ "feature": "G08_multivariate_ext",
+ "note": "G08 mvbind(y, y2) ~ x + (1 |p| g) with rescor FALSE: one group term of g across the two responses (groups: id 1 with cn 1 resp y and cn 2 resp y2), sd_1 of length 2, cholesky_factor_corr[2] L_1 (prior cor | g lkj(2)), z_1 matrix[2, 6], r_1_y_1 and r_1_y2_2 the columns of (diag(sd_1) L_1 z_1)', indexed by J_1_y and J_1_y2 with Z_1_y_1 and Z_1_y2_2; each response's sd | g | resp prior covers its own entry of sd_1 (y's normal(0, 1) on sd_1[1], y2's normal(0, 0.5) on sd_1[2]; unlike one ID across mu and sigma, D187); the likelihoods independent normals (checked on the frozen points by tests/oracle/test_multivariate_gp_special_harness.py)",
+ "seed": 3302,
+ "n_points": 8,
+ "data": {
+  "generator": "tier_g3",
+  "seed": 3202,
+  "n": 36,
+  "newdata": {
+   "seed": 3302,
+   "n": 5
+  }
+ },
+ "brms": {
+  "formula": "mvbind(y, y2) ~ x + (1 |p| g)",
+  "rescor": false,
+  "family": {
+   "family": "gaussian"
+  },
+  "factors": {
+   "g": [
+    "a",
+    "b",
+    "c",
+    "d",
+    "e",
+    "f"
+   ]
+  },
+  "priors": [
+   {
+    "prior": "normal(0, 5)",
+    "class": "Intercept",
+    "resp": "y"
+   },
+   {
+    "prior": "normal(0, 2)",
+    "class": "b",
+    "resp": "y"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "sd",
+    "group": "g",
+    "resp": "y"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "sigma",
+    "resp": "y"
+   },
+   {
+    "prior": "normal(0, 5)",
+    "class": "Intercept",
+    "resp": "y2"
+   },
+   {
+    "prior": "normal(0, 2)",
+    "class": "b",
+    "resp": "y2"
+   },
+   {
+    "prior": "normal(0, 0.5)",
+    "class": "sd",
+    "group": "g",
+    "resp": "y2"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "sigma",
+    "resp": "y2"
+   },
+   {
+    "prior": "lkj(2)",
+    "class": "cor",
+    "group": "g"
+   }
+  ],
+  "extras": [
+   "group_scope",
+   "responses"
+  ]
+ },
+ "autobayes": {
+  "constructor": "gaussian",
+  "formula": "mvbind(y, y2) ~ x + (1 |p| g)",
+  "kwargs": {
+   "rescor": false
+  },
+  "priors": {
+   "resp": {
+    "y": {
+     "intercept": [
+      "Normal",
+      0,
+      5
+     ],
+     "b": [
+      "Normal",
+      0,
+      2
+     ],
+     "sigma": [
+      "HalfNormal",
+      1
+     ],
+     "sd": [
+      "HalfNormal",
+      1
+     ]
+    },
+    "y2": {
+     "intercept": [
+      "Normal",
+      0,
+      5
+     ],
+     "b": [
+      "Normal",
+      0,
+      2
+     ],
+     "sigma": [
+      "HalfNormal",
+      1
+     ],
+     "sd": [
+      "HalfNormal",
+      0.5
+     ]
+    }
+   },
+   "cor": {
+    "g": [
+     "LKJ",
+     2
+    ]
+   }
+  }
+ },
+ "gate": {
+  "expect": "fail",
+  "reason": "G08_multivariate_ext not implemented; remove this field when it lands"
+ }
+}

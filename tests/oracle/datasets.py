@@ -378,6 +378,8 @@ def make(spec: dict) -> tuple[pd.DataFrame, pd.DataFrame | None]:
     """The data and newdata frames of a case's `data` section."""
     if spec["generator"] == "tier_g2":                          # Tier G part 2: tier_f2's frames plus columns of its own
         return _make_tier_g2(spec)
+    if spec["generator"] == "tier_g3":                          # Tier G part 3: tier_g2's frames plus columns of its own
+        return _make_tier_g3(spec)
     gen = GENERATORS[spec["generator"]]
     data = gen(int(spec["seed"]), int(spec.get("n", 36)))
     nd = spec.get("newdata")
@@ -471,6 +473,52 @@ GENERATORS["tier_g2"] = tier_g2
 NA_COLUMNS["tier_g2"] = ("xm",)
 DATA2["g_covariance"] = _g_covariance
 DATA2["g_relationship"] = _g_relationship
+
+
+# -- Tier G part 3: multivariate, gp() and special-term extensions ----------------------------------------------------------
+_G3_SEED_OFFSET = 122949823
+
+
+def tier_g3(seed: int, n: int = 36) -> pd.DataFrame:
+    """`tier_g2` plus the columns Tier G part 3 needs: a second ordinal predictor `o2` (1, 2, 3) beside `tier_b`'s `ord` (1..4), for
+    ``mo(ord) * mo(o2)``, and a binary `b2` (0, 1) such that every pair of (o2, b2) is present, the six inputs of a Gaussian process
+    of two inputs on a small grid (``gp(o2, b2)``, whose exact kernel stays well conditioned), and a covariate `xg` observed with known
+    noise standard deviations `sdxg`, both constant within each level of `g` (one latent value per level, ``me(xg, sdxg, gr = g)``).
+    Drawn after `tier_g2`'s so the shared columns equal `tier_g2(seed, n)` exactly (its `xm` keeps its missing values)."""
+    df = tier_g2(seed, n)
+    rng = np.random.default_rng(seed + _G3_SEED_OFFSET)
+    pairs = rng.integers(0, 6, n)
+    pairs[:6] = np.arange(6)                                    # every (o2, b2) pair present, then shuffled
+    rng.shuffle(pairs)
+    df["o2"] = (1 + pairs // 2).astype(np.int64)
+    df["b2"] = (pairs % 2).astype(np.int64)
+    levels = list(LEVELS["g"])
+    sd = np.round(rng.uniform(0.2, 0.6, len(levels)), 4)
+    noisy = np.round(rng.normal(0.0, 1.0, len(levels)) + rng.normal(0.0, 1.0, len(levels)) * sd, 4)
+    g = df["g"].to_numpy(dtype=object)
+    df["xg"] = np.array([noisy[levels.index(v)] for v in g])
+    df["sdxg"] = np.array([sd[levels.index(v)] for v in g])
+    return df
+
+
+def _make_tier_g3(spec: dict) -> tuple[pd.DataFrame, pd.DataFrame | None]:
+    """`make` for `tier_g3`: its data, and `tier_g2`'s new rows (the same keys) with `o2` and `b2` drawn after them from a generator
+    of their own and `xg`, `sdxg` the fitted values of each new row's level of `g` (constant within a level, as on the fitted rows)."""
+    data = tier_g3(int(spec["seed"]), int(spec.get("n", 36)))
+    _, nd = _make_tier_g2({**spec, "generator": "tier_g2"})
+    if nd is None:
+        return data, None
+    rng = np.random.default_rng(int(spec["newdata"]["seed"]) + _G3_SEED_OFFSET)
+    nd["o2"] = rng.integers(1, 4, len(nd)).astype(np.int64)
+    nd["b2"] = rng.integers(0, 2, len(nd)).astype(np.int64)
+    per_level = data.drop_duplicates("g").set_index("g")
+    nd["xg"] = per_level.loc[nd["g"], "xg"].to_numpy()
+    nd["sdxg"] = per_level.loc[nd["g"], "sdxg"].to_numpy()
+    return data, nd
+
+
+GENERATORS["tier_g3"] = tier_g3
+NA_COLUMNS["tier_g3"] = ("xm",)
 
 
 def write_csv(frame: pd.DataFrame, path) -> None:

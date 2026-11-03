@@ -1,0 +1,83 @@
+{
+ "id": "acat_cs_expression",
+ "tier": "G",
+ "feature": "G10_special_term_ext",
+ "note": "G10 cs(x + z) + (1 | g) in acat: one category-specific design of the expression, Xcs = (x, zq, zr) (Kcs = 3, z treatment coded), bcs matrix[3, 3], X empty (K = 0); mucs = Xcs bcs, the thresholds Intercept - mucs[n] (checked on the frozen points by tests/oracle/test_multivariate_gp_special_harness.py)",
+ "seed": 3339,
+ "n_points": 8,
+ "data": {
+  "generator": "tier_g3",
+  "seed": 3239,
+  "n": 36,
+  "newdata": {
+   "seed": 3339,
+   "n": 5
+  }
+ },
+ "brms": {
+  "formula": "ord ~ cs(x + z) + (1 | g)",
+  "family": {
+   "family": "acat",
+   "link": "logit"
+  },
+  "factors": {
+   "g": [
+    "a",
+    "b",
+    "c",
+    "d",
+    "e",
+    "f"
+   ],
+   "z": [
+    "p",
+    "q",
+    "r"
+   ]
+  },
+  "priors": [
+   {
+    "prior": "normal(0, 3)",
+    "class": "Intercept"
+   },
+   {
+    "prior": "normal(0, 1.5)",
+    "class": "b"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "sd",
+    "group": "g"
+   }
+  ]
+ },
+ "autobayes": {
+  "constructor": "acat",
+  "formula": "ord ~ cs(x + z) + (1 | g)",
+  "kwargs": {
+   "categorical": {
+    "z": "p"
+   }
+  },
+  "priors": {
+   "intercept": [
+    "Normal",
+    0,
+    3
+   ],
+   "b": [
+    "Normal",
+    0,
+    1.5
+   ],
+   "sd": [
+    "HalfNormal",
+    1
+   ]
+  }
+ },
+ "gate": {
+  "expect": "fail",
+  "reason": "G10_special_term_ext not implemented; remove this field when it lands"
+ }
+}

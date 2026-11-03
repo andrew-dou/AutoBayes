@@ -1,0 +1,85 @@
+{
+ "id": "acat_cs_group",
+ "tier": "G",
+ "feature": "G10_special_term_ext",
+ "note": "G10 x + (cs(1) | g) in acat (corpus sp_cs_group): three correlated per-threshold intercepts of g (groups g Intercept[1], Intercept[2], Intercept[3], cor; sd_1[3], L_1 3 x 3, prior cor | g lkj(2)), Z_1_k = 1, added to the category-specific predictor, mucs[n, k] += r_1_k[J_1[n]]; the thresholds of row n are Intercept - mucs[n] (acat_logit_lpmf); posterior_linpred is mu + mucs (draws x rows x thresholds) and re_formula = NA drops the per-threshold intercepts (checked on the frozen points by tests/oracle/test_multivariate_gp_special_harness.py)",
+ "seed": 3338,
+ "n_points": 8,
+ "data": {
+  "generator": "tier_g3",
+  "seed": 3238,
+  "n": 36,
+  "newdata": {
+   "seed": 3338,
+   "n": 5
+  }
+ },
+ "brms": {
+  "formula": "ord ~ x + (cs(1) | g)",
+  "family": {
+   "family": "acat",
+   "link": "logit"
+  },
+  "factors": {
+   "g": [
+    "a",
+    "b",
+    "c",
+    "d",
+    "e",
+    "f"
+   ]
+  },
+  "priors": [
+   {
+    "prior": "normal(0, 3)",
+    "class": "Intercept"
+   },
+   {
+    "prior": "normal(0, 1.5)",
+    "class": "b"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "sd",
+    "group": "g"
+   },
+   {
+    "prior": "lkj(2)",
+    "class": "cor",
+    "group": "g"
+   }
+  ]
+ },
+ "autobayes": {
+  "constructor": "acat",
+  "formula": "ord ~ x + (cs(1) | g)",
+  "kwargs": {},
+  "priors": {
+   "intercept": [
+    "Normal",
+    0,
+    3
+   ],
+   "b": [
+    "Normal",
+    0,
+    1.5
+   ],
+   "sd": [
+    "HalfNormal",
+    1
+   ],
+   "cor": {
+    "g": [
+     "LKJ",
+     2
+    ]
+   }
+  }
+ },
+ "gate": {
+  "expect": "fail",
+  "reason": "G10_special_term_ext not implemented; remove this field when it lands"
+ }
+}

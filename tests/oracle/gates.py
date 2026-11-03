@@ -246,6 +246,16 @@ class Bundle:
         if isinstance(formulas, list) and any("offset(" in f for f in formulas[1:]) and "check_dpar_offsets" not in globals():
             raise OracleMismatch("the fixture records an offset of a distributional formula (offsets_<dpar>); gates.py has no "
                                  "check_dpar_offsets to compare it")
+        # Tier G part 3: likewise brms's Stan data of G09 and G10 that G1 does not compare yet: the covariate that a special term's
+        # interaction multiplies (mo(ord):x, me(xobs, sdx):w, brms's Csp_k; G10, ``check_special_covariates``), the level index of the
+        # latent values of me(x, sdx, gr = g) (brms's Jme_k; G10, ``check_me_groups``) and a Gaussian process's by variable (gp(x, by =
+        # w)'s Cgp_k, gp(x, by = z)'s rows Igp_k_l and Cgp_k_l of each level; G09, ``check_gp_by``)
+        for prefixes, comparison, what in (
+                (("Csp_",), "check_special_covariates", "the covariate of a special term's interaction (Csp_k: mo(x):w, me(x, sdx):w)"),
+                (("Jme_",), "check_me_groups", "the level index of the latent values of me(x, sdx, gr = g) (Jme_k)"),
+                (("Cgp_", "Igp_"), "check_gp_by", "the by variable of a Gaussian process (Cgp_k, Igp_k_l: gp(x, by = ))")):
+            if any(k.startswith(prefixes) for k in self.fixture.raw["standata"]) and comparison not in globals():
+                raise OracleMismatch(f"the fixture records {what}; gates.py has no {comparison} to compare it")
         self.cmap = adapter.match_columns(self.fixture, self.model)
         self.gmap = adapter.match_groups(self.fixture, self.model)
 

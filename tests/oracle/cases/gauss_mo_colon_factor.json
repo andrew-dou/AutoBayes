@@ -1,0 +1,125 @@
+{
+ "id": "gauss_mo_colon_factor",
+ "tier": "G",
+ "feature": "G10_special_term_ext",
+ "note": "G10 x + mo(ord):z: brms 2.23.0 gives each level of z a monotonic term of ord with its own simplex (simo_1..3, coefs moord:zp1, moord:zq1, moord:zr1) and coefficient (bsp[1..3]) and writes each level's indicator into the Stan data (Csp_1, Csp_2, Csp_3: z = p, q, r), but its Stan program declares Csp_1 alone and multiplies all three terms by it, mu += (bsp[1] mo(simo_1, Xmo_1) + bsp[2] mo(simo_2, Xmo_2) + bsp[3] mo(simo_3, Xmo_3)) Csp_1: the rows with z = q or r get no monotonic effect and the three terms are not identified apart (the Upstream log). The fixture is brms's model; the interaction as written differs in the log density by 1.03 to 872 at the frozen points. With z's main effect (mo(ord) * z, mo(ord) + mo(ord):z, me(xobs, sdx) * z, mi(xm) * z) brms stops instead with the R error \"replacement has 2 rows, data has 3\"; without it me(xobs, sdx):z has the same one-Csp_1 program; with the two-level f2 both work (checked on the frozen points by tests/oracle/test_multivariate_gp_special_harness.py)",
+ "seed": 3335,
+ "n_points": 8,
+ "data": {
+  "generator": "tier_g3",
+  "seed": 3235,
+  "n": 36,
+  "newdata": {
+   "seed": 3335,
+   "n": 5
+  }
+ },
+ "brms": {
+  "formula": "y ~ x + mo(ord):z + (1 | g)",
+  "family": {
+   "family": "gaussian"
+  },
+  "factors": {
+   "g": [
+    "a",
+    "b",
+    "c",
+    "d",
+    "e",
+    "f"
+   ],
+   "z": [
+    "p",
+    "q",
+    "r"
+   ]
+  },
+  "priors": [
+   {
+    "prior": "normal(0, 5)",
+    "class": "Intercept"
+   },
+   {
+    "prior": "normal(0, 2)",
+    "class": "b"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "sd",
+    "group": "g"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "sigma"
+   },
+   {
+    "prior": "dirichlet(2, 2, 2)",
+    "class": "simo",
+    "coef": "moord:zp1"
+   },
+   {
+    "prior": "dirichlet(2, 2, 2)",
+    "class": "simo",
+    "coef": "moord:zq1"
+   },
+   {
+    "prior": "dirichlet(2, 2, 2)",
+    "class": "simo",
+    "coef": "moord:zr1"
+   }
+  ]
+ },
+ "autobayes": {
+  "constructor": "gaussian",
+  "formula": "y ~ x + mo(ord):z + (1 | g)",
+  "kwargs": {
+   "categorical": {
+    "z": "p"
+   }
+  },
+  "priors": {
+   "intercept": [
+    "Normal",
+    0,
+    5
+   ],
+   "b": [
+    "Normal",
+    0,
+    2
+   ],
+   "sd": [
+    "HalfNormal",
+    1
+   ],
+   "sigma": [
+    "HalfNormal",
+    1
+   ],
+   "simo": {
+    "mo(ord):zp": [
+     "Dirichlet",
+     2,
+     2,
+     2
+    ],
+    "mo(ord):zq": [
+     "Dirichlet",
+     2,
+     2,
+     2
+    ],
+    "mo(ord):zr": [
+     "Dirichlet",
+     2,
+     2,
+     2
+    ]
+   }
+  }
+ },
+ "gate": {
+  "expect": "fail",
+  "reason": "G10_special_term_ext not implemented; brms 2.23.0 multiplies every level's term of mo(ord):z by one indicator column (Csp_1; see the note): when the feature lands, implement the interaction as written and carry a per-gate expected failure or a P6 reference, or keep refusing it"
+ }
+}

@@ -1,0 +1,86 @@
+{
+ "id": "gauss_gp_two_inputs",
+ "tier": "G",
+ "feature": "G09_gp_ext",
+ "note": "G09 gp(o2, b2): one isotropic squared-exponential process of the six distinct (o2, b2) pairs (Nsubgp_1 = 6, Dgp_1 = 2, Xgp_1 6 x 2 in first-appearance order, Jgp_1 each row's pair) scaled by dmax_1 = sqrt(5), their largest Euclidean distance; lscale_1 array[1] vector[1] (one length-scale, coef gpo2b2; brms's default inv_gamma(34.003033, 21.921445) on the Euclidean distances), gp_exp_quad_cov(x, sdgp, lscale) of the joint distance plus 1e-12 on the diagonal, f = cholesky(K) zgp_1; cond(K) below 2e5 at the frozen points; no newdata (brms draws an exact GP at new inputs) (checked on the frozen points by tests/oracle/test_multivariate_gp_special_harness.py)",
+ "seed": 3311,
+ "n_points": 8,
+ "data": {
+  "generator": "tier_g3",
+  "seed": 3211,
+  "n": 36
+ },
+ "brms": {
+  "formula": "y ~ gp(o2, b2) + (1 | g)",
+  "family": {
+   "family": "gaussian"
+  },
+  "factors": {
+   "g": [
+    "a",
+    "b",
+    "c",
+    "d",
+    "e",
+    "f"
+   ]
+  },
+  "priors": [
+   {
+    "prior": "normal(0, 5)",
+    "class": "Intercept"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "sdgp"
+   },
+   {
+    "prior": "inv_gamma(3, 1)",
+    "class": "lscale",
+    "coef": "gpo2b2"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "sd",
+    "group": "g"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "sigma"
+   }
+  ]
+ },
+ "autobayes": {
+  "constructor": "gaussian",
+  "formula": "y ~ gp(o2, b2) + (1 | g)",
+  "kwargs": {},
+  "priors": {
+   "intercept": [
+    "Normal",
+    0,
+    5
+   ],
+   "sdgp": [
+    "HalfNormal",
+    1
+   ],
+   "lscale": [
+    "InverseGamma",
+    3,
+    1
+   ],
+   "sd": [
+    "HalfNormal",
+    1
+   ],
+   "sigma": [
+    "HalfNormal",
+    1
+   ]
+  }
+ },
+ "gate": {
+  "expect": "fail",
+  "reason": "G09_gp_ext not implemented; remove this field when it lands"
+ }
+}

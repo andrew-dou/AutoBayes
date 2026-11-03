@@ -1,0 +1,75 @@
+{
+ "id": "cumulative_cs",
+ "tier": "G",
+ "feature": "G10_special_term_ext",
+ "note": "G10 cs(x) + (1 | g) in cumulative (brms warns \"Category specific effects for this family should be considered experimental and may have convergence issues.\"): the ordered Intercept minus x bcs is each row's thresholds, which nothing keeps ordered: cumulative_logit_lpmf's log_inv_logit_diff of a crossed pair is NaN, and brms's log density is NaN at 568 of 800 points drawn as the fixtures' are (uniform on (-1.2, 1.2), seeds 3340-3439, data seed 3240). The case's points are drawn from (-0.6, 0.6) (point_halfwidth), seed 3387 the first with all eight finite; at three of them 5, 3 and 1 rows' thresholds are crossed (rows with an observed category outside the crossing), and brms's posterior_epred has negative category probabilities there (9 entries at those three points, the smallest -0.2386; -0.1648 on the new rows), rows still summing to 1 (checked on the frozen points by tests/oracle/test_multivariate_gp_special_harness.py)",
+ "seed": 3387,
+ "n_points": 8,
+ "data": {
+  "generator": "tier_g3",
+  "seed": 3240,
+  "n": 36,
+  "newdata": {
+   "seed": 3340,
+   "n": 5
+  }
+ },
+ "brms": {
+  "formula": "ord ~ cs(x) + (1 | g)",
+  "family": {
+   "family": "cumulative",
+   "link": "logit"
+  },
+  "factors": {
+   "g": [
+    "a",
+    "b",
+    "c",
+    "d",
+    "e",
+    "f"
+   ]
+  },
+  "priors": [
+   {
+    "prior": "normal(0, 3)",
+    "class": "Intercept"
+   },
+   {
+    "prior": "normal(0, 1.5)",
+    "class": "b"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "sd",
+    "group": "g"
+   }
+  ],
+  "point_halfwidth": 0.6
+ },
+ "autobayes": {
+  "constructor": "cumulative",
+  "formula": "ord ~ cs(x) + (1 | g)",
+  "kwargs": {},
+  "priors": {
+   "intercept": [
+    "Normal",
+    0,
+    3
+   ],
+   "b": [
+    "Normal",
+    0,
+    1.5
+   ],
+   "sd": [
+    "HalfNormal",
+    1
+   ]
+  }
+ },
+ "gate": {
+  "expect": "fail",
+  "reason": "G10_special_term_ext not implemented (cs() in the cumulative family, refused under D89); remove this field when it lands"
+ }
+}

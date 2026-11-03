@@ -1,0 +1,149 @@
+{
+ "id": "gauss_mv_separate_rescor",
+ "tier": "G",
+ "feature": "G08_multivariate_ext",
+ "note": "G08 bf(y ~ x + (1 | g)) + bf(y2 ~ z) + set_rescor(TRUE): a design per response (X_y: Intercept, x; X_y2: Intercept, zq, zr), the group term on y only (sd_1, z_1, r_1_y_1 with J_1_y, Z_1_y_1), Lrescor (cholesky_factor_corr[2], lkj(2)) and one multi_normal_cholesky(Y[n] | Mu[n], diag(sigma) Lrescor) per row with Mu[n] = (mu_y[n], mu_y2[n]) from the two designs; predictions are draws x rows x responses (responses y, y2) (checked on the frozen points by tests/oracle/test_multivariate_gp_special_harness.py)",
+ "seed": 3301,
+ "n_points": 8,
+ "data": {
+  "generator": "tier_g3",
+  "seed": 3201,
+  "n": 36,
+  "newdata": {
+   "seed": 3301,
+   "n": 5
+  }
+ },
+ "brms": {
+  "mvbf": [
+   "y ~ x + (1 | g)",
+   "y2 ~ z"
+  ],
+  "rescor": true,
+  "family": {
+   "family": "gaussian"
+  },
+  "factors": {
+   "g": [
+    "a",
+    "b",
+    "c",
+    "d",
+    "e",
+    "f"
+   ],
+   "z": [
+    "p",
+    "q",
+    "r"
+   ]
+  },
+  "priors": [
+   {
+    "prior": "normal(0, 5)",
+    "class": "Intercept",
+    "resp": "y"
+   },
+   {
+    "prior": "normal(0, 2)",
+    "class": "b",
+    "resp": "y"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "sd",
+    "group": "g",
+    "resp": "y"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "sigma",
+    "resp": "y"
+   },
+   {
+    "prior": "normal(0, 5)",
+    "class": "Intercept",
+    "resp": "y2"
+   },
+   {
+    "prior": "normal(0, 2)",
+    "class": "b",
+    "resp": "y2"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "sigma",
+    "resp": "y2"
+   },
+   {
+    "prior": "lkj(2)",
+    "class": "rescor"
+   }
+  ],
+  "extras": [
+   "group_scope",
+   "responses"
+  ]
+ },
+ "autobayes": {
+  "constructor": "gaussian",
+  "formula": [
+   "y ~ x + (1 | g)",
+   "y2 ~ z"
+  ],
+  "kwargs": {
+   "rescor": true,
+   "categorical": {
+    "z": "p"
+   }
+  },
+  "priors": {
+   "resp": {
+    "y": {
+     "intercept": [
+      "Normal",
+      0,
+      5
+     ],
+     "b": [
+      "Normal",
+      0,
+      2
+     ],
+     "sigma": [
+      "HalfNormal",
+      1
+     ],
+     "sd": [
+      "HalfNormal",
+      1
+     ]
+    },
+    "y2": {
+     "intercept": [
+      "Normal",
+      0,
+      5
+     ],
+     "b": [
+      "Normal",
+      0,
+      2
+     ],
+     "sigma": [
+      "HalfNormal",
+      1
+     ]
+    }
+   },
+   "rescor": [
+    "LKJ",
+    2
+   ]
+  }
+ },
+ "gate": {
+  "expect": "fail",
+  "reason": "G08_multivariate_ext not implemented; remove this field when it lands"
+ }
+}

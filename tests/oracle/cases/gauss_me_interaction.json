@@ -1,0 +1,94 @@
+{
+ "id": "gauss_me_interaction",
+ "tier": "G",
+ "feature": "G10_special_term_ext",
+ "note": "G10 me(xobs, sdx) * w: the latent Xme_1 (36 values) in two special terms, mu += bsp[1] Xme_1 + bsp[2] Xme_1 Csp_1 with Csp_1 = w, w's population term in X. The brief's me(xobs, sdx) * z (z with three levels) is refused by brms 2.23.0 with an R error, \"replacement has 2 rows, data has 3\" (gauss_mo_colon_factor's note); no newdata (checked on the frozen points by tests/oracle/test_multivariate_gp_special_harness.py)",
+ "seed": 3337,
+ "n_points": 8,
+ "data": {
+  "generator": "tier_g3",
+  "seed": 3237,
+  "n": 36
+ },
+ "brms": {
+  "formula": "y ~ me(xobs, sdx) * w + (1 | g)",
+  "family": {
+   "family": "gaussian"
+  },
+  "factors": {
+   "g": [
+    "a",
+    "b",
+    "c",
+    "d",
+    "e",
+    "f"
+   ]
+  },
+  "priors": [
+   {
+    "prior": "normal(0, 5)",
+    "class": "Intercept"
+   },
+   {
+    "prior": "normal(0, 2)",
+    "class": "b"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "sigma"
+   },
+   {
+    "prior": "normal(0, 2)",
+    "class": "meanme"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "sdme"
+   },
+   {
+    "prior": "normal(0, 1)",
+    "class": "sd",
+    "group": "g"
+   }
+  ]
+ },
+ "autobayes": {
+  "constructor": "gaussian",
+  "formula": "y ~ me(xobs, sdx) * w + (1 | g)",
+  "kwargs": {},
+  "priors": {
+   "intercept": [
+    "Normal",
+    0,
+    5
+   ],
+   "b": [
+    "Normal",
+    0,
+    2
+   ],
+   "sigma": [
+    "HalfNormal",
+    1
+   ],
+   "meanme": [
+    "Normal",
+    0,
+    2
+   ],
+   "sdme": [
+    "HalfNormal",
+    1
+   ],
+   "sd": [
+    "HalfNormal",
+    1
+   ]
+  }
+ },
+ "gate": {
+  "expect": "fail",
+  "reason": "G10_special_term_ext not implemented; remove this field when it lands"
+ }
+}
