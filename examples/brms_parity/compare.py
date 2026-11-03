@@ -192,14 +192,16 @@ def print_decomposition(rows) -> None:
 
 
 def config_label(rec: dict) -> str:
-    """The configuration a record was run with, from its own options: brms-<backend>[-t<threads>][-native][-unnorm],
-    autobayes[-c<cores>]."""
+    """The configuration a record was run with, from its own options: brms-<backend>[-t<threads>][-g<grainsize>][-static]
+    [-native][-unnorm], autobayes[-c<cores>]."""
     o = rec.get("options") or {}
     if rec["library"] == "autobayes":
         return f"autobayes-c{rec['cores']}" if rec.get("cores") else "autobayes"
     label = f"brms-{rec.get('backend', 'rstan')}" + (f"-t{o['threads']}" if o.get("threads") else "")
     if o.get("grainsize_requested"):
         label += f"-g{o['grainsize_requested']}"
+    if o.get("static"):
+        label += "-static"
     return label + ("-native" if o.get("march_native") else "") + ("" if o.get("normalize", True) else "-unnorm")
 
 
