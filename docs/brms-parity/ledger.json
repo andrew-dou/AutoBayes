@@ -2754,12 +2754,15 @@
    "depends_on": [
     "C03_gaussian_process"
    ],
-   "status": "gates_green",
+   "status": "merged",
    "summary": "gp() extensions: several inputs gp(x, z), gp(x, by = f), Matern kernels (cov = 'matern32', 'matern52'), scale = FALSE (corpus sp_gp_*)",
-   "pr": null,
+   "pr": 121,
    "attempts": 0,
-   "divergences": [],
-   "next_action": "feature agent on parity/g09",
+   "divergences": [
+    "D195",
+    "D196"
+   ],
+   "next_action": "none",
    "reserved_divergences": "D195-D196",
    "gates": {
     "sha": "0278370fe29b",
