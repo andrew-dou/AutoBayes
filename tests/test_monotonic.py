@@ -135,12 +135,9 @@ def test_new_rows_are_coded_as_the_fitted_rows():
         lik.codes(pd.Series(["often"]), where="newdata column")
 
 
-FORMULA_REFUSALS = [
-    ("y ~ x + mo(ord) + x:mo(ord)", r"an interaction with a monotonic term \('mo\(ord\)'\) is not supported.*D40"),
-    ("y ~ mo(ord) * x", r"an interaction with a monotonic term.*D40"),
-    ("y ~ mo(ord):mo(neg)", r"an interaction with a monotonic term.*D40"),
+FORMULA_REFUSALS = [   # G10 takes mo(ord):x, mo(ord) * x, mo(ord):mo(neg) and mo(ord, id = 'a') (tests/test_special_term_ext.py)
     ("y ~ mo(ord) + (1 + mo(ord) || g)", r"the monotonic term 'mo\(ord\)' varies by 'g' here only correlated.*D184"),   # G05a takes '|'
-    ("y ~ mo(ord, id = 'a')", r"mo\(\) takes one column here; brms's id argument.*D42"),
+    ("y ~ mo(ord, id = 'a', 2)", r"mo\(\) takes a column and optionally brms's id.*D198"),
     ("y ~ mo(log(ord))", r"mo\(\) takes a column name here, not an expression \('log\(ord\)'.*D42"),
     ("y ~ mo(ord + 1)", r"not an expression"),
     ("y ~ mo(y)", r"the response 'y' cannot be a monotonic predictor"),
@@ -160,8 +157,7 @@ def test_other_refusals_name_the_construct():
         parse_formula("ord | trials(cnt) ~ mo(cnt)", None, "binomial")
     with pytest.raises(ab.FormulaError, match=r"'mo\(ord\)': 'ord' is declared categorical; mo\(\) reads it as an ordinal predictor"):
         parse_formula("y ~ ord + mo(ord)", FRAME, categorical={"ord": 1})
-    with pytest.raises(ab.FormulaError, match=r"a monotonic term in a distributional formula \(mo\(ord\)\) is not supported.*D42"):
-        parse_formula(["y ~ x", "sigma ~ mo(ord)"], FRAME)
+    # G10 takes mo() in a distributional formula with the log link (tests/test_special_term_ext.py)
     with pytest.raises(ab.FormulaError, match=r"the monotonic term 'mo\(ord\)' is not available for the categorical family; "
                                               r"brms's mo\(\) is verified here for the gaussian, student.*D42"):
         parse_formula("lik ~ mo(ord)", None, "categorical")

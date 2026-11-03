@@ -70,6 +70,6 @@
  },
  "gate": {
   "expect": "fail",
-  "reason": "G10_special_term_ext not implemented (cs() in the cumulative family, refused under D89); remove this field when it lands"
+  "reason": "cs() in the cumulative family stays refused (divergence D89): brms 2.23.0 does not keep each row's thresholds Intercept - x bcs ordered, so its log density is NaN at 568 of 800 points drawn as the fixtures' are and its posterior_epred has negative category probabilities (smallest -0.2386 at the frozen points; see the note)"
  }
 }

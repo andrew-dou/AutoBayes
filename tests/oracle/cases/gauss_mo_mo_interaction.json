@@ -116,9 +116,5 @@
     }
    }
   }
- },
- "gate": {
-  "expect": "fail",
-  "reason": "G10_special_term_ext not implemented; remove this field when it lands"
  }
 }

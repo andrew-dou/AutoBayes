@@ -584,3 +584,13 @@ its column, building the same graph. Every model is unchanged bit for bit (graph
 design arrays; recorded before and after with `tools/model_manifest.py`); `GroupBlock.Z` and `Design.Z` are built on access and
 refused above `group_index.DENSE_Z_MAX_ENTRIES`; the target identity is streamed (same digest); predictions of models with
 group-level terms are the library's own (`kind="response"` draws from its generator, D199).
+
+Special terms in interactions and with ids, and category-specific expressions and group terms (G10, docs/special-term-ext.md):
+`mo(ord):x`, `mo(ord) * mo(o2)` (a simplex per `mo()` part of each term, brms's `Csp` covariate), `mo(ord, id = "a")` (one
+simplex for the parts of one formula with the id), `mo()` in a distributional formula with the log link, `me(x, sdx, gr = g)`
+(latent values per level of `g`) and `me(x, sdx) * w`; a factor in a special term is coded as written (D197: brms 2.23.0
+multiplies every level's term by the first level's indicator, or stops); `cs(x + z)` and `cs(z)` of a factor (treatment
+contrasts) and `(cs(1) | g)` (per-threshold intercepts, correlated) in the acat, sratio and cratio families. Verified on
+`gauss_mo_interaction`, `gauss_mo_mo_interaction`, `gauss_mo_id`, `gauss_mo_id_sigma`, `gauss_me_gr`, `gauss_me_interaction`,
+`acat_cs_expression` and `acat_cs_group` (and `gauss_mo_colon_factor` but for D197's gates); `cs()` in the cumulative family stays
+refused (D89, `cumulative_cs`: brms's log density is NaN wherever thresholds cross); the unverified combinations are refused (D198).

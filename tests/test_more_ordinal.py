@@ -356,15 +356,14 @@ REFUSALS = [
     ("gaussian", "y ~ x + cs(w)", {}, "brms's category-specific effect cs() is not supported for the gaussian family"),
     ("cumulative", "y ~ x + cs(w)", {}, "brms's category-specific effect cs() is not supported for the cumulative family: brms takes it "
                                          "in its ordinal families, and this library in the sratio, cratio, acat families"),
-    ("acat", "y ~ cs(x + w)", {}, "cs() takes one column name here, not 'x + w'"),
-    ("acat", "y ~ x + cs(1)", {}, "cs() takes one column name here, not '1'"),
+    ("acat", "y ~ cs(x * w)", {}, "cs() takes column names joined by '+' here, not 'x * w'"),   # G10 takes cs(x + w)
+    ("acat", "y ~ x + cs(1)", {}, "cs() takes column names joined by '+' here, not '1'"),
     ("acat", "y ~ x + cs(x)", {}, "'x' is read by 'cs(x)' and by another term of the formula"),
     ("acat", "y ~ x + z + cs(x):z", {"categorical": {"z": "p"}}, "an interaction with a category-specific term ('cs(x)')"),
-    ("acat", "y ~ x + cs(z)", {"categorical": {"z": "p"}}, "'z' is declared categorical; cs() takes a numeric column"),
     ("acat", "y ~ x + cs(y)", {}, "the response 'y' cannot be a category-specific predictor"),
     ("acat", "y ~ x + cs(g) + (1 | g)", {}, "the grouping factor cannot also be a predictor"),
     ("acat", "y ~ x + cs(w) + cs(w)", {}, "duplicated predictor"),
-    ("acat", "y ~ x + (cs(1) | g)", {}, "function calls and transformations inside a group term are not supported"),
+    ("acat", "y ~ x + (cs(x) | g)", {}, "a category-specific group-level term is offered as (cs(1) | g)"),   # G10 takes (cs(1) | g)
     ("sratio", "y ~ 0 + x", {}, "the sratio family's thresholds are its intercepts, so the intercept cannot be removed"),
     ("cratio", "y ~ x - 1", {}, "the cratio family's thresholds are its intercepts"),
     ("acat", "y ~ x + mo(e)", {}, "the monotonic term 'mo(e)' is not available for the acat family"),

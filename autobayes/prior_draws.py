@@ -67,6 +67,8 @@ def _refuse_unsupported(model) -> None:
     constructs = [
         (bool(spec.dpars), lambda: f"a distributional formula for {', '.join(spec.dpar_names)}"),
         (bool(spec.mo_terms), lambda: f"the monotonic term {spec.mo_terms[0].name!r}"),
+        (bool(getattr(spec, "sp_terms", ())), lambda: f"the special term {spec.sp_terms[0].name!r}"),               # G10
+        (any(getattr(t, "thresholds", False) for t in spec.group_terms), lambda: "the category-specific group-level term (cs(1) | g)"),
         (bool(spec.gp_terms), lambda: f"the Gaussian process {spec.gp_terms[0].term!r}"),
         (bool(getattr(spec, "me_terms", ())), lambda: f"the measurement-error term {spec.me_terms[0].name!r}"),
         (bool(getattr(spec, "mi_terms", ())) or bool(getattr(spec, "missing_columns", ())), lambda: "missing values modelled by mi()"),

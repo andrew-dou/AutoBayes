@@ -724,6 +724,8 @@ def _parse_separate(formulas, data, family, categorical, *, rescor) -> Multivari
         if s.mo_terms:
             raise FormulaError(f"{s.formula!r}: a monotonic term in a multivariate model is not supported (docs/multivariate.md, "
                                "divergence D56)")
+        from autobayes.special_terms import refuse_in             # G10: nor a special product
+        refuse_in(s, "a multivariate model")
         if s.gp_terms:
             raise FormulaError(f"{s.formula!r}: the Gaussian process {s.gp_terms[0].term!r} in a multivariate model is not supported"
                                "; write it in a univariate model (docs/multivariate.md, divergence D56)")
